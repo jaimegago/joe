@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(./joe:*)",
+      "Bash(tree:*)",
+      "Bash(go get:*)",
+      "Bash(go doc:*)",
+      "Bash(go test:*)"
+    ]
+  }
+}
