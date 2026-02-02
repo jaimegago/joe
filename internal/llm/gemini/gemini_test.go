@@ -10,12 +10,12 @@ import (
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
-		name          string
-		model         string
-		geminiKey     string
-		googleKey     string
-		wantErr       bool
-		wantModel     string
+		name      string
+		model     string
+		geminiKey string
+		googleKey string
+		wantErr   bool
+		wantModel string
 	}{
 		{
 			name:      "creates client with GEMINI_API_KEY",
@@ -36,7 +36,7 @@ func TestNewClient(t *testing.T) {
 			model:     "",
 			geminiKey: "test-key",
 			wantErr:   false,
-			wantModel: "gemini-2.0-flash-exp",
+			wantModel: "gemini-1.5-flash",
 		},
 		{
 			name:    "returns error when no API key",

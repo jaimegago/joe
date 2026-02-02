@@ -1,0 +1,50 @@
+# Joe Configuration Example
+# Copy to ~/.joe/config.yaml and customize
+
+llm:
+  # LLM provider: "claude" or "gemini"
+  provider: claude
+
+  # Model identifier
+  model: claude-sonnet-4-20250514
+
+  # For Gemini, use:
+  # provider: gemini
+  # model: gemini-1.5-flash
+
+  # Note: API keys are NEVER stored in config files
+  # Set via environment variables:
+  #   - Claude: ANTHROPIC_API_KEY
+  #   - Gemini: GEMINI_API_KEY or GOOGLE_API_KEY
+
+refresh:
+  # Background refresh interval in minutes
+  interval_minutes: 5
+
+  # LLM usage limits during background refresh
+  llm_budget:
+    max_calls_per_hour: 100
+    batch_threshold: 10
+    batch_timeout_sec: 30
+
+notifications:
+  desktop:
+    enabled: false
+    priority_threshold: medium  # low, medium, high, urgent
+
+  slack:
+    enabled: false
+    priority_threshold: high
+
+  quiet_hours:
+    enabled: false
+    start: "22:00"
+    end: "08:00"
+    timezone: Local
+
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+
+  # Log file path (empty = stdout)
+  file: ""
