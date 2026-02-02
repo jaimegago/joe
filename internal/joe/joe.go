@@ -29,7 +29,10 @@ func New(cfg *config.Config, llmAdapter llm.LLMAdapter, graphStore graph.GraphSt
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry)
 	sessionMgr := session.NewManager()
-	agentInstance := agent.NewAgent(llmAdapter, executor, registry)
+
+	// Default system prompt for Joe
+	systemPrompt := "You are Joe, an AI-powered infrastructure copilot. You help platform engineers understand, debug, and operate their infrastructure through natural conversation."
+	agentInstance := agent.NewAgent(llmAdapter, executor, registry, systemPrompt)
 
 	return &Joe{
 		config:     cfg,
@@ -44,8 +47,38 @@ func New(cfg *config.Config, llmAdapter llm.LLMAdapter, graphStore graph.GraphSt
 }
 
 // Chat handles a chat message and returns a streaming response
+// For MVP, this is a simple implementation that returns the response directly
+// In the future, this will stream responses
 func (j *Joe) Chat(ctx context.Context, sessionID, message string) (<-chan string, error) {
-	return j.agent.Run(ctx, sessionID, message)
+	// Get or create session
+	sess := j.sessionMgr.Get(sessionID)
+	if sess == nil {
+		sess = j.sessionMgr.Create(sessionID)
+	}
+
+	// Convert internal/session.Session to internal/agent.Session
+	agentSession := &agent.Session{
+		Messages: sess.Messages,
+	}
+
+	// Run the agent
+	response, err := j.agent.Run(ctx, agentSession, message)
+	if err != nil {
+		responseChan := make(chan string, 1)
+		responseChan <- "Error: " + err.Error()
+		close(responseChan)
+		return responseChan, err
+	}
+
+	// Update the session with new messages
+	sess.Messages = agentSession.Messages
+
+	// Return response as a channel (for future streaming support)
+	responseChan := make(chan string, 1)
+	responseChan <- response
+	close(responseChan)
+
+	return responseChan, nil
 }
 
 // Init runs the onboarding flow

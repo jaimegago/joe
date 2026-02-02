@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -15,6 +16,31 @@ import (
 type Client struct {
 	client anthropic.Client
 	model  string
+}
+
+// APIError represents an error from the Claude API with structured details
+type APIError struct {
+	Code    int    // HTTP status code (inferred from error message)
+	Message string // Raw API error message
+	Err     error  // Enhanced error with user-friendly message
+}
+
+func (e *APIError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *APIError) Unwrap() error {
+	return e.Err
+}
+
+// APICode returns the HTTP status code from the API
+func (e *APIError) APICode() int {
+	return e.Code
+}
+
+// APIMessage returns the raw error message from the API
+func (e *APIError) APIMessage() string {
+	return e.Message
 }
 
 // NewClient creates a new Claude client
@@ -88,7 +114,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// Make the API call
 	response, err := c.client.Messages.New(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+		return nil, c.enhanceError(err)
 	}
 
 	// Convert response
@@ -148,15 +174,65 @@ func (c *Client) convertResponse(response *anthropic.Message) *llm.ChatResponse 
 			toolBlock := block.AsToolUse()
 			// Convert tool call
 			args := make(map[string]any)
-			if err := json.Unmarshal(toolBlock.Input, &args); err == nil {
-				result.ToolCalls = append(result.ToolCalls, llm.ToolCall{
-					ID:   toolBlock.ID,
-					Name: toolBlock.Name,
-					Args: args,
-				})
+			if err := json.Unmarshal(toolBlock.Input, &args); err != nil {
+				// Log error but continue - use empty args rather than skip the tool call
+				// This ensures the LLM knows the tool was called even if args parsing failed
+				args = map[string]any{"_parse_error": err.Error()}
 			}
+			result.ToolCalls = append(result.ToolCalls, llm.ToolCall{
+				ID:   toolBlock.ID,
+				Name: toolBlock.Name,
+				Args: args,
+			})
 		}
 	}
 
 	return result
+}
+
+// enhanceError provides better error messages for common API errors
+// Returns *APIError with structured details for logging
+func (c *Client) enhanceError(err error) error {
+	errMsg := err.Error()
+	var code int
+	var enhancedErr error
+
+	// Check for common error patterns and infer status code
+	if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") {
+		code = 404
+		modelName := c.model
+		suggestions := []string{
+			"claude-sonnet-4-20250514",
+			"claude-opus-4-20241229",
+			"claude-3-5-sonnet-20241022",
+			"claude-3-5-haiku-20241022",
+		}
+
+		// Check if they're using a Gemini model by mistake
+		hint := ""
+		if strings.HasPrefix(modelName, "gemini") {
+			hint = fmt.Sprintf("\n\nNote: '%s' appears to be a Gemini model name, not a Claude model.", modelName)
+		}
+
+		enhancedErr = fmt.Errorf("model '%s' not found for Claude provider.%s\n\nValid Claude models include:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=claude-sonnet-4-20250514",
+			modelName, hint, strings.Join(suggestions, "\n  - "))
+	} else if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "authentication") {
+		code = 401
+		enhancedErr = fmt.Errorf("authentication failed with Claude API.\n\nCheck that your ANTHROPIC_API_KEY is valid:\n  %s", errMsg)
+	} else if strings.Contains(errMsg, "429") || strings.Contains(errMsg, "rate limit") {
+		code = 429
+		enhancedErr = fmt.Errorf("rate limit exceeded for Claude API.\n\nPlease wait a moment before retrying:\n  %s", errMsg)
+	} else if strings.Contains(errMsg, "400") || strings.Contains(errMsg, "invalid") {
+		code = 400
+		enhancedErr = fmt.Errorf("invalid request to Claude API.\n\nThis might indicate unsupported parameters:\n  %s", errMsg)
+	} else {
+		// Return original error with context if we can't enhance it
+		return fmt.Errorf("Claude API call failed: %w", err)
+	}
+
+	return &APIError{
+		Code:    code,
+		Message: errMsg,
+		Err:     enhancedErr,
+	}
 }

@@ -2,11 +2,15 @@ package gemini
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/jaimegago/joe/internal/llm"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -14,6 +18,31 @@ import (
 type Client struct {
 	client *genai.Client
 	model  string
+}
+
+// APIError represents an error from the Gemini API with structured details
+type APIError struct {
+	Code    int    // HTTP status code
+	Message string // Raw API error message
+	Err     error  // Enhanced error with user-friendly message
+}
+
+func (e *APIError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *APIError) Unwrap() error {
+	return e.Err
+}
+
+// APICode returns the HTTP status code from the API
+func (e *APIError) APICode() int {
+	return e.Code
+}
+
+// APIMessage returns the raw error message from the API
+func (e *APIError) APIMessage() string {
+	return e.Message
 }
 
 // NewClient creates a new Gemini client
@@ -33,7 +62,7 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 	}
 
 	if model == "" {
-		model = "gemini-2.0-flash-exp"
+		model = "gemini-1.5-flash"
 	}
 
 	return &Client{
@@ -93,7 +122,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// Send the message
 	resp, err := chat.SendMessage(ctx, genai.Text(lastUserMessage))
 	if err != nil {
-		return nil, fmt.Errorf("gemini API call failed: %w", err)
+		return nil, c.enhanceError(ctx, err)
 	}
 
 	// Convert response
@@ -189,6 +218,97 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 	}
 
 	return result
+}
+
+// enhanceError provides better error messages for common API errors
+// Returns *APIError with structured details for logging
+func (c *Client) enhanceError(ctx context.Context, err error) error {
+	// Check if it's a Google API error (need to unwrap)
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		var enhancedErr error
+		switch apiErr.Code {
+		case 404:
+			// Model not found - fetch available models from API
+			modelName := c.model
+
+			// Check if they're using a Claude model by mistake
+			hint := ""
+			if strings.HasPrefix(modelName, "claude") {
+				hint = fmt.Sprintf("\n\nNote: '%s' appears to be a Claude model name, not a Gemini model.", modelName)
+			}
+
+			// Try to fetch available models from API (use passed context)
+			availableModels := c.listAvailableModels(ctx)
+			if len(availableModels) > 0 {
+				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nAvailable models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=%s",
+					modelName, hint, strings.Join(availableModels, "\n  - "), availableModels[0])
+			} else {
+				// Fallback to hardcoded suggestions if API call fails
+				suggestions := []string{
+					"gemini-1.5-flash (recommended)",
+					"gemini-1.5-pro",
+					"gemini-2.0-flash-exp (experimental)",
+				}
+				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nTry these models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=gemini-1.5-flash",
+					modelName, hint, strings.Join(suggestions, "\n  - "))
+			}
+		case 400:
+			enhancedErr = fmt.Errorf("invalid request to Gemini API: %s\n\nThis might indicate an unsupported model or invalid parameters.", apiErr.Message)
+		case 403:
+			enhancedErr = fmt.Errorf("authentication failed with Gemini API: %s\n\nCheck that your GEMINI_API_KEY is valid.", apiErr.Message)
+		case 429:
+			enhancedErr = fmt.Errorf("rate limit exceeded for Gemini API: %s\n\nYou've hit your API quota limit. Options:\n  1. Wait a few minutes and try again\n  2. Check your quota at https://aistudio.google.com/apikey\n  3. Upgrade your API plan if needed\n  4. Try a different model (some have separate quotas)", apiErr.Message)
+		default:
+			enhancedErr = fmt.Errorf("Gemini API error (%d): %s", apiErr.Code, apiErr.Message)
+		}
+
+		return &APIError{
+			Code:    apiErr.Code,
+			Message: apiErr.Message,
+			Err:     enhancedErr,
+		}
+	}
+
+	// Return original error if we can't enhance it
+	return fmt.Errorf("gemini API call failed: %w", err)
+}
+
+// listAvailableModels fetches the list of available models from Gemini API
+func (c *Client) listAvailableModels(ctx context.Context) []string {
+	// Create a context with timeout to avoid blocking too long
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	iter := c.client.ListModels(ctx)
+	var models []string
+
+	for {
+		model, err := iter.Next()
+		if err != nil {
+			break
+		}
+
+		// Filter to only include generative models (not embedding-only models)
+		// and format the name nicely
+		if model != nil && strings.Contains(model.Name, "models/") {
+			modelName := strings.TrimPrefix(model.Name, "models/")
+			// Only include models that support generateContent
+			for _, method := range model.SupportedGenerationMethods {
+				if method == "generateContent" {
+					models = append(models, modelName)
+					break
+				}
+			}
+		}
+
+		// Limit to first 10 models to keep error message readable
+		if len(models) >= 10 {
+			break
+		}
+	}
+
+	return models
 }
 
 // Close closes the Gemini client

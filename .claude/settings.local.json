@@ -8,7 +8,12 @@
       "Bash(tree:*)",
       "Bash(go get:*)",
       "Bash(go doc:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(go version:*)",
+      "Bash(unset:*)",
+      "Bash(export GEMINI_API_KEY=)",
+      "Bash(GEMINI_API_KEY=\"test-key\" ./joe:*)",
+      "Bash(ls:*)"
     ]
   }
 }
