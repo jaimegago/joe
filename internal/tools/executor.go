@@ -55,6 +55,7 @@ func (e *Executor) ExecuteBatch(ctx context.Context, calls []ToolCallRequest) ([
 		result, err := e.Execute(ctx, call.Name, call.Args)
 		results[i] = ToolCallResult{
 			ID:     call.ID,
+			Name:   call.Name,
 			Result: result,
 			Error:  err,
 		}
@@ -86,8 +87,9 @@ func (e *Executor) ResultsToMessages(results []ToolCallResult) []llm.Message {
 // ResultToMessage converts a single tool call result to an LLM message
 func ResultToMessage(result ToolCallResult) llm.Message {
 	var content string
+	isError := result.Error != nil
 
-	if result.Error != nil {
+	if isError {
 		content = fmt.Sprintf("Error executing tool: %v", result.Error)
 	} else {
 		// Format the result as JSON for the LLM
@@ -100,8 +102,11 @@ func ResultToMessage(result ToolCallResult) llm.Message {
 	}
 
 	return llm.Message{
-		Role:    "user", // Tool results are sent as user messages in the conversation
-		Content: content,
+		Role:         "user",
+		Content:      content,
+		ToolResultID: result.ID,
+		ToolName:     result.Name,
+		IsError:      isError,
 	}
 }
 
@@ -115,6 +120,7 @@ type ToolCallRequest struct {
 // ToolCallResult represents the result of executing a tool
 type ToolCallResult struct {
 	ID     string
+	Name   string
 	Result any
 	Error  error
 }

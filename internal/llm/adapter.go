@@ -40,8 +40,12 @@ type StreamChunk struct {
 
 // Message represents a message in the conversation
 type Message struct {
-	Role    string // "user", "assistant", "system"
-	Content string
+	Role         string     // "user", "assistant"
+	Content      string     // Text content
+	ToolCalls    []ToolCall // For assistant messages: the tool calls made
+	ToolResultID string     // For tool result messages: references the tool call ID
+	ToolName     string     // For tool result messages: the tool name (needed by Gemini)
+	IsError      bool       // For tool result messages: whether the result is an error
 }
 
 // ToolDefinition describes a tool available to the LLM
