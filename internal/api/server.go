@@ -57,5 +57,10 @@ func (s *Server) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// Already wrote header, can't change status - just log the error
+		// This is a programming error that should be caught in testing
+		// Use standard log since we may not have slog available here
+		println("ERROR: failed to encode JSON response:", err.Error())
+	}
 }

@@ -16,6 +16,10 @@ type Session struct {
 	RunOutputTokens int
 	RunTokens       int
 	RunLLMCalls     int
+
+	// MaxMessages limits conversation history size to prevent unbounded growth
+	// When 0, no limit is applied. Recommended: 100-200 for typical conversations.
+	MaxMessages int
 }
 
 // NewSession creates a new session with empty conversation history
@@ -25,9 +29,22 @@ func NewSession() *Session {
 	}
 }
 
-// AddMessage adds a message to the conversation history
+// AddMessage adds a message to the conversation history.
+// If MaxMessages is set and exceeded, older messages are pruned while
+// preserving the most recent messages for context.
 func (s *Session) AddMessage(message llm.Message) {
 	s.Messages = append(s.Messages, message)
+
+	// Prune old messages if we've exceeded the limit
+	if s.MaxMessages > 0 && len(s.Messages) > s.MaxMessages {
+		// Keep the most recent MaxMessages/2 messages
+		// This aggressive pruning ensures we don't slowly grow near the limit
+		keepCount := s.MaxMessages / 2
+		if keepCount < 10 {
+			keepCount = 10 // Always keep at least 10 messages for context
+		}
+		s.Messages = s.Messages[len(s.Messages)-keepCount:]
+	}
 }
 
 // AddMessages adds multiple messages to the conversation history

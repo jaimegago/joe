@@ -12,13 +12,12 @@ import (
 
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/logging"
 )
 
 func main() {
 	// Setup initial logger at info level
-	initialLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	initialLogger := logging.SetupLogger("info")
 	slog.SetDefault(initialLogger)
 
 	// Load config (defaults to ~/.joe/config.yaml if exists, otherwise uses hardcoded defaults)
@@ -30,23 +29,7 @@ func main() {
 	}
 
 	// Reconfigure logger based on config level
-	var level slog.Level
-	switch cfg.Logging.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	}))
+	logger := logging.SetupLogger(cfg.Logging.Level)
 	slog.SetDefault(logger)
 
 	// Log debug mode if enabled

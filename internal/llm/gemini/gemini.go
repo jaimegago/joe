@@ -293,12 +293,15 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 
 // convertResponse converts Gemini response to our response format
 func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatResponse {
-	result := &llm.ChatResponse{
-		Usage: llm.TokenUsage{
+	result := &llm.ChatResponse{}
+
+	// Safely extract token usage - UsageMetadata can be nil
+	if resp.UsageMetadata != nil {
+		result.Usage = llm.TokenUsage{
 			InputTokens:  int(resp.UsageMetadata.PromptTokenCount),
 			OutputTokens: int(resp.UsageMetadata.CandidatesTokenCount),
 			TotalTokens:  int(resp.UsageMetadata.TotalTokenCount),
-		},
+		}
 	}
 
 	// Extract content and tool calls from candidates

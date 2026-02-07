@@ -276,10 +276,8 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 	registry.Register(&mockTool{
 		name: "slow",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+			<-ctx.Done()
+			return nil, ctx.Err()
 		},
 	})
 
