@@ -8,83 +8,88 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot. It helps 
 
 **Key characteristics:**
 - AI-agnostic (Claude, OpenAI, Ollama)
-- Runs locally on engineer's machine (MVP is single binary)
+- Two binaries: `joe` (Local) and `joecored` (Core daemon)
+- Two agents: User Agent (in joe) + Core Agent (in joecored)
+- HTTP API contract between joe and joecored
 - Builds a graph of infrastructure relationships
-- Uses agentic loop: LLM reasons → calls tools → gets results → continues
 
-## Architecture Overview
+## Two-Binary Architecture
 
-Joe is a **single binary** for MVP. The process stays running in interactive mode.
+Joe is built as two binaries from day one:
 
 ```
-$ joe
-Joe is ready.
-
-> why is payment-service slow?
-[Joe queries graph, calls k8s tools, queries prometheus, responds]
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  joe (Joe Local)                    joecored (Joe Core)                │
+│  ────────────────                   ──────────────────                 │
+│                                                                         │
+│  User Agent                         HTTP API (:7777)                   │
+│  • REPL                             • /api/v1/graph/...                │
+│  • Agentic loop → LLM               • /api/v1/k8s/...                  │
+│  • Local tools (direct)             • /api/v1/clarifications           │
+│  • Core tools (HTTP) ──────────────►                                   │
+│                                     Core Agent                         │
+│  Local tools:                       • Background refresh               │
+│  • read_file, write_file            • .joe/ processing                 │
+│  • local_git_diff                   • Onboarding                       │
+│  • local_git_status                 • Clarification queue              │
+│  • run_command                                                         │
+│                                     Core Services                      │
+│                                     • Graph Store (Cayley)             │
+│                                     • SQL Store (SQLite)               │
+│                                     • Adapters (K8s, Git, ArgoCD...)   │
+│                                     • LLM (for Core Agent reasoning)   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Core components:**
-- **Joe Core** (`internal/joe/`) - Main struct, orchestrates everything
-- **REPL** (`internal/repl/`) - Interactive command loop
-- **Agentic Loop** (`internal/agent/`) - LLM + tool execution loop
-- **LLM Adapter** (`internal/llm/`) - Interface for AI providers
-- **Tool Executor** (`internal/tools/`) - Executes tool calls from LLM
-- **Adapters** (`internal/adapters/`) - K8s, Git, ArgoCD, Prometheus, etc.
-- **Graph Store** (`internal/graph/`) - Cayley graph database
-- **SQL Store** (`internal/store/`) - SQLite for sources, sessions, cache
-
-**Data flow:**
+**Development workflow:**
 ```
-User input → REPL → Joe.Chat() → Agent.Run() → LLM
-                                      ↓
-                              tool_calls in response
-                                      ↓
-                              ToolExecutor.Execute()
-                                      ↓
-                              Adapter (K8s, Git, etc.)
-                                      ↓
-                              Results back to LLM
-                                      ↓
-                              Loop until final response
-                                      ↓
-                              Stream to user
+Terminal 1:                    Terminal 2:
+$ joecored                     $ joe
+API listening on :7777         Connecting to joecored... Connected.
+Core Agent started             
+                               > why is payment slow?
+[logs: API request]            [queries joecored, responds]
 ```
 
-## Key Design Decisions
-
-1. **No daemon for MVP** - Single binary, background refresh via goroutines
-2. **No gRPC** - HTTP + SSE when we add daemon later (Phase 7)
-3. **Joe Core is reusable** - Same code whether run from REPL or HTTP server
-4. **LLM interprets .joe/ files** - With hash-based caching to avoid re-interpretation
-5. **Graph is rebuildable** - Sources persist in SQL, graph can be reconstructed
+**Core Agent Autonomy:**
+- **Autonomous**: Deterministic API changes (pod added, replica count changed)
+- **LLM + Auto**: High-confidence interpretations (.joe/ files, clear patterns)
+- **Needs Human**: Low-confidence inferences → queued as clarifications
 
 ## Directory Structure
 
 ```
 joe/
-├── cmd/joe/                    # CLI entry point
+├── cmd/
+│   ├── joe/                      # Joe Local (User Agent CLI)
+│   │   └── main.go
+│   └── joecored/                 # Joe Core (daemon)
+│       └── main.go
+│
 ├── internal/
-│   ├── joe/                    # Joe Core struct
-│   ├── agent/                  # Agentic loop
-│   ├── session/                # Session management  
-│   ├── llm/                    # LLM adapters (claude/, openai/, ollama/)
-│   ├── tools/                  # Tool executor + implementations
-│   ├── discovery/              # Onboarding, .joe/ processing
-│   ├── refresh/                # Background refresh
-│   ├── notify/                 # Notifications
-│   ├── graph/                  # Graph store (Cayley)
-│   ├── store/                  # SQL store (SQLite)
-│   ├── adapters/               # Infrastructure adapters
-│   ├── repl/                   # REPL / interactive mode
-│   └── config/                 # Configuration
-└── docs/                       # Architecture docs
+│   ├── api/                      # HTTP API handlers (joecored)
+│   ├── client/                   # HTTP client (joe → joecored)
+│   ├── core/                     # Core Services
+│   ├── coreagent/                # Core Agent
+│   ├── useragent/                # User Agent
+│   ├── llm/                      # LLM adapters (both agents)
+│   ├── tools/
+│   │   ├── local/                # Local tools (joe)
+│   │   └── core/                 # Core tools (call joecored)
+│   ├── graph/                    # Graph store (joecored)
+│   ├── store/                    # SQL store (joecored)
+│   ├── adapters/                 # K8s, Git, ArgoCD... (joecored)
+│   ├── repl/                     # REPL (joe)
+│   └── config/
+└── docs/
 ```
 
 ## Key Interfaces
 
 ```go
-// LLM Adapter - implement for each provider
+// LLM Adapter - implement for each provider (used by both agents)
 type LLMAdapter interface {
     Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
     ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error)
@@ -99,7 +104,19 @@ type Tool interface {
     Execute(ctx context.Context, args map[string]any) (any, error)
 }
 
-// Graph Store
+// CoreClient - how joe calls joecored (HTTP client in internal/client/)
+type CoreClient interface {
+    GraphQuery(ctx context.Context, query string) ([]Node, error)
+    GraphRelated(ctx context.Context, nodeID string, depth int) (*Subgraph, error)
+    K8sGet(ctx context.Context, cluster, resource, ns, name string) (any, error)
+    K8sLogs(ctx context.Context, cluster, pod, ns string, lines int) (string, error)
+    GitRead(ctx context.Context, repo, path string) (string, error)
+    Clarifications(ctx context.Context) ([]Clarification, error)
+    AnswerClarification(ctx context.Context, id, answer string) error
+    // ... etc
+}
+
+// Graph Store (used by Core Services)
 type GraphStore interface {
     AddNode(ctx context.Context, node Node) error
     AddEdge(ctx context.Context, edge Edge) error
@@ -112,42 +129,43 @@ type GraphStore interface {
 
 We're building incrementally. Each phase should be working before moving on.
 
-### Phase 1: Foundation (Current)
-- [x] Scaffold directory structure
+### Phase 1: Foundation (Two Binaries)
+- [ ] Restructure: `cmd/joe/` + `cmd/joecored/`
+- [ ] HTTP API skeleton (joecored)
+- [ ] HTTP client skeleton (joe)
 - [ ] Config loading
-- [ ] LLM Adapter interface + Claude implementation
-- [ ] Joe Core struct (shell)
+- [ ] LLM Adapter interface + Claude
+- [ ] **Milestone: joecored serves /api/v1/status, joe connects**
 
-### Phase 2: Core Loop
+### Phase 2: User Agent Loop
 - [ ] Tool interface + executor + registry
-- [ ] Agentic loop (prompt → LLM → tools → loop)
-- [ ] Basic tools: `echo`, `ask_user`
+- [ ] User Agent with agentic loop
+- [ ] Basic local tools: `echo`, `ask_user`
 - [ ] REPL
-- [ ] **Milestone: `joe` runs, can chat, executes tools**
+- [ ] **Milestone: joe connects to joecored, echo tool works**
 
-### Phase 3: State
-- [ ] SQL Store + migrations
-- [ ] Graph Store (Cayley)
-- [ ] Graph tools: `graph_query`, `graph_add_node`, `graph_add_edge`
-- [ ] Source tools: `register_source`, `list_sources`
-- [ ] **Milestone: Can build and query graph through chat**
+### Phase 3: Core Services + API
+- [ ] SQL Store + migrations (joecored)
+- [ ] Graph Store (joecored)
+- [ ] API handlers for graph
+- [ ] Core tools in joe: `graph_query`, `graph_related`
+- [ ] **Milestone: User Agent queries graph via HTTP**
 
 ### Phase 4: Infrastructure
-- [ ] K8s adapter
-- [ ] K8s tools: `k8s_get`, `k8s_list`, `k8s_logs`
-- [ ] Git adapter
-- [ ] Git tools: `git_read`, `git_ls`
+- [ ] K8s adapter + API + tools
+- [ ] Git adapter + API + tools
+- [ ] Local tools: `read_file`, `write_file`, `local_git_diff`
 - [ ] **Milestone: "why is pod X failing?" works**
 
-### Phase 5: Discovery
-- [ ] .joe/ file processing with hash cache
-- [ ] Onboarding flow (collect → validate → explore)
-- [ ] Background refresh goroutine
+### Phase 5: Core Agent
+- [ ] Core Agent + background refresh (joecored)
+- [ ] Clarifications queue + API
+- [ ] Onboarding + .joe/ processing
+- [ ] **Milestone: Graph auto-updates, clarifications work**
 
-### Phase 6: Extensions
-- [ ] ArgoCD, Prometheus, Loki adapters
-- [ ] Session memory with embeddings
-- [ ] Notifications
+### Phase 6+: Extensions
+- [ ] ArgoCD, Prometheus, notifications, more LLM adapters
+- [ ] Web UI, VS Code extension
 
 ## Testing Strategy
 
