@@ -2,17 +2,25 @@
 # Copy to ~/.joe/config.yaml and customize
 
 llm:
-  # LLM provider: "claude" or "gemini"
-  provider: gemini
+  # Currently active model key (must match a key in 'available')
+  current: gemini-flash-lite
 
-  # Model identifier
-  # model: claude-sonnet-4-20250514
-  model: gemini-2.0-flash-lite
+  # All configured models
+  available:
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+    gemini-flash-lite:
+      provider: gemini
+      model: gemini-2.0-flash-lite
 
   # Note: API keys are NEVER stored in config files
   # Set via environment variables:
   #   - Claude: ANTHROPIC_API_KEY
   #   - Gemini: GEMINI_API_KEY or GOOGLE_API_KEY
+
+server:
+  address: "localhost:7777"
 
 refresh:
   # Background refresh interval in minutes

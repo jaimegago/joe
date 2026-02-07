@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
@@ -37,7 +38,19 @@ func TestNew(t *testing.T) {
 	executor := tools.NewExecutor(registry)
 	agentInstance := useragent.NewAgent(mockLLM, executor, registry, "test prompt")
 
-	repl := New(agentInstance)
+	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Current: "test-model",
+			Available: map[string]config.ModelConfig{
+				"test-model": {
+					Provider: "test",
+					Model:    "test-1",
+				},
+			},
+		},
+	}
+
+	repl := New(agentInstance, cfg)
 
 	if repl == nil {
 		t.Fatal("New() returned nil")
@@ -45,6 +58,10 @@ func TestNew(t *testing.T) {
 
 	if repl.agent == nil {
 		t.Error("New() did not set agent")
+	}
+
+	if repl.config == nil {
+		t.Error("New() did not set config")
 	}
 
 	if repl.session == nil {

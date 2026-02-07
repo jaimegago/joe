@@ -4,29 +4,78 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
 )
 
-// Agent runs the agentic loop: LLM → tool calls → LLM → ...
-type Agent struct {
-	llm           llm.LLMAdapter
-	executor      *tools.Executor
-	registry      *tools.Registry
-	systemPrompt  string
-	maxIterations int
+// AdapterFactory creates a new LLM adapter for the given provider and model.
+// Used by SwitchModel to hot-swap the underlying LLM without restarting.
+type AdapterFactory func(ctx context.Context, provider, model string) (llm.LLMAdapter, error)
+
+// AgentOption configures optional Agent settings.
+type AgentOption func(*Agent)
+
+// WithAdapterFactory sets the adapter factory for hot-swapping models.
+func WithAdapterFactory(f AdapterFactory) AgentOption {
+	return func(a *Agent) { a.adapterFactory = f }
 }
 
-// NewAgent creates a new agent
-func NewAgent(llmAdapter llm.LLMAdapter, executor *tools.Executor, registry *tools.Registry, systemPrompt string) *Agent {
-	return &Agent{
+// WithCurrentModelName sets the display name of the active model.
+func WithCurrentModelName(name string) AgentOption {
+	return func(a *Agent) { a.currentModel = name }
+}
+
+// Agent runs the agentic loop: LLM → tool calls → LLM → ...
+type Agent struct {
+	mu             sync.RWMutex // protects llm and currentModel
+	llm            llm.LLMAdapter
+	executor       *tools.Executor
+	registry       *tools.Registry
+	systemPrompt   string
+	maxIterations  int
+	adapterFactory AdapterFactory // optional, for hot-swap
+	currentModel   string         // display name of active model
+}
+
+// NewAgent creates a new agent. Options are applied after defaults.
+func NewAgent(llmAdapter llm.LLMAdapter, executor *tools.Executor, registry *tools.Registry, systemPrompt string, opts ...AgentOption) *Agent {
+	a := &Agent{
 		llm:           llmAdapter,
 		executor:      executor,
 		registry:      registry,
 		systemPrompt:  systemPrompt,
 		maxIterations: 10, // Prevent infinite loops
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
+}
+
+// SwitchModel hot-swaps the LLM adapter to a different provider/model.
+// Requires an AdapterFactory to have been set via WithAdapterFactory.
+func (a *Agent) SwitchModel(ctx context.Context, provider, model, displayName string) error {
+	if a.adapterFactory == nil {
+		return fmt.Errorf("no adapter factory configured; cannot switch models")
+	}
+	newAdapter, err := a.adapterFactory(ctx, provider, model)
+	if err != nil {
+		return fmt.Errorf("failed to create adapter for %s/%s: %w", provider, model, err)
+	}
+	a.mu.Lock()
+	a.llm = newAdapter
+	a.currentModel = displayName
+	a.mu.Unlock()
+	return nil
+}
+
+// CurrentModelName returns the display name of the active model.
+func (a *Agent) CurrentModelName() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.currentModel
 }
 
 // Run executes the agentic loop for a user message
@@ -64,8 +113,10 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			Tools:        toolDefs,
 		}
 
-		// Call LLM
+		// Call LLM (under read lock so SwitchModel can't swap mid-call)
+		a.mu.RLock()
 		resp, err := a.llm.Chat(ctx, req)
+		a.mu.RUnlock()
 		if err != nil {
 			return "", fmt.Errorf("llm chat failed: %w", err)
 		}
