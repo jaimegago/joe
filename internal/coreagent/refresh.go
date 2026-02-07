@@ -1,4 +1,4 @@
-package refresh
+package coreagent
 
 // Refresher handles background refresh of the graph
 type Refresher struct {

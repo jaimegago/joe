@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jaimegago/joe/internal/agent"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
+	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // mockLLM is a simple mock for testing
@@ -35,7 +35,7 @@ func TestNew(t *testing.T) {
 	mockLLM := &mockLLM{response: "test"}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry)
-	agentInstance := agent.NewAgent(mockLLM, executor, registry, "test prompt")
+	agentInstance := useragent.NewAgent(mockLLM, executor, registry, "test prompt")
 
 	repl := New(agentInstance)
 

@@ -7,20 +7,20 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jaimegago/joe/internal/agent"
+	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // REPL implements the Read-Eval-Print-Loop for interactive mode
 type REPL struct {
-	agent   *agent.Agent
-	session *agent.Session
+	agent   *useragent.Agent
+	session *useragent.Session
 }
 
 // New creates a new REPL with the given agent
-func New(a *agent.Agent) *REPL {
+func New(a *useragent.Agent) *REPL {
 	return &REPL{
 		agent:   a,
-		session: agent.NewSession(),
+		session: useragent.NewSession(),
 	}
 }
 

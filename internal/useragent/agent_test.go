@@ -1,4 +1,4 @@
-package agent
+package useragent
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/tools/echo"
+	"github.com/jaimegago/joe/internal/tools/local/echo"
 )
 
 // mockLLM is a mock LLM adapter for testing
