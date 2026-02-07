@@ -6,204 +6,234 @@ Reference architecture for implementation. This document is the source of truth 
 
 ## Design Principles
 
-1. **Joe Core is independent of how it's run** - Same code whether CLI or daemon
-2. **Start simple, evolve when needed** - MVP is single binary, daemon comes later
-3. **HTTP + SSE when we need networking** - No gRPC, keep it debuggable
+1. **Two binaries from day one** - `joe` (Local) and `joecored` (Core daemon) in a monorepo
+2. **Two agents, clear boundaries** - Core Agent maintains graph, User Agent assists users
+3. **HTTP API is the contract** - Joe Local calls Joe Core via HTTP, never direct function calls
+4. **Local context stays local** - User's files accessed by Joe Local only, never by Joe Core
+5. **Core Agent has autonomy levels** - Deterministic changes auto-apply, ambiguous ones queue for human
 
 ---
 
-## MVP: Single Binary
+## Two-Agent Architecture
 
-The MVP is a single `joe` binary that stays running in interactive mode. No separate daemon process, no IPC protocol. Background refresh runs as goroutines within the same process.
-
-```
-$ joe
-Joe is ready. Background refresh active.
-
-> why is payment slow?
-[streams response]
-
-> exit
-Goodbye.
-```
+Joe has two distinct agents with different jobs:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                          │
-│  $ joe                                                                                   │
-│       │                                                                                  │
-│       ▼                                                                                  │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
-│  │  Joe Process (single binary, stays running)                                       │  │
-│  │                                                                                   │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │  │
-│  │  │      REPL       │  │  Agentic Loop   │  │   Background    │                   │  │
-│  │  │  (stdin/stdout) │  │                 │  │    Refresh      │                   │  │
-│  │  │                 │  │  prompt → LLM   │  │   (goroutine)   │                   │  │
-│  │  │  read input     │  │      ↓          │  │                 │                   │  │
-│  │  │  show response  │  │  tool calls     │  │  every 5min:    │                   │  │
-│  │  │                 │  │      ↓          │  │  refresh graph  │                   │  │
-│  │  │                 │  │  execute        │  │                 │                   │  │
-│  │  │                 │  │      ↓          │  │                 │                   │  │
-│  │  │                 │  │  loop until done│  │                 │                   │  │
-│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘                   │  │
-│  │           │                    │                    │                            │  │
-│  │           └────────────────────┼────────────────────┘                            │  │
-│  │                                │                                                 │  │
-│  │                                ▼                                                 │  │
-│  │                       ┌────────────────┐                                         │  │
-│  │                       │                │                                         │  │
-│  │                       │   JOE CORE     │  ◄── Same code used in daemon later    │  │
-│  │                       │                │                                         │  │
-│  │                       └────────┬───────┘                                         │  │
-│  │                                │                                                 │  │
-│  │           ┌────────────────────┼────────────────────┐                           │  │
-│  │           │                    │                    │                           │  │
-│  │           ▼                    ▼                    ▼                           │  │
-│  │    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                      │  │
-│  │    │ LLM Adapter │     │ Tool        │     │ Discovery   │                      │  │
-│  │    │             │     │ Executor    │     │ Engine      │                      │  │
-│  │    │ Claude      │     │             │     │             │                      │  │
-│  │    │ OpenAI      │     │ graph_*     │     │ onboarding  │                      │  │
-│  │    │ Ollama      │     │ k8s_*       │     │ .joe/ files │                      │  │
-│  │    │             │     │ git_*       │     │             │                      │  │
-│  │    └─────────────┘     │ argocd_*    │     └─────────────┘                      │  │
-│  │                        │ prom_*      │                                          │  │
-│  │                        │ ...         │                                          │  │
-│  │                        └──────┬──────┘                                          │  │
-│  │                               │                                                 │  │
-│  │                               ▼                                                 │  │
-│  │                       ┌─────────────┐                                           │  │
-│  │                       │  Adapters   │                                           │  │
-│  │                       │             │                                           │  │
-│  │                       │ K8s, ArgoCD │                                           │  │
-│  │                       │ Git, Prom   │                                           │  │
-│  │                       │ Loki, HTTP  │                                           │  │
-│  │                       └──────┬──────┘                                           │  │
-│  │                              │                                                  │  │
-│  └──────────────────────────────┼──────────────────────────────────────────────────┘  │
-│                                 │                                                     │
-│                                 ▼                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐│
-│  │                            DATA LAYER                                             ││
-│  │                                                                                   ││
-│  │     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐          ││
-│  │     │   Graph Store   │     │    SQL Store    │     │   File Store    │          ││
-│  │     │    (Cayley)     │     │    (SQLite)     │     │ (~/.joe/repos/) │          ││
-│  │     │                 │     │                 │     │                 │          ││
-│  │     │  ~/.joe/graph.db│     │  ~/.joe/joe.db  │     │  cloned repos   │          ││
-│  │     └─────────────────┘     └─────────────────┘     └─────────────────┘          ││
-│  │                                                                                   ││
-│  └───────────────────────────────────────────────────────────────────────────────────┘│
+│  CORE AGENT (maintains infrastructure knowledge)                                        │
+│  ───────────────────────────────────────────────                                        │
+│                                                                                          │
+│  Runs:        Server-side (or background goroutine in MVP)                              │
+│  Triggered:   Timer, webhooks, API calls, onboarding                                    │
+│  Reads:       Infrastructure (K8s, Git repos, ArgoCD, Prometheus)                       │
+│  Writes:      Graph DB (nodes, edges, relationships)                                    │
+│  LLM calls:   For interpretation ("what is this service?", "what connects to what?")   │
+│  User interaction: None (or notifications)                                              │
+│                                                                                          │
+│  Jobs:                                                                                  │
+│  • Onboarding - interpret user input, discover infrastructure                          │
+│  • .joe/ file interpretation - understand repo context, update graph                   │
+│  • Background refresh - poll sources, detect changes, update graph                     │
+│  • Anomaly detection - notice issues, queue notifications                              │
+│                                                                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│  USER AGENT (assists users with questions and tasks)                                    │
+│  ───────────────────────────────────────────────────                                    │
+│                                                                                          │
+│  Runs:        Client-side (CLI, IDE extension, Web UI)                                  │
+│  Triggered:   User message                                                              │
+│  Reads:       Local files + Core API (graph, K8s, Git, etc.)                           │
+│  Writes:      User's local files (with permission)                                      │
+│  LLM calls:   For conversation and reasoning                                            │
+│  User interaction: Direct chat                                                          │
+│                                                                                          │
+│  Tools (Local):                      Tools (via Core API):                              │
+│  • read_file (user's filesystem)     • graph_query                                      │
+│  • write_file (user's filesystem)    • k8s_get, k8s_list, k8s_logs                     │
+│  • local_git_diff                    • git_read (cloned repos)                          │
+│  • local_git_status                  • argocd_get, argocd_diff                          │
+│  • run_command                       • prom_query                                       │
 │                                                                                          │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**MVP gives us:**
-- Warm connections (no cold start per query)
-- Background refresh (goroutines)
-- State persistence (during session)
-- Simple architecture (no IPC)
+**Why two agents?**
 
-**MVP trade-offs:**
-- No notifications when Joe isn't running
-- No Web UI (yet)
-- Process must stay open for background work
+| Need | Core Agent | User Agent |
+|------|------------|------------|
+| Keep graph updated when no user online | ✅ | - |
+| Access user's local files | - | ✅ |
+| Reason about infrastructure relationships | ✅ | Reads result |
+| Answer user questions | - | ✅ |
+| Run continuously | ✅ | Only when user active |
 
 ---
 
-## Future: Daemon + Clients
+## Two-Binary Architecture
 
-When we need Web UI, push notifications, or in-cluster deployment, we split into daemon + thin clients. **Joe Core stays the same** - we just wrap it in an HTTP server.
+Joe is built as two binaries from day one, communicating via HTTP:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                          │
-│                                    CLIENTS                                               │
+│  DEVELOPMENT / LOCAL                                                                     │
 │                                                                                          │
-│    ┌──────────────┐      ┌──────────────┐      ┌──────────────┐                         │
-│    │     CLI      │      │    Web UI    │      │  Slack Bot   │                         │
-│    │    (joe)     │      │              │      │              │                         │
-│    │              │      │              │      │              │                         │
-│    │  thin client │      │   browser    │      │   webhook    │                         │
-│    └──────┬───────┘      └──────┬───────┘      └──────┬───────┘                         │
-│           │                     │                     │                                  │
-│           └─────────────────────┼─────────────────────┘                                  │
-│                                 │                                                        │
-│                                 │  HTTP + SSE                                            │
-│                                 │                                                        │
-│                                 ▼                                                        │
-└─────────────────────────────────┼────────────────────────────────────────────────────────┘
-                                  │
-┌─────────────────────────────────┼────────────────────────────────────────────────────────┐
-│                                 │                                                        │
-│  joedaemon                      ▼                                                        │
-│                        ┌────────────────┐                                                │
-│                        │  HTTP Server   │                                                │
-│                        │                │                                                │
-│                        │  POST /chat    │  → SSE stream                                  │
-│                        │  GET  /status  │  → JSON                                        │
-│                        │  POST /init    │  → JSON                                        │
-│                        │  GET  /sources │  → JSON                                        │
-│                        │  ...           │                                                │
-│                        └───────┬────────┘                                                │
-│                                │                                                         │
-│                                ▼                                                         │
-│                       ┌────────────────┐                                                 │
-│                       │                │                                                 │
-│                       │   JOE CORE     │  ◄── Identical to MVP                          │
-│                       │                │                                                 │
-│                       └────────────────┘                                                 │
+│  Terminal 1:                            Terminal 2:                                     │
+│  ────────────────────────────           ────────────────────────────                    │
+│  $ joecored                             $ joe                                           │
+│  Joe Core starting...                   Connecting to joecored...                       │
+│  API listening on :7777                 Connected.                                      │
+│  Core Agent started                                                                     │
+│  Background refresh active              > why is payment slow?                          │
+│                                         [queries core API, responds]                    │
+│  [logs: refresh cycle]                                                                  │
+│  [logs: API request]                    > look at my local changes                      │
+│                                         [reads local files directly]                    │
 │                                                                                          │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-**HTTP API (when needed):**
-
-| Endpoint | Method | Response | Purpose |
-|----------|--------|----------|---------|
-| `/chat` | POST | SSE stream | Streaming conversation |
-| `/status` | GET | JSON | Daemon & graph status |
-| `/init` | POST | JSON | Run onboarding |
-| `/sources` | GET | JSON | List sources |
-| `/sources` | POST | JSON | Add source |
-| `/refresh` | POST | JSON | Trigger refresh |
-| `/notifications` | GET | JSON | Pending notifications |
-| `/notifications/:id/ack` | POST | JSON | Acknowledge |
-
----
-
-## Joe Core
-
-The core is the same regardless of how Joe is run. This is what we build first.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                          │
-│                                    JOE CORE                                              │
+│  joe (Joe Local)                         joecored (Joe Core)                            │
+│  ────────────────                        ──────────────────                             │
+│                                                                                          │
+│  ┌────────────────────────────┐         ┌────────────────────────────────────────────┐ │
+│  │  User Agent                │         │  HTTP API (:7777)                          │ │
+│  │                            │         │                                            │ │
+│  │  REPL ──► Agent Loop ──► LLM         │  /api/v1/graph/query                       │ │
+│  │               │            │         │  /api/v1/k8s/:cluster/...                  │ │
+│  │               ▼            │         │  /api/v1/argocd/...                        │ │
+│  │         tool_call(...)     │         │  /api/v1/clarifications                    │ │
+│  │               │            │         │  /api/v1/status                            │ │
+│  │        ┌──────┴──────┐     │         │                                            │ │
+│  │        ▼             ▼     │         └──────────────┬─────────────────────────────┘ │
+│  │   Local Tools    Core Tools│                        │                               │
+│  │   (direct)       (HTTP)────┼────────────────────────┘                               │
+│  │                            │                        │                               │
+│  │   • read_file              │         ┌──────────────┴─────────────────────────────┐ │
+│  │   • write_file             │         │  Core Agent                                │ │
+│  │   • local_git_diff         │         │                                            │ │
+│  │   • local_git_status       │         │  Background:                               │ │
+│  │   • run_command            │         │  • Refresh graph (every 5min)              │ │
+│  │                            │         │  • Process .joe/ changes                   │ │
+│  └────────────────────────────┘         │  • Detect anomalies                        │ │
+│                                         │                                            │ │
+│                                         │  Triggered:                                │ │
+│                                         │  • Onboarding (via API)                    │ │
+│                                         │  • Manual refresh (via API)                │ │
+│                                         │                                            │ │
+│                                         │  Clarifications:                           │ │
+│                                         │  • Queue ambiguous findings                │ │
+│                                         │  • Send notifications                      │ │
+│                                         │                                            │ │
+│                                         └──────────────┬─────────────────────────────┘ │
+│                                                        │                               │
+│                                         ┌──────────────┴─────────────────────────────┐ │
+│                                         │  Core Services                             │ │
+│                                         │                                            │ │
+│                                         │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
+│                                         │  │  Graph   │ │   SQL    │ │ Adapters │   │ │
+│                                         │  │  Store   │ │  Store   │ │ K8s,Git  │   │ │
+│                                         │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   │ │
+│                                         │  └──────────┘ └──────────┘ └──────────┘   │ │
+│                                         │                                            │ │
+│                                         │  ┌──────────┐                              │ │
+│                                         │  │   LLM    │ (for Core Agent reasoning)  │ │
+│                                         │  │ Adapter  │                              │ │
+│                                         │  └──────────┘                              │ │
+│                                         │                                            │ │
+│                                         └────────────────────────────────────────────┘ │
+│                                                                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why two binaries from day one:**
+- Clean separation enforced by HTTP boundary
+- Each component can be tested independently  
+- Deployment flexibility (same machine, different machines, in-cluster)
+- No "refactor to daemon later" tech debt
+- API design happens upfront
+
+---
+
+## HTTP API Contract
+
+Joe Local communicates with Joe Core exclusively via HTTP:
+
+```
+joecored HTTP API (default :7777)
+
+# Graph queries (User Agent tools)
+GET  /api/v1/graph/query?q=...              Query graph
+GET  /api/v1/graph/related/:nodeID          Get related nodes
+GET  /api/v1/graph/summary                  Graph summary for LLM context
+
+# Infrastructure queries (User Agent tools)  
+GET  /api/v1/k8s/:cluster/:resource/:ns/:name    Get K8s resource
+GET  /api/v1/k8s/:cluster/logs/:ns/:pod          Get pod logs
+GET  /api/v1/argocd/:instance/apps/:name         Get ArgoCD app
+POST /api/v1/prom/query                          Query Prometheus
+POST /api/v1/git/:repo/read                      Read file from cloned repo
+
+# Sources
+GET  /api/v1/sources                        List sources
+POST /api/v1/sources                        Register source
+
+# Clarifications (for human-in-the-loop)
+GET  /api/v1/clarifications                 List pending clarifications
+POST /api/v1/clarifications/:id/answer      Answer a clarification
+POST /api/v1/clarifications/:id/dismiss     Dismiss a clarification
+
+# Control
+POST /api/v1/onboarding                     Start onboarding flow
+POST /api/v1/refresh                        Trigger manual refresh
+GET  /api/v1/status                         Core status (health, graph stats)
+```
+
+---
+
+## Core Services
+
+Core Services run inside `joecored` and are accessed via HTTP API:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│  CORE SERVICES                                                                          │
 │                                                                                          │
 │  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                                   │  │
-│  │  type Joe struct {                                                                │  │
+│  │  type CoreServices struct {                                                       │  │
 │  │      config     *Config                                                           │  │
 │  │      llm        LLMAdapter                                                        │  │
 │  │      graph      GraphStore                                                        │  │
 │  │      store      *SQLStore                                                         │  │
-│  │      executor   *ToolExecutor                                                     │  │
-│  │      discovery  *DiscoveryEngine                                                  │  │
-│  │      refresher  *BackgroundRefresher                                              │  │
+│  │      adapters   *AdapterRegistry  // K8s, ArgoCD, Git, Prom, etc.                │  │
 │  │  }                                                                                │  │
 │  │                                                                                   │  │
-│  │  // Core methods - used by REPL or HTTP handlers                                 │  │
-│  │  func (j *Joe) Chat(ctx, sessionID, message) (<-chan Chunk, error)               │  │
-│  │  func (j *Joe) Init(ctx) error                                                   │  │
-│  │  func (j *Joe) Status() Status                                                   │  │
-│  │  func (j *Joe) Sources() []Source                                                │  │
-│  │  func (j *Joe) Refresh(ctx) error                                                │  │
+│  │  // Graph operations                                                              │  │
+│  │  func (c *CoreServices) GraphQuery(ctx, query) ([]Node, error)                   │  │
+│  │  func (c *CoreServices) GraphRelated(ctx, nodeID, depth) (*Subgraph, error)      │  │
+│  │  func (c *CoreServices) GraphAddNode(ctx, node) error           // Core Agent    │  │
+│  │  func (c *CoreServices) GraphAddEdge(ctx, edge) error           // Core Agent    │  │
 │  │                                                                                   │  │
-│  │  // Lifecycle                                                                     │  │
-│  │  func (j *Joe) Start(ctx) error    // Start background refresh                   │  │
-│  │  func (j *Joe) Stop() error        // Graceful shutdown                          │  │
+│  │  // Infrastructure queries (called by User Agent via tools)                      │  │
+│  │  func (c *CoreServices) K8sGet(ctx, cluster, resource, ns, name) (any, error)    │  │
+│  │  func (c *CoreServices) K8sList(ctx, cluster, resource, ns) ([]any, error)       │  │
+│  │  func (c *CoreServices) K8sLogs(ctx, cluster, pod, ns, lines) (string, error)    │  │
+│  │  func (c *CoreServices) GitRead(ctx, repo, path) (string, error)                 │  │
+│  │  func (c *CoreServices) ArgoCDGet(ctx, instance, app) (any, error)               │  │
+│  │  func (c *CoreServices) PromQuery(ctx, promql) (any, error)                      │  │
+│  │                                                                                   │  │
+│  │  // Source management                                                             │  │
+│  │  func (c *CoreServices) ListSources(ctx) ([]Source, error)                       │  │
+│  │  func (c *CoreServices) RegisterSource(ctx, source) error       // Core Agent    │  │
 │  │                                                                                   │  │
 │  └───────────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                          │
@@ -212,10 +242,12 @@ The core is the same regardless of how Joe is run. This is what we build first.
 │         │                               │                               │               │
 │         ▼                               ▼                               ▼               │
 │  ┌─────────────┐                ┌─────────────┐                ┌─────────────┐          │
+│  │ LLM Adapter │                │  Adapters   │                │   Stores    │          │
 │  │             │                │             │                │             │          │
-│  │ LLM Adapter │                │    Tool     │                │  Discovery  │          │
-│  │             │                │  Executor   │                │   Engine    │          │
-│  │             │                │             │                │             │          │
+│  │ Claude      │                │ K8s         │                │ GraphStore  │          │
+│  │ OpenAI      │                │ ArgoCD      │                │ SQLStore    │          │
+│  │ Ollama      │                │ Git         │                │             │          │
+│  │             │                │ Prometheus  │                │             │          │
 │  └─────────────┘                └─────────────┘                └─────────────┘          │
 │                                                                                          │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
@@ -223,41 +255,260 @@ The core is the same regardless of how Joe is run. This is what we build first.
 
 ---
 
+## Agent Definitions
+
+### Core Agent (maintains infrastructure knowledge)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Core Agent                                                          │
+│  ──────────                                                          │
+│                                                                      │
+│  Runs: Background goroutine (MVP) or in joedaemon (future)          │
+│  Purpose: Keep infrastructure graph accurate and up-to-date         │
+│                                                                      │
+│  type CoreAgent struct {                                            │
+│      services   *CoreServices                                       │
+│      llm        LLMAdapter      // For reasoning during discovery   │
+│      refresher  *BackgroundRefresher                                │
+│      discovery  *DiscoveryEngine                                    │
+│  }                                                                  │
+│                                                                      │
+│  // Background jobs                                                  │
+│  func (a *CoreAgent) StartBackgroundRefresh(ctx)                    │
+│  func (a *CoreAgent) ProcessJoeFiles(ctx, repo)                     │
+│                                                                      │
+│  // Triggered jobs                                                   │
+│  func (a *CoreAgent) RunOnboarding(ctx, input) error                │
+│  func (a *CoreAgent) TriggerRefresh(ctx) error                      │
+│                                                                      │
+│  Tools available (for LLM reasoning):                               │
+│  • graph_add_node, graph_add_edge, graph_update                     │
+│  • register_source                                                  │
+│  • save_onboarding_fact                                             │
+│  • k8s_*, git_*, argocd_* (for discovery)                          │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### User Agent (assists users)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  User Agent                                                          │
+│  ──────────                                                          │
+│                                                                      │
+│  Runs: In client (CLI, IDE, browser)                                │
+│  Purpose: Help user understand and operate infrastructure           │
+│                                                                      │
+│  type UserAgent struct {                                            │
+│      llm          LLMAdapter                                        │
+│      coreClient   CoreClient      // HTTP client in daemon mode,    │
+│                                   // direct CoreServices in MVP     │
+│      localTools   *LocalToolExecutor                                │
+│      session      *Session                                          │
+│  }                                                                  │
+│                                                                      │
+│  func (a *UserAgent) Chat(ctx, message string) (<-chan Chunk, error)│
+│                                                                      │
+│  Tools available to LLM:                                            │
+│                                                                      │
+│  LOCAL TOOLS (execute on client):                                   │
+│  • read_file(path) → content                                        │
+│  • write_file(path, content)                                        │
+│  • local_git_status() → status                                      │
+│  • local_git_diff(ref) → diff                                       │
+│  • run_command(cmd) → output                                        │
+│                                                                      │
+│  CORE TOOLS (call Core Services):                                   │
+│  • graph_query(query) → nodes                                       │
+│  • graph_related(node, depth) → subgraph                           │
+│  • k8s_get(cluster, resource, ns, name) → resource                 │
+│  • k8s_logs(cluster, pod, ns) → logs                               │
+│  • git_read(repo, path) → content  (remote cloned repos)           │
+│  • argocd_get(app) → app details                                   │
+│  • prom_query(promql) → metrics                                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Core Agent Decision Flow
+
+Core Agent operates with varying levels of autonomy depending on confidence:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  AUTONOMOUS (no human needed)                                        │
+│  ────────────────────────────                                        │
+│                                                                      │
+│  Deterministic changes from API data:                               │
+│  • New pod appears in existing deployment    → Update node metadata │
+│  • Replica count changed                     → Update node metadata │
+│  • ConfigMap content changed                 → Update node          │
+│  • Resource deleted                          → Remove from graph    │
+│  • Known deployment scaled                   → Update graph         │
+│                                                                      │
+│  Cached operations:                                                 │
+│  • .joe/ file unchanged (cache hit)          → Replay cached calls  │
+│                                                                      │
+│  Explicit relationships from infra:                                 │
+│  • Service selector → Pod                    → Add edge (explicit)  │
+│  • ArgoCD app → Git repo                     → Add edge (explicit)  │
+│  • Deployment → ConfigMap mount              → Add edge (explicit)  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  LLM REASONING (may need human confirmation)                        │
+│  ───────────────────────────────────────────                        │
+│                                                                      │
+│  LLM interprets, confidence determines action:                      │
+│                                                                      │
+│  HIGH CONFIDENCE → Apply automatically:                             │
+│  • .joe/ file clearly states relationship                           │
+│  • Standard naming pattern recognized                               │
+│  • Explicit annotation on K8s resource                              │
+│                                                                      │
+│  LOW CONFIDENCE → Queue for clarification:                          │
+│  • New service discovered, purpose unclear                          │
+│  • Inferred relationship (e.g., "payment" calls "user"?)            │
+│  • .joe/ file is ambiguous or contradictory                         │
+│  • Multiple possible interpretations                                │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  ALWAYS REQUIRES HUMAN                                              │
+│  ────────────────────                                               │
+│                                                                      │
+│  • Onboarding (user provides sources and context)                   │
+│  • Adding new source (user provides credentials)                    │
+│  • Semantic relationships ("this service handles payments")         │
+│  • Business context ("this is customer-facing")                     │
+│  • Destructive actions (removing sources, major graph changes)      │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Clarification Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│  Core Agent discovers something ambiguous                           │
+│       │                                                              │
+│       ▼                                                              │
+│  Create clarification record                                        │
+│       │                                                              │
+│       ├──► Store in clarifications table (status: pending)          │
+│       │                                                              │
+│       └──► Send notification                                        │
+│            • Desktop notification (if enabled)                      │
+│            • Slack (if configured)                                  │
+│            • Show in Joe Local on next interaction                  │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────────────  │
+│                                                                      │
+│  User responds (via Joe Local or notification):                     │
+│       │                                                              │
+│       ▼                                                              │
+│  "It's the authentication service, depends on postgres"            │
+│       │                                                              │
+│       ▼                                                              │
+│  Core Agent processes answer:                                       │
+│  1. Update clarification record (status: answered)                  │
+│  2. Execute graph_operations from record                            │
+│  3. Store as onboarding_fact (for future rebuild)                   │
+│       │                                                              │
+│       ▼                                                              │
+│  Graph updated with confirmed information                           │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Example Clarification Types
+
+| Type | Trigger | Question | Options |
+|------|---------|----------|---------|
+| `new_service` | Unknown deployment found | "What is deployment/prod/mystery-svc?" | Free text |
+| `edge_confirm` | LLM inferred relationship | "Does payment-svc call user-db?" | Yes / No / Not sure |
+| `ambiguous_joe_file` | .joe/ file unclear | "In repo X, what does 'depends on auth' mean?" | List of possible services |
+| `new_source` | Discovered reference | "Found reference to cluster 'staging'. Add as source?" | Yes / No |
+| `service_purpose` | New service, unclear role | "What does order-processor do?" | Free text |
+
+### Clarification in Joe Local
+
+When user starts Joe Local, pending clarifications are shown:
+
+```
+$ joe
+Joe is ready.
+
+📋 Pending clarifications (2):
+
+1. [new_service] Found deployment 'mystery-svc' in prod cluster.
+   What is this service?
+
+2. [edge_confirm] I think payment-svc calls user-db based on
+   network traffic patterns. Is this correct? (yes/no)
+
+> 1: It's the new authentication service, it talks to redis and postgres
+
+Got it. Updated graph:
+  + node: deployment/prod/mystery-svc (authentication service)
+  + edge: mystery-svc → redis (depends_on, confirmed)
+  + edge: mystery-svc → postgres (depends_on, confirmed)
+
+> 2: yes
+
+Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
+
+> why is payment slow?
+[continues with normal conversation...]
+```
+
+---
+
 ## Component Details
 
-### 1. CLI / REPL
+### 1. CLI (User Agent Host)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  CLI (joe)                                                          │
 │  ─────────                                                          │
-│  MVP: Single binary that runs Joe Core directly.                    │
-│  Future: Thin client connecting to joedaemon via HTTP.              │
+│  MVP: Hosts both User Agent and Core Agent (+ Core Services)        │
+│  Future: Hosts only User Agent, calls joedaemon for Core Services  │
 │                                                                      │
 │  Location: cmd/joe/                                                 │
 │                                                                      │
 │  Commands:                                                          │
 │    joe                     # Interactive mode (stays running)       │
-│    joe init                # Run onboarding                         │
-│    joe ask "question"      # One-shot query (still starts Joe Core) │
-│    joe refresh             # Force discovery refresh                │
+│    joe init                # Run onboarding (triggers Core Agent)   │
+│    joe ask "question"      # One-shot query                         │
+│    joe refresh             # Force discovery refresh (Core Agent)   │
 │    joe sources             # List known sources                     │
 │    joe graph               # Show graph stats                       │
 │    joe cache clear         # Clear .joe/ interpretation cache       │
 │                                                                      │
-│  MVP Startup (joe command):                                         │
+│  MVP Startup:                                                       │
 │    1. Load config from ~/.joe/config.yaml                           │
-│    2. Create Joe Core instance                                      │
-│    3. Start background refresh (goroutine)                          │
-│    4. Enter REPL loop                                               │
-│    5. On exit: graceful shutdown                                    │
+│    2. Initialize Core Services (LLM, Graph, SQL, Adapters)          │
+│    3. Start Core Agent (background goroutine)                       │
+│    4. Create User Agent (with Core Services access)                 │
+│    5. Enter REPL loop                                               │
+│    6. On exit: graceful shutdown                                    │
 │                                                                      │
 │  REPL Loop:                                                         │
 │    while true:                                                      │
 │        input := readline()                                          │
 │        if input == "exit": break                                    │
-│        response := joe.Chat(ctx, sessionID, input)                  │
+│        response := userAgent.Chat(ctx, input)                       │
 │        stream response to stdout                                    │
+│                                                                      │
+│  Local tools execute here (read_file, write_file, local_git_*)     │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -268,7 +519,7 @@ The core is the same regardless of how Joe is run. This is what we build first.
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Session Manager                                                     │
 │  ───────────────                                                     │
-│  Manages conversation sessions.                                     │
+│  Manages conversation sessions for User Agent.                      │
 │                                                                      │
 │  Location: internal/session/                                        │
 │                                                                      │
@@ -281,22 +532,23 @@ The core is the same regardless of how Joe is run. This is what we build first.
 │                                                                      │
 │  Session struct:                                                    │
 │    ID          string                                               │
+│    UserID      string             // For multi-user (daemon mode)   │
 │    StartedAt   time.Time                                            │
-│    Messages    []Message       // conversation history              │
-│    Context     map[string]any  // working memory                    │
+│    Messages    []Message          // conversation history           │
+│    Context     map[string]any     // working memory                 │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Agentic Loop
+### 3. User Agent Loop
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Agentic Loop                                                        │
-│  ────────────                                                        │
-│  Core reasoning engine. LLM + tool execution loop.                  │
+│  User Agent Loop                                                     │
+│  ───────────────                                                     │
+│  Handles user conversation. Calls LLM, executes tools.              │
 │                                                                      │
-│  Location: internal/agent/                                          │
+│  Location: internal/useragent/                                      │
 │                                                                      │
 │  Flow:                                                              │
 │                                                                      │
@@ -749,6 +1001,7 @@ The core is the same regardless of how Joe is run. This is what we build first.
 │  sessions                        Chat session history               │
 │  ──────────────────────────────────────────────────────────────    │
 │  id                  TEXT PK                                        │
+│  user_id             TEXT        For multi-user (daemon mode)       │
 │  started_at          TIMESTAMP                                      │
 │  ended_at            TIMESTAMP                                      │
 │  summary             TEXT        LLM-generated summary              │
@@ -758,6 +1011,22 @@ The core is the same regardless of how Joe is run. This is what we build first.
 │  components          JSON        Involved graph nodes               │
 │  tags                JSON        For categorization                 │
 │  embedding           BLOB        For similarity search              │
+│                                                                      │
+│  clarifications                  Human confirmation queue           │
+│  ──────────────────────────────────────────────────────────────    │
+│  id                  TEXT PK     UUID                               │
+│  type                TEXT        "new_service", "edge_confirm",     │
+│                                  "ambiguous_joe_file", "new_source" │
+│  context             JSON        What was discovered                │
+│  question            TEXT        Human-readable question            │
+│  options             JSON        Suggested answers (if applicable)  │
+│  status              TEXT        "pending", "answered", "dismissed" │
+│  answer              TEXT        Human response                     │
+│  answered_by         TEXT        user_id                            │
+│  answered_at         TIMESTAMP                                      │
+│  graph_operations    JSON        Operations to apply when answered  │
+│  created_at          TIMESTAMP                                      │
+│  notified_at         TIMESTAMP   When notification was sent         │
 │                                                                      │
 │  onboarding_input                Raw onboarding data                │
 │  ──────────────────────────────────────────────────────────────    │
@@ -804,23 +1073,40 @@ The core is the same regardless of how Joe is run. This is what we build first.
 ```
 joe/
 ├── cmd/
-│   └── joe/                    # CLI + REPL (single binary for MVP)
-│       └── main.go
+│   ├── joe/                      # Joe Local (User Agent CLI)
+│   │   └── main.go               # Connects to joecored, runs REPL
+│   │
+│   └── joecored/                 # Joe Core (daemon)
+│       └── main.go               # Starts API server, Core Agent
 │
 ├── internal/
-│   ├── joe/                    # Joe Core - the heart of the system
-│   │   └── joe.go              # Joe struct, Chat(), Init(), Start(), Stop()
+│   ├── api/                      # HTTP API (for joecored)
+│   │   ├── server.go             # HTTP server setup
+│   │   ├── handlers.go           # Route handlers
+│   │   └── middleware.go         # Logging, auth
 │   │
-│   ├── agent/                  # Agentic loop
-│   │   ├── agent.go            # Agent struct
-│   │   ├── prompt.go           # Prompt building
-│   │   └── loop.go             # Tool execution loop
+│   ├── client/                   # HTTP client (for joe)
+│   │   └── client.go             # CoreClient HTTP implementation
 │   │
-│   ├── session/                # Session management
+│   ├── core/                     # Core Services
+│   │   └── services.go           # CoreServices struct
+│   │
+│   ├── coreagent/                # Core Agent
+│   │   ├── agent.go              # CoreAgent struct
+│   │   ├── refresh.go            # Background refresh
+│   │   ├── discovery.go          # .joe/ processing
+│   │   └── onboarding.go         # Onboarding flow
+│   │
+│   ├── useragent/                # User Agent
+│   │   ├── agent.go              # UserAgent struct
+│   │   ├── loop.go               # Agentic loop
+│   │   └── prompt.go             # Prompt building
+│   │
+│   ├── session/                  # Session management
 │   │   └── session.go
 │   │
-│   ├── llm/                    # LLM adapters
-│   │   ├── adapter.go          # Interface
+│   ├── llm/                      # LLM adapters (used by both agents)
+│   │   ├── adapter.go            # Interface
 │   │   ├── claude/
 │   │   │   └── claude.go
 │   │   ├── openai/
@@ -828,44 +1114,37 @@ joe/
 │   │   └── ollama/
 │   │       └── ollama.go
 │   │
-│   ├── tools/                  # Tool implementations
-│   │   ├── executor.go
-│   │   ├── registry.go
-│   │   ├── graph/
-│   │   ├── sources/
-│   │   ├── memory/
-│   │   ├── k8s/
-│   │   ├── git/
-│   │   ├── argocd/
-│   │   ├── telemetry/
-│   │   ├── http/
-│   │   └── user/
+│   ├── tools/                    # Tool implementations
+│   │   ├── executor.go           # Tool executor
+│   │   ├── registry.go           # Tool registry
+│   │   ├── local/                # LOCAL TOOLS (run in joe)
+│   │   │   ├── readfile.go
+│   │   │   ├── writefile.go
+│   │   │   ├── gitdiff.go
+│   │   │   ├── gitstatus.go
+│   │   │   └── runcmd.go
+│   │   └── core/                 # CORE TOOLS (call joecored API)
+│   │       ├── graphquery.go
+│   │       ├── graphrelated.go
+│   │       ├── k8sget.go
+│   │       ├── k8slogs.go
+│   │       ├── gitread.go
+│   │       ├── argocdget.go
+│   │       └── promquery.go
 │   │
-│   ├── discovery/              # Onboarding & .joe/ handling
-│   │   ├── discovery.go
-│   │   ├── onboarding.go
-│   │   └── joefile.go
+│   ├── graph/                    # Graph store (used by joecored)
+│   │   ├── store.go              # Interface
+│   │   └── cayley.go             # Implementation
 │   │
-│   ├── refresh/                # Background refresh
-│   │   └── refresh.go
-│   │
-│   ├── notify/                 # Notifications
-│   │   ├── service.go
-│   │   ├── desktop.go
-│   │   └── slack.go
-│   │
-│   ├── graph/                  # Graph store
-│   │   ├── store.go            # Interface
-│   │   └── cayley.go           # Implementation
-│   │
-│   ├── store/                  # SQL store
+│   ├── store/                    # SQL store (used by joecored)
 │   │   ├── store.go
 │   │   ├── sources.go
 │   │   ├── sessions.go
+│   │   ├── clarifications.go
 │   │   ├── cache.go
 │   │   └── migrations/
 │   │
-│   ├── adapters/               # Infrastructure adapters
+│   ├── adapters/                 # Infrastructure adapters (used by joecored)
 │   │   ├── k8s/
 │   │   ├── argocd/
 │   │   ├── git/
@@ -873,8 +1152,13 @@ joe/
 │   │   ├── loki/
 │   │   └── http/
 │   │
-│   ├── repl/                   # REPL / interactive mode
+│   ├── repl/                     # REPL (used by joe)
 │   │   └── repl.go
+│   │
+│   ├── notify/                   # Notifications (used by joecored)
+│   │   ├── service.go
+│   │   ├── desktop.go
+│   │   └── slack.go
 │   │
 │   └── config/                 # Configuration
 │       └── config.go
@@ -944,45 +1228,51 @@ logging:
 
 ## Implementation Phases
 
-### Phase 1: Foundation
-- [ ] Project setup (go.mod, directory structure)
-- [ ] Config loading
-- [ ] SQL Store with migrations
+### Phase 1: Foundation (Two Binaries)
+- [ ] Restructure for two binaries: `cmd/joe/`, `cmd/joecored/`
+- [ ] HTTP API skeleton in joecored (server setup, health endpoint)
+- [ ] HTTP client skeleton in joe (connects to joecored)
+- [ ] Config loading (shared config package)
 - [ ] LLM Adapter interface + Claude implementation
-- [ ] Joe Core struct
+- [ ] **Milestone: `joecored` starts and serves /api/v1/status, `joe` connects**
 
-### Phase 2: Core Loop
-- [ ] Agentic Loop (prompt building, tool execution)
-- [ ] Tool Executor with registry
-- [ ] Basic tools: graph_query, ask_user
-- [ ] REPL / interactive mode
-- [ ] `joe` command works end-to-end
+### Phase 2: User Agent Loop
+- [ ] Tool interface + executor + registry
+- [ ] User Agent with agentic loop (in joe)
+- [ ] Basic local tools: `echo`, `ask_user`
+- [ ] REPL
+- [ ] **Milestone: `joe` runs, connects to joecored, echo tool works**
 
-### Phase 3: Discovery
-- [ ] Onboarding flow (3 phases)
-- [ ] Git Adapter
-- [ ] .joe/ file processing with hash cache
-- [ ] Source registration
+### Phase 3: Core Services + API
+- [ ] SQL Store with migrations (in joecored)
+- [ ] Graph Store with Cayley (in joecored)
+- [ ] Core Services implementation
+- [ ] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related`
+- [ ] Core tools in joe calling API: `graph_query`, `graph_related`
+- [ ] **Milestone: User Agent queries graph via HTTP**
 
 ### Phase 4: Infrastructure
-- [ ] K8s Adapter
-- [ ] Graph Store (Cayley)
-- [ ] Full graph tools
-- [ ] K8s tools
+- [ ] K8s adapter (joecored) + API endpoints + tools (joe)
+- [ ] Git adapter (joecored) + API endpoints + tools (joe)
+- [ ] Local tools in joe: `read_file`, `write_file`, `local_git_diff`
+- [ ] **Milestone: "why is pod X failing?" works end-to-end**
 
-### Phase 5: Background & Notifications
-- [ ] Background refresh (goroutine in same process)
-- [ ] Notification service
-- [ ] Desktop notifications
+### Phase 5: Core Agent
+- [ ] Core Agent struct (in joecored)
+- [ ] Clarifications table + API endpoints
+- [ ] Onboarding flow via API
+- [ ] .joe/ file processing with cache
+- [ ] Background refresh goroutine
+- [ ] **Milestone: Graph auto-updates, clarifications work**
 
 ### Phase 6: Extensions
-- [ ] ArgoCD Adapter
-- [ ] Prometheus Adapter
-- [ ] Memory/session management (embeddings, search)
+- [ ] ArgoCD adapter + API + tools
+- [ ] Prometheus adapter + API + tools
+- [ ] Notifications (desktop, Slack)
+- [ ] Session memory (embeddings, search)
 - [ ] Additional LLM adapters (OpenAI, Ollama)
 
-### Phase 7: Daemon + Clients (Future)
-- [ ] HTTP + SSE server (`joedaemon`)
-- [ ] Thin CLI client
+### Phase 7: Additional Clients
 - [ ] Web UI
-- [ ] In-cluster deployment
+- [ ] VS Code extension
+- [ ] In-cluster deployment for joecored

@@ -6,10 +6,78 @@
 ## Design Principle: AI Agnostic
 Joe treats LLMs as swappable inference backends. The orchestration, memory, and tooling are Joe's—not the AI provider's.
 
+---
+
+## Two-Binary Architecture
+
+Joe is built as two binaries that communicate via HTTP:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│  joe (Joe Local)                           joecored (Joe Core)                          │
+│  ────────────────                          ──────────────────                           │
+│                                                                                          │
+│  ┌────────────────────────────┐           ┌────────────────────────────────────────────┐│
+│  │  User Agent                │           │  HTTP API (:7777)                          ││
+│  │                            │           │                                            ││
+│  │  REPL ──► Agentic Loop     │           │  GET  /api/v1/graph/query                  ││
+│  │               │            │           │  GET  /api/v1/graph/related/:id            ││
+│  │               ▼            │           │  GET  /api/v1/k8s/:cluster/...             ││
+│  │         tool_call(...)     │           │  POST /api/v1/prom/query                   ││
+│  │               │            │           │  GET  /api/v1/clarifications               ││
+│  │        ┌──────┴──────┐     │           │                                            ││
+│  │        ▼             ▼     │           └──────────────┬─────────────────────────────┘│
+│  │   Local Tools    Core Tools│                          │                              │
+│  │   (direct)       (HTTP) ───┼──────────────────────────┘                              │
+│  │                            │                          │                              │
+│  │   • read_file              │           ┌──────────────┴─────────────────────────────┐│
+│  │   • write_file             │           │  Core Agent                                ││
+│  │   • local_git_diff         │           │                                            ││
+│  │   • local_git_status       │           │  • Background refresh (every 5min)         ││
+│  │   • run_command            │           │  • .joe/ file discovery                    ││
+│  │                            │           │  • Onboarding flow                         ││
+│  │  ┌──────────────────────┐  │           │  • Clarification queue                     ││
+│  │  │  LLM Adapter         │  │           │                                            ││
+│  │  │  (Claude/GPT/Gemini) │  │           │  Uses LLM for:                             ││
+│  │  └──────────────────────┘  │           │  • "What is this service?"                 ││
+│  │                            │           │  • "What connects to what?"                ││
+│  └────────────────────────────┘           │                                            ││
+│                                           └──────────────┬─────────────────────────────┘│
+│                                                          │                              │
+│                                           ┌──────────────┴─────────────────────────────┐│
+│                                           │  Core Services                             ││
+│                                           │                                            ││
+│                                           │  ┌──────────┐ ┌──────────┐ ┌──────────┐   ││
+│                                           │  │  Graph   │ │   SQL    │ │ Adapters │   ││
+│                                           │  │  Store   │ │  Store   │ │ K8s, Git │   ││
+│                                           │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   ││
+│                                           │  └──────────┘ └──────────┘ └──────────┘   ││
+│                                           │                                            ││
+│                                           │  ┌──────────┐                              ││
+│                                           │  │   LLM    │ (for Core Agent reasoning)  ││
+│                                           │  │ Adapter  │                              ││
+│                                           │  └──────────┘                              ││
+│                                           │                                            ││
+│                                           └────────────────────────────────────────────┘│
+│                                                                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key points:**
+- **joe** (Joe Local): User-facing CLI with User Agent, REPL, local tools
+- **joecored** (Joe Core): Daemon with HTTP API, Core Agent, Core Services
+- Both agents can use LLMs (User Agent for conversation, Core Agent for discovery)
+- HTTP API is the contract between them
+
+---
+
+## LLM Adapter (Used by Both Agents)
+
 ```
 ┌─────────────────────────────────────────────┐
-│                Joe Core                      │
-│  (Orchestration, Memory, Tools, Safety)     │
+│            LLM Adapter Interface             │
+│   (Orchestration, Memory, Tools, Safety)    │
 └─────────────────────┬───────────────────────┘
                       │
                       ▼
@@ -101,10 +169,10 @@ This runs periodically (or on-demand). Here's what Joe discovered about your sys
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**How this was built:**
+**How this was built (by Core Agent in joecored):**
 
 ```
-Discovery Run (last: 5 min ago)
+joecored: Core Agent Discovery Run (last: 5 min ago)
 │
 ├─► K8s Adapter
 │   ├─ List Deployments → found payment-service
@@ -119,7 +187,7 @@ Discovery Run (last: 5 min ago)
 │   └─ Emit nodes + edges
 │
 ├─► Git Adapter
-│   ├─ Scan local repo ~/code/infra/payments
+│   ├─ Clone/pull repo infra/payments
 │   ├─ Found Chart.yaml, values.yaml
 │   ├─ Parse values → timeout: 30s, replicas: 3
 │   └─ Emit nodes + edges
@@ -169,21 +237,22 @@ At the end of each session, Joe:
 
 ## Data Flow: Your Query
 
-The key insight: **the LLM drives the investigation.** Joe doesn't parse your input or pre-fetch anything. Joe gives the LLM tools and lets it decide what to call.
+The key insight: **the LLM drives the investigation.** Joe doesn't parse your input or pre-fetch anything. The User Agent gives the LLM tools and lets it decide what to call.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│ PHASE 1: SEND TO LLM WITH TOOLS                                        │
+│ PHASE 1: USER AGENT SENDS TO LLM WITH TOOLS                           │
 └───────────────────────────────────────────────────────────────────────┘
 
 You type your message
         │
         ▼
 ┌───────────────────┐
-│    Joe CLI        │
+│  joe (Joe Local)  │
+│      REPL         │
 └─────────┬─────────┘
           │
-          │ Joe constructs LLM request:
+          │ User Agent constructs LLM request:
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -192,19 +261,24 @@ You type your message
 │  access to tools to investigate infrastructure issues. Use them."      │
 │                                                                        │
 │  Available tools:                                                      │
+│                                                                        │
+│  LOCAL TOOLS (run directly in joe):                                   │
+│    • read_file(path)           - read user's local file               │
+│    • write_file(path, content) - write to user's local file           │
+│    • local_git_diff()          - user's uncommitted changes           │
+│    • local_git_status()        - user's working tree status           │
+│    • run_command(cmd)          - run shell command locally            │
+│                                                                        │
+│  CORE TOOLS (call joecored API via HTTP):                             │
 │    • graph_query(query)         - search infrastructure graph          │
 │    • graph_related(node, depth) - get connected nodes                  │
-│    • k8s_get(resource, ns, name)- get k8s resource                     │
-│    • k8s_list(resource, ns)     - list resources                       │
-│    • k8s_logs(pod, ns, lines)   - get pod logs                         │
-│    • k8s_events(ns)             - get namespace events                 │
-│    • argocd_get(app)            - get ArgoCD app status                │
-│    • argocd_diff(app)           - show sync diff                       │
-│    • git_log(repo, path, n)     - recent commits                       │
-│    • git_show(repo, ref)        - show commit/file                     │
-│    • http_get(url)              - fetch URL (status pages, APIs)       │
+│    • k8s_get(cluster, resource, ns, name) - get k8s resource          │
+│    • k8s_logs(cluster, pod, ns, lines)    - get pod logs              │
+│    • argocd_get(instance, app)  - get ArgoCD app status               │
+│    • git_read(repo, path)       - read file from cloned repo          │
+│    • prom_query(promql)         - query Prometheus metrics            │
 │    • memory_search(query)       - find similar past incidents          │
-│    • prom_query(promql)         - query Prometheus metrics             │
+│    • http_get(url)              - fetch URL (status pages, APIs)       │
 │                                                                        │
 │  User message: "I have this issue reported by a user..."               │
 │                                                                        │
@@ -229,9 +303,12 @@ You type your message
 │  │ Tool call: graph_query("payment-service")                       │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │         │                                                              │
-│         ▼                                                              │
+│         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │ Joe executes → returns graph nodes:                             │  │
+│  │ joe ──► GET http://localhost:7777/api/v1/graph/query            │  │
+│  │            ?q=payment-service                                   │  │
+│  │                                                                  │  │
+│  │ joecored ──► queries Graph Store ──► returns nodes:             │  │
 │  │   - deployment/payments/payment-service                         │  │
 │  │   - configmap/payments/payment-config (timeout: 30s)            │  │
 │  │   - secret/payments/stripe-api-key                              │  │
@@ -244,9 +321,11 @@ You type your message
 │  │ Tool call: memory_search("payment stripe timeout")              │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │         │                                                              │
-│         ▼                                                              │
+│         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │ Joe executes → returns:                                         │  │
+│  │ joe ──► POST http://localhost:7777/api/v1/memory/search         │  │
+│  │                                                                  │  │
+│  │ joecored ──► queries SQL Store ──► returns:                     │  │
 │  │   Session 2025-01-15: Similar issue, root cause was Stripe      │  │
 │  │   degradation. Resolved by waiting.                             │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -258,9 +337,11 @@ You type your message
 │  │ Tool call: http_get("https://status.stripe.com/api/v2/status")  │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │         │                                                              │
-│         ▼                                                              │
+│         ▼ CORE TOOL → HTTP to joecored (proxy)                        │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │ Joe executes → returns:                                         │  │
+│  │ joe ──► POST http://localhost:7777/api/v1/http/fetch            │  │
+│  │                                                                  │  │
+│  │ joecored ──► fetches external URL ──► returns:                  │  │
 │  │   { "status": "degraded", "message": "Investigating increased   │  │
 │  │     API latency", "started": "2025-01-30T14:15:00Z" }           │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -269,12 +350,15 @@ You type your message
 │  LLM thinks: "Stripe is degraded, started 14:15, user error at 14:23"  │
 │                                                                        │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │ Tool call: k8s_logs("payment-service", "payments", 50)          │  │
+│  │ Tool call: k8s_logs("prod", "payment-service", "payments", 50)  │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │         │                                                              │
-│         ▼                                                              │
+│         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │ Joe executes → returns: 47 timeout errors since 14:15           │  │
+│  │ joe ──► GET http://localhost:7777/api/v1/k8s/prod/logs          │  │
+│  │            /payments/payment-service?lines=50                   │  │
+│  │                                                                  │  │
+│  │ joecored ──► K8s Adapter ──► returns: 47 timeout errors         │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │         │                                                              │
 │         ▼                                                              │
@@ -1671,12 +1755,22 @@ Session End (explicit or timeout)
 ## UX Flow: Complete Session
 
 ```
+# Terminal 1: joecored is running
+$ joecored
+Joe Core v0.1.0 starting...
+API listening on :7777
+Core Agent started (refresh interval: 5m)
+[14:20:01] Graph refresh complete: 247 nodes, 892 edges
+[14:23:15] API: GET /api/v1/graph/query?q=payment-service
+
+# Terminal 2: User interacts with joe
 $ joe
 
   ╭─────────────────────────────────────────────────────────────╮
   │  Joe v0.1.0 — Joe Operates Everything                       │
-  │  Connected: k8s/prod-cluster, argocd/prod, 3 git repos      │
-  │  Model: claude-sonnet-4 (swap with: joe config llm)         │
+  │  Connected: joecored at localhost:7777                      │
+  │  Sources: k8s/prod-cluster, argocd/prod, 3 git repos        │
+  │  Model: claude-sonnet-4                                     │
   ╰─────────────────────────────────────────────────────────────╯
 
 > I have this issue reported by a user:
@@ -1765,9 +1859,53 @@ $
 
 ---
 
-## Next: What to Build First?
+## Implementation: Two-Binary Architecture
 
-1. **LLM Adapter Interface** — so we're AI-agnostic from day 1
-2. **Graph Store** — the foundation for everything
-3. **K8s Adapter** — most value, most complexity
-4. **CLI Shell** — so we can actually use it
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Development Workflow                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Terminal 1:                          Terminal 2:                       │
+│  $ joecored                           $ joe                             │
+│  API listening on :7777               Connecting to joecored...         │
+│  Core Agent started                   Connected.                        │
+│  Background refresh active                                              │
+│                                       > why is payment failing?         │
+│  [logs: graph refresh]                [queries joecored, responds]      │
+│  [logs: API request]                                                    │
+│                                       > look at my local changes        │
+│                                       [reads local files directly]      │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Phase 1: Foundation (Two Binaries)
+- `cmd/joe/` + `cmd/joecored/` structure
+- HTTP API skeleton (joecored)
+- HTTP client skeleton (joe)
+- LLM Adapter interface + Claude implementation
+
+### Phase 2: User Agent Loop
+- Tool interface + executor + registry
+- User Agent with agentic loop
+- Basic local tools: `echo`, `ask_user`
+- REPL
+
+### Phase 3: Core Services + API
+- SQL Store + Graph Store (joecored)
+- API handlers for graph queries
+- Core tools in joe calling API
+
+### Phase 4: Infrastructure
+- K8s, Git adapters + API endpoints + tools
+- Local file tools
+
+### Phase 5: Core Agent
+- Background refresh
+- .joe/ file discovery
+- Clarification queue
+
+### Phase 6+: Extensions
+- ArgoCD, Prometheus, notifications
+- Web UI, VS Code extension
