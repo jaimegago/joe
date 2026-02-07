@@ -223,6 +223,7 @@ func loadFromFile(cfg *Config, path string) error {
 //   - JOE_LLM_MODEL: override LLM model
 //   - JOE_LOG_LEVEL: override logging level (debug, info, warn, error)
 //   - JOE_SERVER_ADDRESS: override server address
+//
 // Returns a slice of environment variable names that were applied.
 func applyEnvOverrides(cfg *Config) []string {
 	var overrides []string

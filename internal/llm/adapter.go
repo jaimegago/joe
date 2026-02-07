@@ -66,6 +66,7 @@ type ParameterSchema struct {
 type Property struct {
 	Type        string
 	Description string
+	Items       *Property // For array types: describes array items
 }
 
 // ToolCall represents a tool call from the LLM

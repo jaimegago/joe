@@ -12,7 +12,7 @@ llm:
       model: claude-sonnet-4-20250514
     gemini-flash:
       provider: gemini
-      model: gemini-2.0-flash-lite
+      model: gemini-2.5-flash
 
   # Note: API keys are NEVER stored in config files
   # Set via environment variables:
