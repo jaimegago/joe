@@ -11,46 +11,44 @@ func TestNewDefaultRegistry(t *testing.T) {
 		t.Fatal("NewDefaultRegistry() returned nil")
 	}
 
-	// Test that echo tool is registered
-	echoTool, err := registry.Get("echo")
-	if err != nil {
-		t.Errorf("NewDefaultRegistry() missing 'echo' tool: %v", err)
-	}
-	if echoTool == nil {
-		t.Error("NewDefaultRegistry() 'echo' tool is nil")
-	}
-
-	// Test that ask_user tool is registered
-	askUserTool, err := registry.Get("ask_user")
-	if err != nil {
-		t.Errorf("NewDefaultRegistry() missing 'ask_user' tool: %v", err)
-	}
-	if askUserTool == nil {
-		t.Error("NewDefaultRegistry() 'ask_user' tool is nil")
+	// Define expected tools
+	expectedTools := map[string]bool{
+		"echo":             true,
+		"ask_user":         true,
+		"read_file":        true,
+		"write_file":       true,
+		"local_git_status": true,
+		"local_git_diff":   true,
+		"run_command":      true,
 	}
 
-	// Test that we have exactly 2 tools
+	// Test that all expected tools are registered
+	for toolName := range expectedTools {
+		tool, err := registry.Get(toolName)
+		if err != nil {
+			t.Errorf("NewDefaultRegistry() missing '%s' tool: %v", toolName, err)
+		}
+		if tool == nil {
+			t.Errorf("NewDefaultRegistry() '%s' tool is nil", toolName)
+		}
+	}
+
+	// Test that we have exactly the expected number of tools
 	allTools := registry.GetAll()
-	if len(allTools) != 2 {
-		t.Errorf("NewDefaultRegistry() has %d tools, want 2", len(allTools))
+	if len(allTools) != len(expectedTools) {
+		t.Errorf("NewDefaultRegistry() has %d tools, want %d", len(allTools), len(expectedTools))
 	}
 
 	// Test that tool definitions can be generated
 	definitions := registry.ToDefinitions()
-	if len(definitions) != 2 {
-		t.Errorf("NewDefaultRegistry().ToDefinitions() returned %d definitions, want 2", len(definitions))
+	if len(definitions) != len(expectedTools) {
+		t.Errorf("NewDefaultRegistry().ToDefinitions() returned %d definitions, want %d", len(definitions), len(expectedTools))
 	}
 
-	// Verify tool names in definitions
-	toolNames := make(map[string]bool)
+	// Verify all tool names in definitions are expected
 	for _, def := range definitions {
-		toolNames[def.Name] = true
-	}
-
-	if !toolNames["echo"] {
-		t.Error("NewDefaultRegistry() definitions missing 'echo'")
-	}
-	if !toolNames["ask_user"] {
-		t.Error("NewDefaultRegistry() definitions missing 'ask_user'")
+		if !expectedTools[def.Name] {
+			t.Errorf("Unexpected tool in definitions: %s", def.Name)
+		}
 	}
 }

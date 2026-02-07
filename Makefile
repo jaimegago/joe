@@ -6,7 +6,7 @@ run-joecored:
 
 # Run joe (CLI) - requires joecored to be running
 run-joe:
-	go run ./cmd/joe -config $(PWD)/config.yaml
+	go run ./cmd/joe
 
 # Run joe with default config location
 run-default:

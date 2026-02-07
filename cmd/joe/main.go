@@ -76,6 +76,13 @@ func main() {
 	// Wrap with instrumentation
 	llmAdapter := llm.NewInstrumentedAdapter(baseAdapter, logger, currentModel.Provider, currentModel.Model)
 
+	// Log which model we're using
+	slog.Info("LLM initialized",
+		"provider", currentModel.Provider,
+		"model", currentModel.Model,
+	)
+	fmt.Printf("Using %s/%s\n", currentModel.Provider, currentModel.Model)
+
 	// Create tool registry with default tools (echo, ask_user)
 	registry := tools.NewDefaultRegistry()
 
@@ -96,6 +103,20 @@ func main() {
 		}
 		if !found {
 			return nil, fmt.Errorf("model config not found for provider=%s model=%s", provider, model)
+		}
+
+		// Validate API keys before creating adapter
+		switch provider {
+		case "claude":
+			if os.Getenv("ANTHROPIC_API_KEY") == "" {
+				return nil, fmt.Errorf("cannot switch to Claude: ANTHROPIC_API_KEY environment variable not set")
+			}
+		case "gemini":
+			geminiKey := os.Getenv("GEMINI_API_KEY")
+			googleKey := os.Getenv("GOOGLE_API_KEY")
+			if geminiKey == "" && googleKey == "" {
+				return nil, fmt.Errorf("cannot switch to Gemini: neither GEMINI_API_KEY nor GOOGLE_API_KEY environment variable is set")
+			}
 		}
 
 		// Create the base adapter

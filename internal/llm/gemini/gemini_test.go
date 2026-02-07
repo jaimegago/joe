@@ -20,23 +20,23 @@ func TestNewClient(t *testing.T) {
 		{
 			name:      "creates client with GEMINI_API_KEY",
 			model:     "gemini-2.0-flash-exp",
-			geminiKey: "test-gemini-key",
+			geminiKey: "test-gemini-api-key-1234567890",
 			wantErr:   false,
 			wantModel: "gemini-2.0-flash-exp",
 		},
 		{
 			name:      "creates client with GOOGLE_API_KEY fallback",
 			model:     "gemini-2.0-flash-exp",
-			googleKey: "test-google-key",
+			googleKey: "test-google-api-key-1234567890",
 			wantErr:   false,
 			wantModel: "gemini-2.0-flash-exp",
 		},
 		{
 			name:      "uses default model when empty",
 			model:     "",
-			geminiKey: "test-key",
+			geminiKey: "test-gemini-api-key-1234567890",
 			wantErr:   false,
-			wantModel: "gemini-1.5-flash",
+			wantModel: "gemini-2.5-flash",
 		},
 		{
 			name:    "returns error when no API key",
@@ -86,7 +86,7 @@ func TestNewClient(t *testing.T) {
 
 func TestConvertToolDefinition(t *testing.T) {
 	// Set up a client for testing
-	os.Setenv("GEMINI_API_KEY", "test-key")
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	ctx := context.Background()
@@ -174,7 +174,7 @@ func TestConvertToolDefinition(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	ctx := context.Background()

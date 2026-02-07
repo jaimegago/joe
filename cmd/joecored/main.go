@@ -55,10 +55,16 @@ func main() {
 	}
 
 	// Log configuration
+	currentModel, modelErr := cfg.LLM.CurrentModel()
+	modelInfo := "none"
+	if modelErr == nil {
+		modelInfo = fmt.Sprintf("%s/%s", currentModel.Provider, currentModel.Model)
+	}
 	slog.Info("configuration loaded",
 		"server.address", cfg.Server.Address,
 		"refresh.interval_minutes", cfg.Refresh.IntervalMinutes,
 		"logging.level", cfg.Logging.Level,
+		"llm.model", modelInfo,
 	)
 
 	// Get listen address from config (defaults to localhost:7777)

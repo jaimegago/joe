@@ -57,13 +57,18 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 		return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set")
 	}
 
+	// Check if key appears to be a placeholder or test value
+	if len(apiKey) < 20 || apiKey == "test" || apiKey == "your-api-key-here" {
+		return nil, fmt.Errorf("GEMINI_API_KEY appears to be invalid (too short or placeholder value). Get a real API key from https://aistudio.google.com/apikey")
+	}
+
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
 
 	if model == "" {
-		model = "gemini-1.5-flash"
+		model = "gemini-2.5-flash"
 	}
 
 	return &Client{
@@ -88,9 +93,23 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// Add tools if provided
 	if len(req.Tools) > 0 {
 		tools := make([]*genai.Tool, 0, len(req.Tools))
-		for _, tool := range req.Tools {
-			tools = append(tools, c.convertToolDefinition(tool))
+		var toolNames []string
+		for i, tool := range req.Tools {
+			convertedTool := c.convertToolDefinition(tool)
+			// Validate tool has required fields
+			if convertedTool == nil || len(convertedTool.FunctionDeclarations) == 0 {
+				return nil, fmt.Errorf("tool %d (%s) converted to invalid format", i, tool.Name)
+			}
+			tools = append(tools, convertedTool)
+			toolNames = append(toolNames, tool.Name)
 		}
+		
+		// Log tool names being registered (for debugging)
+		if len(toolNames) > 0 {
+			// Tools: [echo, ask_user, read_file, write_file, local_git_status, local_git_diff, run_command]
+			_ = toolNames
+		}
+		
 		model.Tools = tools
 	}
 
@@ -160,7 +179,10 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	_ = lastRole // role is implicit in SendMessage
 	resp, err := chat.SendMessage(ctx, lastParts...)
 	if err != nil {
-		return nil, c.enhanceError(ctx, err)
+		// Add debug info about what we sent
+		debugInfo := fmt.Sprintf("\n\nDebug info:\n- Model: %s\n- System prompt: %v\n- Tools count: %d\n- History messages: %d\n- Last message parts: %d",
+			c.model, req.SystemPrompt != "", len(req.Tools), len(history), len(lastParts))
+		return nil, c.enhanceErrorWithDebug(ctx, err, debugInfo)
 	}
 
 	// Convert response
@@ -179,6 +201,11 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 
 // convertToolDefinition converts our tool definition to Gemini format
 func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
+	// Gemini requires non-empty descriptions
+	if tool.Description == "" {
+		tool.Description = tool.Name
+	}
+	
 	// Convert properties to Gemini schema
 	properties := make(map[string]*genai.Schema)
 	for name, prop := range tool.Parameters.Properties {
@@ -196,12 +223,61 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 			schemaType = genai.TypeArray
 		case "object":
 			schemaType = genai.TypeObject
+		default:
+			// Unknown type, default to string
+			schemaType = genai.TypeString
 		}
 
-		properties[name] = &genai.Schema{
-			Type:        schemaType,
-			Description: prop.Description,
+		// Gemini requires property descriptions
+		desc := prop.Description
+		if desc == "" {
+			desc = name
 		}
+
+		schema := &genai.Schema{
+			Type:        schemaType,
+			Description: desc,
+		}
+
+		// For array types, add Items schema if specified
+		if schemaType == genai.TypeArray && prop.Items != nil {
+			itemType := genai.TypeString
+			switch prop.Items.Type {
+			case "string":
+				itemType = genai.TypeString
+			case "number":
+				itemType = genai.TypeNumber
+			case "integer":
+				itemType = genai.TypeInteger
+			case "boolean":
+				itemType = genai.TypeBoolean
+			case "object":
+				itemType = genai.TypeObject
+			}
+			
+			itemDesc := prop.Items.Description
+			if itemDesc == "" {
+				itemDesc = "array item"
+			}
+			
+			schema.Items = &genai.Schema{
+				Type:        itemType,
+				Description: itemDesc,
+			}
+		}
+
+		properties[name] = schema
+	}
+
+	// Build parameters schema - Gemini requires this even if empty
+	params := &genai.Schema{
+		Type:       genai.TypeObject,
+		Properties: properties,
+	}
+	
+	// Only set Required if we have required fields
+	if len(tool.Parameters.Required) > 0 {
+		params.Required = tool.Parameters.Required
 	}
 
 	return &genai.Tool{
@@ -209,11 +285,7 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 			{
 				Name:        tool.Name,
 				Description: tool.Description,
-				Parameters: &genai.Schema{
-					Type:       genai.TypeObject,
-					Properties: properties,
-					Required:   tool.Parameters.Required,
-				},
+				Parameters:  params,
 			},
 		},
 	}
@@ -261,10 +333,26 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 // enhanceError provides better error messages for common API errors
 // Returns *APIError with structured details for logging
 func (c *Client) enhanceError(ctx context.Context, err error) error {
+	return c.enhanceErrorWithDebug(ctx, err, "")
+}
+
+// enhanceErrorWithDebug is like enhanceError but accepts additional debug info
+func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo string) error {
 	// Check if it's a Google API error (need to unwrap)
 	var apiErr *googleapi.Error
 	if errors.As(err, &apiErr) {
 		var enhancedErr error
+		
+		// Extract more detailed error info
+		errDetails := apiErr.Message
+		if errDetails == "" && len(apiErr.Errors) > 0 {
+			// Try to get message from nested errors
+			errDetails = apiErr.Errors[0].Message
+		}
+		if errDetails == "" {
+			errDetails = "(no error message provided by API)"
+		}
+		
 		switch apiErr.Code {
 		case 404:
 			// Model not found - fetch available models from API
@@ -282,17 +370,31 @@ func (c *Client) enhanceError(ctx context.Context, err error) error {
 				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nAvailable models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=%s",
 					modelName, hint, strings.Join(availableModels, "\n  - "), availableModels[0])
 			} else {
-				// Fallback to hardcoded suggestions if API call fails
-				suggestions := []string{
-					"gemini-1.5-flash (recommended)",
-					"gemini-1.5-pro",
-					"gemini-2.0-flash-exp (experimental)",
-				}
-				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nTry these models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=gemini-1.5-flash",
-					modelName, hint, strings.Join(suggestions, "\n  - "))
+				// Fallback if API call fails - provide generic message
+				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nCouldn't fetch available models from API.\nCheck https://ai.google.dev/gemini-api/docs/models/gemini for current model list.\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=<valid-model-name>",
+					modelName, hint)
 			}
 		case 400:
-			enhancedErr = fmt.Errorf("invalid request to Gemini API: %s\n\nThis might indicate an unsupported model or invalid parameters.", apiErr.Message)
+			// Check for common issues
+			modelHint := ""
+			if strings.Contains(c.model, "lite") || strings.Contains(c.model, "1.5") || strings.Contains(c.model, "flash-exp") {
+				modelHint = fmt.Sprintf("\n\nNote: '%s' may be an outdated Gemini model name.", c.model)
+			}
+			
+			// Try to fetch available models from API
+			availableModels := c.listAvailableModels(ctx)
+			var modelsList string
+			if len(availableModels) > 0 {
+				modelsList = fmt.Sprintf("Valid model names:\n  - %s", strings.Join(availableModels, "\n  - "))
+			} else {
+				modelsList = "Valid model names: See https://ai.google.dev/gemini-api/docs/models/gemini"
+			}
+			
+			// Build detailed error message
+			errorMsg := fmt.Sprintf("invalid request to Gemini API: %s%s%s\n\nError code: %d\nFull error: %v",
+				errDetails, modelHint, debugInfo, apiErr.Code, err)
+			
+			enhancedErr = fmt.Errorf("%s\n\nCommon causes:\n  - Invalid model name\n  - Malformed request\n  - Tool/function definition issues\n\n%s", errorMsg, modelsList)
 		case 403:
 			enhancedErr = fmt.Errorf("authentication failed with Gemini API: %s\n\nCheck that your GEMINI_API_KEY is valid.", apiErr.Message)
 		case 429:

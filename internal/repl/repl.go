@@ -155,7 +155,7 @@ func (r *REPL) handleModelCommand(ctx context.Context) error {
 	// Update config current
 	r.config.LLM.Current = selected
 
-	fmt.Printf("Switched to %s\n", selected)
+	fmt.Printf("\nSwitched to %s (%s/%s)\n", selected, modelCfg.Provider, modelCfg.Model)
 	return nil
 }
 
