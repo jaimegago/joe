@@ -87,13 +87,12 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		}
 
 		// Add assistant's response (with tool calls) to history
-		// Note: Some LLMs include content alongside tool calls
-		if resp.Content != "" {
-			session.AddMessage(llm.Message{
-				Role:    "assistant",
-				Content: resp.Content,
-			})
-		}
+		// The tool calls must be preserved so the LLM sees them on the next iteration
+		session.AddMessage(llm.Message{
+			Role:      "assistant",
+			Content:   resp.Content,
+			ToolCalls: resp.ToolCalls,
+		})
 
 		// Execute tool calls
 		toolCallRequests := make([]tools.ToolCallRequest, len(resp.ToolCalls))

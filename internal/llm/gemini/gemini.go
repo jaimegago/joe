@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -95,32 +96,69 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 
 	// Build conversation history
 	var history []*genai.Content
-	var lastUserMessage string
+	var lastParts []genai.Part
+	var lastRole string
 
 	for i, msg := range req.Messages {
-		role := "user"
+		// Determine the parts and role for this message
+		var parts []genai.Part
+		var role string
+
 		if msg.Role == "assistant" {
 			role = "model"
+			if msg.Content != "" {
+				parts = append(parts, genai.Text(msg.Content))
+			}
+			// Include FunctionCall parts so Gemini sees its own tool calls in history
+			for _, tc := range msg.ToolCalls {
+				parts = append(parts, genai.FunctionCall{
+					Name: tc.Name,
+					Args: tc.Args,
+				})
+			}
+		} else if msg.ToolResultID != "" {
+			// Tool result message - use FunctionResponse
+			role = "user"
+			var responseData map[string]any
+			if err := json.Unmarshal([]byte(msg.Content), &responseData); err != nil {
+				// If content isn't valid JSON, wrap it
+				responseData = map[string]any{"result": msg.Content}
+			}
+			parts = append(parts, genai.FunctionResponse{
+				Name:     msg.ToolName,
+				Response: responseData,
+			})
+		} else {
+			role = "user"
+			parts = append(parts, genai.Text(msg.Content))
 		}
 
-		// Gemini API wants the last user message separate for GenerateContent
-		if i == len(req.Messages)-1 && msg.Role == "user" {
-			lastUserMessage = msg.Content
+		// Gemini API wants the last user message separate for SendMessage
+		if i == len(req.Messages)-1 && role == "user" {
+			lastParts = parts
+			lastRole = role
 			break
 		}
 
-		history = append(history, &genai.Content{
-			Parts: []genai.Part{genai.Text(msg.Content)},
-			Role:  role,
-		})
+		if len(parts) > 0 {
+			history = append(history, &genai.Content{
+				Parts: parts,
+				Role:  role,
+			})
+		}
 	}
 
 	// Start chat session with history
 	chat := model.StartChat()
 	chat.History = history
 
-	// Send the message
-	resp, err := chat.SendMessage(ctx, genai.Text(lastUserMessage))
+	// Send the last message
+	if lastParts == nil {
+		lastParts = []genai.Part{genai.Text("")}
+		lastRole = "user"
+	}
+	_ = lastRole // role is implicit in SendMessage
+	resp, err := chat.SendMessage(ctx, lastParts...)
 	if err != nil {
 		return nil, c.enhanceError(ctx, err)
 	}

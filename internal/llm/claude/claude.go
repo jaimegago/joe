@@ -69,7 +69,22 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	messages := make([]anthropic.MessageParam, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		if msg.Role == "assistant" {
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
+			var blocks []anthropic.ContentBlockParamUnion
+			if msg.Content != "" {
+				blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+			}
+			// Include tool_use blocks so Claude sees its own tool calls in history
+			for _, tc := range msg.ToolCalls {
+				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Args, tc.Name))
+			}
+			if len(blocks) > 0 {
+				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+			}
+		} else if msg.ToolResultID != "" {
+			// Tool result message - must use tool_result block referencing the tool call ID
+			messages = append(messages, anthropic.NewUserMessage(
+				anthropic.NewToolResultBlock(msg.ToolResultID, msg.Content, msg.IsError),
+			))
 		} else {
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
 		}
