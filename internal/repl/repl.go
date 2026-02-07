@@ -16,8 +16,8 @@ var ErrExit = errors.New("exit requested")
 
 // REPL implements the Read-Eval-Print-Loop for interactive mode
 type REPL struct {
-	agent  *useragent.Agent
-	config *config.Config
+	agent   *useragent.Agent
+	config  *config.Config
 	session *useragent.Session
 }
 
