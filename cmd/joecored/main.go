@@ -15,24 +15,54 @@ import (
 )
 
 func main() {
-	// Setup logger
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	// Setup initial logger at info level
+	initialLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
-	slog.SetDefault(logger)
+	slog.SetDefault(initialLogger)
 
-	// Load config
-	cfg, err := config.Load("")
+	// Load config (defaults to ~/.joe/config.yaml if exists, otherwise uses hardcoded defaults)
+	configPath := "~/.joe/config.yaml"
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	// Get listen address from config or default
-	addr := cfg.Server.Address
-	if addr == "" {
-		addr = "localhost:7777"
+	// Reconfigure logger based on config level
+	var level slog.Level
+	switch cfg.Logging.Level {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
 	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	}))
+	slog.SetDefault(logger)
+
+	// Log debug mode if enabled
+	if cfg.Logging.Level == "debug" {
+		slog.Debug("running in debug mode")
+	}
+
+	// Log configuration
+	slog.Info("configuration loaded",
+		"server.address", cfg.Server.Address,
+		"refresh.interval_minutes", cfg.Refresh.IntervalMinutes,
+		"logging.level", cfg.Logging.Level,
+	)
+
+	// Get listen address from config (defaults to localhost:7777)
+	addr := cfg.Server.Address
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
