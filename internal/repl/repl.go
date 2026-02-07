@@ -22,11 +22,22 @@ type REPL struct {
 }
 
 // New creates a new REPL with the given agent and config
+// The session is created with default settings (no message limit)
 func New(a *useragent.Agent, cfg *config.Config) *REPL {
 	return &REPL{
 		agent:   a,
 		config:  cfg,
 		session: useragent.NewSession(),
+	}
+}
+
+// NewWithSession creates a new REPL with the given agent, config, and session
+// This allows callers to configure session settings (like MaxMessages) before starting the REPL
+func NewWithSession(a *useragent.Agent, cfg *config.Config, session *useragent.Session) *REPL {
+	return &REPL{
+		agent:   a,
+		config:  cfg,
+		session: session,
 	}
 }
 

@@ -3,7 +3,6 @@ package llmfactory
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
@@ -14,17 +13,19 @@ import (
 // NewAdapter creates an LLMAdapter from a ModelConfig.
 // It validates that the required API key environment variable is set
 // before creating the provider client.
+//
+// Note: For Gemini clients, callers should check if the returned adapter
+// implements io.Closer and call Close() when done to prevent resource leaks.
 func NewAdapter(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
+	// Validate API keys using centralized validation
+	if err := config.ValidateAPIKeys(mc); err != nil {
+		return nil, err
+	}
+
 	switch mc.Provider {
 	case "claude":
-		if os.Getenv("ANTHROPIC_API_KEY") == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY is not set (required for provider %q)", mc.Provider)
-		}
 		return claude.NewClient(mc.Model)
 	case "gemini":
-		if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY must be set (required for provider %q)", mc.Provider)
-		}
 		return gemini.NewClient(ctx, mc.Model)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q (supported: claude, gemini)", mc.Provider)
