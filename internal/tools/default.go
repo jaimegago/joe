@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"github.com/jaimegago/joe/internal/tools/askuser"
-	"github.com/jaimegago/joe/internal/tools/echo"
+	"github.com/jaimegago/joe/internal/tools/local/askuser"
+	"github.com/jaimegago/joe/internal/tools/local/echo"
 )
 
 // NewDefaultRegistry creates a registry with all default tools registered

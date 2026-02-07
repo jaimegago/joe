@@ -8,14 +8,16 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"time"
 
-	"github.com/jaimegago/joe/internal/agent"
+	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llm/claude"
 	"github.com/jaimegago/joe/internal/llm/gemini"
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/tools"
+	"github.com/jaimegago/joe/internal/useragent"
 )
 
 func main() {
@@ -35,6 +37,19 @@ func main() {
 	if err := validateLLMConfig(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		fmt.Fprintln(os.Stderr)
+		os.Exit(1)
+	}
+
+	// Connect to joecored
+	joecoreURL := "http://" + cfg.Server.Address
+	coreClient := client.New(joecoreURL)
+
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pingCancel()
+
+	if err := coreClient.Ping(pingCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Cannot connect to joecored at %s\n", joecoreURL)
+		fmt.Fprintf(os.Stderr, "Make sure joecored is running: joecored\n\n")
 		os.Exit(1)
 	}
 
@@ -71,7 +86,7 @@ func main() {
 
 	// Create agent with system prompt
 	systemPrompt := "You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise."
-	agentInstance := agent.NewAgent(llmAdapter, executor, registry, systemPrompt)
+	agentInstance := useragent.NewAgent(llmAdapter, executor, registry, systemPrompt)
 
 	// Create and run REPL
 	replInstance := repl.New(agentInstance)

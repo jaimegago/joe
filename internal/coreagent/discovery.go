@@ -1,4 +1,4 @@
-package discovery
+package coreagent
 
 // Engine handles onboarding and .joe/ file processing
 type Engine struct {

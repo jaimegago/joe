@@ -12,9 +12,15 @@ import (
 // Config represents the Joe configuration
 type Config struct {
 	LLM           LLMConfig          `yaml:"llm"`
+	Server        ServerConfig       `yaml:"server"`
 	Refresh       RefreshConfig      `yaml:"refresh"`
 	Notifications NotificationConfig `yaml:"notifications"`
 	Logging       LoggingConfig      `yaml:"logging"`
+}
+
+// ServerConfig holds joecored server settings
+type ServerConfig struct {
+	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
 }
 
 // LLMConfig configures the LLM provider
@@ -108,6 +114,9 @@ func defaultConfig() *Config {
 		LLM: LLMConfig{
 			Provider: "claude",
 			Model:    "claude-sonnet-4-20250514",
+		},
+		Server: ServerConfig{
+			Address: "localhost:7777",
 		},
 		Refresh: RefreshConfig{
 			IntervalMinutes: 5,

@@ -1,16 +1,28 @@
-.PHONY: run build test clean
+.PHONY: run run-joe run-joecored run-default build build-joe build-joecored test clean fmt vet deps
 
-# Run joe without building (uses config.yaml in current dir)
-run:
+# Run joecored (daemon) - start this first
+run-joecored:
+	go run ./cmd/joecored
+
+# Run joe (CLI) - requires joecored to be running
+run-joe:
 	go run ./cmd/joe -config $(PWD)/config.yaml
 
-# Run with default config location
+# Run joe with default config location
 run-default:
 	go run ./cmd/joe
 
-# Build the binary
-build:
+# Alias: "make run" starts joecored (the component you run first)
+run: run-joecored
+
+# Build both binaries
+build: build-joe build-joecored
+
+build-joe:
 	go build -o joe ./cmd/joe
+
+build-joecored:
+	go build -o joecored ./cmd/joecored
 
 # Run all tests
 test:
@@ -26,7 +38,7 @@ test-verbose:
 
 # Clean build artifacts
 clean:
-	rm -f joe
+	rm -f joe joecored
 
 # Format code
 fmt:
