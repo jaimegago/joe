@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -103,6 +104,7 @@ type LoggingConfig struct {
 func Load(configPath string) (*Config, error) {
 	// Start with defaults
 	cfg := defaultConfig()
+	slog.Debug("config: initialized with defaults")
 
 	// Expand home directory if path starts with ~
 	if len(configPath) > 0 && configPath[0] == '~' {
@@ -113,6 +115,9 @@ func Load(configPath string) (*Config, error) {
 		configPath = filepath.Join(home, configPath[1:])
 	}
 
+	// Track config source
+	configSource := "defaults"
+
 	// Try to load from file
 	if configPath != "" {
 		if err := loadFromFile(cfg, configPath); err != nil {
@@ -120,15 +125,37 @@ func Load(configPath string) (*Config, error) {
 			if !os.IsNotExist(err) {
 				return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 			}
+			slog.Info("no config file detected, using defaults", "path", configPath)
+			slog.Debug("config: file not found, using defaults", "path", configPath)
+		} else {
+			configSource = configPath
+			slog.Info("loaded config from file", "path", configPath)
+			slog.Debug("config: loaded from file", "path", configPath)
 		}
+	} else {
+		slog.Info("no config path specified, using defaults")
+		slog.Debug("config: no path specified, using defaults")
 	}
 
 	// Apply environment variable overrides
-	applyEnvOverrides(cfg)
+	envOverrides := applyEnvOverrides(cfg)
+	if len(envOverrides) > 0 {
+		slog.Debug("config: applied environment overrides", "vars", envOverrides)
+	}
 
 	// Compute derived fields
 	cfg.Refresh.Interval = time.Duration(cfg.Refresh.IntervalMinutes) * time.Minute
 	cfg.Refresh.LLMBudget.BatchTimeout = time.Duration(cfg.Refresh.LLMBudget.BatchTimeoutSec) * time.Second
+
+	// Log final configuration
+	slog.Debug("config: loaded",
+		"source", configSource,
+		"server.address", cfg.Server.Address,
+		"llm.current", cfg.LLM.Current,
+		"llm.available_models", len(cfg.LLM.Available),
+		"refresh.interval_minutes", cfg.Refresh.IntervalMinutes,
+		"logging.level", cfg.Logging.Level,
+	)
 
 	return cfg, nil
 }
@@ -191,33 +218,55 @@ func loadFromFile(cfg *Config, path string) error {
 }
 
 // applyEnvOverrides applies environment variable overrides
-// If JOE_LLM_PROVIDER or JOE_LLM_MODEL are set, they override the current model entry.
-func applyEnvOverrides(cfg *Config) {
+// Supported environment variables:
+//   - JOE_LLM_PROVIDER: override LLM provider
+//   - JOE_LLM_MODEL: override LLM model
+//   - JOE_LOG_LEVEL: override logging level (debug, info, warn, error)
+//   - JOE_SERVER_ADDRESS: override server address
+// Returns a slice of environment variable names that were applied.
+func applyEnvOverrides(cfg *Config) []string {
+	var overrides []string
+
+	// LLM overrides
 	provider := os.Getenv("JOE_LLM_PROVIDER")
 	model := os.Getenv("JOE_LLM_MODEL")
 
-	if provider == "" && model == "" {
-		return
+	if provider != "" || model != "" {
+		// Get the current model entry (or create one if missing)
+		current := cfg.LLM.Current
+		mc, ok := cfg.LLM.Available[current]
+		if !ok {
+			mc = ModelConfig{}
+		}
+
+		if provider != "" {
+			mc.Provider = provider
+			overrides = append(overrides, "JOE_LLM_PROVIDER")
+		}
+		if model != "" {
+			mc.Model = model
+			overrides = append(overrides, "JOE_LLM_MODEL")
+		}
+
+		if cfg.LLM.Available == nil {
+			cfg.LLM.Available = make(map[string]ModelConfig)
+		}
+		cfg.LLM.Available[current] = mc
 	}
 
-	// Get the current model entry (or create one if missing)
-	current := cfg.LLM.Current
-	mc, ok := cfg.LLM.Available[current]
-	if !ok {
-		mc = ModelConfig{}
+	// Logging level override
+	if logLevel := os.Getenv("JOE_LOG_LEVEL"); logLevel != "" {
+		cfg.Logging.Level = logLevel
+		overrides = append(overrides, "JOE_LOG_LEVEL")
 	}
 
-	if provider != "" {
-		mc.Provider = provider
-	}
-	if model != "" {
-		mc.Model = model
+	// Server address override
+	if serverAddr := os.Getenv("JOE_SERVER_ADDRESS"); serverAddr != "" {
+		cfg.Server.Address = serverAddr
+		overrides = append(overrides, "JOE_SERVER_ADDRESS")
 	}
 
-	if cfg.LLM.Available == nil {
-		cfg.LLM.Available = make(map[string]ModelConfig)
-	}
-	cfg.LLM.Available[current] = mc
+	return overrides
 }
 
 // Save saves the config to a YAML file

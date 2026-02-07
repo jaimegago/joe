@@ -56,6 +56,12 @@ func main() {
 	logger, logCleanup := setupLogger(cfg)
 	defer logCleanup()
 
+	// Log debug mode if enabled
+	if cfg.Logging.Level == "debug" {
+		slog.Debug("running in debug mode")
+		fmt.Println("Debug mode enabled")
+	}
+
 	// Initialize LLM adapter using factory
 	currentModel, err := cfg.LLM.CurrentModel()
 	if err != nil {
