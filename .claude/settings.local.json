@@ -13,7 +13,9 @@
       "Bash(unset:*)",
       "Bash(export GEMINI_API_KEY=)",
       "Bash(GEMINI_API_KEY=\"test-key\" ./joe:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(test:*)",
+      "Bash(grep:*)"
     ]
   }
 }

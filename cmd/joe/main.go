@@ -13,8 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
-	"github.com/jaimegago/joe/internal/llm/claude"
-	"github.com/jaimegago/joe/internal/llm/gemini"
+	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
@@ -57,26 +56,19 @@ func main() {
 	logger, logCleanup := setupLogger(cfg)
 	defer logCleanup()
 
-	// Initialize LLM adapter based on config
-	var baseAdapter llm.LLMAdapter
+	// Initialize LLM adapter using factory
+	currentModel, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		log.Fatalf("Invalid LLM config: %v", err)
+	}
 
-	switch cfg.LLM.Provider {
-	case "claude":
-		baseAdapter, err = claude.NewClient(cfg.LLM.Model)
-		if err != nil {
-			log.Fatalf("Failed to create Claude client: %v", err)
-		}
-	case "gemini":
-		baseAdapter, err = gemini.NewClient(ctx, cfg.LLM.Model)
-		if err != nil {
-			log.Fatalf("Failed to create Gemini client: %v", err)
-		}
-	default:
-		log.Fatalf("Unknown LLM provider: %s (supported: claude, gemini)", cfg.LLM.Provider)
+	baseAdapter, err := llmfactory.NewAdapter(ctx, currentModel)
+	if err != nil {
+		log.Fatalf("Failed to create LLM adapter: %v", err)
 	}
 
 	// Wrap with instrumentation
-	llmAdapter := llm.NewInstrumentedAdapter(baseAdapter, logger, cfg.LLM.Provider, cfg.LLM.Model)
+	llmAdapter := llm.NewInstrumentedAdapter(baseAdapter, logger, currentModel.Provider, currentModel.Model)
 
 	// Create tool registry with default tools (echo, ask_user)
 	registry := tools.NewDefaultRegistry()
@@ -84,12 +76,45 @@ func main() {
 	// Create tool executor
 	executor := tools.NewExecutor(registry)
 
-	// Create agent with system prompt
-	systemPrompt := "You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise."
-	agentInstance := useragent.NewAgent(llmAdapter, executor, registry, systemPrompt)
+	// Create adapter factory for hot-swapping models
+	adapterFactory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
+		// Find the model config
+		var modelCfg config.ModelConfig
+		found := false
+		for _, mc := range cfg.LLM.Available {
+			if mc.Provider == provider && mc.Model == model {
+				modelCfg = mc
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("model config not found for provider=%s model=%s", provider, model)
+		}
 
-	// Create and run REPL
-	replInstance := repl.New(agentInstance)
+		// Create the base adapter
+		baseAdptr, err := llmfactory.NewAdapter(ctx, modelCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		// Wrap with instrumentation
+		return llm.NewInstrumentedAdapter(baseAdptr, logger, provider, model), nil
+	}
+
+	// Create agent with system prompt and adapter factory
+	systemPrompt := "You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise."
+	agentInstance := useragent.NewAgent(
+		llmAdapter,
+		executor,
+		registry,
+		systemPrompt,
+		useragent.WithAdapterFactory(adapterFactory),
+		useragent.WithCurrentModelName(cfg.LLM.Current),
+	)
+
+	// Create and run REPL (pass config for model management)
+	replInstance := repl.New(agentInstance, cfg)
 	if err := replInstance.Run(ctx); err != nil {
 		log.Fatalf("REPL failed: %v", err)
 	}
@@ -144,40 +169,37 @@ func setupLogger(cfg *config.Config) (*slog.Logger, func()) {
 
 // validateLLMConfig checks if LLM is properly configured with API keys
 func validateLLMConfig(cfg *config.Config) error {
+	mc, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		return fmt.Errorf("You need to connect Joe to an LLM.\n\n%w\n\nCheck your config file's llm.current and llm.available sections.", err)
+	}
+
 	// Check if provider is supported
 	supportedProviders := []string{"claude", "gemini"}
 	providerSupported := false
 	for _, p := range supportedProviders {
-		if cfg.LLM.Provider == p {
+		if mc.Provider == p {
 			providerSupported = true
 			break
 		}
 	}
 
 	if !providerSupported {
-		return fmt.Errorf("You need to connect Joe to an LLM.\n\nCurrently supported LLMs:\n  - Claude (Anthropic)\n  - Gemini (Google)\n\nConfigured provider '%s' is not supported.", cfg.LLM.Provider)
+		return fmt.Errorf("You need to connect Joe to an LLM.\n\nCurrently supported LLMs:\n  - Claude (Anthropic)\n  - Gemini (Google)\n\nConfigured provider '%s' is not supported.", mc.Provider)
 	}
 
 	// Check for API keys (must be set and non-empty)
-	switch cfg.LLM.Provider {
+	switch mc.Provider {
 	case "claude":
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
-			return fmt.Errorf("You need to connect Joe to an LLM.\n\nClaude is configured but ANTHROPIC_API_KEY is not set or is empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Claude:\n  export ANTHROPIC_API_KEY=your-api-key-here\n\nTo use Gemini, update your config to provider: gemini")
-		}
-		// Warn if model looks like it's for the wrong provider
-		if len(cfg.LLM.Model) > 6 && cfg.LLM.Model[:6] == "gemini" {
-			return fmt.Errorf("Configuration error: provider is set to 'claude' but model '%s' appears to be a Gemini model.\n\nValid Claude models include:\n  - claude-sonnet-4-20250514\n  - claude-opus-4-20241229\n  - claude-3-5-sonnet-20241022\n\nUpdate your config file to use a Claude model.", cfg.LLM.Model)
+			return fmt.Errorf("You need to connect Joe to an LLM.\n\nClaude is configured but ANTHROPIC_API_KEY is not set or is empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Claude:\n  export ANTHROPIC_API_KEY=your-api-key-here\n\nTo use Gemini, update your config to use a Gemini model")
 		}
 	case "gemini":
 		geminiKey := os.Getenv("GEMINI_API_KEY")
 		googleKey := os.Getenv("GOOGLE_API_KEY")
 		if geminiKey == "" && googleKey == "" {
-			return fmt.Errorf("You need to connect Joe to an LLM.\n\nGemini is configured but neither GEMINI_API_KEY nor GOOGLE_API_KEY is set or both are empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Gemini:\n  export GEMINI_API_KEY=your-api-key-here\n\nTo use Claude, update your config to provider: claude")
-		}
-		// Warn if model looks like it's for the wrong provider
-		if len(cfg.LLM.Model) > 6 && cfg.LLM.Model[:6] == "claude" {
-			return fmt.Errorf("Configuration error: provider is set to 'gemini' but model '%s' appears to be a Claude model.\n\nValid Gemini models include:\n  - gemini-1.5-flash (recommended - fast and stable)\n  - gemini-1.5-pro (more capable)\n  - gemini-2.0-flash-exp (experimental)\n\nUpdate your config file to use a Gemini model.", cfg.LLM.Model)
+			return fmt.Errorf("You need to connect Joe to an LLM.\n\nGemini is configured but neither GEMINI_API_KEY nor GOOGLE_API_KEY is set or both are empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Gemini:\n  export GEMINI_API_KEY=your-api-key-here\n\nTo use Claude, update your config to use a Claude model")
 		}
 	}
 

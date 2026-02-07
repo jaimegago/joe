@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -23,11 +24,35 @@ type ServerConfig struct {
 	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
 }
 
-// LLMConfig configures the LLM provider
+// LLMConfig configures LLM providers with support for multiple models
 type LLMConfig struct {
+	Current   string                 `yaml:"current"`   // Key into Available for the active model
+	Available map[string]ModelConfig `yaml:"available"` // All configured models
+}
+
+// ModelConfig describes a single LLM model
+type ModelConfig struct {
 	Provider string `yaml:"provider"` // "claude", "gemini"
-	Model    string `yaml:"model"`
-	APIKey   string `yaml:"-"` // Never serialize API keys
+	Model    string `yaml:"model"`    // e.g. "claude-sonnet-4-20250514"
+}
+
+// CurrentModel returns the ModelConfig for the currently selected model
+func (c *LLMConfig) CurrentModel() (ModelConfig, error) {
+	mc, ok := c.Available[c.Current]
+	if !ok {
+		return ModelConfig{}, fmt.Errorf("current model %q not found in available models", c.Current)
+	}
+	return mc, nil
+}
+
+// ModelNames returns the sorted list of available model keys
+func (c *LLMConfig) ModelNames() []string {
+	names := make([]string, 0, len(c.Available))
+	for k := range c.Available {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // RefreshConfig configures background refresh
@@ -112,8 +137,10 @@ func Load(configPath string) (*Config, error) {
 func defaultConfig() *Config {
 	return &Config{
 		LLM: LLMConfig{
-			Provider: "claude",
-			Model:    "claude-sonnet-4-20250514",
+			Current: "claude-sonnet",
+			Available: map[string]ModelConfig{
+				"claude-sonnet": {Provider: "claude", Model: "claude-sonnet-4-20250514"},
+			},
 		},
 		Server: ServerConfig{
 			Address: "localhost:7777",
@@ -164,19 +191,33 @@ func loadFromFile(cfg *Config, path string) error {
 }
 
 // applyEnvOverrides applies environment variable overrides
+// If JOE_LLM_PROVIDER or JOE_LLM_MODEL are set, they override the current model entry.
 func applyEnvOverrides(cfg *Config) {
-	// LLM provider can be overridden
-	if provider := os.Getenv("JOE_LLM_PROVIDER"); provider != "" {
-		cfg.LLM.Provider = provider
+	provider := os.Getenv("JOE_LLM_PROVIDER")
+	model := os.Getenv("JOE_LLM_MODEL")
+
+	if provider == "" && model == "" {
+		return
 	}
 
-	// LLM model can be overridden
-	if model := os.Getenv("JOE_LLM_MODEL"); model != "" {
-		cfg.LLM.Model = model
+	// Get the current model entry (or create one if missing)
+	current := cfg.LLM.Current
+	mc, ok := cfg.LLM.Available[current]
+	if !ok {
+		mc = ModelConfig{}
 	}
 
-	// API keys are always from environment, never from config file
-	// This is handled separately in main.go for security
+	if provider != "" {
+		mc.Provider = provider
+	}
+	if model != "" {
+		mc.Model = model
+	}
+
+	if cfg.LLM.Available == nil {
+		cfg.LLM.Available = make(map[string]ModelConfig)
+	}
+	cfg.LLM.Available[current] = mc
 }
 
 // Save saves the config to a YAML file
