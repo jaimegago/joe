@@ -15,6 +15,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
@@ -22,7 +23,7 @@ import (
 
 func main() {
 	// Parse command-line flags
-	configPath := flag.String("config", "~/.joe/config.yaml", "path to config file")
+	configPath := flag.String("config", paths.DefaultConfigPath(), "path to config file")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -63,7 +64,7 @@ func main() {
 	defer logCleanup()
 
 	// Log debug mode if enabled
-	if cfg.Logging.Level == "debug" {
+	if cfg.Logging.Level == logging.LevelDebug {
 		slog.Debug("running in debug mode")
 		fmt.Println("Debug mode enabled")
 	}
@@ -139,7 +140,7 @@ func main() {
 
 	// Create session with message history limit to prevent unbounded growth
 	session := useragent.NewSession()
-	session.MaxMessages = 100 // Limit to 100 messages
+	session.MaxMessages = useragent.DefaultMaxMessages
 
 	// Create and run REPL (pass config for model management and the session)
 	replInstance := repl.NewWithSession(agentInstance, cfg, session)

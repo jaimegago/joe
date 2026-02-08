@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/google/generative-ai-go/genai"
+	"github.com/jaimegago/joe/internal/env"
 	"github.com/jaimegago/joe/internal/llm"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -49,17 +49,17 @@ func (e *APIError) APIMessage() string {
 // NewClient creates a new Gemini client
 // API key is read from GEMINI_API_KEY or GOOGLE_API_KEY environment variable
 func NewClient(ctx context.Context, model string) (*Client, error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
+	apiKey := os.Getenv(env.GeminiAPIKey)
 	if apiKey == "" {
-		apiKey = os.Getenv("GOOGLE_API_KEY")
+		apiKey = os.Getenv(env.GoogleAPIKey)
 	}
 	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set")
+		return nil, fmt.Errorf("%s or %s environment variable not set", env.GeminiAPIKey, env.GoogleAPIKey)
 	}
 
 	// Check if key appears to be a placeholder or test value
-	if len(apiKey) < 20 || apiKey == "test" || apiKey == "your-api-key-here" {
-		return nil, fmt.Errorf("GEMINI_API_KEY appears to be invalid (too short or placeholder value). Get a real API key from https://aistudio.google.com/apikey")
+	if len(apiKey) < minAPIKeyLength || apiKey == "test" || apiKey == "your-api-key-here" {
+		return nil, fmt.Errorf("%s appears to be invalid (too short or placeholder value). Get a real API key from https://aistudio.google.com/apikey", env.GeminiAPIKey)
 	}
 
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
@@ -68,7 +68,7 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 	}
 
 	if model == "" {
-		model = "gemini-2.5-flash"
+		model = DefaultModel
 	}
 
 	return &Client{
@@ -333,13 +333,8 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 	return result
 }
 
-// enhanceError provides better error messages for common API errors
+// enhanceErrorWithDebug provides better error messages for common API errors
 // Returns *APIError with structured details for logging
-func (c *Client) enhanceError(ctx context.Context, err error) error {
-	return c.enhanceErrorWithDebug(ctx, err, "")
-}
-
-// enhanceErrorWithDebug is like enhanceError but accepts additional debug info
 func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo string) error {
 	// Check if it's a Google API error (need to unwrap)
 	var apiErr *googleapi.Error
@@ -420,10 +415,10 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 // listAvailableModels fetches the list of available models from Gemini API
 func (c *Client) listAvailableModels(ctx context.Context) []string {
 	// Create a context with timeout to avoid blocking too long
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	listCtx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 
-	iter := c.client.ListModels(ctx)
+	iter := c.client.ListModels(listCtx)
 	var models []string
 
 	for {

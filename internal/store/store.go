@@ -25,9 +25,10 @@ type Store struct {
 }
 
 // New creates a new Store with the given database path.
+// The dbPath should include any SQLite flags (e.g., "joe.db?_foreign_keys=on").
 // Use ":memory:" for in-memory database (testing).
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

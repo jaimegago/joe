@@ -16,7 +16,7 @@ func TestNewClient(t *testing.T) {
 	}{
 		{
 			name:    "creates client with API key",
-			model:   "claude-sonnet-4-20250514",
+			model:   DefaultModel,
 			apiKey:  "test-api-key",
 			wantErr: false,
 		},

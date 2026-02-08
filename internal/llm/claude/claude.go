@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/jaimegago/joe/internal/env"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
@@ -46,15 +47,15 @@ func (e *APIError) APIMessage() string {
 // NewClient creates a new Claude client
 // API key is read from ANTHROPIC_API_KEY environment variable
 func NewClient(model string) (*Client, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	apiKey := os.Getenv(env.AnthropicAPIKey)
 	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+		return nil, fmt.Errorf("%s environment variable not set", env.AnthropicAPIKey)
 	}
 
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	if model == "" {
-		model = "claude-sonnet-4-20250514"
+		model = DefaultModel
 	}
 
 	return &Client{
@@ -102,7 +103,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// Set max tokens
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
-		maxTokens = 4096
+		maxTokens = defaultMaxTokens
 	}
 
 	// Build the request
@@ -216,12 +217,7 @@ func (c *Client) enhanceError(err error) error {
 	if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") {
 		code = 404
 		modelName := c.model
-		suggestions := []string{
-			"claude-sonnet-4-20250514",
-			"claude-opus-4-20241229",
-			"claude-3-5-sonnet-20241022",
-			"claude-3-5-haiku-20241022",
-		}
+		suggestions := SuggestedModels()
 
 		// Check if they're using a Gemini model by mistake
 		hint := ""
@@ -229,11 +225,11 @@ func (c *Client) enhanceError(err error) error {
 			hint = fmt.Sprintf("\n\nNote: '%s' appears to be a Gemini model name, not a Claude model.", modelName)
 		}
 
-		enhancedErr = fmt.Errorf("model '%s' not found for Claude provider.%s\n\nValid Claude models include:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=claude-sonnet-4-20250514",
-			modelName, hint, strings.Join(suggestions, "\n  - "))
+		enhancedErr = fmt.Errorf("model '%s' not found for Claude provider.%s\n\nValid Claude models include:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=%s",
+			modelName, hint, strings.Join(suggestions, "\n  - "), DefaultModel)
 	} else if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "authentication") {
 		code = 401
-		enhancedErr = fmt.Errorf("authentication failed with Claude API.\n\nCheck that your ANTHROPIC_API_KEY is valid:\n  %s", errMsg)
+		enhancedErr = fmt.Errorf("authentication failed with Claude API.\n\nCheck that your %s is valid:\n  %s", env.AnthropicAPIKey, errMsg)
 	} else if strings.Contains(errMsg, "429") || strings.Contains(errMsg, "rate limit") {
 		code = 429
 		enhancedErr = fmt.Errorf("rate limit exceeded for Claude API.\n\nPlease wait a moment before retrying:\n  %s", errMsg)

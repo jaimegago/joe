@@ -3,21 +3,23 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/jaimegago/joe/internal/env"
 )
 
 // ValidateAPIKeys validates that required API keys are set for the given model configuration.
 // Returns an error with helpful messaging if validation fails.
 func ValidateAPIKeys(mc ModelConfig) error {
 	switch mc.Provider {
-	case "claude":
-		if os.Getenv("ANTHROPIC_API_KEY") == "" {
-			return fmt.Errorf("ANTHROPIC_API_KEY environment variable is required for Claude provider")
+	case providerClaude:
+		if os.Getenv(env.AnthropicAPIKey) == "" {
+			return fmt.Errorf("%s environment variable is required for Claude provider", env.AnthropicAPIKey)
 		}
-	case "gemini":
-		geminiKey := os.Getenv("GEMINI_API_KEY")
-		googleKey := os.Getenv("GOOGLE_API_KEY")
+	case providerGemini:
+		geminiKey := os.Getenv(env.GeminiAPIKey)
+		googleKey := os.Getenv(env.GoogleAPIKey)
 		if geminiKey == "" && googleKey == "" {
-			return fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required for Gemini provider")
+			return fmt.Errorf("%s or %s environment variable is required for Gemini provider", env.GeminiAPIKey, env.GoogleAPIKey)
 		}
 	default:
 		return fmt.Errorf("unsupported LLM provider: %s", mc.Provider)
@@ -29,7 +31,7 @@ func ValidateAPIKeys(mc ModelConfig) error {
 // This is suitable for CLI output where we want to show detailed setup instructions.
 func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
 	// Check if provider is supported
-	supportedProviders := []string{"claude", "gemini"}
+	supportedProviders := []string{providerClaude, providerGemini}
 	providerSupported := false
 	for _, p := range supportedProviders {
 		if mc.Provider == p {
@@ -44,16 +46,18 @@ func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
 
 	// Check for API keys
 	switch mc.Provider {
-	case "claude":
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	case providerClaude:
+		apiKey := os.Getenv(env.AnthropicAPIKey)
 		if apiKey == "" {
-			return fmt.Errorf("You need to connect Joe to an LLM.\n\nClaude is configured but ANTHROPIC_API_KEY is not set or is empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Claude:\n  export ANTHROPIC_API_KEY=your-api-key-here\n\nTo use Gemini, update your config to use a Gemini model")
+			return fmt.Errorf("You need to connect Joe to an LLM.\n\nClaude is configured but %s is not set or is empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires %s\n  - Gemini (Google) - requires %s or %s\n\nTo use Claude:\n  export %s=your-api-key-here\n\nTo use Gemini, update your config to use a Gemini model",
+				env.AnthropicAPIKey, env.AnthropicAPIKey, env.GeminiAPIKey, env.GoogleAPIKey, env.AnthropicAPIKey)
 		}
-	case "gemini":
-		geminiKey := os.Getenv("GEMINI_API_KEY")
-		googleKey := os.Getenv("GOOGLE_API_KEY")
+	case providerGemini:
+		geminiKey := os.Getenv(env.GeminiAPIKey)
+		googleKey := os.Getenv(env.GoogleAPIKey)
 		if geminiKey == "" && googleKey == "" {
-			return fmt.Errorf("You need to connect Joe to an LLM.\n\nGemini is configured but neither GEMINI_API_KEY nor GOOGLE_API_KEY is set or both are empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires ANTHROPIC_API_KEY\n  - Gemini (Google) - requires GEMINI_API_KEY or GOOGLE_API_KEY\n\nTo use Gemini:\n  export GEMINI_API_KEY=your-api-key-here\n\nTo use Claude, update your config to use a Claude model")
+			return fmt.Errorf("You need to connect Joe to an LLM.\n\nGemini is configured but neither %s nor %s is set or both are empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires %s\n  - Gemini (Google) - requires %s or %s\n\nTo use Gemini:\n  export %s=your-api-key-here\n\nTo use Claude, update your config to use a Claude model",
+				env.GeminiAPIKey, env.GoogleAPIKey, env.AnthropicAPIKey, env.GeminiAPIKey, env.GoogleAPIKey, env.GeminiAPIKey)
 		}
 	}
 

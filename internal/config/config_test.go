@@ -22,8 +22,8 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentModel() error: %v", err)
 	}
-	if mc.Provider != "claude" {
-		t.Errorf("default model provider = %s, want claude", mc.Provider)
+	if mc.Provider != providerClaude {
+		t.Errorf("default model provider = %s, want %s", mc.Provider, providerClaude)
 	}
 	if mc.Model != "claude-sonnet-4-20250514" {
 		t.Errorf("default model = %s, want claude-sonnet-4-20250514", mc.Model)

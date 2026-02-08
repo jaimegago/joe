@@ -36,7 +36,7 @@ func TestNewClient(t *testing.T) {
 			model:     "",
 			geminiKey: "test-gemini-api-key-1234567890",
 			wantErr:   false,
-			wantModel: "gemini-2.5-flash",
+			wantModel: DefaultModel,
 		},
 		{
 			name:    "returns error when no API key",

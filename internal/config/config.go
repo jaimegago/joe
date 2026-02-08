@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jaimegago/joe/internal/llm/claude"
 	"gopkg.in/yaml.v3"
 )
 
@@ -164,36 +165,36 @@ func Load(configPath string) (*Config, error) {
 func defaultConfig() *Config {
 	return &Config{
 		LLM: LLMConfig{
-			Current: "claude-sonnet",
+			Current: defaultLLMCurrent,
 			Available: map[string]ModelConfig{
-				"claude-sonnet": {Provider: "claude", Model: "claude-sonnet-4-20250514"},
+				defaultLLMCurrent: {Provider: providerClaude, Model: claude.DefaultModel},
 			},
 		},
 		Server: ServerConfig{
-			Address: "localhost:7777",
+			Address: defaultServerAddress,
 		},
 		Refresh: RefreshConfig{
-			IntervalMinutes: 5,
+			IntervalMinutes: defaultRefreshIntervalMinutes,
 			LLMBudget: LLMBudget{
-				MaxCallsPerHour: 100,
-				BatchThreshold:  10,
-				BatchTimeoutSec: 30,
+				MaxCallsPerHour: defaultMaxCallsPerHour,
+				BatchThreshold:  defaultBatchThreshold,
+				BatchTimeoutSec: defaultBatchTimeoutSec,
 			},
 		},
 		Notifications: NotificationConfig{
 			Desktop: ChannelConfig{
 				Enabled:           false,
-				PriorityThreshold: "medium",
+				PriorityThreshold: defaultDesktopThreshold,
 			},
 			Slack: ChannelConfig{
 				Enabled:           false,
-				PriorityThreshold: "high",
+				PriorityThreshold: defaultSlackThreshold,
 			},
 			QuietHours: QuietHoursConfig{
 				Enabled:  false,
-				Start:    "22:00",
-				End:      "08:00",
-				Timezone: "Local",
+				Start:    defaultQuietStart,
+				End:      defaultQuietEnd,
+				Timezone: defaultQuietTimezone,
 			},
 		},
 		Logging: LoggingConfig{

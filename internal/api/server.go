@@ -42,20 +42,20 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"version": "0.1.0",
+		"status":  statusOK,
+		"version": version,
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
 func (s *Server) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error": "not implemented",
+		"error": errorNotImpl,
 	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// Already wrote header, can't change status - just log the error

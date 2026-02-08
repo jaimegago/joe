@@ -46,7 +46,7 @@ func NewAgent(llmAdapter llm.LLMAdapter, executor *tools.Executor, registry *too
 		executor:      executor,
 		registry:      registry,
 		systemPrompt:  systemPrompt,
-		maxIterations: 10, // Prevent infinite loops
+		maxIterations: DefaultMaxIterations,
 	}
 	for _, opt := range opts {
 		opt(a)

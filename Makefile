@@ -28,9 +28,35 @@ build-joecored:
 test:
 	go test ./...
 
+# Run unit tests only (fast, no external dependencies)
+test-unit:
+	go test -v -short ./internal/...
+
+# Run integration tests with mocks (no external services required)
+test-integration:
+	go test -v -tags=integration ./test/integration/... -timeout 2m
+
+# Run end-to-end tests (requires building binaries)
+test-e2e: build
+	go test -v -tags=e2e ./test/e2e/... -timeout 5m
+
+# Run all test types sequentially
+test-all: test-unit test-integration test-e2e
+
 # Run tests with coverage
 test-coverage:
 	go test -cover ./...
+
+# Run unit tests with coverage report
+test-coverage-unit:
+	go test -cover -coverprofile=coverage.out ./internal/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
+# Run integration tests with coverage
+test-coverage-integration:
+	go test -tags=integration -cover -coverprofile=coverage-integration.out ./test/integration/...
+	go tool cover -html=coverage-integration.out -o coverage-integration.html
 
 # Run tests verbosely
 test-verbose:
