@@ -1,4 +1,4 @@
-# Joe Project Milestone: Phase 3 In Progress
+# Joe Project Milestone: Phase 3 Complete
 
 Use this document to bootstrap a new Claude conversation about Joe.
 
@@ -30,12 +30,14 @@ Phase 2 (User Agent Loop): COMPLETE
 - REPL with /model command for hot-swapping LLMs
 - Local tools: echo, ask_user, read_file, write_file, local_git_status, local_git_diff, run_command
 
-Phase 3 (Core Services + API): IN PROGRESS
+Phase 3 (Core Services + API): COMPLETE
 - SQL Store: COMPLETE (sources, sessions, clarifications, cache, facts tables with repositories)
 - Graph Store: COMPLETE (SQLite-backed, graph_nodes + graph_edges tables, recursive CTEs for traversal)
 - Core Services: COMPLETE (wired with Graph + SQL stores in joecored)
-- API handlers for graph: NOT STARTED
-- Core tools (graph_query, graph_related): NOT STARTED
+- API handlers: COMPLETE (graph/query, graph/related/{nodeID}, graph/summary — 83% test coverage)
+- HTTP client methods: COMPLETE (GraphQuery, GraphRelated, GraphSummary)
+- Core tools: COMPLETE (graph_query, graph_related — wired via NewDefaultRegistryWithClient)
+- Full data path: User Agent → core tool → HTTP client → joecored API → graph store → response
 
 ## Key Architecture Documents
 
@@ -62,7 +64,7 @@ joe/
 │   ├── llm/           # LLM adapters (claude/, gemini/, ollama/)
 │   ├── tools/
 │   │   ├── local/     # Local tools (readfile, writefile, gitstatus, gitdiff, runcmd)
-│   │   └── core/      # Core tools (will call joecored API)
+│   │   └── core/      # Core tools (graph_query, graph_related — call joecored API)
 │   ├── graph/         # Graph store (SQLite-backed, implemented)
 │   ├── store/         # SQL store (SQLite, implemented)
 │   ├── repl/          # REPL with /model command
@@ -84,15 +86,13 @@ server:
 
 ## What's Next
 
-Continue Phase 3:
+Phase 4 (Infrastructure):
 
-1. API Handlers - Expose graph queries via HTTP (/api/v1/graph/query, /api/v1/graph/related, /api/v1/graph/summary)
-2. Core Tools - graph_query and graph_related tools that call joecored API
-
-Then Phase 4 (Infrastructure):
-
-- K8s adapter + API + tools
-- Git adapter + API + tools
+1. K8s adapter (joecored) — connect to clusters, read resources, get logs
+2. K8s API endpoints — expose via HTTP
+3. K8s core tools (joe) — k8s_get, k8s_logs for User Agent
+4. Git adapter (joecored) — clone/read repos
+5. Git API endpoints + core tools
 
 ## Prompt Style for Claude Code
 

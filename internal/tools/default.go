@@ -46,6 +46,8 @@ func NewDefaultRegistryWithClient(coreClient *client.Client) *Registry {
 	// Register core tools (call joecored API)
 	registry.Register(coretools.NewGraphQueryTool(coreClient))
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
+	registry.Register(coretools.NewK8sGetTool(coreClient))
+	registry.Register(coretools.NewK8sLogsTool(coreClient))
 
 	return registry
 }

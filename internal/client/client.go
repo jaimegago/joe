@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // Client connects to joecored HTTP API
@@ -128,6 +130,215 @@ func (c *Client) GraphRelated(ctx context.Context, nodeID string, depth int) (*g
 	}
 
 	return &subgraph, nil
+}
+
+// --- Source Management ---
+
+// listSourcesResponse is the JSON shape returned by GET /api/v1/sources.
+type listSourcesResponse struct {
+	Sources []*store.Source `json:"sources"`
+	Count   int             `json:"count"`
+}
+
+// ListSources returns all registered infrastructure sources.
+func (c *Client) ListSources(ctx context.Context) ([]*store.Source, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+apiSourcesPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list sources request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list sources failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result listSourcesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode list sources response: %w", err)
+	}
+
+	return result.Sources, nil
+}
+
+// CreateSource registers a new infrastructure source.
+func (c *Client) CreateSource(ctx context.Context, source *store.Source) (*store.Source, error) {
+	payload, err := json.Marshal(source)
+	if err != nil {
+		return nil, fmt.Errorf("marshal source: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+apiSourcesPath, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("create source request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("create source failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var created store.Source
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, fmt.Errorf("decode create source response: %w", err)
+	}
+
+	return &created, nil
+}
+
+// DeleteSource removes a registered source by ID.
+func (c *Client) DeleteSource(ctx context.Context, id string) error {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", c.baseURL+apiSourcesPath+"/"+url.PathEscape(id), nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete source request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete source failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// --- K8s Resources ---
+
+// k8sListResponse is the JSON shape returned by GET /api/v1/k8s/{sourceID}/resources.
+type k8sListResponse struct {
+	Resources []map[string]any `json:"resources"`
+	Count     int              `json:"count"`
+	SourceID  string           `json:"source_id"`
+}
+
+// K8sListResources lists Kubernetes resources of a given type.
+func (c *Client) K8sListResources(ctx context.Context, sourceID, resource, namespace string) ([]map[string]any, error) {
+	u := fmt.Sprintf("%s%s/%s/resources?resource=%s", c.baseURL, apiK8sBasePath,
+		url.PathEscape(sourceID), url.QueryEscape(resource))
+	if namespace != "" {
+		u += "&namespace=" + url.QueryEscape(namespace)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("k8s list resources request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("k8s list resources failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result k8sListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode k8s list response: %w", err)
+	}
+
+	return result.Resources, nil
+}
+
+// K8sGetResource retrieves a single Kubernetes resource.
+func (c *Client) K8sGetResource(ctx context.Context, sourceID, resource, namespace, name string) (map[string]any, error) {
+	u := fmt.Sprintf("%s%s/%s/resources/%s/%s/%s", c.baseURL, apiK8sBasePath,
+		url.PathEscape(sourceID), url.PathEscape(resource),
+		url.PathEscape(namespace), url.PathEscape(name))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("k8s get resource request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("k8s get resource failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Resource map[string]any `json:"resource"`
+		SourceID string         `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode k8s get response: %w", err)
+	}
+
+	return result.Resource, nil
+}
+
+// k8sLogsResponse is the JSON shape returned by GET /api/v1/k8s/{sourceID}/logs/{namespace}/{pod}.
+type k8sLogsResponse struct {
+	Logs      string `json:"logs"`
+	Pod       string `json:"pod"`
+	Namespace string `json:"namespace"`
+	SourceID  string `json:"source_id"`
+}
+
+// K8sGetLogs retrieves logs from a Kubernetes pod.
+func (c *Client) K8sGetLogs(ctx context.Context, sourceID, namespace, pod, container string, tailLines int) (string, error) {
+	u := fmt.Sprintf("%s%s/%s/logs/%s/%s", c.baseURL, apiK8sBasePath,
+		url.PathEscape(sourceID), url.PathEscape(namespace), url.PathEscape(pod))
+
+	params := url.Values{}
+	if container != "" {
+		params.Set("container", container)
+	}
+	if tailLines > 0 {
+		params.Set("tail", strconv.Itoa(tailLines))
+	}
+	if len(params) > 0 {
+		u += "?" + params.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("k8s get logs request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("k8s get logs failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result k8sLogsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode k8s logs response: %w", err)
+	}
+
+	return result.Logs, nil
 }
 
 // GraphSummary returns a high-level summary of the graph.

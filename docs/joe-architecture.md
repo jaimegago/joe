@@ -1243,13 +1243,15 @@ logging:
 - [x] REPL with `/model` command for hot-swapping LLMs
 - [x] **Milestone: `joe` runs, connects to joecored, echo tool works**
 
-### Phase 3: Core Services + API -- IN PROGRESS
+### Phase 3: Core Services + API -- COMPLETE
 - [x] SQL Store with migrations (in joecored)
 - [x] Graph Store with SQLite (in joecored) -- uses same joe.db, recursive CTEs for traversal
 - [x] Core Services wired up with Graph + SQL stores
-- [ ] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related`, `/api/v1/graph/summary`
-- [ ] Core tools in joe calling API: `graph_query`, `graph_related`
-- [ ] **Milestone: User Agent queries graph via HTTP**
+- [x] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related/{nodeID}`, `/api/v1/graph/summary`
+- [x] HTTP client methods: `GraphQuery`, `GraphRelated`, `GraphSummary`
+- [x] Core tools in joe calling API: `graph_query`, `graph_related`
+- [x] `NewDefaultRegistryWithClient` wires local + core tools together
+- [x] **Milestone: User Agent queries graph via HTTP**
 
 ### Phase 4: Infrastructure
 - [ ] K8s adapter (joecored) + API endpoints + tools (joe)
