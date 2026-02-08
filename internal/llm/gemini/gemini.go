@@ -209,7 +209,7 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 	// Convert properties to Gemini schema
 	properties := make(map[string]*genai.Schema)
 	for name, prop := range tool.Parameters.Properties {
-		schemaType := genai.TypeString
+		var schemaType genai.Type
 		switch prop.Type {
 		case "string":
 			schemaType = genai.TypeString
