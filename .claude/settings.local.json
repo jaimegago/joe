@@ -15,7 +15,8 @@
       "Bash(GEMINI_API_KEY=\"test-key\" ./joe:*)",
       "Bash(ls:*)",
       "Bash(test:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(go tool cover -func=/tmp/joe_store_coverage.out)"
     ]
   }
 }
