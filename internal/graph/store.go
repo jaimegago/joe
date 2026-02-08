@@ -2,8 +2,12 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNodeNotFound is returned when a node does not exist in the graph.
+var ErrNodeNotFound = errors.New("node not found")
 
 // GraphStore is the interface for the graph database
 type GraphStore interface {

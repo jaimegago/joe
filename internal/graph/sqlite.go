@@ -1,0 +1,471 @@
+package graph
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// SQLiteStore implements GraphStore using SQLite with graph_nodes and graph_edges tables.
+type SQLiteStore struct {
+	db *sql.DB
+}
+
+// NewSQLiteStore creates a new SQLite-backed graph store.
+// The provided db must have the graph_nodes and graph_edges tables (via migration 002).
+func NewSQLiteStore(db *sql.DB) *SQLiteStore {
+	return &SQLiteStore{db: db}
+}
+
+func (s *SQLiteStore) AddNode(ctx context.Context, node Node) error {
+	if node.Metadata == nil {
+		node.Metadata = map[string]any{}
+	}
+	metadata, err := json.Marshal(node.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal node metadata: %w", err)
+	}
+
+	now := time.Now()
+	if node.FirstSeen.IsZero() {
+		node.FirstSeen = now
+	}
+	if node.LastSeen.IsZero() {
+		node.LastSeen = now
+	}
+
+	query := `
+		INSERT INTO graph_nodes (id, type, source_id, metadata, first_seen, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			type = excluded.type,
+			source_id = excluded.source_id,
+			metadata = excluded.metadata,
+			last_seen = excluded.last_seen
+	`
+	_, err = s.db.ExecContext(ctx, query,
+		node.ID, node.Type, node.SourceID, string(metadata),
+		node.FirstSeen, node.LastSeen,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert node %s: %w", node.ID, err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) AddEdge(ctx context.Context, edge Edge) error {
+	if edge.CreatedAt.IsZero() {
+		edge.CreatedAt = time.Now()
+	}
+
+	query := `
+		INSERT INTO graph_edges (from_node, to_node, relation, confidence, source, context, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(from_node, to_node, relation) DO UPDATE SET
+			confidence = excluded.confidence,
+			source = excluded.source,
+			context = excluded.context
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		edge.From, edge.To, edge.Relation,
+		int(edge.Confidence), edge.Source, edge.Context, edge.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert edge %s->%s (%s): %w", edge.From, edge.To, edge.Relation, err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetNode(ctx context.Context, id string) (*Node, error) {
+	query := `
+		SELECT id, type, source_id, metadata, first_seen, last_seen
+		FROM graph_nodes WHERE id = ?
+	`
+	var node Node
+	var metadataStr string
+	var sourceID sql.NullString
+
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&node.ID, &node.Type, &sourceID, &metadataStr,
+		&node.FirstSeen, &node.LastSeen,
+	)
+	if err == sql.ErrNoRows {
+		return nil, ErrNodeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query node %s: %w", id, err)
+	}
+
+	if sourceID.Valid {
+		node.SourceID = sourceID.String
+	}
+
+	if err := json.Unmarshal([]byte(metadataStr), &node.Metadata); err != nil {
+		node.Metadata = map[string]any{}
+	}
+
+	return &node, nil
+}
+
+func (s *SQLiteStore) Query(ctx context.Context, query string) ([]Node, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	var sqlQuery string
+	var args []any
+
+	// Support "type:deployment" syntax for filtering by type
+	if strings.HasPrefix(query, "type:") {
+		nodeType := strings.TrimPrefix(query, "type:")
+		sqlQuery = `
+			SELECT id, type, source_id, metadata, first_seen, last_seen
+			FROM graph_nodes WHERE type = ? ORDER BY id
+		`
+		args = []any{nodeType}
+	} else {
+		// Search by ID pattern or metadata content
+		pattern := "%" + query + "%"
+		sqlQuery = `
+			SELECT id, type, source_id, metadata, first_seen, last_seen
+			FROM graph_nodes
+			WHERE id LIKE ? OR type LIKE ? OR metadata LIKE ?
+			ORDER BY id
+		`
+		args = []any{pattern, pattern, pattern}
+	}
+
+	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query graph nodes: %w", err)
+	}
+	defer rows.Close()
+
+	return scanNodes(rows)
+}
+
+func (s *SQLiteStore) Related(ctx context.Context, nodeID string, depth int) (*Subgraph, error) {
+	if depth <= 0 {
+		// Just return the single node if it exists
+		node, err := s.GetNode(ctx, nodeID)
+		if err != nil {
+			return nil, err
+		}
+		return &Subgraph{Nodes: []Node{*node}}, nil
+	}
+
+	// Bidirectional recursive CTE to find all connected nodes within depth
+	nodesQuery := `
+		WITH RECURSIVE connected(node_id, d) AS (
+			SELECT ?, 0
+			UNION
+			SELECT CASE
+				WHEN e.from_node = c.node_id THEN e.to_node
+				ELSE e.from_node
+			END, c.d + 1
+			FROM graph_edges e
+			JOIN connected c ON (e.from_node = c.node_id OR e.to_node = c.node_id)
+			WHERE c.d < ?
+		)
+		SELECT DISTINCT n.id, n.type, n.source_id, n.metadata, n.first_seen, n.last_seen
+		FROM graph_nodes n
+		JOIN connected c ON n.id = c.node_id
+		ORDER BY n.id
+	`
+
+	rows, err := s.db.QueryContext(ctx, nodesQuery, nodeID, depth)
+	if err != nil {
+		return nil, fmt.Errorf("query related nodes: %w", err)
+	}
+	defer rows.Close()
+
+	nodes, err := scanNodes(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nodes) == 0 {
+		return nil, ErrNodeNotFound
+	}
+
+	// Collect node IDs for edge query
+	nodeIDs := make([]string, len(nodes))
+	for i, n := range nodes {
+		nodeIDs[i] = n.ID
+	}
+
+	edges, err := s.edgesBetween(ctx, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Subgraph{Nodes: nodes, Edges: edges}, nil
+}
+
+func (s *SQLiteStore) Path(ctx context.Context, from, to string) ([]Edge, error) {
+	// Recursive CTE to find a path from source to target.
+	// We track the path as a comma-separated string of node IDs to avoid cycles.
+	pathQuery := `
+		WITH RECURSIVE pathfinder(current, target, path, depth) AS (
+			SELECT ?, ?, ?, 0
+			UNION ALL
+			SELECT
+				CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END,
+				p.target,
+				p.path || ',' || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END,
+				p.depth + 1
+			FROM graph_edges e
+			JOIN pathfinder p ON (e.from_node = p.current OR e.to_node = p.current)
+			WHERE p.depth < 10
+				AND p.path NOT LIKE '%' || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END || '%'
+				AND p.current != p.target
+		)
+		SELECT path FROM pathfinder
+		WHERE current = target
+		ORDER BY depth
+		LIMIT 1
+	`
+
+	var pathStr string
+	err := s.db.QueryRowContext(ctx, pathQuery, from, to, from).Scan(&pathStr)
+	if err == sql.ErrNoRows {
+		return nil, nil // No path found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find path %s->%s: %w", from, to, err)
+	}
+
+	// Parse path string into node sequence and fetch edges along the path
+	pathNodes := strings.Split(pathStr, ",")
+	var edges []Edge
+	for i := 0; i < len(pathNodes)-1; i++ {
+		edge, err := s.getEdgeBetween(ctx, pathNodes[i], pathNodes[i+1])
+		if err != nil {
+			return nil, err
+		}
+		if edge != nil {
+			edges = append(edges, *edge)
+		}
+	}
+
+	return edges, nil
+}
+
+func (s *SQLiteStore) DeleteNode(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM graph_nodes WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete node %s: %w", id, err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return ErrNodeNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteEdge(ctx context.Context, from, to, relation string) error {
+	_, err := s.db.ExecContext(ctx,
+		"DELETE FROM graph_edges WHERE from_node = ? AND to_node = ? AND relation = ?",
+		from, to, relation,
+	)
+	if err != nil {
+		return fmt.Errorf("delete edge %s->%s (%s): %w", from, to, relation, err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) Summary(ctx context.Context) (GraphSummary, error) {
+	var summary GraphSummary
+
+	// Node count
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&summary.NodeCount)
+	if err != nil {
+		return summary, fmt.Errorf("count nodes: %w", err)
+	}
+
+	// Edge count
+	err = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_edges").Scan(&summary.EdgeCount)
+	if err != nil {
+		return summary, fmt.Errorf("count edges: %w", err)
+	}
+
+	// Nodes by type
+	summary.NodesByType = map[string]int{}
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT type, COUNT(*) FROM graph_nodes GROUP BY type ORDER BY COUNT(*) DESC",
+	)
+	if err != nil {
+		return summary, fmt.Errorf("count nodes by type: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var nodeType string
+		var count int
+		if err := rows.Scan(&nodeType, &count); err != nil {
+			return summary, fmt.Errorf("scan node type count: %w", err)
+		}
+		summary.NodesByType[nodeType] = count
+	}
+	if err := rows.Err(); err != nil {
+		return summary, fmt.Errorf("iterate node type counts: %w", err)
+	}
+
+	// Recently added (by first_seen, last 10)
+	recentRows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, source_id, metadata, first_seen, last_seen
+		FROM graph_nodes ORDER BY first_seen DESC LIMIT 10
+	`)
+	if err != nil {
+		return summary, fmt.Errorf("query recently added: %w", err)
+	}
+	defer recentRows.Close()
+
+	summary.RecentlyAdded, err = scanNodes(recentRows)
+	if err != nil {
+		return summary, err
+	}
+
+	// Recently updated (by last_seen, last 10)
+	updatedRows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, source_id, metadata, first_seen, last_seen
+		FROM graph_nodes ORDER BY last_seen DESC LIMIT 10
+	`)
+	if err != nil {
+		return summary, fmt.Errorf("query recently updated: %w", err)
+	}
+	defer updatedRows.Close()
+
+	summary.RecentlyUpdated, err = scanNodes(updatedRows)
+	if err != nil {
+		return summary, err
+	}
+
+	return summary, nil
+}
+
+// edgesBetween returns all edges where both endpoints are in the given node ID set.
+func (s *SQLiteStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edge, error) {
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := strings.Repeat("?,", len(nodeIDs))
+	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+
+	// We need nodeIDs twice: once for from_node IN (...) and once for to_node IN (...)
+	args := make([]any, 0, len(nodeIDs)*2)
+	for _, id := range nodeIDs {
+		args = append(args, id)
+	}
+	for _, id := range nodeIDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT from_node, to_node, relation, confidence, source, context, created_at
+		FROM graph_edges
+		WHERE from_node IN (%s) AND to_node IN (%s)
+		ORDER BY from_node, to_node
+	`, placeholders, placeholders)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query edges between nodes: %w", err)
+	}
+	defer rows.Close()
+
+	return scanEdges(rows)
+}
+
+// getEdgeBetween returns the first edge connecting two adjacent nodes (in either direction).
+func (s *SQLiteStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, error) {
+	query := `
+		SELECT from_node, to_node, relation, confidence, source, context, created_at
+		FROM graph_edges
+		WHERE (from_node = ? AND to_node = ?) OR (from_node = ? AND to_node = ?)
+		LIMIT 1
+	`
+	var edge Edge
+	var confidence int
+	var source, edgeContext sql.NullString
+
+	err := s.db.QueryRowContext(ctx, query, a, b, b, a).Scan(
+		&edge.From, &edge.To, &edge.Relation,
+		&confidence, &source, &edgeContext, &edge.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query edge between %s and %s: %w", a, b, err)
+	}
+
+	edge.Confidence = ConfidenceLevel(confidence)
+	if source.Valid {
+		edge.Source = source.String
+	}
+	if edgeContext.Valid {
+		edge.Context = edgeContext.String
+	}
+
+	return &edge, nil
+}
+
+func scanNodes(rows *sql.Rows) ([]Node, error) {
+	var nodes []Node
+	for rows.Next() {
+		var node Node
+		var metadataStr string
+		var sourceID sql.NullString
+
+		if err := rows.Scan(
+			&node.ID, &node.Type, &sourceID, &metadataStr,
+			&node.FirstSeen, &node.LastSeen,
+		); err != nil {
+			return nil, fmt.Errorf("scan node: %w", err)
+		}
+
+		if sourceID.Valid {
+			node.SourceID = sourceID.String
+		}
+
+		if err := json.Unmarshal([]byte(metadataStr), &node.Metadata); err != nil {
+			node.Metadata = map[string]any{}
+		}
+
+		nodes = append(nodes, node)
+	}
+	return nodes, rows.Err()
+}
+
+func scanEdges(rows *sql.Rows) ([]Edge, error) {
+	var edges []Edge
+	for rows.Next() {
+		var edge Edge
+		var confidence int
+		var source, edgeContext sql.NullString
+
+		if err := rows.Scan(
+			&edge.From, &edge.To, &edge.Relation,
+			&confidence, &source, &edgeContext, &edge.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan edge: %w", err)
+		}
+
+		edge.Confidence = ConfidenceLevel(confidence)
+		if source.Valid {
+			edge.Source = source.String
+		}
+		if edgeContext.Valid {
+			edge.Context = edgeContext.String
+		}
+
+		edges = append(edges, edge)
+	}
+	return edges, rows.Err()
+}

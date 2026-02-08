@@ -140,7 +140,7 @@ Joe is built as two binaries from day one, communicating via HTTP:
 │                                         │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
 │                                         │  │  Graph   │ │   SQL    │ │ Adapters │   │ │
 │                                         │  │  Store   │ │  Store   │ │ K8s,Git  │   │ │
-│                                         │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   │ │
+│                                         │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │   │ │
 │                                         │  └──────────┘ └──────────┘ └──────────┘   │ │
 │                                         │                                            │ │
 │                                         │  ┌──────────┐                              │ │
@@ -636,8 +636,9 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │                                                                      │
 │  Implementations:                                                   │
 │    internal/llm/claude/     Anthropic Claude API                    │
-│    internal/llm/openai/     OpenAI GPT-4                            │
-│    internal/llm/ollama/     Local Ollama models                     │
+│    internal/llm/gemini/     Google Gemini API                       │
+│    internal/llm/openai/     OpenAI GPT-4 (future)                   │
+│    internal/llm/ollama/     Local Ollama models (future)            │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -912,7 +913,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 
 ## Data Layer
 
-### Graph Store (Cayley)
+### Graph Store (SQLite)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -921,7 +922,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  Stores infrastructure topology.                                    │
 │                                                                      │
 │  Location: internal/graph/                                          │
-│  File: ~/.joe/graph.db (BoltDB backend)                             │
+│  Backend: SQLite (same joe.db, tables: graph_nodes, graph_edges)    │
 │                                                                      │
 │  Interface:                                                         │
 │    type GraphStore interface {                                      │
@@ -948,7 +949,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │    From       string                                                │
 │    To         string                                                │
 │    Relation   string           // "calls", "depends_on", etc.       │
-│    Confidence string           // "explicit", "inferred", "confirmed"│
+│    Confidence ConfidenceLevel  // Inferred (1), Explicit (3), etc.   │
 │    Source     string           // "k8s_api", "llm", "user"          │
 │    Context    string           // Why this edge exists              │
 │                                                                      │
@@ -1107,12 +1108,11 @@ joe/
 │   │
 │   ├── llm/                      # LLM adapters (used by both agents)
 │   │   ├── adapter.go            # Interface
+│   │   ├── instrumented.go       # Observability wrapper
 │   │   ├── claude/
 │   │   │   └── claude.go
-│   │   ├── openai/
-│   │   │   └── openai.go
-│   │   └── ollama/
-│   │       └── ollama.go
+│   │   └── gemini/
+│   │       └── gemini.go
 │   │
 │   ├── tools/                    # Tool implementations
 │   │   ├── executor.go           # Tool executor
@@ -1133,8 +1133,8 @@ joe/
 │   │       └── promquery.go
 │   │
 │   ├── graph/                    # Graph store (used by joecored)
-│   │   ├── store.go              # Interface
-│   │   └── cayley.go             # Implementation
+│   │   ├── store.go              # Interface + types
+│   │   └── sqlite.go             # SQLite implementation
 │   │
 │   ├── store/                    # SQL store (used by joecored)
 │   │   ├── store.go
@@ -1180,8 +1180,7 @@ joe/
 ```
 ~/.joe/
 ├── config.yaml                 # User configuration
-├── joe.db                      # SQLite database
-├── graph.db                    # Cayley graph
+├── joe.db                      # SQLite database (SQL store + graph store)
 └── repos/                      # Cloned git repos
     └── <host>/<owner>/<repo>/
 ```
@@ -1228,38 +1227,38 @@ logging:
 
 ## Implementation Phases
 
-### Phase 1: Foundation (Two Binaries)
-- [ ] Restructure for two binaries: `cmd/joe/`, `cmd/joecored/`
-- [ ] HTTP API skeleton in joecored (server setup, health endpoint)
-- [ ] HTTP client skeleton in joe (connects to joecored)
-- [ ] Config loading (shared config package)
-- [ ] LLM Adapter interface + Claude implementation
-- [ ] **Milestone: `joecored` starts and serves /api/v1/status, `joe` connects**
+### Phase 1: Foundation (Two Binaries) -- COMPLETE
+- [x] Restructure for two binaries: `cmd/joe/`, `cmd/joecored/`
+- [x] HTTP API skeleton in joecored (server setup, health endpoint)
+- [x] HTTP client skeleton in joe (connects to joecored)
+- [x] Config loading (shared config package)
+- [x] LLM Adapter interface + Claude + Gemini implementations
+- [x] **Milestone: `joecored` starts and serves /api/v1/status, `joe` connects**
 
-### Phase 2: User Agent Loop
-- [ ] Tool interface + executor + registry
-- [ ] User Agent with agentic loop (in joe)
-- [ ] Basic local tools: `echo`, `ask_user`
-- [ ] REPL
-- [ ] **Milestone: `joe` runs, connects to joecored, echo tool works**
+### Phase 2: User Agent Loop -- COMPLETE
+- [x] Tool interface + executor + registry
+- [x] User Agent with agentic loop (in joe)
+- [x] Basic local tools: `echo`, `ask_user`
+- [x] Additional local tools: `read_file`, `write_file`, `local_git_status`, `local_git_diff`, `run_command`
+- [x] REPL with `/model` command for hot-swapping LLMs
+- [x] **Milestone: `joe` runs, connects to joecored, echo tool works**
 
-### Phase 3: Core Services + API
-- [ ] SQL Store with migrations (in joecored)
-- [ ] Graph Store with Cayley (in joecored)
-- [ ] Core Services implementation
-- [ ] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related`
+### Phase 3: Core Services + API -- IN PROGRESS
+- [x] SQL Store with migrations (in joecored)
+- [x] Graph Store with SQLite (in joecored) -- uses same joe.db, recursive CTEs for traversal
+- [x] Core Services wired up with Graph + SQL stores
+- [ ] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related`, `/api/v1/graph/summary`
 - [ ] Core tools in joe calling API: `graph_query`, `graph_related`
 - [ ] **Milestone: User Agent queries graph via HTTP**
 
 ### Phase 4: Infrastructure
 - [ ] K8s adapter (joecored) + API endpoints + tools (joe)
 - [ ] Git adapter (joecored) + API endpoints + tools (joe)
-- [ ] Local tools in joe: `read_file`, `write_file`, `local_git_diff`
 - [ ] **Milestone: "why is pod X failing?" works end-to-end**
 
 ### Phase 5: Core Agent
 - [ ] Core Agent struct (in joecored)
-- [ ] Clarifications table + API endpoints
+- [ ] Clarifications API endpoints (table already exists)
 - [ ] Onboarding flow via API
 - [ ] .joe/ file processing with cache
 - [ ] Background refresh goroutine

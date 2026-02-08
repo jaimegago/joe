@@ -12,6 +12,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
@@ -81,6 +82,11 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("database ready", "path", dbPath)
+
+	// Initialize core services (graph store uses same SQLite DB)
+	services := core.New(cfg, sqlStore, sqlStore.DB())
+	defer services.Close()
+	slog.Info("core services ready", "graph_store", "sqlite")
 
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address
