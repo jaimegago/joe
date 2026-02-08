@@ -95,7 +95,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register API routes
-	apiServer := api.New()
+	apiServer := api.New(services)
 	apiServer.RegisterRoutes(mux)
 
 	server := &http.Server{

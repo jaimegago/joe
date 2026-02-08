@@ -90,8 +90,8 @@ func main() {
 	)
 	fmt.Printf("Using %s/%s\n", currentModel.Provider, currentModel.Model)
 
-	// Create tool registry with default tools (echo, ask_user)
-	registry := tools.NewDefaultRegistry()
+	// Create tool registry with local tools + core tools (graph_query, graph_related)
+	registry := tools.NewDefaultRegistryWithClient(coreClient)
 
 	// Create tool executor
 	executor := tools.NewExecutor(registry)

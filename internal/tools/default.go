@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"github.com/jaimegago/joe/internal/client"
+	coretools "github.com/jaimegago/joe/internal/tools/core"
 	"github.com/jaimegago/joe/internal/tools/local/askuser"
 	"github.com/jaimegago/joe/internal/tools/local/echo"
 	"github.com/jaimegago/joe/internal/tools/local/gitdiff"
@@ -32,6 +34,18 @@ func NewDefaultRegistry() *Registry {
 		"ls", "cat", "head", "tail", "grep", "find", "wc",
 		"kubectl", "helm", "argocd",
 	}))
+
+	return registry
+}
+
+// NewDefaultRegistryWithClient creates a registry with all default tools plus
+// core tools that communicate with joecored via the HTTP client.
+func NewDefaultRegistryWithClient(coreClient *client.Client) *Registry {
+	registry := NewDefaultRegistry()
+
+	// Register core tools (call joecored API)
+	registry.Register(coretools.NewGraphQueryTool(coreClient))
+	registry.Register(coretools.NewGraphRelatedTool(coreClient))
 
 	return registry
 }
