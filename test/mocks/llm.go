@@ -75,7 +75,7 @@ func (m *MockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 func (m *MockLLM) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
 	// For the mock, we'll just return a channel with a single chunk
 	ch := make(chan llm.StreamChunk, 1)
-	
+
 	if m.ShouldError {
 		errMsg := m.ErrorMessage
 		if errMsg == "" {
