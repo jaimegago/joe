@@ -10,16 +10,34 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
+	_ "github.com/mattn/go-sqlite3"
 )
 
-func TestIntegration_API_Status(t *testing.T) {
-	// Setup API server
-	server := api.New()
+func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.Store) {
+	t.Helper()
+	testStore, err := store.New(":memory:" + paths.DatabaseFlags)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	if err := testStore.Migrate(); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	t.Cleanup(func() { testStore.Close() })
+	services := core.New(&config.Config{}, testStore, testStore.DB(), adapters.NewRegistry())
+	server := api.New(services)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
+	return server, mux, testStore
+}
+
+func TestIntegration_API_Status(t *testing.T) {
+	_, mux, _ := setupIntegrationServer(t)
 
 	// Make request
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
@@ -46,14 +64,10 @@ func TestIntegration_API_Status(t *testing.T) {
 }
 
 func TestIntegration_API_NotImplemented(t *testing.T) {
-	server := api.New()
-	mux := http.NewServeMux()
-	server.RegisterRoutes(mux)
+	_, mux, _ := setupIntegrationServer(t)
 
-	// Test various unimplemented endpoints
+	// Test remaining unimplemented endpoints (graph and sources are now implemented)
 	endpoints := []string{
-		"/api/v1/graph/query",
-		"/api/v1/sources",
 		"/api/v1/clarifications",
 	}
 

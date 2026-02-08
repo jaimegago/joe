@@ -74,6 +74,8 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"run_command":      true,
 		"graph_query":      true,
 		"graph_related":    true,
+		"k8s_get":          true,
+		"k8s_logs":         true,
 	}
 
 	for toolName := range expectedTools {

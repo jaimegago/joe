@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -56,8 +57,9 @@ func setupTestServer(t *testing.T) (*api.Server, graph.GraphStore) {
 
 	graphStore := graph.NewSQLiteStore(db)
 	services := &core.Services{
-		Config: &config.Config{},
-		Graph:  graphStore,
+		Config:   &config.Config{},
+		Graph:    graphStore,
+		Adapters: adapters.NewRegistry(),
 	}
 
 	server := api.New(services)
@@ -357,8 +359,6 @@ func TestHandleNotImplemented(t *testing.T) {
 		method string
 		path   string
 	}{
-		{"GET", "/api/v1/sources"},
-		{"POST", "/api/v1/sources"},
 		{"GET", "/api/v1/clarifications"},
 	}
 

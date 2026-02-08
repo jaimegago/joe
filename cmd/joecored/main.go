@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -83,10 +85,28 @@ func main() {
 	}
 	slog.Info("database ready", "path", dbPath)
 
+	// Initialize adapter registry and load saved sources
+	adapterRegistry := adapters.NewRegistry()
+
+	ctx := context.Background()
+	k8sSources, err := sqlStore.Sources.ListByType(ctx, "kubernetes")
+	if err != nil {
+		slog.Warn("failed to load kubernetes sources", "error", err)
+	}
+	for _, src := range k8sSources {
+		adapter := k8s.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect k8s source", "id", src.ID, "error", err)
+			continue
+		}
+		adapterRegistry.Register(src.ID, adapter)
+		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
+	}
+
 	// Initialize core services (graph store uses same SQLite DB)
-	services := core.New(cfg, sqlStore, sqlStore.DB())
+	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry)
 	defer services.Close()
-	slog.Info("core services ready", "graph_store", "sqlite")
+	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address

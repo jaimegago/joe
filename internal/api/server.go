@@ -31,9 +31,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/graph/related/{nodeID}", s.handleGraphRelated)
 	mux.HandleFunc("GET /api/v1/graph/summary", s.handleGraphSummary)
 
-	// Sources (placeholder)
-	mux.HandleFunc("GET /api/v1/sources", s.handleNotImplemented)
-	mux.HandleFunc("POST /api/v1/sources", s.handleNotImplemented)
+	// Sources
+	mux.HandleFunc("GET /api/v1/sources", s.handleListSources)
+	mux.HandleFunc("POST /api/v1/sources", s.handleCreateSource)
+	mux.HandleFunc("GET /api/v1/sources/{id}", s.handleGetSource)
+	mux.HandleFunc("DELETE /api/v1/sources/{id}", s.handleDeleteSource)
+
+	// Kubernetes
+	mux.HandleFunc("GET /api/v1/k8s/{sourceID}/resources", s.handleK8sListResources)
+	mux.HandleFunc("GET /api/v1/k8s/{sourceID}/resources/{resource}/{namespace}/{name}", s.handleK8sGetResource)
+	mux.HandleFunc("GET /api/v1/k8s/{sourceID}/logs/{namespace}/{pod}", s.handleK8sGetLogs)
 
 	// Clarifications (placeholder)
 	mux.HandleFunc("GET /api/v1/clarifications", s.handleNotImplemented)
