@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
 
 func setupTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.New(":memory:")
+	s, err := store.New(":memory:" + paths.DatabaseFlags)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

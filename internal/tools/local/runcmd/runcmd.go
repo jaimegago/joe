@@ -6,14 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/jaimegago/joe/internal/llm"
-)
-
-const (
-	commandTimeout = 30 * time.Second
-	maxOutputSize  = 100 * 1024 // 100KB
 )
 
 type Tool struct {
@@ -92,7 +86,7 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	}
 
 	// Create context with timeout
-	execCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, CommandTimeout)
 	defer cancel()
 
 	// Execute command (NOT through shell, direct execution)
@@ -108,7 +102,7 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else if execCtx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("command timed out after 30s")
+			return nil, fmt.Errorf("command timed out after %v", CommandTimeout)
 		} else {
 			return nil, fmt.Errorf("failed to execute command: %w", err)
 		}
@@ -119,12 +113,13 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	stderrStr := stderr.String()
 	truncated := false
 
-	if len(stdoutStr) > maxOutputSize {
-		stdoutStr = stdoutStr[:maxOutputSize] + "\n... (truncated at 100KB)"
+	truncateMsg := fmt.Sprintf("\n... (truncated at %dKB)", MaxOutputSize/1024)
+	if len(stdoutStr) > MaxOutputSize {
+		stdoutStr = stdoutStr[:MaxOutputSize] + truncateMsg
 		truncated = true
 	}
-	if len(stderrStr) > maxOutputSize {
-		stderrStr = stderrStr[:maxOutputSize] + "\n... (truncated at 100KB)"
+	if len(stderrStr) > MaxOutputSize {
+		stderrStr = stderrStr[:MaxOutputSize] + truncateMsg
 		truncated = true
 	}
 

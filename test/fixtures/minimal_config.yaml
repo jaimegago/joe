@@ -1,0 +1,11 @@
+llm:
+  provider: gemini
+  current_model: gemini-2.0-flash
+  available_models:
+    - gemini-2.0-flash
+
+server:
+  address: localhost:7777
+
+logging:
+  level: info

@@ -10,11 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"path/filepath"
-
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -24,8 +23,7 @@ func main() {
 	slog.SetDefault(initialLogger)
 
 	// Load config (defaults to ~/.joe/config.yaml if exists, otherwise uses hardcoded defaults)
-	configPath := "~/.joe/config.yaml"
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(paths.DefaultConfigPath())
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
@@ -36,7 +34,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Log debug mode if enabled
-	if cfg.Logging.Level == "debug" {
+	if cfg.Logging.Level == logging.LevelDebug {
 		slog.Debug("running in debug mode")
 	}
 
@@ -54,14 +52,24 @@ func main() {
 	)
 
 	// Initialize store
-	joeDir := filepath.Join(os.Getenv("HOME"), ".joe")
+	joeDir, err := paths.JoeDirPath()
+	if err != nil {
+		slog.Error("failed to get joe directory path", "error", err)
+		os.Exit(1)
+	}
+
 	if err := os.MkdirAll(joeDir, 0755); err != nil {
 		slog.Error("failed to create joe directory", "error", err)
 		os.Exit(1)
 	}
 
-	dbPath := filepath.Join(joeDir, "joe.db")
-	sqlStore, err := store.New(dbPath)
+	dbPath, err := paths.DatabasePath()
+	if err != nil {
+		slog.Error("failed to get database path", "error", err)
+		os.Exit(1)
+	}
+
+	sqlStore, err := store.New(dbPath + paths.DatabaseFlags)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)

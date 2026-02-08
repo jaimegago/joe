@@ -1,22 +1,32 @@
 {
+    "go.buildTags": "e2e,integration",
     "cSpell.words": [
         "bubbletea",
         "charmbracelet",
+        "clar",
+        "entr",
         "Errorf",
+        "Fatalf",
+        "Funcs",
         "genai",
         "gitdiff",
         "gitstatus",
         "gofmt",
         "googleapi",
         "goroutines",
+        "gotestsum",
+        "httptest",
         "jaimegago",
         "joecored",
         "lipgloss",
+        "Logf",
         "ordersvc",
         "overcomplicating",
         "paymentsvc",
         "runcmd",
         "stretchr",
-        "subtests"
+        "subtests",
+        "testdata",
+        "unittests"
     ]
 }

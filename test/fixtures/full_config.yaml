@@ -1,0 +1,22 @@
+llm:
+  provider: gemini
+  current_model: gemini-2.5-flash
+  available_models:
+    - gemini-2.5-flash
+    - gemini-2.5-pro
+    - gemini-2.0-flash
+    - claude-3-5-sonnet-20241022
+    - claude-3-7-sonnet-20250219
+
+server:
+  address: localhost:7777
+  read_timeout: 30s
+  write_timeout: 30s
+
+logging:
+  level: debug
+  format: json
+
+refresh:
+  interval_minutes: 15
+  enabled: true

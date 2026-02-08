@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // Client connects to joecored HTTP API
@@ -20,7 +19,7 @@ func New(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: DefaultTimeout,
 		},
 	}
 }
@@ -34,7 +33,7 @@ type Status struct {
 
 // GetStatus checks if joecored is running
 func (c *Client) GetStatus(ctx context.Context) (*Status, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/v1/status", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+apiStatusPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

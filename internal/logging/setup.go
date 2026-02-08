@@ -7,25 +7,11 @@ import (
 )
 
 // SetupLogger creates a structured logger based on the provided log level.
-// Supported levels: "debug", "info", "warn", "error"
+// Supported levels: LevelDebug, LevelInfo, LevelWarn, LevelError
 // Returns a configured slog.Logger using text output to stdout.
 func SetupLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch level {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "info":
-		lvl = slog.LevelInfo
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-
 	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: lvl,
+		Level: ParseLevel(level),
 	})
 	return slog.New(handler)
 }
@@ -35,19 +21,7 @@ func SetupLogger(level string) *slog.Logger {
 // If logFile is specified, logs are written as JSON to that file.
 // Returns the logger and a cleanup function that must be called to close the file.
 func SetupLoggerWithFile(level, logFile string) (*slog.Logger, func()) {
-	var lvl slog.Level
-	switch level {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "info":
-		lvl = slog.LevelInfo
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
+	lvl := ParseLevel(level)
 
 	opts := &slog.HandlerOptions{
 		Level: lvl,

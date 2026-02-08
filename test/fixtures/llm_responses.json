@@ -1,0 +1,85 @@
+{
+  "scenarios": {
+    "greeting": {
+      "description": "Simple greeting exchange",
+      "input": "hello",
+      "response": {
+        "content": "Hi! How can I help you with your infrastructure today?",
+        "model": "test-model"
+      }
+    },
+    "kubernetes_question": {
+      "description": "Basic Kubernetes question",
+      "input": "what is kubernetes?",
+      "response": {
+        "content": "Kubernetes is a container orchestration platform that automates deployment, scaling, and management of containerized applications.",
+        "model": "test-model"
+      }
+    },
+    "file_read_request": {
+      "description": "Request to read a file",
+      "input": "read my config.yaml",
+      "response": {
+        "content": "I'll read that file for you.",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "name": "read_file",
+            "args": {
+              "path": "config.yaml"
+            }
+          }
+        ],
+        "model": "test-model"
+      }
+    },
+    "multi_tool_request": {
+      "description": "Request requiring multiple tool calls",
+      "input": "check git status and read the README",
+      "response": {
+        "content": "I'll check the git status and read the README file.",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "name": "git_status",
+            "args": {
+              "path": "."
+            }
+          },
+          {
+            "id": "call_2",
+            "name": "read_file",
+            "args": {
+              "path": "README.md"
+            }
+          }
+        ],
+        "model": "test-model"
+      }
+    },
+    "error_simulation": {
+      "description": "Simulates an LLM error",
+      "input": "trigger error",
+      "error": "mock LLM error for testing"
+    }
+  },
+  "conversations": {
+    "multi_turn": {
+      "description": "Multi-turn conversation maintaining context",
+      "turns": [
+        {
+          "user": "hello",
+          "assistant": "Hi! How can I help with your infrastructure?"
+        },
+        {
+          "user": "what can you do?",
+          "assistant": "I can help with:\n• Reading and writing files\n• Checking git status and diffs\n• Querying Kubernetes resources\n• Running commands\n• And more!"
+        },
+        {
+          "user": "thanks",
+          "assistant": "You're welcome! Let me know if you need anything else."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,216 @@
+# Instrumentation Contract
+# This file defines the observability contract for the LLM instrumentation.
+# All metrics and traces defined here MUST be emitted by the instrumented code.
+
+version: 1.0
+service: joe
+
+# Metrics Contract
+# These metrics MUST be emitted for every operation
+metrics:
+  llm.requests:
+    type: counter
+    description: "Total number of LLM API requests"
+    unit: "{request}"
+    attributes:
+      - "llm.provider (string, required)"
+      - "llm.model (string, required)"
+      - "operation (string, required: chat | chat_stream | embed)"
+    scenarios:
+      - name: "successful chat request"
+        operation: chat
+        expected_increment: 1
+      - name: "failed chat request"
+        operation: chat
+        expected_increment: 1
+      - name: "streaming chat request"
+        operation: chat_stream
+        expected_increment: 1
+
+  llm.errors:
+    type: counter
+    description: "Total number of LLM API errors"
+    unit: "{error}"
+    attributes:
+      - "llm.provider (string, required)"
+      - "llm.model (string, required)"
+      - "operation (string, required)"
+      - "api_error_code (int, optional)"
+    scenarios:
+      - name: "api error with error code"
+        operation: chat
+        expected_increment: 1
+        expected_attributes:
+          api_error_code: 429
+      - name: "generic error"
+        operation: chat
+        expected_increment: 1
+
+  llm.tokens.input:
+    type: counter
+    description: "Total input tokens consumed"
+    unit: "{token}"
+    attributes:
+      - llm.provider (string, required)
+      - llm.model (string, required)
+      - \"operation (string, required)\"
+    scenarios:
+      - name: "successful chat with tokens"
+        operation: chat
+        expected_increment: "> 0"
+
+  llm.tokens.output:
+    type: counter
+    description: "Total output tokens consumed"
+    unit: "{token}"
+    attributes:
+      - llm.provider (string, required)
+      - llm.model (string, required)
+      - \"operation (string, required)\"
+    scenarios:
+      - name: "successful chat with tokens"
+        operation: chat
+        expected_increment: "> 0"
+
+  llm.request.duration:
+    type: histogram
+    description: "LLM request latency"
+    unit: "ms"
+    attributes:
+      - "llm.provider (string, required)"
+      - "llm.model (string, required)"
+      - "operation (string, required)"
+      - "error (bool, required)"
+    scenarios:
+      - name: "successful request latency"
+        operation: chat
+        expected_recorded: true
+        expected_attributes:
+          error: false
+      - name: "failed request latency"
+        operation: chat
+        expected_recorded: true
+        expected_attributes:
+          error: true
+
+# LLM Middleware Metrics (observability package)
+  llm.calls:
+    type: counter
+    description: "Number of LLM API calls"
+    unit: "1"
+    attributes:
+      - "provider (string, required)"
+      - "model (string, required)"
+
+  llm.duration:
+    type: histogram
+    description: "LLM API call duration"
+    unit: "ms"
+    attributes:
+      - "provider (string, required)"
+      - "model (string, required)"
+
+  llm.tokens:
+    type: counter
+    description: "LLM token usage"
+    unit: "1"
+    attributes:
+      - "provider (string, required)"
+      - "model (string, required)"
+      - "token_type (string, required: input | output)"
+
+# Traces Contract
+# These spans MUST be created for operations
+traces:
+  llm.chat:
+    description: "Span for LLM chat operations"
+    attributes:
+      - "llm.provider (string, required)"
+      - "llm.model (string, required)"
+      - "llm.messages.count (int, required)"
+      - "llm.tools.count (int, required)"
+      - "llm.tokens.input (int, on_success)"
+      - "llm.tokens.output (int, on_success)"
+      - "llm.tokens.total (int, on_success)"
+    scenarios:
+      - name: "successful chat creates span"
+        expected_status: ok
+        expected_events: 0
+      - name: "failed chat records error"
+        expected_status: error
+        expected_error_recorded: true
+
+  llm.chat_stream:
+    description: "Span for LLM streaming chat operations"
+    attributes:
+      - llm.provider (string, required)
+      - llm.model (string, required)
+      - llm.messages.count (int, required)
+      - llm.tools.count (int, required)
+      - llm.tokens.input (int, on_success)
+      - llm.tokens.output (int, on_success)
+    scenarios:
+      - name: "successful stream creates span"
+        expected_status: ok
+      - name: "failed stream records error"
+        expected_status: error
+        expected_error_recorded: true
+
+# Test Scenarios
+# These are complete end-to-end scenarios that verify the full contract
+scenarios:
+  - id: successful_chat_request
+    description: "Verify complete instrumentation for a successful chat request"
+    given: "an instrumented LLM adapter with a mock backend"
+    when: "a chat request is made and succeeds"
+    then:
+      metrics:
+        - llm.requests increments by 1
+        - llm.tokens.input increments by input token count
+        - llm.tokens.output increments by output token count
+        - llm.request.duration records a value with error=false
+      traces:
+        - llm.chat span is created
+        - span status is OK
+        - span has required attributes
+        - span has token attributes set
+
+  - id: failed_chat_request
+    description: "Verify complete instrumentation for a failed chat request"
+    given: "an instrumented LLM adapter with a mock backend that returns errors"
+    when: "a chat request is made and fails"
+    then:
+      metrics:
+        - llm.requests increments by 1
+        - llm.errors increments by 1
+        - llm.request.duration records a value with error=true
+      traces:
+        - llm.chat span is created
+        - span status is Error
+        - span records the error
+
+  - id: streaming_chat_request
+    description: "Verify complete instrumentation for streaming chat"
+    given: "an instrumented LLM adapter with streaming support"
+    when: "a streaming chat request is made"
+    then:
+      metrics:
+        - llm.requests increments by 1
+        - llm.tokens.input increments by token count
+        - llm.tokens.output increments by token count
+        - llm.request.duration records a value
+      traces:
+        - llm.chat_stream span is created
+        - span status is OK
+
+  - id: middleware_instrumentation
+    description: "Verify middleware metrics and traces"
+    given: "an LLM middleware wrapping an adapter"
+    when: "operations are performed through middleware"
+    then:
+      metrics:
+        - llm.calls increments
+        - llm.duration records latency
+        - llm.tokens increments for input and output
+      traces:
+        - llm.chat span is created with all attributes
