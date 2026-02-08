@@ -10,9 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"path/filepath"
+
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 func main() {
@@ -49,6 +52,27 @@ func main() {
 		"logging.level", cfg.Logging.Level,
 		"llm.model", modelInfo,
 	)
+
+	// Initialize store
+	joeDir := filepath.Join(os.Getenv("HOME"), ".joe")
+	if err := os.MkdirAll(joeDir, 0755); err != nil {
+		slog.Error("failed to create joe directory", "error", err)
+		os.Exit(1)
+	}
+
+	dbPath := filepath.Join(joeDir, "joe.db")
+	sqlStore, err := store.New(dbPath)
+	if err != nil {
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
+	}
+	defer sqlStore.Close()
+
+	if err := sqlStore.Migrate(); err != nil {
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("database ready", "path", dbPath)
 
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address

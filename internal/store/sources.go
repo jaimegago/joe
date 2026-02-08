@@ -1,0 +1,174 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+)
+
+// SourceRepository defines operations on sources.
+type SourceRepository interface {
+	Create(ctx context.Context, source *Source) error
+	Get(ctx context.Context, id string) (*Source, error)
+	List(ctx context.Context) ([]*Source, error)
+	ListByType(ctx context.Context, sourceType string) ([]*Source, error)
+	Update(ctx context.Context, source *Source) error
+	UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error
+	Delete(ctx context.Context, id string) error
+}
+
+type sqlSourceRepository struct {
+	db *sql.DB
+}
+
+func (r *sqlSourceRepository) Create(ctx context.Context, source *Source) error {
+	query := `
+		INSERT INTO sources (id, type, name, config, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	now := time.Now()
+	source.CreatedAt = now
+	source.UpdatedAt = now
+	if source.Status == "" {
+		source.Status = "active"
+	}
+
+	_, err := r.db.ExecContext(ctx, query,
+		source.ID, source.Type, source.Name, source.Config,
+		source.Status, source.CreatedAt, source.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert source: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlSourceRepository) Get(ctx context.Context, id string) (*Source, error) {
+	query := `
+		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
+		FROM sources WHERE id = ?
+	`
+	var s Source
+	var config []byte
+	var lastSyncAt, lastError sql.NullString
+
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&s.ID, &s.Type, &s.Name, &config, &s.Status,
+		&lastSyncAt, &lastError, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query source: %w", err)
+	}
+
+	s.Config = config
+	if lastSyncAt.Valid {
+		t, _ := time.Parse(time.RFC3339, lastSyncAt.String)
+		s.LastSyncAt = &t
+	}
+	if lastError.Valid {
+		s.LastError = lastError.String
+	}
+
+	return &s, nil
+}
+
+func (r *sqlSourceRepository) List(ctx context.Context) ([]*Source, error) {
+	query := `
+		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
+		FROM sources ORDER BY name
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query sources: %w", err)
+	}
+	defer rows.Close()
+
+	return scanSources(rows)
+}
+
+func (r *sqlSourceRepository) ListByType(ctx context.Context, sourceType string) ([]*Source, error) {
+	query := `
+		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
+		FROM sources WHERE type = ? ORDER BY name
+	`
+	rows, err := r.db.QueryContext(ctx, query, sourceType)
+	if err != nil {
+		return nil, fmt.Errorf("query sources by type: %w", err)
+	}
+	defer rows.Close()
+
+	return scanSources(rows)
+}
+
+func scanSources(rows *sql.Rows) ([]*Source, error) {
+	var sources []*Source
+	for rows.Next() {
+		var s Source
+		var config []byte
+		var lastSyncAt, lastError sql.NullString
+
+		if err := rows.Scan(
+			&s.ID, &s.Type, &s.Name, &config, &s.Status,
+			&lastSyncAt, &lastError, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan source: %w", err)
+		}
+
+		s.Config = config
+		if lastSyncAt.Valid {
+			t, _ := time.Parse(time.RFC3339, lastSyncAt.String)
+			s.LastSyncAt = &t
+		}
+		if lastError.Valid {
+			s.LastError = lastError.String
+		}
+		sources = append(sources, &s)
+	}
+	return sources, rows.Err()
+}
+
+func (r *sqlSourceRepository) Update(ctx context.Context, source *Source) error {
+	query := `
+		UPDATE sources
+		SET type = ?, name = ?, config = ?, status = ?, updated_at = ?
+		WHERE id = ?
+	`
+	source.UpdatedAt = time.Now()
+	_, err := r.db.ExecContext(ctx, query,
+		source.Type, source.Name, source.Config, source.Status,
+		source.UpdatedAt, source.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update source: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlSourceRepository) UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error {
+	query := `
+		UPDATE sources
+		SET last_sync_at = ?, last_error = ?, status = ?, updated_at = ?
+		WHERE id = ?
+	`
+	status := "active"
+	if lastError != "" {
+		status = "error"
+	}
+	_, err := r.db.ExecContext(ctx, query, syncedAt, lastError, status, time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update sync status: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlSourceRepository) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM sources WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete source: %w", err)
+	}
+	return nil
+}

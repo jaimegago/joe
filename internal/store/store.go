@@ -1,74 +1,84 @@
 package store
 
 import (
-	"context"
-	"time"
+	"database/sql"
+	"embed"
+	"fmt"
+
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/mattn/go-sqlite3"
 )
 
-// Store is the interface for SQL storage (SQLite)
-type Store interface {
-	// Sources
-	AddSource(ctx context.Context, source Source) error
-	GetSource(ctx context.Context, id string) (*Source, error)
-	ListSources(ctx context.Context) ([]Source, error)
-	UpdateSource(ctx context.Context, source Source) error
-	DeleteSource(ctx context.Context, id string) error
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
-	// Sessions
-	CreateSession(ctx context.Context, session Session) error
-	GetSession(ctx context.Context, id string) (*Session, error)
-	UpdateSession(ctx context.Context, session Session) error
-
-	// Cache
-	GetJoeFileCache(ctx context.Context, repoID, hash string) (*JoeFileCache, error)
-	SetJoeFileCache(ctx context.Context, cache JoeFileCache) error
-
-	// Close the store
-	Close() error
+// Store provides access to all repositories.
+type Store struct {
+	db             *sql.DB
+	Sources        SourceRepository
+	Sessions       SessionRepository
+	Clarifications ClarificationRepository
+	Cache          CacheRepository
+	Facts          FactRepository
 }
 
-// Source represents an infrastructure source
-type Source struct {
-	ID                string
-	Type              string
-	URL               string
-	Name              string
-	Environment       string
-	Categories        []string
-	ConnectionDetails map[string]any
-	Status            string
-	LastConnected     *time.Time
-	DiscoveredFrom    string
-	DiscoveryContext  string
-	Metadata          map[string]any
-	CreatedAt         time.Time
+// New creates a new Store with the given database path.
+// Use ":memory:" for in-memory database (testing).
+func New(dbPath string) (*Store, error) {
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping database: %w", err)
+	}
+
+	store := &Store{
+		db:             db,
+		Sources:        &sqlSourceRepository{db: db},
+		Sessions:       &sqlSessionRepository{db: db},
+		Clarifications: &sqlClarificationRepository{db: db},
+		Cache:          &sqlCacheRepository{db: db},
+		Facts:          &sqlFactRepository{db: db},
+	}
+
+	return store, nil
 }
 
-// Session represents a conversation session
-type Session struct {
-	ID         string
-	StartedAt  time.Time
-	EndedAt    *time.Time
-	Summary    string
-	Issue      string
-	RootCause  string
-	Resolution string
-	Components []string
-	Tags       []string
-	Embedding  []float32
+// Migrate runs all pending migrations.
+func (s *Store) Migrate() error {
+	driver, err := sqlite3.WithInstance(s.db, &sqlite3.Config{})
+	if err != nil {
+		return fmt.Errorf("create migration driver: %w", err)
+	}
+
+	source, err := iofs.New(migrationsFS, "migrations")
+	if err != nil {
+		return fmt.Errorf("create migration source: %w", err)
+	}
+
+	m, err := migrate.NewWithInstance("iofs", source, "sqlite3", driver)
+	if err != nil {
+		return fmt.Errorf("create migrator: %w", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	return nil
 }
 
-// JoeFileCache stores cached interpretations of .joe/ files
-type JoeFileCache struct {
-	RepoID     string
-	JoeDirHash string
-	ToolCalls  []CachedToolCall
-	CachedAt   time.Time
-	LLMModel   string
+// Close closes the database connection.
+func (s *Store) Close() error {
+	return s.db.Close()
 }
 
-// CachedToolCall represents a cached tool call from .joe/ file interpretation
-type CachedToolCall struct {
-	Tool string
-	Args map[string]any
+// DB returns the underlying database connection (for transactions).
+func (s *Store) DB() *sql.DB {
+	return s.db
 }

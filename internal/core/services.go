@@ -13,7 +13,7 @@ type Services struct {
 	Config *config.Config
 	LLM    llm.LLMAdapter
 	Graph  graph.GraphStore
-	Store  store.Store
+	Store  *store.Store
 }
 
 // New creates a new Services instance
