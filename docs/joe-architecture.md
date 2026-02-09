@@ -1082,12 +1082,13 @@ joe/
 │
 ├── internal/
 │   ├── api/                      # HTTP API (for joecored)
-│   │   ├── server.go             # HTTP server setup
-│   │   ├── handlers.go           # Route handlers
-│   │   └── middleware.go         # Logging, auth
+│   │   ├── server.go             # HTTP server setup + route registration
+│   │   ├── sources.go            # Source CRUD handlers
+│   │   └── k8s.go                # K8s resource + logs handlers
 │   │
 │   ├── client/                   # HTTP client (for joe)
-│   │   └── client.go             # CoreClient HTTP implementation
+│   │   ├── client.go             # HTTP methods (graph, sources, K8s)
+│   │   └── constants.go          # API paths, timeouts
 │   │
 │   ├── core/                     # Core Services
 │   │   └── services.go           # CoreServices struct
@@ -1117,20 +1118,20 @@ joe/
 │   ├── tools/                    # Tool implementations
 │   │   ├── executor.go           # Tool executor
 │   │   ├── registry.go           # Tool registry
+│   │   ├── default.go            # Default registry factory
 │   │   ├── local/                # LOCAL TOOLS (run in joe)
-│   │   │   ├── readfile.go
-│   │   │   ├── writefile.go
-│   │   │   ├── gitdiff.go
-│   │   │   ├── gitstatus.go
-│   │   │   └── runcmd.go
+│   │   │   ├── readfile/
+│   │   │   ├── writefile/
+│   │   │   ├── gitdiff/
+│   │   │   ├── gitstatus/
+│   │   │   ├── runcmd/
+│   │   │   ├── echo/
+│   │   │   └── askuser/
 │   │   └── core/                 # CORE TOOLS (call joecored API)
 │   │       ├── graphquery.go
 │   │       ├── graphrelated.go
 │   │       ├── k8sget.go
-│   │       ├── k8slogs.go
-│   │       ├── gitread.go
-│   │       ├── argocdget.go
-│   │       └── promquery.go
+│   │       └── k8slogs.go
 │   │
 │   ├── graph/                    # Graph store (used by joecored)
 │   │   ├── store.go              # Interface + types
@@ -1145,12 +1146,14 @@ joe/
 │   │   └── migrations/
 │   │
 │   ├── adapters/                 # Infrastructure adapters (used by joecored)
-│   │   ├── k8s/
-│   │   ├── argocd/
-│   │   ├── git/
-│   │   ├── prometheus/
-│   │   ├── loki/
-│   │   └── http/
+│   │   ├── adapter.go            # Adapter interface
+│   │   ├── registry.go           # Thread-safe sourceID → adapter map
+│   │   └── k8s/                  # Kubernetes adapter (implemented)
+│   │       ├── k8s.go            # KubernetesAdapter interface + Connect/Disconnect
+│   │       ├── config.go         # K8s source config parsing
+│   │       ├── resources.go      # ListResources, GetResource (dynamic client)
+│   │       ├── logs.go           # GetPodLogs (typed clientset)
+│   │       └── resolve.go        # GVR resolution for common resources
 │   │
 │   ├── repl/                     # REPL (used by joe)
 │   │   └── repl.go
@@ -1163,8 +1166,12 @@ joe/
 │   └── config/                 # Configuration
 │       └── config.go
 │
+├── test/
+│   ├── mocks/                  # Test mocks (MockK8sAdapter, etc.)
+│   └── integration/            # Integration tests (build tag: integration)
+│
 ├── docs/
-│   ├── architecture.md         # This file
+│   ├── joe-architecture.md     # This file
 │   ├── joe-dataflow.md
 │   └── joe-prompt.md
 │
@@ -1253,8 +1260,16 @@ logging:
 - [x] `NewDefaultRegistryWithClient` wires local + core tools together
 - [x] **Milestone: User Agent queries graph via HTTP**
 
-### Phase 4: Infrastructure
-- [ ] K8s adapter (joecored) + API endpoints + tools (joe)
+### Phase 4: Infrastructure (in progress)
+
+- [x] Adapter registry (thread-safe sourceID → adapter mapping)
+- [x] K8s adapter with client-go dynamic client (joecored) — Connect, ListResources, GetResource, GetPodLogs
+- [x] K8s GVR resolution for 15 common resource types + fallback
+- [x] Source management API: CRUD `/api/v1/sources`
+- [x] K8s API endpoints: `/api/v1/k8s/{sourceID}/resources`, `.../resources/{r}/{ns}/{name}`, `.../logs/{ns}/{pod}`
+- [x] HTTP client methods: `ListSources`, `CreateSource`, `DeleteSource`, `K8sListResources`, `K8sGetResource`, `K8sGetLogs`
+- [x] K8s core tools in joe: `k8s_get`, `k8s_logs`
+- [x] joecored startup loads saved K8s sources from DB, connects adapters
 - [ ] Git adapter (joecored) + API endpoints + tools (joe)
 - [ ] **Milestone: "why is pod X failing?" works end-to-end**
 
