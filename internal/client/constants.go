@@ -13,4 +13,5 @@ const (
 	apiGraphSummaryPath = "/api/v1/graph/summary"
 	apiSourcesPath      = "/api/v1/sources"
 	apiK8sBasePath      = "/api/v1/k8s"
+	apiGitBasePath      = "/api/v1/git"
 )

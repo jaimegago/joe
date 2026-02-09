@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -365,4 +366,134 @@ func (c *Client) GraphSummary(ctx context.Context) (*graph.GraphSummary, error) 
 	}
 
 	return &summary, nil
+}
+
+// --- Git Operations ---
+
+// GitReadFile reads a file from a Git repository source.
+func (c *Client) GitReadFile(ctx context.Context, sourceID, path string) (string, error) {
+	u := fmt.Sprintf("%s%s/%s/file?path=%s", c.baseURL, apiGitBasePath,
+		url.PathEscape(sourceID), url.QueryEscape(path))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("git read file request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("git read file failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode git read file response: %w", err)
+	}
+
+	return result.Content, nil
+}
+
+// GitListFiles lists files in a directory of a Git repository source.
+func (c *Client) GitListFiles(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error) {
+	u := fmt.Sprintf("%s%s/%s/files", c.baseURL, apiGitBasePath, url.PathEscape(sourceID))
+	if dir != "" {
+		u += "?dir=" + url.QueryEscape(dir)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("git list files request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("git list files failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Files []gitadapter.FileInfo `json:"files"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode git list files response: %w", err)
+	}
+
+	return result.Files, nil
+}
+
+// GitLog returns recent commits from a Git repository source.
+func (c *Client) GitLog(ctx context.Context, sourceID string, limit int) ([]gitadapter.CommitInfo, error) {
+	u := fmt.Sprintf("%s%s/%s/log", c.baseURL, apiGitBasePath, url.PathEscape(sourceID))
+	if limit > 0 {
+		u += "?limit=" + strconv.Itoa(limit)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("git log request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("git log failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Commits []gitadapter.CommitInfo `json:"commits"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode git log response: %w", err)
+	}
+
+	return result.Commits, nil
+}
+
+// GitDiff returns a diff between two refs in a Git repository source.
+func (c *Client) GitDiff(ctx context.Context, sourceID, from, to string) (string, error) {
+	u := fmt.Sprintf("%s%s/%s/diff?from=%s&to=%s", c.baseURL, apiGitBasePath,
+		url.PathEscape(sourceID), url.QueryEscape(from), url.QueryEscape(to))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("git diff request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("git diff failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Diff string `json:"diff"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode git diff response: %w", err)
+	}
+
+	return result.Diff, nil
 }

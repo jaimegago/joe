@@ -42,6 +42,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/k8s/{sourceID}/resources/{resource}/{namespace}/{name}", s.handleK8sGetResource)
 	mux.HandleFunc("GET /api/v1/k8s/{sourceID}/logs/{namespace}/{pod}", s.handleK8sGetLogs)
 
+	// Git
+	mux.HandleFunc("GET /api/v1/git/{sourceID}/file", s.handleGitReadFile)
+	mux.HandleFunc("GET /api/v1/git/{sourceID}/files", s.handleGitListFiles)
+	mux.HandleFunc("GET /api/v1/git/{sourceID}/log", s.handleGitLog)
+	mux.HandleFunc("GET /api/v1/git/{sourceID}/diff", s.handleGitDiff)
+
 	// Clarifications (placeholder)
 	mux.HandleFunc("GET /api/v1/clarifications", s.handleNotImplemented)
 	mux.HandleFunc("POST /api/v1/clarifications/{id}/answer", s.handleNotImplemented)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -78,6 +79,15 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		if err := adapter.Connect(*source); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "failed to connect to cluster: " + err.Error(),
+			})
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	} else if req.Type == "git" {
+		adapter := gitadapter.New()
+		if err := adapter.Connect(*source); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "failed to connect to git repo: " + err.Error(),
 			})
 			return
 		}
