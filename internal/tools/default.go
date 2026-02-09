@@ -48,6 +48,9 @@ func NewDefaultRegistryWithClient(coreClient *client.Client) *Registry {
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
 	registry.Register(coretools.NewK8sGetTool(coreClient))
 	registry.Register(coretools.NewK8sLogsTool(coreClient))
+	registry.Register(coretools.NewGitReadTool(coreClient))
+	registry.Register(coretools.NewGitLogTool(coreClient))
+	registry.Register(coretools.NewGitDiffTool(coreClient))
 
 	return registry
 }

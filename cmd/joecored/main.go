@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
@@ -101,6 +102,20 @@ func main() {
 		}
 		adapterRegistry.Register(src.ID, adapter)
 		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
+	}
+
+	gitSources, err := sqlStore.Sources.ListByType(ctx, "git")
+	if err != nil {
+		slog.Warn("failed to load git sources", "error", err)
+	}
+	for _, src := range gitSources {
+		adapter := gitadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect git source", "id", src.ID, "error", err)
+			continue
+		}
+		adapterRegistry.Register(src.ID, adapter)
+		slog.Info("connected git source", "id", src.ID, "name", src.Name)
 	}
 
 	// Initialize core services (graph store uses same SQLite DB)
