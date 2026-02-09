@@ -77,12 +77,16 @@ joe/
 │   ├── llm/                      # LLM adapters (both agents)
 │   ├── tools/
 │   │   ├── local/                # Local tools (joe)
-│   │   └── core/                 # Core tools (call joecored)
-│   ├── graph/                    # Graph store (joecored)
+│   │   └── core/                 # Core tools: graph_query, graph_related, k8s_get, k8s_logs
+│   ├── graph/                    # Graph store (joecored, SQLite-backed)
 │   ├── store/                    # SQL store (joecored)
-│   ├── adapters/                 # K8s, Git, ArgoCD... (joecored)
+│   ├── adapters/                 # Adapter registry + K8s adapter (joecored)
+│   │   └── k8s/                  # client-go dynamic client, GVR resolution, pod logs
 │   ├── repl/                     # REPL (joe)
 │   └── config/
+├── test/
+│   ├── mocks/                    # Test mocks (MockK8sAdapter)
+│   └── integration/              # Integration tests
 └── docs/
 ```
 
@@ -105,16 +109,11 @@ type Tool interface {
 }
 
 // CoreClient - how joe calls joecored (HTTP client in internal/client/)
-type CoreClient interface {
-    GraphQuery(ctx context.Context, query string) ([]Node, error)
-    GraphRelated(ctx context.Context, nodeID string, depth int) (*Subgraph, error)
-    K8sGet(ctx context.Context, cluster, resource, ns, name string) (any, error)
-    K8sLogs(ctx context.Context, cluster, pod, ns string, lines int) (string, error)
-    GitRead(ctx context.Context, repo, path string) (string, error)
-    Clarifications(ctx context.Context) ([]Clarification, error)
-    AnswerClarification(ctx context.Context, id, answer string) error
-    // ... etc
-}
+// Implemented methods:
+//   GraphQuery, GraphRelated, GraphSummary
+//   ListSources, CreateSource, DeleteSource
+//   K8sListResources, K8sGetResource, K8sGetLogs
+// Future: GitRead, Clarifications, AnswerClarification
 
 // Graph Store (used by Core Services)
 type GraphStore interface {
@@ -129,32 +128,30 @@ type GraphStore interface {
 
 We're building incrementally. Each phase should be working before moving on.
 
-### Phase 1: Foundation (Two Binaries)
-- [ ] Restructure: `cmd/joe/` + `cmd/joecored/`
-- [ ] HTTP API skeleton (joecored)
-- [ ] HTTP client skeleton (joe)
-- [ ] Config loading
-- [ ] LLM Adapter interface + Claude
-- [ ] **Milestone: joecored serves /api/v1/status, joe connects**
+### Phase 1: Foundation (Two Binaries) -- COMPLETE
 
-### Phase 2: User Agent Loop
-- [ ] Tool interface + executor + registry
-- [ ] User Agent with agentic loop
-- [ ] Basic local tools: `echo`, `ask_user`
-- [ ] REPL
-- [ ] **Milestone: joe connects to joecored, echo tool works**
+- [x] Two binaries: `cmd/joe/`, `cmd/joecored/`
+- [x] HTTP API skeleton, HTTP client, config loading
+- [x] LLM Adapter interface + Claude + Gemini
 
-### Phase 3: Core Services + API
-- [ ] SQL Store + migrations (joecored)
-- [ ] Graph Store (joecored)
-- [ ] API handlers for graph
-- [ ] Core tools in joe: `graph_query`, `graph_related`
-- [ ] **Milestone: User Agent queries graph via HTTP**
+### Phase 2: User Agent Loop -- COMPLETE
 
-### Phase 4: Infrastructure
-- [ ] K8s adapter + API + tools
+- [x] Tool interface + executor + registry
+- [x] User Agent with agentic loop, REPL with `/model` command
+- [x] Local tools: `echo`, `ask_user`, `read_file`, `write_file`, `local_git_status`, `local_git_diff`, `run_command`
+
+### Phase 3: Core Services + API -- COMPLETE
+
+- [x] SQL Store + migrations, Graph Store (SQLite-backed)
+- [x] API handlers: graph/query, graph/related, graph/summary
+- [x] Core tools: `graph_query`, `graph_related`
+
+### Phase 4: Infrastructure (in progress)
+
+- [x] Adapter registry + K8s adapter (client-go dynamic client)
+- [x] Source CRUD API + K8s API endpoints + HTTP client methods
+- [x] K8s core tools: `k8s_get`, `k8s_logs`
 - [ ] Git adapter + API + tools
-- [ ] Local tools: `read_file`, `write_file`, `local_git_diff`
 - [ ] **Milestone: "why is pod X failing?" works**
 
 ### Phase 5: Core Agent
