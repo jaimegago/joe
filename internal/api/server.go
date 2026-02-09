@@ -28,7 +28,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Graph
 	mux.HandleFunc("GET /api/v1/graph/query", s.handleGraphQuery)
-	mux.HandleFunc("GET /api/v1/graph/related/{nodeID}", s.handleGraphRelated)
+	mux.HandleFunc("GET /api/v1/graph/related", s.handleGraphRelated)
 	mux.HandleFunc("GET /api/v1/graph/summary", s.handleGraphSummary)
 
 	// Sources
@@ -88,10 +88,10 @@ func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGraphRelated(w http.ResponseWriter, r *http.Request) {
-	nodeID := r.PathValue("nodeID")
+	nodeID := r.URL.Query().Get("nodeID")
 	if nodeID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "missing node ID",
+			"error": "missing required query parameter 'nodeID'",
 		})
 		return
 	}

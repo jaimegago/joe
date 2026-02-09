@@ -9,7 +9,7 @@ const (
 	// API endpoints.
 	apiStatusPath       = "/api/v1/status"
 	apiGraphQueryPath   = "/api/v1/graph/query"
-	apiGraphRelatedPath = "/api/v1/graph/related/"
+	apiGraphRelatedPath = "/api/v1/graph/related"
 	apiGraphSummaryPath = "/api/v1/graph/summary"
 	apiSourcesPath      = "/api/v1/sources"
 	apiK8sBasePath      = "/api/v1/k8s"

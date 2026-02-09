@@ -258,6 +258,20 @@ func TestHandleGraphRelated(t *testing.T) {
 			seed:       true,
 			wantStatus: http.StatusBadRequest,
 		},
+		{
+			name:       "missing nodeID",
+			nodeID:     "",
+			seed:       true,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "node ID with slashes",
+			nodeID:     "deployment/prod/payment-svc",
+			depth:      "1",
+			seed:       false, // uses custom seed below
+			wantStatus: http.StatusOK,
+			wantNodes:  2,
+		},
 	}
 
 	for _, tt := range tests {
@@ -269,9 +283,27 @@ func TestHandleGraphRelated(t *testing.T) {
 				seedTestGraph(t, store)
 			}
 
-			path := "/api/v1/graph/related/" + tt.nodeID
+			// Custom seed for slashed node IDs
+			if tt.name == "node ID with slashes" {
+				ctx := context.Background()
+				for _, n := range []graph.Node{
+					{ID: "deployment/prod/payment-svc", Type: "deployment"},
+					{ID: "deployment/prod/user-svc", Type: "deployment"},
+				} {
+					if err := store.AddNode(ctx, n); err != nil {
+						t.Fatalf("add node: %v", err)
+					}
+				}
+				if err := store.AddEdge(ctx, graph.Edge{
+					From: "deployment/prod/payment-svc", To: "deployment/prod/user-svc", Relation: "calls",
+				}); err != nil {
+					t.Fatalf("add edge: %v", err)
+				}
+			}
+
+			path := "/api/v1/graph/related?nodeID=" + tt.nodeID
 			if tt.depth != "" {
-				path += "?depth=" + tt.depth
+				path += "&depth=" + tt.depth
 			}
 
 			req := httptest.NewRequest("GET", path, nil)
@@ -349,6 +381,173 @@ func TestHandleGraphSummary(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSlashedNodeIDs is a regression test ensuring that graph node IDs
+// containing slashes (e.g. "deployment/prod/payment-svc") work correctly
+// across all graph API endpoints. Go 1.22's http.ServeMux {wildcard} only
+// matches a single path segment, so IDs with slashes must be passed as
+// query parameters, not path parameters.
+func TestSlashedNodeIDs(t *testing.T) {
+	server, store := setupTestServer(t)
+	mux := setupMux(t, server)
+
+	ctx := context.Background()
+
+	// Seed nodes with realistic slashed IDs
+	slashedNodes := []graph.Node{
+		{ID: "deployment/prod/payment-svc", Type: "deployment"},
+		{ID: "deployment/prod/user-svc", Type: "deployment"},
+		{ID: "service/prod/payment-svc", Type: "service"},
+		{ID: "statefulset/prod/postgres", Type: "statefulset"},
+		{ID: "namespace/prod", Type: "namespace"},
+	}
+	for _, n := range slashedNodes {
+		if err := store.AddNode(ctx, n); err != nil {
+			t.Fatalf("add node %s: %v", n.ID, err)
+		}
+	}
+
+	slashedEdges := []graph.Edge{
+		{From: "deployment/prod/payment-svc", To: "service/prod/payment-svc", Relation: "exposes"},
+		{From: "deployment/prod/payment-svc", To: "deployment/prod/user-svc", Relation: "calls"},
+		{From: "deployment/prod/user-svc", To: "statefulset/prod/postgres", Relation: "depends_on"},
+		{From: "namespace/prod", To: "deployment/prod/payment-svc", Relation: "contains"},
+	}
+	for _, e := range slashedEdges {
+		if err := store.AddEdge(ctx, e); err != nil {
+			t.Fatalf("add edge %s->%s: %v", e.From, e.To, err)
+		}
+	}
+
+	t.Run("graph/query by type finds slashed IDs", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/query?q=type:deployment", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var body struct {
+			Nodes []graph.Node `json:"nodes"`
+			Count int          `json:"count"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Count != 2 {
+			t.Errorf("count = %d, want 2", body.Count)
+		}
+		for _, n := range body.Nodes {
+			if n.Type != "deployment" {
+				t.Errorf("unexpected type %q for node %q", n.Type, n.ID)
+			}
+		}
+	})
+
+	t.Run("graph/query free text matches slashed ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/query?q=payment", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var body struct {
+			Count int `json:"count"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Count != 2 { // deployment + service both have "payment" in ID
+			t.Errorf("count = %d, want 2", body.Count)
+		}
+	})
+
+	t.Run("graph/related depth 1 with slashed ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/related?nodeID=deployment/prod/payment-svc&depth=1", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var body struct {
+			Nodes []graph.Node `json:"nodes"`
+			Edges []graph.Edge `json:"edges"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		// payment-svc + user-svc + service/payment-svc + namespace/prod
+		if len(body.Nodes) != 4 {
+			t.Errorf("nodes = %d, want 4", len(body.Nodes))
+		}
+		if len(body.Edges) != 3 { // exposes + calls + contains
+			t.Errorf("edges = %d, want 3", len(body.Edges))
+		}
+	})
+
+	t.Run("graph/related depth 2 traverses full slashed graph", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/related?nodeID=deployment/prod/payment-svc&depth=2", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var body struct {
+			Nodes []graph.Node `json:"nodes"`
+			Edges []graph.Edge `json:"edges"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(body.Nodes) != 5 { // all nodes reachable at depth 2
+			t.Errorf("nodes = %d, want 5", len(body.Nodes))
+		}
+		if len(body.Edges) != 4 {
+			t.Errorf("edges = %d, want 4", len(body.Edges))
+		}
+	})
+
+	t.Run("graph/related not found with slashed ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/related?nodeID=deployment/staging/ghost-svc", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+		}
+	})
+
+	t.Run("graph/summary includes slashed nodes", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/graph/summary", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var body graph.GraphSummary
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.NodeCount != 5 {
+			t.Errorf("node_count = %d, want 5", body.NodeCount)
+		}
+		if body.EdgeCount != 4 {
+			t.Errorf("edge_count = %d, want 4", body.EdgeCount)
+		}
+		if body.NodesByType["deployment"] != 2 {
+			t.Errorf("deployment count = %d, want 2", body.NodesByType["deployment"])
+		}
+	})
 }
 
 func TestHandleNotImplemented(t *testing.T) {
