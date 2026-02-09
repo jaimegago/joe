@@ -21,7 +21,7 @@ func NewK8sGetTool(c *client.Client) *K8sGetTool {
 func (t *K8sGetTool) Name() string { return "k8s_get" }
 
 func (t *K8sGetTool) Description() string {
-	return "Query Kubernetes resources from a connected cluster. Lists resources by type, or gets a single resource by name. Supports pods, deployments, services, configmaps, secrets, namespaces, nodes, ingresses, statefulsets, daemonsets, replicasets, jobs, cronjobs, and events."
+	return "Query Kubernetes resources from a connected cluster. Lists resources by type, or gets a single resource by name. Supports pods, deployments, services, configmaps, secrets, namespaces, nodes, ingresses, statefulsets, daemonsets, replicasets, jobs, cronjobs, and events. If you don't know the source_id, call list_sources first to discover available Kubernetes clusters."
 }
 
 func (t *K8sGetTool) Parameters() llm.ParameterSchema {
