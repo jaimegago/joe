@@ -3,6 +3,9 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/jaimegago/joe/internal/adapters"
@@ -113,7 +116,11 @@ func buildRESTConfig(cfg Config) (*rest.Config, error) {
 
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if cfg.Kubeconfig != "" {
-		rules.ExplicitPath = cfg.Kubeconfig
+		expanded, err := expandPath(cfg.Kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("expand kubeconfig path: %w", err)
+		}
+		rules.ExplicitPath = expanded
 	}
 
 	overrides := &clientcmd.ConfigOverrides{}
@@ -122,4 +129,18 @@ func buildRESTConfig(cfg Config) (*rest.Config, error) {
 	}
 
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+}
+
+func expandPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if len(path) == 1 {
+			return home, nil
+		}
+		return filepath.Join(home, path[1:]), nil
+	}
+	return path, nil
 }

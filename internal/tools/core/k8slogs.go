@@ -21,7 +21,7 @@ func NewK8sLogsTool(c *client.Client) *K8sLogsTool {
 func (t *K8sLogsTool) Name() string { return "k8s_logs" }
 
 func (t *K8sLogsTool) Description() string {
-	return "Get logs from a Kubernetes pod. Returns the most recent log lines from a pod, optionally from a specific container."
+	return "Get logs from a Kubernetes pod. Returns the most recent log lines from a pod, optionally from a specific container. If you don't know the source_id, call list_sources first to discover available Kubernetes clusters."
 }
 
 func (t *K8sLogsTool) Parameters() llm.ParameterSchema {

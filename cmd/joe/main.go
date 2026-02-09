@@ -128,7 +128,12 @@ func main() {
 	}
 
 	// Create agent with system prompt and adapter factory
-	systemPrompt := "You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise."
+	systemPrompt := `You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise.
+
+When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll need source IDs:
+- If you don't know the available sources, call list_sources first to discover them
+- Then use the source_id from list_sources in subsequent tool calls like k8s_get or k8s_logs
+- If there's only one source of the needed type, use that one automatically`
 	agentInstance := useragent.NewAgent(
 		llmAdapter,
 		executor,
