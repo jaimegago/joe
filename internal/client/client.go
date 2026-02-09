@@ -104,7 +104,7 @@ func (c *Client) GraphQuery(ctx context.Context, query string) ([]graph.Node, er
 
 // GraphRelated finds nodes related to the given node within the specified depth.
 func (c *Client) GraphRelated(ctx context.Context, nodeID string, depth int) (*graph.Subgraph, error) {
-	u := c.baseURL + apiGraphRelatedPath + url.PathEscape(nodeID) + "?depth=" + strconv.Itoa(depth)
+	u := c.baseURL + apiGraphRelatedPath + "?nodeID=" + url.QueryEscape(nodeID) + "&depth=" + strconv.Itoa(depth)
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
