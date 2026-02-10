@@ -77,16 +77,12 @@ joe/
 │   ├── llm/                      # LLM adapters (both agents)
 │   ├── tools/
 │   │   ├── local/                # Local tools (joe)
-│   │   └── core/                 # Core tools: graph_query, graph_related, k8s_get, k8s_logs
-│   ├── graph/                    # Graph store (joecored, SQLite-backed)
+│   │   └── core/                 # Core tools (call joecored)
+│   ├── graph/                    # Graph store (joecored)
 │   ├── store/                    # SQL store (joecored)
-│   ├── adapters/                 # Adapter registry + K8s adapter (joecored)
-│   │   └── k8s/                  # client-go dynamic client, GVR resolution, pod logs
+│   ├── adapters/                 # K8s, Git, ArgoCD... (joecored)
 │   ├── repl/                     # REPL (joe)
 │   └── config/
-├── test/
-│   ├── mocks/                    # Test mocks (MockK8sAdapter)
-│   └── integration/              # Integration tests
 └── docs/
 ```
 
@@ -109,11 +105,16 @@ type Tool interface {
 }
 
 // CoreClient - how joe calls joecored (HTTP client in internal/client/)
-// Implemented methods:
-//   GraphQuery, GraphRelated, GraphSummary
-//   ListSources, CreateSource, DeleteSource
-//   K8sListResources, K8sGetResource, K8sGetLogs
-// Future: GitRead, Clarifications, AnswerClarification
+type CoreClient interface {
+    GraphQuery(ctx context.Context, query string) ([]Node, error)
+    GraphRelated(ctx context.Context, nodeID string, depth int) (*Subgraph, error)
+    K8sGet(ctx context.Context, cluster, resource, ns, name string) (any, error)
+    K8sLogs(ctx context.Context, cluster, pod, ns string, lines int) (string, error)
+    GitRead(ctx context.Context, repo, path string) (string, error)
+    Clarifications(ctx context.Context) ([]Clarification, error)
+    AnswerClarification(ctx context.Context, id, answer string) error
+    // ... etc
+}
 
 // Graph Store (used by Core Services)
 type GraphStore interface {
@@ -124,45 +125,103 @@ type GraphStore interface {
 }
 ```
 
+## REPL Commands (Joe Local)
+
+The REPL supports slash commands for control operations:
+
+```
+> /model                    # Interactive model selector
+> /help                     # Show available commands
+> /exit or /quit            # Exit Joe
+```
+
+### /model Command
+
+Opens an interactive selector showing configured models from config.yaml:
+
+```
+> /model
+
+Select model:
+    claude-sonnet-4
+  • gemini-2.0-flash (current)
+    ollama/llama3
+    
+Use ↑/↓ to navigate, Enter to select, Esc to cancel
+```
+
+- Shows all models from `config.yaml` `llm.available` list
+- Current model marked with `•` and `(current)`
+- Arrow key navigation (up/down)
+- Enter selects and switches model
+- Esc cancels without changing
+- Model switch is hot (no restart needed, conversation continues)
+
 ## Implementation Phases
 
 We're building incrementally. Each phase should be working before moving on.
 
-### Phase 1: Foundation (Two Binaries) -- COMPLETE
+### Phase 1: Foundation ✅ COMPLETE
+### Phase 2: User Agent Loop ✅ COMPLETE  
+### Phase 3: Core Services + API ✅ COMPLETE
+- SQL Store (8 tables), Graph Store (SQLite-based), API handlers, Core tools
 
-- [x] Two binaries: `cmd/joe/`, `cmd/joecored/`
-- [x] HTTP API skeleton, HTTP client, config loading
-- [x] LLM Adapter interface + Claude + Gemini
+### Phase 4: Infrastructure Adapters ✅ COMPLETE
+- K8s adapter (Connect, ListResources, GetResource, GetPodLogs)
+- Git adapter (Connect, ReadFile, ListFiles, Log, Diff)
+- API endpoints and core tools for both
 
-### Phase 2: User Agent Loop -- COMPLETE
+### Phase 5: Core Agent ← CURRENT (PARTIAL)
+- [ ] Background refresh loop
+- [ ] Auto-discovery implementation
+- [x] Clarifications table (API endpoints stubbed)
+- [ ] Onboarding flow
+- [ ] .joe/ file processing
 
-- [x] Tool interface + executor + registry
-- [x] User Agent with agentic loop, REPL with `/model` command
-- [x] Local tools: `echo`, `ask_user`, `read_file`, `write_file`, `local_git_status`, `local_git_diff`, `run_command`
+### Phase 6: Cloud Adapters
+- [ ] AWS adapter (EC2, EKS, RDS, VPC, CloudWatch)
+- [ ] Azure adapter (VMs, AKS, SQL, VNets, Monitor)
+- [ ] Graph integration (cloud nodes link to K8s nodes)
 
-### Phase 3: Core Services + API -- COMPLETE
+### Phase 7: Knowledge Store
+- [ ] Knowledge tiers (curated, synced, derived)
+- [ ] Synced sources (Confluence, Notion)
+- [ ] LLM-derived insights from sessions
+- [ ] Semantic search with embeddings
 
-- [x] SQL Store + migrations, Graph Store (SQLite-backed)
-- [x] API handlers: graph/query, graph/related, graph/summary
-- [x] Core tools: `graph_query`, `graph_related`
+### Phase 8: Documentation Co-Pilot
+- [ ] Write adapters for wikis
+- [ ] Draft generation, update proposals
+- [ ] Human approval flow
 
-### Phase 4: Infrastructure (in progress)
-
-- [x] Adapter registry + K8s adapter (client-go dynamic client)
-- [x] Source CRUD API + K8s API endpoints + HTTP client methods
-- [x] K8s core tools: `k8s_get`, `k8s_logs`
-- [ ] Git adapter + API + tools
-- [ ] **Milestone: "why is pod X failing?" works**
-
-### Phase 5: Core Agent
-- [ ] Core Agent + background refresh (joecored)
-- [ ] Clarifications queue + API
-- [ ] Onboarding + .joe/ processing
-- [ ] **Milestone: Graph auto-updates, clarifications work**
-
-### Phase 6+: Extensions
-- [ ] ArgoCD, Prometheus, notifications, more LLM adapters
+### Phase 9: Additional Clients
 - [ ] Web UI, VS Code extension
+- [ ] RBAC / permissions layer
+
+## Knowledge Store (Phase 7)
+
+Joe captures tribal knowledge in three tiers:
+
+| Tier | Trust | Management | Examples |
+|------|-------|------------|----------|
+| 1: Curated | Highest | Human only | Notes attached to nodes, onboarding facts |
+| 2: Synced | High | External source of truth | Runbooks, wiki pages (fetched, cached) |
+| 3: Derived | Lower | LLM autonomous | Session learnings, inferred patterns |
+
+Key principles:
+- LLM can create/update Tier 3, but cannot touch Tier 1
+- Synced sources are cache; external doc is truth
+- Derived insights show provenance ("Learned from session X")
+- Joe can propose doc updates, but human approves publish
+
+## Cloud Adapters (Phase 6)
+
+Cloud adapters discover infrastructure backing K8s:
+
+AWS: EC2, EKS, RDS, ALB, VPC, SecurityGroups, CloudWatch
+Azure: VMs, AKS, Azure SQL, VNets, NSGs, Monitor
+
+Key edge: is_k8s_node links cloud instances to K8s nodes, enabling traversal from K8s problems to cloud infrastructure.
 
 ## Testing Strategy
 

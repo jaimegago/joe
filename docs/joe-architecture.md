@@ -140,7 +140,7 @@ Joe is built as two binaries from day one, communicating via HTTP:
 │                                         │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
 │                                         │  │  Graph   │ │   SQL    │ │ Adapters │   │ │
 │                                         │  │  Store   │ │  Store   │ │ K8s,Git  │   │ │
-│                                         │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │   │ │
+│                                         │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   │ │
 │                                         │  └──────────┘ └──────────┘ └──────────┘   │ │
 │                                         │                                            │ │
 │                                         │  ┌──────────┐                              │ │
@@ -195,6 +195,41 @@ POST /api/v1/onboarding                     Start onboarding flow
 POST /api/v1/refresh                        Trigger manual refresh
 GET  /api/v1/status                         Core status (health, graph stats)
 ```
+
+---
+
+## REPL Commands (Joe Local)
+
+The Joe Local REPL supports slash commands for control operations:
+
+| Command | Description |
+|---------|-------------|
+| `/model` | Interactive model selector |
+| `/help` | Show available commands |
+| `/exit`, `/quit` | Exit Joe |
+
+### /model Command
+
+Opens an interactive selector for switching LLM models:
+
+```
+> /model
+
+Select model:
+    claude-sonnet
+  • gemini-flash (current)
+    claude-opus
+    ollama-llama
+    
+Use ↑/↓ to navigate, Enter to select, Esc to cancel
+```
+
+- Lists all models from `config.yaml` under `llm.available`
+- Current model (from `llm.current`) marked with `•` and `(current)`
+- Arrow keys navigate up/down
+- Enter selects and hot-swaps the model (conversation continues)
+- Esc cancels without changing
+- After switch, User Agent uses new LLM adapter for subsequent calls
 
 ---
 
@@ -636,9 +671,8 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │                                                                      │
 │  Implementations:                                                   │
 │    internal/llm/claude/     Anthropic Claude API                    │
-│    internal/llm/gemini/     Google Gemini API                       │
-│    internal/llm/openai/     OpenAI GPT-4 (future)                   │
-│    internal/llm/ollama/     Local Ollama models (future)            │
+│    internal/llm/openai/     OpenAI GPT-4                            │
+│    internal/llm/ollama/     Local Ollama models                     │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -865,37 +899,51 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │    }                                                                │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Kubernetes (internal/adapters/k8s/)                        │   │
-│  │  - Uses client-go                                           │   │
+│  │  Kubernetes (internal/adapters/k8s/) ✅ IMPLEMENTED         │   │
+│  │  - Uses client-go with dynamic client                       │   │
 │  │  - Multiple contexts support                                │   │
-│  │  - Dynamic resource discovery                               │   │
-│  │  - CRD support                                              │   │
+│  │  - Methods: Connect, ListResources, GetResource, GetPodLogs │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  ArgoCD (internal/adapters/argocd/)                         │   │
+│  │  Git (internal/adapters/git/) ✅ IMPLEMENTED                │   │
+│  │  - Uses go-git                                              │   │
+│  │  - Methods: Connect, ReadFile, ListFiles, Log, Diff         │   │
+│  │  - SSH and HTTPS auth                                       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  AWS (internal/adapters/aws/) 🚧 PLANNED                    │   │
+│  │  - Uses aws-sdk-go-v2                                       │   │
+│  │  - EC2, EKS, RDS, ALB/NLB, VPC, CloudWatch                  │   │
+│  │  - Multi-account support via profiles/roles                 │   │
+│  │  - Links EC2 instances to K8s nodes in graph                │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Azure (internal/adapters/azure/) 🚧 PLANNED                │   │
+│  │  - Uses azure-sdk-for-go                                    │   │
+│  │  - VMs, AKS, Azure SQL, VNets, NSGs, Monitor                │   │
+│  │  - Multi-subscription support                               │   │
+│  │  - Links VMs to K8s nodes in graph                          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  ArgoCD (internal/adapters/argocd/) 🚧 PLANNED              │   │
 │  │  - REST API client                                          │   │
 │  │  - Token authentication                                     │   │
 │  │  - App listing, sync, diff                                  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Git (internal/adapters/git/)                               │   │
-│  │  - Uses go-git                                              │   │
-│  │  - Clone, pull, read                                        │   │
-│  │  - SSH and HTTPS auth                                       │   │
-│  │  - Local repo cache (~/.joe/repos/)                         │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Prometheus (internal/adapters/prometheus/)                 │   │
+│  │  Prometheus (internal/adapters/prometheus/) 🚧 PLANNED      │   │
 │  │  - HTTP API client                                          │   │
 │  │  - Query, range query                                       │   │
 │  │  - Target discovery                                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Loki (internal/adapters/loki/)                             │   │
+│  │  Loki (internal/adapters/loki/) 🚧 PLANNED                  │   │
 │  │  - HTTP API client                                          │   │
 │  │  - LogQL queries                                            │   │
 │  └─────────────────────────────────────────────────────────────┘   │
@@ -909,20 +957,59 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Cloud Adapter Details
+
+Cloud adapters discover infrastructure that backs Kubernetes clusters and applications.
+
+**AWS Adapter Node Types:**
+
+| Node Type | Example ID | Key Edges |
+|-----------|------------|-----------|
+| aws/{account}/ec2/{instance-id} | aws/prod/ec2/i-abc123 | is_k8s_node, in_vpc, has_sg |
+| aws/{account}/eks/{cluster} | aws/prod/eks/main | in_vpc, has_nodegroup |
+| aws/{account}/eks/nodegroup/{name} | aws/prod/eks/ng-workers | in_cluster, in_subnet |
+| aws/{account}/rds/{db-id} | aws/prod/rds/payments-db | in_vpc, has_sg |
+| aws/{account}/alb/{lb-name} | aws/prod/alb/main-lb | in_vpc, targets_service |
+| aws/{account}/vpc/{vpc-id} | aws/prod/vpc/vpc-123 | has_subnet, peers_with |
+| aws/{account}/sg/{sg-id} | aws/prod/sg/sg-web | allows_from, allows_to |
+
+**Azure Adapter Node Types:**
+
+| Node Type | Example ID | Key Edges |
+|-----------|------------|-----------|
+| azure/{subscription}/vm/{name} | azure/prod/vm/aks-node-1 | is_k8s_node, in_vnet |
+| azure/{subscription}/aks/{name} | azure/prod/aks/main | in_vnet, has_nodepool |
+| azure/{subscription}/sql/{name} | azure/prod/sql/payments | in_vnet, has_pe |
+| azure/{subscription}/vnet/{name} | azure/prod/vnet/main | has_subnet, peers_with |
+| azure/{subscription}/nsg/{name} | azure/prod/nsg/web | allows_from, allows_to |
+| azure/{subscription}/appgw/{name} | azure/prod/appgw/main | in_vnet, targets_service |
+
+**Key Edge: is_k8s_node**
+
+This edge links cloud compute (EC2/VM) to Kubernetes nodes, enabling Joe to traverse from K8s problems to cloud infrastructure:
+
+```
+k8s/prod/node/ip-10-0-1-5 ──is_instance──► aws/prod/ec2/i-abc123
+                                                │
+                                                ├── in_vpc ──► aws/prod/vpc/vpc-123
+                                                ├── has_sg ──► aws/prod/sg/sg-nodes
+                                                └── in_subnet ──► aws/prod/subnet/private-1a
+```
+
 ---
 
 ## Data Layer
 
-### Graph Store (SQLite)
+### Graph Store (SQLite-based)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Graph Store                                                         │
 │  ───────────                                                         │
-│  Stores infrastructure topology.                                    │
+│  Stores infrastructure topology using SQLite tables.                │
 │                                                                      │
 │  Location: internal/graph/                                          │
-│  Backend: SQLite (same joe.db, tables: graph_nodes, graph_edges)    │
+│  Storage: Uses graph_nodes and graph_edges tables in joe.db         │
 │                                                                      │
 │  Interface:                                                         │
 │    type GraphStore interface {                                      │
@@ -937,6 +1024,13 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │        Summary() GraphSummary  // For LLM context                   │
 │    }                                                                │
 │                                                                      │
+│  Implementation: SQLiteStore (sqlite.go)                            │
+│    - Uses graph_nodes and graph_edges tables                        │
+│    - Supports type-based queries (type:deployment)                  │
+│    - Implements graph traversal for related nodes                   │
+│    - Path finding between nodes                                     │
+│    - Graph summaries for LLM context                                │
+│                                                                      │
 │  Node:                                                              │
 │    ID        string            // "deployment/payments/payment-svc" │
 │    Type      string            // "deployment"                      │
@@ -949,7 +1043,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │    From       string                                                │
 │    To         string                                                │
 │    Relation   string           // "calls", "depends_on", etc.       │
-│    Confidence ConfidenceLevel  // Inferred (1), Explicit (3), etc.   │
+│    Confidence string           // "explicit", "inferred", "confirmed"│
 │    Source     string           // "k8s_api", "llm", "user"          │
 │    Context    string           // Why this edge exists              │
 │                                                                      │
@@ -1067,6 +1161,130 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Knowledge Store
+
+The Knowledge Store captures tribal knowledge, runbooks, and learned insights with different trust tiers:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           KNOWLEDGE TIERS                                        │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  TIER 1: Human-Curated (highest trust)                                          │
+│  ─────────────────────────────────────                                          │
+│  • Node notes attached by humans                                                │
+│  • Explicit facts from onboarding                                               │
+│  • Human-approved session learnings                                             │
+│  → Never auto-modified, human deletes/updates                                   │
+│                                                                                  │
+│  TIER 2: Synced Sources (external source of truth)                              │
+│  ─────────────────────────────────────────────────                              │
+│  • Company wiki / Confluence                                                    │
+│  • Runbooks                                                                     │
+│  • Standards docs, ADRs                                                         │
+│  → Joe fetches periodically, re-parses on change                               │
+│  → External doc is truth, Joe's copy is cache                                  │
+│                                                                                  │
+│  TIER 3: LLM-Derived (lower trust, visible provenance)                          │
+│  ────────────────────────────────────────────────────                           │
+│  • Patterns extracted from sessions                                             │
+│  • Tribal knowledge from conversations                                          │
+│  • Inferred relationships                                                       │
+│  → LLM manages autonomously                                                     │
+│  → Shows provenance: "Learned from session 2025-02-10"                         │
+│  → Can be promoted to Tier 1 if human confirms                                 │
+│  → Auto-decays if contradicted                                                 │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Schema:**
+
+```
+knowledge_items
+──────────────────────────────────────────────────────────────
+id                  TEXT PK     UUID
+tier                TEXT        "curated" | "synced" | "derived"
+type                TEXT        "note" | "runbook" | "standard" | "pattern" | "tribal"
+subject             TEXT        Service name, topic, etc.
+content             TEXT        The knowledge itself
+source_url          TEXT        For synced (Confluence URL, etc.)
+source_session_id   TEXT        For derived (which session)
+content_hash        TEXT        For synced (detect changes)
+confidence          TEXT        For derived: "high" | "medium" | "low"
+related_node_ids    JSON        Links to graph nodes
+created_at          TIMESTAMP
+updated_at          TIMESTAMP
+synced_at           TIMESTAMP   For synced sources
+invalidated_at      TIMESTAMP   Soft delete for derived
+```
+
+**LLM Autonomy Rules:**
+
+| Tier | LLM Can | LLM Cannot |
+|------|---------|------------|
+| Tier 1 (Curated) | Read | Modify, delete |
+| Tier 2 (Synced) | Re-fetch, re-parse, update cache, link nodes | Change source of truth |
+| Tier 3 (Derived) | Create, invalidate if contradicted, adjust confidence | Delete permanently, promote to Tier 1 |
+
+**Write Capabilities:**
+
+Joe can propose documentation updates based on knowledge:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    KNOWLEDGE → DOCS FLOW                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Session Resolution                                            │
+│         │                                                        │
+│         ▼                                                        │
+│   Joe extracts insight                                          │
+│   "Connection pool exhaustion causes timeouts"                  │
+│         │                                                        │
+│         ▼                                                        │
+│   Stored as Tier 3 (derived)                                    │
+│         │                                                        │
+│         ▼                                                        │
+│   Joe notices runbook missing this info                         │
+│         │                                                        │
+│         ▼                                                        │
+│   Joe proposes update ───────────► Human reviews                │
+│         │                                 │                      │
+│         │                                 ▼                      │
+│         │                          Approves / Rejects            │
+│         │                                 │                      │
+│         ▼                                 ▼                      │
+│   If approved:                     Update pushed to wiki        │
+│   • Confluence/Notion API                                       │
+│   • Or: Git PR for docs-as-code                                 │
+│         │                                                        │
+│         ▼                                                        │
+│   Tier 2 re-syncs updated doc                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Write Trust Levels:**
+
+| Action | Human Approval Required |
+|--------|------------------------|
+| Create draft doc | No (it's a draft) |
+| Suggest edit in chat | No (just a suggestion) |
+| Update Tier 3 insights | No (LLM-managed) |
+| Publish to wiki | Yes |
+| Update existing runbook | Yes |
+| Delete/archive doc | Yes |
+
+**Retrieval Priority:**
+
+When Joe investigates a service, knowledge is retrieved in order:
+1. Tier 1 notes attached to the service node
+2. Tier 2 synced sources mentioning the service
+3. Tier 3 derived insights about the service
+
+Each tier is presented with provenance: "According to your runbook..." vs "From a previous incident..."
+
 ---
 
 ## Directory Structure
@@ -1082,13 +1300,12 @@ joe/
 │
 ├── internal/
 │   ├── api/                      # HTTP API (for joecored)
-│   │   ├── server.go             # HTTP server setup + route registration
-│   │   ├── sources.go            # Source CRUD handlers
-│   │   └── k8s.go                # K8s resource + logs handlers
+│   │   ├── server.go             # HTTP server setup
+│   │   ├── handlers.go           # Route handlers
+│   │   └── middleware.go         # Logging, auth
 │   │
 │   ├── client/                   # HTTP client (for joe)
-│   │   ├── client.go             # HTTP methods (graph, sources, K8s)
-│   │   └── constants.go          # API paths, timeouts
+│   │   └── client.go             # CoreClient HTTP implementation
 │   │
 │   ├── core/                     # Core Services
 │   │   └── services.go           # CoreServices struct
@@ -1109,33 +1326,34 @@ joe/
 │   │
 │   ├── llm/                      # LLM adapters (used by both agents)
 │   │   ├── adapter.go            # Interface
-│   │   ├── instrumented.go       # Observability wrapper
 │   │   ├── claude/
 │   │   │   └── claude.go
-│   │   └── gemini/
-│   │       └── gemini.go
+│   │   ├── openai/
+│   │   │   └── openai.go
+│   │   └── ollama/
+│   │       └── ollama.go
 │   │
 │   ├── tools/                    # Tool implementations
 │   │   ├── executor.go           # Tool executor
 │   │   ├── registry.go           # Tool registry
-│   │   ├── default.go            # Default registry factory
 │   │   ├── local/                # LOCAL TOOLS (run in joe)
-│   │   │   ├── readfile/
-│   │   │   ├── writefile/
-│   │   │   ├── gitdiff/
-│   │   │   ├── gitstatus/
-│   │   │   ├── runcmd/
-│   │   │   ├── echo/
-│   │   │   └── askuser/
+│   │   │   ├── readfile.go
+│   │   │   ├── writefile.go
+│   │   │   ├── gitdiff.go
+│   │   │   ├── gitstatus.go
+│   │   │   └── runcmd.go
 │   │   └── core/                 # CORE TOOLS (call joecored API)
 │   │       ├── graphquery.go
 │   │       ├── graphrelated.go
 │   │       ├── k8sget.go
-│   │       └── k8slogs.go
+│   │       ├── k8slogs.go
+│   │       ├── gitread.go
+│   │       ├── argocdget.go
+│   │       └── promquery.go
 │   │
 │   ├── graph/                    # Graph store (used by joecored)
-│   │   ├── store.go              # Interface + types
-│   │   └── sqlite.go             # SQLite implementation
+│   │   ├── store.go              # Interface
+│   │   └── cayley.go             # Implementation
 │   │
 │   ├── store/                    # SQL store (used by joecored)
 │   │   ├── store.go
@@ -1146,14 +1364,12 @@ joe/
 │   │   └── migrations/
 │   │
 │   ├── adapters/                 # Infrastructure adapters (used by joecored)
-│   │   ├── adapter.go            # Adapter interface
-│   │   ├── registry.go           # Thread-safe sourceID → adapter map
-│   │   └── k8s/                  # Kubernetes adapter (implemented)
-│   │       ├── k8s.go            # KubernetesAdapter interface + Connect/Disconnect
-│   │       ├── config.go         # K8s source config parsing
-│   │       ├── resources.go      # ListResources, GetResource (dynamic client)
-│   │       ├── logs.go           # GetPodLogs (typed clientset)
-│   │       └── resolve.go        # GVR resolution for common resources
+│   │   ├── k8s/
+│   │   ├── argocd/
+│   │   ├── git/
+│   │   ├── prometheus/
+│   │   ├── loki/
+│   │   └── http/
 │   │
 │   ├── repl/                     # REPL (used by joe)
 │   │   └── repl.go
@@ -1166,12 +1382,8 @@ joe/
 │   └── config/                 # Configuration
 │       └── config.go
 │
-├── test/
-│   ├── mocks/                  # Test mocks (MockK8sAdapter, etc.)
-│   └── integration/            # Integration tests (build tag: integration)
-│
 ├── docs/
-│   ├── joe-architecture.md     # This file
+│   ├── architecture.md         # This file
 │   ├── joe-dataflow.md
 │   └── joe-prompt.md
 │
@@ -1187,7 +1399,8 @@ joe/
 ```
 ~/.joe/
 ├── config.yaml                 # User configuration
-├── joe.db                      # SQLite database (SQL store + graph store)
+├── joe.db                      # SQLite database
+├── graph.db                    # Cayley graph
 └── repos/                      # Cloned git repos
     └── <host>/<owner>/<repo>/
 ```
@@ -1197,9 +1410,28 @@ joe/
 ```yaml
 # LLM Configuration
 llm:
-  provider: claude              # claude | openai | ollama
-  model: claude-sonnet-4-20250514
-  # API key via env: ANTHROPIC_API_KEY
+  current: claude-sonnet          # Currently active model (key from 'available')
+  available:                      # All configured models
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+      api_key_env: ANTHROPIC_API_KEY
+    claude-opus:
+      provider: claude
+      model: claude-opus-4-20250514
+      api_key_env: ANTHROPIC_API_KEY
+    gemini-flash:
+      provider: gemini
+      model: gemini-2.0-flash
+      api_key_env: GOOGLE_API_KEY
+    ollama-llama:
+      provider: ollama
+      model: llama3:latest
+      endpoint: http://localhost:11434
+
+# Server (for joecored)
+server:
+  address: ":7777"
 
 # Background Refresh
 refresh:
@@ -1234,61 +1466,68 @@ logging:
 
 ## Implementation Phases
 
-### Phase 1: Foundation (Two Binaries) -- COMPLETE
-- [x] Restructure for two binaries: `cmd/joe/`, `cmd/joecored/`
-- [x] HTTP API skeleton in joecored (server setup, health endpoint)
-- [x] HTTP client skeleton in joe (connects to joecored)
-- [x] Config loading (shared config package)
+### Phase 1: Foundation (Two Binaries) ✅ COMPLETE
+- [x] Two binaries: `cmd/joe/`, `cmd/joecored/`
+- [x] HTTP API server in joecored
+- [x] HTTP client in joe (connects to joecored)
+- [x] Config loading with env var overrides
 - [x] LLM Adapter interface + Claude + Gemini implementations
-- [x] **Milestone: `joecored` starts and serves /api/v1/status, `joe` connects**
 
-### Phase 2: User Agent Loop -- COMPLETE
+### Phase 2: User Agent Loop ✅ COMPLETE
 - [x] Tool interface + executor + registry
-- [x] User Agent with agentic loop (in joe)
-- [x] Basic local tools: `echo`, `ask_user`
-- [x] Additional local tools: `read_file`, `write_file`, `local_git_status`, `local_git_diff`, `run_command`
-- [x] REPL with `/model` command for hot-swapping LLMs
-- [x] **Milestone: `joe` runs, connects to joecored, echo tool works**
+- [x] User Agent with agentic loop
+- [x] Local tools: `echo`, `ask_user`, `read_file`, `write_file`, `local_git_status`, `local_git_diff`, `run_command`
+- [x] REPL with `/model` command (bubbletea TUI)
+- [x] Session management
 
-### Phase 3: Core Services + API -- COMPLETE
-- [x] SQL Store with migrations (in joecored)
-- [x] Graph Store with SQLite (in joecored) -- uses same joe.db, recursive CTEs for traversal
-- [x] Core Services wired up with Graph + SQL stores
-- [x] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related/{nodeID}`, `/api/v1/graph/summary`
-- [x] HTTP client methods: `GraphQuery`, `GraphRelated`, `GraphSummary`
-- [x] Core tools in joe calling API: `graph_query`, `graph_related`
-- [x] `NewDefaultRegistryWithClient` wires local + core tools together
-- [x] **Milestone: User Agent queries graph via HTTP**
+### Phase 3: Core Services + API ✅ COMPLETE
+- [x] SQL Store with migrations (8 tables: sources, sessions, session_messages, clarifications, joe_file_cache, onboarding_facts, graph_nodes, graph_edges)
+- [x] Graph Store (SQLite-based, not Cayley)
+- [x] API handlers: `/api/v1/graph/query`, `/api/v1/graph/related`, `/api/v1/graph/summary`
+- [x] API handlers: `/api/v1/sources` CRUD
+- [x] Core tools in joe: `graph_query`, `graph_related`, `list_sources`
 
-### Phase 4: Infrastructure (in progress)
+### Phase 4: Infrastructure Adapters ✅ COMPLETE
+- [x] K8s adapter (Connect, ListResources, GetResource, GetPodLogs)
+- [x] K8s API endpoints + core tools (`k8s_get`, `k8s_logs`)
+- [x] Git adapter (Connect, ReadFile, ListFiles, Log, Diff)
+- [x] Git API endpoints + core tools (`git_read`, `git_log`, `git_diff`)
 
-- [x] Adapter registry (thread-safe sourceID → adapter mapping)
-- [x] K8s adapter with client-go dynamic client (joecored) — Connect, ListResources, GetResource, GetPodLogs
-- [x] K8s GVR resolution for 15 common resource types + fallback
-- [x] Source management API: CRUD `/api/v1/sources`
-- [x] K8s API endpoints: `/api/v1/k8s/{sourceID}/resources`, `.../resources/{r}/{ns}/{name}`, `.../logs/{ns}/{pod}`
-- [x] HTTP client methods: `ListSources`, `CreateSource`, `DeleteSource`, `K8sListResources`, `K8sGetResource`, `K8sGetLogs`
-- [x] K8s core tools in joe: `k8s_get`, `k8s_logs`
-- [x] joecored startup loads saved K8s sources from DB, connects adapters
-- [ ] Git adapter (joecored) + API endpoints + tools (joe)
-- [ ] **Milestone: "why is pod X failing?" works end-to-end**
-
-### Phase 5: Core Agent
-- [ ] Core Agent struct (in joecored)
-- [ ] Clarifications API endpoints (table already exists)
-- [ ] Onboarding flow via API
+### Phase 5: Core Agent ← CURRENT (PARTIAL)
+- [ ] Core Agent background refresh loop
+- [ ] Auto-discovery of infrastructure
+- [x] Clarifications table + models (API endpoints stubbed, return 501)
+- [ ] Onboarding flow implementation
 - [ ] .joe/ file processing with cache
-- [ ] Background refresh goroutine
 - [ ] **Milestone: Graph auto-updates, clarifications work**
 
-### Phase 6: Extensions
-- [ ] ArgoCD adapter + API + tools
-- [ ] Prometheus adapter + API + tools
-- [ ] Notifications (desktop, Slack)
-- [ ] Session memory (embeddings, search)
-- [ ] Additional LLM adapters (OpenAI, Ollama)
+### Phase 6: Cloud Adapters
+- [ ] AWS adapter (EC2, EKS, RDS, ALB, VPC, CloudWatch)
+- [ ] Azure adapter (VMs, AKS, Azure SQL, VNets, Monitor)
+- [ ] Cloud API endpoints in joecored
+- [ ] Cloud core tools in joe
+- [ ] Graph integration (cloud nodes link to K8s nodes)
+- [ ] **Milestone: Joe understands cloud infrastructure backing K8s**
 
-### Phase 7: Additional Clients
+### Phase 7: Knowledge Store
+- [ ] Knowledge items table (tiers: curated, synced, derived)
+- [ ] Tier 1: Human-curated notes attached to nodes
+- [ ] Tier 2: Synced sources (Confluence, Notion adapters)
+- [ ] Tier 3: LLM-derived insights from sessions
+- [ ] Knowledge retrieval integrated into User Agent context
+- [ ] Embeddings for semantic search
+- [ ] **Milestone: Joe references runbooks and past learnings**
+
+### Phase 8: Documentation Co-Pilot
+- [ ] Write adapters for Confluence, Notion, Git (docs-as-code)
+- [ ] Draft generation from tribal knowledge
+- [ ] Update proposals with human approval flow
+- [ ] Drift detection (docs vs reality)
+- [ ] **Milestone: Joe can propose and publish doc updates**
+
+### Phase 9: Additional Clients & Polish
+- [ ] Notifications (desktop, Slack)
 - [ ] Web UI
 - [ ] VS Code extension
 - [ ] In-cluster deployment for joecored
+- [ ] RBAC / permissions layer
