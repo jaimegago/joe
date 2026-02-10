@@ -72,6 +72,7 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"local_git_status": true,
 		"local_git_diff":   true,
 		"run_command":      true,
+		"list_sources":     true,
 		"graph_query":      true,
 		"graph_related":    true,
 		"k8s_get":          true,
