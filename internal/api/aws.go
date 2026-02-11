@@ -1,24 +1,52 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/jaimegago/joe/internal/adapters/aws"
 )
 
-// handleAWSEC2ListInstances lists EC2 instances from an AWS source
-func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+const (
+	// Error messages for AWS API handlers
+	errorSourceNotFound    = "source not found"
+	errorNotAWSAdapter     = "source is not an AWS adapter"
+	errorMissingInstanceID = "missing instance ID"
+	errorMissingClusterName = "missing cluster name"
+	errorMissingDBInstanceID = "missing database instance ID"
+	errorMissingVPCID      = "missing VPC ID"
+	errorInstanceNotFound  = "instance not found"
+	errorClusterNotFound   = "cluster not found"
+	errorDBInstanceNotFound = "database instance not found"
+	errorVPCNotFound       = "VPC not found"
+)
 
+// getAWSAdapter is a helper function to get and validate AWS adapter
+func (s *Server) getAWSAdapter(sourceID string) (aws.AWSAdapter, error) {
 	adapter, err := s.services.Adapters.Get(sourceID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
+		return nil, fmt.Errorf("%s: %s", errorSourceNotFound, sourceID)
 	}
 
 	awsAdapter, ok := adapter.(aws.AWSAdapter)
 	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+		return nil, fmt.Errorf(errorNotAWSAdapter)
+	}
+
+	return awsAdapter, nil
+}
+
+// handleAWSEC2ListInstances lists EC2 instances from an AWS source
+func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if err != nil {
+		if err.Error() == fmt.Sprintf("%s: %s", errorSourceNotFound, sourceID) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		} else {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
 		return
 	}
 
@@ -41,19 +69,17 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	instanceID := r.PathValue("instanceID")
 
 	if instanceID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing instance ID"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errorMissingInstanceID})
 		return
 	}
 
-	adapter, err := s.services.Adapters.Get(sourceID)
+	awsAdapter, err := s.getAWSAdapter(sourceID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+		if err.Error() == fmt.Sprintf("%s: %s", errorSourceNotFound, sourceID) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		} else {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
 		return
 	}
 
@@ -64,7 +90,7 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	}
 
 	if instance == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found: " + instanceID})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID)})
 		return
 	}
 

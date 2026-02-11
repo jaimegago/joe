@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/eks/types"
@@ -14,8 +13,12 @@ func (a *Adapter) ListEKSClusters(ctx context.Context) ([]EKSCluster, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.eksClient == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.eksClient == nil {
+		return nil, fmt.Errorf("EKS client not initialized")
 	}
 
 	// First get cluster names
@@ -45,8 +48,12 @@ func (a *Adapter) GetEKSCluster(ctx context.Context, clusterName string) (*EKSCl
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.eksClient == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.eksClient == nil {
+		return nil, fmt.Errorf("EKS client not initialized")
 	}
 
 	input := &eks.DescribeClusterInput{
@@ -59,7 +66,7 @@ func (a *Adapter) GetEKSCluster(ctx context.Context, clusterName string) (*EKSCl
 	}
 
 	if result.Cluster == nil {
-		return nil, fmt.Errorf("EKS cluster %s not found", clusterName)
+		return nil, fmt.Errorf("%s: %s", errorClusterNotFound, clusterName)
 	}
 
 	cluster := convertEKSCluster(*result.Cluster)
@@ -99,7 +106,7 @@ func convertEKSCluster(cluster types.Cluster) EKSCluster {
 	}
 
 	if cluster.CreatedAt != nil {
-		result.CreatedAt = cluster.CreatedAt.Format(time.RFC3339)
+		result.CreatedAt = cluster.CreatedAt.Format(timeFormatRFC3339)
 	}
 
 	if cluster.PlatformVersion != nil {
