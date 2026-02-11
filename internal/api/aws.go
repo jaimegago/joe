@@ -9,16 +9,16 @@ import (
 
 const (
 	// Error messages for AWS API handlers
-	errorSourceNotFound    = "source not found"
-	errorNotAWSAdapter     = "source is not an AWS adapter"
-	errorMissingInstanceID = "missing instance ID"
-	errorMissingClusterName = "missing cluster name"
+	errorSourceNotFound      = "source not found"
+	errorNotAWSAdapter       = "source is not an AWS adapter"
+	errorMissingInstanceID   = "missing instance ID"
+	errorMissingClusterName  = "missing cluster name"
 	errorMissingDBInstanceID = "missing database instance ID"
-	errorMissingVPCID      = "missing VPC ID"
-	errorInstanceNotFound  = "instance not found"
-	errorClusterNotFound   = "cluster not found"
-	errorDBInstanceNotFound = "database instance not found"
-	errorVPCNotFound       = "VPC not found"
+	errorMissingVPCID        = "missing VPC ID"
+	errorInstanceNotFound    = "instance not found"
+	errorClusterNotFound     = "cluster not found"
+	errorDBInstanceNotFound  = "database instance not found"
+	errorVPCNotFound         = "VPC not found"
 )
 
 // getAWSAdapter is a helper function to get and validate AWS adapter
