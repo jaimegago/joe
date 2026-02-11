@@ -48,6 +48,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/git/{sourceID}/log", s.handleGitLog)
 	mux.HandleFunc("GET /api/v1/git/{sourceID}/diff", s.handleGitDiff)
 
+	// AWS
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/ec2/instances", s.handleAWSEC2ListInstances)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/ec2/instances/{instanceID}", s.handleAWSEC2GetInstance)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/eks/clusters", s.handleAWSEKSListClusters)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/eks/clusters/{clusterName}", s.handleAWSEKSGetCluster)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/rds/instances", s.handleAWSRDSListInstances)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/rds/instances/{dbInstanceID}", s.handleAWSRDSGetInstance)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/vpc/vpcs", s.handleAWSVPCListVPCs)
+	mux.HandleFunc("GET /api/v1/aws/{sourceID}/vpc/vpcs/{vpcID}", s.handleAWSVPCGetVPC)
+
 	// Clarifications (placeholder)
 	mux.HandleFunc("GET /api/v1/clarifications", s.handleNotImplemented)
 	mux.HandleFunc("POST /api/v1/clarifications/{id}/answer", s.handleNotImplemented)

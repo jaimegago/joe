@@ -52,6 +52,16 @@ func NewDefaultRegistryWithClient(coreClient *client.Client) *Registry {
 	registry.Register(coretools.NewGitReadTool(coreClient))
 	registry.Register(coretools.NewGitLogTool(coreClient))
 	registry.Register(coretools.NewGitDiffTool(coreClient))
+	registry.Register(coretools.NewAWSEC2Tool(coreClient))
+	registry.Register(coretools.NewAWSEKSTool(coreClient))
+	registry.Register(coretools.NewAWSRDSTool(coreClient))
+	registry.Register(coretools.NewAWSVPCTool(coreClient))
+
+	// Register AWS tools
+	registry.Register(coretools.NewAWSEC2Tool(coreClient))
+	registry.Register(coretools.NewAWSEKSTool(coreClient))
+	registry.Register(coretools.NewAWSRDSTool(coreClient))
+	registry.Register(coretools.NewAWSVPCTool(coreClient))
 
 	return registry
 }

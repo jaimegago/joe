@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
@@ -496,4 +497,262 @@ func (c *Client) GitDiff(ctx context.Context, sourceID, from, to string) (string
 	}
 
 	return result.Diff, nil
+}
+
+// --- AWS Resources ---
+
+// AWSEC2ListInstances lists all EC2 instances from an AWS source.
+func (c *Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]awsadapter.EC2Instance, error) {
+	u := fmt.Sprintf("%s%s/%s/ec2/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws ec2 list instances request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws ec2 list instances failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Instances []awsadapter.EC2Instance `json:"instances"`
+		Count     int                      `json:"count"`
+		SourceID  string                   `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws ec2 list response: %w", err)
+	}
+
+	return result.Instances, nil
+}
+
+// AWSEC2GetInstance retrieves a single EC2 instance from an AWS source.
+func (c *Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID string) (*awsadapter.EC2Instance, error) {
+	u := fmt.Sprintf("%s%s/%s/ec2/instances/%s", c.baseURL, apiAWSBasePath,
+		url.PathEscape(sourceID), url.PathEscape(instanceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws ec2 get instance request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws ec2 get instance failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Instance *awsadapter.EC2Instance `json:"instance"`
+		SourceID string                  `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws ec2 get response: %w", err)
+	}
+
+	return result.Instance, nil
+}
+
+// AWSEKSListClusters lists all EKS clusters from an AWS source.
+func (c *Client) AWSEKSListClusters(ctx context.Context, sourceID string) ([]awsadapter.EKSCluster, error) {
+	u := fmt.Sprintf("%s%s/%s/eks/clusters", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws eks list clusters request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws eks list clusters failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Clusters []awsadapter.EKSCluster `json:"clusters"`
+		Count    int                     `json:"count"`
+		SourceID string                  `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws eks list response: %w", err)
+	}
+
+	return result.Clusters, nil
+}
+
+// AWSEKSGetCluster retrieves a single EKS cluster from an AWS source.
+func (c *Client) AWSEKSGetCluster(ctx context.Context, sourceID, clusterName string) (*awsadapter.EKSCluster, error) {
+	u := fmt.Sprintf("%s%s/%s/eks/clusters/%s", c.baseURL, apiAWSBasePath,
+		url.PathEscape(sourceID), url.PathEscape(clusterName))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws eks get cluster request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws eks get cluster failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Cluster  *awsadapter.EKSCluster `json:"cluster"`
+		SourceID string                 `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws eks get response: %w", err)
+	}
+
+	return result.Cluster, nil
+}
+
+// AWSRDSListInstances lists all RDS instances from an AWS source.
+func (c *Client) AWSRDSListInstances(ctx context.Context, sourceID string) ([]awsadapter.RDSInstance, error) {
+	u := fmt.Sprintf("%s%s/%s/rds/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws rds list instances request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws rds list instances failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Instances []awsadapter.RDSInstance `json:"instances"`
+		Count     int                      `json:"count"`
+		SourceID  string                   `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws rds list response: %w", err)
+	}
+
+	return result.Instances, nil
+}
+
+// AWSRDSGetInstance retrieves a single RDS instance from an AWS source.
+func (c *Client) AWSRDSGetInstance(ctx context.Context, sourceID, dbInstanceID string) (*awsadapter.RDSInstance, error) {
+	u := fmt.Sprintf("%s%s/%s/rds/instances/%s", c.baseURL, apiAWSBasePath,
+		url.PathEscape(sourceID), url.PathEscape(dbInstanceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws rds get instance request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws rds get instance failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Instance *awsadapter.RDSInstance `json:"instance"`
+		SourceID string                  `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws rds get response: %w", err)
+	}
+
+	return result.Instance, nil
+}
+
+// AWSVPCListVPCs lists all VPCs from an AWS source.
+func (c *Client) AWSVPCListVPCs(ctx context.Context, sourceID string) ([]awsadapter.VPC, error) {
+	u := fmt.Sprintf("%s%s/%s/vpc/vpcs", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws vpc list vpcs request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws vpc list vpcs failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		VPCs     []awsadapter.VPC `json:"vpcs"`
+		Count    int              `json:"count"`
+		SourceID string           `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws vpc list response: %w", err)
+	}
+
+	return result.VPCs, nil
+}
+
+// AWSVPCGetVPC retrieves a single VPC from an AWS source.
+func (c *Client) AWSVPCGetVPC(ctx context.Context, sourceID, vpcID string) (*awsadapter.VPC, error) {
+	u := fmt.Sprintf("%s%s/%s/vpc/vpcs/%s", c.baseURL, apiAWSBasePath,
+		url.PathEscape(sourceID), url.PathEscape(vpcID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aws vpc get vpc request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("aws vpc get vpc failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		VPC      *awsadapter.VPC `json:"vpc"`
+		SourceID string          `json:"source_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode aws vpc get response: %w", err)
+	}
+
+	return result.VPC, nil
 }

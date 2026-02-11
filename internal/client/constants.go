@@ -14,4 +14,5 @@ const (
 	apiSourcesPath      = "/api/v1/sources"
 	apiK8sBasePath      = "/api/v1/k8s"
 	apiGitBasePath      = "/api/v1/git"
+	apiAWSBasePath      = "/api/v1/aws"
 )
