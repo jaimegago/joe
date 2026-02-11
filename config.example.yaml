@@ -53,3 +53,11 @@ logging:
 
   # Log file path (empty = stdout)
   file: ""
+
+# Note: Infrastructure sources (K8s, Git, AWS) are registered via the API or joe CLI
+# AWS example requires AWS credentials configured via:
+#   - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables
+#   - AWS CLI shared credentials (~/.aws/credentials)
+#   - IAM roles (recommended for production)
+#   - AWS SSO
+# Use: joe sources add --name production-aws --type aws --region us-west-2

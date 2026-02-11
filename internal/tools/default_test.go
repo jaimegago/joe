@@ -13,7 +13,7 @@ func TestNewDefaultRegistry(t *testing.T) {
 		t.Fatal("NewDefaultRegistry() returned nil")
 	}
 
-	// Define expected tools
+	// Define expected tools (only local tools, no client tools)
 	expectedTools := map[string]bool{
 		"echo":             true,
 		"ask_user":         true,
@@ -80,6 +80,10 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"git_read":         true,
 		"git_log":          true,
 		"git_diff":         true,
+		"aws_ec2":          true,
+		"aws_eks":          true,
+		"aws_rds":          true,
+		"aws_vpc":          true,
 	}
 
 	for toolName := range expectedTools {
