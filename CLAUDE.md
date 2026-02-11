@@ -178,10 +178,12 @@ We're building incrementally. Each phase should be working before moving on.
 - [ ] Onboarding flow
 - [ ] .joe/ file processing
 
-### Phase 6: Cloud Adapters
-- [ ] AWS adapter (EC2, EKS, RDS, VPC, CloudWatch)
-- [ ] Azure adapter (VMs, AKS, SQL, VNets, Monitor)
-- [ ] Graph integration (cloud nodes link to K8s nodes)
+### Phase 6: Cloud, Observability & Alerting Adapters
+- [ ] Cloud: AWS, Azure
+- [ ] Open Source: Prometheus/Mimir, Loki, Tempo, Jaeger
+- [ ] Proprietary: Datadog, Splunk, Dynatrace, New Relic
+- [ ] Alerting: Alertmanager, PagerDuty, Grafana
+- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge tiers (curated, synced, derived)
@@ -214,14 +216,29 @@ Key principles:
 - Derived insights show provenance ("Learned from session X")
 - Joe can propose doc updates, but human approves publish
 
-## Cloud Adapters (Phase 6)
+## Cloud, Observability & Alerting Adapters (Phase 6)
 
-Cloud adapters discover infrastructure backing K8s:
+**Cloud adapters** discover infrastructure backing K8s:
+- AWS: EC2, EKS, RDS, ALB, VPC, SecurityGroups
+- Azure: VMs, AKS, Azure SQL, VNets, NSGs
 
-AWS: EC2, EKS, RDS, ALB, VPC, SecurityGroups, CloudWatch
-Azure: VMs, AKS, Azure SQL, VNets, NSGs, Monitor
+**Observability adapters** query metrics, logs, traces:
+- Open Source: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces)
+- Proprietary: Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL)
+- Cloud: CloudWatch, Azure Monitor (KQL)
 
-Key edge: is_k8s_node links cloud instances to K8s nodes, enabling traversal from K8s problems to cloud infrastructure.
+**Alerting & Incident adapters:**
+- Alertmanager: list alerts, create silences
+- PagerDuty: incidents, on-call schedules, acknowledge
+- Grafana: dashboards, alerts, annotations
+
+**Key graph edges:**
+- `is_k8s_node`: cloud instance → K8s node
+- `metrics_in`, `logs_in`, `traces_in`: service → observability source
+- `alerts_in`: service → Alertmanager/Grafana
+- `paged_via`: service → PagerDuty
+
+The LLM picks the right tool based on graph context — no generic abstraction layer.
 
 ## Testing Strategy
 

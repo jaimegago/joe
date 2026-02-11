@@ -24,7 +24,7 @@ Joe has two distinct agents with different jobs:
 │  CORE AGENT (maintains infrastructure knowledge)                                        │
 │  ───────────────────────────────────────────────                                        │
 │                                                                                          │
-│  Runs:        Server-side (or background goroutine in MVP)                              │
+│  Runs:        Server-side background daemon (joecored)                                  │
 │  Triggered:   Timer, webhooks, API calls, onboarding                                    │
 │  Reads:       Infrastructure (K8s, Git repos, ArgoCD, Prometheus)                       │
 │  Writes:      Graph DB (nodes, edges, relationships)                                    │
@@ -36,6 +36,8 @@ Joe has two distinct agents with different jobs:
 │  • .joe/ file interpretation - understand repo context, update graph                   │
 │  • Background refresh - poll sources, detect changes, update graph                     │
 │  • Anomaly detection - notice issues, queue notifications                              │
+│                                                                                          │
+│  ✅ IMPLEMENTED: Core Agent with 5 tools, background refresh, lifecycle management     │
 │                                                                                          │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 
@@ -140,7 +142,7 @@ Joe is built as two binaries from day one, communicating via HTTP:
 │                                         │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
 │                                         │  │  Graph   │ │   SQL    │ │ Adapters │   │ │
 │                                         │  │  Store   │ │  Store   │ │ K8s,Git  │   │ │
-│                                         │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   │ │
+│                                         │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │   │ │
 │                                         │  └──────────┘ └──────────┘ └──────────┘   │ │
 │                                         │                                            │ │
 │                                         │  ┌──────────┐                              │ │
@@ -299,7 +301,7 @@ Core Services run inside `joecored` and are accessed via HTTP API:
 │  Core Agent                                                          │
 │  ──────────                                                          │
 │                                                                      │
-│  Runs: Background goroutine (MVP) or in joedaemon (future)          │
+│  Runs: Background daemon in joecored (fully implemented)            │
 │  Purpose: Keep infrastructure graph accurate and up-to-date         │
 │                                                                      │
 │  type CoreAgent struct {                                            │
@@ -310,18 +312,18 @@ Core Services run inside `joecored` and are accessed via HTTP API:
 │  }                                                                  │
 │                                                                      │
 │  // Background jobs                                                  │
-│  func (a *CoreAgent) StartBackgroundRefresh(ctx)                    │
-│  func (a *CoreAgent) ProcessJoeFiles(ctx, repo)                     │
+│  func (a *CoreAgent) Start(ctx) error                               │
+│  func (a *CoreAgent) Stop(ctx) error                                │
+│  func (a *CoreAgent) ProcessOnboarding(ctx, input) error            │
 │                                                                      │
-│  // Triggered jobs                                                   │
-│  func (a *CoreAgent) RunOnboarding(ctx, input) error                │
-│  func (a *CoreAgent) TriggerRefresh(ctx) error                      │
+│  // Trigger jobs                                                     │
+│  func (a *CoreAgent) ExecuteTool(ctx, name, args) (any, error)      │
 │                                                                      │
-│  Tools available (for LLM reasoning):                               │
-│  • graph_add_node, graph_add_edge, graph_update                     │
-│  • register_source                                                  │
-│  • save_onboarding_fact                                             │
-│  • k8s_*, git_*, argocd_* (for discovery)                          │
+│  ✅ IMPLEMENTED Tools (for LLM reasoning):                          │
+│  • graph_add_node, graph_add_edge, graph_update_node                │
+│  • register_source, save_onboarding_fact                            │
+│  • Background refresh with configurable interval                    │
+│  • Graceful start/stop lifecycle management                         │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -514,10 +516,8 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 ┌─────────────────────────────────────────────────────────────────────┐
 │  CLI (joe)                                                          │
 │  ─────────                                                          │
-│  MVP: Hosts both User Agent and Core Agent (+ Core Services)        │
-│  Future: Hosts only User Agent, calls joedaemon for Core Services  │
-│                                                                      │
-│  Location: cmd/joe/                                                 │
+│  Client only - connects to joecored daemon via HTTP               │
+│  Location: cmd/joe/                                                  │
 │                                                                      │
 │  Commands:                                                          │
 │    joe                     # Interactive mode (stays running)       │
@@ -528,13 +528,12 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │    joe graph               # Show graph stats                       │
 │    joe cache clear         # Clear .joe/ interpretation cache       │
 │                                                                      │
-│  MVP Startup:                                                       │
+│  Current Startup:                                                   │
 │    1. Load config from ~/.joe/config.yaml                           │
-│    2. Initialize Core Services (LLM, Graph, SQL, Adapters)          │
-│    3. Start Core Agent (background goroutine)                       │
-│    4. Create User Agent (with Core Services access)                 │
-│    5. Enter REPL loop                                               │
-│    6. On exit: graceful shutdown                                    │
+│    2. Create HTTP client for joecored API                           │
+│    3. Create User Agent (with Core API access)                      │
+│    4. Enter REPL loop                                               │
+│    5. On exit: graceful shutdown                                    │
 │                                                                      │
 │  REPL Loop:                                                         │
 │    while true:                                                      │
@@ -935,17 +934,123 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  │  - App listing, sync, diff                                  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
+│  OBSERVABILITY ADAPTERS                                             │
+│  ──────────────────────                                             │
+│                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Prometheus (internal/adapters/prometheus/) 🚧 PLANNED      │   │
-│  │  - HTTP API client                                          │   │
-│  │  - Query, range query                                       │   │
-│  │  - Target discovery                                         │   │
+│  │  Prometheus/Mimir (internal/adapters/prometheus/) 🚧 PLANNED│   │
+│  │  - HTTP API client (compatible with Mimir, Thanos, Cortex) │   │
+│  │  - Instant query, range query                               │   │
+│  │  - Label discovery, series metadata                         │   │
+│  │  - Methods: Query, QueryRange, Labels, Series               │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │  Loki (internal/adapters/loki/) 🚧 PLANNED                  │   │
 │  │  - HTTP API client                                          │   │
-│  │  - LogQL queries                                            │   │
+│  │  - LogQL queries (filter, parse, aggregate)                 │   │
+│  │  - Label discovery, stream metadata                         │   │
+│  │  - Methods: Query, QueryRange, Labels, Series               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Tempo (internal/adapters/tempo/) 🚧 PLANNED                │   │
+│  │  - HTTP API client                                          │   │
+│  │  - TraceQL queries                                          │   │
+│  │  - Trace by ID lookup                                       │   │
+│  │  - Methods: GetTrace, Search, SearchTags                    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Jaeger (internal/adapters/jaeger/) 🚧 PLANNED              │   │
+│  │  - HTTP/gRPC API client                                     │   │
+│  │  - Trace search by service, operation, tags                 │   │
+│  │  - Trace by ID lookup                                       │   │
+│  │  - Methods: GetTrace, FindTraces, GetServices               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  CloudWatch (internal/adapters/cloudwatch/) 🚧 PLANNED      │   │
+│  │  - AWS SDK client                                           │   │
+│  │  - Metrics: GetMetricData, ListMetrics                      │   │
+│  │  - Logs: FilterLogEvents, Insights queries                  │   │
+│  │  - Unified for AWS observability                            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Azure Monitor (internal/adapters/azuremonitor/) 🚧 PLANNED │   │
+│  │  - Azure SDK client                                         │   │
+│  │  - Metrics: query metrics by resource                       │   │
+│  │  - Logs: Log Analytics KQL queries                          │   │
+│  │  - Unified for Azure observability                          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  PROPRIETARY OBSERVABILITY                                          │
+│  ─────────────────────────                                          │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Datadog (internal/adapters/datadog/) 🚧 PLANNED            │   │
+│  │  - REST API client (api.datadoghq.com)                      │   │
+│  │  - Metrics: query, submit                                   │   │
+│  │  - Logs: search, analytics                                  │   │
+│  │  - APM: traces, spans, service map                          │   │
+│  │  - Methods: QueryMetrics, SearchLogs, GetTrace, ListServices│   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Splunk (internal/adapters/splunk/) 🚧 PLANNED              │   │
+│  │  - REST API client (Splunk Enterprise / Cloud)              │   │
+│  │  - Search: SPL queries                                      │   │
+│  │  - Observability Cloud: metrics, traces                     │   │
+│  │  - Methods: Search, GetJob, GetResults, QueryMetrics        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Dynatrace (internal/adapters/dynatrace/) 🚧 PLANNED        │   │
+│  │  - REST API client (Environment API v2)                     │   │
+│  │  - Metrics: query with DQL                                  │   │
+│  │  - Problems: list, get details                              │   │
+│  │  - Entities: hosts, services, processes                     │   │
+│  │  - Methods: QueryMetrics, ListProblems, GetEntity, GetTrace │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  New Relic (internal/adapters/newrelic/) 🚧 PLANNED         │   │
+│  │  - NerdGraph API (GraphQL)                                  │   │
+│  │  - NRQL queries for metrics, events, logs                   │   │
+│  │  - Distributed tracing                                      │   │
+│  │  - Methods: Query (NRQL), GetTrace, ListEntities            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ALERTING & INCIDENT MANAGEMENT                                     │
+│  ──────────────────────────────                                     │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Alertmanager (internal/adapters/alertmanager/) 🚧 PLANNED  │   │
+│  │  - HTTP API client                                          │   │
+│  │  - List alerts (active, silenced)                           │   │
+│  │  - Get alert groups                                         │   │
+│  │  - Create/delete silences                                   │   │
+│  │  - Methods: ListAlerts, GetAlertGroups, CreateSilence       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  PagerDuty (internal/adapters/pagerduty/) 🚧 PLANNED        │   │
+│  │  - REST API client                                          │   │
+│  │  - Incidents: list, get, acknowledge, resolve               │   │
+│  │  - On-call: who's on call now                               │   │
+│  │  - Services: list, get status                               │   │
+│  │  - Methods: ListIncidents, GetIncident, GetOnCall, AckIncident │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Grafana (internal/adapters/grafana/) 🚧 PLANNED            │   │
+│  │  - HTTP API client                                          │   │
+│  │  - Dashboards: list, get, create, update                    │   │
+│  │  - Alerts: list rules, get state, silence                   │   │
+│  │  - Annotations: create, query                               │   │
+│  │  - Datasources: list, query via unified alerting            │   │
+│  │  - Methods: GetDashboard, ListAlerts, CreateAnnotation      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
@@ -994,6 +1099,165 @@ k8s/prod/node/ip-10-0-1-5 ──is_instance──► aws/prod/ec2/i-abc123
                                                 ├── in_vpc ──► aws/prod/vpc/vpc-123
                                                 ├── has_sg ──► aws/prod/sg/sg-nodes
                                                 └── in_subnet ──► aws/prod/subnet/private-1a
+```
+
+### Observability Adapter Details
+
+Observability adapters query metrics, logs, and traces. Each is specific to its backend — the LLM picks the right tool based on graph context.
+
+**Graph Linking:**
+
+Services link to their observability sources via edges:
+
+```
+k8s/prod/deploy/payment-svc
+    ├── metrics_in ──► prometheus/prod
+    ├── logs_in ──► loki/prod
+    └── traces_in ──► tempo/prod
+```
+
+When Joe investigates payment-svc, it sees these edges and knows which tools to use.
+
+**Prometheus/Mimir Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| prom_query | source_id, query (PromQL), time | Instant metric value |
+| prom_query_range | source_id, query, start, end, step | Metric over time |
+| prom_labels | source_id, label_name | Discover label values |
+
+Example queries Joe might run:
+- `rate(http_requests_total{service="payment-svc",status="500"}[5m])`
+- `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`
+- `container_memory_usage_bytes{pod=~"payment-.*"}`
+
+**Loki Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| loki_query | source_id, query (LogQL), limit, start, end | Search logs |
+| loki_labels | source_id, label_name | Discover label values |
+
+Example queries:
+- `{namespace="payments"} |= "error" | json | level="error"`
+- `{app="payment-svc"} | pattern "<_> status=<status> <_>" | status >= 500`
+
+**Tempo Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| tempo_trace | source_id, trace_id | Get full trace by ID |
+| tempo_search | source_id, service, operation, tags, min_duration | Find traces |
+
+**Jaeger Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| jaeger_trace | source_id, trace_id | Get full trace by ID |
+| jaeger_search | source_id, service, operation, tags, start, end | Find traces |
+| jaeger_services | source_id | List available services |
+
+**CloudWatch Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| cloudwatch_metrics | source_id, namespace, metric, dimensions, stat, period | Get metric data |
+| cloudwatch_logs | source_id, log_group, query (Insights), start, end | Query logs |
+
+**Azure Monitor Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| azure_metrics | source_id, resource_id, metric, aggregation, interval | Get metric data |
+| azure_logs | source_id, workspace_id, query (KQL) | Query Log Analytics |
+
+**Datadog Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| datadog_metrics | source_id, query, from, to | Query metrics |
+| datadog_logs | source_id, query, from, to, limit | Search logs |
+| datadog_trace | source_id, trace_id | Get trace by ID |
+| datadog_services | source_id | List APM services |
+
+**Splunk Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| splunk_search | source_id, query (SPL), earliest, latest | Run search |
+| splunk_job_results | source_id, job_id | Get async job results |
+
+**Dynatrace Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| dynatrace_metrics | source_id, selector, from, to | Query metrics (DQL) |
+| dynatrace_problems | source_id, status | List problems |
+| dynatrace_entity | source_id, entity_id | Get entity details |
+| dynatrace_trace | source_id, trace_id | Get distributed trace |
+
+**New Relic Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| newrelic_query | source_id, nrql, account_id | Run NRQL query |
+| newrelic_trace | source_id, trace_id | Get distributed trace |
+| newrelic_entities | source_id, query | Search entities |
+
+**Alertmanager Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| alertmanager_alerts | source_id, filter, silenced, active | List alerts |
+| alertmanager_groups | source_id | Get alert groups |
+| alertmanager_silence | source_id, matchers, duration, comment | Create silence |
+
+**PagerDuty Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| pagerduty_incidents | source_id, status, service_ids | List incidents |
+| pagerduty_incident | source_id, incident_id | Get incident details |
+| pagerduty_oncall | source_id, schedule_ids | Who's on call |
+| pagerduty_ack | source_id, incident_id | Acknowledge incident |
+
+**Grafana Tools:**
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| grafana_dashboards | source_id, folder_id, query | List/search dashboards |
+| grafana_dashboard | source_id, uid | Get dashboard JSON |
+| grafana_alerts | source_id, state | List alert rules |
+| grafana_annotations | source_id, dashboard_id, from, to | Get annotations |
+| grafana_annotate | source_id, dashboard_id, text, tags | Create annotation |
+
+**Graph Edges for Alerting:**
+
+```
+k8s/prod/deploy/payment-svc
+    ├── metrics_in ──► prometheus/prod
+    ├── alerts_in ──► alertmanager/prod
+    ├── paged_via ──► pagerduty/prod
+    └── dashboard_in ──► grafana/prod
+```
+
+**How Joe Uses Observability:**
+
+```
+> why is payment-svc returning 500s?
+
+[Joe queries graph: payment-svc → metrics_in → prometheus/prod]
+[Joe calls prom_query: rate(http_requests_total{status="500"}[5m])]
+
+[Joe queries graph: payment-svc → logs_in → loki/prod]
+[Joe calls loki_query: {app="payment-svc"} |= "error" | json]
+
+[Joe finds trace_id in error log]
+[Joe queries graph: payment-svc → traces_in → tempo/prod]
+[Joe calls tempo_trace: trace_id=abc123]
+
+The 500s correlate with auth-service latency. Traces show auth-service 
+responding in 2.3s (p99). Auth-service metrics show memory at 95%.
 ```
 
 ---
@@ -1349,11 +1613,15 @@ joe/
 │   │       ├── k8slogs.go
 │   │       ├── gitread.go
 │   │       ├── argocdget.go
-│   │       └── promquery.go
+│   │       ├── promquery.go       # Prometheus/Mimir
+│   │       ├── lokiquery.go       # 🚧 Planned
+│   │       ├── tempotrace.go      # 🚧 Planned
+│   │       ├── cloudwatchquery.go # 🚧 Planned
+│   │       └── azuremonitor.go    # 🚧 Planned
 │   │
 │   ├── graph/                    # Graph store (used by joecored)
 │   │   ├── store.go              # Interface
-│   │   └── cayley.go             # Implementation
+│   │   └── sqlite.go             # SQLite implementation
 │   │
 │   ├── store/                    # SQL store (used by joecored)
 │   │   ├── store.go
@@ -1364,12 +1632,18 @@ joe/
 │   │   └── migrations/
 │   │
 │   ├── adapters/                 # Infrastructure adapters (used by joecored)
-│   │   ├── k8s/
-│   │   ├── argocd/
-│   │   ├── git/
-│   │   ├── prometheus/
-│   │   ├── loki/
-│   │   └── http/
+│   │   ├── k8s/                  # ✅ Implemented
+│   │   ├── git/                  # ✅ Implemented
+│   │   ├── aws/                  # 🚧 Planned
+│   │   ├── azure/                # 🚧 Planned
+│   │   ├── argocd/               # 🚧 Planned
+│   │   ├── prometheus/           # 🚧 Planned (also covers Mimir)
+│   │   ├── loki/                 # 🚧 Planned
+│   │   ├── tempo/                # 🚧 Planned
+│   │   ├── jaeger/               # 🚧 Planned
+│   │   ├── cloudwatch/           # 🚧 Planned
+│   │   ├── azuremonitor/         # 🚧 Planned
+│   │   └── http/                 # Generic HTTP client
 │   │
 │   ├── repl/                     # REPL (used by joe)
 │   │   └── repl.go
@@ -1399,8 +1673,7 @@ joe/
 ```
 ~/.joe/
 ├── config.yaml                 # User configuration
-├── joe.db                      # SQLite database
-├── graph.db                    # Cayley graph
+├── joe.db                      # SQLite database (includes graph)
 └── repos/                      # Cloned git repos
     └── <host>/<owner>/<repo>/
 ```
@@ -1493,21 +1766,26 @@ logging:
 - [x] Git adapter (Connect, ReadFile, ListFiles, Log, Diff)
 - [x] Git API endpoints + core tools (`git_read`, `git_log`, `git_diff`)
 
-### Phase 5: Core Agent ← CURRENT (PARTIAL)
-- [ ] Core Agent background refresh loop
-- [ ] Auto-discovery of infrastructure
-- [x] Clarifications table + models (API endpoints stubbed, return 501)
-- [ ] Onboarding flow implementation
-- [ ] .joe/ file processing with cache
-- [ ] **Milestone: Graph auto-updates, clarifications work**
+### Phase 5: Core Agent ✅ COMPLETE
+- [x] Core Agent background refresh loop
+- [x] Core Agent tools (graph manipulation, source registration)
+- [x] Agent lifecycle management (start/stop with graceful shutdown)
+- [x] Discovery engine for onboarding processing
+- [x] Background refresh with configurable intervals
+- [x] Integration with joecored daemon
+- [x] Comprehensive test coverage
+- [x] **Milestone: Two-agent architecture fully operational**
 
-### Phase 6: Cloud Adapters
-- [ ] AWS adapter (EC2, EKS, RDS, ALB, VPC, CloudWatch)
-- [ ] Azure adapter (VMs, AKS, Azure SQL, VNets, Monitor)
-- [ ] Cloud API endpoints in joecored
-- [ ] Cloud core tools in joe
-- [ ] Graph integration (cloud nodes link to K8s nodes)
-- [ ] **Milestone: Joe understands cloud infrastructure backing K8s**
+### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
+- [ ] **Cloud:** AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets)
+- [ ] **Open Source Observability:** Prometheus/Mimir, Loki, Tempo, Jaeger
+- [ ] **Proprietary Observability:** Datadog, Splunk, Dynatrace, New Relic
+- [ ] **Cloud Observability:** CloudWatch, Azure Monitor
+- [ ] **Alerting & Incidents:** Alertmanager, PagerDuty
+- [ ] **Dashboards:** Grafana
+- [ ] API endpoints + core tools for each adapter
+- [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
+- [ ] **Milestone: Joe queries metrics, logs, traces, alerts, and understands incident context**
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge items table (tiers: curated, synced, derived)
