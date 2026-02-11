@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
@@ -14,8 +13,12 @@ func (a *Adapter) ListRDSInstances(ctx context.Context) ([]RDSInstance, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.rdsClient == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.rdsClient == nil {
+		return nil, fmt.Errorf("RDS client not initialized")
 	}
 
 	input := &rds.DescribeDBInstancesInput{}
@@ -38,8 +41,12 @@ func (a *Adapter) GetRDSInstance(ctx context.Context, dbInstanceID string) (*RDS
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.rdsClient == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.rdsClient == nil {
+		return nil, fmt.Errorf("RDS client not initialized")
 	}
 
 	input := &rds.DescribeDBInstancesInput{
@@ -52,7 +59,7 @@ func (a *Adapter) GetRDSInstance(ctx context.Context, dbInstanceID string) (*RDS
 	}
 
 	if len(result.DBInstances) == 0 {
-		return nil, fmt.Errorf("RDS instance %s not found", dbInstanceID)
+		return nil, fmt.Errorf("%s: %s", errorDBInstanceNotFound, dbInstanceID)
 	}
 
 	rdsInstance := convertRDSInstance(result.DBInstances[0])
@@ -113,7 +120,7 @@ func convertRDSInstance(dbInstance types.DBInstance) RDSInstance {
 	}
 
 	if dbInstance.InstanceCreateTime != nil {
-		result.CreatedTime = dbInstance.InstanceCreateTime.Format(time.RFC3339)
+		result.CreatedTime = dbInstance.InstanceCreateTime.Format(timeFormatRFC3339)
 	}
 
 	// Convert security groups

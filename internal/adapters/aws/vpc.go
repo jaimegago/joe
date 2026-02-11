@@ -13,8 +13,12 @@ func (a *Adapter) ListVPCs(ctx context.Context) ([]VPC, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.ec2Client == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.ec2Client == nil {
+		return nil, fmt.Errorf("EC2 client not initialized")
 	}
 
 	input := &ec2.DescribeVpcsInput{}
@@ -46,8 +50,12 @@ func (a *Adapter) GetVPC(ctx context.Context, vpcID string) (*VPC, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.ec2Client == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.ec2Client == nil {
+		return nil, fmt.Errorf("EC2 client not initialized")
 	}
 
 	input := &ec2.DescribeVpcsInput{
@@ -60,7 +68,7 @@ func (a *Adapter) GetVPC(ctx context.Context, vpcID string) (*VPC, error) {
 	}
 
 	if len(result.Vpcs) == 0 {
-		return nil, fmt.Errorf("VPC %s not found", vpcID)
+		return nil, fmt.Errorf("%s: %s", errorVPCNotFound, vpcID)
 	}
 
 	vpc := convertVPC(result.Vpcs[0])

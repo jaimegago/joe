@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -14,8 +13,12 @@ func (a *Adapter) ListEC2Instances(ctx context.Context) ([]EC2Instance, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.ec2Client == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.ec2Client == nil {
+		return nil, fmt.Errorf("EC2 client not initialized")
 	}
 
 	input := &ec2.DescribeInstancesInput{}
@@ -40,8 +43,12 @@ func (a *Adapter) GetEC2Instance(ctx context.Context, instanceID string) (*EC2In
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if !a.connected || a.ec2Client == nil {
-		return nil, fmt.Errorf("adapter not connected to AWS")
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	if a.ec2Client == nil {
+		return nil, fmt.Errorf("EC2 client not initialized")
 	}
 
 	input := &ec2.DescribeInstancesInput{
@@ -62,7 +69,7 @@ func (a *Adapter) GetEC2Instance(ctx context.Context, instanceID string) (*EC2In
 		}
 	}
 
-	return nil, fmt.Errorf("EC2 instance %s not found", instanceID)
+	return nil, fmt.Errorf("%s: %s", errorInstanceNotFound, instanceID)
 }
 
 // convertEC2Instance converts AWS EC2 Instance to our EC2Instance struct
@@ -92,7 +99,7 @@ func convertEC2Instance(instance types.Instance) EC2Instance {
 	}
 
 	if instance.LaunchTime != nil {
-		result.LaunchTime = instance.LaunchTime.Format(time.RFC3339)
+		result.LaunchTime = instance.LaunchTime.Format(timeFormatRFC3339)
 	}
 
 	if instance.Placement != nil && instance.Placement.AvailabilityZone != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -17,6 +18,22 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/store"
+)
+
+const (
+	// Error messages
+	errorNotConnected    = "adapter not connected to AWS"
+	errorInstanceNotFound = "instance not found"
+	errorClusterNotFound  = "cluster not found"
+	errorDBInstanceNotFound = "database instance not found"
+	errorVPCNotFound      = "VPC not found"
+
+	// Time formats
+	timeFormatRFC3339 = time.RFC3339
+
+	// Status messages
+	statusNotConnected = "Not connected to AWS"
+	statusConnectedFmt = "Connected to AWS region %s"
 )
 
 // EC2Instance represents an EC2 instance
@@ -206,13 +223,13 @@ func (a *Adapter) Status() adapters.Status {
 	if a.connected {
 		return adapters.Status{
 			Connected: true,
-			Message:   fmt.Sprintf("Connected to AWS region %s", a.config.Region),
+			Message:   fmt.Sprintf(statusConnectedFmt, a.config.Region),
 		}
 	}
 
 	return adapters.Status{
 		Connected: false,
-		Message:   "Not connected to AWS",
+		Message:   statusNotConnected,
 	}
 }
 
@@ -247,4 +264,12 @@ func buildAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
 	}
 
 	return awsConfig, nil
+}
+
+// checkConnected validates that the adapter is connected and returns an error if not
+func (a *Adapter) checkConnected() error {
+	if !a.connected {
+		return fmt.Errorf(errorNotConnected)
+	}
+	return nil
 }
