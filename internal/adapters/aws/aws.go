@@ -22,11 +22,11 @@ import (
 
 const (
 	// Error messages
-	errorNotConnected    = "adapter not connected to AWS"
-	errorInstanceNotFound = "instance not found"
-	errorClusterNotFound  = "cluster not found"
+	errorNotConnected       = "adapter not connected to AWS"
+	errorInstanceNotFound   = "instance not found"
+	errorClusterNotFound    = "cluster not found"
 	errorDBInstanceNotFound = "database instance not found"
-	errorVPCNotFound      = "VPC not found"
+	errorVPCNotFound        = "VPC not found"
 
 	// Time formats
 	timeFormatRFC3339 = time.RFC3339
