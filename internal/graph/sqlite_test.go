@@ -50,7 +50,7 @@ func setupTestStore(t *testing.T) graph.GraphStore {
 	}
 
 	t.Cleanup(func() { db.Close() })
-	return graph.NewSQLiteStore(db)
+	return graph.NewSQLiteStore(db, nil)
 }
 
 // seedGraph creates a small test graph:
