@@ -18,7 +18,7 @@ type apiError struct {
 }
 
 var (
-	errSourceNotFound   = errors.New("source not found")
+	errSourceNotFound    = errors.New("source not found")
 	errInvalidSourceType = errors.New("source is not expected adapter type")
 )
 
