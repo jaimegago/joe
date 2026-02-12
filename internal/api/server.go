@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // Server handles HTTP API requests for joecored
@@ -19,6 +20,9 @@ type Server struct {
 
 // New creates a new API server with access to core services
 func New(services *core.Services) *Server {
+	if services != nil {
+		services.Metrics = observability.EnsureMetrics(services.Metrics)
+	}
 	return &Server{services: services}
 }
 

@@ -30,7 +30,11 @@ test:
 
 # Run unit tests only (fast, no external dependencies)
 test-unit:
-	go test -v -short ./internal/...
+	@set -e; \
+	for pkg in $$(go list ./internal/...); do \
+		echo "==> $$pkg"; \
+		go test -v -short -failfast $$pkg; \
+	done
 
 # Run integration tests with mocks (no external services required)
 test-integration:
