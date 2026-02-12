@@ -3,6 +3,8 @@ package api
 const (
 	// API version and status values.
 	version      = "0.1.0"
+	apiVersion   = "v1"      // Current API version for route paths
+	apiPrefix    = "/api/v1" // Full API path prefix
 	statusOK     = "ok"
 	errorNotImpl = "not implemented"
 
