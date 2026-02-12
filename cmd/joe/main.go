@@ -15,6 +15,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/tools"
@@ -33,6 +34,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Initialize OpenTelemetry (default to no tracing in CLI unless explicitly enabled)
+	otelCfg := observability.DefaultConfig()
+	if _, ok := os.LookupEnv("OTEL_TRACES_ENABLED"); !ok {
+		otelCfg.TracesEnabled = false
+	}
+	if _, ok := os.LookupEnv("OTEL_TRACES_EXPORTER"); !ok {
+		otelCfg.TracesExporter = "none"
+	}
+	shutdownOTel, err := observability.Setup(ctx, otelCfg)
+	if err != nil {
+		log.Printf("OpenTelemetry setup failed: %v", err)
+	} else {
+		defer func() { _ = shutdownOTel(context.Background()) }()
+	}
+
+	// Create metrics instance
+	metrics := observability.NewMetrics()
 
 	// Validate LLM configuration and check API keys
 	currentModel, err := cfg.LLM.CurrentModel()
@@ -94,7 +113,7 @@ func main() {
 	registry := tools.NewDefaultRegistryWithClient(coreClient)
 
 	// Create tool executor
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, metrics)
 
 	// Create adapter factory for hot-swapping models
 	adapterFactory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
@@ -144,7 +163,7 @@ When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll
 	)
 
 	// Create session with message history limit to prevent unbounded growth
-	session := useragent.NewSession()
+	session := useragent.NewSession(metrics)
 	session.MaxMessages = useragent.DefaultMaxMessages
 
 	// Create and run REPL (pass config for model management and the session)

@@ -35,7 +35,7 @@ func (m *mockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
 func TestNew(t *testing.T) {
 	mockLLM := &mockLLM{response: "test"}
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agentInstance := useragent.NewAgent(mockLLM, executor, registry, "test prompt")
 
 	cfg := &config.Config{

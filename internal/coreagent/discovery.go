@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -15,19 +17,24 @@ type Engine struct {
 	services *core.Services
 	llm      llm.LLMAdapter
 	logger   *slog.Logger
+	metrics  *observability.Metrics
 }
 
 // NewEngine creates a new discovery engine
-func NewEngine(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger) *Engine {
+func NewEngine(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger, metrics *observability.Metrics) *Engine {
 	return &Engine{
 		services: services,
 		llm:      llmAdapter,
-		logger:   logger.With("component", "discovery-engine"),
+		logger:   logger.With("component", "discovery"),
+		metrics:  observability.EnsureMetrics(metrics),
 	}
 }
 
 // ProcessInput handles onboarding input from users
-func (e *Engine) ProcessInput(ctx context.Context, input string) error {
+func (e *Engine) ProcessInput(ctx context.Context, input string) (err error) {
+	start := time.Now()
+	defer func() { e.metrics.RecordDiscoveryInput(ctx, time.Since(start), err) }()
+
 	e.logger.Info("processing onboarding input", "input_length", len(input))
 
 	// Phase 5 MVP: Store the input as an onboarding fact
@@ -40,7 +47,7 @@ func (e *Engine) ProcessInput(ctx context.Context, input string) error {
 		Source:   "discovery-engine",
 	}
 
-	err := e.services.Store.Facts.Create(ctx, fact)
+	err = e.services.Store.Facts.Create(ctx, fact)
 	if err != nil {
 		e.logger.Error("failed to store onboarding input", "error", err)
 		return fmt.Errorf("failed to store onboarding input: %w", err)

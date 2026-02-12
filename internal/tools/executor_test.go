@@ -8,7 +8,7 @@ import (
 
 func TestNewExecutor(t *testing.T) {
 	registry := NewRegistry()
-	executor := NewExecutor(registry)
+	executor := NewExecutor(registry, nil)
 
 	if executor == nil {
 		t.Fatal("NewExecutor() returned nil")
@@ -107,7 +107,7 @@ func TestExecutor_Execute(t *testing.T) {
 			if tt.setupFunc != nil {
 				tt.setupFunc(registry)
 			}
-			executor := NewExecutor(registry)
+			executor := NewExecutor(registry, nil)
 
 			got, err := executor.Execute(context.Background(), tt.toolName, tt.args)
 
@@ -256,7 +256,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			if tt.setupFunc != nil {
 				tt.setupFunc(registry)
 			}
-			executor := NewExecutor(registry)
+			executor := NewExecutor(registry, nil)
 
 			results, err := executor.ExecuteBatch(context.Background(), tt.calls)
 			if err != nil {
@@ -281,7 +281,7 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := NewExecutor(registry, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -424,7 +424,7 @@ func TestExecutor_ResultsToMessages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := NewRegistry()
-			executor := NewExecutor(registry)
+			executor := NewExecutor(registry, nil)
 
 			messages := executor.ResultsToMessages(tt.results)
 

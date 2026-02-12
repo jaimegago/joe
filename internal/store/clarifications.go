@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // ClarificationRepository defines operations on clarifications.
@@ -20,10 +22,14 @@ type ClarificationRepository interface {
 }
 
 type sqlClarificationRepository struct {
-	db *sql.DB
+	db      *sql.DB
+	metrics *observability.Metrics
 }
 
-func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarification) error {
+func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarification) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.create", time.Since(start), err) }()
+
 	query := `
 		INSERT INTO clarifications (id, type, context, question, options, status, graph_operations, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -38,7 +44,7 @@ func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarificatio
 		options, _ = json.Marshal(c.Options)
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err = r.db.ExecContext(ctx, query,
 		c.ID, c.Type, c.Context, c.Question, options,
 		c.Status, c.GraphOperations, c.CreatedAt,
 	)
@@ -48,7 +54,10 @@ func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarificatio
 	return nil
 }
 
-func (r *sqlClarificationRepository) Get(ctx context.Context, id string) (*Clarification, error) {
+func (r *sqlClarificationRepository) Get(ctx context.Context, id string) (clarification *Clarification, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.get", time.Since(start), err) }()
+
 	query := `
 		SELECT id, type, context, question, options, status, answer,
 		       answered_by, answered_at, graph_operations, created_at, notified_at
@@ -57,11 +66,17 @@ func (r *sqlClarificationRepository) Get(ctx context.Context, id string) (*Clari
 	return r.scanOne(r.db.QueryRowContext(ctx, query, id))
 }
 
-func (r *sqlClarificationRepository) ListPending(ctx context.Context) ([]*Clarification, error) {
+func (r *sqlClarificationRepository) ListPending(ctx context.Context) (clarifications []*Clarification, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.list_pending", time.Since(start), err) }()
+
 	return r.ListByStatus(ctx, ClarificationPending)
 }
 
-func (r *sqlClarificationRepository) ListByStatus(ctx context.Context, status string) ([]*Clarification, error) {
+func (r *sqlClarificationRepository) ListByStatus(ctx context.Context, status string) (clarifications []*Clarification, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.list_by_status", time.Since(start), err) }()
+
 	query := `
 		SELECT id, type, context, question, options, status, answer,
 		       answered_by, answered_at, graph_operations, created_at, notified_at
@@ -75,7 +90,6 @@ func (r *sqlClarificationRepository) ListByStatus(ctx context.Context, status st
 	}
 	defer rows.Close()
 
-	var clarifications []*Clarification
 	for rows.Next() {
 		var c Clarification
 		var options, graphOps sql.NullString
@@ -96,31 +110,40 @@ func (r *sqlClarificationRepository) ListByStatus(ctx context.Context, status st
 	return clarifications, rows.Err()
 }
 
-func (r *sqlClarificationRepository) Answer(ctx context.Context, id, answer, answeredBy string) error {
+func (r *sqlClarificationRepository) Answer(ctx context.Context, id, answer, answeredBy string) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.answer", time.Since(start), err) }()
+
 	query := `
 		UPDATE clarifications
 		SET answer = ?, answered_by = ?, answered_at = ?, status = ?
 		WHERE id = ?
 	`
-	_, err := r.db.ExecContext(ctx, query, answer, answeredBy, time.Now(), ClarificationAnswered, id)
+	_, err = r.db.ExecContext(ctx, query, answer, answeredBy, time.Now(), ClarificationAnswered, id)
 	if err != nil {
 		return fmt.Errorf("answer clarification: %w", err)
 	}
 	return nil
 }
 
-func (r *sqlClarificationRepository) Dismiss(ctx context.Context, id string) error {
+func (r *sqlClarificationRepository) Dismiss(ctx context.Context, id string) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.dismiss", time.Since(start), err) }()
+
 	query := `UPDATE clarifications SET status = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, ClarificationDismissed, id)
+	_, err = r.db.ExecContext(ctx, query, ClarificationDismissed, id)
 	if err != nil {
 		return fmt.Errorf("dismiss clarification: %w", err)
 	}
 	return nil
 }
 
-func (r *sqlClarificationRepository) MarkNotified(ctx context.Context, id string) error {
+func (r *sqlClarificationRepository) MarkNotified(ctx context.Context, id string) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.mark_notified", time.Since(start), err) }()
+
 	query := `UPDATE clarifications SET notified_at = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, time.Now(), id)
+	_, err = r.db.ExecContext(ctx, query, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("mark notified: %w", err)
 	}

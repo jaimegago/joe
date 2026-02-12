@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
@@ -84,7 +85,10 @@ func (a *Agent) CurrentModelName() string {
 // 2. Calls LLM with system prompt, tools, and conversation history
 // 3. If LLM returns tool calls, executes them and loops back to step 2
 // 4. If LLM returns no tool calls, returns the final response
-func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (string, error) {
+func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (response string, err error) {
+	start := time.Now()
+	defer func() { session.metrics.RecordAgentRun(ctx, time.Since(start), err) }()
+
 	// Reset per-run token tracking
 	session.ResetRunStats()
 

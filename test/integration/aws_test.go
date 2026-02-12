@@ -88,7 +88,7 @@ func (m *MockAWSAdapter) GetVPC(ctx context.Context, vpcID string) (*awsadapter.
 
 func TestAWSIntegration(t *testing.T) {
 	// Create test database
-	db, err := store.New(":memory:" + paths.DatabaseFlags)
+	db, err := store.New(":memory:"+paths.DatabaseFlags, nil)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestAWSIntegration(t *testing.T) {
 
 	// Create core services
 	cfg := &config.Config{}
-	services := core.New(cfg, db, db.DB(), registry)
+	services := core.New(cfg, db, db.DB(), registry, nil)
 
 	// Set up HTTP server
 	server := api.New(services)

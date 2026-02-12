@@ -21,7 +21,7 @@ import (
 
 func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.Store) {
 	t.Helper()
-	testStore, err := store.New(":memory:" + paths.DatabaseFlags)
+	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -29,7 +29,7 @@ func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.S
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	t.Cleanup(func() { testStore.Close() })
-	services := core.New(&config.Config{}, testStore, testStore.DB(), adapters.NewRegistry())
+	services := core.New(&config.Config{}, testStore, testStore.DB(), adapters.NewRegistry(), nil)
 	server := api.New(services)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)

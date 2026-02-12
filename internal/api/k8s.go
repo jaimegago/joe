@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jaimegago/joe/internal/constants"
 )
@@ -23,7 +24,9 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 
 	namespace := r.URL.Query().Get("namespace")
 
+	start := time.Now()
 	items, err := k8sAdapter.ListResources(r.Context(), resource, namespace)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "list_resources", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "k8s list resources")
 		return
@@ -54,7 +57,9 @@ func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
+	start := time.Now()
 	obj, err := k8sAdapter.GetResource(r.Context(), resource, namespace, name)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "get_resource", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "k8s get resource")
 		return
@@ -88,7 +93,9 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 		tailLines = parsed
 	}
 
+	start := time.Now()
 	logs, err := k8sAdapter.GetPodLogs(r.Context(), namespace, pod, container, tailLines)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "get_pod_logs", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "k8s get logs")
 		return

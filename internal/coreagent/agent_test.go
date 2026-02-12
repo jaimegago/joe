@@ -35,7 +35,7 @@ func (m *mockLLMAdapter) Embed(ctx context.Context, text string) ([]float32, err
 
 func TestNewCoreAgent(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:")
+	sqlStore, err := store.New(":memory:", nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -53,14 +53,14 @@ func TestNewCoreAgent(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
 	llmAdapter := &mockLLMAdapter{}
 
 	// Create Core Agent
-	agent := New(services, llmAdapter)
+	agent := New(services, llmAdapter, nil)
 	if agent == nil {
 		t.Fatal("New() returned nil agent")
 	}
@@ -93,7 +93,7 @@ func TestNewCoreAgent(t *testing.T) {
 
 func TestCoreAgentStartStop(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:")
+	sqlStore, err := store.New(":memory:", nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -111,14 +111,14 @@ func TestCoreAgentStartStop(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
 	llmAdapter := &mockLLMAdapter{}
 
 	// Create and start Core Agent
-	agent := New(services, llmAdapter)
+	agent := New(services, llmAdapter, nil)
 	ctx := context.Background()
 
 	if err := agent.Start(ctx); err != nil {
@@ -136,7 +136,7 @@ func TestCoreAgentStartStop(t *testing.T) {
 
 func TestCoreAgentProcessOnboarding(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:")
+	sqlStore, err := store.New(":memory:", nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -154,14 +154,14 @@ func TestCoreAgentProcessOnboarding(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
 	llmAdapter := &mockLLMAdapter{}
 
 	// Create Core Agent
-	agent := New(services, llmAdapter)
+	agent := New(services, llmAdapter, nil)
 	ctx := context.Background()
 
 	// Test onboarding processing

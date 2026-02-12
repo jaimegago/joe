@@ -9,6 +9,8 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 //go:embed migrations/*.sql
@@ -22,12 +24,13 @@ type Store struct {
 	Clarifications ClarificationRepository
 	Cache          CacheRepository
 	Facts          FactRepository
+	Metrics        *observability.Metrics
 }
 
 // New creates a new Store with the given database path.
 // The dbPath should include any SQLite flags (e.g., "joe.db?_foreign_keys=on").
 // Use ":memory:" for in-memory database (testing).
-func New(dbPath string) (*Store, error) {
+func New(dbPath string, metrics *observability.Metrics) (*Store, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -38,13 +41,16 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	metrics = observability.EnsureMetrics(metrics)
+
 	store := &Store{
 		db:             db,
-		Sources:        &sqlSourceRepository{db: db},
-		Sessions:       &sqlSessionRepository{db: db},
-		Clarifications: &sqlClarificationRepository{db: db},
-		Cache:          &sqlCacheRepository{db: db},
-		Facts:          &sqlFactRepository{db: db},
+		Sources:        &sqlSourceRepository{db: db, metrics: metrics},
+		Sessions:       &sqlSessionRepository{db: db, metrics: metrics},
+		Clarifications: &sqlClarificationRepository{db: db, metrics: metrics},
+		Cache:          &sqlCacheRepository{db: db, metrics: metrics},
+		Facts:          &sqlFactRepository{db: db, metrics: metrics},
+		Metrics:        metrics,
 	}
 
 	return store, nil

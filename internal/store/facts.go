@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // FactRepository defines operations on onboarding facts.
@@ -17,10 +19,14 @@ type FactRepository interface {
 }
 
 type sqlFactRepository struct {
-	db *sql.DB
+	db      *sql.DB
+	metrics *observability.Metrics
 }
 
-func (r *sqlFactRepository) Create(ctx context.Context, fact *OnboardingFact) error {
+func (r *sqlFactRepository) Create(ctx context.Context, fact *OnboardingFact) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.create", time.Since(start), err) }()
+
 	query := `
 		INSERT INTO onboarding_facts (fact_type, subject, content, source, source_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -36,7 +42,10 @@ func (r *sqlFactRepository) Create(ctx context.Context, fact *OnboardingFact) er
 	return nil
 }
 
-func (r *sqlFactRepository) GetBySubject(ctx context.Context, subject string) ([]*OnboardingFact, error) {
+func (r *sqlFactRepository) GetBySubject(ctx context.Context, subject string) (facts []*OnboardingFact, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_subject", time.Since(start), err) }()
+
 	query := `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts WHERE subject = ? ORDER BY created_at
@@ -44,7 +53,10 @@ func (r *sqlFactRepository) GetBySubject(ctx context.Context, subject string) ([
 	return r.queryFacts(ctx, query, subject)
 }
 
-func (r *sqlFactRepository) GetByType(ctx context.Context, factType string) ([]*OnboardingFact, error) {
+func (r *sqlFactRepository) GetByType(ctx context.Context, factType string) (facts []*OnboardingFact, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_type", time.Since(start), err) }()
+
 	query := `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts WHERE fact_type = ? ORDER BY created_at
@@ -52,7 +64,10 @@ func (r *sqlFactRepository) GetByType(ctx context.Context, factType string) ([]*
 	return r.queryFacts(ctx, query, factType)
 }
 
-func (r *sqlFactRepository) Search(ctx context.Context, searchQuery string) ([]*OnboardingFact, error) {
+func (r *sqlFactRepository) Search(ctx context.Context, searchQuery string) (facts []*OnboardingFact, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.search", time.Since(start), err) }()
+
 	query := `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts
@@ -63,14 +78,16 @@ func (r *sqlFactRepository) Search(ctx context.Context, searchQuery string) ([]*
 	return r.queryFacts(ctx, query, pattern, pattern)
 }
 
-func (r *sqlFactRepository) queryFacts(ctx context.Context, query string, args ...any) ([]*OnboardingFact, error) {
+func (r *sqlFactRepository) queryFacts(ctx context.Context, query string, args ...any) (facts []*OnboardingFact, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.query", time.Since(start), err) }()
+
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query facts: %w", err)
 	}
 	defer rows.Close()
 
-	var facts []*OnboardingFact
 	for rows.Next() {
 		var f OnboardingFact
 		var sourceID sql.NullString
@@ -86,8 +103,11 @@ func (r *sqlFactRepository) queryFacts(ctx context.Context, query string, args .
 	return facts, rows.Err()
 }
 
-func (r *sqlFactRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.db.ExecContext(ctx, "DELETE FROM onboarding_facts WHERE id = ?", id)
+func (r *sqlFactRepository) Delete(ctx context.Context, id int64) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "facts.delete", time.Since(start), err) }()
+
+	_, err = r.db.ExecContext(ctx, "DELETE FROM onboarding_facts WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete fact: %w", err)
 	}
