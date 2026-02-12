@@ -114,6 +114,7 @@ func (r *Refresher) refresh(ctx context.Context) error {
 // refreshSource refreshes a single infrastructure source
 func (r *Refresher) refreshSource(ctx context.Context, sourceID string) error {
 	r.logger.Debug("refreshing source", "source_id", sourceID)
+	_ = ctx
 
 	// Phase 5 MVP: Placeholder for source-specific refresh logic
 	// Future implementation will connect to the actual infrastructure

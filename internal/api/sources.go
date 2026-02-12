@@ -72,14 +72,15 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to connect the adapter before saving
-	if req.Type == store.SourceTypeKubernetes {
+	switch req.Type {
+	case store.SourceTypeKubernetes:
 		adapter := k8s.New()
 		if err := adapter.Connect(*source); err != nil {
 			writeBadRequest(w, err, "connect kubernetes source", "failed to connect to cluster")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
-	} else if req.Type == store.SourceTypeGit {
+	case store.SourceTypeGit:
 		adapter := gitadapter.New()
 		if err := adapter.Connect(*source); err != nil {
 			writeBadRequest(w, err, "connect git source", "failed to connect to git repo")

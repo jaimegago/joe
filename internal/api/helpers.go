@@ -51,11 +51,12 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 	if errors.Is(err, errInvalidSourceType) {
 		// Capitalize adapter type for proper display
 		displayType := expected
-		if displayType == "aws" {
+		switch displayType {
+		case "aws":
 			displayType = "AWS"
-		} else if displayType == "k8s" {
+		case "k8s":
 			displayType = "Kubernetes"
-		} else if displayType == "git" {
+		case "git":
 			displayType = "Git"
 		}
 		article := "a"
