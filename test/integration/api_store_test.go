@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package integration
 
@@ -86,7 +85,7 @@ func TestIntegration_API_NotImplemented(t *testing.T) {
 
 func TestIntegration_Store_CRUD(t *testing.T) {
 	// Setup in-memory store
-	testStore, err := store.New(":memory:" + paths.DatabaseFlags)
+	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -230,7 +229,7 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 
 // TestIntegration_Store_Transactions tests transactional behavior
 func TestIntegration_Store_Transactions(t *testing.T) {
-	testStore, err := store.New(":memory:" + paths.DatabaseFlags)
+	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}

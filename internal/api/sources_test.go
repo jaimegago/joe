@@ -20,7 +20,7 @@ import (
 func setupFullTestServer(t *testing.T) *api.Server {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on")
+	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -32,7 +32,7 @@ func setupFullTestServer(t *testing.T) *api.Server {
 
 	services := &core.Services{
 		Config:   &config.Config{},
-		Graph:    graph.NewSQLiteStore(sqlStore.DB()),
+		Graph:    graph.NewSQLiteStore(sqlStore.DB(), nil),
 		Store:    sqlStore,
 		Adapters: adapters.NewRegistry(),
 	}

@@ -55,7 +55,7 @@ func setupTestServer(t *testing.T) (*api.Server, graph.GraphStore) {
 		t.Fatalf("create tables: %v", err)
 	}
 
-	graphStore := graph.NewSQLiteStore(db)
+	graphStore := graph.NewSQLiteStore(db, nil)
 	services := &core.Services{
 		Config:   &config.Config{},
 		Graph:    graphStore,
