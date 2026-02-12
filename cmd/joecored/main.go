@@ -92,7 +92,7 @@ func main() {
 	adapterRegistry := adapters.NewRegistry()
 
 	ctx := context.Background()
-	k8sSources, err := sqlStore.Sources.ListByType(ctx, "kubernetes")
+	k8sSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeKubernetes)
 	if err != nil {
 		slog.Warn("failed to load kubernetes sources", "error", err)
 	}
@@ -106,7 +106,7 @@ func main() {
 		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
 	}
 
-	gitSources, err := sqlStore.Sources.ListByType(ctx, "git")
+	gitSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeGit)
 	if err != nil {
 		slog.Warn("failed to load git sources", "error", err)
 	}

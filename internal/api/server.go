@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -79,17 +80,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "missing required query parameter 'q'",
-		})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'q'")
 		return
 	}
 
 	nodes, err := s.services.Graph.Query(r.Context(), q)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		writeInternalError(w, err, "graph query")
 		return
 	}
 
@@ -106,9 +103,7 @@ func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGraphRelated(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.URL.Query().Get("nodeID")
 	if nodeID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "missing required query parameter 'nodeID'",
-		})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'nodeID'")
 		return
 	}
 
@@ -116,9 +111,7 @@ func (s *Server) handleGraphRelated(w http.ResponseWriter, r *http.Request) {
 	if d := r.URL.Query().Get("depth"); d != "" {
 		parsed, err := strconv.Atoi(d)
 		if err != nil || parsed < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "depth must be a non-negative integer",
-			})
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "depth must be a non-negative integer")
 			return
 		}
 		depth = parsed
@@ -127,14 +120,10 @@ func (s *Server) handleGraphRelated(w http.ResponseWriter, r *http.Request) {
 	subgraph, err := s.services.Graph.Related(r.Context(), nodeID, depth)
 	if err != nil {
 		if errors.Is(err, graph.ErrNodeNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "node not found",
-			})
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "node not found")
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		writeInternalError(w, err, "graph related")
 		return
 	}
 
@@ -144,9 +133,7 @@ func (s *Server) handleGraphRelated(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 	summary, err := s.services.Graph.Summary(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		writeInternalError(w, err, "graph summary")
 		return
 	}
 
@@ -154,15 +141,13 @@ func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error": errorNotImpl,
-	})
+	writeError(w, http.StatusNotImplemented, errorCodeNotImplemented, errorNotImpl)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		println("ERROR: failed to encode JSON response:", err.Error())
+		slog.Error("failed to encode JSON response", "error", err)
 	}
 }

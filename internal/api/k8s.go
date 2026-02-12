@@ -4,27 +4,20 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jaimegago/joe/internal/adapters/k8s"
+	"github.com/jaimegago/joe/internal/constants"
 )
 
 func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not a kubernetes adapter"})
+	k8sAdapter, err := s.getK8sAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
 		return
 	}
 
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing required query parameter 'resource'"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'resource'")
 		return
 	}
 
@@ -32,7 +25,7 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 
 	items, err := k8sAdapter.ListResources(r.Context(), resource, namespace)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "k8s list resources")
 		return
 	}
 
@@ -52,15 +45,8 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not a kubernetes adapter"})
+	k8sAdapter, err := s.getK8sAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
 		return
 	}
 
@@ -70,7 +56,7 @@ func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 
 	obj, err := k8sAdapter.GetResource(r.Context(), resource, namespace, name)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "k8s get resource")
 		return
 	}
 
@@ -83,15 +69,8 @@ func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not a kubernetes adapter"})
+	k8sAdapter, err := s.getK8sAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
 		return
 	}
 
@@ -99,11 +78,11 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 	pod := r.PathValue("pod")
 	container := r.URL.Query().Get("container")
 
-	tailLines := 100
+	tailLines := constants.DefaultK8sTailLines
 	if t := r.URL.Query().Get("tail"); t != "" {
 		parsed, err := strconv.Atoi(t)
 		if err != nil || parsed <= 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tail must be a positive integer"})
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "tail must be a positive integer")
 			return
 		}
 		tailLines = parsed
@@ -111,7 +90,7 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := k8sAdapter.GetPodLogs(r.Context(), namespace, pod, container, tailLines)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "k8s get logs")
 		return
 	}
 

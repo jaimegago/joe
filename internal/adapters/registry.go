@@ -1,9 +1,12 @@
 package adapters
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
+
+var ErrAdapterNotFound = errors.New("adapter not found")
 
 // Registry manages adapter instances by source ID.
 type Registry struct {
@@ -25,7 +28,7 @@ func (r *Registry) Get(sourceID string) (Adapter, error) {
 
 	a, ok := r.adapters[sourceID]
 	if !ok {
-		return nil, fmt.Errorf("adapter not found for source %q", sourceID)
+		return nil, fmt.Errorf("%w: source %q", ErrAdapterNotFound, sourceID)
 	}
 	return a, nil
 }

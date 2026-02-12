@@ -13,9 +13,7 @@ import (
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	sources, err := s.services.Store.Sources.List(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		writeInternalError(w, err, "list sources")
 		return
 	}
 
@@ -40,29 +38,29 @@ type createSourceRequest struct {
 func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read body"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "failed to read body")
 		return
 	}
 
 	var req createSourceRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON")
 		return
 	}
 
 	if req.ID == "" || req.Type == "" || req.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id, type, and name are required"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "id, type, and name are required")
 		return
 	}
 
 	// Check if source already exists
 	existing, err := s.services.Store.Sources.Get(r.Context(), req.ID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "get source")
 		return
 	}
 	if existing != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "source already exists"})
+		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "source already exists")
 		return
 	}
 
@@ -74,28 +72,24 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to connect the adapter before saving
-	if req.Type == "kubernetes" {
+	if req.Type == store.SourceTypeKubernetes {
 		adapter := k8s.New()
 		if err := adapter.Connect(*source); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "failed to connect to cluster: " + err.Error(),
-			})
+			writeBadRequest(w, err, "connect kubernetes source", "failed to connect to cluster")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
-	} else if req.Type == "git" {
+	} else if req.Type == store.SourceTypeGit {
 		adapter := gitadapter.New()
 		if err := adapter.Connect(*source); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "failed to connect to git repo: " + err.Error(),
-			})
+			writeBadRequest(w, err, "connect git source", "failed to connect to git repo")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
 	}
 
 	if err := s.services.Store.Sources.Create(r.Context(), source); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "create source")
 		return
 	}
 
@@ -105,17 +99,17 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing source id"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
 		return
 	}
 
 	source, err := s.services.Store.Sources.Get(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "get source")
 		return
 	}
 	if source == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found"})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found")
 		return
 	}
 
@@ -125,28 +119,28 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing source id"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
 		return
 	}
 
 	source, err := s.services.Store.Sources.Get(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "get source")
 		return
 	}
 	if source == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found"})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found")
 		return
 	}
 
 	// Disconnect and unregister adapter
 	if err := s.services.Adapters.Unregister(id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "unregister source")
 		return
 	}
 
 	if err := s.services.Store.Sources.Delete(r.Context(), id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "delete source")
 		return
 	}
 
