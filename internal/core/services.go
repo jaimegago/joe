@@ -7,6 +7,7 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -18,16 +19,19 @@ type Services struct {
 	Graph    graph.GraphStore
 	Store    *store.Store
 	Adapters *adapters.Registry
+	Metrics  *observability.Metrics
 }
 
 // New creates a new Services instance with the given SQL store database.
 // The db is used for both the SQL store and the SQLite-backed graph store.
-func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry *adapters.Registry) *Services {
+func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
+	metrics = observability.EnsureMetrics(metrics)
 	return &Services{
 		Config:   cfg,
 		Store:    sqlStore,
-		Graph:    graph.NewSQLiteStore(db),
+		Graph:    graph.NewSQLiteStore(db, metrics),
 		Adapters: adapterRegistry,
+		Metrics:  metrics,
 	}
 }
 

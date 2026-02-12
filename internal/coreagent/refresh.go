@@ -8,6 +8,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // Refresher handles background refresh of the graph
@@ -15,18 +16,20 @@ type Refresher struct {
 	services *core.Services
 	llm      llm.LLMAdapter
 	logger   *slog.Logger
+	metrics  *observability.Metrics
 	interval time.Duration
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 }
 
 // NewRefresher creates a new background refresher
-func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger) *Refresher {
+func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger, metrics *observability.Metrics) *Refresher {
 	return &Refresher{
 		services: services,
 		llm:      llmAdapter,
 		logger:   logger.With("component", "refresher"),
-		interval: 5 * time.Minute, // Default refresh interval
+		metrics:  observability.EnsureMetrics(metrics),
+		interval: 5 * time.Minute,
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 	}
@@ -81,7 +84,9 @@ func (r *Refresher) refreshLoop(ctx context.Context) {
 }
 
 // refresh performs a single refresh cycle
-func (r *Refresher) refresh(ctx context.Context) error {
+func (r *Refresher) refresh(ctx context.Context) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordRefreshCycle(ctx, time.Since(start), err) }()
 	r.logger.Debug("starting refresh cycle")
 
 	// Phase 5 MVP: Basic refresh structure

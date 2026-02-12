@@ -1,10 +1,16 @@
 package useragent
 
-import "github.com/jaimegago/joe/internal/llm"
+import (
+	"context"
+
+	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
+)
 
 // Session holds the conversation history for an agentic interaction
 type Session struct {
 	Messages []llm.Message
+	metrics  *observability.Metrics
 
 	// Token usage tracking
 	TotalInputTokens  int
@@ -23,10 +29,18 @@ type Session struct {
 }
 
 // NewSession creates a new session with empty conversation history
-func NewSession() *Session {
+func NewSession(metrics *observability.Metrics) *Session {
+	metrics = observability.EnsureMetrics(metrics)
+	metrics.RecordSessionStart()
 	return &Session{
 		Messages: make([]llm.Message, 0),
+		metrics:  metrics,
 	}
+}
+
+// Close releases session tracking metrics.
+func (s *Session) Close() {
+	s.metrics.RecordSessionEnd()
 }
 
 // AddMessage adds a message to the conversation history.
@@ -34,6 +48,7 @@ func NewSession() *Session {
 // preserving the most recent messages for context.
 func (s *Session) AddMessage(message llm.Message) {
 	s.Messages = append(s.Messages, message)
+	s.metrics.RecordSessionMessage(context.Background(), message.Role)
 
 	// Prune old messages if we've exceeded the limit
 	if s.MaxMessages > 0 && len(s.Messages) > s.MaxMessages {
@@ -50,6 +65,10 @@ func (s *Session) AddMessage(message llm.Message) {
 // AddMessages adds multiple messages to the conversation history
 func (s *Session) AddMessages(messages []llm.Message) {
 	s.Messages = append(s.Messages, messages...)
+	ctx := context.Background()
+	for _, msg := range messages {
+		s.metrics.RecordSessionMessage(ctx, msg.Role)
+	}
 }
 
 // Clear clears the conversation history
@@ -77,4 +96,5 @@ func (s *Session) AddTokenUsage(usage llm.TokenUsage) {
 	s.TotalInputTokens += usage.InputTokens
 	s.TotalOutputTokens += usage.OutputTokens
 	s.TotalTokens += usage.TotalTokens
+	s.metrics.RecordSessionTokens(context.Background(), usage.TotalTokens)
 }

@@ -7,23 +7,23 @@ import (
 )
 
 func TestNewSession(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 
 	if session == nil {
-		t.Fatal("NewSession() returned nil")
+		t.Fatal("NewSession(nil) returned nil")
 	}
 
 	if session.Messages == nil {
-		t.Fatal("NewSession() Messages is nil")
+		t.Fatal("NewSession(nil) Messages is nil")
 	}
 
 	if len(session.Messages) != 0 {
-		t.Errorf("NewSession() has %d messages, want 0", len(session.Messages))
+		t.Errorf("NewSession(nil) has %d messages, want 0", len(session.Messages))
 	}
 }
 
 func TestSession_AddMessage(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 
 	msg := llm.Message{
 		Role:    "user",
@@ -46,7 +46,7 @@ func TestSession_AddMessage(t *testing.T) {
 }
 
 func TestSession_AddMessages(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 
 	messages := []llm.Message{
 		{Role: "user", Content: "Message 1"},
@@ -71,7 +71,7 @@ func TestSession_AddMessages(t *testing.T) {
 }
 
 func TestSession_AddMessages_Empty(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 	session.AddMessages([]llm.Message{})
 
 	if len(session.Messages) != 0 {
@@ -80,7 +80,7 @@ func TestSession_AddMessages_Empty(t *testing.T) {
 }
 
 func TestSession_AddMultipleTimes(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 
 	session.AddMessage(llm.Message{Role: "user", Content: "First"})
 	session.AddMessage(llm.Message{Role: "assistant", Content: "Second"})
@@ -102,7 +102,7 @@ func TestSession_AddMultipleTimes(t *testing.T) {
 }
 
 func TestSession_Clear(t *testing.T) {
-	session := NewSession()
+	session := NewSession(nil)
 
 	// Add some messages
 	session.AddMessage(llm.Message{Role: "user", Content: "Message 1"})

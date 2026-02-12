@@ -40,7 +40,7 @@ func (m *mockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
 func TestNewAgent(t *testing.T) {
 	mockLLM := &mockLLM{}
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	systemPrompt := "You are a helpful assistant"
 
 	agent := NewAgent(mockLLM, executor, registry, systemPrompt)
@@ -77,10 +77,10 @@ func TestAgent_Run_NoToolCalls(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Hello")
 
 	if err != nil {
@@ -135,10 +135,10 @@ func TestAgent_Run_WithToolCall(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(echo.NewTool())
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Echo 'test message'")
 
 	if err != nil {
@@ -190,10 +190,10 @@ func TestAgent_Run_MultipleToolCalls(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(echo.NewTool())
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Test")
 
 	if err != nil {
@@ -224,10 +224,10 @@ func TestAgent_Run_LLMError(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Hello")
 
 	if err == nil {
@@ -263,10 +263,10 @@ func TestAgent_Run_ToolNotFound(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Test")
 
 	// The agent should complete successfully, handling the tool error gracefully
@@ -319,10 +319,10 @@ func TestAgent_Run_MaxIterations(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(echo.NewTool())
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Test")
 
 	if err == nil {
@@ -345,13 +345,13 @@ func TestAgent_Run_ContextCancellation(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	session := NewSession()
+	session := NewSession(nil)
 	_, err := agent.Run(ctx, session, "Test")
 
 	if err == nil {
@@ -375,10 +375,10 @@ func TestAgent_Run_ToolDefinitionsIncluded(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(echo.NewTool())
-	executor := tools.NewExecutor(registry)
+	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
-	session := NewSession()
+	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Test")
 
 	if err != nil {

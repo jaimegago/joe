@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const (
@@ -26,7 +27,9 @@ func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	start := time.Now()
 	instances, err := awsAdapter.ListEC2Instances(r.Context())
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "ec2.list_instances", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws ec2 list instances")
 		return
@@ -54,7 +57,9 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	start := time.Now()
 	instance, err := awsAdapter.GetEC2Instance(r.Context(), instanceID)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "ec2.get_instance", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws ec2 get instance")
 		return
@@ -80,7 +85,9 @@ func (s *Server) handleAWSEKSListClusters(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	start := time.Now()
 	clusters, err := awsAdapter.ListEKSClusters(r.Context())
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "eks.list_clusters", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws eks list clusters")
 		return
@@ -108,7 +115,9 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	start := time.Now()
 	cluster, err := awsAdapter.GetEKSCluster(r.Context(), clusterName)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "eks.get_cluster", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws eks get cluster")
 		return
@@ -134,7 +143,9 @@ func (s *Server) handleAWSRDSListInstances(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	start := time.Now()
 	instances, err := awsAdapter.ListRDSInstances(r.Context())
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "rds.list_instances", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws rds list instances")
 		return
@@ -162,7 +173,9 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	start := time.Now()
 	instance, err := awsAdapter.GetRDSInstance(r.Context(), dbInstanceID)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "rds.get_instance", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws rds get instance")
 		return
@@ -188,7 +201,9 @@ func (s *Server) handleAWSVPCListVPCs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	vpcs, err := awsAdapter.ListVPCs(r.Context())
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "vpc.list", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws vpc list vpcs")
 		return
@@ -216,7 +231,9 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	vpc, err := awsAdapter.GetVPC(r.Context(), vpcID)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "vpc.get", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "aws vpc get vpc")
 		return

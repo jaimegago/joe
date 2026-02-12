@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -24,6 +26,8 @@ const (
 	serviceName    = "joe"
 	serviceVersion = "0.1.0"
 )
+
+var metricsHandler http.Handler
 
 // Config holds OpenTelemetry configuration
 type Config struct {
@@ -144,19 +148,19 @@ func setupTracing(ctx context.Context, cfg Config, res *resource.Resource) (func
 
 func setupMetrics(ctx context.Context, cfg Config, res *resource.Resource) (func(context.Context) error, error) {
 	var reader sdkmetric.Reader
-	var err error
 
 	switch cfg.MetricsExporter {
 	case "prometheus":
-		reader, err = prometheus.New()
+		exporter, exportErr := prometheus.New()
+		if exportErr != nil {
+			return nil, exportErr
+		}
+		metricsHandler = promhttp.Handler()
+		reader = exporter
 	case "none":
 		return func(context.Context) error { return nil }, nil
 	default:
 		return nil, fmt.Errorf("unknown metrics exporter: %s", cfg.MetricsExporter)
-	}
-
-	if err != nil {
-		return nil, err
 	}
 
 	mp := sdkmetric.NewMeterProvider(
@@ -177,6 +181,11 @@ func Tracer(name string) trace.Tracer {
 // Meter returns a meter for the given name
 func Meter(name string) metric.Meter {
 	return otel.Meter(name)
+}
+
+// MetricsHandler returns the HTTP handler for the metrics exporter, if any.
+func MetricsHandler() http.Handler {
+	return metricsHandler
 }
 
 // Helper functions

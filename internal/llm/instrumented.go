@@ -9,10 +9,13 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const meterName = "github.com/jaimegago/joe/internal/llm"
+const tracerName = "github.com/jaimegago/joe/internal/llm"
 
 // APIErrorDetails interface for errors that carry API error details
 type APIErrorDetails interface {
@@ -41,6 +44,9 @@ type InstrumentedAdapter struct {
 	inputTokenCounter  metric.Int64Counter
 	outputTokenCounter metric.Int64Counter
 	latencyHistogram   metric.Float64Histogram
+
+	// OTel tracing
+	tracer trace.Tracer
 }
 
 // NewInstrumentedAdapter wraps an LLM adapter with instrumentation
@@ -103,6 +109,7 @@ func NewInstrumentedAdapter(adapter LLMAdapter, logger *slog.Logger, provider, m
 		inputTokenCounter:  inputTokenCounter,
 		outputTokenCounter: outputTokenCounter,
 		latencyHistogram:   latencyHistogram,
+		tracer:             otel.Tracer(tracerName),
 	}
 }
 
@@ -122,6 +129,16 @@ func safeRecordHistogram(ctx context.Context, hist metric.Float64Histogram, valu
 
 // Chat implements LLMAdapter with instrumentation
 func (i *InstrumentedAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	ctx, span := i.tracer.Start(ctx, "llm.chat",
+		trace.WithAttributes(
+			attribute.String("llm.provider", i.provider),
+			attribute.String("llm.model", i.model),
+			attribute.Int("llm.messages.count", len(req.Messages)),
+			attribute.Int("llm.tools.count", len(req.Tools)),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
 	i.totalCalls.Add(1)
 
@@ -168,6 +185,9 @@ func (i *InstrumentedAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatR
 				"duration_ms", duration.Milliseconds(),
 			)
 		}
+
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -178,11 +198,30 @@ func (i *InstrumentedAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatR
 	safeAddCounter(ctx, i.inputTokenCounter, int64(resp.Usage.InputTokens), attrs...)
 	safeAddCounter(ctx, i.outputTokenCounter, int64(resp.Usage.OutputTokens), attrs...)
 
+	span.SetAttributes(
+		attribute.Int("llm.tokens.input", resp.Usage.InputTokens),
+		attribute.Int("llm.tokens.output", resp.Usage.OutputTokens),
+		attribute.Int("llm.tokens.total", resp.Usage.TotalTokens),
+		attribute.Int("llm.tool_calls.count", len(resp.ToolCalls)),
+		attribute.Int64("llm.duration_ms", duration.Milliseconds()),
+	)
+	span.SetStatus(codes.Ok, "")
+
 	return resp, nil
 }
 
 // ChatStream implements LLMAdapter with instrumentation
 func (i *InstrumentedAdapter) ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
+	ctx, span := i.tracer.Start(ctx, "llm.chat_stream",
+		trace.WithAttributes(
+			attribute.String("llm.provider", i.provider),
+			attribute.String("llm.model", i.model),
+			attribute.Int("llm.messages.count", len(req.Messages)),
+			attribute.Int("llm.tools.count", len(req.Tools)),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
 	i.totalCalls.Add(1)
 
@@ -209,14 +248,28 @@ func (i *InstrumentedAdapter) ChatStream(ctx context.Context, req ChatRequest) (
 			"model", i.model,
 			"duration_ms", duration.Milliseconds(),
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.Int64("llm.duration_ms", duration.Milliseconds()))
+	span.SetStatus(codes.Ok, "")
 
 	return stream, nil
 }
 
 // Embed implements LLMAdapter with instrumentation
 func (i *InstrumentedAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
+	ctx, span := i.tracer.Start(ctx, "llm.embed",
+		trace.WithAttributes(
+			attribute.String("llm.provider", i.provider),
+			attribute.String("llm.model", i.model),
+			attribute.Int("llm.text.length", len(text)),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
 	i.totalCalls.Add(1)
 
@@ -243,9 +296,17 @@ func (i *InstrumentedAdapter) Embed(ctx context.Context, text string) ([]float32
 			"model", i.model,
 			"duration_ms", duration.Milliseconds(),
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
+	span.SetAttributes(
+		attribute.Int("llm.embedding.dimensions", len(embedding)),
+		attribute.Int64("llm.duration_ms", duration.Milliseconds()),
+	)
+
+	span.SetStatus(codes.Ok, "")
 	return embedding, nil
 }
 

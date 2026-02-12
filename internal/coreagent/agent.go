@@ -10,6 +10,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 )
@@ -23,27 +24,30 @@ type Agent struct {
 	refresher *Refresher
 	discovery *Engine
 	logger    *slog.Logger
+	metrics   *observability.Metrics
 	stopCh    chan struct{}
 }
 
 // New creates a new Core Agent
-func New(services *core.Services, llmAdapter llm.LLMAdapter) *Agent {
+func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) *Agent {
+	metrics = observability.EnsureMetrics(metrics)
 	logger := slog.With("component", "core-agent")
 
 	// Create Core Agent tools (graph manipulation)
 	toolRegistry := tools.NewRegistry()
 	registerCoreAgentTools(toolRegistry, services, logger)
 
-	executor := tools.NewExecutor(toolRegistry)
+	executor := tools.NewExecutor(toolRegistry, metrics)
 
 	return &Agent{
 		services:  services,
 		llm:       llmAdapter,
 		tools:     toolRegistry,
 		executor:  executor,
-		refresher: NewRefresher(services, llmAdapter, logger),
-		discovery: NewEngine(services, llmAdapter, logger),
+		refresher: NewRefresher(services, llmAdapter, logger, metrics),
+		discovery: NewEngine(services, llmAdapter, logger, metrics),
 		logger:    logger,
+		metrics:   metrics,
 		stopCh:    make(chan struct{}),
 	}
 }

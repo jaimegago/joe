@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // ErrAllToolsFailed is returned when all tools in a batch fail
@@ -15,26 +17,33 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 // Executor executes tool calls from the LLM
 type Executor struct {
 	registry *Registry
+	metrics  *observability.Metrics
 }
 
 // NewExecutor creates a new tool executor
-func NewExecutor(registry *Registry) *Executor {
+func NewExecutor(registry *Registry, metrics *observability.Metrics) *Executor {
 	return &Executor{
 		registry: registry,
+		metrics:  observability.EnsureMetrics(metrics),
 	}
 }
 
 // Execute executes a single tool call
 func (e *Executor) Execute(ctx context.Context, name string, args map[string]any) (any, error) {
+	start := time.Now()
 	tool, err := e.registry.Get(name)
 	if err != nil {
+		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, fmt.Errorf("failed to get tool %s: %w", name, err)
 	}
 
 	result, err := tool.Execute(ctx, args)
 	if err != nil {
+		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, fmt.Errorf("failed to execute tool %s: %w", name, err)
 	}
+
+	e.metrics.RecordToolExecution(ctx, name, time.Since(start), nil)
 
 	return result, nil
 }
@@ -47,6 +56,8 @@ func (e *Executor) ExecuteBatch(ctx context.Context, calls []ToolCallRequest) ([
 	if len(calls) == 0 {
 		return nil, nil
 	}
+
+	start := time.Now()
 
 	results := make([]ToolCallResult, len(calls))
 	errorCount := 0
@@ -66,8 +77,11 @@ func (e *Executor) ExecuteBatch(ctx context.Context, calls []ToolCallRequest) ([
 
 	// Return error only if ALL tools failed
 	if errorCount == len(calls) {
+		e.metrics.RecordToolBatch(ctx, len(calls), errorCount, time.Since(start))
 		return results, fmt.Errorf("%w: %d tool(s) failed", ErrAllToolsFailed, errorCount)
 	}
+
+	e.metrics.RecordToolBatch(ctx, len(calls), errorCount, time.Since(start))
 
 	return results, nil
 }

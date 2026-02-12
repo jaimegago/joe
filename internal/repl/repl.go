@@ -27,7 +27,7 @@ func New(a *useragent.Agent, cfg *config.Config) *REPL {
 	return &REPL{
 		agent:   a,
 		config:  cfg,
-		session: useragent.NewSession(),
+		session: useragent.NewSession(nil),
 	}
 }
 
@@ -45,6 +45,8 @@ func NewWithSession(a *useragent.Agent, cfg *config.Config, session *useragent.S
 // Prints welcome message, then loops reading input and calling the agent
 // Exits on "exit", "quit", or Ctrl+D (EOF)
 func (r *REPL) Run(ctx context.Context) error {
+	defer r.session.Close()
+
 	fmt.Println("Joe is ready.")
 	fmt.Println()
 

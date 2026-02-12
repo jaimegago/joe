@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/jaimegago/joe/internal/observability"
 )
 
 // SessionRepository defines operations on sessions.
@@ -19,26 +21,33 @@ type SessionRepository interface {
 }
 
 type sqlSessionRepository struct {
-	db *sql.DB
+	db      *sql.DB
+	metrics *observability.Metrics
 }
 
-func (r *sqlSessionRepository) Create(ctx context.Context, session *Session) error {
+func (r *sqlSessionRepository) Create(ctx context.Context, session *Session) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.create", time.Since(start), err) }()
+
 	query := `INSERT INTO sessions (id, started_at) VALUES (?, ?)`
 	session.StartedAt = time.Now()
-	_, err := r.db.ExecContext(ctx, query, session.ID, session.StartedAt)
+	_, err = r.db.ExecContext(ctx, query, session.ID, session.StartedAt)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
 	}
 	return nil
 }
 
-func (r *sqlSessionRepository) Get(ctx context.Context, id string) (*Session, error) {
+func (r *sqlSessionRepository) Get(ctx context.Context, id string) (session *Session, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.get", time.Since(start), err) }()
+
 	query := `SELECT id, started_at, ended_at, summary, metadata FROM sessions WHERE id = ?`
 	var s Session
 	var endedAt sql.NullString
 	var summary, metadata sql.NullString
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err = r.db.QueryRowContext(ctx, query, id).Scan(
 		&s.ID, &s.StartedAt, &endedAt, &summary, &metadata,
 	)
 	if err == sql.ErrNoRows {
@@ -62,16 +71,22 @@ func (r *sqlSessionRepository) Get(ctx context.Context, id string) (*Session, er
 	return &s, nil
 }
 
-func (r *sqlSessionRepository) End(ctx context.Context, id string, summary string, metadata json.RawMessage) error {
+func (r *sqlSessionRepository) End(ctx context.Context, id string, summary string, metadata json.RawMessage) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.end", time.Since(start), err) }()
+
 	query := `UPDATE sessions SET ended_at = ?, summary = ?, metadata = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, time.Now(), summary, metadata, id)
+	_, err = r.db.ExecContext(ctx, query, time.Now(), summary, metadata, id)
 	if err != nil {
 		return fmt.Errorf("end session: %w", err)
 	}
 	return nil
 }
 
-func (r *sqlSessionRepository) AddMessage(ctx context.Context, msg *SessionMessage) error {
+func (r *sqlSessionRepository) AddMessage(ctx context.Context, msg *SessionMessage) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.add_message", time.Since(start), err) }()
+
 	query := `
 		INSERT INTO session_messages (session_id, role, content, tool_name, tool_args, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -87,7 +102,10 @@ func (r *sqlSessionRepository) AddMessage(ctx context.Context, msg *SessionMessa
 	return nil
 }
 
-func (r *sqlSessionRepository) GetMessages(ctx context.Context, sessionID string) ([]*SessionMessage, error) {
+func (r *sqlSessionRepository) GetMessages(ctx context.Context, sessionID string) (messages []*SessionMessage, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.get_messages", time.Since(start), err) }()
+
 	query := `
 		SELECT id, session_id, role, content, tool_name, tool_args, created_at
 		FROM session_messages WHERE session_id = ? ORDER BY id
@@ -98,7 +116,6 @@ func (r *sqlSessionRepository) GetMessages(ctx context.Context, sessionID string
 	}
 	defer rows.Close()
 
-	var messages []*SessionMessage
 	for rows.Next() {
 		var m SessionMessage
 		var toolName, toolArgs sql.NullString
@@ -117,7 +134,10 @@ func (r *sqlSessionRepository) GetMessages(ctx context.Context, sessionID string
 	return messages, rows.Err()
 }
 
-func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) ([]*Session, error) {
+func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) (sessions []*Session, err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.list_recent", time.Since(start), err) }()
+
 	query := `
 		SELECT id, started_at, ended_at, summary, metadata
 		FROM sessions ORDER BY started_at DESC LIMIT ?
@@ -128,7 +148,6 @@ func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) ([]*Se
 	}
 	defer rows.Close()
 
-	var sessions []*Session
 	for rows.Next() {
 		var s Session
 		var endedAt, summary, metadata sql.NullString

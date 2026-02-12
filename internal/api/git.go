@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/constants"
@@ -21,7 +22,9 @@ func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	content, err := ga.ReadFile(r.Context(), path)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "read_file", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "git read file")
 		return
@@ -43,7 +46,9 @@ func (s *Server) handleGitListFiles(w http.ResponseWriter, r *http.Request) {
 
 	dir := r.URL.Query().Get("dir")
 
+	start := time.Now()
 	files, err := ga.ListFiles(r.Context(), dir)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "list_files", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "git list files")
 		return
@@ -78,7 +83,9 @@ func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 		limit = parsed
 	}
 
+	start := time.Now()
 	commits, err := ga.Log(r.Context(), limit)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "log", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "git log")
 		return
@@ -109,7 +116,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	diff, err := ga.Diff(r.Context(), from, to)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "diff", time.Since(start), err)
 	if err != nil {
 		writeInternalError(w, err, "git diff")
 		return

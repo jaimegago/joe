@@ -19,6 +19,7 @@ import (
 	"github.com/jaimegago/joe/internal/coreagent"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -57,6 +58,19 @@ func main() {
 		"llm.model", modelInfo,
 	)
 
+	// Initialize OpenTelemetry
+	otelCfg := observability.DefaultConfig()
+	otelCtx := context.Background()
+	shutdownOTel, err := observability.Setup(otelCtx, otelCfg)
+	if err != nil {
+		slog.Warn("OpenTelemetry setup failed", "error", err)
+	} else {
+		defer func() { _ = shutdownOTel(context.Background()) }()
+	}
+
+	// Create metrics instance
+	metrics := observability.NewMetrics()
+
 	// Initialize store
 	joeDir, err := paths.JoeDirPath()
 	if err != nil {
@@ -75,7 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	sqlStore, err := store.New(dbPath + paths.DatabaseFlags)
+	sqlStore, err := store.New(dbPath+paths.DatabaseFlags, metrics)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
@@ -121,9 +135,41 @@ func main() {
 	}
 
 	// Initialize core services (graph store uses same SQLite DB)
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, metrics)
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
+
+	// Register business metrics gauges
+	businessProvider := observability.BusinessMetricsProvider{
+		SourcesByType: func(ctx context.Context) (map[string]int, error) {
+			sources, err := services.Store.Sources.List(ctx)
+			if err != nil {
+				return nil, err
+			}
+			counts := map[string]int{}
+			for _, src := range sources {
+				counts[src.Type]++
+			}
+			return counts, nil
+		},
+		GraphSummary: func(ctx context.Context) (observability.GraphMetricsSummary, error) {
+			summary, err := services.Graph.Summary(ctx)
+			if err != nil {
+				return observability.GraphMetricsSummary{}, err
+			}
+			return observability.GraphMetricsSummary{
+				NodeCount:   summary.NodeCount,
+				EdgeCount:   summary.EdgeCount,
+				NodesByType: summary.NodesByType,
+			}, nil
+		},
+		AdapterCount: func() int {
+			return len(services.Adapters.List())
+		},
+	}
+	if _, err := services.Metrics.RegisterBusinessMetrics(businessProvider); err != nil {
+		slog.Warn("failed to register business metrics", "error", err)
+	}
 
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address
@@ -135,11 +181,35 @@ func main() {
 	apiServer := api.New(services)
 	apiServer.RegisterRoutes(mux)
 
+	handler := observability.HTTPMetricsMiddleware(mux, metrics)
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
+	}
+
+	// Start metrics server if enabled
+	if otelCfg.MetricsEnabled && otelCfg.MetricsExporter == "prometheus" {
+		metricsHandler := observability.MetricsHandler()
+		if metricsHandler != nil {
+			metricsAddr := fmt.Sprintf(":%d", otelCfg.MetricsPort)
+			metricsMux := http.NewServeMux()
+			metricsMux.Handle("/metrics", metricsHandler)
+			metricsServer := &http.Server{
+				Addr:         metricsAddr,
+				Handler:      metricsMux,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			go func() {
+				slog.Info("metrics server listening", "addr", metricsAddr)
+				if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					slog.Error("metrics server error", "error", err)
+				}
+			}()
+			defer metricsServer.Shutdown(context.Background())
+		}
 	}
 
 	// Start server in goroutine
@@ -169,7 +239,7 @@ func main() {
 	}
 
 	// Initialize and start Core Agent
-	coreAgent := coreagent.New(services, llmAdapter)
+	coreAgent := coreagent.New(services, llmAdapter, metrics)
 	if err := coreAgent.Start(ctx); err != nil {
 		slog.Error("failed to start core agent", "error", err)
 		os.Exit(1)
