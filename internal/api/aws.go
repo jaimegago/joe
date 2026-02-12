@@ -3,14 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/jaimegago/joe/internal/adapters/aws"
 )
 
 const (
 	// Error messages for AWS API handlers
-	errorSourceNotFound      = "source not found"
-	errorNotAWSAdapter       = "source is not an AWS adapter"
 	errorMissingInstanceID   = "missing instance ID"
 	errorMissingClusterName  = "missing cluster name"
 	errorMissingDBInstanceID = "missing database instance ID"
@@ -21,38 +17,18 @@ const (
 	errorVPCNotFound         = "VPC not found"
 )
 
-// getAWSAdapter is a helper function to get and validate AWS adapter
-func (s *Server) getAWSAdapter(sourceID string) (aws.AWSAdapter, error) {
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s", errorSourceNotFound, sourceID)
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		return nil, fmt.Errorf(errorNotAWSAdapter)
-	}
-
-	return awsAdapter, nil
-}
-
 // handleAWSEC2ListInstances lists EC2 instances from an AWS source
 func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
 	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if err != nil {
-		if err.Error() == fmt.Sprintf("%s: %s", errorSourceNotFound, sourceID) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		} else {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	instances, err := awsAdapter.ListEC2Instances(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws ec2 list instances")
 		return
 	}
 
@@ -69,28 +45,23 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	instanceID := r.PathValue("instanceID")
 
 	if instanceID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errorMissingInstanceID})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingInstanceID)
 		return
 	}
 
 	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if err != nil {
-		if err.Error() == fmt.Sprintf("%s: %s", errorSourceNotFound, sourceID) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		} else {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	instance, err := awsAdapter.GetEC2Instance(r.Context(), instanceID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws ec2 get instance")
 		return
 	}
 
 	if instance == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID)})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID))
 		return
 	}
 
@@ -104,21 +75,14 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAWSEKSListClusters(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	clusters, err := awsAdapter.ListEKSClusters(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws eks list clusters")
 		return
 	}
 
@@ -135,30 +99,23 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 	clusterName := r.PathValue("clusterName")
 
 	if clusterName == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing cluster name"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingClusterName)
 		return
 	}
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	cluster, err := awsAdapter.GetEKSCluster(r.Context(), clusterName)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws eks get cluster")
 		return
 	}
 
 	if cluster == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "cluster not found: " + clusterName})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorClusterNotFound, clusterName))
 		return
 	}
 
@@ -172,21 +129,14 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleAWSRDSListInstances(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	instances, err := awsAdapter.ListRDSInstances(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws rds list instances")
 		return
 	}
 
@@ -203,30 +153,23 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 	dbInstanceID := r.PathValue("dbInstanceID")
 
 	if dbInstanceID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing DB instance ID"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingDBInstanceID)
 		return
 	}
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	instance, err := awsAdapter.GetRDSInstance(r.Context(), dbInstanceID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws rds get instance")
 		return
 	}
 
 	if instance == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "DB instance not found: " + dbInstanceID})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorDBInstanceNotFound, dbInstanceID))
 		return
 	}
 
@@ -240,21 +183,14 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAWSVPCListVPCs(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	vpcs, err := awsAdapter.ListVPCs(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws vpc list vpcs")
 		return
 	}
 
@@ -271,30 +207,23 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 	vpcID := r.PathValue("vpcID")
 
 	if vpcID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing VPC ID"})
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingVPCID)
 		return
 	}
 
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "source not found: " + sourceID})
-		return
-	}
-
-	awsAdapter, ok := adapter.(aws.AWSAdapter)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source is not an AWS adapter"})
+	awsAdapter, err := s.getAWSAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "AWS") {
 		return
 	}
 
 	vpc, err := awsAdapter.GetVPC(r.Context(), vpcID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err, "aws vpc get vpc")
 		return
 	}
 
 	if vpc == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "VPC not found: " + vpcID})
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorVPCNotFound, vpcID))
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/constants"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
@@ -71,7 +72,7 @@ func (t *K8sLogsTool) Execute(ctx context.Context, args map[string]any) (any, er
 
 	container, _ := args["container"].(string)
 
-	tailLines := 100
+	tailLines := constants.DefaultK8sTailLines
 	if t, ok := args["tail"].(float64); ok && t > 0 {
 		tailLines = int(t)
 	}

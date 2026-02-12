@@ -349,11 +349,17 @@ func TestHandleAWSWrongAdapterType(t *testing.T) {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
 	}
 
-	var response map[string]string
+	var response struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response["error"] != "source is not an AWS adapter" {
-		t.Errorf("error message: got %q, want %q", response["error"], "source is not an AWS adapter")
+	if response.Error != "invalid_source" {
+		t.Errorf("error code: got %q, want %q", response.Error, "invalid_source")
+	}
+	if response.Message != "source is not an AWS adapter" {
+		t.Errorf("error message: got %q, want %q", response.Message, "source is not an AWS adapter")
 	}
 }

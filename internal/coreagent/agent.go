@@ -458,11 +458,6 @@ func (t *SaveOnboardingFactTool) Execute(ctx context.Context, args map[string]an
 		return nil, fmt.Errorf("description is required and must be a string")
 	}
 
-	metadata, _ := args["metadata"].(map[string]any)
-	if metadata == nil {
-		metadata = make(map[string]any)
-	}
-
 	fact := &store.OnboardingFact{
 		FactType: factType,
 		Subject:  "onboarding",

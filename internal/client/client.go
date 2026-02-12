@@ -32,6 +32,37 @@ func New(baseURL string) *Client {
 	}
 }
 
+func (c *Client) doJSON(ctx context.Context, method, url string, body io.Reader, expectedStatus int, out any, errPrefix string) error {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s request failed: %w", errPrefix, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != expectedStatus {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s failed (status %d): %s", errPrefix, resp.StatusCode, string(bodyBytes))
+	}
+
+	if out == nil {
+		return nil
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode %s response: %w", errPrefix, err)
+	}
+
+	return nil
+}
+
 // Status represents joecored status response
 type Status struct {
 	Status  string `json:"status"`
@@ -41,25 +72,9 @@ type Status struct {
 
 // GetStatus checks if joecored is running
 func (c *Client) GetStatus(ctx context.Context) (*Status, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+apiStatusPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
-	}
-
 	var status Status
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	if err := c.doJSON(ctx, "GET", c.baseURL+apiStatusPath, nil, http.StatusOK, &status, "status"); err != nil {
+		return nil, err
 	}
 
 	return &status, nil
@@ -80,25 +95,9 @@ type graphQueryResponse struct {
 // GraphQuery searches the graph for nodes matching the query.
 func (c *Client) GraphQuery(ctx context.Context, query string) ([]graph.Node, error) {
 	u := c.baseURL + apiGraphQueryPath + "?q=" + url.QueryEscape(query)
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("graph query request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("graph query failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result graphQueryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode graph query response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "graph query"); err != nil {
+		return nil, err
 	}
 
 	return result.Nodes, nil
@@ -144,25 +143,9 @@ type listSourcesResponse struct {
 
 // ListSources returns all registered infrastructure sources.
 func (c *Client) ListSources(ctx context.Context) ([]*store.Source, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+apiSourcesPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("list sources request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("list sources failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result listSourcesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode list sources response: %w", err)
+	if err := c.doJSON(ctx, "GET", c.baseURL+apiSourcesPath, nil, http.StatusOK, &result, "list sources"); err != nil {
+		return nil, err
 	}
 
 	return result.Sources, nil
@@ -174,27 +157,9 @@ func (c *Client) CreateSource(ctx context.Context, source *store.Source) (*store
 	if err != nil {
 		return nil, fmt.Errorf("marshal source: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+apiSourcesPath, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("create source request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("create source failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var created store.Source
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return nil, fmt.Errorf("decode create source response: %w", err)
+	if err := c.doJSON(ctx, "POST", c.baseURL+apiSourcesPath, bytes.NewReader(payload), http.StatusCreated, &created, "create source"); err != nil {
+		return nil, err
 	}
 
 	return &created, nil
@@ -202,23 +167,7 @@ func (c *Client) CreateSource(ctx context.Context, source *store.Source) (*store
 
 // DeleteSource removes a registered source by ID.
 func (c *Client) DeleteSource(ctx context.Context, id string) error {
-	req, err := http.NewRequestWithContext(ctx, "DELETE", c.baseURL+apiSourcesPath+"/"+url.PathEscape(id), nil)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("delete source request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("delete source failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return c.doJSON(ctx, "DELETE", c.baseURL+apiSourcesPath+"/"+url.PathEscape(id), nil, http.StatusNoContent, nil, "delete source")
 }
 
 // --- K8s Resources ---
@@ -238,25 +187,9 @@ func (c *Client) K8sListResources(ctx context.Context, sourceID, resource, names
 		u += "&namespace=" + url.QueryEscape(namespace)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("k8s list resources request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("k8s list resources failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result k8sListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode k8s list response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "k8s list resources"); err != nil {
+		return nil, err
 	}
 
 	return result.Resources, nil
@@ -268,28 +201,12 @@ func (c *Client) K8sGetResource(ctx context.Context, sourceID, resource, namespa
 		url.PathEscape(sourceID), url.PathEscape(resource),
 		url.PathEscape(namespace), url.PathEscape(name))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("k8s get resource request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("k8s get resource failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Resource map[string]any `json:"resource"`
 		SourceID string         `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode k8s get response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "k8s get resource"); err != nil {
+		return nil, err
 	}
 
 	return result.Resource, nil
@@ -319,25 +236,9 @@ func (c *Client) K8sGetLogs(ctx context.Context, sourceID, namespace, pod, conta
 		u += "?" + params.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("k8s get logs request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("k8s get logs failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result k8sLogsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode k8s logs response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "k8s get logs"); err != nil {
+		return "", err
 	}
 
 	return result.Logs, nil
@@ -345,25 +246,9 @@ func (c *Client) K8sGetLogs(ctx context.Context, sourceID, namespace, pod, conta
 
 // GraphSummary returns a high-level summary of the graph.
 func (c *Client) GraphSummary(ctx context.Context) (*graph.GraphSummary, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+apiGraphSummaryPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("graph summary request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("graph summary failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var summary graph.GraphSummary
-	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
-		return nil, fmt.Errorf("decode graph summary response: %w", err)
+	if err := c.doJSON(ctx, "GET", c.baseURL+apiGraphSummaryPath, nil, http.StatusOK, &summary, "graph summary"); err != nil {
+		return nil, err
 	}
 
 	return &summary, nil
@@ -376,27 +261,11 @@ func (c *Client) GitReadFile(ctx context.Context, sourceID, path string) (string
 	u := fmt.Sprintf("%s%s/%s/file?path=%s", c.baseURL, apiGitBasePath,
 		url.PathEscape(sourceID), url.QueryEscape(path))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("git read file request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("git read file failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Content string `json:"content"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode git read file response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "git read file"); err != nil {
+		return "", err
 	}
 
 	return result.Content, nil
@@ -409,27 +278,11 @@ func (c *Client) GitListFiles(ctx context.Context, sourceID, dir string) ([]gita
 		u += "?dir=" + url.QueryEscape(dir)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("git list files request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("git list files failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Files []gitadapter.FileInfo `json:"files"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode git list files response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "git list files"); err != nil {
+		return nil, err
 	}
 
 	return result.Files, nil
@@ -442,27 +295,11 @@ func (c *Client) GitLog(ctx context.Context, sourceID string, limit int) ([]gita
 		u += "?limit=" + strconv.Itoa(limit)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("git log request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("git log failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Commits []gitadapter.CommitInfo `json:"commits"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode git log response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "git log"); err != nil {
+		return nil, err
 	}
 
 	return result.Commits, nil
@@ -473,27 +310,11 @@ func (c *Client) GitDiff(ctx context.Context, sourceID, from, to string) (string
 	u := fmt.Sprintf("%s%s/%s/diff?from=%s&to=%s", c.baseURL, apiGitBasePath,
 		url.PathEscape(sourceID), url.QueryEscape(from), url.QueryEscape(to))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("git diff request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("git diff failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Diff string `json:"diff"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode git diff response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "git diff"); err != nil {
+		return "", err
 	}
 
 	return result.Diff, nil
@@ -505,29 +326,13 @@ func (c *Client) GitDiff(ctx context.Context, sourceID, from, to string) (string
 func (c *Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]awsadapter.EC2Instance, error) {
 	u := fmt.Sprintf("%s%s/%s/ec2/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws ec2 list instances request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws ec2 list instances failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Instances []awsadapter.EC2Instance `json:"instances"`
 		Count     int                      `json:"count"`
 		SourceID  string                   `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws ec2 list response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws ec2 list instances"); err != nil {
+		return nil, err
 	}
 
 	return result.Instances, nil
@@ -538,28 +343,12 @@ func (c *Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID str
 	u := fmt.Sprintf("%s%s/%s/ec2/instances/%s", c.baseURL, apiAWSBasePath,
 		url.PathEscape(sourceID), url.PathEscape(instanceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws ec2 get instance request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws ec2 get instance failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Instance *awsadapter.EC2Instance `json:"instance"`
 		SourceID string                  `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws ec2 get response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws ec2 get instance"); err != nil {
+		return nil, err
 	}
 
 	return result.Instance, nil
@@ -569,29 +358,13 @@ func (c *Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID str
 func (c *Client) AWSEKSListClusters(ctx context.Context, sourceID string) ([]awsadapter.EKSCluster, error) {
 	u := fmt.Sprintf("%s%s/%s/eks/clusters", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws eks list clusters request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws eks list clusters failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Clusters []awsadapter.EKSCluster `json:"clusters"`
 		Count    int                     `json:"count"`
 		SourceID string                  `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws eks list response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws eks list clusters"); err != nil {
+		return nil, err
 	}
 
 	return result.Clusters, nil
@@ -602,28 +375,12 @@ func (c *Client) AWSEKSGetCluster(ctx context.Context, sourceID, clusterName str
 	u := fmt.Sprintf("%s%s/%s/eks/clusters/%s", c.baseURL, apiAWSBasePath,
 		url.PathEscape(sourceID), url.PathEscape(clusterName))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws eks get cluster request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws eks get cluster failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Cluster  *awsadapter.EKSCluster `json:"cluster"`
 		SourceID string                 `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws eks get response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws eks get cluster"); err != nil {
+		return nil, err
 	}
 
 	return result.Cluster, nil
@@ -633,29 +390,13 @@ func (c *Client) AWSEKSGetCluster(ctx context.Context, sourceID, clusterName str
 func (c *Client) AWSRDSListInstances(ctx context.Context, sourceID string) ([]awsadapter.RDSInstance, error) {
 	u := fmt.Sprintf("%s%s/%s/rds/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws rds list instances request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws rds list instances failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Instances []awsadapter.RDSInstance `json:"instances"`
 		Count     int                      `json:"count"`
 		SourceID  string                   `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws rds list response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws rds list instances"); err != nil {
+		return nil, err
 	}
 
 	return result.Instances, nil
@@ -666,28 +407,12 @@ func (c *Client) AWSRDSGetInstance(ctx context.Context, sourceID, dbInstanceID s
 	u := fmt.Sprintf("%s%s/%s/rds/instances/%s", c.baseURL, apiAWSBasePath,
 		url.PathEscape(sourceID), url.PathEscape(dbInstanceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws rds get instance request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws rds get instance failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		Instance *awsadapter.RDSInstance `json:"instance"`
 		SourceID string                  `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws rds get response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws rds get instance"); err != nil {
+		return nil, err
 	}
 
 	return result.Instance, nil
@@ -697,29 +422,13 @@ func (c *Client) AWSRDSGetInstance(ctx context.Context, sourceID, dbInstanceID s
 func (c *Client) AWSVPCListVPCs(ctx context.Context, sourceID string) ([]awsadapter.VPC, error) {
 	u := fmt.Sprintf("%s%s/%s/vpc/vpcs", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws vpc list vpcs request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws vpc list vpcs failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		VPCs     []awsadapter.VPC `json:"vpcs"`
 		Count    int              `json:"count"`
 		SourceID string           `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws vpc list response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws vpc list vpcs"); err != nil {
+		return nil, err
 	}
 
 	return result.VPCs, nil
@@ -730,28 +439,12 @@ func (c *Client) AWSVPCGetVPC(ctx context.Context, sourceID, vpcID string) (*aws
 	u := fmt.Sprintf("%s%s/%s/vpc/vpcs/%s", c.baseURL, apiAWSBasePath,
 		url.PathEscape(sourceID), url.PathEscape(vpcID))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("aws vpc get vpc request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("aws vpc get vpc failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
 	var result struct {
 		VPC      *awsadapter.VPC `json:"vpc"`
 		SourceID string          `json:"source_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode aws vpc get response: %w", err)
+	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws vpc get vpc"); err != nil {
+		return nil, err
 	}
 
 	return result.VPC, nil
