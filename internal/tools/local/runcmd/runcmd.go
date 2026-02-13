@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"errors"
 	"os/exec"
 	"strings"
 
@@ -12,6 +13,32 @@ import (
 
 type Tool struct {
 	allowedCommands map[string]bool
+	runner          Runner
+}
+
+// Runner executes a command and returns stdout, stderr, exit code, and error.
+type Runner interface {
+	Run(ctx context.Context, name string, args []string) (string, string, int, error)
+}
+
+type execRunner struct{}
+
+func (r *execRunner) Run(ctx context.Context, name string, args []string) (string, string, int, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+
+	return stdout.String(), stderr.String(), exitCode, err
 }
 
 func New(allowed []string) *Tool {
@@ -21,7 +48,17 @@ func New(allowed []string) *Tool {
 	}
 	return &Tool{
 		allowedCommands: allowedMap,
+		runner:          &execRunner{},
 	}
+}
+
+// NewWithRunner creates a run_command tool with a custom runner (useful for tests).
+func NewWithRunner(allowed []string, runner Runner) *Tool {
+	tool := New(allowed)
+	if runner != nil {
+		tool.runner = runner
+	}
+	return tool
 }
 
 func (t *Tool) Name() string {
@@ -90,27 +127,17 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	defer cancel()
 
 	// Execute command (NOT through shell, direct execution)
-	cmd := exec.CommandContext(execCtx, cmdName, cmdArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	exitCode := 0
+	stdoutStr, stderrStr, exitCode, err := t.runner.Run(execCtx, cmdName, cmdArgs)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else if execCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) || execCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("command timed out after %v", CommandTimeout)
-		} else {
+		}
+		if exitCode == 0 {
 			return nil, fmt.Errorf("failed to execute command: %w", err)
 		}
 	}
 
 	// Truncate output if too large
-	stdoutStr := stdout.String()
-	stderrStr := stderr.String()
 	truncated := false
 
 	truncateMsg := fmt.Sprintf("\n... (truncated at %dKB)", MaxOutputSize/1024)

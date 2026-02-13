@@ -188,6 +188,11 @@ func MetricsHandler() http.Handler {
 	return metricsHandler
 }
 
+// ResetMetricsHandler clears the metrics handler (useful for tests).
+func ResetMetricsHandler() {
+	metricsHandler = nil
+}
+
 // Helper functions
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
