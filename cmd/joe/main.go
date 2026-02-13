@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"time"
@@ -29,10 +28,15 @@ func main() {
 
 	ctx := context.Background()
 
+	// Initialize a basic logger before config is available
+	initialLogger := logging.SetupLogger(logging.LevelInfo)
+	slog.SetDefault(initialLogger)
+
 	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize OpenTelemetry (default to no tracing in CLI unless explicitly enabled)
@@ -45,7 +49,7 @@ func main() {
 	}
 	shutdownOTel, err := observability.Setup(ctx, otelCfg)
 	if err != nil {
-		log.Printf("OpenTelemetry setup failed: %v", err)
+		slog.Warn("OpenTelemetry setup failed", "error", err)
 	} else {
 		defer func() { _ = shutdownOTel(context.Background()) }()
 	}
@@ -81,6 +85,7 @@ func main() {
 	// Set up structured logging based on config
 	logger, logCleanup := logging.SetupLoggerWithFile(cfg.Logging.Level, cfg.Logging.File)
 	defer logCleanup()
+	slog.SetDefault(logger)
 
 	// Log debug mode if enabled
 	if cfg.Logging.Level == logging.LevelDebug {
@@ -91,7 +96,8 @@ func main() {
 	// Initialize LLM adapter using factory
 	baseAdapter, err := llmfactory.NewAdapter(ctx, currentModel)
 	if err != nil {
-		log.Fatalf("Failed to create LLM adapter: %v", err)
+		slog.Error("failed to create LLM adapter", "error", err)
+		os.Exit(1)
 	}
 
 	// Clean up adapter resources (important for Gemini client)
@@ -169,7 +175,8 @@ When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll
 	// Create and run REPL (pass config for model management and the session)
 	replInstance := repl.NewWithSession(agentInstance, cfg, session)
 	if err := replInstance.Run(ctx); err != nil {
-		log.Fatalf("REPL failed: %v", err)
+		slog.Error("repl failed", "error", err)
+		os.Exit(1)
 	}
 
 	os.Exit(0)

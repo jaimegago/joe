@@ -18,7 +18,9 @@ func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Query().Get("path")
 	if path == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'path'")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'path'", map[string]any{
+			"param": "path",
+		})
 		return
 	}
 
@@ -77,7 +79,10 @@ func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 	if l := r.URL.Query().Get("limit"); l != "" {
 		parsed, err := strconv.Atoi(l)
 		if err != nil || parsed <= 0 {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "limit must be a positive integer")
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "limit must be a positive integer", map[string]any{
+				"param": "limit",
+				"value": l,
+			})
 			return
 		}
 		limit = parsed
@@ -112,7 +117,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
 	if from == "" || to == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameters 'from' and 'to'")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameters 'from' and 'to'", map[string]any{
+			"params": []string{"from", "to"},
+		})
 		return
 	}
 

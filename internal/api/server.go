@@ -119,7 +119,9 @@ type graphHandler struct {
 func (h *graphHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'q'")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'q'", map[string]any{
+			"param": "q",
+		})
 		return
 	}
 
@@ -142,7 +144,9 @@ func (h *graphHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 func (h *graphHandler) handleRelated(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.URL.Query().Get("nodeID")
 	if nodeID == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'nodeID'")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'nodeID'", map[string]any{
+			"param": "nodeID",
+		})
 		return
 	}
 
@@ -150,7 +154,10 @@ func (h *graphHandler) handleRelated(w http.ResponseWriter, r *http.Request) {
 	if d := r.URL.Query().Get("depth"); d != "" {
 		parsed, err := strconv.Atoi(d)
 		if err != nil || parsed < 0 {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "depth must be a non-negative integer")
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "depth must be a non-negative integer", map[string]any{
+				"param": "depth",
+				"value": d,
+			})
 			return
 		}
 		depth = parsed
@@ -159,7 +166,9 @@ func (h *graphHandler) handleRelated(w http.ResponseWriter, r *http.Request) {
 	subgraph, err := h.graph.Related(r.Context(), nodeID, depth)
 	if err != nil {
 		if errors.Is(err, graph.ErrNodeNotFound) {
-			writeError(w, http.StatusNotFound, errorCodeNotFound, "node not found")
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "node not found", map[string]any{
+				"node_id": nodeID,
+			})
 			return
 		}
 		writeInternalError(w, err, "graph related")

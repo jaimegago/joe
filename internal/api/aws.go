@@ -48,7 +48,9 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	instanceID := r.PathValue("instanceID")
 
 	if instanceID == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingInstanceID)
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingInstanceID, map[string]any{
+			"param": "instanceID",
+		})
 		return
 	}
 
@@ -66,7 +68,9 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	}
 
 	if instance == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID))
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID), map[string]any{
+			"instance_id": instanceID,
+		})
 		return
 	}
 
@@ -106,7 +110,9 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 	clusterName := r.PathValue("clusterName")
 
 	if clusterName == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingClusterName)
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingClusterName, map[string]any{
+			"param": "clusterName",
+		})
 		return
 	}
 
@@ -124,7 +130,9 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if cluster == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorClusterNotFound, clusterName))
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorClusterNotFound, clusterName), map[string]any{
+			"cluster_name": clusterName,
+		})
 		return
 	}
 
@@ -164,7 +172,9 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 	dbInstanceID := r.PathValue("dbInstanceID")
 
 	if dbInstanceID == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingDBInstanceID)
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingDBInstanceID, map[string]any{
+			"param": "dbInstanceID",
+		})
 		return
 	}
 
@@ -182,7 +192,9 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 	}
 
 	if instance == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorDBInstanceNotFound, dbInstanceID))
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorDBInstanceNotFound, dbInstanceID), map[string]any{
+			"db_instance_id": dbInstanceID,
+		})
 		return
 	}
 
@@ -222,7 +234,9 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 	vpcID := r.PathValue("vpcID")
 
 	if vpcID == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingVPCID)
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, errorMissingVPCID, map[string]any{
+			"param": "vpcID",
+		})
 		return
 	}
 
@@ -240,7 +254,9 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if vpc == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorVPCNotFound, vpcID))
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorVPCNotFound, vpcID), map[string]any{
+			"vpc_id": vpcID,
+		})
 		return
 	}
 
