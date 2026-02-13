@@ -3,8 +3,8 @@ package runcmd
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 
