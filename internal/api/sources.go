@@ -49,7 +49,19 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ID == "" || req.Type == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "id, type, and name are required")
+		missing := []string{}
+		if req.ID == "" {
+			missing = append(missing, "id")
+		}
+		if req.Type == "" {
+			missing = append(missing, "type")
+		}
+		if req.Name == "" {
+			missing = append(missing, "name")
+		}
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "id, type, and name are required", map[string]any{
+			"missing": missing,
+		})
 		return
 	}
 
@@ -60,7 +72,9 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing != nil {
-		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "source already exists")
+		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "source already exists", map[string]any{
+			"source_id": req.ID,
+		})
 		return
 	}
 
@@ -100,7 +114,9 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+			"param": "id",
+		})
 		return
 	}
 
@@ -110,7 +126,9 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if source == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found")
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+			"source_id": id,
+		})
 		return
 	}
 
@@ -120,7 +138,9 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+			"param": "id",
+		})
 		return
 	}
 
@@ -130,7 +150,9 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if source == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found")
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+			"source_id": id,
+		})
 		return
 	}
 

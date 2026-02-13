@@ -15,6 +15,7 @@ import (
 type apiError struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 var (
@@ -22,8 +23,12 @@ var (
 	errInvalidSourceType = errors.New("source is not expected adapter type")
 )
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, apiError{Error: code, Message: message})
+func writeError(w http.ResponseWriter, status int, code, message string, details ...map[string]any) {
+	var payloadDetails map[string]any
+	if len(details) > 0 {
+		payloadDetails = details[0]
+	}
+	writeJSON(w, status, apiError{Error: code, Message: message, Details: payloadDetails})
 }
 
 func writeInternalError(w http.ResponseWriter, err error, context string) {
@@ -45,7 +50,9 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 		return false
 	}
 	if errors.Is(err, errSourceNotFound) {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source not found: %s", sourceID))
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source not found: %s", sourceID), map[string]any{
+			"source_id": sourceID,
+		})
 		return true
 	}
 	if errors.Is(err, errInvalidSourceType) {
@@ -63,7 +70,10 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 		if displayType == "AWS" {
 			article = "an"
 		}
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource, fmt.Sprintf("source is not %s %s adapter", article, displayType))
+		writeError(w, http.StatusBadRequest, errorCodeInvalidSource, fmt.Sprintf("source is not %s %s adapter", article, displayType), map[string]any{
+			"source_id": sourceID,
+			"expected":  expected,
+		})
 		return true
 	}
 	writeInternalError(w, err, "adapter lookup")

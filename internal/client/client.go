@@ -16,6 +16,48 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// APIError represents a structured error returned by the joecored API.
+type APIError struct {
+	Status  int
+	Code    string
+	Message string
+	Details map[string]any
+	RawBody string
+}
+
+func (e *APIError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("api error (%d %s): %s", e.Status, e.Code, e.Message)
+	}
+	return fmt.Sprintf("api error (%d): %s", e.Status, e.RawBody)
+}
+
+type apiErrorResponse struct {
+	Error   string         `json:"error"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+func parseAPIError(body []byte, status int) (*APIError, bool) {
+	if len(body) == 0 {
+		return nil, false
+	}
+	var resp apiErrorResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, false
+	}
+	if resp.Error == "" && resp.Message == "" {
+		return nil, false
+	}
+	return &APIError{
+		Status:  status,
+		Code:    resp.Error,
+		Message: resp.Message,
+		Details: resp.Details,
+		RawBody: string(body),
+	}, true
+}
+
 // Client connects to joecored HTTP API
 type Client struct {
 	baseURL    string
@@ -49,6 +91,9 @@ func (c *Client) doJSON(ctx context.Context, method, url string, body io.Reader,
 
 	if resp.StatusCode != expectedStatus {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+		if apiErr, ok := parseAPIError(bodyBytes, resp.StatusCode); ok {
+			return apiErr
+		}
 		return fmt.Errorf("%s failed (status %d): %s", errPrefix, resp.StatusCode, string(bodyBytes))
 	}
 
@@ -118,10 +163,17 @@ func (c *Client) GraphRelated(ctx context.Context, nodeID string, depth int) (*g
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		if apiErr, ok := parseAPIError(body, resp.StatusCode); ok {
+			return nil, apiErr
+		}
 		return nil, fmt.Errorf("node %q not found", nodeID)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if apiErr, ok := parseAPIError(body, resp.StatusCode); ok {
+			return nil, apiErr
+		}
 		return nil, fmt.Errorf("graph related failed (status %d): %s", resp.StatusCode, string(body))
 	}
 

@@ -18,7 +18,9 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'resource'")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required query parameter 'resource'", map[string]any{
+			"param": "resource",
+		})
 		return
 	}
 
@@ -87,7 +89,10 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 	if t := r.URL.Query().Get("tail"); t != "" {
 		parsed, err := strconv.Atoi(t)
 		if err != nil || parsed <= 0 {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "tail must be a positive integer")
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "tail must be a positive integer", map[string]any{
+				"param": "tail",
+				"value": t,
+			})
 			return
 		}
 		tailLines = parsed
