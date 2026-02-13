@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"net/http"
 	"testing"
 )
@@ -47,5 +48,24 @@ func TestResetMetricsHandler(t *testing.T) {
 	ResetMetricsHandler()
 	if MetricsHandler() != nil {
 		t.Fatal("expected metrics handler to be nil after reset")
+	}
+}
+
+func TestSetup_Disabled(t *testing.T) {
+	ResetMetricsHandler()
+
+	cfg := Config{Enabled: false}
+	shutdown, err := Setup(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Setup() error: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("expected shutdown function")
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+	if MetricsHandler() != nil {
+		t.Fatal("expected metrics handler to remain nil")
 	}
 }
