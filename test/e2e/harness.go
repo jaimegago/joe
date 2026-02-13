@@ -22,6 +22,7 @@ type JoeTestHarness struct {
 	joecored     *exec.Cmd
 	joecoredLog  *os.File
 	apiURL       string
+	httpClient   *http.Client
 	configPath   string
 	tmpDir       string
 	testPort     string
@@ -39,6 +40,7 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 	return &JoeTestHarness{
 		t:          t,
 		apiURL:     fmt.Sprintf("http://localhost:%s", testPort),
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 		configPath: configPath,
 		tmpDir:     tmpDir,
 		testPort:   testPort,
@@ -108,7 +110,11 @@ func (h *JoeTestHarness) Stop() {
 
 // GetStatus checks the API status endpoint
 func (h *JoeTestHarness) GetStatus() (map[string]interface{}, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/api/v1/status", h.apiURL))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf("%s/api/v1/status", h.apiURL), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +132,9 @@ func (h *JoeTestHarness) GetStatus() (map[string]interface{}, error) {
 
 // RunCommand runs the joe CLI and returns output
 func (h *JoeTestHarness) RunCommand(args ...string) (string, error) {
-	cmd := exec.Command("./joe", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "./joe", args...)
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
 		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
@@ -151,7 +159,11 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 			}
 			return fmt.Errorf("timeout waiting for API to start")
 		case <-ticker.C:
-			resp, err := http.Get(fmt.Sprintf("%s/api/v1/status", h.apiURL))
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/v1/status", h.apiURL), nil)
+			if err != nil {
+				continue
+			}
+			resp, err := h.httpClient.Do(req)
 			if err == nil && resp.StatusCode == http.StatusOK {
 				resp.Body.Close()
 				h.t.Log("API is ready")
