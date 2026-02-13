@@ -13,8 +13,8 @@ import (
 )
 
 type apiError struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Error   string         `json:"error"`
+	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
 }
 
