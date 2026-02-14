@@ -86,6 +86,25 @@ func (a *Agent) ProcessOnboarding(ctx context.Context, input string) error {
 	return a.discovery.ProcessInput(ctx, input)
 }
 
+// TriggerRefresh manually triggers a full refresh cycle
+func (a *Agent) TriggerRefresh(ctx context.Context) error {
+	a.logger.Info("manual refresh triggered")
+	return a.refresher.refresh(ctx)
+}
+
+// TriggerRefreshSource manually triggers refresh for a specific source
+func (a *Agent) TriggerRefreshSource(ctx context.Context, sourceID string) error {
+	a.logger.Info("manual source refresh triggered", "source_id", sourceID)
+	source, err := a.services.Store.Sources.Get(ctx, sourceID)
+	if err != nil {
+		return fmt.Errorf("get source: %w", err)
+	}
+	if source == nil {
+		return fmt.Errorf("source not found: %s", sourceID)
+	}
+	return a.refresher.refreshSource(ctx, source)
+}
+
 // ExecuteTool executes a Core Agent tool call
 func (a *Agent) ExecuteTool(ctx context.Context, toolName string, args map[string]interface{}) (any, error) {
 	a.logger.Debug("executing core agent tool", "tool", toolName, "args", args)

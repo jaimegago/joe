@@ -104,19 +104,19 @@ Use this as a checklist. Complete each section fully before moving on.
 
 ## 2) Onboarding + Control Endpoints
 
-2.1 Add onboarding handler
+2.1 ✅ DONE: Add onboarding handler
 - Implement POST /api/v1/onboarding to trigger Core Agent onboarding.
 - Validate payload and return a clear status response.
 
-2.2 Add refresh handler
+2.2 ✅ DONE: Add refresh handler
 - Implement POST /api/v1/refresh to trigger a manual refresh.
 - Support optional source_id filtering if helpful.
 
-2.3 Wire handlers to Core Agent
+2.3 ✅ DONE: Wire handlers to Core Agent
 - Inject core agent into API server.
 - Ensure context cancellation and timeouts are handled.
 
-2.4 Add tests
+2.4 ✅ DONE: Add tests
 - HTTP tests for onboarding and refresh routes.
 - Validate success and error cases.
 

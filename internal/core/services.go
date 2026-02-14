@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/jaimegago/joe/internal/adapters"
@@ -11,6 +12,13 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// CoreAgent interface for control operations
+type CoreAgent interface {
+	ProcessOnboarding(ctx context.Context, input string) error
+	TriggerRefresh(ctx context.Context) error
+	TriggerRefreshSource(ctx context.Context, sourceID string) error
+}
+
 // Services provides access to all core functionality.
 // Used by both the API handlers and the Core Agent.
 type Services struct {
@@ -18,6 +26,7 @@ type Services struct {
 	LLM      llm.LLMAdapter
 	Graph    graph.GraphStore
 	Store    *store.Store
+	Agent    CoreAgent // Core Agent instance for control endpoints
 	Adapters *adapters.Registry
 	Metrics  *observability.Metrics
 }

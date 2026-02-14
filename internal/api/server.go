@@ -105,10 +105,10 @@ func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) 
 	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/dismiss", prefix), s.handleNotImplemented)
 }
 
-// registerControlRoutes registers control plane routes (placeholder)
+// registerControlRoutes registers control plane routes
 func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) {
-	mux.HandleFunc(fmt.Sprintf("POST %s/onboarding", prefix), s.handleNotImplemented)
-	mux.HandleFunc(fmt.Sprintf("POST %s/refresh", prefix), s.handleNotImplemented)
+	mux.HandleFunc(fmt.Sprintf("POST %s/onboarding", prefix), s.handleOnboarding)
+	mux.HandleFunc(fmt.Sprintf("POST %s/refresh", prefix), s.handleRefresh)
 }
 
 // graphHandler handles graph-related requests
@@ -317,6 +317,83 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, errorCodeNotImplemented, errorNotImpl)
+}
+
+func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
+	if s.services.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
+		return
+	}
+
+	var req struct {
+		Input string `json:"input"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON payload", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if req.Input == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required field 'input'")
+		return
+	}
+
+	if err := s.services.Agent.ProcessOnboarding(r.Context(), req.Input); err != nil {
+		writeInternalError(w, err, "onboarding processing")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": "onboarding input processed successfully",
+	})
+}
+
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if s.services.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
+		return
+	}
+
+	var req struct {
+		SourceID string `json:"source_id,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Empty body is OK, treat as full refresh
+		if err.Error() != "EOF" {
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON payload", map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
+	var err error
+	if req.SourceID != "" {
+		err = s.services.Agent.TriggerRefreshSource(r.Context(), req.SourceID)
+	} else {
+		err = s.services.Agent.TriggerRefresh(r.Context())
+	}
+
+	if err != nil {
+		// Check if source not found
+		expectedErrMsg := fmt.Sprintf("source not found: %s", req.SourceID)
+		if req.SourceID != "" && err.Error() == expectedErrMsg {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source '%s' not found", req.SourceID))
+			return
+		}
+		writeInternalError(w, err, "refresh")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": "refresh completed successfully",
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

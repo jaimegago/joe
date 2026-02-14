@@ -96,15 +96,15 @@ func TestRouteRegistration(t *testing.T) {
 			name:           "onboarding endpoint",
 			method:         "POST",
 			path:           "/api/v1/onboarding",
-			expectedStatus: http.StatusNotImplemented,
-			description:    "should be registered but return 501 (not implemented)",
+			expectedStatus: http.StatusServiceUnavailable,
+			description:    "should be registered but return 503 (agent not available)",
 		},
 		{
 			name:           "refresh endpoint",
 			method:         "POST",
 			path:           "/api/v1/refresh",
-			expectedStatus: http.StatusNotImplemented,
-			description:    "should be registered but return 501 (not implemented)",
+			expectedStatus: http.StatusServiceUnavailable,
+			description:    "should be registered but return 503 (agent not available)",
 		},
 	}
 
