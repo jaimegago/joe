@@ -2,13 +2,18 @@ package coreagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/jaimegago/joe/internal/adapters"
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // Refresher handles background refresh of the graph
@@ -106,7 +111,7 @@ func (r *Refresher) refresh(ctx context.Context) (err error) {
 	r.logger.Debug("loaded sources for refresh", "count", len(sources))
 
 	for _, source := range sources {
-		if err := r.refreshSource(ctx, source.ID); err != nil {
+		if err := r.refreshSource(ctx, source); err != nil {
 			r.logger.Error("failed to refresh source", "source_id", source.ID, "error", err)
 			// Continue with other sources even if one fails
 		}
@@ -117,13 +122,46 @@ func (r *Refresher) refresh(ctx context.Context) (err error) {
 }
 
 // refreshSource refreshes a single infrastructure source
-func (r *Refresher) refreshSource(ctx context.Context, sourceID string) error {
-	r.logger.Debug("refreshing source", "source_id", sourceID)
-	_ = ctx
+func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (err error) {
+	start := time.Now()
+	defer func() {
+		lastError := ""
+		if err != nil {
+			lastError = err.Error()
+		}
+		if updateErr := r.services.Store.Sources.UpdateSyncStatus(ctx, source.ID, time.Now(), lastError); updateErr != nil {
+			r.logger.Warn("failed to update source sync status", "source_id", source.ID, "error", updateErr)
+		}
+		r.logger.Info("source refresh finished", "source_id", source.ID, "duration_ms", time.Since(start).Milliseconds(), "error", lastError)
+	}()
 
-	// Phase 5 MVP: Placeholder for source-specific refresh logic
-	// Future implementation will connect to the actual infrastructure
-	// and update the knowledge graph based on current state
+	r.logger.Debug("refreshing source", "source_id", source.ID, "type", source.Type)
 
-	return nil
+	adapter, err := r.services.Adapters.Get(source.ID)
+	if err != nil {
+		if errors.Is(err, adapters.ErrAdapterNotFound) {
+			return fmt.Errorf("adapter not found for source %s", source.ID)
+		}
+		return fmt.Errorf("get adapter for source %s: %w", source.ID, err)
+	}
+
+	switch source.Type {
+	case store.SourceTypeKubernetes:
+		k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not kubernetes", source.ID)
+		}
+		return r.refreshK8sSource(ctx, source, k8sAdapter)
+	case store.SourceTypeGit:
+		gitAdapter, ok := adapter.(gitadapter.GitAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not git", source.ID)
+		}
+		return r.refreshGitSource(ctx, source, gitAdapter)
+	case store.SourceTypeAWS:
+		return nil
+	default:
+		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)
+		return nil
+	}
 }

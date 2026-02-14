@@ -37,6 +37,12 @@ type GraphStore interface {
 
 	// Summary returns a summary of the graph for LLM context
 	Summary(ctx context.Context) (GraphSummary, error)
+
+	// ListNodesBySource returns all nodes for a given source_id
+	ListNodesBySource(ctx context.Context, sourceID string) ([]Node, error)
+
+	// ListEdgesForNodes returns edges where both endpoints are in nodeIDs
+	ListEdgesForNodes(ctx context.Context, nodeIDs []string) ([]Edge, error)
 }
 
 // Node represents a node in the infrastructure graph
