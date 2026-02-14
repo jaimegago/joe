@@ -174,6 +174,35 @@ func main() {
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address
 
+	// Initialize LLM adapter for Core Agent
+	currentModelCfg, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		slog.Error("failed to get current model config for core agent", "error", err)
+		os.Exit(1)
+	}
+
+	llmAdapter, err := llmfactory.NewAdapter(ctx, currentModelCfg)
+	if err != nil {
+		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
+		os.Exit(1)
+	}
+
+	// Initialize and start Core Agent BEFORE setting up API routes
+	coreAgent := coreagent.New(services, llmAdapter, metrics)
+	services.Agent = coreAgent // Wire Core Agent to services for API handlers
+
+	if err := coreAgent.Start(ctx); err != nil {
+		slog.Error("failed to start core agent", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := coreAgent.Stop(context.Background()); err != nil {
+			slog.Error("failed to stop core agent", "error", err)
+		}
+	}()
+
+	slog.Info("core agent started with background refresh")
+
 	// Setup HTTP server
 	mux := http.NewServeMux()
 
@@ -221,36 +250,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
-	// TODO: Start Core Agent background refresh here
-	slog.Info("core agent ready (background refresh not yet implemented)")
-
-	// Initialize LLM adapter for Core Agent
-	currentModelCfg, err := cfg.LLM.CurrentModel()
-	if err != nil {
-		slog.Error("failed to get current model config for core agent", "error", err)
-		os.Exit(1)
-	}
-
-	llmAdapter, err := llmfactory.NewAdapter(ctx, currentModelCfg)
-	if err != nil {
-		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
-		os.Exit(1)
-	}
-
-	// Initialize and start Core Agent
-	coreAgent := coreagent.New(services, llmAdapter, metrics)
-	if err := coreAgent.Start(ctx); err != nil {
-		slog.Error("failed to start core agent", "error", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := coreAgent.Stop(context.Background()); err != nil {
-			slog.Error("failed to stop core agent", "error", err)
-		}
-	}()
-
-	slog.Info("core agent started with background refresh")
 
 	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
