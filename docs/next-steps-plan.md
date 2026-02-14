@@ -2,6 +2,13 @@
 
 Use this as a checklist. Complete each section fully before moving on.
 
+## Progress Summary
+
+- ✅ **Milestone 1: Core Agent Refresh Loop** - Complete (14 tests passing)
+- ✅ **Milestone 2: Onboarding + Control Endpoints** - Complete (10+ tests passing)
+- ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
+- ⏳ **Milestone 4: .joe/ Processing and Cache Replay** - Ready to start
+
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
 1.1 ✅ DONE: Define refresh inputs and outputs
@@ -122,22 +129,32 @@ Use this as a checklist. Complete each section fully before moving on.
 
 ## 3) Clarifications System (MVP)
 
-3.1 Implement store interactions
+3.1 ✅ DONE: Implement store interactions
 - Add read/list/create/update operations for clarifications.
 - Define status transitions: pending -> answered/dismissed.
+	- Status: All CRUD operations implemented and tested (Create, Get, ListPending, ListByStatus, Answer, Dismiss, MarkNotified).
 
-3.2 Add API handlers
-- GET /api/v1/clarifications
-- POST /api/v1/clarifications/{id}/answer
-- POST /api/v1/clarifications/{id}/dismiss
+3.2 ✅ DONE: Add API handlers
+- GET /api/v1/clarifications - Lists pending clarifications
+- POST /api/v1/clarifications/{id}/answer - Answers a clarification with optional answered_by
+- POST /api/v1/clarifications/{id}/dismiss - Dismisses a clarification
+	- Status: All endpoints implemented with validation and error handling.
 
-3.3 Apply answers to graph
+3.3 ✅ DONE: Apply answers to graph
 - When answered, apply stored graph operations.
 - Record provenance and confidence.
+	- Status: ClarificationService executes operations (add_node, add_edge, delete_node, delete_edge).
+	- Status: Provenance recorded on nodes with confirmed_by, confirmed_at, clarification_id, confidence.
+	- Status: User-confirmed edges marked with UserConfirmed confidence level.
+	- Status: Handler calls service after answering, logs failures but doesn't fail response.
 
-3.4 Add tests
+3.4 ✅ DONE: Add tests
 - Store tests for clarification lifecycle.
 - API tests for list/answer/dismiss.
+	- Status: TestClarificationRepository (6 subtests) covering create, get, list pending, answer, dismiss, mark notified.
+	- Status: TestClarificationsAPI (11 subtests) covering all endpoints and edge cases.
+	- Status: TestClarificationService_ApplyAnswer (3 subtests) covering add_node, add_edge, no operations.
+	- Status: All tests passing. Total 60+ tests in api/core/store packages.
 
 ## 4) .joe/ Processing and Cache Replay
 

@@ -98,11 +98,18 @@ func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string, registry *
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
 }
 
-// registerClarificationRoutes registers clarification management routes (placeholder)
+// registerClarificationRoutes registers clarification management routes
 func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) {
-	mux.HandleFunc(fmt.Sprintf("GET %s/clarifications", prefix), s.handleNotImplemented)
-	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/answer", prefix), s.handleNotImplemented)
-	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/dismiss", prefix), s.handleNotImplemented)
+	if s.services == nil || s.services.Store == nil {
+		return
+	}
+	handler := &clarificationHandler{
+		storeInst:            s.services.Store,
+		clarificationService: s.services.Clarifications,
+	}
+	mux.HandleFunc(fmt.Sprintf("GET %s/clarifications", prefix), handler.handleListClarifications)
+	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/answer", prefix), handler.handleAnswerClarification)
+	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/dismiss", prefix), handler.handleDismissClarification)
 }
 
 // registerControlRoutes registers control plane routes

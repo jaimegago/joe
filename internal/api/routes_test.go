@@ -84,13 +84,13 @@ func TestRouteRegistration(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			description:    "should return 200 with empty list",
 		},
-		// Clarification routes (not implemented)
+		// Clarification routes (now implemented)
 		{
 			name:           "clarifications list endpoint",
 			method:         "GET",
 			path:           "/api/v1/clarifications",
-			expectedStatus: http.StatusNotImplemented,
-			description:    "should be registered but return 501 (not implemented)",
+			expectedStatus: http.StatusOK,
+			description:    "should return 200 with empty list of pending clarifications",
 		},
 		{
 			name:           "onboarding endpoint",
