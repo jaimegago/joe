@@ -63,5 +63,8 @@
         "timeboxed",
         "unittests",
         "VPCID"
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "gofmt": true
+    }
 }

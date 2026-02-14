@@ -377,6 +377,32 @@ func (s *SQLiteStore) Summary(ctx context.Context) (summary GraphSummary, err er
 	return summary, nil
 }
 
+// ListNodesBySource returns all nodes for a given source_id.
+func (s *SQLiteStore) ListNodesBySource(ctx context.Context, sourceID string) (nodes []Node, err error) {
+	start := time.Now()
+	defer func() { s.metrics.RecordGraphOperation(ctx, "list_nodes_by_source", time.Since(start), err) }()
+
+	query := `
+		SELECT id, type, source_id, metadata, first_seen, last_seen
+		FROM graph_nodes WHERE source_id = ? ORDER BY id
+	`
+	rows, err := s.db.QueryContext(ctx, query, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("query nodes by source %s: %w", sourceID, err)
+	}
+	defer rows.Close()
+
+	return scanNodes(rows)
+}
+
+// ListEdgesForNodes returns edges where both endpoints are in nodeIDs.
+func (s *SQLiteStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string) (edges []Edge, err error) {
+	start := time.Now()
+	defer func() { s.metrics.RecordGraphOperation(ctx, "list_edges_for_nodes", time.Since(start), err) }()
+
+	return s.edgesBetween(ctx, nodeIDs)
+}
+
 // edgesBetween returns all edges where both endpoints are in the given node ID set.
 func (s *SQLiteStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edge, error) {
 	if len(nodeIDs) == 0 {
