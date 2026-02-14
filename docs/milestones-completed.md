@@ -1,13 +1,19 @@
-# Next Steps Plan (Step-by-Step)
+# Milestones 1-4: Completed Phases (Historical Reference)
 
-Use this as a checklist. Complete each section fully before moving on.
+This document records the completed phases of Joe's development (Phases 1-5, Milestones 1-4). It serves as a historical reference for implementation decisions and architectural patterns established during the initial build.
+
+**Current Status:** ✅ All 4 milestones complete - 70+ tests passing
+
+**Next Phase:** Phase 6 - Cloud, Observability, and Alerting Adapters (see `CLAUDE.md` for planning)
+
+---
 
 ## Progress Summary
 
 - ✅ **Milestone 1: Core Agent Refresh Loop** - Complete (14 tests passing)
 - ✅ **Milestone 2: Onboarding + Control Endpoints** - Complete (10+ tests passing)
 - ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
-- ⏳ **Milestone 4: .joe/ Processing and Cache Replay** - Ready to start
+- ✅ **Milestone 4: .joe/ Processing and Cache Replay** - Complete (5 new tests passing)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -158,26 +164,44 @@ Use this as a checklist. Complete each section fully before moving on.
 
 ## 4) .joe/ Processing and Cache Replay
 
-4.1 Define cache key and storage
-- Hash .joe/ directory contents.
-- Store/retrieve tool calls from cache table.
+4.1 ✅ DONE: Define cache key and storage
+- Extended JoeFileCache model with tool_calls and processed_at fields.
+- Added migration 003_joe_file_cache_extensions.up.sql.
+- Cache.Get/Set handle nullable tool_calls and processed_at.
 
-4.2 Implement .joe/ discovery path
-- Read .joe/ files from repo sources.
-- If cache hit, replay tool calls.
-- If cache miss, call LLM to interpret.
+4.2 ✅ DONE: Implement .joe/ discovery path
+- Created JoeFileService in internal/coreagent/joefile_service.go.
+- ProcessJoeFiles() discovers .joe/ YAML files via git adapter.
+- Computes SHA256 content hash for cache keying.
+- Cache hit: Deserializes and returns cached tool calls (no LLM call).
+- Cache miss: Calls LLM for interpretation, caches result.
 
-4.3 Execute and persist tool calls
-- Execute tool calls via core agent tools.
-- Persist tool calls for future cache hits.
+4.3 ✅ DONE: Execute and persist tool calls
+- LLM system prompt interprets .joe/ files and returns tool calls.
+- Supports graph_add_node, graph_add_edge, save_onboarding_fact.
+- Tool calls serialized as JSON and stored in cache.
 
-4.4 Add tests
-- Cache hit: no LLM call, tool calls replayed.
-- Cache miss: tool calls cached and replayed on next run.
+4.4 ✅ DONE: Integration into git_refresh
+- Refresher now includes joeFileService dependency.
+- refreshGitSource calls ProcessJoeFiles and executeJoeFileToolCalls.
+- Tool execution handlers: executeAddNode, executeAddEdge, executeSaveOnboardingFact.
+- joe_dir_present metadata set based on .joe/ YAML file existence.
 
-## Suggested Order
+4.5 ✅ DONE: Add tests
+- TestJoeFileService_CacheHit: Cached content returns without LLM call.
+- TestJoeFileService_CacheMiss: Missing cache triggers LLM, stores result.
+- TestJoeFileService_HashChange: Changed hash causes re-processing.
+- TestJoeFileService_NoJoeFiles: No .joe/ files returns empty tool calls.
+- TestJoeFileService_MultipleFiles: Both files processed and cached.
+- All cache tests passing (5 new tests).
 
-- Step 1 (Core Agent refresh loop)
-- Step 2 (Onboarding + control endpoints)
-- Step 3 (Clarifications system)
-- Step 4 (.joe/ processing and cache replay)
+**Status: ✅ Complete - 70+ tests passing across all packages**
+
+---
+
+## Key Implementation Decisions
+
+For architectural decisions and rationale, see:
+- [phase-4-complete.md](phase-4-complete.md) - Design decisions for milestone 4
+- [CLAUDE.md](CLAUDE.md) - Architecture overview and phase planning
+- Individual phase completion docs (phase-1, phase-2, etc.)
