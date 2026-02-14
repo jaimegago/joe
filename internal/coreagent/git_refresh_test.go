@@ -49,16 +49,21 @@ func (f *fakeGitAdapter) Diff(_ context.Context, _, _ string) (string, error) {
 
 func TestRefreshGitSourceBasic(t *testing.T) {
 	graphStore := setupGraphStore(t)
+	cache := newFakeCache()
+	fakeLLM := &fakeLLM{}
+	joeFileService := NewJoeFileService(cache, fakeLLM, slog.Default(), nil)
+
 	refresher := &Refresher{
-		services: &core.Services{Graph: graphStore},
-		logger:   slog.Default(),
+		services:       &core.Services{Graph: graphStore},
+		joeFileService: joeFileService,
+		logger:         slog.Default(),
 	}
 
 	source := &store.Source{ID: "src-git-1", Type: store.SourceTypeGit, Name: "test-repo"}
 	adapter := &fakeGitAdapter{
 		files: []git.FileInfo{
-			{Path: "deployment.yaml", IsDir: false},
-			{Path: "service.yaml", IsDir: false},
+			{Path: ".joe/manifest.yaml", IsDir: false},
+			{Path: ".joe/sources.yaml", IsDir: false},
 		},
 		logs: []git.CommitInfo{
 			{Hash: "abc123", Author: "alice", Message: "fix: update deployment"},
@@ -101,9 +106,14 @@ func TestRefreshGitSourceBasic(t *testing.T) {
 
 func TestRefreshGitSourceNoJoeFiles(t *testing.T) {
 	graphStore := setupGraphStore(t)
+	cache := newFakeCache()
+	fakeLLM := &fakeLLM{}
+	joeFileService := NewJoeFileService(cache, fakeLLM, slog.Default(), nil)
+
 	refresher := &Refresher{
-		services: &core.Services{Graph: graphStore},
-		logger:   slog.Default(),
+		services:       &core.Services{Graph: graphStore},
+		joeFileService: joeFileService,
+		logger:         slog.Default(),
 	}
 
 	source := &store.Source{ID: "src-git-2", Type: store.SourceTypeGit, Name: "test-repo"}

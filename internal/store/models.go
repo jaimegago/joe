@@ -70,11 +70,13 @@ const (
 	ClarificationDismissed = "dismissed"
 )
 
-// JoeFileCache represents cached .joe/ file parsing.
+// JoeFileCache represents cached .joe/ file parsing and executed tool calls.
 type JoeFileCache struct {
 	FilePath    string          `json:"file_path"`
 	ContentHash string          `json:"content_hash"`
 	ParsedData  json.RawMessage `json:"parsed_data"`
+	ToolCalls   json.RawMessage `json:"tool_calls,omitempty"` // []llm.ToolCall as JSON
+	ProcessedAt time.Time       `json:"processed_at,omitempty"`
 	ParsedAt    time.Time       `json:"parsed_at"`
 }
 

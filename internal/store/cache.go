@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -26,10 +27,12 @@ func (r *sqlCacheRepository) Get(ctx context.Context, filePath string) (cache *J
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "cache.get", time.Since(start), err) }()
 
-	query := `SELECT file_path, content_hash, parsed_data, parsed_at FROM joe_file_cache WHERE file_path = ?`
+	query := `SELECT file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at FROM joe_file_cache WHERE file_path = ?`
 	var c JoeFileCache
+	var toolCalls sql.NullString
+	var processedAt sql.NullTime
 	err = r.db.QueryRowContext(ctx, query, filePath).Scan(
-		&c.FilePath, &c.ContentHash, &c.ParsedData, &c.ParsedAt,
+		&c.FilePath, &c.ContentHash, &c.ParsedData, &c.ParsedAt, &toolCalls, &processedAt,
 	)
 	if err == sql.ErrNoRows {
 		r.metrics.RecordCacheLookup(ctx, "joe_file_cache", false, time.Since(start), nil)
@@ -39,6 +42,15 @@ func (r *sqlCacheRepository) Get(ctx context.Context, filePath string) (cache *J
 		r.metrics.RecordCacheLookup(ctx, "joe_file_cache", false, time.Since(start), err)
 		return nil, fmt.Errorf("query cache: %w", err)
 	}
+
+	// Handle nullable fields
+	if toolCalls.Valid {
+		c.ToolCalls = json.RawMessage(toolCalls.String)
+	}
+	if processedAt.Valid {
+		c.ProcessedAt = processedAt.Time
+	}
+
 	r.metrics.RecordCacheLookup(ctx, "joe_file_cache", true, time.Since(start), nil)
 	return &c, nil
 }
@@ -48,11 +60,11 @@ func (r *sqlCacheRepository) Set(ctx context.Context, cache *JoeFileCache) (err 
 	defer func() { r.metrics.RecordDBOperation(ctx, "cache.set", time.Since(start), err) }()
 
 	query := `
-		INSERT OR REPLACE INTO joe_file_cache (file_path, content_hash, parsed_data, parsed_at)
-		VALUES (?, ?, ?, ?)
+		INSERT OR REPLACE INTO joe_file_cache (file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`
 	cache.ParsedAt = time.Now()
-	_, err = r.db.ExecContext(ctx, query, cache.FilePath, cache.ContentHash, cache.ParsedData, cache.ParsedAt)
+	_, err = r.db.ExecContext(ctx, query, cache.FilePath, cache.ContentHash, cache.ParsedData, cache.ParsedAt, cache.ToolCalls, cache.ProcessedAt)
 	if err != nil {
 		return fmt.Errorf("set cache: %w", err)
 	}

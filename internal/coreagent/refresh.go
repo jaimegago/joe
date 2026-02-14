@@ -18,25 +18,28 @@ import (
 
 // Refresher handles background refresh of the graph
 type Refresher struct {
-	services *core.Services
-	llm      llm.LLMAdapter
-	logger   *slog.Logger
-	metrics  *observability.Metrics
-	interval time.Duration
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	services       *core.Services
+	llm            llm.LLMAdapter
+	joeFileService *JoeFileService
+	logger         *slog.Logger
+	metrics        *observability.Metrics
+	interval       time.Duration
+	stopCh         chan struct{}
+	doneCh         chan struct{}
 }
 
 // NewRefresher creates a new background refresher
 func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger, metrics *observability.Metrics) *Refresher {
+	joeFileService := NewJoeFileService(services.Store.Cache, llmAdapter, logger, metrics)
 	return &Refresher{
-		services: services,
-		llm:      llmAdapter,
-		logger:   logger.With("component", "refresher"),
-		metrics:  observability.EnsureMetrics(metrics),
-		interval: 5 * time.Minute,
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
+		services:       services,
+		llm:            llmAdapter,
+		joeFileService: joeFileService,
+		logger:         logger.With("component", "refresher"),
+		metrics:        observability.EnsureMetrics(metrics),
+		interval:       5 * time.Minute,
+		stopCh:         make(chan struct{}),
+		doneCh:         make(chan struct{}),
 	}
 }
 

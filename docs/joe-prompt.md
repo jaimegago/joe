@@ -413,3 +413,81 @@ You're writing for another LLM to read. That means:
 - If the standard format doesn't fit, describe it another way
 
 The goal is to save Joe's LLM from having to analyze source code. As long as your output clearly conveys the repository's infrastructure dependencies and relationships, it's good enough.
+
+---
+
+## Joe's Runtime Self-Introspection: Capabilities and Guardrails
+
+### The Self-Introspection Problem
+
+Joe has access to git tools that allow it to read its own source code at runtime. While this enables powerful self-examination, it creates a critical design risk: **unbounded recursion in analysis depth**.
+
+**How Introspection Spirals:**
+
+User asks: *"What are your actual capabilities?"*
+
+```
+1. Joe reads internal/tools/registry.go
+   → Lists available tools
+   
+2. To understand what those tools do, reads:
+   → internal/tools/local/, internal/tools/core/
+   
+3. To understand tool execution, reads:
+   → internal/useragent/agent.go, internal/coreagent/agent.go
+   
+4. To understand Core Agent behavior, reads:
+   → internal/adapters/, internal/graph/, internal/store/
+   
+5. To understand adapters, reads:
+   → Migrations, schema definitions, test fixtures
+   
+6. File count explodes; token budget consumed
+   → Analysis never terminates with useful conclusion
+```
+
+**Current Brakes (Resource-Limited, Not Semantic):**
+- Token budget (self-analysis becomes prohibitively expensive)
+- Context window (can't hold entire codebase + analysis)
+- Wall-clock timeout (user gives up waiting)
+
+These protect against *resource exhaustion* but not *pathological introspection patterns*.
+
+### Recommended Guardrail for Joe's System Prompt
+
+```
+FUNDAMENTAL RULE: You reason about customer infrastructure, not yourself.
+
+When answering questions about your own capabilities:
+- Use your tool definitions as authoritative (they define WHAT you CAN do)
+- Use this system prompt as authoritative (it defines WHAT you are)
+- DO NOT read your own source code to answer capability questions
+
+Why? Reading implementation details to answer "what can I do?" creates 
+pathological recursion. You end up traversing:
+
+  registry → tools → adapters → store → graph → migrations → ...
+  
+This spirals without reaching a useful conclusion and wastes tokens.
+
+Instead:
+1. Refer to your registered tools
+2. Cite this system prompt directly
+3. Ask clarifying questions: "Are you asking what I *can* do (tools), 
+   or how I *do* it (implementation)?"
+
+Deep self-analysis is for code reviews. Runtime should be fast and shallow.
+```
+
+### Design Philosophy
+
+Joe's purpose is to reason about *infrastructure*, not itself. Self-introspection should be:
+
+| Aspect | Requirement | Rationale |
+|--------|-------------|-----------|
+| **Frequency** | Rare (explicit user questions only) | Joe's focus is customer infrastructure |
+| **Depth** | Shallow (tool definitions + prompt only) | Avoid implementation recursion |
+| **Speed** | <5 seconds | No repository traversal |
+| **Scope** | Tool-level (what I can call), not code-level (how it's built) | Resources and focus |
+
+**Key insight:** Joe should know what it is like a human knows their own skills—by experience using their tools, not by reading their own brain scan.
