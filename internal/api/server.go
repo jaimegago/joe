@@ -322,10 +322,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, errorCodeNotImplemented, errorNotImpl)
-}
-
 func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	if s.services.Agent == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")

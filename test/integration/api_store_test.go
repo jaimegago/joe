@@ -63,24 +63,18 @@ func TestIntegration_API_Status(t *testing.T) {
 }
 
 func TestIntegration_API_NotImplemented(t *testing.T) {
-	_, mux, _ := setupIntegrationServer(t)
-
-	// Test remaining unimplemented endpoints (graph and sources are now implemented)
-	endpoints := []string{
-		"/api/v1/clarifications",
-	}
-
-	for _, endpoint := range endpoints {
-		t.Run(endpoint, func(t *testing.T) {
-			req := httptest.NewRequest("GET", endpoint, nil)
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, req)
-
-			if w.Code != http.StatusNotImplemented {
-				t.Errorf("expected 501, got %d", w.Code)
-			}
-		})
-	}
+	// All major endpoints are now implemented (phases 1-4 complete):
+	// - /api/v1/status - Status endpoint
+	// - /api/v1/refresh - Control endpoint (Milestone 2)
+	// - /api/v1/onboarding - Control endpoint (Milestone 2)
+	// - /api/v1/clarifications - Clarifications system (Milestone 3)
+	// - /api/v1/graph/* - Graph queries (Milestone 1)
+	// - /api/v1/k8s/* - K8s adapter (Milestone 1)
+	// - /api/v1/git/* - Git adapter (Milestone 1)
+	// - /api/v1/aws/* - AWS adapter (Milestone 1)
+	//
+	// No unimplemented endpoints to test. This test is now a pass-through.
+	t.Skip("All endpoints implemented as of Milestone 4")
 }
 
 func TestIntegration_Store_CRUD(t *testing.T) {
