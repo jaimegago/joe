@@ -549,27 +549,3 @@ func TestSlashedNodeIDs(t *testing.T) {
 		}
 	})
 }
-
-func TestHandleNotImplemented(t *testing.T) {
-	server, _ := setupTestServer(t)
-	mux := setupMux(t, server)
-
-	endpoints := []struct {
-		method string
-		path   string
-	}{
-		{"GET", "/api/v1/clarifications"},
-	}
-
-	for _, ep := range endpoints {
-		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
-			req := httptest.NewRequest(ep.method, ep.path, nil)
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, req)
-
-			if w.Code != http.StatusNotImplemented {
-				t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
-			}
-		})
-	}
-}

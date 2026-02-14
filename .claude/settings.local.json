@@ -19,7 +19,8 @@
       "Bash(go tool cover -func=/tmp/joe_store_coverage.out)",
       "Bash(wc:*)",
       "Bash(gh repo view:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(git log:*)"
     ]
   }
 }

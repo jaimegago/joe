@@ -22,25 +22,28 @@ type CoreAgent interface {
 // Services provides access to all core functionality.
 // Used by both the API handlers and the Core Agent.
 type Services struct {
-	Config   *config.Config
-	LLM      llm.LLMAdapter
-	Graph    graph.GraphStore
-	Store    *store.Store
-	Agent    CoreAgent // Core Agent instance for control endpoints
-	Adapters *adapters.Registry
-	Metrics  *observability.Metrics
+	Config         *config.Config
+	LLM            llm.LLMAdapter
+	Graph          graph.GraphStore
+	Store          *store.Store
+	Agent          CoreAgent // Core Agent instance for control endpoints
+	Adapters       *adapters.Registry
+	Metrics        *observability.Metrics
+	Clarifications *ClarificationService
 }
 
 // New creates a new Services instance with the given SQL store database.
 // The db is used for both the SQL store and the SQLite-backed graph store.
 func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
 	metrics = observability.EnsureMetrics(metrics)
+	graphStore := graph.NewSQLiteStore(db, metrics)
 	return &Services{
-		Config:   cfg,
-		Store:    sqlStore,
-		Graph:    graph.NewSQLiteStore(db, metrics),
-		Adapters: adapterRegistry,
-		Metrics:  metrics,
+		Config:         cfg,
+		Store:          sqlStore,
+		Graph:          graphStore,
+		Adapters:       adapterRegistry,
+		Metrics:        metrics,
+		Clarifications: NewClarificationService(graphStore, sqlStore),
 	}
 }
 
