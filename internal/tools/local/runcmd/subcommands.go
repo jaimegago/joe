@@ -72,7 +72,7 @@ func ValidateSubcommand(command string, args []string) error {
 		return fmt.Errorf("command '%s' requires a subcommand (e.g., get, describe, logs)", command)
 	}
 
-	subcommand := args[0]
+	var subcommand string
 
 	// Strip leading flags before subcommand (e.g., kubectl -n foo get pods)
 	idx := 0

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
+	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/api"
@@ -147,6 +148,20 @@ func main() {
 		}
 		adapterRegistry.Register(src.ID, adapter)
 		slog.Info("connected aws source", "id", src.ID, "name", src.Name)
+	}
+
+	azureSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAzure)
+	if err != nil {
+		slog.Warn("failed to load azure sources", "error", err)
+	}
+	for _, src := range azureSources {
+		adapter := azureadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect azure source", "id", src.ID, "error", err)
+			continue
+		}
+		adapterRegistry.Register(src.ID, adapter)
+		slog.Info("connected azure source", "id", src.ID, "name", src.Name)
 	}
 
 	// Initialize core services (graph store uses same SQLite DB)

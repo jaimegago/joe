@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
+	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/store"
@@ -100,6 +101,13 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		adapter := awsadapter.New()
 		if err := adapter.Connect(*source); err != nil {
 			writeBadRequest(w, err, "connect aws source", "failed to connect to AWS")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeAzure:
+		adapter := azureadapter.New()
+		if err := adapter.Connect(*source); err != nil {
+			writeBadRequest(w, err, "connect azure source", "failed to connect to Azure")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
