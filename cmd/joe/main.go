@@ -17,6 +17,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/repl"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
 )
@@ -115,11 +116,32 @@ func main() {
 	)
 	fmt.Printf("Using %s/%s\n", currentModel.Provider, currentModel.Model)
 
+	// Load safety policy from ~/.joe/safety-policy.yaml
+	// If the file doesn't exist, DefaultPolicy is used (most restrictive for T3).
+	// If the file is malformed, we refuse to start.
+	joeDir, err := paths.JoeDirPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot determine Joe config directory: %v\n", err)
+		os.Exit(1)
+	}
+	safetyPolicy, err := safety.LoadPolicy(joeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	slog.Info("safety policy loaded", "config_dir", joeDir)
+
 	// Create tool registry with local tools + core tools (graph_query, graph_related)
 	registry := tools.NewDefaultRegistryWithClient(coreClient)
 
-	// Create tool executor
-	executor := tools.NewExecutor(registry, metrics)
+	// Create REPL notifier for T3 pre-execution countdown and T2/T3 post-execution log
+	replNotifier := repl.NewNotifier()
+
+	// Create tool executor with safety policy enforcement and notifications
+	executor := tools.NewExecutor(registry, metrics,
+		tools.WithPolicy(safetyPolicy),
+		tools.WithNotifier(replNotifier),
+	)
 
 	// Create adapter factory for hot-swapping models
 	adapterFactory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
