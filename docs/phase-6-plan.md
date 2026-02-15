@@ -260,11 +260,107 @@ Tests
 
 ---
 
-## 6.6 Data Store Adapters
+## 6.6 Network & System Diagnostic Tools (Go-native)
+
+Go-native implementations of common troubleshooting tools. All T1 (read-only). These live in `internal/tools/shared/` so both `joe` (local) and `joecored` (server-side) can use them — the LLM picks the right perspective based on context ("can I reach X from my laptop?" vs "can the cluster reach X?").
+
+**Design principle:** No shelling out to CLI tools. Use Go standard library (`net`, `net/http`, `os`, `syscall`) for structured JSON output the LLM can reason over directly.
+
+### 6.6.1 TCP connectivity check (replaces `nc`, `telnet`)
+
+- Use `net.DialTimeout` to check if a host:port is reachable.
+- Return: reachable (bool), latency_ms, error detail.
+- Support multiple ports in one call for port scanning.
+
+Touchpoints
+- internal/tools/shared/netcheck/ (new)
+
+Tools
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| tcp_connect | host, port, timeout_ms (default 5000) | Check if a host:port is reachable |
+| port_scan | host, ports (array), timeout_ms | Check multiple ports, return which are open |
+
+### 6.6.2 DNS lookup (replaces `dig`, `nslookup`, `host`)
+
+- Use `net.LookupHost`, `net.LookupCNAME`, `net.LookupMX`, `net.LookupTXT`, `net.LookupNS`.
+- Return structured records: A, AAAA, CNAME, MX, TXT, NS.
+- Optionally specify a custom DNS resolver.
+
+Touchpoints
+- internal/tools/shared/dnsquery/ (new)
+
+Tools
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| dns_lookup | hostname, record_type (optional: A, AAAA, CNAME, MX, TXT, NS, all) | Resolve DNS records |
+
+### 6.6.3 HTTP request (replaces `curl`)
+
+- Use `net/http` client with configurable method, headers, timeout.
+- Return: status_code, headers (map), body (truncated), latency_ms, TLS info.
+- Default to GET. Allow HEAD for lightweight checks.
+- Safety: block requests to localhost/internal metadata endpoints (169.254.169.254) unless explicitly allowed.
+
+Touchpoints
+- internal/tools/shared/httpreq/ (new)
+
+Tools
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| http_request | url, method (default GET), headers (optional), timeout_ms (default 10000) | Probe HTTP endpoint, check status/latency |
+
+### 6.6.4 System info (replaces `df`, `free`, `uptime`, `ps`, `uname`)
+
+- Use `syscall.Statfs` (disk), `runtime.MemStats` + `/proc/meminfo` (memory), `syscall.Sysinfo` (uptime/load), `os` (hostname, platform).
+- Return structured stats, not formatted text.
+
+Touchpoints
+- internal/tools/shared/sysinfo/ (new)
+
+Tools
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| system_info | sections (optional: disk, memory, load, os, all) | System stats: disk usage, memory, load averages, OS info |
+
+### 6.6.5 Traceroute (replaces `traceroute`, `tracepath`)
+
+- Use `golang.org/x/net/icmp` for hop-by-hop path tracing.
+- Return structured hop list: hop number, IP, hostname (reverse DNS), latency_ms.
+- Configurable max hops and timeout.
+
+Touchpoints
+- internal/tools/shared/traceroute/ (new)
+
+Tools
+
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| trace_route | host, max_hops (default 30), timeout_ms (default 5000) | Network path with per-hop latency |
+
+Note: ICMP requires elevated privileges on most systems. Fall back to UDP-based traceroute if ICMP is unavailable.
+
+Acceptance (all 6.6.x)
+- All tools return structured JSON, not text.
+- Both joe and joecored can register and use these tools.
+- No external CLI dependencies — pure Go implementations.
+- Testable with mock interfaces for network operations.
+
+Tests
+- Unit tests with mock dialers/resolvers.
+- Table-driven tests for edge cases (timeout, unreachable, DNS failure).
+
+---
+
+## 6.7 Data Store Adapters
 
 Read-only diagnostic queries. Joe never writes application data. All T1.
 
-### 6.6.1 PostgreSQL
+### 6.7.1 PostgreSQL
 
 - Connect via `lib/pq` or `pgx` driver with read-only connection string.
 - Query `pg_stat_activity` (active connections, blocked queries), `pg_stat_user_tables` (seq scans, dead tuples), `pg_stat_replication` (replication lag).
@@ -289,7 +385,7 @@ Tests
 - Unit tests with mock driver responses.
 - SQL parsing tests to verify write rejection.
 
-### 6.6.2 MySQL
+### 6.7.2 MySQL
 
 - Connect via `go-sql-driver/mysql` with read-only user.
 - Query `SHOW PROCESSLIST`, `SHOW SLAVE STATUS` / `SHOW REPLICA STATUS`, `INFORMATION_SCHEMA.INNODB_TRX`.
@@ -305,7 +401,7 @@ Tools
 | mysql_stat | source_id | Processlist, replication status, InnoDB stats |
 | mysql_query | source_id, query (read-only enforced) | Run diagnostic SQL (SELECT only) |
 
-### 6.6.3 Redis
+### 6.7.3 Redis
 
 - Connect via `go-redis/redis` client.
 - Run `INFO` (server, memory, clients, stats, replication), `SLOWLOG GET`, `CLIENT LIST`, `DBSIZE`.
@@ -322,7 +418,7 @@ Tools
 | redis_info | source_id, section (optional) | INFO stats by section |
 | redis_slowlog | source_id, count (default 10) | Recent slow commands |
 
-### 6.6.4 MongoDB
+### 6.7.4 MongoDB
 
 - Connect via `mongo-driver/mongo` with read-only user.
 - Run `db.serverStatus()`, `rs.status()`, `db.currentOp()`, `system.profile` (if enabled).
@@ -338,7 +434,7 @@ Tools
 | mongodb_stat | source_id | Server status, replica set health, current ops |
 | mongodb_query | source_id, database, collection, filter (read-only) | Diagnostic find queries |
 
-### 6.6.5 Kafka
+### 6.7.5 Kafka
 
 - Connect via `confluent-kafka-go` or `segmentio/kafka-go` admin client.
 - List topics, describe consumer groups (lag per partition), broker metadata, cluster health.
@@ -356,7 +452,7 @@ Tools
 | kafka_consumers | source_id, group (optional) | Consumer group lag, members, offsets |
 | kafka_brokers | source_id | Broker list, controller, cluster ID |
 
-### 6.6.6 Elasticsearch
+### 6.7.6 Elasticsearch
 
 - Connect via HTTP REST API (compatible with OpenSearch).
 - Query `_cluster/health`, `_cat/indices`, `_cat/shards`, `_nodes/stats`.
@@ -372,7 +468,7 @@ Tools
 | elasticsearch_health | source_id | Cluster health, shard status, node stats |
 | elasticsearch_indices | source_id, pattern (optional) | Index list with doc count, size, health |
 
-Acceptance (all 6.6.x)
+Acceptance (all 6.7.x)
 - Each adapter connects with read-only credentials.
 - Stats returned as structured JSON.
 - Graph edges created linking data stores to consuming services.
@@ -382,9 +478,9 @@ Tests
 
 ---
 
-## 6.7 GitOps, CD & IaC Adapters
+## 6.8 GitOps, CD & IaC Adapters
 
-### 6.7.1 Argo CD (full adapter)
+### 6.8.1 Argo CD (full adapter)
 
 - Upgrade from `run_command` passthrough to a proper REST API adapter.
 - List applications, get app details (sync status, health, resources), get app diff, get sync history.
@@ -402,7 +498,7 @@ Tools
 | argocd_diff | source_id, name | Live vs desired state diff |
 | argocd_history | source_id, name, limit | Recent sync operations |
 
-### 6.7.2 Flux
+### 6.8.2 Flux
 
 - Query Flux CRDs via K8s adapter: `GitRepository`, `Kustomization`, `HelmRelease`, `HelmRepository`.
 - Show reconciliation status, last applied revision, conditions.
@@ -418,7 +514,7 @@ Tools
 | flux_status | source_id, namespace (optional) | All Flux resources with reconciliation status |
 | flux_resource | source_id, kind, namespace, name | Detail for one Flux resource |
 
-### 6.7.3 Terraform
+### 6.8.3 Terraform
 
 - Read Terraform state files (local or remote backend via `terraform show -json`).
 - Parse `tfstate` JSON: list managed resources, detect drift (planned vs actual).
@@ -438,7 +534,7 @@ Tools
 
 Note: Terraform state may contain secrets. Adapter must redact sensitive attributes marked `sensitive: true` in state.
 
-### 6.7.4 Helm
+### 6.8.4 Helm
 
 - Use Helm SDK (`helm/v3`) to query release history.
 - List releases, get release status, get values, get manifest diff between revisions.
@@ -455,7 +551,7 @@ Tools
 | helm_release | source_id, namespace, name | Release detail: values, notes, manifest |
 | helm_history | source_id, namespace, name, limit | Revision history with status |
 
-Acceptance (all 6.7.x)
+Acceptance (all 6.8.x)
 - Each adapter returns structured data from real sources.
 - Graph edges link managed resources back to their managing tool.
 
@@ -464,9 +560,9 @@ Tests
 
 ---
 
-## 6.8 Networking & Ingress Adapters
+## 6.9 Networking & Ingress Adapters
 
-### 6.8.1 NGINX Ingress Controller
+### 6.9.1 NGINX Ingress Controller
 
 - Query NGINX status via:
   - K8s Ingress CRDs (ingress rules, backends, TLS)
@@ -486,7 +582,7 @@ Tools
 | nginx_status | source_id | Active connections, request rates, upstream health |
 | nginx_config | source_id, namespace | Effective NGINX configuration from ConfigMaps |
 
-### 6.8.2 Envoy
+### 6.9.2 Envoy
 
 - Query Envoy admin API (`/config_dump`, `/clusters`, `/stats`, `/server_info`).
 - Show cluster health, upstream endpoints, circuit breaker state.
@@ -504,7 +600,7 @@ Tools
 | envoy_config | source_id, section (optional) | Config dump (listeners, routes, clusters) |
 | envoy_stats | source_id, filter (optional) | Stats filtered by prefix |
 
-### 6.8.3 Istio
+### 6.9.3 Istio
 
 - Query Istio CRDs via K8s adapter: `VirtualService`, `DestinationRule`, `Gateway`, `PeerAuthentication`, `AuthorizationPolicy`.
 - Show mTLS status, traffic policies, fault injection rules.
@@ -520,7 +616,7 @@ Tools
 | istio_config | source_id, namespace (optional), kind (optional) | List Istio CRDs with status |
 | istio_resource | source_id, kind, namespace, name | Detail for one Istio resource |
 
-### 6.8.4 Cilium
+### 6.9.4 Cilium
 
 - Query Cilium CRDs via K8s adapter: `CiliumNetworkPolicy`, `CiliumClusterwideNetworkPolicy`, `CiliumEndpoint`.
 - Query Hubble API for network flow visibility (if available).
@@ -538,7 +634,7 @@ Tools
 | cilium_endpoints | source_id, namespace (optional) | Endpoint health and identity |
 | cilium_flows | source_id, namespace, pod (optional), limit | Recent network flows via Hubble |
 
-Acceptance (all 6.8.x)
+Acceptance (all 6.9.x)
 - Each adapter returns structured config/status data.
 - Graph edges map networking resources to the services they front or protect.
 
@@ -547,11 +643,11 @@ Tests
 
 ---
 
-## 6.9 K8s CRD-Based Adapters (Low Effort)
+## 6.10 K8s CRD-Based Adapters (Low Effort)
 
 These adapters piggyback on the existing K8s adapter by adding CRD resource types to the supported list. Minimal new code — mainly tool wrappers for convenience.
 
-### 6.9.1 cert-manager
+### 6.10.1 cert-manager
 
 - Query CRDs: `Certificate`, `CertificateRequest`, `Issuer`, `ClusterIssuer`, `Order`, `Challenge`.
 - Surface certificate expiry, readiness, issuer status.
@@ -563,7 +659,7 @@ Tools
 | certmanager_certs | source_id, namespace (optional) | List certificates with expiry, readiness |
 | certmanager_issuers | source_id | List issuers/cluster issuers with status |
 
-### 6.9.2 KEDA
+### 6.10.2 KEDA
 
 - Query CRDs: `ScaledObject`, `ScaledJob`, `TriggerAuthentication`.
 - Surface scaling targets, trigger types, current replicas vs desired.
@@ -574,7 +670,7 @@ Tools
 |------|------------|----------|
 | keda_scaledobjects | source_id, namespace (optional) | List scaled objects with trigger info |
 
-### 6.9.3 OPA / Gatekeeper
+### 6.10.3 OPA / Gatekeeper
 
 - Query CRDs: `ConstraintTemplate`, constraints (dynamic GVK), `Config`.
 - Surface constraint violations from audit results.
@@ -586,7 +682,7 @@ Tools
 | opa_constraints | source_id, template (optional) | List constraints with violation counts |
 | opa_violations | source_id, constraint | Violation details for a specific constraint |
 
-### 6.9.4 Crossplane
+### 6.10.4 Crossplane
 
 - Query CRDs: `Provider`, `ProviderConfig`, `Composite Resource Definitions (XRD)`, `Claims`, `Managed Resources`.
 - Surface provider health, resource sync status, composition status.
@@ -598,7 +694,7 @@ Tools
 | crossplane_providers | source_id | List providers with health status |
 | crossplane_resources | source_id, kind (optional), namespace (optional) | List managed/composite resources with sync status |
 
-Touchpoints (all 6.9.x)
+Touchpoints (all 6.10.x)
 - internal/adapters/k8s/ (add CRD types to supported resources)
 - internal/tools/core/ (convenience tool wrappers)
 
@@ -611,9 +707,9 @@ Tests
 
 ---
 
-## 6.10 Security & Runtime Adapters
+## 6.11 Security & Runtime Adapters
 
-### 6.10.1 Falco
+### 6.11.1 Falco
 
 - Query Falco gRPC or HTTP output API for runtime security events.
 - List recent alerts by severity, rule, source (syscall, k8s_audit).
@@ -644,14 +740,15 @@ Tests
 3) 6.3 Open source observability (Prometheus, Loki, Tempo/Jaeger) ← current
 4) 6.4 Alerting and dashboards
 5) 6.5 Safety and hardening
-6) 6.6 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
-7) 6.7 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
-8) 6.8 Networking & ingress (NGINX, Envoy, Istio, Cilium)
-9) 6.9 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
-10) 6.10 Security & runtime (Falco)
-11) 6.3.4 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
+6) 6.6 Network & system diagnostic tools (Go-native, shared)
+7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
+9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium)
+10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
+11) 6.11 Security & runtime (Falco)
+12) 6.3.4 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
 
-Note: 6.9 (CRD-based) can be done earlier as quick wins since effort is minimal.
+Note: 6.10 (CRD-based) can be done earlier as quick wins since effort is minimal.
 
 ---
 
@@ -662,20 +759,20 @@ Note: 6.9 (CRD-based) can be done earlier as quick wins since effort is minimal.
 | metrics_in | service | prometheus source | 6.3 |
 | logs_in | service | loki source | 6.3 |
 | traces_in | service | tempo/jaeger source | 6.3 |
-| alerts_in | service | alertmanager/falco source | 6.4, 6.10 |
+| alerts_in | service | alertmanager/falco source | 6.4, 6.11 |
 | paged_via | service | pagerduty source | 6.4 |
 | dashboard_in | service | grafana source | 6.4 |
 | is_k8s_node | cloud instance | K8s node | 6.2 |
-| stores_in | service | database (pg/mysql/mongo/es/redis) | 6.6 |
-| queues_in | service | kafka/rabbitmq | 6.6 |
-| managed_by | k8s resource | argocd app / flux / helm release | 6.7 |
-| provisions | terraform resource / crossplane | cloud resource | 6.7, 6.9 |
-| ingress_for | nginx ingress | backend service | 6.8 |
-| proxies | envoy | service | 6.8 |
-| mesh_for | istio config | service | 6.8 |
-| policy_enforces | opa constraint / cilium policy | namespace/workload | 6.8, 6.9 |
-| scaled_by | keda scaled object | workload | 6.9 |
-| secures | certificate | service/ingress | 6.9 |
+| stores_in | service | database (pg/mysql/mongo/es/redis) | 6.7 |
+| queues_in | service | kafka/rabbitmq | 6.7 |
+| managed_by | k8s resource | argocd app / flux / helm release | 6.8 |
+| provisions | terraform resource / crossplane | cloud resource | 6.8, 6.10 |
+| ingress_for | nginx ingress | backend service | 6.9 |
+| proxies | envoy | service | 6.9 |
+| mesh_for | istio config | service | 6.9 |
+| policy_enforces | opa constraint / cilium policy | namespace/workload | 6.9, 6.10 |
+| scaled_by | keda scaled object | workload | 6.10 |
+| secures | certificate | service/ingress | 6.10 |
 
 ---
 
@@ -690,3 +787,4 @@ Note: 6.9 (CRD-based) can be done earlier as quick wins since effort is minimal.
 - AWS adapter is wired at source creation and joecored startup.
 - Phase 6 relations are defined as graph relation constants and referenced in .joe interpretation and graph_add_edge tool docs.
 - (2026-02-15) Expanded Phase 6 scope beyond cloud/observability/alerting to include data stores, GitOps/IaC, networking/ingress, CRD-based tools, and security/runtime adapters. Rationale: cover the tools platform engineers encounter daily during incidents. CRD-based adapters (6.9) are low-effort since they reuse the K8s adapter. Proprietary observability vendors moved to last in execution order — open-source and infrastructure-adjacent tools come first.
+- (2026-02-16) Tool directory convention: `tools/local/` = joe-only tools that interact with the user's machine or REPL (readfile, writefile, gitdiff, gitstatus, runcmd, echo, askuser). `tools/core/` = joe tools that call joecored via HTTP. `tools/shared/` = Go-native tools usable by both binaries (diagnostic tools: netcheck, dnsquery, httpreq, sysinfo, traceroute). Existing local tools stay in `local/` — they shell out to git or use `os.Getwd()` and are fundamentally tied to the user's machine. Shared tools use only Go stdlib/x packages, return structured JSON, and accept mock interfaces for testing.

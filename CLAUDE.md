@@ -76,8 +76,9 @@ joe/
 │   ├── useragent/                # User Agent
 │   ├── llm/                      # LLM adapters (both agents)
 │   ├── tools/
-│   │   ├── local/                # Local tools (joe)
-│   │   └── core/                 # Core tools (call joecored)
+│   │   ├── local/                # Local tools (joe only): readfile, writefile, gitstatus, gitdiff, runcmd, echo, askuser
+│   │   ├── core/                 # Core tools (joe → joecored via HTTP): graphquery, k8sget, awsec2, etc.
+│   │   └── shared/               # Go-native tools (both joe and joecored): netcheck, dnsquery, httpreq, sysinfo, traceroute
 │   ├── graph/                    # Graph store (joecored)
 │   ├── store/                    # SQL store (joecored)
 │   ├── adapters/                 # K8s, Git, ArgoCD... (joecored)
@@ -199,11 +200,12 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [ ] 6.3 Observability (Prometheus/Mimir, Loki, Tempo/Jaeger; Datadog, Splunk, Dynatrace, New Relic; CloudWatch, Azure Monitor)
 - [ ] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
 - [ ] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
-- [ ] 6.6 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
-- [ ] 6.7 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
-- [ ] 6.8 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
-- [ ] 6.9 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
-- [ ] 6.10 Security & runtime (Falco)
+- [ ] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
+- [ ] 6.7 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+- [ ] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
+- [ ] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
+- [ ] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
+- [ ] 6.11 Security & runtime (Falco)
 - [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions
 - [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags
 
@@ -244,6 +246,7 @@ Key principles:
 - Cloud: AWS (EC2, EKS, RDS, ALB, VPC, SecurityGroups), Azure (VMs, AKS, SQL, VNets, NSGs)
 - Observability: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces), Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL), CloudWatch, Azure Monitor (KQL)
 - Alerting: Alertmanager, PagerDuty, Grafana (alerts, dashboards, annotations)
+- Network & system diagnostics: Go-native tools in `internal/tools/shared/` (tcp_connect, dns_lookup, http_request, system_info, trace_route) — used by both joe and joecored
 - Data stores: PostgreSQL (pg_stat_*), MySQL (processlist, replication), Redis (INFO, SLOWLOG), MongoDB (serverStatus, rs.status), Kafka (topics, consumer lag, brokers), Elasticsearch (cluster health, indices)
 - GitOps/CD/IaC: Argo CD (full REST API), Flux (K8s CRDs), Terraform (state read), Helm (release status)
 - Networking/Ingress: NGINX Ingress (rules, status, config), Envoy (admin API), Istio (K8s CRDs), Cilium (CRDs + Hubble)

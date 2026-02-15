@@ -37,7 +37,16 @@ All new adapters are read-only (T1) by default. Mutations require T3 classificat
 - Rate limiting middleware
 - Classify each new tool as T1/T2/T3 with policy flags for T2/T3 actions
 
-5.6 ⏳ Data store adapters (read-only diagnostic queries)
+5.6 ⏳ Network & system diagnostic tools (Go-native, shared)
+- Go-native implementations in `internal/tools/shared/` (no CLI shelling out)
+- tcp_connect: TCP connectivity check via `net.DialTimeout`
+- dns_lookup: DNS resolution via `net.LookupHost`, `net.LookupCNAME`, etc.
+- http_request: HTTP probing via `net/http` client
+- system_info: Disk, memory, load via `syscall`/`os`/`runtime`
+- trace_route: Hop-by-hop path via `golang.org/x/net/icmp`
+- Usable by both joe (local) and joecored (server-side perspective)
+
+5.7 ⏳ Data store adapters (read-only diagnostic queries)
 - PostgreSQL: pg_stat_activity, pg_stat_user_tables, pg_stat_replication, pg_stat_statements
 - MySQL: SHOW PROCESSLIST, SHOW REPLICA STATUS, INNODB_TRX
 - Redis: INFO, SLOWLOG GET, CLIENT LIST, DBSIZE
@@ -46,28 +55,28 @@ All new adapters are read-only (T1) by default. Mutations require T3 classificat
 - Elasticsearch: cluster health, indices, shards, node stats
 - Graph edges: `stores_in`, `queues_in`
 
-5.7 ⏳ GitOps, CD & IaC adapters
+5.8 ⏳ GitOps, CD & IaC adapters
 - Argo CD: full REST API adapter (apps, sync status, diff, history)
 - Flux: via K8s CRDs (GitRepository, Kustomization, HelmRelease)
 - Terraform: state file read, managed resources, outputs, drift detection
 - Helm: release listing, status, values, revision history
 - Graph edges: `managed_by`, `provisions`
 
-5.8 ⏳ Networking & ingress adapters
+5.9 ⏳ Networking & ingress adapters
 - NGINX Ingress: K8s Ingress CRDs + status endpoint
 - Envoy: admin API (clusters, config_dump, stats)
 - Istio: via K8s CRDs (VirtualService, DestinationRule, Gateway, PeerAuthentication)
 - Cilium: CRDs + Hubble API (network policies, endpoint health, flows)
 - Graph edges: `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`
 
-5.9 ⏳ K8s CRD-based adapters (low effort — extends K8s adapter)
+5.10 ⏳ K8s CRD-based adapters (low effort — extends K8s adapter)
 - cert-manager: Certificate, Issuer, ClusterIssuer (expiry, readiness)
 - KEDA: ScaledObject, ScaledJob (scaling targets, triggers)
 - OPA/Gatekeeper: ConstraintTemplate, Constraint (violation audit)
 - Crossplane: Provider, XRD, Claims (sync status)
 - Graph edges: `scaled_by`, `secures`, `policy_enforces`, `provisions`
 
-5.10 ⏳ Security & runtime adapters
+5.11 ⏳ Security & runtime adapters
 - Falco: runtime security events by severity/rule
 - Graph edges: `alerts_in`
 
