@@ -18,10 +18,10 @@ func getSecureHomeDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot get current user: %w", err)
 	}
-	
+
 	if currentUser.HomeDir == "" {
 		return "", fmt.Errorf("user home directory is empty")
 	}
-	
+
 	return currentUser.HomeDir, nil
 }
