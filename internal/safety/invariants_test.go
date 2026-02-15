@@ -261,17 +261,17 @@ func TestIsPathAllowed_CaseSensitivity(t *testing.T) {
 
 	// Test various case permutations
 	testPaths := []string{
-		filepath.Join(home, ".JOE", "config.yaml"),          // Uppercase
-		filepath.Join(home, ".Joe", "config.yaml"),          // Mixed case
-		filepath.Join(home, ".joE", "config.yaml"),          // Mixed case
-		strings.ToUpper(joeDir) + "/config.yaml",            // Full uppercase path
-		filepath.Join(strings.ToUpper(home), ".joe", "db"),  // Uppercase home
+		filepath.Join(home, ".JOE", "config.yaml"),         // Uppercase
+		filepath.Join(home, ".Joe", "config.yaml"),         // Mixed case
+		filepath.Join(home, ".joE", "config.yaml"),         // Mixed case
+		strings.ToUpper(joeDir) + "/config.yaml",           // Full uppercase path
+		filepath.Join(strings.ToUpper(home), ".joe", "db"), // Uppercase home
 	}
 
 	for _, path := range testPaths {
 		t.Run(path, func(t *testing.T) {
 			err := IsPathAllowed(path)
-			
+
 			// On case-insensitive systems (macOS, Windows), these should be blocked
 			if isCaseInsensitiveFS() {
 				if err == nil {
@@ -300,7 +300,7 @@ func TestIsPathAllowed_HomeEnvBypass(t *testing.T) {
 	// paths.JoeDirPath() uses getSecureHomeDir which ignores HOME env)
 	configPath := filepath.Join(realJoeDir, "config.yaml")
 	err = IsPathAllowed(configPath)
-	
+
 	// The protection should still work because paths.JoeDirPath()
 	// determines the protected directory using getSecureHomeDir(), not HOME
 	if err == nil {
