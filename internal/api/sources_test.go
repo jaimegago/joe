@@ -90,6 +90,31 @@ func TestHandleCreateSource_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestHandleCreateSource_InvalidType(t *testing.T) {
+	server := setupFullTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(`{"id":"src-1","type":"nope","name":"bad","config":{}}`))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+
+	var response struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error != "invalid_source" {
+		t.Errorf("error code: got %q, want %q", response.Error, "invalid_source")
+	}
+}
+
 func TestHandleGetSource_NotFound(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()

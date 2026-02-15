@@ -159,7 +159,7 @@ Guidelines:
 3. Use descriptive node IDs (e.g., "service/payment", "database/users-db")
 4. Set node_type appropriately (service, postgresql, redis, kafka_topic, etc.)
 5. Include metadata from the .joe/ file (team, language, purpose, etc.)
-6. Create edges with appropriate relations (calls, uses, produces, consumes, defines)
+6. Create edges with appropriate relations (calls, uses, produces, consumes, defines, metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node)
 7. DO NOT try to read actual config files - just record what the .joe/ file tells you
 
 Example .joe/ file interpretation:
