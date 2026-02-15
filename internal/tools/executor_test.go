@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 func TestNewExecutor(t *testing.T) {
@@ -57,13 +59,13 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "tool execution error",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "failing",
+					name: "read_file",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return nil, errors.New("execution failed")
 					},
 				})
 			},
-			toolName: "failing",
+			toolName: "read_file",
 			args:     map[string]any{},
 			wantErr:  true,
 			errMsg:   "failed to execute tool",
@@ -72,7 +74,7 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "tool with complex arguments",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "complex",
+					name: "list_sources",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]any{
 							"count":  args["count"],
@@ -82,7 +84,7 @@ func TestExecutor_Execute(t *testing.T) {
 					},
 				})
 			},
-			toolName: "complex",
+			toolName: "list_sources",
 			args: map[string]any{
 				"count": 42,
 				"items": []string{"a", "b", "c"},
@@ -151,7 +153,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 					},
 				})
 				r.Register(&mockTool{
-					name: "upper",
+					name: "ask_user",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"result": "UPPER"}, nil
 					},
@@ -159,7 +161,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			},
 			calls: []ToolCallRequest{
 				{ID: "call-1", Name: "echo", Args: map[string]any{"message": "hello"}},
-				{ID: "call-2", Name: "upper", Args: map[string]any{"text": "hello"}},
+				{ID: "call-2", Name: "ask_user", Args: map[string]any{"text": "hello"}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 2 {
@@ -183,22 +185,22 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			name: "execute with some failures",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "success",
+					name: "echo",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return "ok", nil
 					},
 				})
 				r.Register(&mockTool{
-					name: "failing",
+					name: "ask_user",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return nil, errors.New("failed")
 					},
 				})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "success", Args: map[string]any{}},
-				{ID: "call-2", Name: "failing", Args: map[string]any{}},
-				{ID: "call-3", Name: "success", Args: map[string]any{}},
+				{ID: "call-1", Name: "echo", Args: map[string]any{}},
+				{ID: "call-2", Name: "ask_user", Args: map[string]any{}},
+				{ID: "call-3", Name: "echo", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 3 {
@@ -218,11 +220,11 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute with non-existent tool",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "real"})
+				r.Register(&mockTool{name: "echo"})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "real", Args: map[string]any{}},
-				{ID: "call-2", Name: "fake", Args: map[string]any{}},
+				{ID: "call-1", Name: "echo", Args: map[string]any{}},
+				{ID: "call-2", Name: "nonexistent_tool_xyz", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 2 {
@@ -239,7 +241,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute empty batch",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "test"})
+				r.Register(&mockTool{name: "echo"})
 			},
 			calls: []ToolCallRequest{},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -273,8 +275,9 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 
 func TestExecutor_ContextCancellation(t *testing.T) {
 	registry := NewRegistry()
+	// Use "echo" (T1) so safety gate passes — we're testing context cancellation
 	registry.Register(&mockTool{
-		name: "slow",
+		name: "echo",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -285,7 +288,7 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := executor.Execute(ctx, "slow", map[string]any{})
+	_, err := executor.Execute(ctx, "echo", map[string]any{})
 	if err == nil {
 		t.Error("Execute() with cancelled context should return error")
 	}
@@ -443,6 +446,232 @@ func TestExecutor_ResultsToMessages(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Safety gate tests ---
+
+func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
+	registry := NewRegistry()
+	// "echo" is classified as T1 (Observe) in the safety tier registry
+	registry.Register(&mockTool{
+		name: "echo",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "ok", nil
+		},
+	})
+
+	// Even with most restrictive policy, T1 tools should work
+	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
+
+	result, err := executor.Execute(context.Background(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatalf("T1 tool should always be allowed, got error: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("result = %v, want ok", result)
+	}
+}
+
+func TestExecutor_SafetyGate_T3_DeniedByDefault(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "write_file",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "written", nil
+		},
+	})
+
+	// Default policy denies write_file
+	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
+
+	_, err := executor.Execute(context.Background(), "write_file", map[string]any{"path": "/tmp/test"})
+	if err == nil {
+		t.Fatal("write_file should be denied by default policy")
+	}
+
+	var accessErr *safety.AccessDeniedError
+	if !errors.As(err, &accessErr) {
+		t.Errorf("expected AccessDeniedError, got %T: %v", err, err)
+	}
+}
+
+func TestExecutor_SafetyGate_T3_AllowedByPolicy(t *testing.T) {
+	registry := NewRegistry()
+	called := false
+	registry.Register(&mockTool{
+		name: "run_command",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			called = true
+			return "output", nil
+		},
+	})
+
+	// Policy that enables run_command
+	policy := safety.DefaultPolicy()
+	policy.Act.RunCommand.Enabled = true
+
+	executor := NewExecutor(registry, nil, WithPolicy(policy))
+
+	result, err := executor.Execute(context.Background(), "run_command", map[string]any{"command": "ls"})
+	if err != nil {
+		t.Fatalf("run_command should be allowed by policy, got: %v", err)
+	}
+	if !called {
+		t.Error("tool Execute was not called")
+	}
+	if result != "output" {
+		t.Errorf("result = %v, want output", result)
+	}
+}
+
+func TestExecutor_SafetyGate_UnknownTool_Denied(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "dangerous_unknown",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "bad", nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
+
+	_, err := executor.Execute(context.Background(), "dangerous_unknown", map[string]any{})
+	if err == nil {
+		t.Fatal("unknown tool should be denied (classified as T3)")
+	}
+}
+
+func TestExecutor_Notifier_T3_CalledBeforeAndAfter(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "run_command",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "ok", nil
+		},
+	})
+
+	policy := safety.DefaultPolicy()
+	policy.Act.RunCommand.Enabled = true
+
+	notifier := &trackingNotifier{}
+	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
+
+	_, err := executor.Execute(context.Background(), "run_command", map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !notifier.beforeCalled {
+		t.Error("NotifyBefore was not called for T3 action")
+	}
+	if !notifier.afterCalled {
+		t.Error("NotifyAfter was not called for T3 action")
+	}
+	if notifier.beforeInfo.ToolName != "run_command" {
+		t.Errorf("NotifyBefore tool = %q, want run_command", notifier.beforeInfo.ToolName)
+	}
+}
+
+func TestExecutor_Notifier_T3_CancelledDuringBefore(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "run_command",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			t.Fatal("tool should not execute when NotifyBefore returns error")
+			return nil, nil
+		},
+	})
+
+	policy := safety.DefaultPolicy()
+	policy.Act.RunCommand.Enabled = true
+
+	notifier := &trackingNotifier{
+		beforeErr: context.Canceled,
+	}
+	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
+
+	_, err := executor.Execute(context.Background(), "run_command", map[string]any{})
+	if err == nil {
+		t.Fatal("expected error when NotifyBefore returns error")
+	}
+	if !contains(err.Error(), "cancelled") {
+		t.Errorf("error = %v, want 'cancelled' message", err)
+	}
+}
+
+func TestExecutor_Notifier_T2_OnlyAfter(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "graph_add_node",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "added", nil
+		},
+	})
+
+	policy := safety.DefaultPolicy()
+	// graph_mutations is enabled by default
+
+	notifier := &trackingNotifier{}
+	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
+
+	_, err := executor.Execute(context.Background(), "graph_add_node", map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// T2 should NOT get NotifyBefore (only T3 does)
+	if notifier.beforeCalled {
+		t.Error("NotifyBefore should NOT be called for T2 action")
+	}
+	// T2 SHOULD get NotifyAfter
+	if !notifier.afterCalled {
+		t.Error("NotifyAfter should be called for T2 action")
+	}
+}
+
+func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "echo",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "ok", nil
+		},
+	})
+
+	notifier := &trackingNotifier{}
+	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()), WithNotifier(notifier))
+
+	_, err := executor.Execute(context.Background(), "echo", map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if notifier.beforeCalled {
+		t.Error("NotifyBefore should NOT be called for T1")
+	}
+	if notifier.afterCalled {
+		t.Error("NotifyAfter should NOT be called for T1")
+	}
+}
+
+// trackingNotifier records calls for test assertions.
+type trackingNotifier struct {
+	beforeCalled bool
+	afterCalled  bool
+	beforeInfo   safety.ActionInfo
+	afterInfo    safety.ActionInfo
+	beforeErr    error
+}
+
+func (n *trackingNotifier) NotifyBefore(_ context.Context, info safety.ActionInfo) error {
+	n.beforeCalled = true
+	n.beforeInfo = info
+	return n.beforeErr
+}
+
+func (n *trackingNotifier) NotifyAfter(_ context.Context, info safety.ActionInfo, _ any, _ error) {
+	n.afterCalled = true
+	n.afterInfo = info
 }
 
 // Helper functions
