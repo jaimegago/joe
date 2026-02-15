@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/jaimegago/joe/internal/paths"
@@ -34,12 +35,22 @@ func IsPathAllowed(absPath string) error {
 	cleanPath := filepath.Clean(absPath)
 	cleanJoeDir := filepath.Clean(joeDir)
 
+	// Normalize case on case-insensitive filesystems (macOS, Windows)
+	// to prevent bypass via /Users/alice/.JOE/ vs /Users/alice/.joe/
+	if isCaseInsensitiveFS() {
+		cleanPath = strings.ToLower(cleanPath)
+		cleanJoeDir = strings.ToLower(cleanJoeDir)
+	}
+
 	// Resolve symlinks if the path exists — a symlink to ~/.joe/ must be caught.
 	// If the path doesn't exist yet (e.g., write_file creating new file),
 	// we check the cleaned path which is still safe since filepath.Clean
 	// normalizes away .. segments.
 	if resolved, err := filepath.EvalSymlinks(cleanPath); err == nil {
 		cleanPath = resolved
+		if isCaseInsensitiveFS() {
+			cleanPath = strings.ToLower(cleanPath)
+		}
 	} else if !os.IsNotExist(err) {
 		// EvalSymlinks failed for a reason other than "not found" — deny for safety
 		return fmt.Errorf("cannot resolve path %s for safety check: %w", absPath, err)
@@ -55,8 +66,11 @@ func IsPathAllowed(absPath string) error {
 	}
 
 	// Extra check for safety policy file specifically (defense in depth)
-	safetyPolicyPath := filepath.Join(joeDir, PolicyFileName)
-	if cleanPath == filepath.Clean(safetyPolicyPath) {
+	safetyPolicyPath := filepath.Clean(filepath.Join(joeDir, PolicyFileName))
+	if isCaseInsensitiveFS() {
+		safetyPolicyPath = strings.ToLower(safetyPolicyPath)
+	}
+	if cleanPath == safetyPolicyPath {
 		return &InvariantViolationError{
 			Type:   "path_protection",
 			Target: absPath,
@@ -124,4 +138,11 @@ func (e *InvariantViolationError) Error() string {
 func IsInvariantViolation(err error) bool {
 	_, ok := err.(*InvariantViolationError)
 	return ok
+}
+
+// isCaseInsensitiveFS returns true if the operating system uses a case-insensitive
+// filesystem by default (macOS, Windows). This is used to normalize paths for
+// security checks to prevent case-based bypass attacks.
+func isCaseInsensitiveFS() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
