@@ -1906,6 +1906,15 @@ $
 - .joe/ file discovery
 - Clarification queue
 
-### Phase 6+: Extensions
-- ArgoCD, Prometheus, notifications
+### Phase 5.5: Action Safety Framework
+- Safety policy loader and action tiers
+- Tool executor gate and self-protection invariants
+- Path sandboxing and command allowlists
+
+### Phase 6: Cloud, Observability, Alerting
+- Cloud adapters (AWS, Azure)
+- Observability (Prometheus/Mimir, Loki, Tempo/Jaeger)
+- Alerting and notifications (Alertmanager, PagerDuty, Grafana)
+
+### Phase 7+: Extensions
 - Web UI, VS Code extension

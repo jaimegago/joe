@@ -4,7 +4,8 @@ Joe (Joe Operates Everything) helps platform engineers understand, debug, and op
 
 ## Status
 
-📈 **Phase 4 Complete** - Core foundation built, ready for Core Agent implementation
+📈 **Phase 5.5 Complete** - Core Agent + Action Safety Framework
+🧭 **Phase 6 In Progress** - Cloud, Observability, and Alerting adapters
 
 Architecture & Foundation:
 - ✅ Two-binary architecture (`joe` client + `joecored` daemon)
@@ -27,13 +28,14 @@ Data Layer & Infrastructure:
 - ✅ Migration system with schema versioning
 - ✅ Kubernetes adapter (client-go, dynamic discovery)
 - ✅ Git adapter (go-git, clone/read/log/diff operations)
+- ✅ AWS adapter (EC2, EKS, RDS, VPC discovery)
 
 Testing & Observability:
 - ✅ Unit tests, integration tests, E2E test harness
 - ✅ OpenTelemetry metrics and tracing
 - ✅ Structured logging with configurable levels
 
-**Next Phase 5:** Core Agent implementation (background discovery, autonomous graph maintenance)
+**Current Phase 6:** Cloud, observability, and alerting adapters
 
 ## Quick Start
 
@@ -218,7 +220,7 @@ Joe uses a client-server architecture:
 
 **Architecture Highlights:**
 - **Two-binary design** - `joe` (client) + `joecored` (daemon) with HTTP API boundary
-- **Dual agents** - User Agent (interactive) + Core Agent (autonomous, Phase 5)
+- **Dual agents** - User Agent (interactive) + Core Agent (autonomous)
 - **AI-agnostic** - Swappable LLM backends (Claude 4, Gemini 2.5)
 - **Tool-based execution** - LLM calls tools to perform actions
 - **Hot-swappable models** - Change models without restarting
@@ -263,14 +265,13 @@ Test categories:
 
 Joe is built in iterative phases:
 
-**✅ Phase 1-4: Complete** - Core foundation built  
-**🚧 Phase 5: Current** - Core Agent implementation  
-**📋 Phase 6: Planned** - Cloud adapters (AWS, Azure)  
+**✅ Phase 1-5.5: Complete** - Core foundation + Core Agent + safety framework  
+**🚧 Phase 6: Current** - Cloud, observability, and alerting adapters  
 **📋 Phase 7: Planned** - Knowledge store with embedding search  
 **📋 Phase 8: Planned** - Documentation co-pilot  
 **📋 Phase 9: Planned** - Additional clients (Web UI, VS Code)  
 
-See [docs/phase-4-finished-copilot-analysis-and-next-steps.md](docs/phase-4-finished-copilot-analysis-and-next-steps.md) for detailed status.
+See [docs/next-steps-plan.md](docs/next-steps-plan.md) for detailed status.
 
 ## Project Structure
 
@@ -282,12 +283,13 @@ joe/
 ├── internal/
 │   ├── adapters/             # Infrastructure adapter registry
 │   │   ├── k8s/              # Kubernetes adapter (client-go)
-│   │   └── git/              # Git adapter (go-git)
+│   │   ├── git/              # Git adapter (go-git)
+│   │   └── aws/              # AWS adapter (SDK)
 │   ├── api/                  # HTTP API server (joecored)
 │   ├── client/               # HTTP client (joe→joecored)
 │   ├── config/               # Configuration loading & validation
 │   ├── core/                 # Core services container
-│   ├── coreagent/            # Core agent logic (Phase 5)
+│   ├── coreagent/            # Core agent logic
 │   ├── llm/                  # LLM interface and implementations
 │   │   ├── claude/           # Claude 4 Sonnet adapter
 │   │   └── gemini/           # Gemini 2.5 adapters

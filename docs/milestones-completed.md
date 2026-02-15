@@ -4,7 +4,7 @@ This document records the completed phases of Joe's development (Milestones 1-4 
 
 **Current Status:** ✅ Milestones 1-4 complete + Phase 5.5 Action Safety Framework complete
 
-**Next Phase:** Phase 6 - Cloud, Observability, and Alerting Adapters (see `CLAUDE.md` for planning)
+**Current Phase:** Phase 6 - Cloud, Observability, and Alerting Adapters (see `CLAUDE.md` for planning)
 
 ---
 

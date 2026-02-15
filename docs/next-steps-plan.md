@@ -8,7 +8,34 @@ Use this as a checklist. Complete each section fully before moving on.
 - ✅ **Milestone 2: Onboarding + Control Endpoints** - Complete (10+ tests passing)
 - ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
 - ✅ **Milestone 4: .joe/ Processing and Cache Replay** - Complete (5 new tests passing)
-- ⏳ **Next: Phase 6 - Cloud, Observability, Alerting Adapters**
+- 🧭 **Current: Phase 6 - Cloud, Observability, Alerting Adapters**
+
+## 5) Phase 6: Cloud, Observability & Alerting Adapters
+
+All new adapters are read-only (T1) by default. Mutations require T3 classification + policy flag.
+
+5.1 ⏳ Core foundations
+- Add source types and registry wiring for new adapters
+- Add API endpoints + core tools for each adapter
+- Add graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
+
+5.2 ⏳ Cloud adapters
+- AWS: EC2, EKS, RDS, VPC (verify coverage + graph mapping)
+- Azure: VMs, AKS, Azure SQL, VNets
+
+5.3 ⏳ Observability adapters
+- Open source: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces)
+- Proprietary: Datadog, Splunk, Dynatrace, New Relic
+- Cloud: CloudWatch, Azure Monitor
+
+5.4 ⏳ Alerting + dashboards
+- Alertmanager, PagerDuty, Grafana
+
+5.5 ⏳ Safety and hardening
+- Credential encryption at rest for `sources.config`
+- TLS support for joe↔joecored
+- Rate limiting middleware
+- Classify each new tool as T1/T2/T3 with policy flags for T2/T3 actions
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
