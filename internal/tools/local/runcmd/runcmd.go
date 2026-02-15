@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 type Tool struct {
@@ -99,6 +100,11 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	cmdName, ok := args["command"].(string)
 	if !ok || cmdName == "" {
 		return nil, fmt.Errorf("command parameter is required and must be a string")
+	}
+
+	// Self-protection: check if command is blocked (joe, joecored, kill, etc.)
+	if err := safety.IsCommandAllowed(cmdName); err != nil {
+		return nil, err
 	}
 
 	// Check if command is allowed

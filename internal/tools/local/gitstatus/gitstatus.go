@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools/local"
 )
 
@@ -53,6 +54,11 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 		dir, err = local.ExpandPath(pathArg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand path: %w", err)
+		}
+
+		// Self-protection: check if path is allowed (blocks ~/.joe/)
+		if err := safety.IsPathAllowed(dir); err != nil {
+			return nil, err
 		}
 	}
 
