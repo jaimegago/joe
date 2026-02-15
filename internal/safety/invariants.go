@@ -2,7 +2,6 @@ package safety
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -42,18 +41,11 @@ func IsPathAllowed(absPath string) error {
 		cleanJoeDir = strings.ToLower(cleanJoeDir)
 	}
 
-	// Resolve symlinks if the path exists — a symlink to ~/.joe/ must be caught.
-	// If the path doesn't exist yet (e.g., write_file creating new file),
-	// we check the cleaned path which is still safe since filepath.Clean
-	// normalizes away .. segments.
-	if resolved, err := filepath.EvalSymlinks(cleanPath); err == nil {
-		cleanPath = resolved
-		if isCaseInsensitiveFS() {
-			cleanPath = strings.ToLower(cleanPath)
-		}
-	} else if !os.IsNotExist(err) {
-		// EvalSymlinks failed for a reason other than "not found" — deny for safety
-		return fmt.Errorf("cannot resolve path %s for safety check: %w", absPath, err)
+	// Resolve symlinks — including parent directories for paths that don't exist
+	// yet. This prevents escape via symlinked parent dirs (e.g., /tmp/link-to-joe/file).
+	cleanPath = resolvePathSymlinks(cleanPath)
+	if isCaseInsensitiveFS() {
+		cleanPath = strings.ToLower(cleanPath)
 	}
 
 	// Block any path within ~/.joe/
@@ -150,20 +142,16 @@ func IsWritePathInAllowedDir(absPath string, allowedDirs []string) error {
 	}
 
 	cleanPath := filepath.Clean(absPath)
+
+	// Resolve symlinks — including parent directories for paths that don't exist
+	// yet. This prevents escape via symlinked parent dirs.
+	cleanPath = resolvePathSymlinks(cleanPath)
 	if isCaseInsensitiveFS() {
 		cleanPath = strings.ToLower(cleanPath)
 	}
 
-	// Resolve symlinks if path exists
-	if resolved, err := filepath.EvalSymlinks(cleanPath); err == nil {
-		cleanPath = resolved
-		if isCaseInsensitiveFS() {
-			cleanPath = strings.ToLower(cleanPath)
-		}
-	}
-
 	for _, dir := range allowedDirs {
-		cleanDir := filepath.Clean(dir)
+		cleanDir := resolvePathSymlinks(filepath.Clean(dir))
 		if isCaseInsensitiveFS() {
 			cleanDir = strings.ToLower(cleanDir)
 		}
@@ -177,6 +165,42 @@ func IsWritePathInAllowedDir(absPath string, allowedDirs []string) error {
 		Target: absPath,
 		Reason: fmt.Sprintf("path is outside allowed directories: %v", allowedDirs),
 	}
+}
+
+// resolvePathSymlinks resolves symlinks in a path, handling the case where the
+// file doesn't exist yet. When the full path doesn't exist, it walks up to the
+// nearest existing ancestor, resolves symlinks there, and appends the remaining
+// components. This prevents escape via symlinked parent directories.
+//
+// Example: /tmp/symlink-to-etc/newfile.txt
+//   - /tmp/symlink-to-etc/newfile.txt doesn't exist → EvalSymlinks fails
+//   - /tmp/symlink-to-etc exists and is a symlink to /etc → resolves to /etc
+//   - Result: /etc/newfile.txt (correctly reveals the real destination)
+func resolvePathSymlinks(cleanPath string) string {
+	// Try the full path first (fast path for existing files)
+	if resolved, err := filepath.EvalSymlinks(cleanPath); err == nil {
+		return resolved
+	}
+
+	// Walk up to find the nearest existing ancestor
+	remaining := ""
+	current := cleanPath
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root without finding existing path
+			break
+		}
+		remaining = filepath.Join(filepath.Base(current), remaining)
+		current = parent
+
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return filepath.Join(resolved, remaining)
+		}
+	}
+
+	// Nothing resolvable — return the cleaned path as-is
+	return cleanPath
 }
 
 // isCaseInsensitiveFS returns true if the operating system uses a case-insensitive
