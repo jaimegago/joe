@@ -1,7 +1,7 @@
 package paths
 
 import (
-	"os"
+	"fmt"
 	"path/filepath"
 )
 
@@ -14,24 +14,23 @@ const (
 )
 
 // DefaultConfigPath returns the default configuration file path.
-// Returns ~/.joe/config.yaml
+// Returns ~/.joe/config.yaml using secure home directory resolution.
 func DefaultConfigPath() string {
-	home, err := os.UserHomeDir()
+	home, err := getSecureHomeDir()
 	if err != nil {
+		// Fallback to tilde expansion if secure method fails
 		return filepath.Join("~", JoeDir, ConfigFile)
 	}
 	return filepath.Join(home, JoeDir, ConfigFile)
 }
 
 // JoeDirPath returns the .joe directory path in the user's home.
+// Uses getSecureHomeDir() which bypasses HOME environment variable to prevent
+// security bypass attacks where an attacker sets HOME=/tmp/fake.
 func JoeDirPath() (string, error) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		var err error
-		home, err = os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
+	home, err := getSecureHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	return filepath.Join(home, JoeDir), nil
 }

@@ -3,6 +3,7 @@ package safety
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -246,5 +247,66 @@ func TestIsInvariantViolation_NotInvariantError(t *testing.T) {
 
 	if IsInvariantViolation(err) {
 		t.Error("IsInvariantViolation() should return false for non-invariant errors")
+	}
+}
+
+// TestIsPathAllowed_CaseSensitivity verifies case-insensitive filesystem bypass protection.
+// On macOS and Windows, /Users/alice/.JOE/ is the same as /Users/alice/.joe/
+func TestIsPathAllowed_CaseSensitivity(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+	joeDir := filepath.Join(home, ".joe")
+
+	// Test various case permutations
+	testPaths := []string{
+		filepath.Join(home, ".JOE", "config.yaml"),          // Uppercase
+		filepath.Join(home, ".Joe", "config.yaml"),          // Mixed case
+		filepath.Join(home, ".joE", "config.yaml"),          // Mixed case
+		strings.ToUpper(joeDir) + "/config.yaml",            // Full uppercase path
+		filepath.Join(strings.ToUpper(home), ".joe", "db"),  // Uppercase home
+	}
+
+	for _, path := range testPaths {
+		t.Run(path, func(t *testing.T) {
+			err := IsPathAllowed(path)
+			
+			// On case-insensitive systems (macOS, Windows), these should be blocked
+			if isCaseInsensitiveFS() {
+				if err == nil {
+					t.Errorf("SECURITY: IsPathAllowed(%q) allowed on case-insensitive FS, should block", path)
+				}
+			}
+			// On case-sensitive systems (Linux), these are different paths and may be allowed
+			// (we don't test the block because the uppercase path may not exist)
+		})
+	}
+}
+
+// TestIsPathAllowed_HomeEnvBypass verifies that HOME env manipulation doesn't bypass protection.
+func TestIsPathAllowed_HomeEnvBypass(t *testing.T) {
+	// Get real home before manipulation using the same secure method paths package uses
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("Cannot get home directory: %v", err)
+	}
+	realJoeDir := filepath.Join(realHome, ".joe")
+
+	// Set fake HOME (JoeDirPath uses secure method, should ignore this)
+	t.Setenv("HOME", "/tmp/fake-home")
+
+	// Try to access real .joe directory (should still be blocked because
+	// paths.JoeDirPath() uses getSecureHomeDir which ignores HOME env)
+	configPath := filepath.Join(realJoeDir, "config.yaml")
+	err = IsPathAllowed(configPath)
+	
+	// The protection should still work because paths.JoeDirPath()
+	// determines the protected directory using getSecureHomeDir(), not HOME
+	if err == nil {
+		t.Errorf("SECURITY: IsPathAllowed(%q) succeeded despite HOME manipulation", configPath)
+	}
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("Expected self-protection error, got: %v", err)
 	}
 }
