@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/jaimegago/joe/internal/paths"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,6 +111,17 @@ func LoadPolicy(configDir string) (*SafetyPolicy, error) {
 		return nil, fmt.Errorf("safety policy %s: version must be >= 1, got %d", path, policy.Version)
 	}
 
+	// Expand ~ in allowed_directories to the user's home directory.
+	// Uses secure home resolution that bypasses HOME env var.
+	if err := expandTildePaths(policy.Act.WriteFile.AllowedDirectories); err != nil {
+		return nil, fmt.Errorf("safety policy %s: expand allowed_directories: %w", path, err)
+	}
+
+	// Normalize allowed_directories to absolute, cleaned paths and reject relative entries.
+	if err := normalizeAllowedDirectories(policy.Act.WriteFile.AllowedDirectories); err != nil {
+		return nil, fmt.Errorf("safety policy %s: normalize allowed_directories: %w", path, err)
+	}
+
 	return policy, nil
 }
 
@@ -146,4 +159,46 @@ func (p *SafetyPolicy) IsT3Allowed(action string) bool {
 	default:
 		return false // unknown action → deny
 	}
+}
+
+// expandTildePaths expands ~ prefix in path slices to the user's home directory.
+// Modifies the slice in place. Uses secure home resolution (bypasses HOME env).
+func expandTildePaths(paths_ []string) error {
+	var home string
+	for i, p := range paths_ {
+		if strings.HasPrefix(p, "~/") || p == "~" {
+			if home == "" {
+				var err error
+				home, err = paths.SecureHomeDir()
+				if err != nil {
+					return fmt.Errorf("cannot resolve ~ in path %q: %w", p, err)
+				}
+			}
+			if p == "~" {
+				paths_[i] = home
+			} else {
+				paths_[i] = filepath.Join(home, p[2:])
+			}
+		}
+	}
+	return nil
+}
+
+// normalizeAllowedDirectories converts allowed_directories entries to absolute,
+// cleaned paths and rejects any that are still relative after expansion.
+func normalizeAllowedDirectories(paths_ []string) error {
+	for i, p := range paths_ {
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			return fmt.Errorf("allowed_directories must be absolute: %q", p)
+		}
+		absPath, err := filepath.Abs(p)
+		if err != nil {
+			return fmt.Errorf("failed to resolve allowed_directories path %q: %w", p, err)
+		}
+		paths_[i] = filepath.Clean(absPath)
+	}
+	return nil
 }

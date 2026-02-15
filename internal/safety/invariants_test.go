@@ -339,6 +339,36 @@ func TestIsWritePathInAllowedDir(t *testing.T) {
 	}
 }
 
+// TestIsWritePathInAllowedDir_SymlinkParentEscape verifies that a symlinked parent
+// directory cannot be used to escape the sandbox for new files.
+func TestIsWritePathInAllowedDir_SymlinkParentEscape(t *testing.T) {
+	// Create two temp dirs: one allowed, one forbidden
+	allowedDir := t.TempDir()
+	forbiddenDir := t.TempDir()
+
+	// Create a symlink inside the allowed dir that points to the forbidden dir
+	symlinkPath := filepath.Join(allowedDir, "escape-link")
+	if err := os.Symlink(forbiddenDir, symlinkPath); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	// Attempt to write to a new file via the symlink — should be blocked
+	escapePath := filepath.Join(symlinkPath, "newfile.txt")
+	err := IsWritePathInAllowedDir(escapePath, []string{allowedDir})
+	if err != nil {
+		t.Logf("correctly blocked symlink parent escape: %v", err)
+	} else {
+		t.Error("SECURITY: IsWritePathInAllowedDir should block symlink escape to forbidden dir")
+	}
+
+	// Direct access to the forbidden dir should also be blocked
+	directPath := filepath.Join(forbiddenDir, "newfile.txt")
+	err = IsWritePathInAllowedDir(directPath, []string{allowedDir})
+	if err == nil {
+		t.Error("expected error for path outside allowed dir")
+	}
+}
+
 // TestIsPathAllowed_CaseSensitivity verifies case-insensitive filesystem bypass protection.
 // On macOS and Windows, /Users/alice/.JOE/ is the same as /Users/alice/.joe/
 func TestIsPathAllowed_CaseSensitivity(t *testing.T) {

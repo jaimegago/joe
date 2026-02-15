@@ -35,6 +35,13 @@ func JoeDirPath() (string, error) {
 	return filepath.Join(home, JoeDir), nil
 }
 
+// SecureHomeDir returns the user's home directory using system APIs that
+// bypass the HOME environment variable. This is the exported version of
+// getSecureHomeDir for use by other packages that need secure home resolution.
+func SecureHomeDir() (string, error) {
+	return getSecureHomeDir()
+}
+
 // DatabasePath returns the full path to the Joe database file.
 func DatabasePath() (string, error) {
 	dir, err := JoeDirPath()

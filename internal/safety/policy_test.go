@@ -3,7 +3,10 @@ package safety
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/jaimegago/joe/internal/paths"
 )
 
 func TestDefaultPolicy(t *testing.T) {
@@ -179,6 +182,27 @@ record:
 	}
 }
 
+func TestLoadPolicy_RejectsRelativeAllowedDirectories(t *testing.T) {
+	dir := t.TempDir()
+	policyYAML := `
+version: 1
+act:
+  write_file:
+    enabled: true
+    allowed_directories:
+      - ./relative-path
+`
+	err := os.WriteFile(filepath.Join(dir, PolicyFileName), []byte(policyYAML), 0644)
+	if err != nil {
+		t.Fatalf("write test policy: %v", err)
+	}
+
+	_, err = LoadPolicy(dir)
+	if err == nil {
+		t.Fatal("expected error for relative allowed_directories, got nil")
+	}
+}
+
 func TestLoadPolicy_PartialFile(t *testing.T) {
 	dir := t.TempDir()
 	// Only specify version and one field — rest should get defaults
@@ -266,5 +290,56 @@ func TestIsT3Allowed(t *testing.T) {
 				t.Errorf("IsT3Allowed(%q) = %v, want %v", tt.action, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadPolicy_TildeExpansion(t *testing.T) {
+	home, err := paths.SecureHomeDir()
+	if err != nil {
+		t.Fatalf("SecureHomeDir: %v", err)
+	}
+
+	dir := t.TempDir()
+	policyYAML := `
+version: 1
+act:
+  write_file:
+    enabled: true
+    allowed_directories:
+      - ~/projects
+      - /tmp/joe-output
+      - ~/Documents/work
+`
+	err = os.WriteFile(filepath.Join(dir, PolicyFileName), []byte(policyYAML), 0644)
+	if err != nil {
+		t.Fatalf("write test policy: %v", err)
+	}
+
+	p, err := LoadPolicy(dir)
+	if err != nil {
+		t.Fatalf("LoadPolicy error: %v", err)
+	}
+
+	wantDirs := []string{
+		filepath.Join(home, "projects"),
+		"/tmp/joe-output",
+		filepath.Join(home, "Documents/work"),
+	}
+
+	if len(p.Act.WriteFile.AllowedDirectories) != len(wantDirs) {
+		t.Fatalf("AllowedDirectories = %v, want %v", p.Act.WriteFile.AllowedDirectories, wantDirs)
+	}
+
+	for i, got := range p.Act.WriteFile.AllowedDirectories {
+		if got != wantDirs[i] {
+			t.Errorf("AllowedDirectories[%d] = %q, want %q", i, got, wantDirs[i])
+		}
+	}
+
+	// Verify no tilde remains
+	for i, d := range p.Act.WriteFile.AllowedDirectories {
+		if strings.HasPrefix(d, "~") {
+			t.Errorf("AllowedDirectories[%d] = %q still has tilde prefix", i, d)
+		}
 	}
 }
