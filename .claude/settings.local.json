@@ -21,7 +21,8 @@
       "Bash(gh repo view:*)",
       "Bash(head:*)",
       "Bash(git log:*)",
-      "Bash(go tool cover:*)"
+      "Bash(go tool cover:*)",
+      "WebFetch(domain:www.cncf.io)"
     ]
   }
 }

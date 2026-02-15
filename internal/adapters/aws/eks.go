@@ -115,6 +115,9 @@ func convertEKSCluster(cluster types.Cluster) EKSCluster {
 
 	// Convert VPC configuration
 	if cluster.ResourcesVpcConfig != nil {
+		if cluster.ResourcesVpcConfig.VpcId != nil {
+			result.VpcID = *cluster.ResourcesVpcConfig.VpcId
+		}
 		vpcConfig := VPCConfig{
 			SubnetIDs:        cluster.ResourcesVpcConfig.SubnetIds,
 			SecurityGroupIDs: cluster.ResourcesVpcConfig.SecurityGroupIds,

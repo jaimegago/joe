@@ -20,8 +20,8 @@ All new adapters are read-only (T1) by default. Mutations require T3 classificat
 - Add graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
 
 5.2 ⏳ Cloud adapters
-- AWS: EC2, EKS, RDS, VPC (verify coverage + graph mapping)
-- Azure: VMs, AKS, Azure SQL, VNets
+- AWS: EC2, EKS, RDS, VPC (verify coverage + graph mapping) ✅
+- Azure: VMs, AKS, Azure SQL, VNets ✅
 
 5.3 ⏳ Observability adapters
 - Open source: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces)

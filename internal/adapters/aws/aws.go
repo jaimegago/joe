@@ -59,6 +59,7 @@ type EKSCluster struct {
 	Status          string            `json:"status"`
 	Endpoint        string            `json:"endpoint,omitempty"`
 	RoleARN         string            `json:"role_arn"`
+	VpcID           string            `json:"vpc_id,omitempty"`
 	VpcConfig       VPCConfig         `json:"vpc_config,omitempty"`
 	Tags            map[string]string `json:"tags,omitempty"`
 	CreatedAt       string            `json:"created_at,omitempty"`

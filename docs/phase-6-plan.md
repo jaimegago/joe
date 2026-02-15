@@ -97,6 +97,9 @@ Acceptance
 Tests
 - Unit tests for AWS mapping, table-driven.
 
+Status
+- Done (2026-02-15)
+
 ### 6.2.2 Azure adapter (new)
 
 - Add adapter skeleton and config parsing.
@@ -113,6 +116,9 @@ Acceptance
 
 Tests
 - Adapter unit tests and mapping tests.
+
+Status
+- Done (2026-02-15)
 
 ---
 

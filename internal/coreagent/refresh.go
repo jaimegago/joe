@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
+	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/core"
@@ -162,7 +164,17 @@ func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (er
 		}
 		return r.refreshGitSource(ctx, source, gitAdapter)
 	case store.SourceTypeAWS:
-		return nil
+		awsAdapter, ok := adapter.(awsadapter.AWSAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not aws", source.ID)
+		}
+		return r.refreshAWSSource(ctx, source, awsAdapter)
+	case store.SourceTypeAzure:
+		azureAdapter, ok := adapter.(azureadapter.AzureAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not azure", source.ID)
+		}
+		return r.refreshAzureSource(ctx, source, azureAdapter)
 	default:
 		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)
 		return nil
