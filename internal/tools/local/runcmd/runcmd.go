@@ -128,6 +128,12 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 		}
 	}
 
+	// Subcommand validation: for mutation-capable commands (kubectl, helm, argocd),
+	// only allow read-only subcommands. This is hardcoded and cannot be bypassed.
+	if err := ValidateSubcommand(cmdName, cmdArgs); err != nil {
+		return nil, err
+	}
+
 	// Create context with timeout
 	execCtx, cancel := context.WithTimeout(ctx, CommandTimeout)
 	defer cancel()

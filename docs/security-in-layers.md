@@ -377,6 +377,147 @@ Examples of future T3 actions:
 
 ---
 
+## Part 6: Infrastructure Healing — From Observer to Operator
+
+The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control.
+
+### 6.1 Trust Progression
+
+Joe's relationship with infrastructure follows a natural progression:
+
+```
+Stage 1: Observe (T1)          Stage 2: Read-Only Tools (T3 read)
+─────────────────────          ─────────────────────────────────
+Joe reads everything,          Human enables kubectl/helm/argocd
+changes nothing.               in safety-policy.yaml. Subcommand
+"Why is payment-api slow?"     allowlists restrict to get/describe/
+→ Joe explains the cause.      logs. Joe queries infra directly.
+
+Stage 3: Supervised Healing    Stage 4: Autonomous Healing
+───────────────────────────    ────────────────────────────
+Human enables specific T3      Human enables broader T3 actions.
+mutation actions (e.g.,        Joe heals known patterns without
+k8s_scale). Joe announces      prompting, still announces before
+before acting, human can       and after. Audit log captures
+Ctrl+C to cancel.              everything.
+```
+
+### 6.2 Healing Actions by Adapter
+
+When humans choose to enable healing, each action is individually toggled. There is no "enable all mutations" switch.
+
+| Adapter | Healing Action | Policy Key | What Joe Does |
+| ------- | -------------- | ---------- | ------------- |
+| **K8s** | Scale deployment | `act.k8s_scale` | Increase replicas when CPU/memory pressure detected |
+| **K8s** | Restart rollout | `act.k8s_restart` | `kubectl rollout restart` for stuck deployments |
+| **K8s** | Cordon node | `act.k8s_cordon` | Isolate unhealthy node, let pods reschedule |
+| **K8s** | Apply manifest | `act.k8s_apply` | Apply known-good config from git |
+| **Alertmanager** | Create silence | `act.alertmanager_silence` | Silence alert while fixing root cause |
+| **PagerDuty** | Acknowledge | `act.pagerduty_ack` | Acknowledge incident while investigating |
+| **PagerDuty** | Resolve | `act.pagerduty_resolve` | Resolve incident after confirming fix |
+| **Git** | Commit | `act.git_commit` | Commit config changes to repo |
+| **Git** | Push | `act.git_push` | Push fix to trigger GitOps pipeline |
+| **Helm** | Upgrade | `act.helm_upgrade` | Upgrade release with new values |
+
+### 6.3 Graph-Driven Healing
+
+Joe's healing is not blind command execution — it's informed by the knowledge graph. Before acting, Joe traverses relationships to understand blast radius:
+
+```
+Example: "payment-api is slow"
+
+Joe's graph traversal:
+  payment-api (service)
+    ──runs_on──► payment-deploy (deployment, 2 replicas, 95% CPU)
+      ──runs_on──► node-ip-10-0-1-42 (node, healthy)
+    ──depends_on──► payment-db (RDS, 100% CPU)
+      ──metrics_in──► prometheus (high query latency)
+    ──paged_via──► pagerduty (incident #4521, unacked)
+
+Joe's reasoning:
+  "payment-api is slow because payment-db RDS is at 100% CPU.
+   Scaling payment-api replicas won't help — it'll add more
+   load to the already-saturated database. The root cause is
+   likely the missing index from last week's migration.
+
+   What I can do now:
+   1. Acknowledge PagerDuty incident #4521 (act.pagerduty_ack)
+   2. Scale payment-db read replicas (if act.aws_rds_scale enabled)
+
+   What requires human action:
+   1. Add the missing database index
+   2. Review the migration that removed it"
+```
+
+This is the key difference between Joe and a simple runbook executor: Joe understands *why* something is broken and can reason about whether a proposed fix will actually help or make things worse.
+
+### 6.4 Healing Safety Guarantees
+
+Even with healing enabled, the hardcoded safety invariants remain:
+
+1. **T3 notification contract is always enforced** — Joe announces before and after every mutation. For REPL users, this is a blocking 3-second window with Ctrl+C to cancel.
+
+2. **Subcommand allowlists are compiled in** — Enabling `kubectl` in the policy doesn't unlock `kubectl delete`. Mutation subcommands require their own dedicated policy keys (e.g., `act.k8s_scale`).
+
+3. **Self-protection invariants never change** — Joe cannot modify its own config, safety policy, or process, regardless of what healing actions are enabled.
+
+4. **Audit log captures everything** — Every T2 and T3 action is logged with timestamp, tool, arguments, and result. This is the record of what Joe did and why.
+
+5. **Per-action granularity** — A team can enable `k8s_scale` and `alertmanager_silence` while keeping `k8s_apply` and `k8s_delete` disabled. Each mutation is a separate trust decision.
+
+### 6.5 Example: Enabling Healing in safety-policy.yaml
+
+```yaml
+# ~/.joe/safety-policy.yaml — a team that trusts Joe with scaling and alerting
+version: 1
+
+record:
+  graph_mutations: true
+  source_registration: true
+  onboarding_facts: true
+  autonomous_refresh: true
+
+act:
+  write_file:
+    enabled: false
+
+  run_command:
+    enabled: true
+    allowed_commands:
+      - ls
+      - cat
+      - head
+      - tail
+      - grep
+      - find
+      - wc
+      - kubectl              # Read-only subcommands enforced by compiled-in allowlist
+
+  # Healing actions this team has opted into:
+  k8s_scale:
+    enabled: true            # Joe can scale deployments
+  k8s_restart:
+    enabled: true            # Joe can rollout restart
+  alertmanager_silence:
+    enabled: true            # Joe can silence alerts while fixing
+  pagerduty_ack:
+    enabled: true            # Joe can ack incidents
+
+  # Healing actions this team has NOT opted into:
+  k8s_apply:
+    enabled: false           # No applying manifests
+  k8s_cordon:
+    enabled: false           # No node isolation
+  pagerduty_resolve:
+    enabled: false           # Human resolves incidents
+  git_push:
+    enabled: false           # No pushing to repos
+  helm_upgrade:
+    enabled: false           # No helm upgrades
+```
+
+---
+
 ## Risk Matrix
 
 ```

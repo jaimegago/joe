@@ -20,7 +20,8 @@
       "Bash(wc:*)",
       "Bash(gh repo view:*)",
       "Bash(head:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(go tool cover:*)"
     ]
   }
 }
