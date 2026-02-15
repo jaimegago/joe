@@ -1054,6 +1054,151 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  │  - Methods: GetDashboard, ListAlerts, CreateAnnotation      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
+│  DATA STORE ADAPTERS                                                  │
+│  ────────────────────                                                  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  PostgreSQL (internal/adapters/postgres/) 🚧 PLANNED        │   │
+│  │  - pgx driver, read-only connection                         │   │
+│  │  - pg_stat_activity, pg_stat_user_tables, pg_stat_replication│  │
+│  │  - Methods: Stat, Query (SELECT only)                       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  MySQL (internal/adapters/mysql/) 🚧 PLANNED                │   │
+│  │  - go-sql-driver/mysql, read-only user                      │   │
+│  │  - SHOW PROCESSLIST, SHOW REPLICA STATUS, INNODB_TRX        │   │
+│  │  - Methods: Stat, Query (SELECT only)                       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Redis (internal/adapters/redis/) 🚧 PLANNED                │   │
+│  │  - go-redis client, operational stats only                  │   │
+│  │  - INFO, SLOWLOG GET, CLIENT LIST, DBSIZE                   │   │
+│  │  - Methods: Info, SlowLog                                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  MongoDB (internal/adapters/mongodb/) 🚧 PLANNED            │   │
+│  │  - mongo-driver, read-only user                             │   │
+│  │  - serverStatus, rs.status, currentOp                       │   │
+│  │  - Methods: Stat, Query (find only)                         │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Kafka (internal/adapters/kafka/) 🚧 PLANNED                │   │
+│  │  - Admin client, no message consumption                     │   │
+│  │  - Topics, consumer groups, lag, broker metadata            │   │
+│  │  - Methods: Topics, Consumers, Brokers                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Elasticsearch (internal/adapters/elasticsearch/) 🚧 PLANNED│   │
+│  │  - HTTP REST API (compatible with OpenSearch)               │   │
+│  │  - _cluster/health, _cat/indices, _nodes/stats              │   │
+│  │  - Methods: Health, Indices                                 │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  GITOPS, CD & IAC ADAPTERS                                            │
+│  ─────────────────────────                                            │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  ArgoCD (internal/adapters/argocd/) 🚧 PLANNED              │   │
+│  │  - REST API client, token auth                              │   │
+│  │  - App listing, sync status, diff, history                  │   │
+│  │  - Methods: Apps, App, Diff, History                        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Flux (via K8s CRDs) 🚧 PLANNED                             │   │
+│  │  - GitRepository, Kustomization, HelmRelease CRDs           │   │
+│  │  - Reconciliation status, conditions                        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Terraform (internal/adapters/terraform/) 🚧 PLANNED        │   │
+│  │  - State file parser (JSON), sensitive attribute redaction  │   │
+│  │  - Managed resources, outputs, drift detection              │   │
+│  │  - Methods: State, Resource, Outputs                        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Helm (internal/adapters/helm/) 🚧 PLANNED                  │   │
+│  │  - Helm v3 SDK                                              │   │
+│  │  - Release listing, status, values, revision history        │   │
+│  │  - Methods: Releases, Release, History                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  NETWORKING & INGRESS ADAPTERS                                        │
+│  ─────────────────────────────                                        │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  NGINX Ingress (internal/adapters/nginx/) 🚧 PLANNED        │   │
+│  │  - K8s Ingress CRDs + NGINX status endpoint                │   │
+│  │  - Ingress rules, backends, upstream health                 │   │
+│  │  - Methods: Ingresses, Status, Config                       │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Envoy (internal/adapters/envoy/) 🚧 PLANNED                │   │
+│  │  - Admin API (/config_dump, /clusters, /stats)              │   │
+│  │  - Cluster health, endpoints, circuit breaker state         │   │
+│  │  - Methods: Clusters, Config, Stats                         │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Istio (via K8s CRDs) 🚧 PLANNED                            │   │
+│  │  - VirtualService, DestinationRule, Gateway CRDs            │   │
+│  │  - mTLS status, traffic policies                            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Cilium (internal/adapters/cilium/) 🚧 PLANNED              │   │
+│  │  - CiliumNetworkPolicy CRDs + Hubble API                   │   │
+│  │  - Network policies, endpoint health, flow visibility       │   │
+│  │  - Methods: Policies, Endpoints, Flows                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  K8S CRD-BASED ADAPTERS (LOW EFFORT)                                  │
+│  ───────────────────────────────────                                  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  cert-manager (via K8s CRDs) 🚧 PLANNED                     │   │
+│  │  - Certificate, Issuer, ClusterIssuer CRDs                  │   │
+│  │  - Expiry, readiness, issuer status                         │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  KEDA (via K8s CRDs) 🚧 PLANNED                             │   │
+│  │  - ScaledObject, ScaledJob, TriggerAuthentication CRDs      │   │
+│  │  - Scaling targets, triggers, replica counts                │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  OPA/Gatekeeper (via K8s CRDs) 🚧 PLANNED                   │   │
+│  │  - ConstraintTemplate, Constraint CRDs                      │   │
+│  │  - Constraint violations from audit                         │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Crossplane (via K8s CRDs) 🚧 PLANNED                       │   │
+│  │  - Provider, ProviderConfig, XRD, Claims CRDs               │   │
+│  │  - Provider health, resource sync status                    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  SECURITY & RUNTIME ADAPTERS                                          │
+│  ────────────────────────────                                          │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Falco (internal/adapters/falco/) 🚧 PLANNED                │   │
+│  │  - gRPC/HTTP output API                                     │   │
+│  │  - Runtime security events by severity/rule                 │   │
+│  │  - Methods: Alerts, Rules                                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  OTHER                                                                │
+│  ─────                                                                │
+│                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │  HTTP (internal/adapters/http/)                             │   │
 │  │  - Generic HTTP client                                      │   │
@@ -1847,17 +1992,26 @@ Implements the safety enforcement layer before any new adapters or mutation capa
 - [x] **Tests:** Safety gate rejects denied actions; notifications emitted; self-protection paths blocked; policy loading works
 - [x] **Milestone: No tool can mutate anything without passing through the safety gate**
 
-### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
+### Phase 6: Infrastructure Adapters ← CURRENT
 All new adapters in this phase are read-only (T1) by default. Any mutation capability (silence creation, incident acknowledgment) must be registered as T3 with a corresponding policy flag.
 
-- [ ] **Scope:** Cloud (AWS, Azure), Observability (Prometheus/Mimir, Loki, Tempo/Jaeger, Datadog, Splunk, Dynatrace, New Relic, CloudWatch, Azure Monitor), Alerting (Alertmanager, PagerDuty), Dashboards (Grafana)
+- [x] **6.1 Core foundations:** Source types, adapter registry wiring, graph edge definitions
+- [x] **6.2 Cloud:** AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets)
+- [ ] **6.3 Observability:** Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces); Proprietary: Datadog, Splunk, Dynatrace, New Relic; Cloud: CloudWatch, Azure Monitor
+- [ ] **6.4 Alerting & Dashboards:** Alertmanager, PagerDuty, Grafana
+- [ ] **6.5 Safety & Hardening:** Credential encryption, TLS, rate limiting, tool tier classification
+- [ ] **6.6 Data Stores:** PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch (read-only diagnostic queries)
+- [ ] **6.7 GitOps, CD & IaC:** Argo CD (full adapter), Flux (CRDs), Terraform (state), Helm (releases)
+- [ ] **6.8 Networking & Ingress:** NGINX Ingress, Envoy (admin API), Istio (CRDs), Cilium (CRDs + Hubble)
+- [ ] **6.9 K8s CRD-Based (low effort):** cert-manager, KEDA, OPA/Gatekeeper, Crossplane
+- [ ] **6.10 Security & Runtime:** Falco (runtime events)
 - [ ] API endpoints + core tools for each adapter
-- [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
+- [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`, `provisions`
 - [ ] **Safety:** Classify each new tool as T1/T2/T3; add policy flags for any T2/T3 actions (e.g., `act.alertmanager_silence`, `act.pagerduty_ack`); implement notification contract for mutation actions
 - [ ] **Safety:** Credential encryption at rest for `sources.config` column
 - [ ] **Safety:** TLS support for joe-joecored communication
 - [ ] **Safety:** Rate limiting middleware
-- [ ] **Milestone: Joe queries metrics, logs, traces, alerts with safety enforcement on all mutation paths**
+- [ ] **Milestone: Joe queries cloud, observability, data stores, GitOps, networking, and policy with safety enforcement on all mutation paths**
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge items table (tiers: curated, synced, derived)

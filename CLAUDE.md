@@ -191,11 +191,20 @@ Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-la
 - [x] T3 blocking notification in REPL, T2 post-execution log — `internal/repl/notifier.go`, `internal/safety/notifier.go`
 - [x] API auth (Bearer token) + request size limits — `internal/api/middleware.go`
 
-### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
+### Phase 6: Infrastructure Adapters ← CURRENT
 
 All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
-- [ ] Adapters: cloud, observability, alerting (see details below)
-- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node
+- [x] 6.1 Core foundations (source types, registry wiring, graph edges)
+- [x] 6.2 Cloud adapters (AWS: EC2/EKS/RDS/VPC, Azure: VMs/AKS/SQL/VNets)
+- [ ] 6.3 Observability (Prometheus/Mimir, Loki, Tempo/Jaeger; Datadog, Splunk, Dynatrace, New Relic; CloudWatch, Azure Monitor)
+- [ ] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
+- [ ] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
+- [ ] 6.6 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+- [ ] 6.7 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
+- [ ] 6.8 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
+- [ ] 6.9 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
+- [ ] 6.10 Security & runtime (Falco)
+- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions
 - [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags
 
 ### Phase 7: Knowledge Store
@@ -229,18 +238,33 @@ Key principles:
 - Derived insights show provenance ("Learned from session X")
 - Joe can propose doc updates, but human approves publish
 
-## Cloud, Observability & Alerting Adapters (Phase 6)
+## Infrastructure Adapters (Phase 6)
 
 **Scope (T1 read-only by default):**
 - Cloud: AWS (EC2, EKS, RDS, ALB, VPC, SecurityGroups), Azure (VMs, AKS, SQL, VNets, NSGs)
 - Observability: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces), Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL), CloudWatch, Azure Monitor (KQL)
 - Alerting: Alertmanager, PagerDuty, Grafana (alerts, dashboards, annotations)
+- Data stores: PostgreSQL (pg_stat_*), MySQL (processlist, replication), Redis (INFO, SLOWLOG), MongoDB (serverStatus, rs.status), Kafka (topics, consumer lag, brokers), Elasticsearch (cluster health, indices)
+- GitOps/CD/IaC: Argo CD (full REST API), Flux (K8s CRDs), Terraform (state read), Helm (release status)
+- Networking/Ingress: NGINX Ingress (rules, status, config), Envoy (admin API), Istio (K8s CRDs), Cilium (CRDs + Hubble)
+- K8s CRD-based (low effort): cert-manager, KEDA, OPA/Gatekeeper, Crossplane
+- Security/Runtime: Falco (runtime events)
 
 **Key graph edges:**
 - `is_k8s_node`: cloud instance → K8s node
 - `metrics_in`, `logs_in`, `traces_in`: service → observability source
-- `alerts_in`: service → Alertmanager/Grafana
+- `alerts_in`: service → Alertmanager/Grafana/Falco
 - `paged_via`: service → PagerDuty
+- `stores_in`: service → database (PostgreSQL, MySQL, MongoDB, Redis, Elasticsearch)
+- `queues_in`: service → message broker (Kafka)
+- `managed_by`: K8s resource → Argo CD app / Flux / Helm release
+- `provisions`: Terraform resource / Crossplane → cloud resource
+- `ingress_for`: NGINX ingress → backend service
+- `proxies`: Envoy → service
+- `mesh_for`: Istio config → service
+- `policy_enforces`: OPA constraint / Cilium policy → namespace/workload
+- `scaled_by`: KEDA scaled object → workload
+- `secures`: certificate → service/ingress
 
 The LLM picks the right tool based on graph context — no generic abstraction layer.
 
