@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewDefaultRegistry(t *testing.T) {
-	registry := NewDefaultRegistry()
+	registry := NewDefaultRegistry(nil)
 
 	if registry == nil {
 		t.Fatal("NewDefaultRegistry() returned nil")
@@ -57,7 +57,7 @@ func TestNewDefaultRegistry(t *testing.T) {
 
 func TestNewDefaultRegistryWithClient(t *testing.T) {
 	coreClient := client.New("http://localhost:7777")
-	registry := NewDefaultRegistryWithClient(coreClient)
+	registry := NewDefaultRegistryWithClient(coreClient, nil)
 
 	if registry == nil {
 		t.Fatal("NewDefaultRegistryWithClient() returned nil")

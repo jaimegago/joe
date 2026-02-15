@@ -11,10 +11,12 @@ import (
 	"github.com/jaimegago/joe/internal/tools/local"
 )
 
-type Tool struct{}
+type Tool struct {
+	allowedDirs []string // if non-empty, writes are restricted to these directories
+}
 
-func New() *Tool {
-	return &Tool{}
+func New(allowedDirs ...string) *Tool {
+	return &Tool{allowedDirs: allowedDirs}
 }
 
 func (t *Tool) Name() string {
@@ -61,6 +63,11 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 
 	// Self-protection: check if path is allowed (blocks ~/.joe/)
 	if err := safety.IsPathAllowed(absPath); err != nil {
+		return nil, err
+	}
+
+	// Path sandboxing: if allowed_directories is configured, restrict writes
+	if err := safety.IsWritePathInAllowedDir(absPath, t.allowedDirs); err != nil {
 		return nil, err
 	}
 

@@ -140,6 +140,45 @@ func IsInvariantViolation(err error) bool {
 	return ok
 }
 
+// IsWritePathInAllowedDir checks if absPath falls under one of the allowed
+// directories. If allowedDirs is empty, all paths are permitted (no sandboxing).
+// This is called AFTER IsPathAllowed (self-protection), providing an additional
+// layer that restricts where write_file can operate.
+func IsWritePathInAllowedDir(absPath string, allowedDirs []string) error {
+	if len(allowedDirs) == 0 {
+		return nil // no sandbox configured — allow all
+	}
+
+	cleanPath := filepath.Clean(absPath)
+	if isCaseInsensitiveFS() {
+		cleanPath = strings.ToLower(cleanPath)
+	}
+
+	// Resolve symlinks if path exists
+	if resolved, err := filepath.EvalSymlinks(cleanPath); err == nil {
+		cleanPath = resolved
+		if isCaseInsensitiveFS() {
+			cleanPath = strings.ToLower(cleanPath)
+		}
+	}
+
+	for _, dir := range allowedDirs {
+		cleanDir := filepath.Clean(dir)
+		if isCaseInsensitiveFS() {
+			cleanDir = strings.ToLower(cleanDir)
+		}
+		if strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) || cleanPath == cleanDir {
+			return nil
+		}
+	}
+
+	return &InvariantViolationError{
+		Type:   "path_sandbox",
+		Target: absPath,
+		Reason: fmt.Sprintf("path is outside allowed directories: %v", allowedDirs),
+	}
+}
+
 // isCaseInsensitiveFS returns true if the operating system uses a case-insensitive
 // filesystem by default (macOS, Windows). This is used to normalize paths for
 // security checks to prevent case-based bypass attacks.

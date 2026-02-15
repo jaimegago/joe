@@ -250,6 +250,95 @@ func TestIsInvariantViolation_NotInvariantError(t *testing.T) {
 	}
 }
 
+func TestIsWritePathInAllowedDir(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		allowedDirs []string
+		wantErr     bool
+		errType     string
+	}{
+		{
+			name:        "no sandbox — all allowed",
+			path:        "/anywhere/file.txt",
+			allowedDirs: nil,
+			wantErr:     false,
+		},
+		{
+			name:        "empty list — all allowed",
+			path:        "/anywhere/file.txt",
+			allowedDirs: []string{},
+			wantErr:     false,
+		},
+		{
+			name:        "path inside allowed dir",
+			path:        "/tmp/joe-output/report.txt",
+			allowedDirs: []string{"/tmp/joe-output"},
+			wantErr:     false,
+		},
+		{
+			name:        "path inside second allowed dir",
+			path:        "/home/alice/projects/foo.txt",
+			allowedDirs: []string{"/tmp/joe-output", "/home/alice/projects"},
+			wantErr:     false,
+		},
+		{
+			name:        "path in nested subdir of allowed",
+			path:        "/tmp/joe-output/sub/deep/file.txt",
+			allowedDirs: []string{"/tmp/joe-output"},
+			wantErr:     false,
+		},
+		{
+			name:        "path outside all allowed dirs",
+			path:        "/etc/passwd",
+			allowedDirs: []string{"/tmp/joe-output", "/home/alice/projects"},
+			wantErr:     true,
+			errType:     "path_sandbox",
+		},
+		{
+			name:        "similar prefix but different dir",
+			path:        "/tmp/joe-output-backup/file.txt",
+			allowedDirs: []string{"/tmp/joe-output"},
+			wantErr:     true,
+			errType:     "path_sandbox",
+		},
+		{
+			name:        "dot-dot traversal out of sandbox",
+			path:        "/tmp/joe-output/../etc/passwd",
+			allowedDirs: []string{"/tmp/joe-output"},
+			wantErr:     true,
+			errType:     "path_sandbox",
+		},
+		{
+			name:        "path equals allowed dir exactly",
+			path:        "/tmp/joe-output",
+			allowedDirs: []string{"/tmp/joe-output"},
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := IsWritePathInAllowedDir(tt.path, tt.allowedDirs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("IsWritePathInAllowedDir(%q, %v) error = %v, wantErr %v",
+					tt.path, tt.allowedDirs, err, tt.wantErr)
+				return
+			}
+			if err != nil && tt.errType != "" {
+				invErr, ok := err.(*InvariantViolationError)
+				if !ok {
+					t.Errorf("wrong error type: %T", err)
+					return
+				}
+				if invErr.Type != tt.errType {
+					t.Errorf("error type = %q, want %q", invErr.Type, tt.errType)
+				}
+			}
+		})
+	}
+}
+
 // TestIsPathAllowed_CaseSensitivity verifies case-insensitive filesystem bypass protection.
 // On macOS and Windows, /Users/alice/.JOE/ is the same as /Users/alice/.joe/
 func TestIsPathAllowed_CaseSensitivity(t *testing.T) {

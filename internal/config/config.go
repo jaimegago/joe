@@ -24,6 +24,7 @@ type Config struct {
 // ServerConfig holds joecored server settings
 type ServerConfig struct {
 	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
+	APIKey  string `yaml:"api_key"` // Bearer token for API authentication (optional)
 }
 
 // LLMConfig configures LLM providers with support for multiple models
@@ -266,6 +267,12 @@ func applyEnvOverrides(cfg *Config) []string {
 	if serverAddr := os.Getenv("JOE_SERVER_ADDRESS"); serverAddr != "" {
 		cfg.Server.Address = serverAddr
 		overrides = append(overrides, "JOE_SERVER_ADDRESS")
+	}
+
+	// API key override
+	if apiKey := os.Getenv("JOE_API_KEY"); apiKey != "" {
+		cfg.Server.APIKey = apiKey
+		overrides = append(overrides, "JOE_API_KEY")
 	}
 
 	return overrides

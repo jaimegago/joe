@@ -62,15 +62,30 @@ func parseAPIError(body []byte, status int) (*APIError, bool) {
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	apiKey     string // Bearer token for API authentication (optional)
 }
 
 // New creates a new joecored client
-func New(baseURL string) *Client {
-	return &Client{
+func New(baseURL string, opts ...ClientOption) *Client {
+	c := &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// ClientOption configures optional Client settings.
+type ClientOption func(*Client)
+
+// WithAPIKey sets the Bearer token for API authentication.
+func WithAPIKey(key string) ClientOption {
+	return func(c *Client) {
+		c.apiKey = key
 	}
 }
 
@@ -82,6 +97,7 @@ func (c *Client) doJSON(ctx context.Context, method, url string, body io.Reader,
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	c.setAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -106,6 +122,13 @@ func (c *Client) doJSON(ctx context.Context, method, url string, body io.Reader,
 	}
 
 	return nil
+}
+
+// setAuth adds the Authorization header if an API key is configured.
+func (c *Client) setAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 }
 
 // Status represents joecored status response
@@ -155,6 +178,7 @@ func (c *Client) GraphRelated(ctx context.Context, nodeID string, depth int) (*g
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+	c.setAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

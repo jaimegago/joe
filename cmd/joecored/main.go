@@ -210,7 +210,22 @@ func main() {
 	apiServer := api.New(services)
 	apiServer.RegisterRoutes(mux)
 
-	handler := observability.HTTPMetricsMiddleware(mux, metrics)
+	// Build middleware chain: metrics → auth → request size limit → mux
+	handler := api.Chain(
+		mux,
+		func(h http.Handler) http.Handler {
+			return observability.HTTPMetricsMiddleware(h, metrics)
+		},
+		api.BearerAuth(cfg.Server.APIKey),
+		api.MaxRequestBody(api.DefaultMaxRequestBytes),
+	)
+
+	if cfg.Server.APIKey != "" {
+		slog.Info("API authentication enabled")
+	} else {
+		slog.Warn("API authentication disabled — set server.api_key in config or JOE_API_KEY env var")
+	}
+
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      handler,
