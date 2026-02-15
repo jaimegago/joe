@@ -72,7 +72,11 @@ func main() {
 
 	// Connect to joecored
 	joecoreURL := "http://" + cfg.Server.Address
-	coreClient := client.New(joecoreURL)
+	var clientOpts []client.ClientOption
+	if cfg.Server.APIKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	}
+	coreClient := client.New(joecoreURL, clientOpts...)
 
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pingCancel()
@@ -132,7 +136,8 @@ func main() {
 	slog.Info("safety policy loaded", "config_dir", joeDir)
 
 	// Create tool registry with local tools + core tools (graph_query, graph_related)
-	registry := tools.NewDefaultRegistryWithClient(coreClient)
+	// Pass safety policy so tool-specific settings (e.g., allowed_directories) are enforced.
+	registry := tools.NewDefaultRegistryWithClient(coreClient, safetyPolicy)
 
 	// Create REPL notifier for T3 pre-execution countdown and T2/T3 post-execution log
 	replNotifier := repl.NewNotifier()

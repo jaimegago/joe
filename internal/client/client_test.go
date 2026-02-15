@@ -10,6 +10,68 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 )
 
+func TestWithAPIKey_SetsAuthHeader(t *testing.T) {
+	var capturedAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "version": "test", "time": "now"})
+	}))
+	defer ts.Close()
+
+	c := New(ts.URL, WithAPIKey("my-secret"))
+	_, err := c.GetStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetStatus() error: %v", err)
+	}
+
+	if capturedAuth != "Bearer my-secret" {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer my-secret")
+	}
+}
+
+func TestNoAPIKey_NoAuthHeader(t *testing.T) {
+	var capturedAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "version": "test", "time": "now"})
+	}))
+	defer ts.Close()
+
+	c := New(ts.URL) // no WithAPIKey
+	_, err := c.GetStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetStatus() error: %v", err)
+	}
+
+	if capturedAuth != "" {
+		t.Errorf("Authorization = %q, want empty (no key configured)", capturedAuth)
+	}
+}
+
+func TestWithAPIKey_GraphRelated(t *testing.T) {
+	var capturedAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(graph.Subgraph{
+			Nodes: []graph.Node{{ID: "test", Type: "test"}},
+		})
+	}))
+	defer ts.Close()
+
+	c := New(ts.URL, WithAPIKey("graph-key"))
+	_, err := c.GraphRelated(context.Background(), "test", 1)
+	if err != nil {
+		t.Fatalf("GraphRelated() error: %v", err)
+	}
+
+	if capturedAuth != "Bearer graph-key" {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer graph-key")
+	}
+}
+
 // TestGraphRelatedSlashedNodeIDs verifies the client correctly encodes
 // node IDs containing slashes as query parameters, not path segments.
 // This is a regression test: Go 1.22's http.ServeMux {wildcard} only

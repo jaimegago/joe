@@ -283,7 +283,7 @@ func TestAWSIntegration(t *testing.T) {
 
 	t.Run("ToolRegistry", func(t *testing.T) {
 		// Test that AWS tools are properly registered
-		registry := tools.NewDefaultRegistryWithClient(coreClient)
+		registry := tools.NewDefaultRegistryWithClient(coreClient, nil)
 
 		expectedTools := []string{"aws_ec2", "aws_eks", "aws_rds", "aws_vpc"}
 		for _, toolName := range expectedTools {

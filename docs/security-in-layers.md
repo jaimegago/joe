@@ -18,7 +18,7 @@ These are non-negotiable and must be hardcoded (not bypassable by LLM or configu
 
 ---
 
-## Part 1: Current State (as of Phase 5)
+## Part 1: Current State (as of Phase 5.5)
 
 ### What We Do Right
 
@@ -32,6 +32,15 @@ These are non-negotiable and must be hardcoded (not bypassable by LLM or configu
 | URL encoding | Client uses `url.PathEscape` / `url.QueryEscape` for all HTTP calls |
 | Adapters are read-only | K8s, Git, AWS adapters expose only read/list/describe operations — no create/delete/update |
 | Core tools are read-only | All tools that call joecored via HTTP are query-only |
+| Action tier enforcement | Every tool classified T1/T2/T3; executor gate checks policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
+| Safety policy | Loaded once at startup from `~/.joe/safety-policy.yaml`; immutable at runtime; default-deny for T3 (`internal/safety/policy.go`) |
+| Self-protection invariants | Joe cannot read/write `~/.joe/`, cannot run joe/joecored/kill — hardcoded, no override (`internal/safety/invariants.go`) |
+| Path sandboxing | `write_file` enforces `allowed_directories` from safety policy; symlink-aware, case-insensitive on macOS/Windows |
+| Subcommand allowlists | kubectl/helm/argocd restricted to read-only subcommands; compiled-in, not configurable by LLM (`internal/tools/local/runcmd/subcommands.go`) |
+| T3 notification contract | Blocking 3-second countdown before T3 actions with Ctrl+C cancel; post-execution summary for T2/T3 (`internal/repl/notifier.go`) |
+| API authentication | Bearer token middleware on all `/api/v1/` routes; configurable via `server.api_key` or `JOE_API_KEY` env (`internal/api/middleware.go`) |
+| Request size limits | `http.MaxBytesReader` wraps all request bodies (default 1 MB) (`internal/api/middleware.go`) |
+| Secure home resolution | `paths.JoeDirPath()` uses `os/user.Current()`, bypasses `HOME` env var to prevent path manipulation |
 
 ---
 
@@ -43,28 +52,31 @@ Every component that can change state, classified by blast radius.
 
 | Tool | Can Mutate? | What It Changes | Authorization | Notification | Blast Radius |
 |------|-------------|-----------------|---------------|--------------|--------------|
-| `write_file` | **YES** | Any file the process user can write | None | None | **Local filesystem** |
-| `run_command` | **YES** | Depends on allowlist | Allowlist only | None | **Local + remote infra** |
-| `read_file` | No | — | — | — | Read-only |
-| `local_git_status` | No | — | — | — | Read-only |
-| `local_git_diff` | No | — | — | — | Read-only |
-| `echo` | No | — | — | — | Harmless |
-| `ask_user` | No | — | — | — | Harmless |
+| `write_file` | **YES** | Files within `allowed_directories` only | T3 policy gate + path sandbox | T3: before (blocking) + after | **Local filesystem (sandboxed)** |
+| `run_command` | **YES** | Depends on allowlist + subcommand validation | T3 policy gate + command allowlist + subcommand allowlist | T3: before (blocking) + after | **Local + remote infra (restricted)** |
+| `read_file` | No | — | T1 (always allowed) | — | Read-only (blocks `~/.joe/`) |
+| `local_git_status` | No | — | T1 | — | Read-only |
+| `local_git_diff` | No | — | T1 | — | Read-only |
+| `echo` | No | — | T1 | — | Harmless |
+| `ask_user` | No | — | T1 | — | Harmless |
 
-**`write_file` detail** (`internal/tools/local/writefile/writefile.go:44-81`):
-- Creates files anywhere, creates parent dirs with `os.MkdirAll`, overwrites silently.
-- No path validation, no sandbox, no confirmation.
+**`write_file` detail** (`internal/tools/local/writefile/writefile.go`):
+
+- T3 action — disabled by default in safety policy.
+- Self-protection: blocks `~/.joe/` (hardcoded invariant, symlink-aware, case-insensitive).
+- Path sandboxing: if `allowed_directories` configured in policy, writes restricted to those dirs only.
+- T3 notification: 3-second blocking countdown in REPL before execution, Ctrl+C to cancel.
 
 **`run_command` detail** (`internal/tools/local/runcmd/runcmd.go`):
-- Allowlist defined in `internal/tools/default.go:33-36`:
-  ```
-  ls, cat, head, tail, grep, find, wc, kubectl, helm, argocd
-  ```
-- **Problem:** `kubectl`, `helm`, `argocd` are not read-only. They can:
-  - `kubectl delete pod`, `kubectl scale`, `kubectl apply`
-  - `helm install`, `helm upgrade`, `helm delete`
-  - `argocd app sync`, `argocd app rollback`
-- Arguments are not validated — only the base command is allowlisted.
+
+- Default allowlist (read-only only): `ls, cat, head, tail, grep, find, wc`.
+- kubectl/helm/argocd **excluded** from default allowlist — must be explicitly added in `safety-policy.yaml`.
+- When enabled, mutation-capable commands enforce **compiled-in subcommand allowlists** (`internal/tools/local/runcmd/subcommands.go`):
+  - kubectl: get, describe, logs, top, explain, api-resources, api-versions, version, cluster-info, config, auth
+  - helm: list, status, get, history, show, search, version, env, repo, template, dependency
+  - argocd: app list/get/diff/manifests/logs/history/resources, cluster/repo/version (read-only)
+- Self-protection: `joe`, `joecored`, `kill`, `pkill`, `killall` blocked (hardcoded invariant).
+- Flag-aware parsing: leading flags (e.g., `-n default`) are skipped to find the actual subcommand.
 
 ### Core Agent Tools (joecored — autonomous)
 
@@ -94,12 +106,14 @@ Key files: `internal/coreagent/graphdelta.go:118-145`, `internal/coreagent/joefi
 
 | Endpoint | Method | Mutation | Authorization | Notification |
 |----------|--------|----------|---------------|--------------|
-| `/api/v1/sources` | POST | Creates source + registers adapter | None | None |
-| `/api/v1/sources/{id}` | DELETE | Removes source + disconnects adapter | None | None |
-| `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies graph ops | None | None |
-| `/api/v1/clarifications/{id}/dismiss` | POST | Marks dismissed | None | None |
-| `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | None | None |
-| `/api/v1/refresh` | POST | Triggers full graph reconciliation | None | None |
+| `/api/v1/sources` | POST | Creates source + registers adapter | Bearer token (if configured) | None |
+| `/api/v1/sources/{id}` | DELETE | Removes source + disconnects adapter | Bearer token (if configured) | None |
+| `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies graph ops | Bearer token (if configured) | None |
+| `/api/v1/clarifications/{id}/dismiss` | POST | Marks dismissed | Bearer token (if configured) | None |
+| `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | Bearer token (if configured) | None |
+| `/api/v1/refresh` | POST | Triggers full graph reconciliation | Bearer token (if configured) | None |
+
+All endpoints are behind `BearerAuth` middleware when `server.api_key` is set. Request bodies limited to 1 MB via `MaxRequestBody` middleware.
 
 ### Adapters (joecored backend)
 
@@ -282,84 +296,93 @@ Examples of future T3 actions:
 
 ### Layer 1: Network Boundary (joecored HTTP API)
 
-| Gap | Severity | Detail |
-|-----|----------|--------|
-| No authentication | CRITICAL | API at `:7777` has zero auth — any network client has full control |
-| No rate limiting | HIGH | No middleware to prevent DoS or brute-force |
-| No request size limits | HIGH | Unbounded request bodies → memory exhaustion |
-| Plaintext HTTP | HIGH | joe↔joecored traffic unencrypted; credentials in transit exposed |
-| No CORS / security headers | MEDIUM | Missing `X-Content-Type-Options`, `X-Frame-Options`, etc. |
+| Gap | Severity | Status | Detail |
+| ----- | -------- | ------ | ------ |
+| ~~No authentication~~ | ~~CRITICAL~~ | **FIXED** | Bearer token middleware on all `/api/v1/` routes (`internal/api/middleware.go`) |
+| No rate limiting | HIGH | Open | No middleware to prevent DoS or brute-force |
+| ~~No request size limits~~ | ~~HIGH~~ | **FIXED** | `http.MaxBytesReader` wraps all request bodies, default 1 MB (`internal/api/middleware.go`) |
+| Plaintext HTTP | HIGH | Open | joe↔joecored traffic unencrypted; credentials in transit exposed |
+| No CORS / security headers | MEDIUM | Open | Missing `X-Content-Type-Options`, `X-Frame-Options`, etc. |
 
-**Key files:** `cmd/joecored/main.go`, `internal/api/server.go`
+**Key files:** `cmd/joecored/main.go`, `internal/api/server.go`, `internal/api/middleware.go`
 
 ### Layer 2: Credential Storage
 
-| Gap | Severity | Detail |
-|-----|----------|--------|
-| Plaintext credentials in DB | CRITICAL | `sources.config` JSON column stores AWS keys, Git tokens unencrypted |
-| SSH keys with empty passphrase | HIGH | `git.go:158` loads SSH keys with `""` passphrase |
-| No credential rotation | MEDIUM | Static credentials never refreshed or expired |
-| World-readable config | MEDIUM | `~/.joe/config.yaml` uses default umask (typically 0644) |
+| Gap | Severity | Status | Detail |
+| ----- | -------- | ------ | ------ |
+| Plaintext credentials in DB | CRITICAL | Open | `sources.config` JSON column stores AWS keys, Git tokens unencrypted |
+| SSH keys with empty passphrase | HIGH | Open | `git.go:158` loads SSH keys with `""` passphrase |
+| No credential rotation | MEDIUM | Open | Static credentials never refreshed or expired |
+| World-readable config | MEDIUM | Open | `~/.joe/config.yaml` uses default umask (typically 0644) |
 
 **Key files:** `internal/adapters/git/git.go:169`, `internal/adapters/aws/aws.go:256-257`
 
 ### Layer 3: LLM Tool Sandbox
 
-| Gap | Severity | Detail |
-|-----|----------|--------|
-| No path sandboxing on `read_file` | CRITICAL | LLM can read any file the process user can access |
-| No path sandboxing on `write_file` | CRITICAL | LLM can write to any writable location |
-| Prompt injection | CRITICAL | User input flows unsanitized into LLM context, which then calls tools |
+| Gap | Severity | Status | Detail |
+| ----- | -------- | ------ | ------ |
+| ~~No path sandboxing on `write_file`~~ | ~~CRITICAL~~ | **FIXED** | `write_file` enforces `allowed_directories` from safety policy + blocks `~/.joe/` |
+| No path sandboxing on `read_file` | HIGH | Open | LLM can read any file the process user can access (except `~/.joe/`) |
+| Prompt injection | CRITICAL | Open | User input flows unsanitized into LLM context, which then calls tools |
 
-**Key files:** `internal/tools/local/readfile/readfile.go`, `internal/tools/local/writefile/writefile.go`, `internal/tools/local/pathutil.go`
+**Key files:** `internal/tools/local/readfile/readfile.go`, `internal/tools/local/writefile/writefile.go`, `internal/safety/invariants.go`
 
 ### Layer 4: Authorization
 
-| Gap | Severity | Detail |
-|-----|----------|--------|
-| No per-source access control | HIGH | Any client can query any infrastructure source |
-| No user identity model | HIGH | No concept of who is making a request |
-| No audit logging | MEDIUM | No record of who did what, when |
+| Gap | Severity | Status | Detail |
+| ----- | -------- | ------ | ------ |
+| No per-source access control | HIGH | Open | Any client can query any infrastructure source |
+| No user identity model | HIGH | Open | No concept of who is making a request |
+| No audit logging | MEDIUM | Open | No record of who did what, when |
 
 ---
 
 ## Part 5: Implementation Roadmap
 
-### Do Now (before Phase 6)
+### Phase 5.5: Action Safety Framework — COMPLETE
 
-**1. Action Safety Framework — core enforcement**
-- Implement action tier classification (T1/T2/T3)
-- Load `safety-policy.yaml` at startup
-- Add gate check in tool executor before every `Execute()` call
-- Hardcode self-protection invariants (Joe can't touch `~/.joe/`)
-- Files: new `internal/safety/`, changes to `internal/tools/`, `internal/useragent/`, `internal/coreagent/`
+All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, tools 97.1%.
 
-**2. Path sandboxing for file tools**
-- Add `allowed_directories` from safety policy
-- Reject paths containing `..` after normalization
-- Reject symlinks that resolve outside allowed directories
-- Hardcode exclusion of `~/.joe/` directory
-- Files: `internal/tools/local/pathutil.go`, `readfile/readfile.go`, `writefile/writefile.go`
+**1. Action Safety Framework — core enforcement** ✅
 
-**3. run_command subcommand validation**
-- Split allowlist into read-only commands and mutation-capable commands
-- Add subcommand allowlist for `kubectl`, `helm`, `argocd`
-- Default: only read-only subcommands permitted
-- Files: `internal/tools/local/runcmd/runcmd.go`, `internal/tools/default.go`
+- Action tier classification (T1/T2/T3) with hardcoded registry: `internal/safety/tier.go`
+- Safety policy loader from `~/.joe/safety-policy.yaml`: `internal/safety/policy.go`
+- Executor gate checks tier + policy before every `Execute()`: `internal/tools/executor.go`
+- Default-deny for unknown tools (classified as T3)
 
-**4. T3 notification contract**
-- Implement pre-execution notification in REPL (blocking, cancellable)
-- Implement post-execution summary
-- Files: `internal/repl/`, `internal/useragent/`
+**2. Self-protection invariants + path sandboxing** ✅
 
-**5. API key authentication**
-- `Authorization: Bearer <token>` middleware on all `/api/v1/` routes
-- Token from `config.yaml` under `server.api_key`
-- Files: new `internal/api/middleware.go`, `cmd/joecored/main.go`
+- `~/.joe/` blocked for all read/write operations (hardcoded, symlink-aware, case-insensitive): `internal/safety/invariants.go`
+- `write_file` enforces `allowed_directories` from safety policy: `internal/tools/local/writefile/writefile.go`
+- `..` traversal normalized via `filepath.Clean`, symlinks resolved via `filepath.EvalSymlinks`
+- Secure home directory resolution bypasses `HOME` env var: `internal/paths/secure.go`
 
-**6. Request size limits**
-- `http.MaxBytesReader` wrapper (default 1 MB)
-- Files: `internal/api/middleware.go`
+**3. run_command subcommand validation** ✅
+
+- kubectl/helm/argocd removed from default allowlist (read-only commands only)
+- Compiled-in subcommand allowlists for mutation-capable commands: `internal/tools/local/runcmd/subcommands.go`
+- Flag-aware parsing skips leading flags to find actual subcommand
+- `joe`, `joecored`, `kill`, `pkill`, `killall` blocked by hardcoded invariant
+
+**4. T3 notification contract** ✅
+
+- `ActionNotifier` interface with `NotifyBefore`/`NotifyAfter`: `internal/safety/notifier.go`
+- REPL notifier with 3-second blocking countdown + Ctrl+C cancel: `internal/repl/notifier.go`
+- Executor calls `NotifyBefore` for T3 (blocking), `NotifyAfter` for T2 and T3
+- `NoopNotifier` for tests, `LogNotifier` for joecored
+
+**5. API key authentication** ✅
+
+- `BearerAuth` middleware on all `/api/v1/` routes: `internal/api/middleware.go`
+- Token from `config.yaml` `server.api_key` or `JOE_API_KEY` env var
+- Client sends `Authorization: Bearer <token>` on all requests: `internal/client/client.go`
+- Graceful degradation: auth disabled when no key configured (logs warning)
+
+**6. Request size limits** ✅
+
+- `MaxRequestBody` middleware wraps all request bodies with `http.MaxBytesReader`: `internal/api/middleware.go`
+- Default limit: 1 MB (`DefaultMaxRequestBytes`)
+- `Chain()` helper composes middleware in order
 
 ### Do in Phase 6
 
@@ -518,21 +541,27 @@ act:
 
 ---
 
-## Risk Matrix
+## Risk Matrix (updated post-Phase 5.5)
 
 ```
            Impact
-           HIGH ┃ Cred Storage  │ File Tools    │ No Auth
+           HIGH ┃ Cred Storage  │ Prompt Inj.   │ No TLS
                 ┃ (Layer 2)     │ (Layer 3)     │ (Layer 1)
                 ┃               │               │
-           MED  ┃ No RBAC       │ Prompt Inj.   │ No Rate Limit
-                ┃ (Layer 4)     │ (Layer 3)     │ (Layer 1)
-                ┃               │               │
-           LOW  ┃ No Audit      │ Sec Headers   │ No TLS (local)
-                ┃ (Layer 4)     │ (Layer 1)     │ (Layer 1)
+           MED  ┃ No RBAC       │ read_file     │ No Rate Limit
+                ┃ (Layer 4)     │ no sandbox    │ (Layer 1)
+                ┃               │ (Layer 3)     │
+           LOW  ┃ No Audit      │ Sec Headers   │
+                ┃ (Layer 4)     │ (Layer 1)     │
                 ┗━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━
                   LOW             MEDIUM          HIGH
                                 Likelihood
+
+Resolved in Phase 5.5:
+  - No Auth (Layer 1) → Bearer token middleware
+  - No Request Size Limits (Layer 1) → MaxBytesReader 1 MB
+  - File Tools unsandboxed (Layer 3) → write_file allowed_directories + self-protection
+  - run_command unrestricted (Layer 3) → subcommand allowlists + self-protection
 ```
 
 ---

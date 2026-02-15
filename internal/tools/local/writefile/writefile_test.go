@@ -65,6 +65,62 @@ func TestExecute_InvalidContent(t *testing.T) {
 	}
 }
 
+func TestExecute_AllowedDirectories_Inside(t *testing.T) {
+	allowedDir := t.TempDir()
+	tool := New(allowedDir)
+
+	path := filepath.Join(allowedDir, "allowed.txt")
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path":    path,
+		"content": "allowed",
+	})
+	if err != nil {
+		t.Fatalf("Execute() inside allowed dir: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "allowed" {
+		t.Errorf("content = %q, want %q", string(data), "allowed")
+	}
+}
+
+func TestExecute_AllowedDirectories_Outside(t *testing.T) {
+	allowedDir := t.TempDir()
+	outsideDir := t.TempDir()
+	tool := New(allowedDir)
+
+	path := filepath.Join(outsideDir, "blocked.txt")
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path":    path,
+		"content": "should not write",
+	})
+	if err == nil {
+		t.Fatal("expected error when writing outside allowed directories")
+	}
+	if !strings.Contains(err.Error(), "path_sandbox") {
+		t.Errorf("expected path_sandbox error, got: %v", err)
+	}
+
+	// Verify file was NOT created
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Error("file should not have been created outside allowed directory")
+	}
+}
+
+func TestExecute_AllowedDirectories_Empty_AllowsAll(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := New() // no allowed directories — no sandbox
+
+	path := filepath.Join(tmpDir, "anywhere.txt")
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path":    path,
+		"content": "unrestricted",
+	})
+	if err != nil {
+		t.Fatalf("Execute() without sandbox: %v", err)
+	}
+}
+
 func TestExecute_BlocksJoeDirectory(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -178,20 +178,21 @@ We're building incrementally. Each phase should be working before moving on.
 - [x] Onboarding flow
 - [x] .joe/ file processing with cache
 
-### Phase 5.5: Action Safety Framework ← CURRENT
+### Phase 5.5: Action Safety Framework ✅ COMPLETE
 
-Prerequisite for Phase 6. Implements hardcoded safety enforcement. See `docs/security-in-layers.md`.
+Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-layers.md`.
 
-- [ ] Safety policy loader (`~/.joe/safety-policy.yaml`)
-- [ ] Action tier registry (T1: Observe, T2: Record, T3: Act)
-- [ ] Tool executor gate (check tier + policy before every Execute)
-- [ ] Self-protection invariants (Joe can't touch `~/.joe/`, can't run joe/joecored/kill)
-- [ ] Path sandboxing for read_file/write_file
-- [ ] run_command subcommand validation for kubectl/helm/argocd
-- [ ] T3 blocking notification in REPL, T2 post-execution log
-- [ ] API auth (Bearer token) + request size limits
+- [x] Safety policy loader (`~/.joe/safety-policy.yaml`) — `internal/safety/policy.go`
+- [x] Action tier registry (T1: Observe, T2: Record, T3: Act) — `internal/safety/tier.go`
+- [x] Tool executor gate (check tier + policy before every Execute) — `internal/tools/executor.go`
+- [x] Self-protection invariants (Joe can't touch `~/.joe/`, can't run joe/joecored/kill) — `internal/safety/invariants.go`
+- [x] Path sandboxing for write_file (`allowed_directories`) — `internal/tools/local/writefile/writefile.go`
+- [x] run_command subcommand validation for kubectl/helm/argocd — `internal/tools/local/runcmd/subcommands.go`
+- [x] T3 blocking notification in REPL, T2 post-execution log — `internal/repl/notifier.go`, `internal/safety/notifier.go`
+- [x] API auth (Bearer token) + request size limits — `internal/api/middleware.go`
 
-### Phase 6: Cloud, Observability & Alerting Adapters
+### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
+
 All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
 - [ ] Cloud: AWS, Azure
 - [ ] Open Source: Prometheus/Mimir, Loki, Tempo, Jaeger
