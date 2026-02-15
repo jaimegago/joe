@@ -29,10 +29,13 @@ func NewDefaultRegistry() *Registry {
 	registry.Register(gitstatus.New())
 	registry.Register(gitdiff.New())
 
-	// Register command runner (with safe defaults)
+	// Register command runner with safe defaults.
+	// Only read-only commands are included. Mutation-capable commands (kubectl,
+	// helm, argocd) are excluded — they must be explicitly enabled in
+	// ~/.joe/safety-policy.yaml and are subject to subcommand allowlists even
+	// when enabled.
 	registry.Register(runcmd.New([]string{
 		"ls", "cat", "head", "tail", "grep", "find", "wc",
-		"kubectl", "helm", "argocd",
 	}))
 
 	return registry
