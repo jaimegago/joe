@@ -11,6 +11,7 @@ Reference architecture for implementation. This document is the source of truth 
 3. **HTTP API is the contract** - Joe Local calls Joe Core via HTTP, never direct function calls
 4. **Local context stays local** - User's files accessed by Joe Local only, never by Joe Core
 5. **Core Agent has autonomy levels** - Deterministic changes auto-apply, ambiguous ones queue for human
+6. **Humans own all mutations** - Joe never changes infrastructure, files, or configuration without explicit human authorization. Safety enforcement is hardcoded, not LLM-instructed. See [Action Safety Framework](#action-safety-framework) and `docs/security-in-layers.md`
 
 ---
 
@@ -1737,6 +1738,60 @@ logging:
 
 ---
 
+## Action Safety Framework
+
+Joe enforces a hardcoded safety layer that governs what it can change and under what conditions. This is not LLM-instructed — it is compiled into the binary and configured by humans outside Joe's reach.
+
+Full details in `docs/security-in-layers.md`. This section captures the architectural decisions that affect every phase.
+
+### Action Tiers
+
+Every tool and API action is classified at registration time. The LLM cannot change a tool's tier.
+
+| Tier | Label | Description | Default |
+|------|-------|-------------|---------|
+| T1 | Observe | Read-only, cannot change any state | Allowed |
+| T2 | Record | Changes Joe's internal state (graph, facts, sources) | Requires opt-in |
+| T3 | Act | Changes external systems (files, infra, deployments) | Denied, per-action opt-in |
+
+### Safety Policy File
+
+Policy lives in `~/.joe/safety-policy.yaml` — human-editable only. Joe cannot read, write, or influence this file:
+
+- Excluded from `read_file` and `write_file` allowed directories (hardcoded)
+- Loaded once at startup, not re-readable by the agent at runtime
+- Controls which T2/T3 actions are permitted
+
+### Hardcoded Self-Protection Invariants
+
+These are constants in the source code. No configuration can override them:
+
+- Joe cannot read or write `~/.joe/safety-policy.yaml`
+- Joe cannot write to `~/.joe/` (its own config directory)
+- Joe cannot run `joe`, `joecored`, `kill`, `pkill`, or `killall` via `run_command`
+- `kubectl`, `helm`, `argocd` are not in the default `run_command` allowlist; when enabled by policy, only read-only subcommands (`get`, `describe`, `logs`) are permitted unless the human explicitly allows mutation subcommands
+
+### Notification Contract
+
+Hardcoded in the tool executor, not in LLM instructions:
+
+- **T3 (Act):** Blocking notification before execution ("I'm about to..."), human can cancel. Summary after execution.
+- **T2 (Record):** Post-execution notification in session log ("Updated graph: added node...").
+- **T1 (Observe):** No notification required.
+
+### Per-Phase Safety Requirements
+
+Every new phase that introduces tools, adapters, or mutation capabilities must:
+
+1. Classify each new action as T1, T2, or T3
+2. Add a corresponding policy flag in `safety-policy.yaml` for T2/T3 actions
+3. Wire the action through the safety gate before execution
+4. Implement the notification contract for T2/T3 actions
+5. Add tests verifying that denied actions are rejected and notifications are emitted
+6. Document the action's blast radius in `docs/security-in-layers.md`
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Foundation (Two Binaries) ✅ COMPLETE
@@ -1776,7 +1831,25 @@ logging:
 - [x] Comprehensive test coverage
 - [x] **Milestone: Two-agent architecture fully operational**
 
-### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
+### Phase 5.5: Action Safety Framework ← CURRENT
+Implements the safety enforcement layer before any new adapters or mutation capabilities are added. This phase is a prerequisite for Phase 6.
+
+- [ ] **Safety policy loader:** Load `~/.joe/safety-policy.yaml` at startup in both joe and joecored
+- [ ] **Action tier registry:** Classify every existing tool as T1/T2/T3 at registration time
+- [ ] **Tool executor gate:** Check tier + policy before every `Execute()` call; reject unauthorized actions
+- [ ] **Self-protection invariants:** Hardcode exclusions — Joe cannot touch `~/.joe/`, cannot run `joe`/`joecored`/`kill` commands
+- [ ] **Path sandboxing:** `read_file`/`write_file` restricted to `allowed_directories` from policy; `..` and symlink escape rejected
+- [ ] **run_command hardening:** Split allowlist into read-only vs mutation-capable; add subcommand allowlist for kubectl/helm/argocd (default: read-only subcommands only)
+- [ ] **T3 notification contract:** Blocking pre-execution notification in REPL, post-execution summary
+- [ ] **T2 notification contract:** Post-execution log entry for all graph/store mutations
+- [ ] **API authentication:** Bearer token middleware on all `/api/v1/` routes
+- [ ] **Request size limits:** `http.MaxBytesReader` middleware (default 1 MB)
+- [ ] **Tests:** Safety gate rejects denied actions; notifications emitted; self-protection paths blocked; policy loading works
+- [ ] **Milestone: No tool can mutate anything without passing through the safety gate**
+
+### Phase 6: Cloud, Observability & Alerting Adapters
+All new adapters in this phase are read-only (T1) by default. Any mutation capability (silence creation, incident acknowledgment) must be registered as T3 with a corresponding policy flag.
+
 - [ ] **Cloud:** AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets)
 - [ ] **Open Source Observability:** Prometheus/Mimir, Loki, Tempo, Jaeger
 - [ ] **Proprietary Observability:** Datadog, Splunk, Dynatrace, New Relic
@@ -1785,7 +1858,11 @@ logging:
 - [ ] **Dashboards:** Grafana
 - [ ] API endpoints + core tools for each adapter
 - [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
-- [ ] **Milestone: Joe queries metrics, logs, traces, alerts, and understands incident context**
+- [ ] **Safety:** Classify each new tool as T1/T2/T3; add policy flags for any T2/T3 actions (e.g., `act.alertmanager_silence`, `act.pagerduty_ack`); implement notification contract for mutation actions
+- [ ] **Safety:** Credential encryption at rest for `sources.config` column
+- [ ] **Safety:** TLS support for joe-joecored communication
+- [ ] **Safety:** Rate limiting middleware
+- [ ] **Milestone: Joe queries metrics, logs, traces, alerts with safety enforcement on all mutation paths**
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge items table (tiers: curated, synced, derived)
@@ -1794,6 +1871,7 @@ logging:
 - [ ] Tier 3: LLM-derived insights from sessions
 - [ ] Knowledge retrieval integrated into User Agent context
 - [ ] Embeddings for semantic search
+- [ ] **Safety:** Tier 1 writes are T3 (human-only content, must not be LLM-writable); Tier 3 writes are T2 (internal derived knowledge); synced source fetches are T1
 - [ ] **Milestone: Joe references runbooks and past learnings**
 
 ### Phase 8: Documentation Co-Pilot
@@ -1801,11 +1879,13 @@ logging:
 - [ ] Draft generation from tribal knowledge
 - [ ] Update proposals with human approval flow
 - [ ] Drift detection (docs vs reality)
-- [ ] **Milestone: Joe can propose and publish doc updates**
+- [ ] **Safety:** All doc write/publish actions are T3 with individual policy flags (e.g., `act.confluence_publish`, `act.git_commit`, `act.git_push`); draft generation is T2; reads are T1
+- [ ] **Milestone: Joe can propose and publish doc updates with safety enforcement**
 
 ### Phase 9: Additional Clients & Polish
 - [ ] Notifications (desktop, Slack)
 - [ ] Web UI
 - [ ] VS Code extension
 - [ ] In-cluster deployment for joecored
-- [ ] RBAC / permissions layer
+- [ ] **Safety:** RBAC / per-user permissions layer; per-user safety policies; audit logging for all T2/T3 actions
+- [ ] **Milestone: Multi-user Joe with per-user safety boundaries**
