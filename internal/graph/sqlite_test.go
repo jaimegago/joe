@@ -150,6 +150,43 @@ func TestAddNode(t *testing.T) {
 	})
 }
 
+func TestAddEdge_NewRelations(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	nodes := []graph.Node{
+		{ID: "service/prod/api", Type: "service", SourceID: "k8s/prod", Metadata: map[string]any{}},
+		{ID: "observability/prom", Type: "prometheus", SourceID: "obs-1", Metadata: map[string]any{}},
+	}
+	for _, node := range nodes {
+		if err := store.AddNode(ctx, node); err != nil {
+			t.Fatalf("AddNode(%s): %v", node.ID, err)
+		}
+	}
+
+	relations := []string{
+		graph.RelationMetricsIn,
+		graph.RelationLogsIn,
+		graph.RelationTracesIn,
+		graph.RelationAlertsIn,
+		graph.RelationPagedVia,
+		graph.RelationDashboard,
+		graph.RelationIsK8sNode,
+	}
+	for _, relation := range relations {
+		edge := graph.Edge{
+			From:       nodes[0].ID,
+			To:         nodes[1].ID,
+			Relation:   relation,
+			Confidence: graph.Explicit,
+			Source:     "test",
+		}
+		if err := store.AddEdge(ctx, edge); err != nil {
+			t.Fatalf("AddEdge(%s): %v", relation, err)
+		}
+	}
+}
+
 func TestGetNode(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()

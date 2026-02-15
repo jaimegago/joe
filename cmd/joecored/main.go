@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/api"
@@ -132,6 +133,20 @@ func main() {
 		}
 		adapterRegistry.Register(src.ID, adapter)
 		slog.Info("connected git source", "id", src.ID, "name", src.Name)
+	}
+
+	awsSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAWS)
+	if err != nil {
+		slog.Warn("failed to load aws sources", "error", err)
+	}
+	for _, src := range awsSources {
+		adapter := awsadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect aws source", "id", src.ID, "error", err)
+			continue
+		}
+		adapterRegistry.Register(src.ID, adapter)
+		slog.Info("connected aws source", "id", src.ID, "name", src.Name)
 	}
 
 	// Initialize core services (graph store uses same SQLite DB)

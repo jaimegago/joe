@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/store"
@@ -65,6 +66,14 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !store.IsValidSourceType(req.Type) {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidSource, "unsupported source type", map[string]any{
+			"type":    req.Type,
+			"allowed": store.AllowedSourceTypes(),
+		})
+		return
+	}
+
 	// Check if source already exists
 	existing, err := s.services.Store.Sources.Get(r.Context(), req.ID)
 	if err != nil {
@@ -87,6 +96,13 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Try to connect the adapter before saving
 	switch req.Type {
+	case store.SourceTypeAWS:
+		adapter := awsadapter.New()
+		if err := adapter.Connect(*source); err != nil {
+			writeBadRequest(w, err, "connect aws source", "failed to connect to AWS")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
 	case store.SourceTypeKubernetes:
 		adapter := k8s.New()
 		if err := adapter.Connect(*source); err != nil {

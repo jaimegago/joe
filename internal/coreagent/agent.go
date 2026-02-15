@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jaimegago/joe/internal/core"
@@ -237,7 +238,7 @@ func (t *GraphAddEdgeTool) Parameters() llm.ParameterSchema {
 			},
 			"relationship": {
 				Type:        "string",
-				Description: "Type of relationship (depends_on, runs_on, connects_to, etc.)",
+				Description: "Type of relationship (depends_on, runs_on, connects_to, metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, etc.)",
 			},
 		},
 		Required: []string{"from_node", "to_node", "relationship"},
@@ -398,6 +399,9 @@ func (t *RegisterSourceTool) Execute(ctx context.Context, args map[string]any) (
 	sourceType, ok := args["type"].(string)
 	if !ok || sourceType == "" {
 		return nil, fmt.Errorf("type is required and must be a string")
+	}
+	if !store.IsValidSourceType(sourceType) {
+		return nil, fmt.Errorf("unsupported source type %q (allowed: %s)", sourceType, strings.Join(store.AllowedSourceTypes(), ", "))
 	}
 
 	config, ok := args["config"].(map[string]any)
