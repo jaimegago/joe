@@ -1,8 +1,8 @@
-# Milestones 1-4: Completed Phases (Historical Reference)
+# Milestones 1-5.5: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Phases 1-5, Milestones 1-4). It serves as a historical reference for implementation decisions and architectural patterns established during the initial build.
+This document records the completed phases of Joe's development (Milestones 1-4 plus Phase 5.5). It serves as a historical reference for implementation decisions and architectural patterns established during the initial build.
 
-**Current Status:** ✅ All 4 milestones complete - 70+ tests passing
+**Current Status:** ✅ Milestones 1-4 complete + Phase 5.5 Action Safety Framework complete
 
 **Next Phase:** Phase 6 - Cloud, Observability, and Alerting Adapters (see `CLAUDE.md` for planning)
 
@@ -14,6 +14,7 @@ This document records the completed phases of Joe's development (Phases 1-5, Mil
 - ✅ **Milestone 2: Onboarding + Control Endpoints** - Complete (10+ tests passing)
 - ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
 - ✅ **Milestone 4: .joe/ Processing and Cache Replay** - Complete (5 new tests passing)
+- ✅ **Phase 5.5: Action Safety Framework** - Complete (self-protection, policy gate, path sandboxing, command allowlists)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -199,9 +200,31 @@ This document records the completed phases of Joe's development (Phases 1-5, Mil
 
 ---
 
+## 5) Phase 5.5: Action Safety Framework
+
+5.1 ✅ DONE: Policy loader and action tiers
+- Safety policy loaded from `~/.joe/safety-policy.yaml` with default-deny for T3.
+- T1/T2/T3 action tiers enforced by tool executor gate.
+
+5.2 ✅ DONE: Self-protection invariants
+- Hardcoded blocks for `~/.joe/` access and dangerous commands (joe/joecored/kill).
+- Path normalization, symlink resolution, and case-insensitive checks on macOS/Windows.
+
+5.3 ✅ DONE: Path sandboxing for write_file
+- `allowed_directories` enforced with symlink-aware boundary checks.
+
+5.4 ✅ DONE: Subcommand validation for kubectl/helm/argocd
+- Compiled-in read-only subcommand allowlists.
+
+5.5 ✅ DONE: T3 notifications
+- Blocking pre-execution notification with cancel window; post-execution summary.
+
+---
+
 ## Key Implementation Decisions
 
 For architectural decisions and rationale, see:
-- [phase-4-complete.md](phase-4-complete.md) - Design decisions for milestone 4
-- [CLAUDE.md](CLAUDE.md) - Architecture overview and phase planning
-- Individual phase completion docs (phase-1, phase-2, etc.)
+- [docs/joe-architecture.md](docs/joe-architecture.md) - Architecture overview
+- [docs/joe-dataflow.md](docs/joe-dataflow.md) - Data flow and .joe/ processing
+- [docs/security-in-layers.md](docs/security-in-layers.md) - Security posture and Action Safety Framework
+- [CLAUDE.md](CLAUDE.md) - Phase planning and standards
