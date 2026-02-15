@@ -1831,31 +1831,26 @@ Every new phase that introduces tools, adapters, or mutation capabilities must:
 - [x] Comprehensive test coverage
 - [x] **Milestone: Two-agent architecture fully operational**
 
-### Phase 5.5: Action Safety Framework ← CURRENT
+### Phase 5.5: Action Safety Framework ✅ COMPLETE
 Implements the safety enforcement layer before any new adapters or mutation capabilities are added. This phase is a prerequisite for Phase 6.
 
-- [ ] **Safety policy loader:** Load `~/.joe/safety-policy.yaml` at startup in both joe and joecored
-- [ ] **Action tier registry:** Classify every existing tool as T1/T2/T3 at registration time
-- [ ] **Tool executor gate:** Check tier + policy before every `Execute()` call; reject unauthorized actions
-- [ ] **Self-protection invariants:** Hardcode exclusions — Joe cannot touch `~/.joe/`, cannot run `joe`/`joecored`/`kill` commands
-- [ ] **Path sandboxing:** `read_file`/`write_file` restricted to `allowed_directories` from policy; `..` and symlink escape rejected
-- [ ] **run_command hardening:** Split allowlist into read-only vs mutation-capable; add subcommand allowlist for kubectl/helm/argocd (default: read-only subcommands only)
-- [ ] **T3 notification contract:** Blocking pre-execution notification in REPL, post-execution summary
-- [ ] **T2 notification contract:** Post-execution log entry for all graph/store mutations
-- [ ] **API authentication:** Bearer token middleware on all `/api/v1/` routes
-- [ ] **Request size limits:** `http.MaxBytesReader` middleware (default 1 MB)
-- [ ] **Tests:** Safety gate rejects denied actions; notifications emitted; self-protection paths blocked; policy loading works
-- [ ] **Milestone: No tool can mutate anything without passing through the safety gate**
+- [x] **Safety policy loader:** Load `~/.joe/safety-policy.yaml` at startup in both joe and joecored
+- [x] **Action tier registry:** Classify every existing tool as T1/T2/T3 at registration time
+- [x] **Tool executor gate:** Check tier + policy before every `Execute()` call; reject unauthorized actions
+- [x] **Self-protection invariants:** Hardcode exclusions — Joe cannot touch `~/.joe/`, cannot run `joe`/`joecored`/`kill` commands
+- [x] **Path sandboxing:** `read_file`/`write_file` restricted to `allowed_directories` from policy; `..` and symlink escape rejected
+- [x] **run_command hardening:** Split allowlist into read-only vs mutation-capable; add subcommand allowlist for kubectl/helm/argocd (default: read-only subcommands only)
+- [x] **T3 notification contract:** Blocking pre-execution notification in REPL, post-execution summary
+- [x] **T2 notification contract:** Post-execution log entry for all graph/store mutations
+- [x] **API authentication:** Bearer token middleware on all `/api/v1/` routes
+- [x] **Request size limits:** `http.MaxBytesReader` middleware (default 1 MB)
+- [x] **Tests:** Safety gate rejects denied actions; notifications emitted; self-protection paths blocked; policy loading works
+- [x] **Milestone: No tool can mutate anything without passing through the safety gate**
 
-### Phase 6: Cloud, Observability & Alerting Adapters
+### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
 All new adapters in this phase are read-only (T1) by default. Any mutation capability (silence creation, incident acknowledgment) must be registered as T3 with a corresponding policy flag.
 
-- [ ] **Cloud:** AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets)
-- [ ] **Open Source Observability:** Prometheus/Mimir, Loki, Tempo, Jaeger
-- [ ] **Proprietary Observability:** Datadog, Splunk, Dynatrace, New Relic
-- [ ] **Cloud Observability:** CloudWatch, Azure Monitor
-- [ ] **Alerting & Incidents:** Alertmanager, PagerDuty
-- [ ] **Dashboards:** Grafana
+- [ ] **Scope:** Cloud (AWS, Azure), Observability (Prometheus/Mimir, Loki, Tempo/Jaeger, Datadog, Splunk, Dynatrace, New Relic, CloudWatch, Azure Monitor), Alerting (Alertmanager, PagerDuty), Dashboards (Grafana)
 - [ ] API endpoints + core tools for each adapter
 - [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`
 - [ ] **Safety:** Classify each new tool as T1/T2/T3; add policy flags for any T2/T3 actions (e.g., `act.alertmanager_silence`, `act.pagerduty_ack`); implement notification contract for mutation actions

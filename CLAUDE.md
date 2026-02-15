@@ -194,12 +194,9 @@ Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-la
 ### Phase 6: Cloud, Observability & Alerting Adapters ← CURRENT
 
 All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
-- [ ] Cloud: AWS, Azure
-- [ ] Open Source: Prometheus/Mimir, Loki, Tempo, Jaeger
-- [ ] Proprietary: Datadog, Splunk, Dynatrace, New Relic
-- [ ] Alerting: Alertmanager, PagerDuty, Grafana
-- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via
-- [ ] Safety: credential encryption, TLS, rate limiting
+- [ ] Adapters: cloud, observability, alerting (see details below)
+- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node
+- [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge tiers (curated, synced, derived)
@@ -234,19 +231,10 @@ Key principles:
 
 ## Cloud, Observability & Alerting Adapters (Phase 6)
 
-**Cloud adapters** discover infrastructure backing K8s:
-- AWS: EC2, EKS, RDS, ALB, VPC, SecurityGroups
-- Azure: VMs, AKS, Azure SQL, VNets, NSGs
-
-**Observability adapters** query metrics, logs, traces:
-- Open Source: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces)
-- Proprietary: Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL)
-- Cloud: CloudWatch, Azure Monitor (KQL)
-
-**Alerting & Incident adapters:**
-- Alertmanager: list alerts, create silences
-- PagerDuty: incidents, on-call schedules, acknowledge
-- Grafana: dashboards, alerts, annotations
+**Scope (T1 read-only by default):**
+- Cloud: AWS (EC2, EKS, RDS, ALB, VPC, SecurityGroups), Azure (VMs, AKS, SQL, VNets, NSGs)
+- Observability: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces), Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL), CloudWatch, Azure Monitor (KQL)
+- Alerting: Alertmanager, PagerDuty, Grafana (alerts, dashboards, annotations)
 
 **Key graph edges:**
 - `is_k8s_node`: cloud instance → K8s node
@@ -433,7 +421,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 }
 ```
 
-For Joe MVP, we'll add instrumentation in Phase 6. Keep business logic clean from the start.
+OpenTelemetry instrumentation is in place. Phase 6 extends it to new adapters while keeping business logic clean from the start.
 
 ### Structured Logging
 Use `log/slog` for structured logging at boundaries:
