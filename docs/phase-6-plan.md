@@ -5,7 +5,12 @@ This plan is the execution checklist for Phase 6. Complete each step in order an
 ## Goals
 
 - Add cloud, observability, and alerting adapters (read-only T1 by default).
-- Extend the graph with new relationships: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node.
+- Add data store adapters for databases and messaging (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch).
+- Add GitOps, CD, and IaC adapters (Argo CD full adapter, Flux, Terraform, Helm releases).
+- Add networking and ingress adapters (NGINX Ingress, Envoy, Istio, Cilium).
+- Add K8s CRD-based adapters with minimal effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane).
+- Add security and runtime adapters (Falco).
+- Extend the graph with new relationships: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, mesh_for, policy_enforces, scaled_by, provisions.
 - Harden safety: credential encryption, TLS, rate limiting, and tool tier classification.
 
 ## Working Rules
@@ -255,15 +260,422 @@ Tests
 
 ---
 
+## 6.6 Data Store Adapters
+
+Read-only diagnostic queries. Joe never writes application data. All T1.
+
+### 6.6.1 PostgreSQL
+
+- Connect via `lib/pq` or `pgx` driver with read-only connection string.
+- Query `pg_stat_activity` (active connections, blocked queries), `pg_stat_user_tables` (seq scans, dead tuples), `pg_stat_replication` (replication lag).
+- Slow query log via `pg_stat_statements` extension (if available).
+- Map database to services via `stores_in` edges.
+
+Touchpoints
+- internal/adapters/postgres/ (new)
+- internal/tools/core/postgres_stat.go, postgres_query.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| postgres_stat | source_id | Connection stats, replication lag, table stats |
+| postgres_query | source_id, query (read-only enforced) | Run diagnostic SQL (SELECT only) |
+
+Acceptance
+- Connect to PostgreSQL, return structured stats.
+- Query enforcement: only SELECT statements allowed (parsed before execution).
+
+Tests
+- Unit tests with mock driver responses.
+- SQL parsing tests to verify write rejection.
+
+### 6.6.2 MySQL
+
+- Connect via `go-sql-driver/mysql` with read-only user.
+- Query `SHOW PROCESSLIST`, `SHOW SLAVE STATUS` / `SHOW REPLICA STATUS`, `INFORMATION_SCHEMA.INNODB_TRX`.
+- Map database to services via `stores_in` edges.
+
+Touchpoints
+- internal/adapters/mysql/ (new)
+- internal/tools/core/mysql_stat.go, mysql_query.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| mysql_stat | source_id | Processlist, replication status, InnoDB stats |
+| mysql_query | source_id, query (read-only enforced) | Run diagnostic SQL (SELECT only) |
+
+### 6.6.3 Redis
+
+- Connect via `go-redis/redis` client.
+- Run `INFO` (server, memory, clients, stats, replication), `SLOWLOG GET`, `CLIENT LIST`, `DBSIZE`.
+- No key reads — Joe sees operational stats only.
+- Map cache/store to services via `stores_in` edges.
+
+Touchpoints
+- internal/adapters/redis/ (new)
+- internal/tools/core/redis_info.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| redis_info | source_id, section (optional) | INFO stats by section |
+| redis_slowlog | source_id, count (default 10) | Recent slow commands |
+
+### 6.6.4 MongoDB
+
+- Connect via `mongo-driver/mongo` with read-only user.
+- Run `db.serverStatus()`, `rs.status()`, `db.currentOp()`, `system.profile` (if enabled).
+- Map database to services via `stores_in` edges.
+
+Touchpoints
+- internal/adapters/mongodb/ (new)
+- internal/tools/core/mongodb_stat.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| mongodb_stat | source_id | Server status, replica set health, current ops |
+| mongodb_query | source_id, database, collection, filter (read-only) | Diagnostic find queries |
+
+### 6.6.5 Kafka
+
+- Connect via `confluent-kafka-go` or `segmentio/kafka-go` admin client.
+- List topics, describe consumer groups (lag per partition), broker metadata, cluster health.
+- No message consumption — admin metadata only.
+- Map queues to services via `queues_in` edges.
+
+Touchpoints
+- internal/adapters/kafka/ (new)
+- internal/tools/core/kafka_topics.go, kafka_consumers.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| kafka_topics | source_id, topic (optional) | List topics or describe one (partitions, config) |
+| kafka_consumers | source_id, group (optional) | Consumer group lag, members, offsets |
+| kafka_brokers | source_id | Broker list, controller, cluster ID |
+
+### 6.6.6 Elasticsearch
+
+- Connect via HTTP REST API (compatible with OpenSearch).
+- Query `_cluster/health`, `_cat/indices`, `_cat/shards`, `_nodes/stats`.
+- Map search/logging backend to services via `stores_in` or `logs_in` edges.
+
+Touchpoints
+- internal/adapters/elasticsearch/ (new)
+- internal/tools/core/elasticsearch_health.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| elasticsearch_health | source_id | Cluster health, shard status, node stats |
+| elasticsearch_indices | source_id, pattern (optional) | Index list with doc count, size, health |
+
+Acceptance (all 6.6.x)
+- Each adapter connects with read-only credentials.
+- Stats returned as structured JSON.
+- Graph edges created linking data stores to consuming services.
+
+Tests
+- Table-driven unit tests with mock responses for each adapter.
+
+---
+
+## 6.7 GitOps, CD & IaC Adapters
+
+### 6.7.1 Argo CD (full adapter)
+
+- Upgrade from `run_command` passthrough to a proper REST API adapter.
+- List applications, get app details (sync status, health, resources), get app diff, get sync history.
+- Map apps to K8s resources via `managed_by` edges.
+
+Touchpoints
+- internal/adapters/argocd/ (new, replaces run_command usage)
+- internal/tools/core/argocd_apps.go, argocd_diff.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| argocd_apps | source_id, project (optional) | List apps with sync/health status |
+| argocd_app | source_id, name | App detail: resources, sync status, conditions |
+| argocd_diff | source_id, name | Live vs desired state diff |
+| argocd_history | source_id, name, limit | Recent sync operations |
+
+### 6.7.2 Flux
+
+- Query Flux CRDs via K8s adapter: `GitRepository`, `Kustomization`, `HelmRelease`, `HelmRepository`.
+- Show reconciliation status, last applied revision, conditions.
+- Map Flux resources to K8s workloads via `managed_by` edges.
+
+Touchpoints
+- Extends K8s adapter CRD resource list
+- internal/tools/core/flux_status.go (new, convenience wrapper)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| flux_status | source_id, namespace (optional) | All Flux resources with reconciliation status |
+| flux_resource | source_id, kind, namespace, name | Detail for one Flux resource |
+
+### 6.7.3 Terraform
+
+- Read Terraform state files (local or remote backend via `terraform show -json`).
+- Parse `tfstate` JSON: list managed resources, detect drift (planned vs actual).
+- Show output values and provider configuration.
+- Map Terraform-managed resources to graph nodes via `provisions` edges.
+
+Touchpoints
+- internal/adapters/terraform/ (new)
+- internal/tools/core/terraform_state.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| terraform_state | source_id, resource_type (optional) | List managed resources from state |
+| terraform_resource | source_id, address | Detail for one resource (attributes, dependencies) |
+| terraform_outputs | source_id | List output values |
+
+Note: Terraform state may contain secrets. Adapter must redact sensitive attributes marked `sensitive: true` in state.
+
+### 6.7.4 Helm
+
+- Use Helm SDK (`helm/v3`) to query release history.
+- List releases, get release status, get values, get manifest diff between revisions.
+- Map Helm releases to K8s resources via `managed_by` edges.
+
+Touchpoints
+- internal/adapters/helm/ (new)
+- internal/tools/core/helm_releases.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| helm_releases | source_id, namespace (optional) | List releases with status, revision, chart |
+| helm_release | source_id, namespace, name | Release detail: values, notes, manifest |
+| helm_history | source_id, namespace, name, limit | Revision history with status |
+
+Acceptance (all 6.7.x)
+- Each adapter returns structured data from real sources.
+- Graph edges link managed resources back to their managing tool.
+
+Tests
+- Unit tests with mock API/state responses.
+
+---
+
+## 6.8 Networking & Ingress Adapters
+
+### 6.8.1 NGINX Ingress Controller
+
+- Query NGINX status via:
+  - K8s Ingress CRDs (ingress rules, backends, TLS)
+  - NGINX status endpoint (`/nginx_status` or Prometheus metrics endpoint)
+  - ConfigMaps for NGINX configuration
+- Map ingress rules to backend services via `ingress_for` edges.
+
+Touchpoints
+- Extends K8s adapter for Ingress CRD queries
+- internal/adapters/nginx/ (new, for status/metrics endpoint)
+- internal/tools/core/nginx_ingress.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| nginx_ingresses | source_id, namespace (optional) | List ingress rules with hosts, paths, backends |
+| nginx_status | source_id | Active connections, request rates, upstream health |
+| nginx_config | source_id, namespace | Effective NGINX configuration from ConfigMaps |
+
+### 6.8.2 Envoy
+
+- Query Envoy admin API (`/config_dump`, `/clusters`, `/stats`, `/server_info`).
+- Show cluster health, upstream endpoints, circuit breaker state.
+- Compatible with standalone Envoy and Envoy sidecars (Istio data plane).
+- Map Envoy proxies to services via `proxies` edges.
+
+Touchpoints
+- internal/adapters/envoy/ (new)
+- internal/tools/core/envoy_clusters.go, envoy_config.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| envoy_clusters | source_id | Cluster health, endpoints, circuit breaker state |
+| envoy_config | source_id, section (optional) | Config dump (listeners, routes, clusters) |
+| envoy_stats | source_id, filter (optional) | Stats filtered by prefix |
+
+### 6.8.3 Istio
+
+- Query Istio CRDs via K8s adapter: `VirtualService`, `DestinationRule`, `Gateway`, `PeerAuthentication`, `AuthorizationPolicy`.
+- Show mTLS status, traffic policies, fault injection rules.
+- Map mesh config to services via `mesh_for` edges.
+
+Touchpoints
+- Extends K8s adapter CRD resource list
+- internal/tools/core/istio_mesh.go (new, convenience wrapper)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| istio_config | source_id, namespace (optional), kind (optional) | List Istio CRDs with status |
+| istio_resource | source_id, kind, namespace, name | Detail for one Istio resource |
+
+### 6.8.4 Cilium
+
+- Query Cilium CRDs via K8s adapter: `CiliumNetworkPolicy`, `CiliumClusterwideNetworkPolicy`, `CiliumEndpoint`.
+- Query Hubble API for network flow visibility (if available).
+- Map network policies to workloads via `policy_enforces` edges.
+
+Touchpoints
+- Extends K8s adapter CRD resource list
+- internal/adapters/cilium/ (new, for Hubble API)
+- internal/tools/core/cilium_policy.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| cilium_policies | source_id, namespace (optional) | List network policies with enforcement status |
+| cilium_endpoints | source_id, namespace (optional) | Endpoint health and identity |
+| cilium_flows | source_id, namespace, pod (optional), limit | Recent network flows via Hubble |
+
+Acceptance (all 6.8.x)
+- Each adapter returns structured config/status data.
+- Graph edges map networking resources to the services they front or protect.
+
+Tests
+- Unit tests with mock API/CRD responses.
+
+---
+
+## 6.9 K8s CRD-Based Adapters (Low Effort)
+
+These adapters piggyback on the existing K8s adapter by adding CRD resource types to the supported list. Minimal new code — mainly tool wrappers for convenience.
+
+### 6.9.1 cert-manager
+
+- Query CRDs: `Certificate`, `CertificateRequest`, `Issuer`, `ClusterIssuer`, `Order`, `Challenge`.
+- Surface certificate expiry, readiness, issuer status.
+- Map certificates to services/ingresses via `secures` edges.
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| certmanager_certs | source_id, namespace (optional) | List certificates with expiry, readiness |
+| certmanager_issuers | source_id | List issuers/cluster issuers with status |
+
+### 6.9.2 KEDA
+
+- Query CRDs: `ScaledObject`, `ScaledJob`, `TriggerAuthentication`.
+- Surface scaling targets, trigger types, current replicas vs desired.
+- Map scaled objects to workloads via `scaled_by` edges.
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| keda_scaledobjects | source_id, namespace (optional) | List scaled objects with trigger info |
+
+### 6.9.3 OPA / Gatekeeper
+
+- Query CRDs: `ConstraintTemplate`, constraints (dynamic GVK), `Config`.
+- Surface constraint violations from audit results.
+- Map policies to namespaces/workloads via `policy_enforces` edges.
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| opa_constraints | source_id, template (optional) | List constraints with violation counts |
+| opa_violations | source_id, constraint | Violation details for a specific constraint |
+
+### 6.9.4 Crossplane
+
+- Query CRDs: `Provider`, `ProviderConfig`, `Composite Resource Definitions (XRD)`, `Claims`, `Managed Resources`.
+- Surface provider health, resource sync status, composition status.
+- Map Crossplane resources to cloud resources via `provisions` edges.
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| crossplane_providers | source_id | List providers with health status |
+| crossplane_resources | source_id, kind (optional), namespace (optional) | List managed/composite resources with sync status |
+
+Touchpoints (all 6.9.x)
+- internal/adapters/k8s/ (add CRD types to supported resources)
+- internal/tools/core/ (convenience tool wrappers)
+
+Acceptance
+- CRD resources queryable through existing K8s adapter.
+- Convenience tools return structured, human-readable status.
+
+Tests
+- Unit tests with mock CRD responses.
+
+---
+
+## 6.10 Security & Runtime Adapters
+
+### 6.10.1 Falco
+
+- Query Falco gRPC or HTTP output API for runtime security events.
+- List recent alerts by severity, rule, source (syscall, k8s_audit).
+- Map alerts to pods/nodes via `alerts_in` edges.
+
+Touchpoints
+- internal/adapters/falco/ (new)
+- internal/tools/core/falco_alerts.go (new)
+
+Tools
+| Tool | Parameters | Use Case |
+|------|------------|----------|
+| falco_alerts | source_id, priority (optional), limit | Recent runtime security events |
+| falco_rules | source_id | List loaded rules with priority |
+
+Acceptance
+- Adapter connects to Falco output and returns structured events.
+
+Tests
+- Unit tests with mock event responses.
+
+---
+
 ## Execution Order (Recommended)
 
 1) 6.1 Core foundations (done)
-2) 6.2.1 AWS verification
-3) 6.2.2 Azure adapter
-4) 6.3 Open source observability (Prometheus, Loki, Tempo)
-5) 6.4 Alerting and dashboards
-6) 6.3.4 Proprietary vendors
-7) 6.5 Safety and hardening
+2) 6.2 Cloud adapters (done)
+3) 6.3 Open source observability (Prometheus, Loki, Tempo/Jaeger) ← current
+4) 6.4 Alerting and dashboards
+5) 6.5 Safety and hardening
+6) 6.6 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+7) 6.7 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
+8) 6.8 Networking & ingress (NGINX, Envoy, Istio, Cilium)
+9) 6.9 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
+10) 6.10 Security & runtime (Falco)
+11) 6.3.4 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
+
+Note: 6.9 (CRD-based) can be done earlier as quick wins since effort is minimal.
+
+---
+
+## New Graph Edge Types
+
+| Edge | From | To | Added In |
+|------|------|----|----------|
+| metrics_in | service | prometheus source | 6.3 |
+| logs_in | service | loki source | 6.3 |
+| traces_in | service | tempo/jaeger source | 6.3 |
+| alerts_in | service | alertmanager/falco source | 6.4, 6.10 |
+| paged_via | service | pagerduty source | 6.4 |
+| dashboard_in | service | grafana source | 6.4 |
+| is_k8s_node | cloud instance | K8s node | 6.2 |
+| stores_in | service | database (pg/mysql/mongo/es/redis) | 6.6 |
+| queues_in | service | kafka/rabbitmq | 6.6 |
+| managed_by | k8s resource | argocd app / flux / helm release | 6.7 |
+| provisions | terraform resource / crossplane | cloud resource | 6.7, 6.9 |
+| ingress_for | nginx ingress | backend service | 6.8 |
+| proxies | envoy | service | 6.8 |
+| mesh_for | istio config | service | 6.8 |
+| policy_enforces | opa constraint / cilium policy | namespace/workload | 6.8, 6.9 |
+| scaled_by | keda scaled object | workload | 6.9 |
+| secures | certificate | service/ingress | 6.9 |
 
 ---
 
@@ -277,3 +689,4 @@ Tests
 - Source types are centrally defined in store constants with AllowedSourceTypes/IsValidSourceType helpers.
 - AWS adapter is wired at source creation and joecored startup.
 - Phase 6 relations are defined as graph relation constants and referenced in .joe interpretation and graph_add_edge tool docs.
+- (2026-02-15) Expanded Phase 6 scope beyond cloud/observability/alerting to include data stores, GitOps/IaC, networking/ingress, CRD-based tools, and security/runtime adapters. Rationale: cover the tools platform engineers encounter daily during incidents. CRD-based adapters (6.9) are low-effort since they reuse the K8s adapter. Proprietary observability vendors moved to last in execution order — open-source and infrastructure-adjacent tools come first.
