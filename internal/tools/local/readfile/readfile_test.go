@@ -76,3 +76,43 @@ func TestExecute_BinaryFile(t *testing.T) {
 		t.Fatalf("expected binary error, got: %v", err)
 	}
 }
+
+func TestExecute_BlocksJoeDirectory(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Try to read ~/.joe/config.yaml
+	configPath := filepath.Join(home, ".joe", "config.yaml")
+
+	tool := New()
+	_, err = tool.Execute(context.Background(), map[string]any{"path": configPath})
+	if err == nil {
+		t.Fatal("expected error when reading from ~/.joe/, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksSafetyPolicy(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Try to read ~/.joe/safety-policy.yaml
+	policyPath := filepath.Join(home, ".joe", "safety-policy.yaml")
+
+	tool := New()
+	_, err = tool.Execute(context.Background(), map[string]any{"path": policyPath})
+	if err == nil {
+		t.Fatal("expected error when reading safety policy, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}

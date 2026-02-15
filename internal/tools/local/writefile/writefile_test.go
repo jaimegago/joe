@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -61,5 +62,51 @@ func TestExecute_InvalidContent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid content")
+	}
+}
+
+func TestExecute_BlocksJoeDirectory(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Try to write to ~/.joe/config.yaml
+	configPath := filepath.Join(home, ".joe", "config.yaml")
+
+	tool := New()
+	_, err = tool.Execute(context.Background(), map[string]any{
+		"path":    configPath,
+		"content": "malicious content",
+	})
+	if err == nil {
+		t.Fatal("expected error when writing to ~/.joe/, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksSafetyPolicy(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Try to write to ~/.joe/safety-policy.yaml
+	policyPath := filepath.Join(home, ".joe", "safety-policy.yaml")
+
+	tool := New()
+	_, err = tool.Execute(context.Background(), map[string]any{
+		"path":    policyPath,
+		"content": "enabled: false",
+	})
+	if err == nil {
+		t.Fatal("expected error when writing safety policy, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
 	}
 }

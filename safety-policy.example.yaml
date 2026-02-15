@@ -1,0 +1,63 @@
+version: 1
+
+# T2: Internal state mutations (Record tier)
+# These control Joe's ability to modify its internal knowledge graph and state.
+# Defaulting to 'true' is safe since these only affect Joe's internal database.
+record:
+  graph_mutations: true          # Allow graph add/update/delete operations
+  source_registration: true      # Allow registering new infrastructure sources
+  onboarding_facts: true         # Allow saving onboarding facts
+  autonomous_refresh: true       # Allow background refresh to mutate graph
+
+# T3: External system mutations (Act tier)
+# These control Joe's ability to change external systems, files, and infrastructure.
+# EVERY T3 ACTION DEFAULTS TO DISABLED. You must explicitly enable each one.
+act:
+  # File operations
+  write_file:
+    enabled: false               # Set to true to allow Joe to write files
+    allowed_directories: []      # When enabled, specify allowed directories:
+                                # Example: ["/tmp/joe-workspace", "/Users/you/projects"]
+                                # Note: ~/.joe/ is ALWAYS blocked regardless of this setting
+
+  # Command execution
+  run_command:
+    enabled: true                # Allow running commands from the allowed list
+    allowed_commands:            # Override the default allowlist
+      - ls
+      - cat
+      - head
+      - tail
+      - grep
+      - find
+      - wc
+      # DANGER: Mutation-capable commands are excluded by default
+      # kubectl, helm, argocd can mutate infrastructure
+      # To enable them, uncomment below and accept the risk:
+      # - kubectl
+      # - helm
+      # - argocd
+
+  # Future T3 actions (Phase 6+)
+  k8s_write:
+    enabled: false               # kubectl scale, apply, delete, patch
+
+  pagerduty_ack:
+    enabled: false               # PagerDuty incident acknowledgment
+
+  alertmanager_silence:
+    enabled: false               # Create Alertmanager silences
+
+  git_push:
+    enabled: false               # Git push to remote repositories
+
+# Self-Protection Invariants (hardcoded, not configurable)
+# These are enforced in code and CANNOT be overridden by this policy file:
+#
+# 1. Joe cannot read or write any files in ~/.joe/ directory
+# 2. Joe cannot read its safety policy file (this file)
+# 3. Joe cannot execute 'joe' or 'joecored' commands
+# 4. Joe cannot execute 'kill', 'pkill', or 'killall' commands
+#
+# These invariants exist to prevent Joe from modifying its own behavior,
+# killing itself, or bypassing safety checks through prompt injection.

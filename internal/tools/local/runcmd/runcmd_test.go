@@ -114,3 +114,83 @@ func TestExecute_TruncatesOutput(t *testing.T) {
 		t.Errorf("stdout missing truncation message")
 	}
 }
+
+func TestExecute_BlocksJoeCommand(t *testing.T) {
+	runner := &mockRunner{stdout: "ok"}
+	tool := NewWithRunner([]string{"joe"}, runner)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "joe",
+	})
+	if err == nil {
+		t.Fatal("expected error when running 'joe' command")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksJoecoredCommand(t *testing.T) {
+	runner := &mockRunner{stdout: "ok"}
+	tool := NewWithRunner([]string{"joecored"}, runner)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "joecored",
+	})
+	if err == nil {
+		t.Fatal("expected error when running 'joecored' command")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksKillCommand(t *testing.T) {
+	runner := &mockRunner{stdout: "ok"}
+	tool := NewWithRunner([]string{"kill"}, runner)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "kill",
+	})
+	if err == nil {
+		t.Fatal("expected error when running 'kill' command")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksPkillCommand(t *testing.T) {
+	runner := &mockRunner{stdout: "ok"}
+	tool := NewWithRunner([]string{"pkill"}, runner)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "pkill",
+	})
+	if err == nil {
+		t.Fatal("expected error when running 'pkill' command")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
+
+func TestExecute_BlocksKillallCommand(t *testing.T) {
+	runner := &mockRunner{stdout: "ok"}
+	tool := NewWithRunner([]string{"killall"}, runner)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"command": "killall",
+	})
+	if err == nil {
+		t.Fatal("expected error when running 'killall' command")
+	}
+
+	if !strings.Contains(err.Error(), "self-protection") {
+		t.Errorf("expected self-protection error, got: %v", err)
+	}
+}
