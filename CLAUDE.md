@@ -171,19 +171,34 @@ We're building incrementally. Each phase should be working before moving on.
 - Git adapter (Connect, ReadFile, ListFiles, Log, Diff)
 - API endpoints and core tools for both
 
-### Phase 5: Core Agent ← CURRENT (PARTIAL)
-- [ ] Background refresh loop
-- [ ] Auto-discovery implementation
-- [x] Clarifications table (API endpoints stubbed)
-- [ ] Onboarding flow
-- [ ] .joe/ file processing
+### Phase 5: Core Agent ✅ COMPLETE
+- [x] Background refresh loop
+- [x] Auto-discovery implementation
+- [x] Clarifications system (list, answer, dismiss + graph ops)
+- [x] Onboarding flow
+- [x] .joe/ file processing with cache
+
+### Phase 5.5: Action Safety Framework ← CURRENT
+
+Prerequisite for Phase 6. Implements hardcoded safety enforcement. See `docs/security-in-layers.md`.
+
+- [ ] Safety policy loader (`~/.joe/safety-policy.yaml`)
+- [ ] Action tier registry (T1: Observe, T2: Record, T3: Act)
+- [ ] Tool executor gate (check tier + policy before every Execute)
+- [ ] Self-protection invariants (Joe can't touch `~/.joe/`, can't run joe/joecored/kill)
+- [ ] Path sandboxing for read_file/write_file
+- [ ] run_command subcommand validation for kubectl/helm/argocd
+- [ ] T3 blocking notification in REPL, T2 post-execution log
+- [ ] API auth (Bearer token) + request size limits
 
 ### Phase 6: Cloud, Observability & Alerting Adapters
+All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
 - [ ] Cloud: AWS, Azure
 - [ ] Open Source: Prometheus/Mimir, Loki, Tempo, Jaeger
 - [ ] Proprietary: Datadog, Splunk, Dynatrace, New Relic
 - [ ] Alerting: Alertmanager, PagerDuty, Grafana
 - [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via
+- [ ] Safety: credential encryption, TLS, rate limiting
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge tiers (curated, synced, derived)
@@ -317,6 +332,7 @@ if len(resp.ToolCalls) > 0 {
 - `docs/joe-architecture.md` - Full architecture with diagrams
 - `docs/joe-dataflow.md` - Data flow details, .joe/ file processing
 - `docs/joe-prompt.md` - Prompt for coding LLMs to generate .joe/ files
+- `docs/security-in-layers.md` - Security posture, mutation audit, Action Safety Framework
 
 ## Go Standards
 
