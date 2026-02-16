@@ -172,6 +172,7 @@ func (r *Refresher) executeAddEdge(ctx context.Context, args map[string]any, sou
 		Relation:   relation,
 		Confidence: graph.Explicit,
 		Source:     "joe_file",
+		SourceID:   sourceID,
 		Context:    ".joe/ file interpretation",
 		CreatedAt:  time.Now(),
 	}

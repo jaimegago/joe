@@ -170,7 +170,7 @@ func TestAddEdge_NewRelations(t *testing.T) {
 		graph.RelationTracesIn,
 		graph.RelationAlertsIn,
 		graph.RelationPagedVia,
-		graph.RelationDashboard,
+		graph.RelationDashboardIn,
 		graph.RelationIsK8sNode,
 	}
 	for _, relation := range relations {
@@ -180,6 +180,7 @@ func TestAddEdge_NewRelations(t *testing.T) {
 			Relation:   relation,
 			Confidence: graph.Explicit,
 			Source:     "test",
+			SourceID:   "",
 		}
 		if err := store.AddEdge(ctx, edge); err != nil {
 			t.Fatalf("AddEdge(%s): %v", relation, err)
@@ -214,6 +215,7 @@ func TestAddEdge(t *testing.T) {
 			Relation:   "calls",
 			Confidence: graph.Explicit,
 			Source:     "k8s_api",
+			SourceID:   "",
 			Context:    "network traffic",
 		})
 		if err != nil {
@@ -228,6 +230,7 @@ func TestAddEdge(t *testing.T) {
 			Relation:   "calls",
 			Confidence: graph.UserConfirmed,
 			Source:     "user",
+			SourceID:   "",
 		})
 		if err != nil {
 			t.Fatalf("AddEdge() upsert error = %v", err)
@@ -239,6 +242,7 @@ func TestAddEdge(t *testing.T) {
 			From:     "svc-a",
 			To:       "nonexistent",
 			Relation: "calls",
+			SourceID: "",
 		})
 		if err == nil {
 			t.Error("expected foreign key error, got nil")

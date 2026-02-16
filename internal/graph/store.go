@@ -62,6 +62,7 @@ type Edge struct {
 	Relation   string
 	Confidence ConfidenceLevel
 	Source     string
+	SourceID   string
 	Context    string
 	CreatedAt  time.Time
 }

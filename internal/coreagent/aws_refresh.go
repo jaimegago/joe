@@ -94,6 +94,7 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 					Relation:   "in_vpc",
 					Confidence: graph.Explicit,
 					Source:     "aws_api",
+					SourceID:   source.ID,
 					Context:    "vpc_id",
 				})
 			}
@@ -142,6 +143,7 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 					Relation:   "in_vpc",
 					Confidence: graph.Explicit,
 					Source:     "aws_api",
+					SourceID:   source.ID,
 					Context:    "vpc_id",
 				})
 			}
@@ -191,6 +193,7 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 					Relation:   "in_vpc",
 					Confidence: graph.Explicit,
 					Source:     "aws_api",
+					SourceID:   source.ID,
 					Context:    "vpc_id",
 				})
 			}

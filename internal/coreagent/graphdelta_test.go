@@ -68,8 +68,8 @@ func TestLoadGraphStateForSource(t *testing.T) {
 	}
 
 	edges := []graph.Edge{
-		{From: nodes[0].ID, To: nodes[1].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api"},
-		{From: nodes[0].ID, To: nodes[2].ID, Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api"},
+		{From: nodes[0].ID, To: nodes[1].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
+		{From: nodes[0].ID, To: nodes[2].ID, Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
 	}
 	for _, edge := range edges {
 		if err := store.AddEdge(ctx, edge); err != nil {
@@ -102,7 +102,7 @@ func TestBuildGraphDelta(t *testing.T) {
 		{ID: "k8s/src-1/service/default/api", Type: "service", SourceID: "src-1", Metadata: map[string]any{}, LastSeen: now},
 	}
 	existingEdges := []graph.Edge{
-		{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api"},
+		{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
 	}
 
 	desiredNodes := []graph.Node{
@@ -132,12 +132,12 @@ func TestBuildGraphDelta(t *testing.T) {
 
 func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 	existingEdges := []graph.Edge{
-		{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", Context: "selector"},
+		{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
 	}
 
 	t.Run("no change", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
 		}
 
 		delta := BuildGraphDelta(nil, existingEdges, nil, desiredEdges)
@@ -148,7 +148,7 @@ func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 
 	t.Run("context changed", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", Context: "label_match"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "label_match"},
 		}
 
 		delta := BuildGraphDelta(nil, existingEdges, nil, desiredEdges)
@@ -159,8 +159,8 @@ func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 
 	t.Run("dedupe desired", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", Context: "selector"},
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
 		}
 
 		delta := BuildGraphDelta(nil, nil, nil, desiredEdges)
@@ -184,7 +184,7 @@ func TestApplyGraphDelta(t *testing.T) {
 		}
 	}
 
-	existingEdge := graph.Edge{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api"}
+	existingEdge := graph.Edge{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""}
 	if err := store.AddEdge(ctx, existingEdge); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}

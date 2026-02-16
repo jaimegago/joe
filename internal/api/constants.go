@@ -5,8 +5,7 @@ const (
 	version      = "0.1.0"
 	apiVersion   = "v1"      // Current API version for route paths
 	apiPrefix    = "/api/v1" // Full API path prefix
-	statusOK     = "ok"
-	errorNotImpl = "not implemented"
+	statusOK = "ok"
 
 	// HTTP Content-Type header value.
 	contentTypeJSON = "application/json"
@@ -16,7 +15,6 @@ const (
 	errorCodeInvalidRequest     = "invalid_request"
 	errorCodeNotFound           = "not_found"
 	errorCodeInvalidSource      = "invalid_source"
-	errorCodeNotImplemented     = "not_implemented"
 	errorCodeServiceUnavailable = "service_unavailable"
 
 	internalErrorMessage = "internal server error"
