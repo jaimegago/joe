@@ -69,7 +69,7 @@ func (a *Adapter) GetEC2Instance(ctx context.Context, instanceID string) (*EC2In
 		}
 	}
 
-	return nil, fmt.Errorf("%s: %s", errorInstanceNotFound, instanceID)
+	return nil, fmt.Errorf("%w: %s", ErrInstanceNotFound, instanceID)
 }
 
 // convertEC2Instance converts AWS EC2 Instance to our EC2Instance struct

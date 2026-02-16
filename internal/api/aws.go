@@ -1,9 +1,12 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 )
 
 const (
@@ -63,6 +66,12 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	instance, err := awsAdapter.GetEC2Instance(r.Context(), instanceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "ec2.get_instance", time.Since(start), err)
 	if err != nil {
+		if errors.Is(err, awsadapter.ErrInstanceNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID), map[string]any{
+				"instance_id": instanceID,
+			})
+			return
+		}
 		writeInternalError(w, err, "aws ec2 get instance")
 		return
 	}
@@ -125,6 +134,12 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 	cluster, err := awsAdapter.GetEKSCluster(r.Context(), clusterName)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "eks.get_cluster", time.Since(start), err)
 	if err != nil {
+		if errors.Is(err, awsadapter.ErrClusterNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorClusterNotFound, clusterName), map[string]any{
+				"cluster_name": clusterName,
+			})
+			return
+		}
 		writeInternalError(w, err, "aws eks get cluster")
 		return
 	}
@@ -187,6 +202,12 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 	instance, err := awsAdapter.GetRDSInstance(r.Context(), dbInstanceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "rds.get_instance", time.Since(start), err)
 	if err != nil {
+		if errors.Is(err, awsadapter.ErrDBInstanceNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorDBInstanceNotFound, dbInstanceID), map[string]any{
+				"db_instance_id": dbInstanceID,
+			})
+			return
+		}
 		writeInternalError(w, err, "aws rds get instance")
 		return
 	}
@@ -249,6 +270,12 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 	vpc, err := awsAdapter.GetVPC(r.Context(), vpcID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "vpc.get", time.Since(start), err)
 	if err != nil {
+		if errors.Is(err, awsadapter.ErrVPCNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorVPCNotFound, vpcID), map[string]any{
+				"vpc_id": vpcID,
+			})
+			return
+		}
 		writeInternalError(w, err, "aws vpc get vpc")
 		return
 	}

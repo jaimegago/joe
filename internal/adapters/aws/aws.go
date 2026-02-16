@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -21,19 +22,25 @@ import (
 )
 
 const (
-	// Error messages
-	errorNotConnected       = "adapter not connected to AWS"
-	errorInstanceNotFound   = "instance not found"
-	errorClusterNotFound    = "cluster not found"
-	errorDBInstanceNotFound = "database instance not found"
-	errorVPCNotFound        = "VPC not found"
-
 	// Time formats
 	timeFormatRFC3339 = time.RFC3339
 
 	// Status messages
 	statusNotConnected = "Not connected to AWS"
 	statusConnectedFmt = "Connected to AWS region %s"
+)
+
+var (
+	// ErrNotConnected indicates the adapter has not established AWS connectivity.
+	ErrNotConnected = errors.New("adapter not connected to AWS")
+	// ErrInstanceNotFound indicates an EC2 instance lookup failed to find a match.
+	ErrInstanceNotFound = errors.New("instance not found")
+	// ErrClusterNotFound indicates an EKS cluster lookup failed to find a match.
+	ErrClusterNotFound = errors.New("cluster not found")
+	// ErrDBInstanceNotFound indicates an RDS instance lookup failed to find a match.
+	ErrDBInstanceNotFound = errors.New("database instance not found")
+	// ErrVPCNotFound indicates a VPC lookup failed to find a match.
+	ErrVPCNotFound = errors.New("VPC not found")
 )
 
 // EC2Instance represents an EC2 instance
@@ -270,7 +277,7 @@ func buildAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
 // checkConnected validates that the adapter is connected and returns an error if not
 func (a *Adapter) checkConnected() error {
 	if !a.connected {
-		return fmt.Errorf(errorNotConnected)
+		return ErrNotConnected
 	}
 	return nil
 }

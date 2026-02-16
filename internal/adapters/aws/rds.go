@@ -59,7 +59,7 @@ func (a *Adapter) GetRDSInstance(ctx context.Context, dbInstanceID string) (*RDS
 	}
 
 	if len(result.DBInstances) == 0 {
-		return nil, fmt.Errorf("%s: %s", errorDBInstanceNotFound, dbInstanceID)
+		return nil, fmt.Errorf("%w: %s", ErrDBInstanceNotFound, dbInstanceID)
 	}
 
 	rdsInstance := convertRDSInstance(result.DBInstances[0])

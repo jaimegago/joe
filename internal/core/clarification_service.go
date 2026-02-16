@@ -3,8 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
@@ -68,19 +68,13 @@ func (s *ClarificationService) ApplyAnswer(ctx context.Context, clarificationID 
 
 	// If no graph operations stored, nothing to apply
 	if len(clarification.GraphOperations) == 0 {
-		slog.DebugContext(ctx, "clarification has no graph operations",
-			"clarification_id", clarificationID)
 		return nil
 	}
 
 	// Parse graph operations
 	var ops GraphOperations
 	if err := json.Unmarshal(clarification.GraphOperations, &ops); err != nil {
-		slog.WarnContext(ctx, "failed to parse graph operations",
-			"clarification_id", clarificationID,
-			"error", err)
-		// Don't fail here - stored operations might be malformed but answer is still valid
-		return nil
+		return fmt.Errorf("parse graph operations for clarification %s: %w", clarificationID, err)
 	}
 
 	// Set provenance
@@ -90,22 +84,18 @@ func (s *ClarificationService) ApplyAnswer(ctx context.Context, clarificationID 
 	ops.Provenance.Confidence = "confirmed"
 
 	// Apply each operation
+	var opErrors []error
 	for i, op := range ops.Operations {
 		if err := s.applyOperation(ctx, &op, &ops.Provenance); err != nil {
-			slog.ErrorContext(ctx, "failed to apply graph operation",
-				"clarification_id", clarificationID,
-				"operation_index", i,
-				"operation_type", op.Type,
-				"error", err)
-			// Don't fail the entire batch - log and continue
+			opErrors = append(opErrors, fmt.Errorf("apply graph operation %d (%s) for clarification %s: %w", i, op.Type, clarificationID, err))
+			// Continue applying other operations and return aggregated errors.
 			continue
 		}
 	}
 
-	slog.InfoContext(ctx, "applied graph operations from answered clarification",
-		"clarification_id", clarificationID,
-		"operation_count", len(ops.Operations),
-		"confirmed_by", answeredBy)
+	if len(opErrors) > 0 {
+		return errors.Join(opErrors...)
+	}
 
 	return nil
 }
