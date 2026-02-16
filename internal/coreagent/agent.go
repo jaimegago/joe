@@ -265,6 +265,7 @@ func (t *GraphAddEdgeTool) Execute(ctx context.Context, args map[string]any) (an
 		From:     fromNode,
 		To:       toNode,
 		Relation: relationship,
+		SourceID: "",
 	}
 
 	err := t.services.Graph.AddEdge(ctx, edge)

@@ -280,10 +280,4 @@ func TestSubcommandDeniedError(t *testing.T) {
 	if msg == "" {
 		t.Fatal("error message should not be empty")
 	}
-
-	// Verify it implements error interface
-	var e error = err
-	if e == nil {
-		t.Fatal("should implement error")
-	}
 }

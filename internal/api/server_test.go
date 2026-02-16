@@ -89,8 +89,8 @@ func seedTestGraph(t *testing.T, store graph.GraphStore) {
 	}
 
 	edges := []graph.Edge{
-		{From: "payment-svc", To: "user-svc", Relation: "calls"},
-		{From: "user-svc", To: "postgres", Relation: "reads_from"},
+		{From: "payment-svc", To: "user-svc", Relation: "calls", SourceID: ""},
+		{From: "user-svc", To: "postgres", Relation: "reads_from", SourceID: ""},
 	}
 	for _, e := range edges {
 		if err := store.AddEdge(ctx, e); err != nil {
@@ -296,6 +296,7 @@ func TestHandleGraphRelated(t *testing.T) {
 				}
 				if err := store.AddEdge(ctx, graph.Edge{
 					From: "deployment/prod/payment-svc", To: "deployment/prod/user-svc", Relation: "calls",
+					SourceID: "",
 				}); err != nil {
 					t.Fatalf("add edge: %v", err)
 				}

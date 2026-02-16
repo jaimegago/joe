@@ -86,7 +86,7 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 	// Setup metrics
 	var shutdownMetricsFn func(context.Context) error
 	if cfg.MetricsEnabled {
-		shutdownMetricsFn, err = setupMetrics(ctx, cfg, res)
+		shutdownMetricsFn, err = setupMetrics(cfg, res)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup metrics: %w", err)
 		}
@@ -146,7 +146,7 @@ func setupTracing(ctx context.Context, cfg Config, res *resource.Resource) (func
 	return tp.Shutdown, nil
 }
 
-func setupMetrics(ctx context.Context, cfg Config, res *resource.Resource) (func(context.Context) error, error) {
+func setupMetrics(cfg Config, res *resource.Resource) (func(context.Context) error, error) {
 	var reader sdkmetric.Reader
 
 	switch cfg.MetricsExporter {
