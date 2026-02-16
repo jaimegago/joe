@@ -71,7 +71,7 @@ func (m *MockAWSAdapter) GetEKSCluster(ctx context.Context, clusterName string) 
 			return &cluster, nil
 		}
 	}
-	return nil, fmt.Errorf("cluster not found")
+	return nil, awsadapter.ErrClusterNotFound
 }
 
 func (m *MockAWSAdapter) ListRDSInstances(ctx context.Context) ([]awsadapter.RDSInstance, error) {
@@ -90,7 +90,7 @@ func (m *MockAWSAdapter) GetRDSInstance(ctx context.Context, dbInstanceID string
 			return &instance, nil
 		}
 	}
-	return nil, fmt.Errorf("db instance not found")
+	return nil, awsadapter.ErrDBInstanceNotFound
 }
 
 func (m *MockAWSAdapter) ListVPCs(ctx context.Context) ([]awsadapter.VPC, error) {
@@ -109,7 +109,7 @@ func (m *MockAWSAdapter) GetVPC(ctx context.Context, vpcID string) (*awsadapter.
 			return &vpc, nil
 		}
 	}
-	return nil, fmt.Errorf("vpc not found")
+	return nil, awsadapter.ErrVPCNotFound
 }
 
 func setupAWSTestServer(t *testing.T, mock *MockAWSAdapter) (*api.Server, *http.ServeMux) {

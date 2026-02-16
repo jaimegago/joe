@@ -66,7 +66,7 @@ func (a *Adapter) GetEKSCluster(ctx context.Context, clusterName string) (*EKSCl
 	}
 
 	if result.Cluster == nil {
-		return nil, fmt.Errorf("%s: %s", errorClusterNotFound, clusterName)
+		return nil, fmt.Errorf("%w: %s", ErrClusterNotFound, clusterName)
 	}
 
 	cluster := convertEKSCluster(*result.Cluster)

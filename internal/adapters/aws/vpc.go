@@ -68,7 +68,7 @@ func (a *Adapter) GetVPC(ctx context.Context, vpcID string) (*VPC, error) {
 	}
 
 	if len(result.Vpcs) == 0 {
-		return nil, fmt.Errorf("%s: %s", errorVPCNotFound, vpcID)
+		return nil, fmt.Errorf("%w: %s", ErrVPCNotFound, vpcID)
 	}
 
 	vpc := convertVPC(result.Vpcs[0])
