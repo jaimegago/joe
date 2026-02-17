@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// GitDiffClient defines the subset of client.Client needed for GitDiffTool.
+type GitDiffClient interface {
+	GitDiff(ctx context.Context, sourceID, from, to string) (string, error)
+}
+
 // GitDiffTool shows the diff between two refs in a Git repository source.
 type GitDiffTool struct {
-	client *client.Client
+	client GitDiffClient
 }
 
 // NewGitDiffTool creates a new git_diff tool.
-func NewGitDiffTool(c *client.Client) *GitDiffTool {
+func NewGitDiffTool(c GitDiffClient) *GitDiffTool {
 	return &GitDiffTool{client: c}
 }
 

@@ -16,6 +16,16 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// AWSVPCList implements AWSVPCClient interface for core/tools/core.
+func (c *Client) AWSVPCList(ctx context.Context, sourceID string) ([]*awsadapter.VPC, error) {
+	return c.AWSVPCListVPCs(ctx, sourceID)
+}
+
+// AWSVPCGet implements AWSVPCClient interface for core/tools/core.
+func (c *Client) AWSVPCGet(ctx context.Context, sourceID, vpcID string) (*awsadapter.VPC, error) {
+	return c.AWSVPCGetVPC(ctx, sourceID, vpcID)
+}
+
 // APIError represents a structured error returned by the joecored API.
 type APIError struct {
 	Status  int
@@ -399,13 +409,13 @@ func (c *Client) GitDiff(ctx context.Context, sourceID, from, to string) (string
 // --- AWS Resources ---
 
 // AWSEC2ListInstances lists all EC2 instances from an AWS source.
-func (c *Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]awsadapter.EC2Instance, error) {
+func (c *Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]*awsadapter.EC2Instance, error) {
 	u := fmt.Sprintf("%s%s/%s/ec2/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Instances []awsadapter.EC2Instance `json:"instances"`
-		Count     int                      `json:"count"`
-		SourceID  string                   `json:"source_id"`
+		Instances []*awsadapter.EC2Instance `json:"instances"`
+		Count     int                       `json:"count"`
+		SourceID  string                    `json:"source_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws ec2 list instances"); err != nil {
 		return nil, err
@@ -431,13 +441,13 @@ func (c *Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID str
 }
 
 // AWSEKSListClusters lists all EKS clusters from an AWS source.
-func (c *Client) AWSEKSListClusters(ctx context.Context, sourceID string) ([]awsadapter.EKSCluster, error) {
+func (c *Client) AWSEKSListClusters(ctx context.Context, sourceID string) ([]*awsadapter.EKSCluster, error) {
 	u := fmt.Sprintf("%s%s/%s/eks/clusters", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Clusters []awsadapter.EKSCluster `json:"clusters"`
-		Count    int                     `json:"count"`
-		SourceID string                  `json:"source_id"`
+		Clusters []*awsadapter.EKSCluster `json:"clusters"`
+		Count    int                      `json:"count"`
+		SourceID string                   `json:"source_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws eks list clusters"); err != nil {
 		return nil, err
@@ -463,13 +473,13 @@ func (c *Client) AWSEKSGetCluster(ctx context.Context, sourceID, clusterName str
 }
 
 // AWSRDSListInstances lists all RDS instances from an AWS source.
-func (c *Client) AWSRDSListInstances(ctx context.Context, sourceID string) ([]awsadapter.RDSInstance, error) {
+func (c *Client) AWSRDSListInstances(ctx context.Context, sourceID string) ([]*awsadapter.RDSInstance, error) {
 	u := fmt.Sprintf("%s%s/%s/rds/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Instances []awsadapter.RDSInstance `json:"instances"`
-		Count     int                      `json:"count"`
-		SourceID  string                   `json:"source_id"`
+		Instances []*awsadapter.RDSInstance `json:"instances"`
+		Count     int                       `json:"count"`
+		SourceID  string                    `json:"source_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws rds list instances"); err != nil {
 		return nil, err
@@ -495,13 +505,13 @@ func (c *Client) AWSRDSGetInstance(ctx context.Context, sourceID, dbInstanceID s
 }
 
 // AWSVPCListVPCs lists all VPCs from an AWS source.
-func (c *Client) AWSVPCListVPCs(ctx context.Context, sourceID string) ([]awsadapter.VPC, error) {
+func (c *Client) AWSVPCListVPCs(ctx context.Context, sourceID string) ([]*awsadapter.VPC, error) {
 	u := fmt.Sprintf("%s%s/%s/vpc/vpcs", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		VPCs     []awsadapter.VPC `json:"vpcs"`
-		Count    int              `json:"count"`
-		SourceID string           `json:"source_id"`
+		VPCs     []*awsadapter.VPC `json:"vpcs"`
+		Count    int               `json:"count"`
+		SourceID string            `json:"source_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws vpc list vpcs"); err != nil {
 		return nil, err

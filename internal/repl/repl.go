@@ -14,6 +14,8 @@ import (
 
 var ErrExit = errors.New("exit requested")
 
+var runModelSelector = RunModelSelector
+
 // REPL implements the Read-Eval-Print-Loop for interactive mode
 type REPL struct {
 	agent   *useragent.Agent
@@ -138,7 +140,7 @@ func (r *REPL) handleModelCommand(ctx context.Context) error {
 		return nil
 	}
 
-	selected, err := RunModelSelector(models, current)
+	selected, err := runModelSelector(models, current)
 	if err != nil {
 		return fmt.Errorf("failed to run selector: %w", err)
 	}

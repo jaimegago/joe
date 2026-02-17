@@ -1,4 +1,4 @@
-.PHONY: run run-joe run-joecored run-default build build-joe build-joecored test clean fmt vet deps
+.PHONY: run run-joe run-joecored run-default build build-joe build-joecored test clean fmt vet deps test-coverage-packages
 
 # Run joecored (daemon) - start this first
 run-joecored:
@@ -56,6 +56,18 @@ test-coverage-unit:
 	go test -cover -coverprofile=coverage.out ./internal/...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+# Run tests with per-package coverage percentage
+test-coverage-packages:
+	@set -e; \
+	printf "%-60s %s\n" "package" "coverage"; \
+	for pkg in $$(go list ./...); do \
+		out=$$(mktemp -t coverpkg); \
+		go test -coverprofile=$$out $$pkg >/dev/null; \
+		pct=$$(go tool cover -func=$$out | awk '/^total:/{print $$NF}'); \
+		printf "%-60s %s\n" $$pkg $$pct; \
+		rm -f $$out; \
+	done
 
 # Run integration tests with coverage
 test-coverage-integration:

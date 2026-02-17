@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
+	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/observability"
@@ -26,16 +28,86 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-func main() {
+type coreAgentRunner interface {
+	core.CoreAgent
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+}
+
+type runDeps struct {
+	loadConfig             func(path string) (*config.Config, error)
+	setupOTel              func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
+	defaultOTelConfig      func() observability.Config
+	newMetrics             func() *observability.Metrics
+	joeDirPath             func() (string, error)
+	mkdirAll               func(path string, perm os.FileMode) error
+	databasePath           func() (string, error)
+	newStore               func(path string, metrics *observability.Metrics) (*store.Store, error)
+	migrateStore           func(store *store.Store) error
+	closeStore             func(store *store.Store) error
+	newAdapterRegistry     func() *adapters.Registry
+	connectSources         func(ctx context.Context, store *store.Store, registry *adapters.Registry)
+	newServices            func(cfg *config.Config, store *store.Store, db *sql.DB, registry *adapters.Registry, metrics *observability.Metrics) *core.Services
+	registerBusinessMetric func(services *core.Services) error
+	newLLMAdapter          func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
+	newCoreAgent           func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner
+	newAPIServer           func(services *core.Services) *api.Server
+	startServer            func(server *http.Server) <-chan error
+	shutdownServer         func(ctx context.Context, server *http.Server) error
+	startMetricsServer     func(server *http.Server) error
+	shutdownMetricsServer  func(ctx context.Context, server *http.Server) error
+	waitForShutdown        func(ctx context.Context) <-chan struct{}
+}
+
+func defaultRunDeps() runDeps {
+	return runDeps{
+		loadConfig:        config.Load,
+		setupOTel:         observability.Setup,
+		defaultOTelConfig: observability.DefaultConfig,
+		newMetrics:        observability.NewMetrics,
+		joeDirPath:        paths.JoeDirPath,
+		mkdirAll:          os.MkdirAll,
+		databasePath:      paths.DatabasePath,
+		newStore:          store.New,
+		migrateStore: func(store *store.Store) error {
+			return store.Migrate()
+		},
+		closeStore: func(store *store.Store) error {
+			return store.Close()
+		},
+		newAdapterRegistry: adapters.NewRegistry,
+		connectSources:     connectSourcesDefault,
+		newServices:        core.New,
+		registerBusinessMetric: func(services *core.Services) error {
+			return registerBusinessMetricsDefault(services)
+		},
+		newLLMAdapter: llmfactory.NewAdapter,
+		newCoreAgent: func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner {
+			return coreagent.New(services, llmAdapter, metrics)
+		},
+		newAPIServer:          api.New,
+		startServer:           defaultStartServer,
+		shutdownServer:        func(ctx context.Context, server *http.Server) error { return server.Shutdown(ctx) },
+		startMetricsServer:    defaultStartMetricsServer,
+		shutdownMetricsServer: func(ctx context.Context, server *http.Server) error { return server.Shutdown(ctx) },
+		waitForShutdown:       defaultWaitForShutdown,
+	}
+}
+
+func run(ctx context.Context) int {
+	return runWithDeps(ctx, defaultRunDeps())
+}
+
+func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Setup initial logger at info level
 	initialLogger := logging.SetupLogger("info")
 	slog.SetDefault(initialLogger)
 
 	// Load config (defaults to ~/.joe/config.yaml if exists, otherwise uses hardcoded defaults)
-	cfg, err := config.Load(paths.DefaultConfigPath())
+	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Reconfigure logger based on config level
@@ -61,9 +133,8 @@ func main() {
 	)
 
 	// Initialize OpenTelemetry
-	otelCfg := observability.DefaultConfig()
-	otelCtx := context.Background()
-	shutdownOTel, err := observability.Setup(otelCtx, otelCfg)
+	otelCfg := deps.defaultOTelConfig()
+	shutdownOTel, err := deps.setupOTel(ctx, otelCfg)
 	if err != nil {
 		slog.Warn("OpenTelemetry setup failed", "error", err)
 	} else {
@@ -71,133 +142,52 @@ func main() {
 	}
 
 	// Create metrics instance
-	metrics := observability.NewMetrics()
+	metrics := deps.newMetrics()
 
 	// Initialize store
-	joeDir, err := paths.JoeDirPath()
+	joeDir, err := deps.joeDirPath()
 	if err != nil {
 		slog.Error("failed to get joe directory path", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	if err := os.MkdirAll(joeDir, 0755); err != nil {
+	if err := deps.mkdirAll(joeDir, 0755); err != nil {
 		slog.Error("failed to create joe directory", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	dbPath, err := paths.DatabasePath()
+	dbPath, err := deps.databasePath()
 	if err != nil {
 		slog.Error("failed to get database path", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	sqlStore, err := store.New(dbPath+paths.DatabaseFlags, metrics)
+	sqlStore, err := deps.newStore(dbPath+paths.DatabaseFlags, metrics)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
+		return 1
 	}
-	defer sqlStore.Close()
+	defer func() {
+		_ = deps.closeStore(sqlStore)
+	}()
 
-	if err := sqlStore.Migrate(); err != nil {
+	if err := deps.migrateStore(sqlStore); err != nil {
 		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	slog.Info("database ready", "path", dbPath)
 
 	// Initialize adapter registry and load saved sources
-	adapterRegistry := adapters.NewRegistry()
-
-	ctx := context.Background()
-	k8sSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeKubernetes)
-	if err != nil {
-		slog.Warn("failed to load kubernetes sources", "error", err)
-	}
-	for _, src := range k8sSources {
-		adapter := k8s.New()
-		if err := adapter.Connect(*src); err != nil {
-			slog.Warn("failed to connect k8s source", "id", src.ID, "error", err)
-			continue
-		}
-		adapterRegistry.Register(src.ID, adapter)
-		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
-	}
-
-	gitSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeGit)
-	if err != nil {
-		slog.Warn("failed to load git sources", "error", err)
-	}
-	for _, src := range gitSources {
-		adapter := gitadapter.New()
-		if err := adapter.Connect(*src); err != nil {
-			slog.Warn("failed to connect git source", "id", src.ID, "error", err)
-			continue
-		}
-		adapterRegistry.Register(src.ID, adapter)
-		slog.Info("connected git source", "id", src.ID, "name", src.Name)
-	}
-
-	awsSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAWS)
-	if err != nil {
-		slog.Warn("failed to load aws sources", "error", err)
-	}
-	for _, src := range awsSources {
-		adapter := awsadapter.New()
-		if err := adapter.Connect(*src); err != nil {
-			slog.Warn("failed to connect aws source", "id", src.ID, "error", err)
-			continue
-		}
-		adapterRegistry.Register(src.ID, adapter)
-		slog.Info("connected aws source", "id", src.ID, "name", src.Name)
-	}
-
-	azureSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAzure)
-	if err != nil {
-		slog.Warn("failed to load azure sources", "error", err)
-	}
-	for _, src := range azureSources {
-		adapter := azureadapter.New()
-		if err := adapter.Connect(*src); err != nil {
-			slog.Warn("failed to connect azure source", "id", src.ID, "error", err)
-			continue
-		}
-		adapterRegistry.Register(src.ID, adapter)
-		slog.Info("connected azure source", "id", src.ID, "name", src.Name)
-	}
+	adapterRegistry := deps.newAdapterRegistry()
+	deps.connectSources(ctx, sqlStore, adapterRegistry)
 
 	// Initialize core services (graph store uses same SQLite DB)
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, metrics)
+	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), adapterRegistry, metrics)
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 
 	// Register business metrics gauges
-	businessProvider := observability.BusinessMetricsProvider{
-		SourcesByType: func(ctx context.Context) (map[string]int, error) {
-			sources, err := services.Store.Sources.List(ctx)
-			if err != nil {
-				return nil, err
-			}
-			counts := map[string]int{}
-			for _, src := range sources {
-				counts[src.Type]++
-			}
-			return counts, nil
-		},
-		GraphSummary: func(ctx context.Context) (observability.GraphMetricsSummary, error) {
-			summary, err := services.Graph.Summary(ctx)
-			if err != nil {
-				return observability.GraphMetricsSummary{}, err
-			}
-			return observability.GraphMetricsSummary{
-				NodeCount:   summary.NodeCount,
-				EdgeCount:   summary.EdgeCount,
-				NodesByType: summary.NodesByType,
-			}, nil
-		},
-		AdapterCount: func() int {
-			return len(services.Adapters.List())
-		},
-	}
-	if _, err := services.Metrics.RegisterBusinessMetrics(businessProvider); err != nil {
+	if err := deps.registerBusinessMetric(services); err != nil {
 		slog.Warn("failed to register business metrics", "error", err)
 	}
 
@@ -208,22 +198,22 @@ func main() {
 	currentModelCfg, err := cfg.LLM.CurrentModel()
 	if err != nil {
 		slog.Error("failed to get current model config for core agent", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	llmAdapter, err := llmfactory.NewAdapter(ctx, currentModelCfg)
+	llmAdapter, err := deps.newLLMAdapter(ctx, currentModelCfg)
 	if err != nil {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Initialize and start Core Agent BEFORE setting up API routes
-	coreAgent := coreagent.New(services, llmAdapter, metrics)
+	coreAgent := deps.newCoreAgent(services, llmAdapter, metrics)
 	services.Agent = coreAgent // Wire Core Agent to services for API handlers
 
 	if err := coreAgent.Start(ctx); err != nil {
 		slog.Error("failed to start core agent", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		if err := coreAgent.Stop(context.Background()); err != nil {
@@ -237,7 +227,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register API routes
-	apiServer := api.New(services)
+	apiServer := deps.newAPIServer(services)
 	apiServer.RegisterRoutes(mux)
 
 	// Build middleware chain: metrics → auth → request size limit → mux
@@ -276,37 +266,169 @@ func main() {
 				ReadTimeout:  10 * time.Second,
 				WriteTimeout: 10 * time.Second,
 			}
-			go func() {
-				slog.Info("metrics server listening", "addr", metricsAddr)
-				if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					slog.Error("metrics server error", "error", err)
-				}
-			}()
-			defer metricsServer.Shutdown(context.Background())
+			if err := deps.startMetricsServer(metricsServer); err != nil {
+				slog.Warn("metrics server failed to start", "error", err)
+			} else {
+				defer func() {
+					_ = deps.shutdownMetricsServer(context.Background(), metricsServer)
+				}()
+			}
 		}
 	}
 
-	// Start server in goroutine
-	go func() {
-		slog.Info("joecored starting", "addr", addr)
-		fmt.Printf("joecored listening on %s\n", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
-		}
-	}()
+	errCh := deps.startServer(server)
+	done := deps.waitForShutdown(ctx)
 
-	// Wait for shutdown signal
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case err := <-errCh:
+		if err != nil {
+			slog.Error("server error", "error", err)
+			return 1
+		}
+	case <-done:
+	}
 
 	slog.Info("shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
+	if err := deps.shutdownServer(shutdownCtx, server); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
 	slog.Info("joecored stopped")
+
+	return 0
+}
+
+func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-quit:
+			close(done)
+		case <-ctx.Done():
+			close(done)
+		}
+	}()
+	return done
+}
+
+func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry *adapters.Registry) {
+	k8sSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeKubernetes)
+	if err != nil {
+		slog.Warn("failed to load kubernetes sources", "error", err)
+	}
+	for _, src := range k8sSources {
+		adapter := k8s.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect k8s source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
+	}
+
+	gitSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeGit)
+	if err != nil {
+		slog.Warn("failed to load git sources", "error", err)
+	}
+	for _, src := range gitSources {
+		adapter := gitadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect git source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected git source", "id", src.ID, "name", src.Name)
+	}
+
+	awsSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAWS)
+	if err != nil {
+		slog.Warn("failed to load aws sources", "error", err)
+	}
+	for _, src := range awsSources {
+		adapter := awsadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect aws source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected aws source", "id", src.ID, "name", src.Name)
+	}
+
+	azureSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeAzure)
+	if err != nil {
+		slog.Warn("failed to load azure sources", "error", err)
+	}
+	for _, src := range azureSources {
+		adapter := azureadapter.New()
+		if err := adapter.Connect(*src); err != nil {
+			slog.Warn("failed to connect azure source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected azure source", "id", src.ID, "name", src.Name)
+	}
+}
+
+func registerBusinessMetricsDefault(services *core.Services) error {
+	businessProvider := observability.BusinessMetricsProvider{
+		SourcesByType: func(ctx context.Context) (map[string]int, error) {
+			sources, err := services.Store.Sources.List(ctx)
+			if err != nil {
+				return nil, err
+			}
+			counts := map[string]int{}
+			for _, src := range sources {
+				counts[src.Type]++
+			}
+			return counts, nil
+		},
+		GraphSummary: func(ctx context.Context) (observability.GraphMetricsSummary, error) {
+			summary, err := services.Graph.Summary(ctx)
+			if err != nil {
+				return observability.GraphMetricsSummary{}, err
+			}
+			return observability.GraphMetricsSummary{
+				NodeCount:   summary.NodeCount,
+				EdgeCount:   summary.EdgeCount,
+				NodesByType: summary.NodesByType,
+			}, nil
+		},
+		AdapterCount: func() int {
+			return len(services.Adapters.List())
+		},
+	}
+	_, err := services.Metrics.RegisterBusinessMetrics(businessProvider)
+	return err
+}
+
+func defaultStartMetricsServer(server *http.Server) error {
+	go func() {
+		slog.Info("metrics server listening", "addr", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("metrics server error", "error", err)
+		}
+	}()
+	return nil
+}
+
+func defaultStartServer(server *http.Server) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		slog.Info("joecored starting", "addr", server.Addr)
+		fmt.Printf("joecored listening on %s\n", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+	return errCh
+}
+
+func main() {
+	ctx := context.Background()
+	os.Exit(run(ctx))
 }

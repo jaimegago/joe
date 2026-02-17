@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// GraphQueryClient is the interface for querying the infrastructure graph.
+type GraphQueryClient interface {
+	GraphQuery(ctx context.Context, query string) ([]graph.Node, error)
+}
+
 // GraphQueryTool queries the infrastructure graph for nodes.
 type GraphQueryTool struct {
-	client *client.Client
+	client GraphQueryClient
 }
 
 // NewGraphQueryTool creates a new graph_query tool.
-func NewGraphQueryTool(c *client.Client) *GraphQueryTool {
+func NewGraphQueryTool(c GraphQueryClient) *GraphQueryTool {
 	return &GraphQueryTool{client: c}
 }
 

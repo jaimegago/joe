@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// AWSEKSClient defines the subset of client needed for AWSEKSTool.
+type AWSEKSClient interface {
+	AWSEKSListClusters(ctx context.Context, sourceID string) ([]*awsadapter.EKSCluster, error)
+	AWSEKSGetCluster(ctx context.Context, sourceID, clusterName string) (*awsadapter.EKSCluster, error)
+}
+
 // AWSEKSTool queries AWS EKS clusters via joecored.
 type AWSEKSTool struct {
-	client *client.Client
+	client AWSEKSClient
 }
 
 // NewAWSEKSTool creates a new aws_eks tool.
-func NewAWSEKSTool(c *client.Client) *AWSEKSTool {
+func NewAWSEKSTool(c AWSEKSClient) *AWSEKSTool {
 	return &AWSEKSTool{client: c}
 }
 

@@ -4,18 +4,24 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// AWSEC2Client defines the subset of client.Client needed for AWSEC2Tool.
+type AWSEC2Client interface {
+	AWSEC2ListInstances(ctx context.Context, sourceID string) ([]*awsadapter.EC2Instance, error)
+	AWSEC2GetInstance(ctx context.Context, sourceID, instanceID string) (*awsadapter.EC2Instance, error)
+}
+
 // AWSEC2Tool queries AWS EC2 instances via joecored.
 type AWSEC2Tool struct {
-	client *client.Client
+	Client AWSEC2Client
 }
 
 // NewAWSEC2Tool creates a new aws_ec2 tool.
-func NewAWSEC2Tool(c *client.Client) *AWSEC2Tool {
-	return &AWSEC2Tool{client: c}
+func NewAWSEC2Tool(c AWSEC2Client) *AWSEC2Tool {
+	return &AWSEC2Tool{Client: c}
 }
 
 func (t *AWSEC2Tool) Name() string { return "aws_ec2" }
@@ -51,7 +57,7 @@ func (t *AWSEC2Tool) Execute(ctx context.Context, args map[string]any) (any, err
 
 	// Single instance get
 	if instanceID != "" {
-		instance, err := t.client.AWSEC2GetInstance(ctx, sourceID, instanceID)
+		instance, err := t.Client.AWSEC2GetInstance(ctx, sourceID, instanceID)
 		if err != nil {
 			return nil, fmt.Errorf("aws ec2 get instance failed: %w", err)
 		}
@@ -62,7 +68,7 @@ func (t *AWSEC2Tool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	// List all instances
-	instances, err := t.client.AWSEC2ListInstances(ctx, sourceID)
+	instances, err := t.Client.AWSEC2ListInstances(ctx, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("aws ec2 list instances failed: %w", err)
 	}

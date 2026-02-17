@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// AWSRDSClient defines the subset of client needed for AWSRDSTool.
+type AWSRDSClient interface {
+	AWSRDSListInstances(ctx context.Context, sourceID string) ([]*awsadapter.RDSInstance, error)
+	AWSRDSGetInstance(ctx context.Context, sourceID, instanceID string) (*awsadapter.RDSInstance, error)
+}
+
 // AWSRDSTool queries AWS RDS instances via joecored.
 type AWSRDSTool struct {
-	client *client.Client
+	client AWSRDSClient
 }
 
 // NewAWSRDSTool creates a new aws_rds tool.
-func NewAWSRDSTool(c *client.Client) *AWSRDSTool {
+func NewAWSRDSTool(c AWSRDSClient) *AWSRDSTool {
 	return &AWSRDSTool{client: c}
 }
 

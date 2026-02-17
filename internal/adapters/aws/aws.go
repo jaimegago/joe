@@ -145,10 +145,25 @@ type Adapter struct {
 	mu        sync.RWMutex
 	config    Config
 	awsConfig aws.Config
-	ec2Client *ec2.Client
-	eksClient *eks.Client
-	rdsClient *rds.Client
+	ec2Client ec2Client
+	eksClient eksClient
+	rdsClient rdsClient
 	connected bool
+}
+
+type ec2Client interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	DescribeVpcs(ctx context.Context, params *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
+	DescribeSubnets(ctx context.Context, params *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
+}
+
+type eksClient interface {
+	ListClusters(ctx context.Context, params *eks.ListClustersInput, optFns ...func(*eks.Options)) (*eks.ListClustersOutput, error)
+	DescribeCluster(ctx context.Context, params *eks.DescribeClusterInput, optFns ...func(*eks.Options)) (*eks.DescribeClusterOutput, error)
+}
+
+type rdsClient interface {
+	DescribeDBInstances(ctx context.Context, params *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
 }
 
 // New creates a new AWS adapter (not yet connected)
