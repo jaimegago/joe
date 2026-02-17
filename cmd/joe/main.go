@@ -22,22 +22,61 @@ import (
 	"github.com/jaimegago/joe/internal/useragent"
 )
 
-func main() {
-	// Parse command-line flags
-	configPath := flag.String("config", paths.DefaultConfigPath(), "path to config file")
-	flag.Parse()
+type replRunner interface {
+	Run(ctx context.Context) error
+}
 
-	ctx := context.Background()
+type runDeps struct {
+	loadConfig  func(path string) (*config.Config, error)
+	setupOTel   func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
+	newMetrics  func() *observability.Metrics
+	newAdapter  func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
+	joeDirPath  func() (string, error)
+	loadPolicy  func(configDir string) (*safety.SafetyPolicy, error)
+	newClient   func(baseURL string, opts ...client.ClientOption) *client.Client
+	newRegistry func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
+	newExecutor func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
+	newRepl     func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
+}
+
+func defaultRunDeps() runDeps {
+	return runDeps{
+		loadConfig:  config.Load,
+		setupOTel:   observability.Setup,
+		newMetrics:  observability.NewMetrics,
+		newAdapter:  llmfactory.NewAdapter,
+		joeDirPath:  paths.JoeDirPath,
+		loadPolicy:  safety.LoadPolicy,
+		newClient:   client.New,
+		newRegistry: tools.NewDefaultRegistryWithClient,
+		newExecutor: tools.NewExecutor,
+		newRepl: func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
+			return repl.NewWithSession(agent, cfg, session)
+		},
+	}
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return runWithDeps(ctx, args, stdout, stderr, defaultRunDeps())
+}
+
+func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	fs := flag.NewFlagSet("joe", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	// Initialize a basic logger before config is available
 	initialLogger := logging.SetupLogger(logging.LevelInfo)
 	slog.SetDefault(initialLogger)
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	cfg, err := deps.loadConfig(*configPath)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Initialize OpenTelemetry (default to no tracing in CLI unless explicitly enabled)
@@ -48,7 +87,7 @@ func main() {
 	if _, ok := os.LookupEnv("OTEL_TRACES_EXPORTER"); !ok {
 		otelCfg.TracesExporter = "none"
 	}
-	shutdownOTel, err := observability.Setup(ctx, otelCfg)
+	shutdownOTel, err := deps.setupOTel(ctx, otelCfg)
 	if err != nil {
 		slog.Warn("OpenTelemetry setup failed", "error", err)
 	} else {
@@ -56,18 +95,18 @@ func main() {
 	}
 
 	// Create metrics instance
-	metrics := observability.NewMetrics()
+	metrics := deps.newMetrics()
 
 	// Validate LLM configuration and check API keys
 	currentModel, err := cfg.LLM.CurrentModel()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "You need to connect Joe to an LLM.\n\n%v\n\nCheck your config file's llm.current and llm.available sections.\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "You need to connect Joe to an LLM.\n\n%v\n\nCheck your config file's llm.current and llm.available sections.\n", err)
+		return 1
 	}
 	if err := config.ValidateAPIKeysWithUserMessage(currentModel); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		fmt.Fprintln(os.Stderr)
-		os.Exit(1)
+		fmt.Fprintln(stderr, err.Error())
+		fmt.Fprintln(stderr)
+		return 1
 	}
 
 	// Connect to joecored
@@ -76,15 +115,15 @@ func main() {
 	if cfg.Server.APIKey != "" {
 		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
 	}
-	coreClient := client.New(joecoreURL, clientOpts...)
+	coreClient := deps.newClient(joecoreURL, clientOpts...)
 
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pingCancel()
 
 	if err := coreClient.Ping(pingCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Cannot connect to joecored at %s\n", joecoreURL)
-		fmt.Fprintf(os.Stderr, "Make sure joecored is running: joecored\n\n")
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Error: Cannot connect to joecored at %s\n", joecoreURL)
+		fmt.Fprintf(stderr, "Make sure joecored is running: joecored\n\n")
+		return 1
 	}
 
 	// Set up structured logging based on config
@@ -95,14 +134,14 @@ func main() {
 	// Log debug mode if enabled
 	if cfg.Logging.Level == logging.LevelDebug {
 		slog.Debug("running in debug mode")
-		fmt.Println("Debug mode enabled")
+		fmt.Fprintln(stdout, "Debug mode enabled")
 	}
 
 	// Initialize LLM adapter using factory
-	baseAdapter, err := llmfactory.NewAdapter(ctx, currentModel)
+	baseAdapter, err := deps.newAdapter(ctx, currentModel)
 	if err != nil {
 		slog.Error("failed to create LLM adapter", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Clean up adapter resources (important for Gemini client)
@@ -118,32 +157,32 @@ func main() {
 		"provider", currentModel.Provider,
 		"model", currentModel.Model,
 	)
-	fmt.Printf("Using %s/%s\n", currentModel.Provider, currentModel.Model)
+	fmt.Fprintf(stdout, "Using %s/%s\n", currentModel.Provider, currentModel.Model)
 
 	// Load safety policy from ~/.joe/safety-policy.yaml
 	// If the file doesn't exist, DefaultPolicy is used (most restrictive for T3).
 	// If the file is malformed, we refuse to start.
-	joeDir, err := paths.JoeDirPath()
+	joeDir, err := deps.joeDirPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot determine Joe config directory: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Error: cannot determine Joe config directory: %v\n", err)
+		return 1
 	}
-	safetyPolicy, err := safety.LoadPolicy(joeDir)
+	safetyPolicy, err := deps.loadPolicy(joeDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 1
 	}
 	slog.Info("safety policy loaded", "config_dir", joeDir)
 
 	// Create tool registry with local tools + core tools (graph_query, graph_related)
 	// Pass safety policy so tool-specific settings (e.g., allowed_directories) are enforced.
-	registry := tools.NewDefaultRegistryWithClient(coreClient, safetyPolicy)
+	registry := deps.newRegistry(coreClient, safetyPolicy)
 
 	// Create REPL notifier for T3 pre-execution countdown and T2/T3 post-execution log
 	replNotifier := repl.NewNotifier()
 
 	// Create tool executor with safety policy enforcement and notifications
-	executor := tools.NewExecutor(registry, metrics,
+	executor := deps.newExecutor(registry, metrics,
 		tools.WithPolicy(safetyPolicy),
 		tools.WithNotifier(replNotifier),
 	)
@@ -200,11 +239,16 @@ When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll
 	session.MaxMessages = useragent.DefaultMaxMessages
 
 	// Create and run REPL (pass config for model management and the session)
-	replInstance := repl.NewWithSession(agentInstance, cfg, session)
+	replInstance := deps.newRepl(agentInstance, cfg, session)
 	if err := replInstance.Run(ctx); err != nil {
 		slog.Error("repl failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	os.Exit(0)
+	return 0
+}
+
+func main() {
+	ctx := context.Background()
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }

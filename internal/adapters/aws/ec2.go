@@ -62,7 +62,7 @@ func (a *Adapter) GetEC2Instance(ctx context.Context, instanceID string) (*EC2In
 
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
-			if *instance.InstanceId == instanceID {
+			if instance.InstanceId != nil && *instance.InstanceId == instanceID {
 				ec2Instance := convertEC2Instance(instance)
 				return &ec2Instance, nil
 			}
@@ -75,10 +75,19 @@ func (a *Adapter) GetEC2Instance(ctx context.Context, instanceID string) (*EC2In
 // convertEC2Instance converts AWS EC2 Instance to our EC2Instance struct
 func convertEC2Instance(instance types.Instance) EC2Instance {
 	result := EC2Instance{
-		InstanceID:   *instance.InstanceId,
-		InstanceType: string(instance.InstanceType),
-		State:        string(instance.State.Name),
-		Tags:         make(map[string]string),
+		Tags: make(map[string]string),
+	}
+
+	if instance.InstanceId != nil {
+		result.InstanceID = *instance.InstanceId
+	}
+
+	if instance.InstanceType != "" {
+		result.InstanceType = string(instance.InstanceType)
+	}
+
+	if instance.State != nil && instance.State.Name != "" {
+		result.State = string(instance.State.Name)
 	}
 
 	// Set optional fields if they exist

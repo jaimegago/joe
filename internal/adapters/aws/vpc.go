@@ -30,6 +30,10 @@ func (a *Adapter) ListVPCs(ctx context.Context) ([]VPC, error) {
 	var vpcs []VPC
 	for _, vpc := range result.Vpcs {
 		vpcData := convertVPC(vpc)
+		if vpc.VpcId == nil {
+			vpcs = append(vpcs, vpcData)
+			continue
+		}
 
 		// Get subnets for this VPC
 		subnets, err := a.getSubnetsForVPC(ctx, *vpc.VpcId)

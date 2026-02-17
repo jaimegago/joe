@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// AWSVPCClient defines the subset of client needed for AWSVPCTool.
+type AWSVPCClient interface {
+	AWSVPCList(ctx context.Context, sourceID string) ([]*awsadapter.VPC, error)
+	AWSVPCGet(ctx context.Context, sourceID, vpcID string) (*awsadapter.VPC, error)
+}
+
 // AWSVPCTool queries AWS VPC networks via joecored.
 type AWSVPCTool struct {
-	client *client.Client
+	client AWSVPCClient
 }
 
 // NewAWSVPCTool creates a new aws_vpc tool.
-func NewAWSVPCTool(c *client.Client) *AWSVPCTool {
+func NewAWSVPCTool(c AWSVPCClient) *AWSVPCTool {
 	return &AWSVPCTool{client: c}
 }
 
@@ -51,7 +57,7 @@ func (t *AWSVPCTool) Execute(ctx context.Context, args map[string]any) (any, err
 
 	// Single VPC get
 	if vpcID != "" {
-		vpc, err := t.client.AWSVPCGetVPC(ctx, sourceID, vpcID)
+		vpc, err := t.client.AWSVPCGet(ctx, sourceID, vpcID)
 		if err != nil {
 			return nil, fmt.Errorf("aws vpc get vpc failed: %w", err)
 		}
@@ -62,7 +68,7 @@ func (t *AWSVPCTool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	// List all VPCs
-	vpcs, err := t.client.AWSVPCListVPCs(ctx, sourceID)
+	vpcs, err := t.client.AWSVPCList(ctx, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("aws vpc list vpcs failed: %w", err)
 	}
