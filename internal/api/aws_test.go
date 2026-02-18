@@ -363,3 +363,290 @@ func TestHandleAWSWrongAdapterType(t *testing.T) {
 		t.Errorf("error message: got %q, want %q", response.Message, "source is not an AWS adapter")
 	}
 }
+
+func TestHandleAWSEKSListClusters(t *testing.T) {
+	tests := []struct {
+		name       string
+		clusters   []awsadapter.EKSCluster
+		err        error
+		wantStatus int
+		wantCount  int
+	}{
+		{
+			name: "list eks clusters",
+			clusters: []awsadapter.EKSCluster{
+				{Name: "prod-cluster", Status: "ACTIVE"},
+				{Name: "dev-cluster", Status: "ACTIVE"},
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
+		},
+		{
+			name:       "empty list",
+			clusters:   []awsadapter.EKSCluster{},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+		{
+			name:       "adapter error",
+			err:        fmt.Errorf("EKS error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{EKSClusters: tt.clusters, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			req := httptest.NewRequest("GET", "/api/v1/aws/test-aws/eks/clusters", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusOK {
+				var resp map[string]any
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				if int(resp["count"].(float64)) != tt.wantCount {
+					t.Errorf("count: got %v, want %d", resp["count"], tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleAWSEKSGetCluster(t *testing.T) {
+	tests := []struct {
+		name        string
+		clusterName string
+		clusters    []awsadapter.EKSCluster
+		err         error
+		wantStatus  int
+	}{
+		{
+			name:        "get existing cluster",
+			clusterName: "prod-cluster",
+			clusters:    []awsadapter.EKSCluster{{Name: "prod-cluster", Status: "ACTIVE"}},
+			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "cluster not found",
+			clusterName: "missing-cluster",
+			clusters:    []awsadapter.EKSCluster{{Name: "prod-cluster", Status: "ACTIVE"}},
+			wantStatus:  http.StatusNotFound,
+		},
+		{
+			name:        "adapter error",
+			clusterName: "prod-cluster",
+			err:         fmt.Errorf("EKS error"),
+			wantStatus:  http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{EKSClusters: tt.clusters, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			url := fmt.Sprintf("/api/v1/aws/test-aws/eks/clusters/%s", tt.clusterName)
+			req := httptest.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestHandleAWSRDSListInstances(t *testing.T) {
+	tests := []struct {
+		name       string
+		instances  []awsadapter.RDSInstance
+		err        error
+		wantStatus int
+		wantCount  int
+	}{
+		{
+			name: "list rds instances",
+			instances: []awsadapter.RDSInstance{
+				{DBInstanceID: "db-1", Engine: "postgres", Status: "available"},
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
+		},
+		{
+			name:       "adapter error",
+			err:        fmt.Errorf("RDS error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{RDSInstances: tt.instances, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			req := httptest.NewRequest("GET", "/api/v1/aws/test-aws/rds/instances", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusOK {
+				var resp map[string]any
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				if int(resp["count"].(float64)) != tt.wantCount {
+					t.Errorf("count: got %v, want %d", resp["count"], tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleAWSRDSGetInstance(t *testing.T) {
+	tests := []struct {
+		name         string
+		dbInstanceID string
+		instances    []awsadapter.RDSInstance
+		err          error
+		wantStatus   int
+	}{
+		{
+			name:         "get existing instance",
+			dbInstanceID: "db-1",
+			instances:    []awsadapter.RDSInstance{{DBInstanceID: "db-1", Engine: "postgres"}},
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "instance not found",
+			dbInstanceID: "missing-db",
+			instances:    []awsadapter.RDSInstance{{DBInstanceID: "db-1", Engine: "postgres"}},
+			wantStatus:   http.StatusNotFound,
+		},
+		{
+			name:         "adapter error",
+			dbInstanceID: "db-1",
+			err:          fmt.Errorf("RDS error"),
+			wantStatus:   http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{RDSInstances: tt.instances, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			url := fmt.Sprintf("/api/v1/aws/test-aws/rds/instances/%s", tt.dbInstanceID)
+			req := httptest.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestHandleAWSVPCListVPCs(t *testing.T) {
+	tests := []struct {
+		name       string
+		vpcs       []awsadapter.VPC
+		err        error
+		wantStatus int
+		wantCount  int
+	}{
+		{
+			name: "list vpcs",
+			vpcs: []awsadapter.VPC{
+				{VpcID: "vpc-1", CidrBlock: "10.0.0.0/16", State: "available"},
+				{VpcID: "vpc-2", CidrBlock: "10.1.0.0/16", State: "available"},
+			},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
+		},
+		{
+			name:       "adapter error",
+			err:        fmt.Errorf("VPC error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{VPCs: tt.vpcs, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			req := httptest.NewRequest("GET", "/api/v1/aws/test-aws/vpc/vpcs", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusOK {
+				var resp map[string]any
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				if int(resp["count"].(float64)) != tt.wantCount {
+					t.Errorf("count: got %v, want %d", resp["count"], tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleAWSVPCGetVPC(t *testing.T) {
+	tests := []struct {
+		name       string
+		vpcID      string
+		vpcs       []awsadapter.VPC
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "get existing vpc",
+			vpcID:      "vpc-1",
+			vpcs:       []awsadapter.VPC{{VpcID: "vpc-1", CidrBlock: "10.0.0.0/16"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "vpc not found",
+			vpcID:      "vpc-missing",
+			vpcs:       []awsadapter.VPC{{VpcID: "vpc-1", CidrBlock: "10.0.0.0/16"}},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "adapter error",
+			vpcID:      "vpc-1",
+			err:        fmt.Errorf("VPC error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockAWSAdapter{VPCs: tt.vpcs, Error: tt.err}
+			_, mux := setupAWSTestServer(t, mock)
+
+			url := fmt.Sprintf("/api/v1/aws/test-aws/vpc/vpcs/%s", tt.vpcID)
+			req := httptest.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}

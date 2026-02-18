@@ -4,17 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// GitReadClient defines the subset of client.Client needed for GitReadTool.
+type GitReadClient interface {
+	GitReadFile(ctx context.Context, sourceID, path string) (string, error)
+	GitListFiles(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error)
+}
+
 // GitReadTool reads files or lists directories from a Git repository source.
 type GitReadTool struct {
-	client *client.Client
+	client GitReadClient
 }
 
 // NewGitReadTool creates a new git_read tool.
-func NewGitReadTool(c *client.Client) *GitReadTool {
+func NewGitReadTool(c GitReadClient) *GitReadTool {
 	return &GitReadTool{client: c}
 }
 

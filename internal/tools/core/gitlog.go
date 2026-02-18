@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// GitLogClient defines the subset of client.Client needed for GitLogTool.
+type GitLogClient interface {
+	GitLog(ctx context.Context, sourceID string, limit int) ([]gitadapter.CommitInfo, error)
+}
+
 // GitLogTool retrieves commit history from a Git repository source.
 type GitLogTool struct {
-	client *client.Client
+	client GitLogClient
 }
 
 // NewGitLogTool creates a new git_log tool.
-func NewGitLogTool(c *client.Client) *GitLogTool {
+func NewGitLogTool(c GitLogClient) *GitLogTool {
 	return &GitLogTool{client: c}
 }
 

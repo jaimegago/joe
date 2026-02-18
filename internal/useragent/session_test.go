@@ -1,6 +1,7 @@
 package useragent
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/llm"
@@ -98,6 +99,45 @@ func TestSession_AddMultipleTimes(t *testing.T) {
 		if session.Messages[i].Content != exp {
 			t.Errorf("Message[%d] content = %s, want %s", i, session.Messages[i].Content, exp)
 		}
+	}
+}
+
+func TestSession_Close(t *testing.T) {
+	session := NewSession(nil)
+	// Close should not panic
+	session.Close()
+}
+
+func TestSession_AddMessage_Pruning(t *testing.T) {
+	session := NewSession(nil)
+	session.MaxMessages = 20
+
+	// Add enough to trigger pruning (>20)
+	for i := 0; i < 21; i++ {
+		session.AddMessage(llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
+	}
+
+	// After pruning: keepCount = 20/2 = 10, which is >= 10 minimum, so keep 10
+	if len(session.Messages) != 10 {
+		t.Errorf("session has %d messages after pruning, want 10", len(session.Messages))
+	}
+	// The most recent messages should be kept
+	if session.Messages[len(session.Messages)-1].Content != "msg20" {
+		t.Errorf("last message = %q, want msg20", session.Messages[len(session.Messages)-1].Content)
+	}
+}
+
+func TestSession_AddMessage_PruningSmallMax(t *testing.T) {
+	session := NewSession(nil)
+	session.MaxMessages = 10 // keepCount = 5, but min=10, so keeps 10
+
+	for i := 0; i < 11; i++ {
+		session.AddMessage(llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
+	}
+
+	// keepCount = 10/2 = 5 < 10, so keepCount = 10; len=11-10=1 from front kept → 10 msgs
+	if len(session.Messages) != 10 {
+		t.Errorf("session has %d messages, want 10", len(session.Messages))
 	}
 }
 

@@ -2,11 +2,68 @@ package gemini
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/google/generative-ai-go/genai"
 	"github.com/jaimegago/joe/internal/llm"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
+
+// mockRoundTripper intercepts HTTP requests and returns a pre-configured response.
+type mockRoundTripper struct {
+	body       string
+	statusCode int
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: m.statusCode,
+		Body:       io.NopCloser(strings.NewReader(m.body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Request:    req,
+	}, nil
+}
+
+// newMockGeminiClient builds a Client backed by a mock HTTP transport.
+func newMockGeminiClient(t *testing.T, body string, statusCode int) *Client {
+	t.Helper()
+	transport := &mockRoundTripper{body: body, statusCode: statusCode}
+	httpClient := &http.Client{Transport: transport}
+
+	ctx := context.Background()
+	gClient, err := genai.NewClient(ctx,
+		option.WithAPIKey("fake-key"),
+		option.WithHTTPClient(httpClient),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create mock Gemini client: %v", err)
+	}
+	t.Cleanup(func() { gClient.Close() })
+	return &Client{client: gClient, model: DefaultModel}
+}
+
+// The Gemini REST streaming endpoint returns a JSON array of response chunks.
+const geminiTextResponse = `[{
+	"candidates":[{
+		"content":{"parts":[{"text":"Hello from Gemini!"}],"role":"model"},
+		"finishReason":"STOP","index":0
+	}],
+	"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}
+}]`
+
+const geminiToolCallResponse = `[{
+	"candidates":[{
+		"content":{"parts":[{"functionCall":{"name":"echo","args":{"message":"hi"}}}],"role":"model"},
+		"finishReason":"STOP","index":0
+	}],
+	"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":8,"totalTokenCount":28}
+}]`
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
@@ -186,5 +243,602 @@ func TestClose(t *testing.T) {
 	// Test that Close doesn't error
 	if err := client.Close(); err != nil {
 		t.Errorf("Close() returned error: %v", err)
+	}
+}
+
+func TestNewClient_ShortKey(t *testing.T) {
+	os.Unsetenv("GEMINI_API_KEY")
+	os.Unsetenv("GOOGLE_API_KEY")
+	os.Setenv("GEMINI_API_KEY", "short")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	_, err := NewClient(ctx, "")
+	if err == nil {
+		t.Fatal("Expected error for short API key")
+	}
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Errorf("Expected 'invalid' in error message, got: %s", err.Error())
+	}
+}
+
+func TestAPIError_Methods(t *testing.T) {
+	underlying := errors.New("underlying error")
+	apiErr := &APIError{
+		Code:    403,
+		Message: "forbidden",
+		Err:     underlying,
+	}
+
+	if apiErr.Error() != "underlying error" {
+		t.Errorf("Error() = %q, want %q", apiErr.Error(), "underlying error")
+	}
+	if apiErr.APICode() != 403 {
+		t.Errorf("APICode() = %d, want 403", apiErr.APICode())
+	}
+	if apiErr.APIMessage() != "forbidden" {
+		t.Errorf("APIMessage() = %q, want %q", apiErr.APIMessage(), "forbidden")
+	}
+	if !errors.Is(apiErr.Unwrap(), underlying) {
+		t.Error("Unwrap() should return the underlying error")
+	}
+}
+
+func TestChatStream_NotImplemented(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	_, err := client.ChatStream(ctx, llm.ChatRequest{})
+	if err == nil {
+		t.Fatal("Expected error from unimplemented ChatStream")
+	}
+}
+
+func TestEmbed_NotImplemented(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	_, err := client.Embed(ctx, "test text")
+	if err == nil {
+		t.Fatal("Expected error from unimplemented Embed")
+	}
+}
+
+func TestConvertToolDefinition_AllTypes(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	tests := []struct {
+		name     string
+		propType string
+	}{
+		{"integer type", "integer"},
+		{"boolean type", "boolean"},
+		{"object type", "object"},
+		{"unknown type", "unknown_xyz"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := llm.ToolDefinition{
+				Name:        "test_tool",
+				Description: "Test tool",
+				Parameters: llm.ParameterSchema{
+					Type: "object",
+					Properties: map[string]llm.Property{
+						"param": {Type: tt.propType, Description: "Test param"},
+					},
+				},
+			}
+			result := client.convertToolDefinition(tool)
+			if result == nil {
+				t.Fatal("Expected non-nil tool definition")
+			}
+		})
+	}
+}
+
+func TestConvertToolDefinition_ArrayWithItems(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	tool := llm.ToolDefinition{
+		Name:        "list_items",
+		Description: "Lists items",
+		Parameters: llm.ParameterSchema{
+			Type: "object",
+			Properties: map[string]llm.Property{
+				"items": {
+					Type:        "array",
+					Description: "list of items",
+					Items:       &llm.Property{Type: "string", Description: "an item"},
+				},
+			},
+		},
+	}
+
+	result := client.convertToolDefinition(tool)
+	if result == nil {
+		t.Fatal("Expected non-nil tool definition")
+	}
+	if len(result.FunctionDeclarations) == 0 {
+		t.Fatal("Expected at least one function declaration")
+	}
+	params := result.FunctionDeclarations[0].Parameters
+	if params == nil {
+		t.Fatal("Parameters should not be nil")
+	}
+	itemsProp, ok := params.Properties["items"]
+	if !ok {
+		t.Fatal("Expected 'items' property")
+	}
+	if itemsProp.Items == nil {
+		t.Error("Expected Items schema for array type")
+	}
+}
+
+func TestConvertToolDefinition_EmptyDescriptions(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	tool := llm.ToolDefinition{
+		Name:        "my_tool",
+		Description: "", // should default to tool name
+		Parameters: llm.ParameterSchema{
+			Type: "object",
+			Properties: map[string]llm.Property{
+				"param": {Type: "string", Description: ""}, // should default to param name
+			},
+		},
+	}
+
+	result := client.convertToolDefinition(tool)
+	if result == nil {
+		t.Fatal("Expected non-nil tool definition")
+	}
+	if result.FunctionDeclarations[0].Description != "my_tool" {
+		t.Errorf("Description = %q, want %q", result.FunctionDeclarations[0].Description, "my_tool")
+	}
+}
+
+func TestConvertToolDefinition_ArrayWithItemsAllTypes(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	itemTypes := []string{"number", "integer", "boolean", "object"}
+	for _, itemType := range itemTypes {
+		t.Run("items_type_"+itemType, func(t *testing.T) {
+			tool := llm.ToolDefinition{
+				Name:        "tool",
+				Description: "a tool",
+				Parameters: llm.ParameterSchema{
+					Type: "object",
+					Properties: map[string]llm.Property{
+						"list": {
+							Type:  "array",
+							Items: &llm.Property{Type: itemType},
+						},
+					},
+				},
+			}
+			result := client.convertToolDefinition(tool)
+			if result == nil {
+				t.Fatalf("Expected non-nil result for item type %q", itemType)
+			}
+		})
+	}
+}
+
+func TestConvertResponse_WithText(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []genai.Part{genai.Text("Hello from Gemini!")},
+					Role:  "model",
+				},
+			},
+		},
+		UsageMetadata: &genai.UsageMetadata{
+			PromptTokenCount:     10,
+			CandidatesTokenCount: 5,
+			TotalTokenCount:      15,
+		},
+	}
+
+	result := client.convertResponse(resp)
+
+	if result.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", result.Content, "Hello from Gemini!")
+	}
+	if result.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 5 {
+		t.Errorf("OutputTokens = %d, want 5", result.Usage.OutputTokens)
+	}
+	if result.Usage.TotalTokens != 15 {
+		t.Errorf("TotalTokens = %d, want 15", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertResponse_WithFunctionCall(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []genai.Part{
+						genai.FunctionCall{
+							Name: "echo",
+							Args: map[string]any{"message": "hello"},
+						},
+					},
+					Role: "model",
+				},
+			},
+		},
+	}
+
+	result := client.convertResponse(resp)
+
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if result.ToolCalls[0].Name != "echo" {
+		t.Errorf("ToolCall name = %q, want %q", result.ToolCalls[0].Name, "echo")
+	}
+	if result.ToolCalls[0].Args["message"] != "hello" {
+		t.Errorf("ToolCall arg = %v, want %q", result.ToolCalls[0].Args["message"], "hello")
+	}
+}
+
+func TestConvertResponse_NilUsageMetadata(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []genai.Part{genai.Text("response")},
+					Role:  "model",
+				},
+			},
+		},
+		UsageMetadata: nil,
+	}
+
+	result := client.convertResponse(resp)
+
+	if result.Usage.InputTokens != 0 {
+		t.Errorf("Expected 0 input tokens with nil usage, got %d", result.Usage.InputTokens)
+	}
+}
+
+func TestConvertResponse_NilCandidateContent(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{Content: nil},
+		},
+	}
+
+	result := client.convertResponse(resp)
+
+	if result.Content != "" {
+		t.Errorf("Expected empty content with nil candidate content, got %q", result.Content)
+	}
+}
+
+func TestEnhanceErrorWithDebug_NonGoogleError(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	err := client.enhanceErrorWithDebug(ctx, errors.New("some unknown error"), "debug info")
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "gemini API call failed") {
+		t.Errorf("Expected 'gemini API call failed' in error, got: %s", err.Error())
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPI403(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 403, Message: "permission denied"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 403 {
+		t.Errorf("Code = %d, want 403", enhanced.Code)
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPI429(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 429, Message: "quota exceeded"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 429 {
+		t.Errorf("Code = %d, want 429", enhanced.Code)
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPIDefault(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 500, Message: "internal server error"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 500 {
+		t.Errorf("Code = %d, want 500", enhanced.Code)
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPI404_ClaudeModel(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	// Use a claude model name to trigger the cross-provider hint
+	client, _ := NewClient(ctx, "claude-opus-4")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 404, Message: "model not found"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 404 {
+		t.Errorf("Code = %d, want 404", enhanced.Code)
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPI400(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "gemini-1.5-flash-exp")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 400, Message: "bad request"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 400 {
+		t.Errorf("Code = %d, want 400", enhanced.Code)
+	}
+}
+
+func TestChat_TextResponse(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "Hello"}},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello from Gemini!")
+	}
+	if resp.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", resp.Usage.InputTokens)
+	}
+}
+
+func TestChat_WithSystemPromptAndTools(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		SystemPrompt: "You are helpful.",
+		Messages:     []llm.Message{{Role: "user", Content: "Hello"}},
+		Tools: []llm.ToolDefinition{
+			{Name: "echo", Description: "Echoes input", Parameters: llm.ParameterSchema{
+				Type:       "object",
+				Properties: map[string]llm.Property{"message": {Type: "string", Description: "msg"}},
+				Required:   []string{"message"},
+			}},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello from Gemini!")
+	}
+}
+
+func TestChat_AssistantAndToolResultMessages(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "use the tool"},
+			{
+				Role:      "assistant",
+				Content:   "calling echo",
+				ToolCalls: []llm.ToolCall{{ID: "tc-1", Name: "echo", Args: map[string]any{"message": "hi"}}},
+			},
+			{Role: "user", ToolResultID: "tc-1", ToolName: "echo", Content: `{"result":"hi"}`},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello from Gemini!")
+	}
+}
+
+func TestChat_LastMessageIsAssistant(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	// When all messages are assistant/history, the last user send is empty
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "response"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello from Gemini!")
+	}
+}
+
+func TestChat_InvalidToolDefinition(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	// A tool with empty name will still be converted (description defaults to name)
+	// but we pass a bad tool to trigger the convertToolDefinition nil check path indirectly
+	_, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "Hello"}},
+		Tools: []llm.ToolDefinition{
+			{Name: "valid", Description: "valid tool", Parameters: llm.ParameterSchema{Type: "object"}},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error with valid tool, got %v", err)
+	}
+}
+
+func TestChat_ToolResultWithNonJSONContent(t *testing.T) {
+	client := newMockGeminiClient(t, geminiTextResponse, 200)
+
+	// Tool result with non-JSON content should be wrapped
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "use tool"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "tc-1", Name: "cmd", Args: map[string]any{}}}},
+			{Role: "user", ToolResultID: "tc-1", ToolName: "cmd", Content: "plain text result"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello from Gemini!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello from Gemini!")
+	}
+}
+
+func TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	// Empty message with nested errors
+	apiErr := &googleapi.Error{
+		Code:    400,
+		Message: "",
+		Errors: []googleapi.ErrorItem{
+			{Message: "nested error detail"},
+		},
+	}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if enhanced.Code != 400 {
+		t.Errorf("Code = %d, want 400", enhanced.Code)
 	}
 }

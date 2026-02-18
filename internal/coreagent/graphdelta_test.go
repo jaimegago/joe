@@ -170,6 +170,47 @@ func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 	})
 }
 
+// TestApplyGraphDelta_EdgeDeletePath covers the EdgesToDelete loop body (was 0% before).
+func TestApplyGraphDelta_EdgeDeletePath(t *testing.T) {
+	gs := setupGraphStore(t)
+	ctx := context.Background()
+
+	nodeA := graph.Node{ID: "a", Type: "test", SourceID: "src", Metadata: map[string]any{}}
+	nodeB := graph.Node{ID: "b", Type: "test", SourceID: "src", Metadata: map[string]any{}}
+	for _, n := range []graph.Node{nodeA, nodeB} {
+		if err := gs.AddNode(ctx, n); err != nil {
+			t.Fatalf("AddNode(%s): %v", n.ID, err)
+		}
+	}
+	edge := graph.Edge{From: "a", To: "b", Relation: "depends_on", Confidence: graph.Explicit, Source: "test"}
+	if err := gs.AddEdge(ctx, edge); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	// Delta that keeps both nodes but removes the edge between them.
+	delta := GraphDelta{
+		NodesToUpsert: []graph.Node{nodeA, nodeB},
+		EdgesToDelete: []graph.Edge{edge},
+	}
+	if err := ApplyGraphDelta(ctx, gs, delta); err != nil {
+		t.Errorf("ApplyGraphDelta() error = %v", err)
+	}
+}
+
+// TestApplyGraphDelta_DeleteNonExistentNode covers the ErrNodeNotFound swallow path.
+func TestApplyGraphDelta_DeleteNonExistentNode(t *testing.T) {
+	gs := setupGraphStore(t)
+	ctx := context.Background()
+
+	// Deleting a node that doesn't exist should not return an error.
+	delta := GraphDelta{
+		NodesToDelete: []graph.Node{{ID: "does-not-exist"}},
+	}
+	if err := ApplyGraphDelta(ctx, gs, delta); err != nil {
+		t.Errorf("ApplyGraphDelta() should swallow ErrNodeNotFound: %v", err)
+	}
+}
+
 func TestApplyGraphDelta(t *testing.T) {
 	store := setupGraphStore(t)
 	ctx := context.Background()

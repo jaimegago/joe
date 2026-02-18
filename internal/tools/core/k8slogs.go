@@ -4,18 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/constants"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// K8sLogsClient defines the subset of client.Client needed for K8sLogsTool.
+type K8sLogsClient interface {
+	K8sGetLogs(ctx context.Context, sourceID, namespace, pod, container string, tailLines int) (string, error)
+}
+
 // K8sLogsTool retrieves pod logs from a Kubernetes cluster via joecored.
 type K8sLogsTool struct {
-	client *client.Client
+	client K8sLogsClient
 }
 
 // NewK8sLogsTool creates a new k8s_logs tool.
-func NewK8sLogsTool(c *client.Client) *K8sLogsTool {
+func NewK8sLogsTool(c K8sLogsClient) *K8sLogsTool {
 	return &K8sLogsTool{client: c}
 }
 

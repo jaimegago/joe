@@ -1,7 +1,9 @@
 package paths
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +83,52 @@ func TestDatabasePath_UsesHome(t *testing.T) {
 	want := filepath.Join(home, JoeDir, DatabaseFile)
 	if got != want {
 		t.Fatalf("DatabasePath() = %q, want %q", got, want)
+	}
+}
+
+func TestSecureHomeDir(t *testing.T) {
+	got, err := SecureHomeDir()
+	if err != nil {
+		t.Skipf("Cannot get home directory: %v", err)
+	}
+	if got == "" {
+		t.Fatal("SecureHomeDir() returned empty string")
+	}
+}
+
+func TestDefaultConfigPath_FallbackOnError(t *testing.T) {
+	orig := getSecureHomeDir
+	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }
+	defer func() { getSecureHomeDir = orig }()
+
+	got := DefaultConfigPath()
+	want := filepath.Join("~", JoeDir, ConfigFile)
+	if got != want {
+		t.Errorf("DefaultConfigPath() = %q, want %q", got, want)
+	}
+}
+
+func TestJoeDirPath_Error(t *testing.T) {
+	orig := getSecureHomeDir
+	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }
+	defer func() { getSecureHomeDir = orig }()
+
+	_, err := JoeDirPath()
+	if err == nil {
+		t.Fatal("JoeDirPath() expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot determine home directory") {
+		t.Errorf("JoeDirPath() error = %q, want to contain 'cannot determine home directory'", err.Error())
+	}
+}
+
+func TestDatabasePath_Error(t *testing.T) {
+	orig := getSecureHomeDir
+	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }
+	defer func() { getSecureHomeDir = orig }()
+
+	_, err := DatabasePath()
+	if err == nil {
+		t.Fatal("DatabasePath() expected error, got nil")
 	}
 }
