@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// K8sGetClient defines the subset of client.Client needed for K8sGetTool.
+type K8sGetClient interface {
+	K8sListResources(ctx context.Context, sourceID, resource, namespace string) ([]map[string]any, error)
+	K8sGetResource(ctx context.Context, sourceID, resource, namespace, name string) (map[string]any, error)
+}
+
 // K8sGetTool queries Kubernetes resources via joecored.
 type K8sGetTool struct {
-	client *client.Client
+	client K8sGetClient
 }
 
 // NewK8sGetTool creates a new k8s_get tool.
-func NewK8sGetTool(c *client.Client) *K8sGetTool {
+func NewK8sGetTool(c K8sGetClient) *K8sGetTool {
 	return &K8sGetTool{client: c}
 }
 

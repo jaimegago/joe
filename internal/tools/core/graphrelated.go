@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 )
 
+// GraphRelatedClient defines the subset of client.Client needed for GraphRelatedTool.
+type GraphRelatedClient interface {
+	GraphRelated(ctx context.Context, nodeID string, depth int) (*graph.Subgraph, error)
+}
+
 // GraphRelatedTool finds nodes related to a given node in the graph.
 type GraphRelatedTool struct {
-	client *client.Client
+	client GraphRelatedClient
 }
 
 // NewGraphRelatedTool creates a new graph_related tool.
-func NewGraphRelatedTool(c *client.Client) *GraphRelatedTool {
+func NewGraphRelatedTool(c GraphRelatedClient) *GraphRelatedTool {
 	return &GraphRelatedTool{client: c}
 }
 

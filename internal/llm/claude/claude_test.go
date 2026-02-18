@@ -1,11 +1,164 @@
 package claude
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
+	anthropic "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/jaimegago/joe/internal/llm"
 )
+
+// newTestClient creates a Client that talks to a mock HTTP server.
+// Using the same package lets us construct the struct directly.
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	apiClient := anthropic.NewClient(
+		option.WithAPIKey("test-key"),
+		option.WithBaseURL(srv.URL),
+	)
+	return &Client{client: apiClient, model: DefaultModel}
+}
+
+const textResponse = `{
+	"id":"msg-1","type":"message","role":"assistant",
+	"content":[{"type":"text","text":"Hello!"}],
+	"model":"claude-sonnet-4-20250514","stop_reason":"end_turn",
+	"usage":{"input_tokens":10,"output_tokens":5}
+}`
+
+const toolUseResponse = `{
+	"id":"msg-2","type":"message","role":"assistant",
+	"content":[{"type":"tool_use","id":"tc-1","name":"echo","input":{"message":"hi"}}],
+	"model":"claude-sonnet-4-20250514","stop_reason":"tool_use",
+	"usage":{"input_tokens":20,"output_tokens":8}
+}`
+
+func TestChat_TextResponse(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, textResponse)
+	})
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "Hello"}},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello!")
+	}
+	if resp.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 5 {
+		t.Errorf("OutputTokens = %d, want 5", resp.Usage.OutputTokens)
+	}
+}
+
+func TestChat_ToolUseResponse(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, toolUseResponse)
+	})
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "echo something"}},
+		Tools: []llm.ToolDefinition{
+			{Name: "echo", Description: "Echoes input", Parameters: llm.ParameterSchema{
+				Type:       "object",
+				Properties: map[string]llm.Property{"message": {Type: "string", Description: "msg"}},
+				Required:   []string{"message"},
+			}},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "echo" {
+		t.Errorf("ToolCall name = %q, want %q", resp.ToolCalls[0].Name, "echo")
+	}
+}
+
+func TestChat_WithSystemPromptAndMaxTokens(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, textResponse)
+	})
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		SystemPrompt: "You are helpful.",
+		MaxTokens:    512,
+		Messages:     []llm.Message{{Role: "user", Content: "Hello"}},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello!")
+	}
+}
+
+func TestChat_AssistantMessageWithToolCalls(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, textResponse)
+	})
+
+	resp, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "use the tool"},
+			{
+				Role:    "assistant",
+				Content: "I'll call echo",
+				ToolCalls: []llm.ToolCall{
+					{ID: "tc-1", Name: "echo", Args: map[string]any{"message": "hi"}},
+				},
+			},
+			{Role: "user", ToolResultID: "tc-1", ToolName: "echo", Content: `"hi"`},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.Content != "Hello!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello!")
+	}
+}
+
+func TestChat_ErrorResponse(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"401 invalid api key"}}`)
+	})
+
+	_, err := client.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "Hello"}},
+	})
+
+	if err == nil {
+		t.Fatal("Expected error from 401 response, got nil")
+	}
+}
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
@@ -159,5 +312,247 @@ func TestConvertResponse(t *testing.T) {
 	expectedModel := "claude-sonnet-4-20250514"
 	if client.model != expectedModel {
 		t.Errorf("Client model = %v, want %v", client.model, expectedModel)
+	}
+}
+
+func TestAPIError_Methods(t *testing.T) {
+	underlying := errors.New("underlying error")
+	apiErr := &APIError{
+		Code:    401,
+		Message: "auth failed",
+		Err:     underlying,
+	}
+
+	if apiErr.Error() != "underlying error" {
+		t.Errorf("Error() = %q, want %q", apiErr.Error(), "underlying error")
+	}
+	if apiErr.APICode() != 401 {
+		t.Errorf("APICode() = %d, want 401", apiErr.APICode())
+	}
+	if apiErr.APIMessage() != "auth failed" {
+		t.Errorf("APIMessage() = %q, want %q", apiErr.APIMessage(), "auth failed")
+	}
+	if !errors.Is(apiErr.Unwrap(), underlying) {
+		t.Error("Unwrap() should return the underlying error")
+	}
+}
+
+func TestSuggestedModels(t *testing.T) {
+	models := SuggestedModels()
+	if len(models) == 0 {
+		t.Error("SuggestedModels() returned empty list")
+	}
+	for _, m := range models {
+		if !strings.HasPrefix(m, "claude") {
+			t.Errorf("Expected claude model name, got %q", m)
+		}
+	}
+}
+
+func TestChatStream_NotImplemented(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+	_, err := client.ChatStream(context.Background(), llm.ChatRequest{})
+	if err == nil {
+		t.Fatal("Expected error from unimplemented ChatStream")
+	}
+}
+
+func TestEmbed_NotImplemented(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+	_, err := client.Embed(context.Background(), "test text")
+	if err == nil {
+		t.Fatal("Expected error from unimplemented Embed")
+	}
+}
+
+func TestConvertResponse_WithText(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	msgJSON := `{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello, world!"}],"model":"claude-sonnet","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
+	var msg anthropic.Message
+	if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+		t.Fatalf("Failed to unmarshal message: %v", err)
+	}
+
+	result := client.convertResponse(&msg)
+
+	if result.Content != "Hello, world!" {
+		t.Errorf("Content = %q, want %q", result.Content, "Hello, world!")
+	}
+	if result.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 5 {
+		t.Errorf("OutputTokens = %d, want 5", result.Usage.OutputTokens)
+	}
+	if result.Usage.TotalTokens != 15 {
+		t.Errorf("TotalTokens = %d, want 15", result.Usage.TotalTokens)
+	}
+	if len(result.ToolCalls) != 0 {
+		t.Errorf("Expected no tool calls, got %d", len(result.ToolCalls))
+	}
+}
+
+func TestConvertResponse_WithToolCalls(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	msgJSON := `{"id":"msg-2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"echo","input":{"message":"hello"}}],"model":"claude-sonnet","stop_reason":"tool_use","usage":{"input_tokens":20,"output_tokens":10}}`
+	var msg anthropic.Message
+	if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+		t.Fatalf("Failed to unmarshal message: %v", err)
+	}
+
+	result := client.convertResponse(&msg)
+
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if result.ToolCalls[0].Name != "echo" {
+		t.Errorf("ToolCall name = %q, want %q", result.ToolCalls[0].Name, "echo")
+	}
+	if result.ToolCalls[0].ID != "tool-1" {
+		t.Errorf("ToolCall ID = %q, want %q", result.ToolCalls[0].ID, "tool-1")
+	}
+	if result.ToolCalls[0].Args["message"] != "hello" {
+		t.Errorf("ToolCall arg = %v, want %q", result.ToolCalls[0].Args["message"], "hello")
+	}
+}
+
+func TestConvertResponse_WithInvalidToolInput(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	// input is a JSON string, not an object — json.Unmarshal into map[string]any will fail
+	msgJSON := `{"id":"msg-3","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"echo","input":"not-an-object"}],"model":"claude-sonnet","stop_reason":"tool_use","usage":{"input_tokens":5,"output_tokens":5}}`
+	var msg anthropic.Message
+	if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+		t.Fatalf("Failed to unmarshal message: %v", err)
+	}
+
+	result := client.convertResponse(&msg)
+
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if _, hasParseError := result.ToolCalls[0].Args["_parse_error"]; !hasParseError {
+		t.Error("Expected _parse_error key in args for invalid JSON input")
+	}
+}
+
+func TestEnhanceError_NotFound(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("unknown-model")
+
+	err := client.enhanceError(errors.New("404 model not found"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != 404 {
+		t.Errorf("APICode = %d, want 404", apiErr.Code)
+	}
+}
+
+func TestEnhanceError_NotFound_GeminiModel(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	// Using a Gemini model name triggers the extra hint
+	client, _ := NewClient("gemini-2.0-flash")
+
+	err := client.enhanceError(errors.New("404 not found"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if !strings.Contains(apiErr.Error(), "Gemini") {
+		t.Errorf("Expected Gemini hint in error, got: %s", apiErr.Error())
+	}
+}
+
+func TestEnhanceError_Auth(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	err := client.enhanceError(errors.New("401 authentication failed"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if apiErr.Code != 401 {
+		t.Errorf("APICode = %d, want 401", apiErr.Code)
+	}
+}
+
+func TestEnhanceError_RateLimit(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	err := client.enhanceError(errors.New("429 rate limit exceeded"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if apiErr.Code != 429 {
+		t.Errorf("APICode = %d, want 429", apiErr.Code)
+	}
+}
+
+func TestEnhanceError_InvalidRequest(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	err := client.enhanceError(errors.New("400 invalid request body"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *APIError, got %T", err)
+	}
+	if apiErr.Code != 400 {
+		t.Errorf("APICode = %d, want 400", apiErr.Code)
+	}
+}
+
+func TestEnhanceError_Unknown(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	err := client.enhanceError(errors.New("some unexpected server error"))
+
+	// Unknown errors should NOT be wrapped in *APIError
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		t.Fatal("Unknown error should not be wrapped in *APIError")
+	}
+	if !strings.Contains(err.Error(), "Claude API call failed") {
+		t.Errorf("Expected 'Claude API call failed' in error, got: %s", err.Error())
 	}
 }

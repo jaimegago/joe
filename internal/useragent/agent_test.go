@@ -395,6 +395,79 @@ func TestAgent_Run_ToolDefinitionsIncluded(t *testing.T) {
 	}
 }
 
+func TestWithAdapterFactory(t *testing.T) {
+	factory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
+		return &mockLLM{}, nil
+	}
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+	if agent.adapterFactory == nil {
+		t.Error("WithAdapterFactory() did not set adapterFactory")
+	}
+}
+
+func TestWithCurrentModelName(t *testing.T) {
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithCurrentModelName("my-model"))
+	if agent.currentModel != "my-model" {
+		t.Errorf("WithCurrentModelName() = %q, want %q", agent.currentModel, "my-model")
+	}
+}
+
+func TestAgent_CurrentModelName(t *testing.T) {
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithCurrentModelName("test-model"))
+	if got := agent.CurrentModelName(); got != "test-model" {
+		t.Errorf("CurrentModelName() = %q, want %q", got, "test-model")
+	}
+}
+
+func TestAgent_SwitchModel_NoFactory(t *testing.T) {
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test")
+	err := agent.SwitchModel(context.Background(), "claude", "claude-sonnet", "Claude Sonnet")
+	if err == nil {
+		t.Error("SwitchModel() without factory should return error")
+	}
+}
+
+func TestAgent_SwitchModel_FactoryError(t *testing.T) {
+	factory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
+		return nil, errors.New("factory error")
+	}
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+	err := agent.SwitchModel(context.Background(), "claude", "claude-sonnet", "Claude Sonnet")
+	if err == nil {
+		t.Error("SwitchModel() with factory error should return error")
+	}
+}
+
+func TestAgent_SwitchModel_Success(t *testing.T) {
+	newLLM := &mockLLM{}
+	factory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
+		return newLLM, nil
+	}
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+
+	if err := agent.SwitchModel(context.Background(), "gemini", "gemini-flash", "Gemini Flash"); err != nil {
+		t.Fatalf("SwitchModel() returned error: %v", err)
+	}
+	if got := agent.CurrentModelName(); got != "Gemini Flash" {
+		t.Errorf("CurrentModelName() after switch = %q, want %q", got, "Gemini Flash")
+	}
+	if agent.llm != newLLM {
+		t.Error("SwitchModel() did not update llm adapter")
+	}
+}
+
 // Helper function
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || findSubstring(s, substr))

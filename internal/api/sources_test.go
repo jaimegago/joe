@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -140,5 +141,127 @@ func TestHandleDeleteSource_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+// setupTestServerWithStore creates a test server and returns the underlying store.
+func setupTestServerWithStore(t *testing.T) (*api.Server, *store.Store, *http.ServeMux) {
+	t.Helper()
+
+	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	services := &core.Services{
+		Config:   &config.Config{},
+		Graph:    graph.NewSQLiteStore(sqlStore.DB(), nil),
+		Store:    sqlStore,
+		Adapters: adapters.NewRegistry(),
+	}
+
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	return server, sqlStore, mux
+}
+
+func TestHandleCreateSource_DuplicateSource(t *testing.T) {
+	_, sqlStore, mux := setupTestServerWithStore(t)
+
+	// Pre-insert a source directly so the duplicate check triggers
+	sqlStore.Sources.Create(context.Background(), &store.Source{
+		ID:     "src-dup",
+		Type:   "kubernetes",
+		Name:   "existing cluster",
+		Config: json.RawMessage(`{}`),
+	})
+
+	body := `{"id":"src-dup","type":"kubernetes","name":"cluster"}`
+	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["error"] != "invalid_request" {
+		t.Errorf("error code = %v, want invalid_request", resp["error"])
+	}
+}
+
+func TestHandleCreateSource_GitConnectFails(t *testing.T) {
+	// Empty config causes git adapter to fail (url is required) -> covers writeBadRequest
+	_, _, mux := setupTestServerWithStore(t)
+
+	body := `{"id":"git-1","type":"git","name":"test repo","config":{}}`
+	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d (git connect should fail with empty config)", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGetSource_Success(t *testing.T) {
+	_, sqlStore, mux := setupTestServerWithStore(t)
+
+	sqlStore.Sources.Create(context.Background(), &store.Source{
+		ID:     "test-src",
+		Type:   "git",
+		Name:   "test repo",
+		Config: json.RawMessage(`{}`),
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/sources/test-src", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["id"] != "test-src" {
+		t.Errorf("id = %v, want test-src", resp["id"])
+	}
+}
+
+func TestHandleDeleteSource_Success(t *testing.T) {
+	_, sqlStore, mux := setupTestServerWithStore(t)
+
+	sqlStore.Sources.Create(context.Background(), &store.Source{
+		ID:     "del-src",
+		Type:   "kubernetes",
+		Name:   "to delete",
+		Config: json.RawMessage(`{}`),
+	})
+
+	req := httptest.NewRequest("DELETE", "/api/v1/sources/del-src", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusNoContent, w.Body.String())
+	}
+
+	// Verify source is gone
+	src, _ := sqlStore.Sources.Get(context.Background(), "del-src")
+	if src != nil {
+		t.Error("source should have been deleted")
 	}
 }

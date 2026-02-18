@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+func TestTool_Metadata(t *testing.T) {
+	tool := New()
+	if tool.Name() != "read_file" {
+		t.Errorf("Name() = %q, want read_file", tool.Name())
+	}
+	if tool.Description() == "" {
+		t.Error("Description() should not be empty")
+	}
+	params := tool.Parameters()
+	if params.Type != "object" {
+		t.Errorf("Parameters().Type = %q, want object", params.Type)
+	}
+	if _, ok := params.Properties["path"]; !ok {
+		t.Error("Parameters() missing path property")
+	}
+}
+
+func TestExecute_MissingPath(t *testing.T) {
+	tool := New()
+	_, err := tool.Execute(context.Background(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing path parameter")
+	}
+	if !strings.Contains(err.Error(), "path parameter") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExecute_EmptyPath(t *testing.T) {
+	tool := New()
+	_, err := tool.Execute(context.Background(), map[string]any{"path": ""})
+	if err == nil {
+		t.Fatal("expected error for empty path parameter")
+	}
+}
+
 func TestExecute_ReadsFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")

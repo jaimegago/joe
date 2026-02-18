@@ -11,6 +11,7 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // Compile-time interface check
@@ -72,6 +73,40 @@ func newTestAdapter(t *testing.T) (*gitadapter.Adapter, string, string) {
 	t.Helper()
 	repo, dir, hash1, hash2 := newTestRepo(t)
 	return gitadapter.NewWithRepo(repo, dir), hash1, hash2
+}
+
+func TestConnect_ConfigErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+	}{
+		{
+			name:   "missing url",
+			config: `{"branch": "main"}`,
+		},
+		{
+			name:   "ssh auth without key path",
+			config: `{"url": "git@github.com:foo/bar.git", "auth_type": "ssh"}`,
+		},
+		{
+			name:   "https auth without token",
+			config: `{"url": "https://github.com/foo/bar.git", "auth_type": "https"}`,
+		},
+		{
+			name:   "unknown auth type",
+			config: `{"url": "https://github.com/foo/bar.git", "auth_type": "badauth"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := gitadapter.New()
+			source := store.Source{Config: json.RawMessage(tt.config)}
+			if err := a.Connect(source); err == nil {
+				t.Errorf("Connect() expected error, got nil")
+			}
+		})
+	}
 }
 
 func TestParseConfig(t *testing.T) {
@@ -338,6 +373,80 @@ func TestDiff(t *testing.T) {
 			t.Error("Diff() with bad ref should fail")
 		}
 	})
+
+	t.Run("invalid to ref", func(t *testing.T) {
+		_, err := a.Diff(ctx, hash1, "badtoref")
+		if err == nil {
+			t.Error("Diff() with bad toRef should fail")
+		}
+	})
+}
+
+func TestConnect_LocalRepoWithBranch(t *testing.T) {
+	// Override HOME so clones go to temp dir instead of ~/.joe/repos/
+	t.Setenv("HOME", t.TempDir())
+
+	_, srcDir, _, _ := newTestRepo(t)
+
+	// Try with an explicit branch to exercise the branch condition in Connect
+	for _, branch := range []string{"master", "main"} {
+		a := gitadapter.New()
+		source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `", "branch": "` + branch + `"}`)}
+		if err := a.Connect(source); err == nil {
+			if !a.Status().Connected {
+				t.Errorf("adapter should be connected after Connect() with branch %q", branch)
+			}
+			return
+		}
+	}
+	t.Skip("neither master nor main branch could be cloned")
+}
+
+func TestConnect_LocalRepo(t *testing.T) {
+	// Override HOME so clones go to temp dir instead of ~/.joe/repos/
+	t.Setenv("HOME", t.TempDir())
+
+	_, srcDir, _, _ := newTestRepo(t)
+
+	a := gitadapter.New()
+	source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `"}`)}
+	if err := a.Connect(source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("adapter should be connected after successful Connect()")
+	}
+}
+
+func TestLog_MaxLimitCapped(t *testing.T) {
+	a, _, _ := newTestAdapter(t)
+	ctx := context.Background()
+
+	// 2 commits in repo; asking for > maxLogLimit (500) should still return 2
+	commits, err := a.Log(ctx, 501)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Errorf("Log(501) = %d commits, want 2", len(commits))
+	}
+}
+
+func TestDiff_BranchName(t *testing.T) {
+	a, hash1, _ := newTestAdapter(t)
+	ctx := context.Background()
+
+	// Exercise resolveCommit branch-reference path; try both common default names
+	diff, err := a.Diff(ctx, hash1, "master")
+	if err != nil {
+		diff, err = a.Diff(ctx, hash1, "main")
+		if err != nil {
+			t.Skipf("neither master nor main branch found: %v", err)
+		}
+	}
+	if diff == "" {
+		t.Error("expected non-empty diff when comparing against branch head")
+	}
 }
 
 func contains(s, substr string) bool {

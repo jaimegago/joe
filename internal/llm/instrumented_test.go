@@ -210,3 +210,107 @@ func TestInstrumentedAdapter_Embed_Success(t *testing.T) {
 		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
 	}
 }
+
+// mockAPIDetailedError implements APIErrorDetails for testing the api error branch in Chat
+type mockAPIDetailedError struct {
+	code    int
+	message string
+}
+
+func (e *mockAPIDetailedError) Error() string      { return e.message }
+func (e *mockAPIDetailedError) APICode() int       { return e.code }
+func (e *mockAPIDetailedError) APIMessage() string { return e.message }
+
+// mockLLMReturnsAPIError always returns a specific error for all methods
+type mockLLMReturnsAPIError struct {
+	err error
+}
+
+func (m *mockLLMReturnsAPIError) Chat(_ context.Context, _ ChatRequest) (*ChatResponse, error) {
+	return nil, m.err
+}
+
+func (m *mockLLMReturnsAPIError) ChatStream(_ context.Context, _ ChatRequest) (<-chan StreamChunk, error) {
+	return nil, m.err
+}
+
+func (m *mockLLMReturnsAPIError) Embed(_ context.Context, _ string) ([]float32, error) {
+	return nil, m.err
+}
+
+func TestInstrumentedAdapter_Chat_WithAPIErrorDetails(t *testing.T) {
+	apiErr := &mockAPIDetailedError{code: 401, message: "unauthorized"}
+	mock := &mockLLMReturnsAPIError{err: apiErr}
+
+	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
+	ctx := context.Background()
+	req := ChatRequest{Messages: []Message{{Role: "user", Content: "test"}}}
+
+	_, err := instrumented.Chat(ctx, req)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	stats := instrumented.GetStats()
+	if stats.TotalCalls != 1 {
+		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
+	}
+	if stats.TotalErrors != 1 {
+		t.Errorf("Expected 1 error, got %d", stats.TotalErrors)
+	}
+}
+
+func TestInstrumentedAdapter_ChatStream_Error(t *testing.T) {
+	mock := &mockLLMForInstrumentation{shouldError: true}
+	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
+	ctx := context.Background()
+	req := ChatRequest{Messages: []Message{{Role: "user", Content: "test"}}}
+
+	_, err := instrumented.ChatStream(ctx, req)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	stats := instrumented.GetStats()
+	if stats.TotalCalls != 1 {
+		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
+	}
+	if stats.TotalErrors != 1 {
+		t.Errorf("Expected 1 error, got %d", stats.TotalErrors)
+	}
+}
+
+func TestInstrumentedAdapter_Embed_Error(t *testing.T) {
+	mock := &mockLLMForInstrumentation{shouldError: true}
+	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
+	ctx := context.Background()
+
+	_, err := instrumented.Embed(ctx, "test text")
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	stats := instrumented.GetStats()
+	if stats.TotalCalls != 1 {
+		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
+	}
+	if stats.TotalErrors != 1 {
+		t.Errorf("Expected 1 error, got %d", stats.TotalErrors)
+	}
+}
+
+func TestNewInstrumentedAdapter_WithLogger(t *testing.T) {
+	mock := &mockLLMForInstrumentation{}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	instrumented := NewInstrumentedAdapter(mock, logger, "test-provider", "test-model")
+	if instrumented == nil {
+		t.Fatal("Expected non-nil adapter")
+	}
+	if instrumented.provider != "test-provider" {
+		t.Errorf("provider = %q, want %q", instrumented.provider, "test-provider")
+	}
+	if instrumented.model != "test-model" {
+		t.Errorf("model = %q, want %q", instrumented.model, "test-model")
+	}
+}

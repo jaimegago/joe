@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -314,5 +315,185 @@ logging:
 
 	if cfg.Logging.File != "/var/log/joe.log" {
 		t.Errorf("Log file = %s, want /var/log/joe.log", cfg.Logging.File)
+	}
+}
+
+// ---- ValidateAPIKeys ----
+
+func TestValidateAPIKeys_ClaudeSuccess(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	if err := ValidateAPIKeys(ModelConfig{Provider: "claude", Model: "claude-sonnet"}); err != nil {
+		t.Errorf("ValidateAPIKeys() unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPIKeys_ClaudeMissingKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	err := ValidateAPIKeys(ModelConfig{Provider: "claude", Model: "claude-sonnet"})
+	if err == nil {
+		t.Error("ValidateAPIKeys() expected error for missing ANTHROPIC_API_KEY")
+	}
+}
+
+func TestValidateAPIKeys_GeminiSuccess_GeminiKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	t.Setenv("GOOGLE_API_KEY", "")
+	if err := ValidateAPIKeys(ModelConfig{Provider: "gemini", Model: "gemini-flash"}); err != nil {
+		t.Errorf("ValidateAPIKeys() unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPIKeys_GeminiSuccess_GoogleKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "test-key")
+	if err := ValidateAPIKeys(ModelConfig{Provider: "gemini", Model: "gemini-flash"}); err != nil {
+		t.Errorf("ValidateAPIKeys() unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPIKeys_GeminiMissingBothKeys(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	err := ValidateAPIKeys(ModelConfig{Provider: "gemini", Model: "gemini-flash"})
+	if err == nil {
+		t.Error("ValidateAPIKeys() expected error when both Gemini keys are missing")
+	}
+}
+
+func TestValidateAPIKeys_UnsupportedProvider(t *testing.T) {
+	err := ValidateAPIKeys(ModelConfig{Provider: "ollama", Model: "llama3"})
+	if err == nil {
+		t.Error("ValidateAPIKeys() expected error for unsupported provider")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("ValidateAPIKeys() error = %v, want error containing 'unsupported'", err)
+	}
+}
+
+// ---- ValidateAPIKeysWithUserMessage ----
+
+func TestValidateAPIKeysWithUserMessage_UnsupportedProvider(t *testing.T) {
+	err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "ollama", Model: "llama3"})
+	if err == nil {
+		t.Error("expected error for unsupported provider")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Errorf("error = %v, want 'not supported'", err)
+	}
+}
+
+func TestValidateAPIKeysWithUserMessage_ClaudeMissingKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "claude", Model: "claude-sonnet"})
+	if err == nil {
+		t.Error("expected error for missing ANTHROPIC_API_KEY")
+	}
+	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Errorf("error = %v, want mention of ANTHROPIC_API_KEY", err)
+	}
+}
+
+func TestValidateAPIKeysWithUserMessage_GeminiMissingKeys(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "gemini", Model: "gemini-flash"})
+	if err == nil {
+		t.Error("expected error for missing Gemini keys")
+	}
+	if !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Errorf("error = %v, want mention of GEMINI_API_KEY", err)
+	}
+}
+
+func TestValidateAPIKeysWithUserMessage_ClaudeSuccess(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	if err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "claude", Model: "claude-sonnet"}); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPIKeysWithUserMessage_GeminiSuccess(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	if err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "gemini", Model: "gemini-flash"}); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ---- applyEnvOverrides additional branches ----
+
+func TestLoad_EnvOverrides_LogLevel(t *testing.T) {
+	t.Setenv("JOE_LOG_LEVEL", "debug")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %s, want debug (from JOE_LOG_LEVEL)", cfg.Logging.Level)
+	}
+}
+
+func TestLoad_EnvOverrides_ServerAddress(t *testing.T) {
+	t.Setenv("JOE_SERVER_ADDRESS", "localhost:9999")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.Server.Address != "localhost:9999" {
+		t.Errorf("Server.Address = %s, want localhost:9999", cfg.Server.Address)
+	}
+}
+
+func TestLoad_EnvOverrides_APIKey(t *testing.T) {
+	t.Setenv("JOE_API_KEY", "super-secret")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.Server.APIKey != "super-secret" {
+		t.Errorf("Server.APIKey = %s, want super-secret", cfg.Server.APIKey)
+	}
+}
+
+func TestLoad_EnvOverrides_ModelOnly(t *testing.T) {
+	// Override only model, not provider — exercises the partial-override branch
+	t.Setenv("JOE_LLM_PROVIDER", "")
+	t.Setenv("JOE_LLM_MODEL", "claude-opus-4")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	mc, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		t.Fatalf("CurrentModel() error: %v", err)
+	}
+	if mc.Model != "claude-opus-4" {
+		t.Errorf("model = %s, want claude-opus-4 (from JOE_LLM_MODEL)", mc.Model)
+	}
+}
+
+// ---- Save tilde expansion ----
+
+func TestSave_TildeExpansion(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir available")
+	}
+	tmpDir, err := os.MkdirTemp(home, "joe-test-save-*")
+	if err != nil {
+		t.Skip("cannot create temp dir in home dir")
+	}
+	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+
+	subdir := filepath.Base(tmpDir)
+	tildeConfigPath := "~/" + subdir + "/config.yaml"
+
+	cfg := defaultConfig()
+	if err := Save(cfg, tildeConfigPath); err != nil {
+		t.Fatalf("Save() with tilde path returned error: %v", err)
+	}
+
+	expected := filepath.Join(home, subdir, "config.yaml")
+	if _, err := os.Stat(expected); os.IsNotExist(err) {
+		t.Errorf("Save() with tilde did not create file at %s", expected)
 	}
 }

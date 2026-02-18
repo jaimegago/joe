@@ -11,7 +11,8 @@ import (
 // getSecureHomeDir returns the user's home directory using system APIs that
 // cannot be manipulated via environment variables. On Windows, this uses
 // the Windows user profile directory.
-func getSecureHomeDir() (string, error) {
+// It is a variable to allow overriding in tests.
+var getSecureHomeDir = func() (string, error) {
 	// Use os/user.Current() which uses Windows API on Windows
 	currentUser, err := user.Current()
 	if err != nil {

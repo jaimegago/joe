@@ -2,12 +2,49 @@ package llmfactory
 
 import (
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/config"
 )
+
+func TestNewAdapter_ClaudeSuccess(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	adapter, err := NewAdapter(context.Background(), config.ModelConfig{
+		Provider: "claude",
+		Model:    "claude-sonnet-4-20250514",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+}
+
+func TestNewAdapter_GeminiSuccess(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	adapter, err := NewAdapter(context.Background(), config.ModelConfig{
+		Provider: "gemini",
+		Model:    "gemini-2.5-flash",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+	// Gemini client implements io.Closer — release resources
+	if closer, ok := adapter.(io.Closer); ok {
+		closer.Close()
+	}
+}
 
 func TestNewAdapter_UnsupportedProvider(t *testing.T) {
 	_, err := NewAdapter(context.Background(), config.ModelConfig{

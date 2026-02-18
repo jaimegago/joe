@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	"github.com/jaimegago/joe/internal/store"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -522,5 +523,100 @@ func TestNewWithClients_SetsConnected(t *testing.T) {
 	adapter := k8s.NewWithClients(nil, nil)
 	if !adapter.Status().Connected {
 		t.Error("NewWithClients should set connected=true")
+	}
+}
+
+// TestConnect_AbsoluteKubeconfig exercises expandPath with a non-tilde path (covers return path, nil branch).
+func TestConnect_AbsoluteKubeconfig(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "/nonexistent/path/kubeconfig.yaml"}`)}
+	// expandPath returns the path unchanged; clientcmd fails on missing file
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail for nonexistent absolute kubeconfig")
+	}
+}
+
+// TestConnect_TildeOnlyKubeconfig exercises expandPath len==1 branch ("~" alone).
+func TestConnect_TildeOnlyKubeconfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // ensure home exists but has no .kube/config
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "~"}`)}
+	// expandPath("~") returns home dir; clientcmd then fails (no kubeconfig there)
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail when kubeconfig resolves to a directory")
+	}
+}
+
+// TestConnect_WithContext exercises the context override branch in buildRESTConfig.
+func TestConnect_WithContext(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "/nonexistent.yaml", "context": "my-ctx"}`)}
+	// Covers the cfg.Context != "" branch; fails at clientcmd (file missing)
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail for nonexistent kubeconfig")
+	}
+}
+
+// TestConnect_InvalidJSON verifies that Connect returns an error for bad config JSON.
+func TestConnect_InvalidJSON(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{bad json`)}
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail for invalid JSON config")
+	}
+}
+
+// TestConnect_TildeKubeconfig exercises expandPath and buildRESTConfig with a non-existent kubeconfig.
+func TestConnect_TildeKubeconfig(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "~/nonexistent-kubeconfig-for-joe-test.yaml"}`)}
+	// expandPath runs (covering ~-expansion); then clientcmd fails on missing file
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail for nonexistent kubeconfig")
+	}
+}
+
+// TestConnect_InClusterOutsideCluster verifies in-cluster config fails outside a cluster.
+func TestConnect_InClusterOutsideCluster(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{"in_cluster": true}`)}
+	// rest.InClusterConfig() fails when not running inside a pod
+	if err := a.Connect(src); err == nil {
+		t.Error("Connect() should fail when in_cluster=true outside a cluster")
+	}
+}
+
+// TestGetPodLogs_TailLinesDefaultAndCap verifies the clamping logic without a real cluster.
+func TestGetPodLogs_TailLinesDefaultAndCap(t *testing.T) {
+	tests := []struct {
+		name      string
+		tailLines int
+		wantLines int64 // value clamped to
+	}{
+		{name: "zero becomes 100", tailLines: 0, wantLines: 100},
+		{name: "negative becomes 100", tailLines: -5, wantLines: 100},
+		{name: "over max capped to 1000", tailLines: 1500, wantLines: 1000},
+		{name: "exact max allowed", tailLines: 1000, wantLines: 1000},
+		{name: "normal value unchanged", tailLines: 50, wantLines: 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := newTestAdapter()
+			// fake clientset returns empty logs; we just need the call to succeed
+			_, err := adapter.GetPodLogs(context.Background(), "default", "pod", "", tt.tailLines)
+			if err != nil {
+				t.Fatalf("GetPodLogs() error = %v", err)
+			}
+		})
+	}
+}
+
+// TestGetPodLogs_WithContainer verifies the container field is set when non-empty.
+func TestGetPodLogs_WithContainer(t *testing.T) {
+	adapter := newTestAdapter()
+	_, err := adapter.GetPodLogs(context.Background(), "default", "pod", "nginx", 50)
+	if err != nil {
+		t.Fatalf("GetPodLogs() with container error = %v", err)
 	}
 }

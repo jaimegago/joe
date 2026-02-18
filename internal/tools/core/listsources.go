@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/store"
 )
+
+// ListSourcesClient defines the subset of client.Client needed for ListSourcesTool.
+type ListSourcesClient interface {
+	ListSources(ctx context.Context) ([]*store.Source, error)
+}
 
 // ListSourcesTool queries all registered infrastructure sources from joecored.
 type ListSourcesTool struct {
-	client *client.Client
+	client ListSourcesClient
 }
 
 // NewListSourcesTool creates a new list_sources tool.
-func NewListSourcesTool(c *client.Client) *ListSourcesTool {
+func NewListSourcesTool(c ListSourcesClient) *ListSourcesTool {
 	return &ListSourcesTool{client: c}
 }
 
