@@ -1,6 +1,9 @@
 package runcmd
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // subcommandAllowlists defines the permitted subcommands for mutation-capable
 // commands. These are hardcoded at compile time — the LLM cannot change them.
@@ -162,6 +165,7 @@ func allowedKeys(m map[string]bool) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

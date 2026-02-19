@@ -2,11 +2,11 @@ package coreagent
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
@@ -101,7 +101,7 @@ func (a *Agent) TriggerRefreshSource(ctx context.Context, sourceID string) error
 		return fmt.Errorf("get source: %w", err)
 	}
 	if source == nil {
-		return fmt.Errorf("source not found: %s", sourceID)
+		return fmt.Errorf("%w: %s", store.ErrSourceNotFound, sourceID)
 	}
 	return a.refresher.refreshSource(ctx, source)
 }
@@ -338,7 +338,7 @@ func (t *GraphUpdateNodeTool) Execute(ctx context.Context, args map[string]any) 
 		existingNode.Metadata[key] = value
 	}
 
-	// Update the node (this is simplified - real implementation might need an UpdateNode method)
+	// AddNode performs an upsert, so this updates the existing node
 	err = t.services.Graph.AddNode(ctx, *existingNode)
 	if err != nil {
 		t.logger.Error("failed to update node in graph", "error", err, "node_id", nodeID)
@@ -416,8 +416,12 @@ func (t *RegisterSourceTool) Execute(ctx context.Context, args map[string]any) (
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
 	}
 
+	randBytes := make([]byte, 8)
+	if _, err := crypto_rand.Read(randBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate source ID: %w", err)
+	}
 	source := &store.Source{
-		ID:     fmt.Sprintf("%s-%d", sourceType, time.Now().Unix()),
+		ID:     fmt.Sprintf("%s-%x", sourceType, randBytes),
 		Name:   name,
 		Type:   sourceType,
 		Config: configBytes,

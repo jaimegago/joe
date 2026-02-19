@@ -44,30 +44,29 @@ func (s *Session) Close() {
 }
 
 // AddMessage adds a message to the conversation history.
-// If MaxMessages is set and exceeded, older messages are pruned while
-// preserving the most recent messages for context.
-func (s *Session) AddMessage(message llm.Message) {
+// If MaxMessages is set and exceeded, older messages are pruned to keep
+// the most recent MaxMessages entries (sliding window).
+func (s *Session) AddMessage(ctx context.Context, message llm.Message) {
 	s.Messages = append(s.Messages, message)
-	s.metrics.RecordSessionMessage(context.Background(), message.Role)
-
-	// Prune old messages if we've exceeded the limit
-	if s.MaxMessages > 0 && len(s.Messages) > s.MaxMessages {
-		// Keep the most recent MaxMessages/2 messages
-		// This aggressive pruning ensures we don't slowly grow near the limit
-		keepCount := s.MaxMessages / 2
-		if keepCount < 10 {
-			keepCount = 10 // Always keep at least 10 messages for context
-		}
-		s.Messages = s.Messages[len(s.Messages)-keepCount:]
-	}
+	s.metrics.RecordSessionMessage(ctx, message.Role)
+	s.pruneMessages()
 }
 
-// AddMessages adds multiple messages to the conversation history
-func (s *Session) AddMessages(messages []llm.Message) {
+// AddMessages adds multiple messages to the conversation history.
+// If MaxMessages is set and exceeded, older messages are pruned to keep
+// the most recent MaxMessages entries (sliding window).
+func (s *Session) AddMessages(ctx context.Context, messages []llm.Message) {
 	s.Messages = append(s.Messages, messages...)
-	ctx := context.Background()
 	for _, msg := range messages {
 		s.metrics.RecordSessionMessage(ctx, msg.Role)
+	}
+	s.pruneMessages()
+}
+
+// pruneMessages trims the conversation history to MaxMessages using a sliding window.
+func (s *Session) pruneMessages() {
+	if s.MaxMessages > 0 && len(s.Messages) > s.MaxMessages {
+		s.Messages = s.Messages[len(s.Messages)-s.MaxMessages:]
 	}
 }
 
@@ -85,7 +84,7 @@ func (s *Session) ResetRunStats() {
 }
 
 // AddTokenUsage adds token usage from an LLM response
-func (s *Session) AddTokenUsage(usage llm.TokenUsage) {
+func (s *Session) AddTokenUsage(ctx context.Context, usage llm.TokenUsage) {
 	// Update per-run stats
 	s.RunInputTokens += usage.InputTokens
 	s.RunOutputTokens += usage.OutputTokens
@@ -96,5 +95,5 @@ func (s *Session) AddTokenUsage(usage llm.TokenUsage) {
 	s.TotalInputTokens += usage.InputTokens
 	s.TotalOutputTokens += usage.OutputTokens
 	s.TotalTokens += usage.TotalTokens
-	s.metrics.RecordSessionTokens(context.Background(), usage.TotalTokens)
+	s.metrics.RecordSessionTokens(ctx, usage.TotalTokens)
 }

@@ -169,7 +169,7 @@ func TestDomainRouteRegistration(t *testing.T) {
 	t.Run("source routes", func(t *testing.T) {
 		mux := http.NewServeMux()
 		server := setupTestServer(t)
-		server.registerSourceRoutes(mux, "/api/v1", server.services.Store, server.services.Adapters)
+		server.registerSourceRoutes(mux, "/api/v1")
 
 		// Test that routes are registered
 		testCases := []struct {

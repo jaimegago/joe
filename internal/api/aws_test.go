@@ -30,7 +30,7 @@ func (m *MockAWSAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
 
-func (m *MockAWSAdapter) Connect(source store.Source) error                      { return nil }
+func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Source) error        { return nil }
 func (m *MockAWSAdapter) Disconnect() error                                      { return nil }
 func (m *MockAWSAdapter) Type() string                                           { return "aws" }
 func (m *MockAWSAdapter) SupportsQuery(query string) bool                        { return false }

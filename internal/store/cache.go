@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,7 +35,7 @@ func (r *sqlCacheRepository) Get(ctx context.Context, filePath string) (cache *J
 	err = r.db.QueryRowContext(ctx, query, filePath).Scan(
 		&c.FilePath, &c.ContentHash, &c.ParsedData, &c.ParsedAt, &toolCalls, &processedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		r.metrics.RecordCacheLookup(ctx, "joe_file_cache", false, time.Since(start), nil)
 		return nil, nil
 	}

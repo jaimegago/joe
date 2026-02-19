@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jaimegago/joe/internal/observability"
@@ -41,7 +43,11 @@ func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarificatio
 
 	var options []byte
 	if len(c.Options) > 0 {
-		options, _ = json.Marshal(c.Options)
+		var marshalErr error
+		options, marshalErr = json.Marshal(c.Options)
+		if marshalErr != nil {
+			slog.Warn("failed to marshal clarification options", "clarification_id", c.ID, "error", marshalErr)
+		}
 	}
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -160,7 +166,7 @@ func (r *sqlClarificationRepository) scanOne(row *sql.Row) (*Clarification, erro
 		&c.ID, &c.Type, &c.Context, &c.Question, &options, &c.Status,
 		&answer, &answeredBy, &answeredAt, &graphOps, &c.CreatedAt, &notifiedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -173,7 +179,9 @@ func (r *sqlClarificationRepository) scanOne(row *sql.Row) (*Clarification, erro
 
 func populateClarificationNullables(c *Clarification, options, graphOps, answer, answeredBy, answeredAt, notifiedAt sql.NullString) {
 	if options.Valid {
-		json.Unmarshal([]byte(options.String), &c.Options)
+		if err := json.Unmarshal([]byte(options.String), &c.Options); err != nil {
+			slog.Warn("failed to unmarshal clarification options", "clarification_id", c.ID, "error", err)
+		}
 	}
 	if graphOps.Valid {
 		c.GraphOperations = json.RawMessage(graphOps.String)
@@ -185,11 +193,9 @@ func populateClarificationNullables(c *Clarification, options, graphOps, answer,
 		c.AnsweredBy = answeredBy.String
 	}
 	if answeredAt.Valid {
-		t, _ := time.Parse(time.RFC3339, answeredAt.String)
-		c.AnsweredAt = &t
+		c.AnsweredAt = parseTimeOrWarn(answeredAt.String, "clarifications.answered_at")
 	}
 	if notifiedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, notifiedAt.String)
-		c.NotifiedAt = &t
+		c.NotifiedAt = parseTimeOrWarn(notifiedAt.String, "clarifications.notified_at")
 	}
 }

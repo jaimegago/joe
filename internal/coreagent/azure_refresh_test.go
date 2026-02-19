@@ -18,7 +18,7 @@ type fakeAzureAdapter struct {
 	vnets []azureadapter.VNet
 }
 
-func (f *fakeAzureAdapter) Connect(_ store.Source) error { return nil }
+func (f *fakeAzureAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
 
 func (f *fakeAzureAdapter) Disconnect() error { return nil }
 

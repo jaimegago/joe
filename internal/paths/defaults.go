@@ -3,6 +3,7 @@ package paths
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -40,6 +41,23 @@ func JoeDirPath() (string, error) {
 // getSecureHomeDir for use by other packages that need secure home resolution.
 func SecureHomeDir() (string, error) {
 	return getSecureHomeDir()
+}
+
+// ExpandPath expands ~ to the secure home directory and makes the path absolute.
+// Uses SecureHomeDir() which bypasses the HOME environment variable.
+func ExpandPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~") {
+		home, err := getSecureHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		if len(path) == 1 {
+			path = home
+		} else {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+	return filepath.Abs(path)
 }
 
 // DatabasePath returns the full path to the Joe database file.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/jaimegago/joe/internal/llm"
@@ -67,11 +68,16 @@ func (t *Tool) Name() string {
 }
 
 func (t *Tool) Description() string {
-	allowedList := make([]string, 0, len(t.allowedCommands))
+	return fmt.Sprintf("Run a safe shell command (limited to: %s). Use this to inspect system state, list files, or run read-only commands.", strings.Join(t.sortedAllowedCommands(), ", "))
+}
+
+func (t *Tool) sortedAllowedCommands() []string {
+	cmds := make([]string, 0, len(t.allowedCommands))
 	for cmd := range t.allowedCommands {
-		allowedList = append(allowedList, cmd)
+		cmds = append(cmds, cmd)
 	}
-	return fmt.Sprintf("Run a safe shell command (limited to: %s). Use this to inspect system state, list files, or run read-only commands.", strings.Join(allowedList, ", "))
+	sort.Strings(cmds)
+	return cmds
 }
 
 func (t *Tool) Parameters() llm.ParameterSchema {
@@ -109,11 +115,7 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 
 	// Check if command is allowed
 	if !t.allowedCommands[cmdName] {
-		allowedList := make([]string, 0, len(t.allowedCommands))
-		for cmd := range t.allowedCommands {
-			allowedList = append(allowedList, cmd)
-		}
-		return nil, fmt.Errorf("command '%s' is not allowed. Allowed: %s", cmdName, strings.Join(allowedList, ", "))
+		return nil, fmt.Errorf("command '%s' is not allowed. Allowed: %s", cmdName, strings.Join(t.sortedAllowedCommands(), ", "))
 	}
 
 	// Get arguments

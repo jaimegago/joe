@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -88,4 +90,15 @@ func (s *Store) Close() error {
 // DB returns the underlying database connection (for transactions).
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+// parseTimeOrWarn parses a time string in RFC3339 format and logs a warning if
+// parsing fails. Returns a pointer to the parsed time, or nil on failure.
+func parseTimeOrWarn(value, field string) *time.Time {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		slog.Warn("failed to parse time from database", "field", field, "value", value, "error", err)
+		return nil
+	}
+	return &t
 }

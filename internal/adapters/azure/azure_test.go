@@ -61,18 +61,18 @@ func TestAdapter_ConnectValidatesConfig(t *testing.T) {
 
 	// Invalid JSON
 	invalidJSON := store.Source{ID: "az-1", Name: "azure", Type: "azure", Config: []byte(`{"subscription_id":`)}
-	if err := adapter.Connect(invalidJSON); err == nil || !strings.Contains(err.Error(), "parse source config JSON") {
+	if err := adapter.Connect(context.Background(), invalidJSON); err == nil || !strings.Contains(err.Error(), "parse source config JSON") {
 		t.Fatalf("expected wrapped JSON parse error, got %v", err)
 	}
 
 	// Missing subscription_id
 	source := store.Source{ID: "az-1", Name: "azure", Type: "azure", Config: []byte(`{"tenant_id":"t"}`)}
-	if err := adapter.Connect(source); err == nil {
+	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for missing subscription_id")
 	}
 
 	source.Config = []byte(`{"subscription_id":"sub-1"}`)
-	if err := adapter.Connect(source); err != nil {
+	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestAdapter_DisconnectOperations(t *testing.T) {
 
 func TestAdapter_GetMethodsNotFoundWhenConnected(t *testing.T) {
 	adapter := azureadapter.New()
-	if err := adapter.Connect(store.Source{ID: "az-1", Name: "azure", Type: "azure", Config: []byte(`{"subscription_id":"sub-1"}`)}); err != nil {
+	if err := adapter.Connect(context.Background(), store.Source{ID: "az-1", Name: "azure", Type: "azure", Config: []byte(`{"subscription_id":"sub-1"}`)}); err != nil {
 		t.Fatalf("connect failed: %v", err)
 	}
 

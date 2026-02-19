@@ -87,7 +87,7 @@ func New() *Adapter {
 }
 
 // Connect validates config and marks the adapter connected.
-func (a *Adapter) Connect(source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

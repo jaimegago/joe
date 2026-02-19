@@ -1,0 +1,179 @@
+Code Quality Report — Joe Project
+Scope: All non-test Go source in internal/ and cmd/
+Reference: docs/go-standards.md, docs/security-in-layers.md, CLAUDE.md
+
+1. Bugs
+B1 — AddMessages bypasses MaxMessages limit
+Severity: High | internal/useragent/session.go:66-72
+
+AddMessage (singular) prunes the history when MaxMessages is exceeded. AddMessages (plural), called by the agentic loop after every batch of tool results, appends unconditionally with no pruning:
+
+
+func (s *Session) AddMessages(messages []llm.Message) {
+    s.Messages = append(s.Messages, messages...)  // ← no limit enforcement
+    // ...
+}
+In a multi-tool iteration the loop calls session.AddMessages(resultMessages). Over many iterations the session can silently grow past MaxMessages, defeating the memory bound entirely.
+
+B2 — Source ID collision within the same second
+Severity: High | internal/coreagent/agent.go:421
+
+
+ID: fmt.Sprintf("%s-%d", sourceType, time.Now().Unix()),
+Two sources of the same type registered within the same wall-clock second get identical IDs. The call to Sources.Create then likely fails with a unique-constraint error, but the error message will be cryptic. A UUID or crypto-random suffix is the correct approach.
+
+B3 — Error detection by string comparison in handleRefresh
+Severity: Medium | internal/api/server.go:387-389
+
+
+expectedErrMsg := fmt.Sprintf("source not found: %s", req.SourceID)
+if req.SourceID != "" && err.Error() == expectedErrMsg {
+Comparing err.Error() to an expected string is fragile. If the error message format in coreagent is ever changed or the error is wrapped, this silently falls through to a 500 instead of 404. Per go-standards, sentinel errors and errors.Is/errors.As should be used here.
+
+B4 — Security gap: cleanJoeDir is not symlink-resolved
+Severity: Medium (Security) | internal/safety/invariants.go:34-52
+
+IsPathAllowed resolves symlinks in the candidate path (cleanPath) via resolvePathSymlinks, but does not resolve them in cleanJoeDir:
+
+
+cleanJoeDir := filepath.Clean(joeDir)          // ← not symlink-resolved
+// ...
+cleanPath = resolvePathSymlinks(cleanPath)      // ← resolved
+
+if strings.HasPrefix(cleanPath, cleanJoeDir+...) { // comparison between resolved and unresolved
+If ~/.joe is itself a symlink (e.g. ~/.joe → /mnt/shared/joe-config), the resolved candidate path /mnt/shared/joe-config/safety-policy.yaml will not match the unresolved cleanJoeDir = /home/alice/.joe, and the self-protection check passes. The fix is cleanJoeDir = resolvePathSymlinks(cleanJoeDir).
+
+B5 — GetNode/getEdgeBetween use == instead of errors.Is
+Severity: Low | internal/graph/sqlite.go:107, internal/graph/sqlite.go:456
+
+
+if err == sql.ErrNoRows {   // ← should be errors.Is(err, sql.ErrNoRows)
+The Go standard since 1.13 requires errors.Is for all sentinel error comparisons to correctly handle wrapped errors. If any database driver or middleware wraps sql.ErrNoRows, these checks silently fall through to the generic error path.
+
+B6 — Non-deterministic tool Description() and allowedKeys() output
+Severity: Low | internal/tools/local/runcmd/runcmd.go:70-75, internal/tools/local/runcmd/subcommands.go:160-165
+
+Both functions iterate over maps without sorting:
+
+
+for cmd := range t.allowedCommands {  // random order
+    allowedList = append(allowedList, cmd)
+}
+The LLM sees a different tool description ordering on each process restart. Error messages for denied subcommands also have non-deterministic allowed-list text. Both should call sort.Strings before use.
+
+2. DRY Violations
+D1 — Handler delegation creates throwaway Server instances (14 sites)
+Severity: High | internal/api/server.go:204-315
+
+Every method on sourceHandler, k8sHandler, gitHandler, and awsHandler reconstructs an ephemeral Server to call the real implementation:
+
+
+func (h *sourceHandler) handleList(w http.ResponseWriter, r *http.Request) {
+    (&Server{services: &core.Services{Store: h.store, Adapters: h.registry}}).handleListSources(w, r)
+}
+// ... 13 more identical-pattern delegations
+This is backwards delegation — the handler types exist to separate concerns, but they re-wrap into Server to call sibling files. The intermediate handler types add allocations and indirection with no benefit. The real implementations (handleListSources, handleK8sListResources, etc.) should be methods on the handler types directly, or the route-registration functions should pass a *Server reference to each sub-handler.
+
+D2 — Tilde expansion duplicated three times
+Severity: Medium | internal/config/config.go:112-118, internal/config/config.go:284-289, internal/tools/local/pathutil.go:10-22
+
+config.Load and config.Save each manually expand ~ using os.UserHomeDir(). local.ExpandPath already does this correctly. The config package cannot import tools/local (wrong layering direction), so the right fix is to move ExpandPath into a shared utility package (e.g. internal/fileutil or internal/paths) that both can import.
+
+D3 — Allowed-list building duplicated in runcmd
+Severity: Low | internal/tools/local/runcmd/runcmd.go:70-74, internal/tools/local/runcmd/runcmd.go:112-117
+
+Description() builds the sorted allowed-command list; Execute() builds the same list again for error messages. Extract a sortedAllowedList() []string helper.
+
+D4 — Silent metadata JSON errors in scanNodes/scanEdges
+Severity: Low | internal/graph/sqlite.go:492-494
+
+
+if err := json.Unmarshal([]byte(metadataStr), &node.Metadata); err != nil {
+    node.Metadata = map[string]any{} // silent discard
+}
+Metadata corruption is invisible in production. The same silent-discard pattern exists in getEdgeBetween. A slog.Warn with the node ID and error should be added, consistent with the structured-logging standard.
+
+3. Go Standards Violations
+G1 — config package imports llm/claude directly
+Severity: Medium | internal/config/config.go:12
+
+
+import "github.com/jaimegago/joe/internal/llm/claude"
+The config package then uses claude.DefaultModel as a default. This couples the configuration layer to a specific provider implementation, violating the go-standards principle of "interfaces at point of use / infrastructure implements them." If Gemini becomes the default, a new import is required. The constant claude.DefaultModel should either be defined in config's own constants.go or the default moved to llmfactory.
+
+G2 — IsInvariantViolation uses type assertion instead of errors.As
+Severity: Medium | internal/safety/invariants.go:130-133
+
+
+func IsInvariantViolation(err error) bool {
+    _, ok := err.(*InvariantViolationError)
+    return ok
+}
+If an InvariantViolationError is ever wrapped with %w, this returns false. Per go-standards, use errors.As:
+
+
+func IsInvariantViolation(err error) bool {
+    var e *InvariantViolationError
+    return errors.As(err, &e)
+}
+G3 — context.Background() created inside session methods
+Severity: Low | internal/useragent/session.go:51, internal/useragent/session.go:68, internal/useragent/session.go:99
+
+
+func (s *Session) AddMessage(message llm.Message) {
+    s.Messages = append(s.Messages, message)
+    s.metrics.RecordSessionMessage(context.Background(), message.Role) // ← discards trace context
+The caller (Agent.Run) has a live context.Context with span information. By constructing context.Background() inside these methods, the observability chain is broken and span-linked metrics won't correlate with the parent request. The methods should accept a ctx context.Context parameter.
+
+G4 — Inconsistent home directory resolution (security-in-layers gap)
+Severity: Medium (Security/Design) | Multiple files
+
+The codebase uses two different mechanisms for home directory resolution with different security properties:
+
+Location	Method	HOME-bypass susceptible
+internal/paths/secure_unix.go	user.Current() (reads /etc/passwd)	No
+internal/tools/local/pathutil.go	os.UserHomeDir()	Yes
+internal/config/config.go	os.UserHomeDir()	Yes
+internal/adapters/git/git.go	os.UserHomeDir()	Yes
+The security rationale in docs/security-in-layers.md explains why user.Current() is required. repoDir in the git adapter (line 143) clones repos to ~/.joe/repos/ but uses the HOME-susceptible method, meaning the clone target can be redirected. config.Load similarly reads the config via os.UserHomeDir(). Only paths.JoeDirPath() and IsPathAllowed use the secure method. All internal path resolution should go through paths.JoeDirPath() or a similar secure helper.
+
+G5 — isCaseInsensitiveFS() called five times per path check
+Severity: Low | internal/safety/invariants.go:39,47,62,149,155
+
+runtime.GOOS is a constant set at link time. Calling isCaseInsensitiveFS() five times per IsPathAllowed invocation is harmless but reflects redundant computation. A package-level var caseInsensitiveFS = runtime.GOOS == "darwin" || runtime.GOOS == "windows" would express the intent more clearly.
+
+4. Architecture / Design Observations
+A1 — GraphUpdateNodeTool uses AddNode as an update mechanism
+Severity: Low | internal/coreagent/agent.go:342
+
+
+// Update the node (this is simplified - real implementation might need an UpdateNode method)
+err = t.services.Graph.AddNode(ctx, *existingNode)
+The comment acknowledges the hack. The GraphStore interface should expose an UpdateNode or the AddNode upsert behaviour should be explicitly documented as the canonical update path. As written, calling AddNode on an existing node relies on the SQLite ON CONFLICT ... DO UPDATE semantics, which is correct but implicit.
+
+A2 — Path() cycle detection via LIKE '%node_id%' is substring-fragile
+Severity: Medium | internal/graph/sqlite.go:246
+
+
+AND p.path NOT LIKE '%' || next_node || '%'
+If node ID "a" has been visited, this pattern would also block traversal to node ID "ab" or "ba", because LIKE '%a%' matches any string containing "a". For node IDs that are substrings of other node IDs, the path-finding algorithm would silently skip valid nodes or terminate early. Using delimited IDs in the path string (e.g. ,a,ab, and checking NOT LIKE '%,a,%') would eliminate false positives.
+
+A3 — AddMessages bulk-add breaks message-limit semantics (design)
+Severity: Medium | Related to B1
+
+Even if B1 is fixed by adding pruning to AddMessages, the current pruning strategy in AddMessage (keep MaxMessages/2 on overflow) can cause thrashing. When the limit is hit, half the history is dropped, then immediately refilled. A sliding-window approach (keep last N messages) with a single check after all batch messages are added would be more predictable.
+
+5. Summary
+Category	Count	Highest Severity
+Bugs	6	High
+DRY Violations	4	High
+Go Standards	5	Medium
+Architecture	3	Medium
+Top priorities:
+
+[B1] Fix AddMessages to enforce MaxMessages — currently breaks the session memory bound on every multi-tool iteration.
+[B4] Symlink-resolve cleanJoeDir in IsPathAllowed — actual security bypass when ~/.joe is a symlink.
+[D1] Eliminate throwaway &Server{...} delegation pattern — 14 identical sites of unnecessary indirection.
+[B2] Replace Unix-timestamp source IDs with UUIDs — inevitable collision on any rapid registration.
+[G1] Remove claude import from config package — breaks provider-agnostic design goal.
+[G4] Standardise on paths.JoeDirPath() (secure) for all internal path resolution — git.go and config.go use the HOME-bypass-susceptible os.UserHomeDir().

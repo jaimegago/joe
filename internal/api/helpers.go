@@ -10,6 +10,7 @@ import (
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 type apiError struct {
@@ -18,10 +19,7 @@ type apiError struct {
 	Details map[string]any `json:"details,omitempty"`
 }
 
-var (
-	errSourceNotFound    = errors.New("source not found")
-	errInvalidSourceType = errors.New("source is not expected adapter type")
-)
+var errInvalidSourceType = errors.New("source is not expected adapter type")
 
 func writeError(w http.ResponseWriter, status int, code, message string, details ...map[string]any) {
 	var payloadDetails map[string]any
@@ -49,7 +47,7 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, errSourceNotFound) {
+	if errors.Is(err, store.ErrSourceNotFound) {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source not found: %s", sourceID), map[string]any{
 			"source_id": sourceID,
 		})
@@ -84,7 +82,7 @@ func (s *Server) getAdapter(sourceID string) (adapters.Adapter, error) {
 	adapter, err := s.services.Adapters.Get(sourceID)
 	if err != nil {
 		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return nil, fmt.Errorf("%w: %s", errSourceNotFound, sourceID)
+			return nil, fmt.Errorf("%w: %s", store.ErrSourceNotFound, sourceID)
 		}
 		return nil, err
 	}

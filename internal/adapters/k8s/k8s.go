@@ -50,7 +50,7 @@ func NewWithClients(dynClient dynamic.Interface, clientset kubernetes.Interface)
 }
 
 // Connect establishes a connection to the K8s cluster.
-func (a *Adapter) Connect(source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

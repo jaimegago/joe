@@ -184,7 +184,7 @@ func TestHandleRefresh(t *testing.T) {
 		{
 			name:           "source not found",
 			payload:        map[string]string{"source_id": "nonexistent"},
-			agent:          &mockCoreAgent{refreshSourceErr: fmt.Errorf("source not found: nonexistent")},
+			agent:          &mockCoreAgent{refreshSourceErr: fmt.Errorf("%w: nonexistent", store.ErrSourceNotFound)},
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "source 'nonexistent' not found",
 		},

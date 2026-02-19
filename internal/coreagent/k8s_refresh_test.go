@@ -20,7 +20,7 @@ type fakeK8sAdapter struct {
 	items map[string][]unstructured.Unstructured
 }
 
-func (f *fakeK8sAdapter) Connect(_ store.Source) error { return nil }
+func (f *fakeK8sAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
 
 func (f *fakeK8sAdapter) Disconnect() error { return nil }
 

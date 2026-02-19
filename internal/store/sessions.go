@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,7 +51,7 @@ func (r *sqlSessionRepository) Get(ctx context.Context, id string) (session *Ses
 	err = r.db.QueryRowContext(ctx, query, id).Scan(
 		&s.ID, &s.StartedAt, &endedAt, &summary, &metadata,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -58,8 +59,7 @@ func (r *sqlSessionRepository) Get(ctx context.Context, id string) (session *Ses
 	}
 
 	if endedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, endedAt.String)
-		s.EndedAt = &t
+		s.EndedAt = parseTimeOrWarn(endedAt.String, "sessions.ended_at")
 	}
 	if summary.Valid {
 		s.Summary = summary.String
@@ -155,8 +155,7 @@ func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) (sessi
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		if endedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, endedAt.String)
-			s.EndedAt = &t
+			s.EndedAt = parseTimeOrWarn(endedAt.String, "sessions.ended_at")
 		}
 		if summary.Valid {
 			s.Summary = summary.String

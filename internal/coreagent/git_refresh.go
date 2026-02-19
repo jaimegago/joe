@@ -20,7 +20,7 @@ func (r *Refresher) refreshGitSource(ctx context.Context, source *store.Source, 
 
 	now := time.Now()
 
-	repoInfo, err := r.buildGitRepoNode(source.ID, adapter, now)
+	repoInfo, err := r.buildGitRepoNode(ctx, source.ID, adapter, now)
 	if err != nil {
 		return fmt.Errorf("build git repo node: %w", err)
 	}
@@ -71,7 +71,7 @@ type gitRepoInfo struct {
 	metadata map[string]any
 }
 
-func (r *Refresher) buildGitRepoNode(sourceID string, adapter git.GitAdapter, now time.Time) (gitRepoInfo, error) {
+func (r *Refresher) buildGitRepoNode(ctx context.Context, sourceID string, adapter git.GitAdapter, now time.Time) (gitRepoInfo, error) {
 	metadata := map[string]any{}
 
 	info := gitRepoInfo{
@@ -84,7 +84,7 @@ func (r *Refresher) buildGitRepoNode(sourceID string, adapter git.GitAdapter, no
 		metadata: metadata,
 	}
 
-	logs, err := adapter.Log(context.Background(), 1)
+	logs, err := adapter.Log(ctx, 1)
 	if err == nil && len(logs) > 0 {
 		latest := logs[0]
 		metadata["head_commit"] = latest.Hash

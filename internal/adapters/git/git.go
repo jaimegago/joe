@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -66,7 +66,7 @@ func NewWithRepo(repo *gogit.Repository, repoPath string) *Adapter {
 	}
 }
 
-func (a *Adapter) Connect(source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -140,12 +140,12 @@ func (a *Adapter) Status() adapters.Status {
 
 // repoDir returns a deterministic local path for cloning.
 func repoDir(repoURL string) (string, error) {
-	home, err := os.UserHomeDir()
+	joeDir, err := paths.JoeDirPath()
 	if err != nil {
-		return "", fmt.Errorf("get home dir: %w", err)
+		return "", fmt.Errorf("get joe dir: %w", err)
 	}
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(repoURL)))
-	return filepath.Join(home, ".joe", "repos", hash[:16]), nil
+	return filepath.Join(joeDir, "repos", hash[:16]), nil
 }
 
 // buildAuth creates a transport.AuthMethod from config.

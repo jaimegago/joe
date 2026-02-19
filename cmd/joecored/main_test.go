@@ -35,7 +35,7 @@ func (f *fakeLLMAdapter) Embed(ctx context.Context, text string) ([]float32, err
 
 type fakeSourceAdapter struct{}
 
-func (f *fakeSourceAdapter) Connect(source store.Source) error {
+func (f *fakeSourceAdapter) Connect(_ context.Context, source store.Source) error {
 	return nil
 }
 

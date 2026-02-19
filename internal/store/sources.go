@@ -3,11 +3,15 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jaimegago/joe/internal/observability"
 )
+
+// ErrSourceNotFound is returned when a source cannot be found by ID.
+var ErrSourceNotFound = errors.New("source not found")
 
 // SourceRepository defines operations on sources.
 type SourceRepository interface {
@@ -66,7 +70,7 @@ func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Sourc
 		&s.ID, &s.Type, &s.Name, &config, &s.Status,
 		&lastSyncAt, &lastError, &s.CreatedAt, &s.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -75,8 +79,7 @@ func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Sourc
 
 	s.Config = config
 	if lastSyncAt.Valid {
-		t, _ := time.Parse(time.RFC3339, lastSyncAt.String)
-		s.LastSyncAt = &t
+		s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "sources.last_sync_at")
 	}
 	if lastError.Valid {
 		s.LastError = lastError.String
@@ -135,8 +138,7 @@ func scanSources(rows *sql.Rows) ([]*Source, error) {
 
 		s.Config = config
 		if lastSyncAt.Valid {
-			t, _ := time.Parse(time.RFC3339, lastSyncAt.String)
-			s.LastSyncAt = &t
+			s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "sources.last_sync_at")
 		}
 		if lastError.Valid {
 			s.LastError = lastError.String
