@@ -198,23 +198,23 @@ func TestAWSIntegration(t *testing.T) {
 			t.Fatal("result should be a map")
 		}
 
-		instances, ok := resultMap["instances"].([]awsadapter.EC2Instance)
-		if !ok {
-			t.Fatal("instances field should be a slice of EC2Instance")
-		}
+		   instances, ok := resultMap["instances"].([]*awsadapter.EC2Instance)
+		   if !ok {
+			   t.Fatal("instances field should be a slice of *EC2Instance")
+		   }
 
-		if len(instances) != 1 {
-			t.Errorf("expected 1 instance, got %d", len(instances))
-		}
+		   if len(instances) != 1 {
+			   t.Errorf("expected 1 instance, got %d", len(instances))
+		   }
 
-		instance := instances[0]
-		if instance.InstanceID != "i-1234567890abcdef0" {
-			t.Errorf("instance ID: got %q, want %q", instance.InstanceID, "i-1234567890abcdef0")
-		}
+		   instance := instances[0]
+		   if instance.InstanceID != "i-1234567890abcdef0" {
+			   t.Errorf("instance ID: got %q, want %q", instance.InstanceID, "i-1234567890abcdef0")
+		   }
 
-		if instance.State != "running" {
-			t.Errorf("instance state: got %q, want %q", instance.State, "running")
-		}
+		   if instance.State != "running" {
+			   t.Errorf("instance state: got %q, want %q", instance.State, "running")
+		   }
 	})
 
 	t.Run("QueryEKSviaTool", func(t *testing.T) {
@@ -234,10 +234,10 @@ func TestAWSIntegration(t *testing.T) {
 			t.Fatal("result should be a map")
 		}
 
-		clusters, ok := resultMap["clusters"].([]awsadapter.EKSCluster)
-		if !ok {
-			t.Fatal("clusters field should be a slice of EKSCluster")
-		}
+		   clusters, ok := resultMap["clusters"].([]*awsadapter.EKSCluster)
+		   if !ok {
+			   t.Fatal("clusters field should be a slice of *EKSCluster")
+		   }
 
 		if len(clusters) != 1 {
 			t.Errorf("expected 1 cluster, got %d", len(clusters))

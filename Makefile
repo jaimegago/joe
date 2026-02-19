@@ -38,14 +38,17 @@ test-unit:
 
 # Run integration tests with mocks (no external services required)
 test-integration:
-	go test -v -tags=integration ./test/integration/... -timeout 2m
+	go test -v -failfast -tags=integration ./test/integration/... -timeout 2m
 
 # Run end-to-end tests (requires building binaries)
 test-e2e: build
 	go test -v -tags=e2e ./test/e2e/... -timeout 5m
 
 # Run all test types sequentially
-test-all: test-unit test-integration test-e2e
+test-all:
+	go test -v -short -failfast $(shell go list ./internal/...) && \
+	go test -v -failfast -tags=integration ./test/integration/... -timeout 2m && \
+	go test -v -failfast -tags=e2e ./test/e2e/... -timeout 5m
 
 # Run tests with coverage
 test-coverage:
