@@ -29,8 +29,11 @@ func NewMockGitAdapter() *MockGitAdapter {
 	return &MockGitAdapter{connected: true}
 }
 
-func (m *MockGitAdapter) Connect(source store.Source) error { m.connected = true; return nil }
-func (m *MockGitAdapter) Disconnect() error                 { m.connected = false; return nil }
+func (m *MockGitAdapter) Connect(_ context.Context, _ store.Source) error {
+	m.connected = true
+	return nil
+}
+func (m *MockGitAdapter) Disconnect() error { m.connected = false; return nil }
 func (m *MockGitAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: m.connected}
 }

@@ -1,6 +1,7 @@
 package useragent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestSession_AddMessage(t *testing.T) {
 		Content: "Hello",
 	}
 
-	session.AddMessage(msg)
+	session.AddMessage(context.Background(), msg)
 
 	if len(session.Messages) != 1 {
 		t.Errorf("AddMessage() resulted in %d messages, want 1", len(session.Messages))
@@ -55,7 +56,7 @@ func TestSession_AddMessages(t *testing.T) {
 		{Role: "user", Content: "Message 3"},
 	}
 
-	session.AddMessages(messages)
+	session.AddMessages(context.Background(), messages)
 
 	if len(session.Messages) != 3 {
 		t.Errorf("AddMessages() resulted in %d messages, want 3", len(session.Messages))
@@ -73,7 +74,7 @@ func TestSession_AddMessages(t *testing.T) {
 
 func TestSession_AddMessages_Empty(t *testing.T) {
 	session := NewSession(nil)
-	session.AddMessages([]llm.Message{})
+	session.AddMessages(context.Background(), []llm.Message{})
 
 	if len(session.Messages) != 0 {
 		t.Errorf("AddMessages() with empty slice resulted in %d messages, want 0", len(session.Messages))
@@ -83,9 +84,9 @@ func TestSession_AddMessages_Empty(t *testing.T) {
 func TestSession_AddMultipleTimes(t *testing.T) {
 	session := NewSession(nil)
 
-	session.AddMessage(llm.Message{Role: "user", Content: "First"})
-	session.AddMessage(llm.Message{Role: "assistant", Content: "Second"})
-	session.AddMessages([]llm.Message{
+	session.AddMessage(context.Background(), llm.Message{Role: "user", Content: "First"})
+	session.AddMessage(context.Background(), llm.Message{Role: "assistant", Content: "Second"})
+	session.AddMessages(context.Background(), []llm.Message{
 		{Role: "user", Content: "Third"},
 		{Role: "assistant", Content: "Fourth"},
 	})
@@ -113,31 +114,64 @@ func TestSession_AddMessage_Pruning(t *testing.T) {
 	session.MaxMessages = 20
 
 	// Add enough to trigger pruning (>20)
-	for i := 0; i < 21; i++ {
-		session.AddMessage(llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
+	for i := 0; i < 25; i++ {
+		session.AddMessage(context.Background(), llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
 	}
 
-	// After pruning: keepCount = 20/2 = 10, which is >= 10 minimum, so keep 10
-	if len(session.Messages) != 10 {
-		t.Errorf("session has %d messages after pruning, want 10", len(session.Messages))
+	// Sliding window: keeps last 20 messages
+	if len(session.Messages) != 20 {
+		t.Errorf("session has %d messages after pruning, want 20", len(session.Messages))
 	}
 	// The most recent messages should be kept
-	if session.Messages[len(session.Messages)-1].Content != "msg20" {
-		t.Errorf("last message = %q, want msg20", session.Messages[len(session.Messages)-1].Content)
+	if session.Messages[len(session.Messages)-1].Content != "msg24" {
+		t.Errorf("last message = %q, want msg24", session.Messages[len(session.Messages)-1].Content)
+	}
+	// Oldest kept message should be msg5 (25-20=5)
+	if session.Messages[0].Content != "msg5" {
+		t.Errorf("first message = %q, want msg5", session.Messages[0].Content)
 	}
 }
 
 func TestSession_AddMessage_PruningSmallMax(t *testing.T) {
 	session := NewSession(nil)
-	session.MaxMessages = 10 // keepCount = 5, but min=10, so keeps 10
+	session.MaxMessages = 10
 
-	for i := 0; i < 11; i++ {
-		session.AddMessage(llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
+	for i := 0; i < 15; i++ {
+		session.AddMessage(context.Background(), llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
 	}
 
-	// keepCount = 10/2 = 5 < 10, so keepCount = 10; len=11-10=1 from front kept → 10 msgs
+	// Sliding window: keeps last 10 messages
 	if len(session.Messages) != 10 {
 		t.Errorf("session has %d messages, want 10", len(session.Messages))
+	}
+	if session.Messages[0].Content != "msg5" {
+		t.Errorf("first message = %q, want msg5", session.Messages[0].Content)
+	}
+}
+
+func TestSession_AddMessages_Pruning(t *testing.T) {
+	session := NewSession(nil)
+	session.MaxMessages = 10
+
+	// Add 5 initial messages
+	for i := 0; i < 5; i++ {
+		session.AddMessage(context.Background(), llm.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)})
+	}
+
+	// Bulk-add 8 more (total 13, exceeds 10)
+	bulk := make([]llm.Message, 8)
+	for i := 0; i < 8; i++ {
+		bulk[i] = llm.Message{Role: "user", Content: fmt.Sprintf("bulk%d", i)}
+	}
+	session.AddMessages(context.Background(), bulk)
+
+	// Sliding window: keeps last 10
+	if len(session.Messages) != 10 {
+		t.Errorf("session has %d messages after bulk add, want 10", len(session.Messages))
+	}
+	// Last message should be bulk7
+	if session.Messages[len(session.Messages)-1].Content != "bulk7" {
+		t.Errorf("last message = %q, want bulk7", session.Messages[len(session.Messages)-1].Content)
 	}
 }
 
@@ -145,8 +179,8 @@ func TestSession_Clear(t *testing.T) {
 	session := NewSession(nil)
 
 	// Add some messages
-	session.AddMessage(llm.Message{Role: "user", Content: "Message 1"})
-	session.AddMessage(llm.Message{Role: "assistant", Content: "Message 2"})
+	session.AddMessage(context.Background(), llm.Message{Role: "user", Content: "Message 1"})
+	session.AddMessage(context.Background(), llm.Message{Role: "assistant", Content: "Message 2"})
 
 	if len(session.Messages) != 2 {
 		t.Fatalf("Session has %d messages before clear, want 2", len(session.Messages))
@@ -160,7 +194,7 @@ func TestSession_Clear(t *testing.T) {
 	}
 
 	// Verify we can add messages after clearing
-	session.AddMessage(llm.Message{Role: "user", Content: "New message"})
+	session.AddMessage(context.Background(), llm.Message{Role: "user", Content: "New message"})
 
 	if len(session.Messages) != 1 {
 		t.Errorf("Session has %d messages after clear and add, want 1", len(session.Messages))

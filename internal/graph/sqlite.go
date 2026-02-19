@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -23,6 +25,9 @@ func NewSQLiteStore(db *sql.DB, metrics *observability.Metrics) *SQLiteStore {
 	return &SQLiteStore{db: db, metrics: observability.EnsureMetrics(metrics)}
 }
 
+// AddNode performs an upsert: inserts a new node or updates an existing one.
+// On conflict (same ID), it updates type, source_id, metadata, and last_seen
+// while preserving the original first_seen timestamp.
 func (s *SQLiteStore) AddNode(ctx context.Context, node Node) (err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "add_node", time.Since(start), err) }()
@@ -104,7 +109,7 @@ func (s *SQLiteStore) GetNode(ctx context.Context, id string) (node *Node, err e
 		&result.ID, &result.Type, &sourceID, &metadataStr,
 		&result.FirstSeen, &result.LastSeen,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNodeNotFound
 	}
 	if err != nil {
@@ -116,6 +121,7 @@ func (s *SQLiteStore) GetNode(ctx context.Context, id string) (node *Node, err e
 	}
 
 	if err := json.Unmarshal([]byte(metadataStr), &result.Metadata); err != nil {
+		slog.Warn("failed to unmarshal node metadata", "node_id", result.ID, "error", err)
 		result.Metadata = map[string]any{}
 	}
 
@@ -233,17 +239,17 @@ func (s *SQLiteStore) Path(ctx context.Context, from, to string) (edges []Edge, 
 
 	pathQuery := `
 		WITH RECURSIVE pathfinder(current, target, path, depth) AS (
-			SELECT ?, ?, ?, 0
+			SELECT ?, ?, ',' || ? || ',', 0
 			UNION ALL
 			SELECT
 				CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END,
 				p.target,
-				p.path || ',' || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END,
+				p.path || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END || ',',
 				p.depth + 1
 			FROM graph_edges e
 			JOIN pathfinder p ON (e.from_node = p.current OR e.to_node = p.current)
 			WHERE p.depth < 10
-				AND p.path NOT LIKE '%' || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END || '%'
+				AND p.path NOT LIKE '%,' || CASE WHEN e.from_node = p.current THEN e.to_node ELSE e.from_node END || ',%'
 				AND p.current != p.target
 		)
 		SELECT path FROM pathfinder
@@ -254,15 +260,16 @@ func (s *SQLiteStore) Path(ctx context.Context, from, to string) (edges []Edge, 
 
 	var pathStr string
 	err = s.db.QueryRowContext(ctx, pathQuery, from, to, from).Scan(&pathStr)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // No path found
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find path %s->%s: %w", from, to, err)
 	}
 
-	// Parse path string into node sequence and fetch edges along the path
-	pathNodes := strings.Split(pathStr, ",")
+	// Parse path string into node sequence and fetch edges along the path.
+	// The path format uses delimiter-wrapped IDs: ",from,node1,to," — trim edges.
+	pathNodes := strings.Split(strings.Trim(pathStr, ","), ",")
 	edges = make([]Edge, 0, len(pathNodes))
 	for i := 0; i < len(pathNodes)-1; i++ {
 		edge, err := s.getEdgeBetween(ctx, pathNodes[i], pathNodes[i+1])
@@ -453,7 +460,7 @@ func (s *SQLiteStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, e
 		&edge.From, &edge.To, &edge.Relation,
 		&confidence, &source, &edgeContext, &edge.CreatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -490,6 +497,7 @@ func scanNodes(rows *sql.Rows) ([]Node, error) {
 		}
 
 		if err := json.Unmarshal([]byte(metadataStr), &node.Metadata); err != nil {
+			slog.Warn("failed to unmarshal node metadata", "node_id", node.ID, "error", err)
 			node.Metadata = map[string]any{}
 		}
 

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observability"
@@ -33,10 +32,10 @@ func New(services *core.Services) *Server {
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerStatusRoutes(mux, apiPrefix)
 	s.registerGraphRoutes(mux, apiPrefix, s.services.Graph)
-	s.registerSourceRoutes(mux, apiPrefix, s.services.Store, s.services.Adapters)
-	s.registerK8sRoutes(mux, apiPrefix, s.services.Adapters, s.services.Metrics)
-	s.registerGitRoutes(mux, apiPrefix, s.services.Adapters, s.services.Metrics)
-	s.registerAWSRoutes(mux, apiPrefix, s.services.Adapters, s.services.Metrics)
+	s.registerSourceRoutes(mux, apiPrefix)
+	s.registerK8sRoutes(mux, apiPrefix)
+	s.registerGitRoutes(mux, apiPrefix)
+	s.registerAWSRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
 	s.registerControlRoutes(mux, apiPrefix)
 }
@@ -56,9 +55,8 @@ func (s *Server) registerGraphRoutes(mux *http.ServeMux, prefix string, graphSto
 }
 
 // registerSourceRoutes registers source management routes
-// Requires: store.Store for persistence, adapters.Registry for validation
-func (s *Server) registerSourceRoutes(mux *http.ServeMux, prefix string, storeInst *store.Store, registry *adapters.Registry) {
-	handler := &sourceHandler{store: storeInst, registry: registry}
+func (s *Server) registerSourceRoutes(mux *http.ServeMux, prefix string) {
+	handler := &sourceHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("GET %s/sources", prefix), handler.handleList)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sources", prefix), handler.handleCreate)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sources/{id}", prefix), handler.handleGet)
@@ -66,18 +64,16 @@ func (s *Server) registerSourceRoutes(mux *http.ServeMux, prefix string, storeIn
 }
 
 // registerK8sRoutes registers Kubernetes resource routes
-// Requires: adapters.Registry to lookup K8s adapters, observability.Metrics for telemetry
-func (s *Server) registerK8sRoutes(mux *http.ServeMux, prefix string, registry *adapters.Registry, metrics *observability.Metrics) {
-	handler := &k8sHandler{registry: registry, metrics: metrics}
+func (s *Server) registerK8sRoutes(mux *http.ServeMux, prefix string) {
+	handler := &k8sHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/resources", prefix), handler.handleListResources)
 	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/resources/{resource}/{namespace}/{name}", prefix), handler.handleGetResource)
 	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/logs/{namespace}/{pod}", prefix), handler.handleGetLogs)
 }
 
 // registerGitRoutes registers Git repository routes
-// Requires: adapters.Registry to lookup Git adapters, observability.Metrics for telemetry
-func (s *Server) registerGitRoutes(mux *http.ServeMux, prefix string, registry *adapters.Registry, metrics *observability.Metrics) {
-	handler := &gitHandler{registry: registry, metrics: metrics}
+func (s *Server) registerGitRoutes(mux *http.ServeMux, prefix string) {
+	handler := &gitHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/file", prefix), handler.handleReadFile)
 	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/files", prefix), handler.handleListFiles)
 	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/log", prefix), handler.handleLog)
@@ -85,9 +81,8 @@ func (s *Server) registerGitRoutes(mux *http.ServeMux, prefix string, registry *
 }
 
 // registerAWSRoutes registers AWS resource routes
-// Requires: adapters.Registry to lookup AWS adapters, observability.Metrics for telemetry
-func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string, registry *adapters.Registry, metrics *observability.Metrics) {
-	handler := &awsHandler{registry: registry, metrics: metrics}
+func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string) {
+	handler := &awsHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/ec2/instances", prefix), handler.handleEC2ListInstances)
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/ec2/instances/{instanceID}", prefix), handler.handleEC2GetInstance)
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/eks/clusters", prefix), handler.handleEKSListClusters)
@@ -197,121 +192,98 @@ func (h *graphHandler) handleSummary(w http.ResponseWriter, r *http.Request) {
 
 // sourceHandler handles source management requests
 type sourceHandler struct {
-	store    *store.Store
-	registry *adapters.Registry
+	server *Server
 }
 
 func (h *sourceHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in sources.go
-	(&Server{services: &core.Services{Store: h.store, Adapters: h.registry}}).handleListSources(w, r)
+	h.server.handleListSources(w, r)
 }
 
 func (h *sourceHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in sources.go
-	(&Server{services: &core.Services{Store: h.store, Adapters: h.registry}}).handleCreateSource(w, r)
+	h.server.handleCreateSource(w, r)
 }
 
 func (h *sourceHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in sources.go
-	(&Server{services: &core.Services{Store: h.store, Adapters: h.registry}}).handleGetSource(w, r)
+	h.server.handleGetSource(w, r)
 }
 
 func (h *sourceHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in sources.go
-	(&Server{services: &core.Services{Store: h.store, Adapters: h.registry}}).handleDeleteSource(w, r)
+	h.server.handleDeleteSource(w, r)
 }
 
 // k8sHandler handles Kubernetes resource requests
 type k8sHandler struct {
-	registry *adapters.Registry
-	metrics  *observability.Metrics
+	server *Server
 }
 
 func (h *k8sHandler) handleListResources(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in k8s.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleK8sListResources(w, r)
+	h.server.handleK8sListResources(w, r)
 }
 
 func (h *k8sHandler) handleGetResource(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in k8s.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleK8sGetResource(w, r)
+	h.server.handleK8sGetResource(w, r)
 }
 
 func (h *k8sHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in k8s.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleK8sGetLogs(w, r)
+	h.server.handleK8sGetLogs(w, r)
 }
 
 // gitHandler handles Git repository requests
 type gitHandler struct {
-	registry *adapters.Registry
-	metrics  *observability.Metrics
+	server *Server
 }
 
 func (h *gitHandler) handleReadFile(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in git.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleGitReadFile(w, r)
+	h.server.handleGitReadFile(w, r)
 }
 
 func (h *gitHandler) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in git.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleGitListFiles(w, r)
+	h.server.handleGitListFiles(w, r)
 }
 
 func (h *gitHandler) handleLog(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in git.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleGitLog(w, r)
+	h.server.handleGitLog(w, r)
 }
 
 func (h *gitHandler) handleDiff(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in git.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleGitDiff(w, r)
+	h.server.handleGitDiff(w, r)
 }
 
 // awsHandler handles AWS resource requests
 type awsHandler struct {
-	registry *adapters.Registry
-	metrics  *observability.Metrics
+	server *Server
 }
 
 func (h *awsHandler) handleEC2ListInstances(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSEC2ListInstances(w, r)
+	h.server.handleAWSEC2ListInstances(w, r)
 }
 
 func (h *awsHandler) handleEC2GetInstance(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSEC2GetInstance(w, r)
+	h.server.handleAWSEC2GetInstance(w, r)
 }
 
 func (h *awsHandler) handleEKSListClusters(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSEKSListClusters(w, r)
+	h.server.handleAWSEKSListClusters(w, r)
 }
 
 func (h *awsHandler) handleEKSGetCluster(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSEKSGetCluster(w, r)
+	h.server.handleAWSEKSGetCluster(w, r)
 }
 
 func (h *awsHandler) handleRDSListInstances(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSRDSListInstances(w, r)
+	h.server.handleAWSRDSListInstances(w, r)
 }
 
 func (h *awsHandler) handleRDSGetInstance(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSRDSGetInstance(w, r)
+	h.server.handleAWSRDSGetInstance(w, r)
 }
 
 func (h *awsHandler) handleVPCListVPCs(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSVPCListVPCs(w, r)
+	h.server.handleAWSVPCListVPCs(w, r)
 }
 
 func (h *awsHandler) handleVPCGetVPC(w http.ResponseWriter, r *http.Request) {
-	// Delegate to existing implementation in aws.go
-	(&Server{services: &core.Services{Adapters: h.registry, Metrics: h.metrics}}).handleAWSVPCGetVPC(w, r)
+	h.server.handleAWSVPCGetVPC(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -384,8 +356,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		// Check if source not found
-		expectedErrMsg := fmt.Sprintf("source not found: %s", req.SourceID)
-		if req.SourceID != "" && err.Error() == expectedErrMsg {
+		if req.SourceID != "" && errors.Is(err, store.ErrSourceNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source '%s' not found", req.SourceID))
 			return
 		}

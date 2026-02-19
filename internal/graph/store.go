@@ -11,7 +11,10 @@ var ErrNodeNotFound = errors.New("node not found")
 
 // GraphStore is the interface for the graph database
 type GraphStore interface {
-	// AddNode adds a node to the graph
+	// AddNode adds or updates a node in the graph (upsert).
+	// If a node with the same ID already exists, its type, source_id,
+	// metadata, and last_seen fields are updated. The first_seen field
+	// is preserved from the original insert.
 	AddNode(ctx context.Context, node Node) error
 
 	// AddEdge adds an edge to the graph

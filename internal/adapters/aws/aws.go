@@ -182,7 +182,7 @@ func NewWithClients(ec2Client *ec2.Client, eksClient *eks.Client, rdsClient *rds
 }
 
 // Connect establishes a connection to AWS
-func (a *Adapter) Connect(source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -203,7 +203,7 @@ func (a *Adapter) Connect(source store.Source) error {
 	}
 	a.config = cfg
 
-	awsConfig, err := buildAWSConfig(context.Background(), cfg)
+	awsConfig, err := buildAWSConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("build AWS config: %w", err)
 	}
@@ -216,7 +216,7 @@ func (a *Adapter) Connect(source store.Source) error {
 
 	// Verify connectivity by calling STS GetCallerIdentity
 	stsClient := sts.NewFromConfig(awsConfig)
-	_, err = stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
+	_, err = stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return fmt.Errorf("verify AWS connectivity: %w", err)
 	}

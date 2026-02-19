@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jaimegago/joe/internal/llm/claude"
+	"github.com/jaimegago/joe/internal/paths"
 	"gopkg.in/yaml.v3"
 )
 
@@ -110,11 +110,11 @@ func Load(configPath string) (*Config, error) {
 
 	// Expand home directory if path starts with ~
 	if len(configPath) > 0 && configPath[0] == '~' {
-		home, err := os.UserHomeDir()
+		expanded, err := paths.ExpandPath(configPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
+			return nil, fmt.Errorf("failed to expand config path: %w", err)
 		}
-		configPath = filepath.Join(home, configPath[1:])
+		configPath = expanded
 	}
 
 	// Track config source
@@ -168,7 +168,7 @@ func defaultConfig() *Config {
 		LLM: LLMConfig{
 			Current: defaultLLMCurrent,
 			Available: map[string]ModelConfig{
-				defaultLLMCurrent: {Provider: providerClaude, Model: claude.DefaultModel},
+				defaultLLMCurrent: {Provider: providerClaude, Model: defaultLLMModel},
 			},
 		},
 		Server: ServerConfig{
@@ -282,11 +282,11 @@ func applyEnvOverrides(cfg *Config) []string {
 func Save(cfg *Config, path string) error {
 	// Expand home directory if path starts with ~
 	if len(path) > 0 && path[0] == '~' {
-		home, err := os.UserHomeDir()
+		expanded, err := paths.ExpandPath(path)
 		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
+			return fmt.Errorf("failed to expand config path: %w", err)
 		}
-		path = filepath.Join(home, path[1:])
+		path = expanded
 	}
 
 	// Ensure directory exists

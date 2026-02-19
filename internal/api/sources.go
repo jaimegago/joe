@@ -96,31 +96,32 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to connect the adapter before saving
+	ctx := r.Context()
 	switch req.Type {
 	case store.SourceTypeAWS:
 		adapter := awsadapter.New()
-		if err := adapter.Connect(*source); err != nil {
+		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect aws source", "failed to connect to AWS")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
 	case store.SourceTypeAzure:
 		adapter := azureadapter.New()
-		if err := adapter.Connect(*source); err != nil {
+		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect azure source", "failed to connect to Azure")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
 	case store.SourceTypeKubernetes:
 		adapter := k8s.New()
-		if err := adapter.Connect(*source); err != nil {
+		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect kubernetes source", "failed to connect to cluster")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
 	case store.SourceTypeGit:
 		adapter := gitadapter.New()
-		if err := adapter.Connect(*source); err != nil {
+		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect git source", "failed to connect to git repo")
 			return
 		}

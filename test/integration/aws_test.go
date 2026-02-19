@@ -26,8 +26,8 @@ type MockAWSAdapter struct {
 	error     error
 }
 
-func (m *MockAWSAdapter) Connect(source store.Source) error { return m.error }
-func (m *MockAWSAdapter) Disconnect() error                 { return nil }
+func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Source) error { return m.error }
+func (m *MockAWSAdapter) Disconnect() error                               { return nil }
 func (m *MockAWSAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: m.error == nil, Message: "Mock AWS adapter"}
 }

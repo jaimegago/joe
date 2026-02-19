@@ -27,8 +27,11 @@ func NewMockK8sAdapter() *MockK8sAdapter {
 	return &MockK8sAdapter{connected: true}
 }
 
-func (m *MockK8sAdapter) Connect(source store.Source) error { m.connected = true; return nil }
-func (m *MockK8sAdapter) Disconnect() error                 { m.connected = false; return nil }
+func (m *MockK8sAdapter) Connect(_ context.Context, _ store.Source) error {
+	m.connected = true
+	return nil
+}
+func (m *MockK8sAdapter) Disconnect() error { m.connected = false; return nil }
 func (m *MockK8sAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: m.connected}
 }

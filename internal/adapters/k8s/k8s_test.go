@@ -531,7 +531,7 @@ func TestConnect_AbsoluteKubeconfig(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "/nonexistent/path/kubeconfig.yaml"}`)}
 	// expandPath returns the path unchanged; clientcmd fails on missing file
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail for nonexistent absolute kubeconfig")
 	}
 }
@@ -542,7 +542,7 @@ func TestConnect_TildeOnlyKubeconfig(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "~"}`)}
 	// expandPath("~") returns home dir; clientcmd then fails (no kubeconfig there)
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail when kubeconfig resolves to a directory")
 	}
 }
@@ -552,7 +552,7 @@ func TestConnect_WithContext(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "/nonexistent.yaml", "context": "my-ctx"}`)}
 	// Covers the cfg.Context != "" branch; fails at clientcmd (file missing)
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail for nonexistent kubeconfig")
 	}
 }
@@ -561,7 +561,7 @@ func TestConnect_WithContext(t *testing.T) {
 func TestConnect_InvalidJSON(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{bad json`)}
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail for invalid JSON config")
 	}
 }
@@ -571,7 +571,7 @@ func TestConnect_TildeKubeconfig(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "~/nonexistent-kubeconfig-for-joe-test.yaml"}`)}
 	// expandPath runs (covering ~-expansion); then clientcmd fails on missing file
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail for nonexistent kubeconfig")
 	}
 }
@@ -581,7 +581,7 @@ func TestConnect_InClusterOutsideCluster(t *testing.T) {
 	a := k8s.New()
 	src := store.Source{Config: json.RawMessage(`{"in_cluster": true}`)}
 	// rest.InClusterConfig() fails when not running inside a pod
-	if err := a.Connect(src); err == nil {
+	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail when in_cluster=true outside a cluster")
 	}
 }

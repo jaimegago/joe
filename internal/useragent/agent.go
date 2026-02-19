@@ -93,7 +93,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 	session.ResetRunStats()
 
 	// Add user message to history
-	session.AddMessage(llm.Message{
+	session.AddMessage(ctx, llm.Message{
 		Role:    "user",
 		Content: userMessage,
 	})
@@ -126,13 +126,13 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		}
 
 		// Track token usage
-		session.AddTokenUsage(resp.Usage)
+		session.AddTokenUsage(ctx, resp.Usage)
 
 		// If no tool calls, we have the final response
 		if len(resp.ToolCalls) == 0 {
 			// Add assistant's final response to history
 			if resp.Content != "" {
-				session.AddMessage(llm.Message{
+				session.AddMessage(ctx, llm.Message{
 					Role:    "assistant",
 					Content: resp.Content,
 				})
@@ -143,7 +143,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 
 		// Add assistant's response (with tool calls) to history
 		// The tool calls must be preserved so the LLM sees them on the next iteration
-		session.AddMessage(llm.Message{
+		session.AddMessage(ctx, llm.Message{
 			Role:      "assistant",
 			Content:   resp.Content,
 			ToolCalls: resp.ToolCalls,
@@ -169,7 +169,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		// Convert tool results to messages and add to history
 		// This includes error messages for failed tools, which the LLM can respond to
 		resultMessages := a.executor.ResultsToMessages(results)
-		session.AddMessages(resultMessages)
+		session.AddMessages(ctx, resultMessages)
 	}
 
 	return "", fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)

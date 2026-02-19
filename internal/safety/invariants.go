@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/jaimegago/joe/internal/paths"
 )
+
+// caseInsensitiveFS is true on operating systems with case-insensitive filesystems (macOS, Windows).
+var caseInsensitiveFS = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 
 // Self-protection invariants are hardcoded constraints that protect Joe from
 // modifying its own configuration, killing itself, or bypassing safety checks.
@@ -34,18 +38,17 @@ func IsPathAllowed(absPath string) error {
 	cleanPath := filepath.Clean(absPath)
 	cleanJoeDir := filepath.Clean(joeDir)
 
+	// Resolve symlinks for both the input path and the Joe directory.
+	// This prevents escape via symlinked parent dirs (e.g., /tmp/link-to-joe/file)
+	// and ensures cleanJoeDir is the real path even if ~/.joe is itself a symlink.
+	cleanPath = resolvePathSymlinks(cleanPath)
+	cleanJoeDir = resolvePathSymlinks(cleanJoeDir)
+
 	// Normalize case on case-insensitive filesystems (macOS, Windows)
 	// to prevent bypass via /Users/alice/.JOE/ vs /Users/alice/.joe/
-	if isCaseInsensitiveFS() {
+	if caseInsensitiveFS {
 		cleanPath = strings.ToLower(cleanPath)
 		cleanJoeDir = strings.ToLower(cleanJoeDir)
-	}
-
-	// Resolve symlinks — including parent directories for paths that don't exist
-	// yet. This prevents escape via symlinked parent dirs (e.g., /tmp/link-to-joe/file).
-	cleanPath = resolvePathSymlinks(cleanPath)
-	if isCaseInsensitiveFS() {
-		cleanPath = strings.ToLower(cleanPath)
 	}
 
 	// Block any path within ~/.joe/
@@ -58,8 +61,8 @@ func IsPathAllowed(absPath string) error {
 	}
 
 	// Extra check for safety policy file specifically (defense in depth)
-	safetyPolicyPath := filepath.Clean(filepath.Join(joeDir, PolicyFileName))
-	if isCaseInsensitiveFS() {
+	safetyPolicyPath := resolvePathSymlinks(filepath.Clean(filepath.Join(joeDir, PolicyFileName)))
+	if caseInsensitiveFS {
 		safetyPolicyPath = strings.ToLower(safetyPolicyPath)
 	}
 	if cleanPath == safetyPolicyPath {
@@ -127,9 +130,10 @@ func (e *InvariantViolationError) Error() string {
 }
 
 // IsInvariantViolation checks if an error is an InvariantViolationError.
+// Uses errors.As to correctly unwrap wrapped errors.
 func IsInvariantViolation(err error) bool {
-	_, ok := err.(*InvariantViolationError)
-	return ok
+	var e *InvariantViolationError
+	return errors.As(err, &e)
 }
 
 // IsWritePathInAllowedDir checks if absPath falls under one of the allowed
@@ -146,13 +150,13 @@ func IsWritePathInAllowedDir(absPath string, allowedDirs []string) error {
 	// Resolve symlinks — including parent directories for paths that don't exist
 	// yet. This prevents escape via symlinked parent dirs.
 	cleanPath = resolvePathSymlinks(cleanPath)
-	if isCaseInsensitiveFS() {
+	if caseInsensitiveFS {
 		cleanPath = strings.ToLower(cleanPath)
 	}
 
 	for _, dir := range allowedDirs {
 		cleanDir := resolvePathSymlinks(filepath.Clean(dir))
-		if isCaseInsensitiveFS() {
+		if caseInsensitiveFS {
 			cleanDir = strings.ToLower(cleanDir)
 		}
 		if strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) || cleanPath == cleanDir {
@@ -201,11 +205,4 @@ func resolvePathSymlinks(cleanPath string) string {
 
 	// Nothing resolvable — return the cleaned path as-is
 	return cleanPath
-}
-
-// isCaseInsensitiveFS returns true if the operating system uses a case-insensitive
-// filesystem by default (macOS, Windows). This is used to normalize paths for
-// security checks to prevent case-based bypass attacks.
-func isCaseInsensitiveFS() bool {
-	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }

@@ -434,6 +434,42 @@ func TestPath(t *testing.T) {
 	})
 }
 
+func TestPath_SubstringNodeIDs(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create nodes where one ID is a substring of another: "pod" and "pod-abc"
+	for _, n := range []graph.Node{
+		{ID: "pod", Type: "service"},
+		{ID: "pod-abc", Type: "service"},
+		{ID: "target", Type: "service"},
+	} {
+		if err := store.AddNode(ctx, n); err != nil {
+			t.Fatalf("AddNode(%s): %v", n.ID, err)
+		}
+	}
+
+	// Create a path: pod -> pod-abc -> target
+	for _, e := range []graph.Edge{
+		{From: "pod", To: "pod-abc", Relation: "connects_to"},
+		{From: "pod-abc", To: "target", Relation: "connects_to"},
+	} {
+		if err := store.AddEdge(ctx, e); err != nil {
+			t.Fatalf("AddEdge(%s->%s): %v", e.From, e.To, err)
+		}
+	}
+
+	// Path from "pod" to "target" should traverse through "pod-abc"
+	// Without delimiter-based cycle detection, "pod-abc" would falsely match "pod" in the path
+	edges, err := store.Path(ctx, "pod", "target")
+	if err != nil {
+		t.Fatalf("Path() error = %v", err)
+	}
+	if len(edges) != 2 {
+		t.Errorf("Path() returned %d edges, want 2 (pod->pod-abc->target)", len(edges))
+	}
+}
+
 func TestDeleteNode(t *testing.T) {
 	store := setupTestStore(t)
 	seedGraph(t, store)

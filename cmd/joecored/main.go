@@ -323,7 +323,7 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	}
 	for _, src := range k8sSources {
 		adapter := k8s.New()
-		if err := adapter.Connect(*src); err != nil {
+		if err := adapter.Connect(ctx, *src); err != nil {
 			slog.Warn("failed to connect k8s source", "id", src.ID, "error", err)
 			continue
 		}
@@ -337,7 +337,7 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	}
 	for _, src := range gitSources {
 		adapter := gitadapter.New()
-		if err := adapter.Connect(*src); err != nil {
+		if err := adapter.Connect(ctx, *src); err != nil {
 			slog.Warn("failed to connect git source", "id", src.ID, "error", err)
 			continue
 		}
@@ -351,7 +351,7 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	}
 	for _, src := range awsSources {
 		adapter := awsadapter.New()
-		if err := adapter.Connect(*src); err != nil {
+		if err := adapter.Connect(ctx, *src); err != nil {
 			slog.Warn("failed to connect aws source", "id", src.ID, "error", err)
 			continue
 		}
@@ -365,7 +365,7 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	}
 	for _, src := range azureSources {
 		adapter := azureadapter.New()
-		if err := adapter.Connect(*src); err != nil {
+		if err := adapter.Connect(ctx, *src); err != nil {
 			slog.Warn("failed to connect azure source", "id", src.ID, "error", err)
 			continue
 		}

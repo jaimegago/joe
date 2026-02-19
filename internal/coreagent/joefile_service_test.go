@@ -79,8 +79,8 @@ type fakeGitAdapterWithContent struct {
 	fileContent map[string]string
 }
 
-func (f *fakeGitAdapterWithContent) Connect(source store.Source) error { return nil }
-func (f *fakeGitAdapterWithContent) Disconnect() error                 { return nil }
+func (f *fakeGitAdapterWithContent) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeGitAdapterWithContent) Disconnect() error                               { return nil }
 func (f *fakeGitAdapterWithContent) Status() adapters.Status {
 	return adapters.Status{Connected: true, Message: "connected"}
 }

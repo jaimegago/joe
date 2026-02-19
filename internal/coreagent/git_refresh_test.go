@@ -17,7 +17,7 @@ type fakeGitAdapter struct {
 	logs  []git.CommitInfo
 }
 
-func (f *fakeGitAdapter) Connect(_ store.Source) error { return nil }
+func (f *fakeGitAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
 
 func (f *fakeGitAdapter) Disconnect() error { return nil }
 

@@ -116,14 +116,14 @@ func TestAdapter_ConnectValidatesConfig(t *testing.T) {
 		Type:   "aws",
 		Config: []byte(`{"profile": "default"}`),
 	}
-	err := adapter.Connect(source)
+	err := adapter.Connect(context.Background(), source)
 	if err == nil {
 		t.Error("expected error for missing region")
 	}
 
 	// Test with valid config but no AWS credentials (will fail at STS call)
 	source.Config = []byte(`{"region": "us-west-2"}`)
-	err = adapter.Connect(source)
+	err = adapter.Connect(context.Background(), source)
 	// This will fail due to missing credentials, but that's expected in test environment
 	if err == nil {
 		t.Log("Connection succeeded (AWS credentials available in test environment)")

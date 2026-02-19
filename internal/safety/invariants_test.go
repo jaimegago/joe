@@ -392,7 +392,7 @@ func TestIsPathAllowed_CaseSensitivity(t *testing.T) {
 			err := IsPathAllowed(path)
 
 			// On case-insensitive systems (macOS, Windows), these should be blocked
-			if isCaseInsensitiveFS() {
+			if caseInsensitiveFS {
 				if err == nil {
 					t.Errorf("SECURITY: IsPathAllowed(%q) allowed on case-insensitive FS, should block", path)
 				}

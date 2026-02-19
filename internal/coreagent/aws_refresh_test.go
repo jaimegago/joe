@@ -18,7 +18,7 @@ type fakeAWSAdapter struct {
 	vpcs         []awsadapter.VPC
 }
 
-func (f *fakeAWSAdapter) Connect(_ store.Source) error { return nil }
+func (f *fakeAWSAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
 
 func (f *fakeAWSAdapter) Disconnect() error { return nil }
 

@@ -102,7 +102,7 @@ func TestConnect_ConfigErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := gitadapter.New()
 			source := store.Source{Config: json.RawMessage(tt.config)}
-			if err := a.Connect(source); err == nil {
+			if err := a.Connect(context.Background(), source); err == nil {
 				t.Errorf("Connect() expected error, got nil")
 			}
 		})
@@ -392,7 +392,7 @@ func TestConnect_LocalRepoWithBranch(t *testing.T) {
 	for _, branch := range []string{"master", "main"} {
 		a := gitadapter.New()
 		source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `", "branch": "` + branch + `"}`)}
-		if err := a.Connect(source); err == nil {
+		if err := a.Connect(context.Background(), source); err == nil {
 			if !a.Status().Connected {
 				t.Errorf("adapter should be connected after Connect() with branch %q", branch)
 			}
@@ -410,7 +410,7 @@ func TestConnect_LocalRepo(t *testing.T) {
 
 	a := gitadapter.New()
 	source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `"}`)}
-	if err := a.Connect(source); err != nil {
+	if err := a.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
 	if !a.Status().Connected {

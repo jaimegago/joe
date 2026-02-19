@@ -6,6 +6,7 @@ const (
 
 	// Default LLM configuration.
 	defaultLLMCurrent = "claude-sonnet"
+	defaultLLMModel   = "claude-sonnet-4-20250514"
 
 	// Default refresh intervals.
 	defaultRefreshIntervalMinutes = 5
