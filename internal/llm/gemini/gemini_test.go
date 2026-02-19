@@ -57,14 +57,6 @@ const geminiTextResponse = `[{
 	"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}
 }]`
 
-const geminiToolCallResponse = `[{
-	"candidates":[{
-		"content":{"parts":[{"functionCall":{"name":"echo","args":{"message":"hi"}}}],"role":"model"},
-		"finishReason":"STOP","index":0
-	}],
-	"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":8,"totalTokenCount":28}
-}]`
-
 func TestNewClient(t *testing.T) {
 	tests := []struct {
 		name      string
