@@ -49,7 +49,7 @@ func DefaultConfig() Config {
 	return Config{
 		Enabled:         getEnvBool("OTEL_ENABLED", true),
 		TracesEnabled:   getEnvBool("OTEL_TRACES_ENABLED", true),
-		TracesExporter:  getEnv("OTEL_TRACES_EXPORTER", "stdout"),
+		TracesExporter:  getEnv("OTEL_TRACES_EXPORTER", "none"),
 		OTLPEndpoint:    getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
 		MetricsEnabled:  getEnvBool("OTEL_METRICS_ENABLED", true),
 		MetricsExporter: getEnv("OTEL_METRICS_EXPORTER", "prometheus"),
