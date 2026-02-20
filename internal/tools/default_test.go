@@ -13,7 +13,7 @@ func TestNewDefaultRegistry(t *testing.T) {
 		t.Fatal("NewDefaultRegistry() returned nil")
 	}
 
-	// Define expected tools (only local tools, no client tools)
+	// Define expected tools (local tools + shared diagnostic tools)
 	expectedTools := map[string]bool{
 		"echo":             true,
 		"ask_user":         true,
@@ -22,6 +22,13 @@ func TestNewDefaultRegistry(t *testing.T) {
 		"local_git_status": true,
 		"local_git_diff":   true,
 		"run_command":      true,
+		// Shared diagnostic tools (Phase 6.6)
+		"tcp_connect":  true,
+		"port_scan":    true,
+		"dns_lookup":   true,
+		"http_request": true,
+		"system_info":  true,
+		"trace_route":  true,
 	}
 
 	// Test that all expected tools are registered
@@ -63,7 +70,7 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		t.Fatal("NewDefaultRegistryWithClient() returned nil")
 	}
 
-	// Should have all local tools plus core tools
+	// Should have all local tools + shared diagnostic tools + core tools
 	expectedTools := map[string]bool{
 		"echo":             true,
 		"ask_user":         true,
@@ -72,18 +79,26 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"local_git_status": true,
 		"local_git_diff":   true,
 		"run_command":      true,
-		"list_sources":     true,
-		"graph_query":      true,
-		"graph_related":    true,
-		"k8s_get":          true,
-		"k8s_logs":         true,
-		"git_read":         true,
-		"git_log":          true,
-		"git_diff":         true,
-		"aws_ec2":          true,
-		"aws_eks":          true,
-		"aws_rds":          true,
-		"aws_vpc":          true,
+		// Shared diagnostic tools (Phase 6.6)
+		"tcp_connect":  true,
+		"port_scan":    true,
+		"dns_lookup":   true,
+		"http_request": true,
+		"system_info":  true,
+		"trace_route":  true,
+		// Core tools (call joecored API)
+		"list_sources":        true,
+		"graph_query":         true,
+		"graph_related":       true,
+		"k8s_get":             true,
+		"k8s_logs":            true,
+		"git_read":            true,
+		"git_log":             true,
+		"git_diff":            true,
+		"aws_ec2":             true,
+		"aws_eks":             true,
+		"aws_rds":             true,
+		"aws_vpc":             true,
 		"prometheus_query":    true,
 		"loki_query":          true,
 		"tempo_search":        true,
