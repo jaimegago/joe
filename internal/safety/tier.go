@@ -112,6 +112,12 @@ var toolRegistry = map[string]ToolClassification{
 	"falco_alerts": {Tier: TierObserve, Description: "List recent Falco runtime security events"},
 	"falco_rules":  {Tier: TierObserve, Description: "List Falco rules observed in recent events"},
 
+	// Proprietary observability vendor tools (Phase 6, Step 12) — read-only queries, T1
+	"datadog_query":   {Tier: TierObserve, Description: "Query Datadog metrics and log events"},
+	"splunk_query":    {Tier: TierObserve, Description: "Search Splunk logs using SPL"},
+	"dynatrace_query": {Tier: TierObserve, Description: "Query Dynatrace metrics and events"},
+	"newrelic_query":  {Tier: TierObserve, Description: "Execute New Relic NRQL queries"},
+
 	// K8s CRD-based tools (Phase 6.10) — read-only queries, T1
 	"certmanager_certs":    {Tier: TierObserve, Description: "List cert-manager Certificate resources with expiry and readiness"},
 	"certmanager_issuers":  {Tier: TierObserve, Description: "List cert-manager Issuer and ClusterIssuer resources with status"},

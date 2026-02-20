@@ -183,6 +183,11 @@ func (r *Refresher) refreshK8sSource(ctx context.Context, source *store.Source, 
 		}
 	}
 
+	// Extend with CRD-based nodes and edges (KEDA, cert-manager, OPA, Cilium, Istio, Crossplane).
+	crdNodes, crdEdges := r.refreshK8sCRDs(ctx, source, adapter)
+	desiredNodes = append(desiredNodes, crdNodes...)
+	desiredEdges = append(desiredEdges, crdEdges...)
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err

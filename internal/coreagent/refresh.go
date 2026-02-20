@@ -13,12 +13,27 @@ import (
 	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
+	elasticsearchadapter "github.com/jaimegago/joe/internal/adapters/datastore/elasticsearch"
+	kafkaadapter "github.com/jaimegago/joe/internal/adapters/datastore/kafka"
+	mongodbadapter "github.com/jaimegago/joe/internal/adapters/datastore/mongodb"
+	mysqladapter "github.com/jaimegago/joe/internal/adapters/datastore/mysql"
+	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
+	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	argocdadapter "github.com/jaimegago/joe/internal/adapters/gitops/argocd"
+	terraformadapter "github.com/jaimegago/joe/internal/adapters/iac/terraform"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	envoypadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
+	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
+	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
@@ -224,6 +239,105 @@ func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (er
 			return fmt.Errorf("adapter for source %s is not grafana", source.ID)
 		}
 		return r.refreshGrafanaSource(ctx, source, ga)
+
+	// Phase 6.7 — data store sources.
+	case store.SourceTypePostgreSQL:
+		pa, ok := adapter.(postgresadapter.PostgreSQLAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not postgresql", source.ID)
+		}
+		return r.refreshPostgreSQLSource(ctx, source, pa)
+	case store.SourceTypeMySQL:
+		ma, ok := adapter.(mysqladapter.MySQLAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not mysql", source.ID)
+		}
+		return r.refreshMySQLSource(ctx, source, ma)
+	case store.SourceTypeRedis:
+		ra, ok := adapter.(redisadapter.RedisAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not redis", source.ID)
+		}
+		return r.refreshRedisSource(ctx, source, ra)
+	case store.SourceTypeMongoDB:
+		ma, ok := adapter.(mongodbadapter.MongoDBAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not mongodb", source.ID)
+		}
+		return r.refreshMongoDBSource(ctx, source, ma)
+	case store.SourceTypeKafka:
+		ka, ok := adapter.(kafkaadapter.KafkaAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not kafka", source.ID)
+		}
+		return r.refreshKafkaSource(ctx, source, ka)
+	case store.SourceTypeElasticsearch:
+		ea, ok := adapter.(elasticsearchadapter.ElasticsearchAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not elasticsearch", source.ID)
+		}
+		return r.refreshElasticsearchSource(ctx, source, ea)
+
+	// Phase 6.8 — GitOps / CD / IaC sources.
+	case store.SourceTypeArgoCd:
+		aa, ok := adapter.(argocdadapter.ArgoCDAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not argocd", source.ID)
+		}
+		return r.refreshArgoCDSource(ctx, source, aa)
+	case store.SourceTypeHelm:
+		ha, ok := adapter.(helmadapter.HelmAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not helm", source.ID)
+		}
+		return r.refreshHelmSource(ctx, source, ha)
+	case store.SourceTypeTerraform:
+		ta, ok := adapter.(terraformadapter.TerraformAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not terraform", source.ID)
+		}
+		return r.refreshTerraformSource(ctx, source, ta)
+
+	// Phase 6.9 — Networking & ingress sources.
+	case store.SourceTypeNginx:
+		na, ok := adapter.(nginxadapter.NginxAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not nginx-ingress", source.ID)
+		}
+		return r.refreshNginxSource(ctx, source, na)
+	case store.SourceTypeEnvoy:
+		ea, ok := adapter.(envoypadapter.EnvoyAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not envoy", source.ID)
+		}
+		return r.refreshEnvoySource(ctx, source, ea)
+
+	// Phase 6.12 — Proprietary observability vendors.
+	case store.SourceTypeDatadog:
+		da, ok := adapter.(datadogadapter.DatadogAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not datadog", source.ID)
+		}
+		return r.refreshDatadogSource(ctx, source, da)
+	case store.SourceTypeSplunk:
+		sa, ok := adapter.(splunkadapter.SplunkAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not splunk", source.ID)
+		}
+		return r.refreshSplunkSource(ctx, source, sa)
+	case store.SourceTypeDynatrace:
+		da, ok := adapter.(dynatraceadapter.DynatraceAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not dynatrace", source.ID)
+		}
+		return r.refreshDynatraceSource(ctx, source, da)
+	case store.SourceTypeNewRelic:
+		na, ok := adapter.(newrelicadapter.NewRelicAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not newrelic", source.ID)
+		}
+		return r.refreshNewRelicSource(ctx, source, na)
+
 	default:
 		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)
 		return nil

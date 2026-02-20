@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
@@ -257,4 +261,149 @@ func (r *Refresher) refreshJaegerSource(ctx context.Context, source *store.Sourc
 // obsNodeID builds a stable graph node ID for an observability source.
 func obsNodeID(sourceID, sourceType string) string {
 	return fmt.Sprintf("obs/%s/%s", sourceType, sourceID)
+}
+
+// refreshDatadogSource creates a graph node for a Datadog source.
+// Edge discovery (metrics_in, logs_in) is done via .joe/ files.
+func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Source, _ datadogadapter.DatadogAdapter) error {
+	r.logger.Info("refreshing datadog source", "source_id", source.ID)
+
+	now := time.Now()
+	nodeID := obsNodeID(source.ID, source.Type)
+
+	desiredNodes := []graph.Node{
+		{
+			ID:       nodeID,
+			Type:     "datadog_source",
+			SourceID: source.ID,
+			Metadata: map[string]any{
+				"source_id":   source.ID,
+				"source_type": source.Type,
+				"name":        source.Name,
+			},
+			LastSeen: now,
+		},
+	}
+
+	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	if err != nil {
+		return fmt.Errorf("load graph state for datadog source %s: %w", source.ID, err)
+	}
+
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
+		return fmt.Errorf("apply graph delta for datadog source %s: %w", source.ID, err)
+	}
+
+	_ = existingEdges
+	r.logger.Info("datadog refresh completed", "source_id", source.ID)
+	return nil
+}
+
+// refreshSplunkSource creates a graph node for a Splunk source.
+func (r *Refresher) refreshSplunkSource(ctx context.Context, source *store.Source, _ splunkadapter.SplunkAdapter) error {
+	r.logger.Info("refreshing splunk source", "source_id", source.ID)
+
+	now := time.Now()
+	nodeID := obsNodeID(source.ID, source.Type)
+
+	desiredNodes := []graph.Node{
+		{
+			ID:       nodeID,
+			Type:     "splunk_source",
+			SourceID: source.ID,
+			Metadata: map[string]any{
+				"source_id":   source.ID,
+				"source_type": source.Type,
+				"name":        source.Name,
+			},
+			LastSeen: now,
+		},
+	}
+
+	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	if err != nil {
+		return fmt.Errorf("load graph state for splunk source %s: %w", source.ID, err)
+	}
+
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
+		return fmt.Errorf("apply graph delta for splunk source %s: %w", source.ID, err)
+	}
+
+	_ = existingEdges
+	r.logger.Info("splunk refresh completed", "source_id", source.ID)
+	return nil
+}
+
+// refreshDynatraceSource creates a graph node for a Dynatrace source.
+func (r *Refresher) refreshDynatraceSource(ctx context.Context, source *store.Source, _ dynatraceadapter.DynatraceAdapter) error {
+	r.logger.Info("refreshing dynatrace source", "source_id", source.ID)
+
+	now := time.Now()
+	nodeID := obsNodeID(source.ID, source.Type)
+
+	desiredNodes := []graph.Node{
+		{
+			ID:       nodeID,
+			Type:     "dynatrace_source",
+			SourceID: source.ID,
+			Metadata: map[string]any{
+				"source_id":   source.ID,
+				"source_type": source.Type,
+				"name":        source.Name,
+			},
+			LastSeen: now,
+		},
+	}
+
+	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	if err != nil {
+		return fmt.Errorf("load graph state for dynatrace source %s: %w", source.ID, err)
+	}
+
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
+		return fmt.Errorf("apply graph delta for dynatrace source %s: %w", source.ID, err)
+	}
+
+	_ = existingEdges
+	r.logger.Info("dynatrace refresh completed", "source_id", source.ID)
+	return nil
+}
+
+// refreshNewRelicSource creates a graph node for a New Relic source.
+func (r *Refresher) refreshNewRelicSource(ctx context.Context, source *store.Source, _ newrelicadapter.NewRelicAdapter) error {
+	r.logger.Info("refreshing newrelic source", "source_id", source.ID)
+
+	now := time.Now()
+	nodeID := obsNodeID(source.ID, source.Type)
+
+	desiredNodes := []graph.Node{
+		{
+			ID:       nodeID,
+			Type:     "newrelic_source",
+			SourceID: source.ID,
+			Metadata: map[string]any{
+				"source_id":   source.ID,
+				"source_type": source.Type,
+				"name":        source.Name,
+			},
+			LastSeen: now,
+		},
+	}
+
+	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	if err != nil {
+		return fmt.Errorf("load graph state for newrelic source %s: %w", source.ID, err)
+	}
+
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
+		return fmt.Errorf("apply graph delta for newrelic source %s: %w", source.ID, err)
+	}
+
+	_ = existingEdges
+	r.logger.Info("newrelic refresh completed", "source_id", source.ID)
+	return nil
 }
