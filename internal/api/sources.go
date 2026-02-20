@@ -5,10 +5,17 @@ import (
 	"io"
 	"net/http"
 
+	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
+	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
+	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
+	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -123,6 +130,55 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		adapter := gitadapter.New()
 		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect git source", "failed to connect to git repo")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypePrometheus, store.SourceTypeMimir:
+		adapter := prometheusadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect prometheus source", "failed to connect to Prometheus/Mimir")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeLoki:
+		adapter := lokiadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect loki source", "failed to connect to Loki")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeTempo:
+		adapter := tempoadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect tempo source", "failed to connect to Tempo")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeJaeger:
+		adapter := jaegeradapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect jaeger source", "failed to connect to Jaeger")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeAlertmanager:
+		adapter := alertmanageradapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect alertmanager source", "failed to connect to Alertmanager")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypePagerDuty:
+		adapter := pagerdutyadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect pagerduty source", "failed to connect to PagerDuty")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeGrafana:
+		adapter := grafanaadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect grafana source", "failed to connect to Grafana")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)

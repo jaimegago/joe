@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -211,7 +212,7 @@ func newTestDeps(t *testing.T, cfg *config.Config, capture *runCapture) runDeps 
 	deps.newCoreAgent = func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner {
 		return &fakeCoreAgent{}
 	}
-	deps.startServer = func(server *http.Server) <-chan error {
+	deps.startServer = func(server *http.Server, certFile, keyFile string) <-chan error {
 		capture.server = server
 		return make(chan error, 1)
 	}
@@ -374,7 +375,7 @@ func TestRun_PortBindingError(t *testing.T) {
 	capture := &runCapture{}
 	cfg := baseConfig()
 	deps := newTestDeps(t, cfg, capture)
-	deps.startServer = func(server *http.Server) <-chan error {
+	deps.startServer = func(server *http.Server, certFile, keyFile string) <-chan error {
 		errCh := make(chan error, 1)
 		errCh <- errors.New("bind failed")
 		return errCh
@@ -559,7 +560,7 @@ func TestDefaultWaitForShutdown_ContextCancel(t *testing.T) {
 
 func TestDefaultStartServer(t *testing.T) {
 	server := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
-	errCh := defaultStartServer(server)
+	errCh := defaultStartServer(server, "", "")
 	_ = server.Shutdown(context.Background())
 
 	select {
@@ -660,5 +661,149 @@ func TestRun_MkdirError(t *testing.T) {
 
 	if ret := runWithDeps(context.Background(), deps); ret != 1 {
 		t.Errorf("expected return 1, got %d", ret)
+	}
+}
+
+func TestRun_WithRateLimiting(t *testing.T) {
+	capture := &runCapture{}
+	cfg := baseConfig()
+	cfg.Server.RateLimitRPS = 10.0
+	cfg.Server.RateLimitBurst = 20
+	deps := newTestDeps(t, cfg, capture)
+
+	if ret := runWithDeps(context.Background(), deps); ret != 0 {
+		t.Errorf("expected return 0, got %d", ret)
+	}
+}
+
+func TestRun_WithTLSConfigured(t *testing.T) {
+	capture := &runCapture{}
+	cfg := baseConfig()
+	cfg.Server.TLSCertFile = "/tmp/cert.pem"
+	cfg.Server.TLSKeyFile = "/tmp/key.pem"
+	deps := newTestDeps(t, cfg, capture)
+
+	if ret := runWithDeps(context.Background(), deps); ret != 0 {
+		t.Errorf("expected return 0, got %d", ret)
+	}
+}
+
+func TestDefaultRunDeps_MigrateCloseClosures(t *testing.T) {
+	deps := defaultRunDeps()
+
+	sqlStore, err := store.New(":memory:", nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer sqlStore.Close()
+
+	if err := deps.migrateStore(sqlStore); err != nil {
+		t.Errorf("migrateStore error: %v", err)
+	}
+	if err := deps.closeStore(sqlStore); err != nil {
+		t.Errorf("closeStore error: %v", err)
+	}
+}
+
+func TestDefaultRunDeps_ShutdownClosures(t *testing.T) {
+	deps := defaultRunDeps()
+
+	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
+	if err := deps.shutdownServer(context.Background(), srv); err != nil {
+		t.Errorf("shutdownServer error: %v", err)
+	}
+
+	srv2 := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
+	if err := deps.shutdownMetricsServer(context.Background(), srv2); err != nil {
+		t.Errorf("shutdownMetricsServer error: %v", err)
+	}
+}
+
+func TestDefaultRunDeps_NewCoreAgent(t *testing.T) {
+	deps := defaultRunDeps()
+
+	sqlStore, err := store.New(":memory:", nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer sqlStore.Close()
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	reg := adapters.NewRegistry()
+	cfg := &config.Config{}
+	services := core.New(cfg, sqlStore, sqlStore.DB(), reg, nil)
+
+	agent := deps.newCoreAgent(services, &fakeLLMAdapter{}, observability.NewMetrics())
+	if agent == nil {
+		t.Error("newCoreAgent returned nil")
+	}
+}
+
+func TestDefaultRunDeps_RegisterBusinessMetric(t *testing.T) {
+	deps := defaultRunDeps()
+
+	sqlStore, err := store.New(":memory:", nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer sqlStore.Close()
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	reg := adapters.NewRegistry()
+	cfg := &config.Config{}
+	services := core.New(cfg, sqlStore, sqlStore.DB(), reg, observability.NewMetrics())
+
+	if err := deps.registerBusinessMetric(services); err != nil {
+		t.Errorf("registerBusinessMetric error: %v", err)
+	}
+}
+
+func TestDefaultWaitForShutdown_Signal(t *testing.T) {
+	ctx := context.Background()
+	done := defaultWaitForShutdown(ctx)
+
+	// Send SIGTERM to ourselves; signal.Notify intercepts it before the default handler.
+	if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+
+	select {
+	case <-done:
+		// signal was received and done was closed
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected done channel to close after SIGTERM")
+	}
+}
+
+// errSourceRepo is a fakeSourceRepo variant that returns errors from ListByType.
+type errSourceRepo struct{}
+
+func (e *errSourceRepo) Create(_ context.Context, _ *store.Source) error { return nil }
+func (e *errSourceRepo) Get(_ context.Context, _ string) (*store.Source, error) {
+	return nil, nil
+}
+func (e *errSourceRepo) List(_ context.Context) ([]*store.Source, error) { return nil, nil }
+func (e *errSourceRepo) ListByType(_ context.Context, _ string) ([]*store.Source, error) {
+	return nil, errors.New("db error")
+}
+func (e *errSourceRepo) Update(_ context.Context, _ *store.Source) error { return nil }
+func (e *errSourceRepo) UpdateSyncStatus(_ context.Context, _ string, _ time.Time, _ string) error {
+	return nil
+}
+func (e *errSourceRepo) Delete(_ context.Context, _ string) error { return nil }
+
+func TestConnectSourcesDefault_ListErrors(t *testing.T) {
+	storeInst := &store.Store{Sources: &errSourceRepo{}}
+	registry := adapters.NewRegistry()
+
+	// Should not panic; list errors are logged and skipped.
+	connectSourcesDefault(context.Background(), storeInst, registry)
+
+	if len(registry.List()) != 0 {
+		t.Errorf("expected no adapters registered on list error, got %d", len(registry.List()))
 	}
 }

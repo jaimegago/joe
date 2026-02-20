@@ -382,6 +382,60 @@ func TestValidateAPIKeysWithUserMessage_UnsupportedProvider(t *testing.T) {
 	}
 }
 
+// ---- TLS config ----
+
+func TestServerConfig_TLSConfigured(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  ServerConfig
+		want bool
+	}{
+		{"both set", ServerConfig{TLSCertFile: "/etc/joe/tls.crt", TLSKeyFile: "/etc/joe/tls.key"}, true},
+		{"only cert", ServerConfig{TLSCertFile: "/etc/joe/tls.crt"}, false},
+		{"only key", ServerConfig{TLSKeyFile: "/etc/joe/tls.key"}, false},
+		{"neither", ServerConfig{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.TLSConfigured(); got != tt.want {
+				t.Errorf("TLSConfigured() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoad_TLSConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yaml := `server:
+  address: ":8443"
+  tls_cert_file: /etc/joe/tls.crt
+  tls_key_file: /etc/joe/tls.key
+  tls_enabled: true
+`
+	if err := os.WriteFile(configPath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Server.TLSCertFile != "/etc/joe/tls.crt" {
+		t.Errorf("TLSCertFile = %q, want /etc/joe/tls.crt", cfg.Server.TLSCertFile)
+	}
+	if cfg.Server.TLSKeyFile != "/etc/joe/tls.key" {
+		t.Errorf("TLSKeyFile = %q, want /etc/joe/tls.key", cfg.Server.TLSKeyFile)
+	}
+	if !cfg.Server.TLSEnabled {
+		t.Error("TLSEnabled = false, want true")
+	}
+	if !cfg.Server.TLSConfigured() {
+		t.Error("TLSConfigured() = false, want true")
+	}
+}
+
 func TestValidateAPIKeysWithUserMessage_ClaudeMissingKey(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	err := ValidateAPIKeysWithUserMessage(ModelConfig{Provider: "claude", Model: "claude-sonnet"})

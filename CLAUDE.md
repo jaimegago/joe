@@ -197,9 +197,9 @@ Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-la
 All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
 - [x] 6.1 Core foundations (source types, registry wiring, graph edges)
 - [x] 6.2 Cloud adapters (AWS: EC2/EKS/RDS/VPC, Azure: VMs/AKS/SQL/VNets)
-- [ ] 6.3 Observability (Prometheus/Mimir, Loki, Tempo/Jaeger; Datadog, Splunk, Dynatrace, New Relic; CloudWatch, Azure Monitor)
-- [ ] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
-- [ ] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
+- [x] 6.3 Observability open-source (Prometheus/Mimir, Loki, Tempo/Jaeger) — proprietary vendors deferred to last
+- [x] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
+- [x] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
 - [ ] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
 - [ ] 6.7 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
 - [ ] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)

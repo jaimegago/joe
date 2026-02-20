@@ -68,3 +68,15 @@ func DatabasePath() (string, error) {
 	}
 	return filepath.Join(dir, DatabaseFile), nil
 }
+
+// EncryptionKeyFile is the name of the file that holds the database encryption key.
+const EncryptionKeyFile = "encryption.key"
+
+// EncryptionKeyPath returns the path to the encryption key file (~/.joe/encryption.key).
+func EncryptionKeyPath() (string, error) {
+	dir, err := JoeDirPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, EncryptionKeyFile), nil
+}

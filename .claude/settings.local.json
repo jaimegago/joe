@@ -26,7 +26,13 @@
       "Bash(git stash:*)",
       "Read(//Users/jaimegago/go/pkg/mod/google.golang.org/**)",
       "Read(//Users/jaimegago/go/pkg/mod/github.com/google/generative-ai-go@v0.20.1/**)",
-      "Read(//Users/jaimegago/go/pkg/mod/github.com/google/generative-ai-go@v0.20.1/genai/**)"
+      "Read(//Users/jaimegago/go/pkg/mod/github.com/google/generative-ai-go@v0.20.1/genai/**)",
+      "Bash(find:*)",
+      "Bash(sort:*)",
+      "Read(//tmp/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/jaimegago/joe/docs"
     ]
   }
 }

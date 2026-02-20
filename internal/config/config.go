@@ -23,8 +23,18 @@ type Config struct {
 
 // ServerConfig holds joecored server settings
 type ServerConfig struct {
-	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
-	APIKey  string `yaml:"api_key"` // Bearer token for API authentication (optional)
+	Address        string  `yaml:"address"`         // e.g., ":7777" or "localhost:7777"
+	APIKey         string  `yaml:"api_key"`         // Bearer token for API authentication (optional)
+	TLSCertFile    string  `yaml:"tls_cert_file"`   // Path to TLS certificate (enables HTTPS on server)
+	TLSKeyFile     string  `yaml:"tls_key_file"`    // Path to TLS private key (enables HTTPS on server)
+	TLSEnabled     bool    `yaml:"tls_enabled"`     // joe client: connect over HTTPS (must match server TLS setting)
+	RateLimitRPS   float64 `yaml:"rate_limit_rps"`  // Requests per second per IP (0 = disabled)
+	RateLimitBurst int     `yaml:"rate_limit_burst"` // Burst size for rate limiter (default 10)
+}
+
+// TLSConfigured reports whether TLS has been configured for the server side.
+func (s *ServerConfig) TLSConfigured() bool {
+	return s.TLSCertFile != "" && s.TLSKeyFile != ""
 }
 
 // LLMConfig configures LLM providers with support for multiple models

@@ -14,5 +14,12 @@ const (
 	apiSourcesPath      = "/api/v1/sources"
 	apiK8sBasePath      = "/api/v1/k8s"
 	apiGitBasePath      = "/api/v1/git"
-	apiAWSBasePath      = "/api/v1/aws"
+	apiAWSBasePath        = "/api/v1/aws"
+	apiPrometheusBasePath   = "/api/v1/prometheus"
+	apiLokiBasePath         = "/api/v1/loki"
+	apiTempoBasePath        = "/api/v1/tempo"
+	apiJaegerBasePath       = "/api/v1/jaeger"
+	apiAlertmanagerBasePath = "/api/v1/alertmanager"
+	apiPagerDutyBasePath    = "/api/v1/pagerduty"
+	apiGrafanaBasePath      = "/api/v1/grafana"
 )

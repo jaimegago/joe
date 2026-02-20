@@ -20,6 +20,7 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
+	"github.com/jaimegago/joe/internal/crypto"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
@@ -52,7 +53,7 @@ type runDeps struct {
 	newLLMAdapter          func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
 	newCoreAgent           func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner
 	newAPIServer           func(services *core.Services) *api.Server
-	startServer            func(server *http.Server) <-chan error
+	startServer            func(server *http.Server, certFile, keyFile string) <-chan error
 	shutdownServer         func(ctx context.Context, server *http.Server) error
 	startMetricsServer     func(server *http.Server) error
 	shutdownMetricsServer  func(ctx context.Context, server *http.Server) error
@@ -177,6 +178,25 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	}
 	slog.Info("database ready", "path", dbPath)
 
+	// Load or create encryption key for source configs.
+	encKeyPath, err := paths.EncryptionKeyPath()
+	if err != nil {
+		slog.Error("failed to get encryption key path", "error", err)
+		return 1
+	}
+	encKey, err := crypto.LoadOrCreateKey(encKeyPath)
+	if err != nil {
+		slog.Error("failed to load encryption key", "error", err)
+		return 1
+	}
+	encryptedSources, err := store.NewEncryptedSourceRepository(sqlStore.Sources, encKey)
+	if err != nil {
+		slog.Error("failed to initialize encrypted source repository", "error", err)
+		return 1
+	}
+	sqlStore.Sources = encryptedSources
+	slog.Info("source credential encryption enabled", "key_path", encKeyPath)
+
 	// Initialize adapter registry and load saved sources
 	adapterRegistry := deps.newAdapterRegistry()
 	deps.connectSources(ctx, sqlStore, adapterRegistry)
@@ -230,9 +250,10 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	apiServer := deps.newAPIServer(services)
 	apiServer.RegisterRoutes(mux)
 
-	// Build middleware chain: metrics → auth → request size limit → mux
+	// Build middleware chain: rate limit → metrics → auth → request size limit → mux
 	handler := api.Chain(
 		mux,
+		api.RateLimit(cfg.Server.RateLimitRPS, cfg.Server.RateLimitBurst),
 		func(h http.Handler) http.Handler {
 			return observability.HTTPMetricsMiddleware(h, metrics)
 		},
@@ -244,6 +265,9 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Info("API authentication enabled")
 	} else {
 		slog.Warn("API authentication disabled — set server.api_key in config or JOE_API_KEY env var")
+	}
+	if cfg.Server.RateLimitRPS > 0 {
+		slog.Info("API rate limiting enabled", "rps", cfg.Server.RateLimitRPS, "burst", cfg.Server.RateLimitBurst)
 	}
 
 	server := &http.Server{
@@ -276,7 +300,13 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		}
 	}
 
-	errCh := deps.startServer(server)
+	if cfg.Server.TLSConfigured() {
+		slog.Info("TLS enabled", "cert", cfg.Server.TLSCertFile, "key", cfg.Server.TLSKeyFile)
+	} else {
+		slog.Warn("TLS disabled — connections to joecored are unencrypted")
+	}
+
+	errCh := deps.startServer(server, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
 	done := deps.waitForShutdown(ctx)
 
 	select {
@@ -416,12 +446,18 @@ func defaultStartMetricsServer(server *http.Server) error {
 	return nil
 }
 
-func defaultStartServer(server *http.Server) <-chan error {
+func defaultStartServer(server *http.Server, certFile, keyFile string) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("joecored starting", "addr", server.Addr)
+		slog.Info("joecored starting", "addr", server.Addr, "tls", certFile != "")
 		fmt.Printf("joecored listening on %s\n", server.Addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if certFile != "" && keyFile != "" {
+			err = server.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 	}()

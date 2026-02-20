@@ -29,6 +29,17 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"aws_rds", TierObserve},
 		{"aws_vpc", TierObserve},
 
+		// Phase 6.3: Observability
+		{"prometheus_query", TierObserve},
+		{"loki_query", TierObserve},
+		{"tempo_search", TierObserve},
+		{"jaeger_traces", TierObserve},
+
+		// Phase 6.4: Alerting & dashboards
+		{"alertmanager_alerts", TierObserve},
+		{"pagerduty_incidents", TierObserve},
+		{"grafana_dashboards", TierObserve},
+
 		// T2: Record
 		{"graph_add_node", TierRecord},
 		{"graph_add_edge", TierRecord},
