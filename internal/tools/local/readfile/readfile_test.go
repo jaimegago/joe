@@ -25,130 +25,100 @@ func TestTool_Metadata(t *testing.T) {
 	}
 }
 
-func TestExecute_MissingPath(t *testing.T) {
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{})
-	if err == nil {
-		t.Fatal("expected error for missing path parameter")
-	}
-	if !strings.Contains(err.Error(), "path parameter") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestExecute_EmptyPath(t *testing.T) {
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": ""})
-	if err == nil {
-		t.Fatal("expected error for empty path parameter")
-	}
-}
-
-func TestExecute_ReadsFile(t *testing.T) {
+func TestExecute(t *testing.T) {
 	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(path, []byte("hello"), 0644); err != nil {
-		t.Fatalf("write file: %v", err)
+	home, _ := os.UserHomeDir()
+
+	textFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(textFile, []byte("hello"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	bigFile := filepath.Join(tmpDir, "big.txt")
+	if err := os.WriteFile(bigFile, []byte(strings.Repeat("a", 1024*1024+1)), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	binFile := filepath.Join(tmpDir, "bin.dat")
+	if err := os.WriteFile(binFile, []byte{0, 1, 2}, 0644); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
 
-	tool := New()
-	resultRaw, err := tool.Execute(context.Background(), map[string]any{"path": path})
-	if err != nil {
-		t.Fatalf("Execute() error: %v", err)
+	tests := []struct {
+		name        string
+		args        map[string]any
+		wantErr     bool
+		errContains string
+		wantContent string
+	}{
+		{
+			name:        "reads text file",
+			args:        map[string]any{"path": textFile},
+			wantContent: "hello",
+		},
+		{
+			name:        "missing path parameter",
+			args:        map[string]any{},
+			wantErr:     true,
+			errContains: "path parameter",
+		},
+		{
+			name:    "empty path",
+			args:    map[string]any{"path": ""},
+			wantErr: true,
+		},
+		{
+			name:        "file not found",
+			args:        map[string]any{"path": filepath.Join(tmpDir, "missing.txt")},
+			wantErr:     true,
+			errContains: "file not found",
+		},
+		{
+			name:        "directory path rejected",
+			args:        map[string]any{"path": tmpDir},
+			wantErr:     true,
+			errContains: "directory",
+		},
+		{
+			name:        "file too large",
+			args:        map[string]any{"path": bigFile},
+			wantErr:     true,
+			errContains: "file too large",
+		},
+		{
+			name:        "binary file rejected",
+			args:        map[string]any{"path": binFile},
+			wantErr:     true,
+			errContains: "binary",
+		},
+		{
+			name:        "blocks ~/.joe/config.yaml",
+			args:        map[string]any{"path": filepath.Join(home, ".joe", "config.yaml")},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name:        "blocks ~/.joe/safety-policy.yaml",
+			args:        map[string]any{"path": filepath.Join(home, ".joe", "safety-policy.yaml")},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
 	}
 
-	result := resultRaw.(map[string]any)
-	if result["content"] != "hello" {
-		t.Fatalf("content = %q, want %q", result["content"], "hello")
-	}
-}
-
-func TestExecute_FileNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "missing.txt")
-
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": path})
-	if err == nil || !strings.Contains(err.Error(), "file not found") {
-		t.Fatalf("expected file not found error, got: %v", err)
-	}
-}
-
-func TestExecute_DirectoryPath(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": tmpDir})
-	if err == nil || !strings.Contains(err.Error(), "directory") {
-		t.Fatalf("expected directory error, got: %v", err)
-	}
-}
-
-func TestExecute_TooLarge(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "big.txt")
-	big := strings.Repeat("a", 1024*1024+1)
-	if err := os.WriteFile(path, []byte(big), 0644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": path})
-	if err == nil || !strings.Contains(err.Error(), "file too large") {
-		t.Fatalf("expected too large error, got: %v", err)
-	}
-}
-
-func TestExecute_BinaryFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "bin.dat")
-	if err := os.WriteFile(path, []byte{0, 1, 2}, 0644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": path})
-	if err == nil || !strings.Contains(err.Error(), "binary") {
-		t.Fatalf("expected binary error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksJoeDirectory(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("failed to get home dir: %v", err)
-	}
-
-	// Try to read ~/.joe/config.yaml
-	configPath := filepath.Join(home, ".joe", "config.yaml")
-
-	tool := New()
-	_, err = tool.Execute(context.Background(), map[string]any{"path": configPath})
-	if err == nil {
-		t.Fatal("expected error when reading from ~/.joe/, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksSafetyPolicy(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("failed to get home dir: %v", err)
-	}
-
-	// Try to read ~/.joe/safety-policy.yaml
-	policyPath := filepath.Join(home, ".joe", "safety-policy.yaml")
-
-	tool := New()
-	_, err = tool.Execute(context.Background(), map[string]any{"path": policyPath})
-	if err == nil {
-		t.Fatal("expected error when reading safety policy, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := New()
+			got, err := tool.Execute(context.Background(), tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.errContains != "" && (err == nil || !strings.Contains(err.Error(), tt.errContains)) {
+				t.Errorf("Execute() error = %v, want error containing %q", err, tt.errContains)
+			}
+			if tt.wantContent != "" {
+				result := got.(map[string]any)
+				if result["content"] != tt.wantContent {
+					t.Errorf("content = %q, want %q", result["content"], tt.wantContent)
+				}
+			}
+		})
 	}
 }

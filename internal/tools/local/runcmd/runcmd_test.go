@@ -22,23 +22,14 @@ func (r *mockRunner) Run(ctx context.Context, name string, args []string) (strin
 	return r.stdout, r.stderr, r.exitCode, r.err
 }
 
-func TestTool_Name(t *testing.T) {
-	tool := New([]string{"ls"})
+func TestTool_Metadata(t *testing.T) {
+	tool := New([]string{"ls", "cat"})
 	if got := tool.Name(); got != "run_command" {
 		t.Errorf("Name() = %q, want %q", got, "run_command")
 	}
-}
-
-func TestTool_Description(t *testing.T) {
-	tool := New([]string{"ls", "cat"})
-	desc := tool.Description()
-	if desc == "" {
+	if tool.Description() == "" {
 		t.Fatal("Description() should not be empty")
 	}
-}
-
-func TestTool_Parameters(t *testing.T) {
-	tool := New([]string{"ls"})
 	params := tool.Parameters()
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want %q", params.Type, "object")
@@ -48,284 +39,195 @@ func TestTool_Parameters(t *testing.T) {
 	}
 }
 
-func TestExecute_CommandNotAllowed(t *testing.T) {
-	tool := NewWithRunner([]string{"echo"}, &mockRunner{})
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "rm",
-	})
-	if err == nil {
-		t.Fatal("expected error for disallowed command")
-	}
-}
-
-func TestExecute_RunnerSuccess(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"echo"}, runner)
-
-	resultRaw, err := tool.Execute(context.Background(), map[string]any{
-		"command": "echo",
-		"args":    []any{"hello"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	result, ok := resultRaw.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map result, got %T", resultRaw)
-	}
-
-	if result["stdout"] != "ok" {
-		t.Errorf("stdout = %v, want %v", result["stdout"], "ok")
-	}
-	if result["exit_code"] != 0 {
-		t.Errorf("exit_code = %v, want %d", result["exit_code"], 0)
-	}
-	if runner.seenName != "echo" {
-		t.Errorf("runner name = %q, want %q", runner.seenName, "echo")
-	}
-	if len(runner.seenArgs) != 1 || runner.seenArgs[0] != "hello" {
-		t.Errorf("runner args = %v, want %v", runner.seenArgs, []string{"hello"})
-	}
-}
-
-func TestExecute_RunnerNonZeroExit(t *testing.T) {
-	runner := &mockRunner{stdout: "oops", exitCode: 2, err: errors.New("exit 2")}
-	tool := NewWithRunner([]string{"cmd"}, runner)
-
-	resultRaw, err := tool.Execute(context.Background(), map[string]any{
-		"command": "cmd",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	result := resultRaw.(map[string]any)
-	if result["exit_code"] != 2 {
-		t.Errorf("exit_code = %v, want %d", result["exit_code"], 2)
-	}
-}
-
-func TestExecute_RunnerTimeout(t *testing.T) {
-	runner := &mockRunner{err: context.DeadlineExceeded}
-	tool := NewWithRunner([]string{"cmd"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "cmd",
-	})
-	if err == nil {
-		t.Fatal("expected timeout error")
-	}
-}
-
-func TestExecute_TruncatesOutput(t *testing.T) {
-	long := strings.Repeat("a", MaxOutputSize+10)
-	runner := &mockRunner{stdout: long, stderr: long}
-	tool := NewWithRunner([]string{"cmd"}, runner)
-
-	resultRaw, err := tool.Execute(context.Background(), map[string]any{
-		"command": "cmd",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	result := resultRaw.(map[string]any)
-	if result["truncated"] != true {
-		t.Fatalf("expected truncated=true")
-	}
-	stdout := result["stdout"].(string)
-	if !strings.Contains(stdout, "truncated") {
-		t.Errorf("stdout missing truncation message")
-	}
-}
-
-func TestExecute_BlocksJoeCommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"joe"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "joe",
-	})
-	if err == nil {
-		t.Fatal("expected error when running 'joe' command")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksJoecoredCommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"joecored"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "joecored",
-	})
-	if err == nil {
-		t.Fatal("expected error when running 'joecored' command")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksKillCommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"kill"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "kill",
-	})
-	if err == nil {
-		t.Fatal("expected error when running 'kill' command")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksPkillCommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"pkill"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "pkill",
-	})
-	if err == nil {
-		t.Fatal("expected error when running 'pkill' command")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksKillallCommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"killall"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "killall",
-	})
-	if err == nil {
-		t.Fatal("expected error when running 'killall' command")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_KubectlGetAllowed(t *testing.T) {
-	runner := &mockRunner{stdout: "NAME  READY  STATUS\nmy-pod  1/1  Running"}
-	tool := NewWithRunner([]string{"kubectl"}, runner)
-
-	result, err := tool.Execute(context.Background(), map[string]any{
-		"command": "kubectl",
-		"args":    []any{"get", "pods"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestExecute(t *testing.T) {
+	tests := []struct {
+		name        string
+		allowedCmds []string
+		runner      *mockRunner
+		args        map[string]any
+		wantErr     bool
+		errContains string
+		validate    func(t *testing.T, result any, runner *mockRunner)
+	}{
+		// Allowlist enforcement
+		{
+			name:        "command not in allowed list",
+			allowedCmds: []string{"echo"},
+			runner:      &mockRunner{},
+			args:        map[string]any{"command": "rm"},
+			wantErr:     true,
+		},
+		// Self-protection
+		{
+			name:        "blocks joe command",
+			allowedCmds: []string{"joe"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "joe"},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name:        "blocks joecored command",
+			allowedCmds: []string{"joecored"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "joecored"},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name:        "blocks kill command",
+			allowedCmds: []string{"kill"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "kill"},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name:        "blocks pkill command",
+			allowedCmds: []string{"pkill"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "pkill"},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name:        "blocks killall command",
+			allowedCmds: []string{"killall"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "killall"},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		// kubectl subcommand validation
+		{
+			name:        "kubectl get allowed",
+			allowedCmds: []string{"kubectl"},
+			runner:      &mockRunner{stdout: "NAME  READY  STATUS\nmy-pod  1/1  Running"},
+			args:        map[string]any{"command": "kubectl", "args": []any{"get", "pods"}},
+			validate: func(t *testing.T, result any, runner *mockRunner) {
+				if result.(map[string]any)["stdout"] != runner.stdout {
+					t.Errorf("stdout = %v, want %q", result.(map[string]any)["stdout"], runner.stdout)
+				}
+			},
+		},
+		{
+			name:        "kubectl delete blocked",
+			allowedCmds: []string{"kubectl"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "kubectl", "args": []any{"delete", "pod", "my-pod"}},
+			wantErr:     true,
+			errContains: "not allowed",
+		},
+		{
+			name:        "kubectl apply blocked",
+			allowedCmds: []string{"kubectl"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "kubectl", "args": []any{"apply", "-f", "deploy.yaml"}},
+			wantErr:     true,
+			errContains: "not allowed",
+		},
+		{
+			name:        "kubectl with no subcommand blocked",
+			allowedCmds: []string{"kubectl"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "kubectl", "args": []any{}},
+			wantErr:     true,
+		},
+		{
+			name:        "helm install blocked",
+			allowedCmds: []string{"helm"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "helm", "args": []any{"install", "my-release", "my-chart"}},
+			wantErr:     true,
+		},
+		{
+			name:        "argocd app sync blocked",
+			allowedCmds: []string{"argocd"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "argocd", "args": []any{"app", "sync", "my-app"}},
+			wantErr:     true,
+		},
+		// Runner behavior
+		{
+			name:        "runner success",
+			allowedCmds: []string{"echo"},
+			runner:      &mockRunner{stdout: "ok"},
+			args:        map[string]any{"command": "echo", "args": []any{"hello"}},
+			validate: func(t *testing.T, result any, runner *mockRunner) {
+				res := result.(map[string]any)
+				if res["stdout"] != "ok" {
+					t.Errorf("stdout = %v, want ok", res["stdout"])
+				}
+				if res["exit_code"] != 0 {
+					t.Errorf("exit_code = %v, want 0", res["exit_code"])
+				}
+				if runner.seenName != "echo" {
+					t.Errorf("seenName = %q, want echo", runner.seenName)
+				}
+				if len(runner.seenArgs) != 1 || runner.seenArgs[0] != "hello" {
+					t.Errorf("seenArgs = %v, want [hello]", runner.seenArgs)
+				}
+			},
+		},
+		{
+			name:        "non-zero exit code returned without error",
+			allowedCmds: []string{"cmd"},
+			runner:      &mockRunner{stdout: "oops", exitCode: 2, err: errors.New("exit 2")},
+			args:        map[string]any{"command": "cmd"},
+			validate: func(t *testing.T, result any, _ *mockRunner) {
+				if result.(map[string]any)["exit_code"] != 2 {
+					t.Errorf("exit_code = %v, want 2", result.(map[string]any)["exit_code"])
+				}
+			},
+		},
+		{
+			name:        "deadline exceeded returns error",
+			allowedCmds: []string{"cmd"},
+			runner:      &mockRunner{err: context.DeadlineExceeded},
+			args:        map[string]any{"command": "cmd"},
+			wantErr:     true,
+		},
+		{
+			name:        "long output is truncated",
+			allowedCmds: []string{"cmd"},
+			runner:      &mockRunner{stdout: strings.Repeat("a", MaxOutputSize+10), stderr: strings.Repeat("a", MaxOutputSize+10)},
+			args:        map[string]any{"command": "cmd"},
+			validate: func(t *testing.T, result any, _ *mockRunner) {
+				res := result.(map[string]any)
+				if res["truncated"] != true {
+					t.Error("want truncated=true")
+				}
+				if !strings.Contains(res["stdout"].(string), "truncated") {
+					t.Error("stdout missing truncation message")
+				}
+			},
+		},
+		{
+			name:        "read-only command skips subcommand check",
+			allowedCmds: []string{"ls"},
+			runner:      &mockRunner{stdout: "file1.go\nfile2.go"},
+			args:        map[string]any{"command": "ls", "args": []any{"-la", "/tmp"}},
+			validate: func(t *testing.T, result any, runner *mockRunner) {
+				if result.(map[string]any)["stdout"] != runner.stdout {
+					t.Errorf("stdout = %v, want %q", result.(map[string]any)["stdout"], runner.stdout)
+				}
+			},
+		},
 	}
 
-	res := result.(map[string]any)
-	if res["stdout"] != runner.stdout {
-		t.Errorf("stdout = %v, want %v", res["stdout"], runner.stdout)
-	}
-}
-
-func TestExecute_KubectlDeleteBlocked(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"kubectl"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "kubectl",
-		"args":    []any{"delete", "pod", "my-pod"},
-	})
-	if err == nil {
-		t.Fatal("expected error for kubectl delete")
-	}
-
-	if !strings.Contains(err.Error(), "not allowed") {
-		t.Errorf("expected subcommand denied error, got: %v", err)
-	}
-}
-
-func TestExecute_KubectlApplyBlocked(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"kubectl"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "kubectl",
-		"args":    []any{"apply", "-f", "deploy.yaml"},
-	})
-	if err == nil {
-		t.Fatal("expected error for kubectl apply")
-	}
-
-	if !strings.Contains(err.Error(), "not allowed") {
-		t.Errorf("expected subcommand denied error, got: %v", err)
-	}
-}
-
-func TestExecute_KubectlNoSubcommand(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"kubectl"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "kubectl",
-		"args":    []any{},
-	})
-	if err == nil {
-		t.Fatal("expected error for kubectl with no subcommand")
-	}
-}
-
-func TestExecute_HelmInstallBlocked(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"helm"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "helm",
-		"args":    []any{"install", "my-release", "my-chart"},
-	})
-	if err == nil {
-		t.Fatal("expected error for helm install")
-	}
-}
-
-func TestExecute_ArgocdAppSyncBlocked(t *testing.T) {
-	runner := &mockRunner{stdout: "ok"}
-	tool := NewWithRunner([]string{"argocd"}, runner)
-
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"command": "argocd",
-		"args":    []any{"app", "sync", "my-app"},
-	})
-	if err == nil {
-		t.Fatal("expected error for argocd app sync")
-	}
-}
-
-func TestExecute_ReadOnlyCommandNoSubcommandCheck(t *testing.T) {
-	runner := &mockRunner{stdout: "file1.go\nfile2.go"}
-	tool := NewWithRunner([]string{"ls"}, runner)
-
-	result, err := tool.Execute(context.Background(), map[string]any{
-		"command": "ls",
-		"args":    []any{"-la", "/tmp"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	res := result.(map[string]any)
-	if res["stdout"] != runner.stdout {
-		t.Errorf("stdout = %v, want %v", res["stdout"], runner.stdout)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := NewWithRunner(tt.allowedCmds, tt.runner)
+			got, err := tool.Execute(context.Background(), tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.errContains != "" && (err == nil || !strings.Contains(err.Error(), tt.errContains)) {
+				t.Errorf("Execute() error = %v, want error containing %q", err, tt.errContains)
+			}
+			if tt.validate != nil && err == nil {
+				tt.validate(t, got, tt.runner)
+			}
+		})
 	}
 }
