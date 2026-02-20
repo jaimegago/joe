@@ -82,6 +82,20 @@ var toolRegistry = map[string]ToolClassification{
 	"system_info":  {Tier: TierObserve, Description: "Return system stats: disk, memory, load, OS"},
 	"trace_route":  {Tier: TierObserve, Description: "Trace network path to a host (hop-by-hop)"},
 
+	// Data store tools (Phase 6.7) — read-only diagnostic queries, T1
+	"postgres_stat":           {Tier: TierObserve, Description: "Query PostgreSQL activity, table stats, replication lag"},
+	"postgres_query":          {Tier: TierObserve, Description: "Run a SELECT-only diagnostic query against PostgreSQL"},
+	"mysql_stat":              {Tier: TierObserve, Description: "Query MySQL process list and replica status"},
+	"mysql_query":             {Tier: TierObserve, Description: "Run a SELECT-only diagnostic query against MySQL"},
+	"redis_info":              {Tier: TierObserve, Description: "Query Redis INFO stats by section"},
+	"redis_slowlog":           {Tier: TierObserve, Description: "Retrieve recent slow Redis commands"},
+	"mongodb_stat":            {Tier: TierObserve, Description: "Query MongoDB server status, replica set health, current ops"},
+	"kafka_topics":            {Tier: TierObserve, Description: "List Kafka topics with partition info"},
+	"kafka_brokers":           {Tier: TierObserve, Description: "List Kafka brokers and cluster metadata"},
+	"kafka_consumers":         {Tier: TierObserve, Description: "List Kafka consumer groups and lag"},
+	"elasticsearch_health":    {Tier: TierObserve, Description: "Query Elasticsearch cluster health and node stats"},
+	"elasticsearch_indices":   {Tier: TierObserve, Description: "List Elasticsearch indices with doc count and health"},
+
 	// === T2: Record (internal state mutations) ===
 
 	// Core Agent tools (joecored — graph/fact mutations)

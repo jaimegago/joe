@@ -21,6 +21,14 @@ const (
 	SourceTypeAlertmanager = "alertmanager"
 	SourceTypePagerDuty    = "pagerduty"
 	SourceTypeGrafana      = "grafana"
+
+	// Phase 6.7 data store source types.
+	SourceTypePostgreSQL      = "postgresql"
+	SourceTypeMySQL           = "mysql"
+	SourceTypeRedis           = "redis"
+	SourceTypeMongoDB         = "mongodb"
+	SourceTypeKafka           = "kafka"
+	SourceTypeElasticsearch   = "elasticsearch"
 )
 
 // AllowedSourceTypes returns the supported source types.
@@ -44,6 +52,12 @@ func AllowedSourceTypes() []string {
 		SourceTypeAlertmanager,
 		SourceTypePagerDuty,
 		SourceTypeGrafana,
+		SourceTypePostgreSQL,
+		SourceTypeMySQL,
+		SourceTypeRedis,
+		SourceTypeMongoDB,
+		SourceTypeKafka,
+		SourceTypeElasticsearch,
 	}
 }
 
@@ -68,7 +82,13 @@ func IsValidSourceType(sourceType string) bool {
 		SourceTypeAzureMonitor,
 		SourceTypeAlertmanager,
 		SourceTypePagerDuty,
-		SourceTypeGrafana:
+		SourceTypeGrafana,
+		SourceTypePostgreSQL,
+		SourceTypeMySQL,
+		SourceTypeRedis,
+		SourceTypeMongoDB,
+		SourceTypeKafka,
+		SourceTypeElasticsearch:
 		return true
 	default:
 		return false

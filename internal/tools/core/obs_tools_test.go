@@ -6,20 +6,20 @@ import (
 	"testing"
 	"time"
 
+	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
-	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	"github.com/jaimegago/joe/internal/tools/core"
 )
 
 // --- Prometheus tool tests ---
 
 type mockPrometheusClient struct {
-	queryResult  *prometheusadapter.QueryResult
-	queryErr     error
-	targets      []prometheusadapter.Target
-	targetsErr   error
+	queryResult *prometheusadapter.QueryResult
+	queryErr    error
+	targets     []prometheusadapter.Target
+	targetsErr  error
 }
 
 func (m *mockPrometheusClient) PrometheusQuery(_ context.Context, _, _ string, _ time.Time) (*prometheusadapter.QueryResult, error) {

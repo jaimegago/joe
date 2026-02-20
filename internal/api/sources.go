@@ -10,6 +10,12 @@ import (
 	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
+	elasticsearchadapter "github.com/jaimegago/joe/internal/adapters/datastore/elasticsearch"
+	kafkaadapter "github.com/jaimegago/joe/internal/adapters/datastore/kafka"
+	mongodbadapter "github.com/jaimegago/joe/internal/adapters/datastore/mongodb"
+	mysqladapter "github.com/jaimegago/joe/internal/adapters/datastore/mysql"
+	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
+	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
@@ -179,6 +185,48 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		adapter := grafanaadapter.New()
 		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect grafana source", "failed to connect to Grafana")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypePostgreSQL:
+		adapter := postgresadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect postgresql source", "failed to connect to PostgreSQL")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeMySQL:
+		adapter := mysqladapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect mysql source", "failed to connect to MySQL")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeRedis:
+		adapter := redisadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect redis source", "failed to connect to Redis")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeMongoDB:
+		adapter := mongodbadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect mongodb source", "failed to connect to MongoDB")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeKafka:
+		adapter := kafkaadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect kafka source", "failed to connect to Kafka")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeElasticsearch:
+		adapter := elasticsearchadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect elasticsearch source", "failed to connect to Elasticsearch")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)
