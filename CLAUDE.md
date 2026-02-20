@@ -221,9 +221,11 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [ ] Draft generation, update proposals
 - [ ] Human approval flow
 
-### Phase 9: Additional Clients
+### Phase 9: Additional Clients + RBAC
 - [ ] Web UI, VS Code extension
-- [ ] RBAC / permissions layer
+- [ ] RBAC / permissions layer — see `docs/JOE_RBAC_IMPLEMENTATION.md` (full spec: identity providers, policy engine, middleware pipeline, audit logging) and `docs/JOE_SECURITY.md` (architecture overview)
+  - Triggered by multi-user scenarios (Web UI, VS Code); not required for Phase 7/8 (single-user)
+  - Tier 1 knowledge immutability (Phase 7) is enforced as a store invariant, not an RBAC gate
 
 ## Knowledge Store (Phase 7)
 
