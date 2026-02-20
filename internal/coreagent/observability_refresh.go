@@ -116,8 +116,8 @@ func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Sourc
 }
 
 // refreshLokiSource refreshes a Loki source.
-// Creates a graph node for the source. Edge discovery is done via .joe/ files.
-func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source, _ lokiadapter.LokiAdapter) error {
+// Discovers services sending logs to Loki via the label values API and emits logs_in edges.
+func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source, adapter lokiadapter.LokiAdapter) error {
 	r.logger.Info("refreshing loki source", "source_id", source.ID)
 
 	now := time.Now()
@@ -137,23 +137,57 @@ func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source,
 		},
 	}
 
+	desiredEdges := make([]graph.Edge, 0)
+
+	// Discover services shipping logs to Loki and create logs_in edges.
+	services, err := adapter.ListServices(ctx)
+	if err != nil {
+		r.logger.Warn("failed to list loki services (skipping edge discovery)", "source_id", source.ID, "error", err)
+	} else {
+		for _, svcName := range services {
+			matchingNodes, err := r.services.Graph.Query(ctx, svcName)
+			if err != nil {
+				continue
+			}
+			for _, svcNode := range matchingNodes {
+				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+					continue
+				}
+				desiredEdges = append(desiredEdges, graph.Edge{
+					From:       svcNode.ID,
+					To:         nodeID,
+					Relation:   graph.RelationLogsIn,
+					Confidence: graph.Inferred,
+					Source:     "loki_labels",
+					SourceID:   source.ID,
+					Context:    "app=" + svcName,
+					CreatedAt:  now,
+				})
+			}
+		}
+	}
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for loki source %s: %w", source.ID, err)
 	}
 
-	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
 		return fmt.Errorf("apply graph delta for loki source %s: %w", source.ID, err)
 	}
 
-	_ = existingEdges // suppress unused warning; edges preserved by delta logic
-	r.logger.Info("loki refresh completed", "source_id", source.ID)
+	r.logger.Info("loki refresh completed",
+		"source_id", source.ID,
+		"nodes", len(desiredNodes),
+		"edges", len(desiredEdges),
+	)
 	return nil
 }
 
 // refreshTempoSource refreshes a Tempo source.
-func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source, _ tempoadapter.TempoAdapter) error {
+// Discovers services sending traces to Tempo via the tag values API and emits traces_in edges.
+func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source, adapter tempoadapter.TempoAdapter) error {
 	r.logger.Info("refreshing tempo source", "source_id", source.ID)
 
 	now := time.Now()
@@ -173,18 +207,51 @@ func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source
 		},
 	}
 
+	desiredEdges := make([]graph.Edge, 0)
+
+	// Discover services sending traces to Tempo and create traces_in edges.
+	services, err := adapter.ListServices(ctx)
+	if err != nil {
+		r.logger.Warn("failed to list tempo services (skipping edge discovery)", "source_id", source.ID, "error", err)
+	} else {
+		for _, svcName := range services {
+			matchingNodes, err := r.services.Graph.Query(ctx, svcName)
+			if err != nil {
+				continue
+			}
+			for _, svcNode := range matchingNodes {
+				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+					continue
+				}
+				desiredEdges = append(desiredEdges, graph.Edge{
+					From:       svcNode.ID,
+					To:         nodeID,
+					Relation:   graph.RelationTracesIn,
+					Confidence: graph.Inferred,
+					Source:     "tempo_tags",
+					SourceID:   source.ID,
+					Context:    "service.name=" + svcName,
+					CreatedAt:  now,
+				})
+			}
+		}
+	}
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for tempo source %s: %w", source.ID, err)
 	}
 
-	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
 		return fmt.Errorf("apply graph delta for tempo source %s: %w", source.ID, err)
 	}
 
-	_ = existingEdges
-	r.logger.Info("tempo refresh completed", "source_id", source.ID)
+	r.logger.Info("tempo refresh completed",
+		"source_id", source.ID,
+		"nodes", len(desiredNodes),
+		"edges", len(desiredEdges),
+	)
 	return nil
 }
 

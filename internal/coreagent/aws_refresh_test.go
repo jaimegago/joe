@@ -8,6 +8,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	"github.com/jaimegago/joe/internal/core"
+	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -102,6 +103,65 @@ func TestRefreshAWSSourceMapping(t *testing.T) {
 	requireEdge(t, edges, "aws/src-aws-1/ec2/i-1", "aws/src-aws-1/vpc/vpc-1", "in_vpc")
 	requireEdge(t, edges, "aws/src-aws-1/eks/cluster-1", "aws/src-aws-1/vpc/vpc-1", "in_vpc")
 	requireEdge(t, edges, "aws/src-aws-1/rds/db-1", "aws/src-aws-1/vpc/vpc-1", "in_vpc")
+}
+
+func TestRefreshAWSSource_IsK8sNodeEdge(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	// Pre-seed a K8s node with an InternalIP matching the EC2 instance.
+	k8sNode := graph.Node{
+		ID:       "k8s/src-k8s/node/ip-10-0-1-5",
+		Type:     "node",
+		SourceID: "src-k8s",
+		Metadata: map[string]any{"name": "ip-10-0-1-5", "internal_ip": "10.0.1.5"},
+	}
+	if err := graphStore.AddNode(context.Background(), k8sNode); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	refresher := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-aws-k8s", Type: store.SourceTypeAWS, Name: "aws"}
+	adapter := &fakeAWSAdapter{
+		ec2Instances: []awsadapter.EC2Instance{
+			{InstanceID: "i-abc", InstanceType: "m5.large", State: "running", PrivateIP: "10.0.1.5"},
+		},
+	}
+
+	if err := refresher.refreshAWSSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAWSSource error: %v", err)
+	}
+
+	// Cross-source edges span both endpoints; query with both node IDs.
+	ec2NodeID := "aws/src-aws-k8s/ec2/i-abc"
+	k8sNodeID := "k8s/src-k8s/node/ip-10-0-1-5"
+	edges, err := graphStore.ListEdgesForNodes(context.Background(), []string{ec2NodeID, k8sNodeID})
+	if err != nil {
+		t.Fatalf("ListEdgesForNodes error: %v", err)
+	}
+	requireEdge(t, edges, ec2NodeID, k8sNodeID, "is_k8s_node")
+}
+
+func TestRefreshAWSSource_IsK8sNodeEdge_NoMatch(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	refresher := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-aws-nomatch", Type: store.SourceTypeAWS, Name: "aws"}
+	adapter := &fakeAWSAdapter{
+		ec2Instances: []awsadapter.EC2Instance{
+			{InstanceID: "i-xyz", InstanceType: "t3.micro", State: "running", PrivateIP: "192.168.1.1"},
+		},
+	}
+
+	// No K8s nodes in graph → no is_k8s_node edges, no error.
+	if err := refresher.refreshAWSSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAWSSource error: %v", err)
+	}
 }
 
 var _ awsadapter.AWSAdapter = (*fakeAWSAdapter)(nil)

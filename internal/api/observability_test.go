@@ -61,6 +61,7 @@ func (m *mockLokiAdapter) Query(_ context.Context, _ string, _ int, _ time.Durat
 func (m *mockLokiAdapter) QueryRange(_ context.Context, _ string, _, _ time.Time, _ int) (*lokiadapter.QueryResult, error) {
 	return m.result, m.err
 }
+func (m *mockLokiAdapter) ListServices(_ context.Context) ([]string, error) { return nil, nil }
 
 // --- Tempo mock ---
 
@@ -81,6 +82,7 @@ func (m *mockTempoAdapter) Search(_ context.Context, _, _ string, _, _, _ int) (
 func (m *mockTempoAdapter) GetTrace(_ context.Context, _ string) (*tempoadapter.Trace, error) {
 	return m.trace, m.err
 }
+func (m *mockTempoAdapter) ListServices(_ context.Context) ([]string, error) { return nil, nil }
 
 // --- Jaeger mock ---
 

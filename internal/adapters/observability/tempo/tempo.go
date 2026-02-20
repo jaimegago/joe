@@ -55,6 +55,8 @@ type TempoAdapter interface {
 	Search(ctx context.Context, service, tags string, minDurationMs, maxDurationMs int, limit int) ([]TraceSearchResult, error)
 	// GetTrace retrieves a full trace by ID.
 	GetTrace(ctx context.Context, traceID string) (*Trace, error)
+	// ListServices returns service names discovered from Tempo for traces_in edge discovery.
+	ListServices(ctx context.Context) ([]string, error)
 }
 
 // httpDoer abstracts net/http.Client for testing.
@@ -235,6 +237,56 @@ func (a *Adapter) Search(ctx context.Context, service, tags string, minDurationM
 	}
 
 	return results, nil
+}
+
+// ListServices returns service names seen in Tempo by querying the service.name tag values.
+// These are used to discover which services send traces to this Tempo instance.
+func (a *Adapter) ListServices(ctx context.Context) ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	u := strings.TrimRight(a.config.URL, "/") + "/api/search/tag/service.name/values"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build tag-values request: %w", err)
+	}
+	a.addHeaders(req, a.config)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tag-values request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read tag-values response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tag-values failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var raw struct {
+		TagValues []struct {
+			Value string `json:"value"`
+		} `json:"tagValues"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parse tag-values response: %w", err)
+	}
+
+	services := make([]string, 0, len(raw.TagValues))
+	for _, tv := range raw.TagValues {
+		if tv.Value != "" {
+			services = append(services, tv.Value)
+		}
+	}
+	return services, nil
 }
 
 // GetTrace retrieves a full trace by ID.

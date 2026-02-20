@@ -200,6 +200,9 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 		}
 	}
 
+	// Cross-source: match EC2 instances to K8s nodes by InternalIP → is_k8s_node edges.
+	desiredEdges = append(desiredEdges, r.buildIsK8sNodeEdgesFromEC2(ctx, source, ec2Instances, now)...)
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err
@@ -212,6 +215,44 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 
 	r.logger.Info("aws refresh completed", "source_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
 	return nil
+}
+
+// buildIsK8sNodeEdgesFromEC2 creates is_k8s_node edges by matching EC2 private IPs
+// against K8s node InternalIPs already in the graph.
+func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *store.Source, instances []awsadapter.EC2Instance, now time.Time) []graph.Edge {
+	// Build a lookup index: InternalIP → K8s node graph ID.
+	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
+	if err != nil || len(k8sNodes) == 0 {
+		return nil
+	}
+	ipToK8sNodeID := make(map[string]string, len(k8sNodes))
+	for _, n := range k8sNodes {
+		if ip, ok := n.Metadata["internal_ip"].(string); ok && ip != "" {
+			ipToK8sNodeID[ip] = n.ID
+		}
+	}
+
+	var edges []graph.Edge
+	for _, instance := range instances {
+		if instance.PrivateIP == "" {
+			continue
+		}
+		k8sNodeID, ok := ipToK8sNodeID[instance.PrivateIP]
+		if !ok {
+			continue
+		}
+		edges = append(edges, graph.Edge{
+			From:       awsNodeID(source.ID, "ec2", instance.InstanceID),
+			To:         k8sNodeID,
+			Relation:   graph.RelationIsK8sNode,
+			Confidence: graph.Inferred,
+			Source:     "aws_k8s_ip_match",
+			SourceID:   source.ID,
+			Context:    "private_ip=" + instance.PrivateIP,
+			CreatedAt:  now,
+		})
+	}
+	return edges
 }
 
 func awsNodeID(sourceID, service, resourceID string) string {

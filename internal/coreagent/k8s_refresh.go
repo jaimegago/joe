@@ -267,6 +267,22 @@ func buildK8sMetadata(obj *unstructured.Unstructured, nodeType, namespace string
 		if capacity, found, _ := unstructured.NestedMap(obj.Object, "status", "capacity"); found {
 			metadata["capacity"] = capacitySummary(capacity)
 		}
+		if addresses, found, _ := unstructured.NestedSlice(obj.Object, "status", "addresses"); found {
+			for _, addr := range addresses {
+				addrMap, ok := addr.(map[string]any)
+				if !ok {
+					continue
+				}
+				addrType, _ := addrMap["type"].(string)
+				addrValue, _ := addrMap["address"].(string)
+				switch addrType {
+				case "InternalIP":
+					metadata["internal_ip"] = addrValue
+				case "Hostname":
+					metadata["hostname"] = addrValue
+				}
+			}
+		}
 	}
 
 	return metadata
