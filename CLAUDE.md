@@ -1,4 +1,4 @@
-# CLAUDE.md - Joe Project Context
+# CLAUDE.md — Joe Project Context
 
 This file provides context for Claude Code when working on the Joe codebase.
 
@@ -228,11 +228,11 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 
 Joe captures tribal knowledge in three tiers:
 
-| Tier | Trust | Management | Examples |
-|------|-------|------------|----------|
-| 1: Curated | Highest | Human only | Notes attached to nodes, onboarding facts |
-| 2: Synced | High | External source of truth | Runbooks, wiki pages (fetched, cached) |
-| 3: Derived | Lower | LLM autonomous | Session learnings, inferred patterns |
+| Tier        | Trust    | Management      | Examples                                 |
+|------------ |--------- |----------------|------------------------------------------ |
+| 1: Curated  | Highest  | Human only     | Notes attached to nodes, onboarding facts |
+| 2: Synced   | High     | External source| Runbooks, wiki pages (fetched, cached)    |
+| 3: Derived  | Lower    | LLM autonomous | Session learnings, inferred patterns      |
 
 Key principles:
 - LLM can create/update Tier 3, but cannot touch Tier 1

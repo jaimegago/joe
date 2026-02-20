@@ -32,7 +32,8 @@
       "Read(//tmp/**)",
       "Bash(staticcheck:*)",
       "Bash(revive:*)",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(npx --yes markdownlint-cli:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"
