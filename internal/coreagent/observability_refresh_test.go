@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
@@ -98,6 +99,33 @@ func (f *fakeJaegerAdapter) SearchTraces(_ context.Context, _, _ string, _ int) 
 }
 func (f *fakeJaegerAdapter) GetTrace(_ context.Context, _ string) (map[string]any, error) {
 	return f.trace, f.err
+}
+
+// fakeDatadogAdapter satisfies datadogadapter.DatadogAdapter.
+type fakeDatadogAdapter struct {
+	metricServices []string
+	logServices    []string
+	metricsResult  *datadogadapter.MetricsResult
+	logsResult     *datadogadapter.LogsResult
+	err            error
+}
+
+func (f *fakeDatadogAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeDatadogAdapter) Disconnect() error                               { return nil }
+func (f *fakeDatadogAdapter) Status() adapters.Status {
+	return adapters.Status{Connected: true}
+}
+func (f *fakeDatadogAdapter) MetricsQuery(_ context.Context, _ string, _, _ int64) (*datadogadapter.MetricsResult, error) {
+	return f.metricsResult, f.err
+}
+func (f *fakeDatadogAdapter) LogsSearch(_ context.Context, _ string, _, _ int64, _ int) (*datadogadapter.LogsResult, error) {
+	return f.logsResult, f.err
+}
+func (f *fakeDatadogAdapter) ListActiveServices(_ context.Context) ([]string, error) {
+	return f.metricServices, f.err
+}
+func (f *fakeDatadogAdapter) ListLogServices(_ context.Context) ([]string, error) {
+	return f.logServices, f.err
 }
 
 // setupObsTestServices creates a full services stack for refreshSource tests.
@@ -347,6 +375,88 @@ func TestRefreshJaegerSource_WithMatchingService(t *testing.T) {
 	}
 }
 
+// ---- refreshDatadogSource ----
+
+func TestRefreshDatadogSource_NoServices(t *testing.T) {
+	graphStore := setupGraphStore(t)
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-dd-1", Type: store.SourceTypeDatadog, Name: "test-dd"}
+	adapter := &fakeDatadogAdapter{}
+
+	if err := r.refreshDatadogSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshDatadogSource error: %v", err)
+	}
+
+	nodes, _, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	if err != nil {
+		t.Fatalf("LoadGraphStateForSource error: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Errorf("len(nodes) = %d, want 1", len(nodes))
+	}
+	if nodes[0].Type != "datadog_source" {
+		t.Errorf("node type = %q, want datadog_source", nodes[0].Type)
+	}
+}
+
+func TestRefreshDatadogSource_ServiceDiscoveryError(t *testing.T) {
+	graphStore := setupGraphStore(t)
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-dd-2", Type: store.SourceTypeDatadog, Name: "test-dd"}
+	adapter := &fakeDatadogAdapter{err: errors.New("api error")}
+
+	// Should still succeed (skips edge discovery).
+	if err := r.refreshDatadogSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshDatadogSource should not error on discovery failure, got: %v", err)
+	}
+}
+
+func TestRefreshDatadogSource_MetricsInEdge(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	svcNode := graph.Node{ID: "svc/payment", Type: "service", SourceID: "src-k8s"}
+	if err := graphStore.AddNode(context.Background(), svcNode); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-dd-3", Type: store.SourceTypeDatadog, Name: "test-dd"}
+	adapter := &fakeDatadogAdapter{metricServices: []string{"payment"}}
+
+	if err := r.refreshDatadogSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshDatadogSource error: %v", err)
+	}
+}
+
+func TestRefreshDatadogSource_LogsInEdge(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	svcNode := graph.Node{ID: "svc/frontend", Type: "deployment", SourceID: "src-k8s"}
+	if err := graphStore.AddNode(context.Background(), svcNode); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-dd-4", Type: store.SourceTypeDatadog, Name: "test-dd"}
+	adapter := &fakeDatadogAdapter{logServices: []string{"frontend"}}
+
+	if err := r.refreshDatadogSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshDatadogSource error: %v", err)
+	}
+}
+
 // ---- refreshSource switch cases for observability types ----
 
 func TestRefreshSource_PrometheusType(t *testing.T) {
@@ -401,6 +511,17 @@ func TestRefreshSource_JaegerType(t *testing.T) {
 	source := &store.Source{ID: "src-jaeger", Type: store.SourceTypeJaeger, Name: "jaeger"}
 	if err := r.refreshSource(context.Background(), source); err != nil {
 		t.Fatalf("refreshSource(jaeger) error: %v", err)
+	}
+}
+
+func TestRefreshSource_DatadogType(t *testing.T) {
+	svc, reg := setupObsTestServices(t)
+	reg.Register("src-dd", &fakeDatadogAdapter{})
+
+	r := &Refresher{services: svc, logger: slog.Default()}
+	source := &store.Source{ID: "src-dd", Type: store.SourceTypeDatadog, Name: "datadog"}
+	if err := r.refreshSource(context.Background(), source); err != nil {
+		t.Fatalf("refreshSource(datadog) error: %v", err)
 	}
 }
 

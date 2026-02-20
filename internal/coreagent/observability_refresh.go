@@ -263,9 +263,9 @@ func obsNodeID(sourceID, sourceType string) string {
 	return fmt.Sprintf("obs/%s/%s", sourceType, sourceID)
 }
 
-// refreshDatadogSource creates a graph node for a Datadog source.
-// Edge discovery (metrics_in, logs_in) is done via .joe/ files.
-func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Source, _ datadogadapter.DatadogAdapter) error {
+// refreshDatadogSource refreshes a Datadog source and discovers metrics_in and logs_in
+// edges by querying the Datadog API for active hosts and recent log events.
+func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Source, adapter datadogadapter.DatadogAdapter) error {
 	r.logger.Info("refreshing datadog source", "source_id", source.ID)
 
 	now := time.Now()
@@ -285,19 +285,108 @@ func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Sour
 		},
 	}
 
+	desiredEdges := make([]graph.Edge, 0)
+
+	// Discover metrics_in edges from active Datadog hosts.
+	metricServices, err := adapter.ListActiveServices(ctx)
+	if err != nil {
+		r.logger.Warn("failed to list datadog metric services (skipping metrics_in discovery)", "source_id", source.ID, "error", err)
+	} else {
+		edges, edgeErr := r.buildDDMetricsInEdges(ctx, source, nodeID, metricServices, now)
+		if edgeErr != nil {
+			r.logger.Warn("failed to build datadog metrics_in edges", "source_id", source.ID, "error", edgeErr)
+		} else {
+			desiredEdges = append(desiredEdges, edges...)
+		}
+	}
+
+	// Discover logs_in edges from recent Datadog log events.
+	logServices, err := adapter.ListLogServices(ctx)
+	if err != nil {
+		r.logger.Warn("failed to list datadog log services (skipping logs_in discovery)", "source_id", source.ID, "error", err)
+	} else {
+		edges, edgeErr := r.buildDDLogsInEdges(ctx, source, nodeID, logServices, now)
+		if edgeErr != nil {
+			r.logger.Warn("failed to build datadog logs_in edges", "source_id", source.ID, "error", edgeErr)
+		} else {
+			desiredEdges = append(desiredEdges, edges...)
+		}
+	}
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for datadog source %s: %w", source.ID, err)
 	}
 
-	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
+	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
 		return fmt.Errorf("apply graph delta for datadog source %s: %w", source.ID, err)
 	}
 
-	_ = existingEdges
-	r.logger.Info("datadog refresh completed", "source_id", source.ID)
+	r.logger.Info("datadog refresh completed",
+		"source_id", source.ID,
+		"nodes", len(desiredNodes),
+		"edges", len(desiredEdges),
+	)
 	return nil
+}
+
+// buildDDMetricsInEdges creates metrics_in edges by matching Datadog metric service names
+// (from active hosts) to existing service/deployment nodes in the graph.
+func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Source, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
+	var edges []graph.Edge
+	for _, svcName := range services {
+		matchingNodes, err := r.services.Graph.Query(ctx, svcName)
+		if err != nil {
+			r.logger.Debug("graph query failed for datadog metric service", "service", svcName, "error", err)
+			continue
+		}
+		for _, svcNode := range matchingNodes {
+			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				continue
+			}
+			edges = append(edges, graph.Edge{
+				From:       svcNode.ID,
+				To:         ddNodeID,
+				Relation:   graph.RelationMetricsIn,
+				Confidence: graph.Inferred,
+				Source:     "datadog_hosts",
+				SourceID:   source.ID,
+				Context:    "service=" + svcName,
+				CreatedAt:  now,
+			})
+		}
+	}
+	return edges, nil
+}
+
+// buildDDLogsInEdges creates logs_in edges by matching Datadog log service names
+// (from recent log events) to existing service/deployment nodes in the graph.
+func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Source, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
+	var edges []graph.Edge
+	for _, svcName := range services {
+		matchingNodes, err := r.services.Graph.Query(ctx, svcName)
+		if err != nil {
+			r.logger.Debug("graph query failed for datadog log service", "service", svcName, "error", err)
+			continue
+		}
+		for _, svcNode := range matchingNodes {
+			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				continue
+			}
+			edges = append(edges, graph.Edge{
+				From:       svcNode.ID,
+				To:         ddNodeID,
+				Relation:   graph.RelationLogsIn,
+				Confidence: graph.Inferred,
+				Source:     "datadog_logs",
+				SourceID:   source.ID,
+				Context:    "service=" + svcName,
+				CreatedAt:  now,
+			})
+		}
+	}
+	return edges, nil
 }
 
 // refreshSplunkSource creates a graph node for a Splunk source.

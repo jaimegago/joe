@@ -67,6 +67,12 @@ type DatadogAdapter interface {
 	// LogsSearch searches Datadog log events.
 	// from and to are Unix timestamps in seconds.
 	LogsSearch(ctx context.Context, query string, from, to int64, limit int) (*LogsResult, error)
+	// ListActiveServices returns distinct service names from active Datadog hosts.
+	// Used for metrics_in edge discovery during graph refresh.
+	ListActiveServices(ctx context.Context) ([]string, error)
+	// ListLogServices returns distinct service names from recent Datadog log events.
+	// Used for logs_in edge discovery during graph refresh.
+	ListLogServices(ctx context.Context) ([]string, error)
 }
 
 // httpDoer abstracts net/http.Client for testing.
@@ -342,13 +348,136 @@ func (a *Adapter) checkConnected() error {
 	return nil
 }
 
-// extractServiceNameFromDD extracts a simple service name from a Datadog scope or tag list.
-// Used for graph edge discovery (metrics_in). Exported for testability.
-func extractServiceNameFromDD(tags []string) string {
-	for _, tag := range tags {
-		if strings.HasPrefix(tag, "service:") {
-			return strings.TrimPrefix(tag, "service:")
+// ListActiveServices returns distinct service names discovered from Datadog's active
+// host list. Hosts report their service tags (e.g. "service:payment-api") which are
+// used to build metrics_in edges during graph refresh.
+func (a *Adapter) ListActiveServices(ctx context.Context) ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		a.config.BaseURL()+"/api/v1/hosts", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build hosts request: %w", err)
+	}
+	a.addHeaders(req, a.config)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list hosts request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read hosts response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list hosts failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var raw struct {
+		HostList []struct {
+			TagsBySource map[string][]string `json:"tags_by_source"`
+		} `json:"host_list"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parse hosts response: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	var services []string
+	for _, host := range raw.HostList {
+		for _, tags := range host.TagsBySource {
+			for _, tag := range tags {
+				if strings.HasPrefix(tag, "service:") {
+					svc := strings.TrimPrefix(tag, "service:")
+					if svc != "" {
+						if _, ok := seen[svc]; !ok {
+							seen[svc] = struct{}{}
+							services = append(services, svc)
+						}
+					}
+				}
+			}
 		}
 	}
-	return ""
+	return services, nil
+}
+
+// ListLogServices returns distinct service names from recent Datadog log events
+// (last 15 minutes, up to 500 events). Used to build logs_in edges during graph refresh.
+func (a *Adapter) ListLogServices(ctx context.Context) ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	payload := map[string]any{
+		"filter": map[string]any{
+			"query": "*",
+			"from":  fmt.Sprintf("%d", now.Add(-15*time.Minute).Unix()),
+			"to":    fmt.Sprintf("%d", now.Unix()),
+		},
+		"page": map[string]any{
+			"limit": 500,
+		},
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal log services payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		a.config.BaseURL()+"/api/v2/logs/events/search", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("build log services request: %w", err)
+	}
+	a.addHeaders(req, a.config)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("log services request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read log services response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("log services search failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var raw struct {
+		Data []struct {
+			Attributes struct {
+				Service string `json:"service"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parse log services response: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	var services []string
+	for _, d := range raw.Data {
+		svc := d.Attributes.Service
+		if svc != "" {
+			if _, ok := seen[svc]; !ok {
+				seen[svc] = struct{}{}
+				services = append(services, svc)
+			}
+		}
+	}
+	return services, nil
 }
