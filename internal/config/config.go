@@ -19,6 +19,21 @@ type Config struct {
 	Refresh       RefreshConfig      `yaml:"refresh"`
 	Notifications NotificationConfig `yaml:"notifications"`
 	Logging       LoggingConfig      `yaml:"logging"`
+	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
+}
+
+// KnowledgeConfig configures the Phase 7 Knowledge Store.
+type KnowledgeConfig struct {
+	// EmbeddingModel is the model key (from LLM.Available) used for embeddings.
+	// Defaults to the LLM.Current model when empty.
+	EmbeddingModel string `yaml:"embedding_model"`
+	// SemanticTopK is the default number of results returned by semantic search.
+	SemanticTopK int `yaml:"semantic_top_k"`
+	// DerivedMinConfidence is the minimum confidence for Tier 3 (derived) entries
+	// to appear in semantic search results. 0 means include all.
+	DerivedMinConfidence float32 `yaml:"derived_min_confidence"`
+	// SyncEnabled controls whether background sync of external knowledge sources runs.
+	SyncEnabled bool `yaml:"sync_enabled"`
 }
 
 // ServerConfig holds joecored server settings
@@ -211,6 +226,11 @@ func defaultConfig() *Config {
 		Logging: LoggingConfig{
 			Level: "info",
 			File:  "",
+		},
+		Knowledge: KnowledgeConfig{
+			SemanticTopK:         defaultKnowledgeSemanticTopK,
+			DerivedMinConfidence: defaultKnowledgeMinConfidence,
+			SyncEnabled:          false,
 		},
 	}
 }

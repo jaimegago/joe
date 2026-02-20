@@ -33,7 +33,8 @@
       "Bash(staticcheck:*)",
       "Bash(revive:*)",
       "Bash(xargs basename:*)",
-      "Bash(npx --yes markdownlint-cli:*)"
+      "Bash(npx --yes markdownlint-cli:*)",
+      "Bash(golangci-lint run:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"

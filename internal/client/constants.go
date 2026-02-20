@@ -47,4 +47,9 @@ const (
 	apiSplunkBasePath    = "/api/v1/splunk"
 	apiDynatraceBasePath = "/api/v1/dynatrace"
 	apiNewRelicBasePath  = "/api/v1/newrelic"
+
+	// Knowledge store base paths (Phase 7).
+	apiKnowledgeEntriesPath = "/api/v1/knowledge/entries"
+	apiKnowledgeSearchPath  = "/api/v1/knowledge/search"
+	apiKnowledgeSourcesPath = "/api/v1/knowledge/sources"
 )

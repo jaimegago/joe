@@ -26,6 +26,11 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
 	"github.com/jaimegago/joe/internal/crypto"
+	"github.com/jaimegago/joe/internal/knowledge"
+	"github.com/jaimegago/joe/internal/knowledge/embeddings"
+	knowledgesync "github.com/jaimegago/joe/internal/knowledge/sync"
+	"github.com/jaimegago/joe/internal/knowledge/sync/confluence"
+	"github.com/jaimegago/joe/internal/knowledge/sync/notion"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
@@ -230,6 +235,27 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if err != nil {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
 		return 1
+	}
+
+	// Wire the LLM embedder into the Knowledge Service now that the adapter is ready.
+	embModelName := cfg.Knowledge.EmbeddingModel
+	if embModelName == "" {
+		embModelName = cfg.LLM.Current
+	}
+	embedder := embeddings.New(llmAdapter, embModelName)
+	services.Knowledge = knowledge.NewService(sqlStore.Knowledge, embedder)
+	slog.Info("knowledge store ready", "embedding_model", embModelName)
+
+	// Start knowledge sync coordinator when sync is enabled.
+	if cfg.Knowledge.SyncEnabled {
+		syncers := map[string]knowledgesync.Syncer{
+			"confluence": confluence.New(),
+			"notion":     notion.New(),
+		}
+		syncCoordinator := knowledgesync.NewCoordinator(services.Knowledge, syncers)
+		syncCoordinator.Start(ctx)
+		defer syncCoordinator.Stop()
+		slog.Info("knowledge sync coordinator started")
 	}
 
 	// Initialize and start Core Agent BEFORE setting up API routes

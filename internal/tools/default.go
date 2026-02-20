@@ -146,5 +146,8 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewFalcoAlertsTool(coreClient))
 	registry.Register(coretools.NewFalcoRulesTool(coreClient))
 
+	// Knowledge store tools (Phase 7)
+	registry.Register(coretools.NewSearchKnowledgeTool(coreClient))
+
 	return registry
 }

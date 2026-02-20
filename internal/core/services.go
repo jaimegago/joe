@@ -7,6 +7,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
@@ -30,6 +31,7 @@ type Services struct {
 	Adapters       *adapters.Registry
 	Metrics        *observability.Metrics
 	Clarifications *ClarificationService
+	Knowledge      *knowledge.Service
 }
 
 // New creates a new Services instance with the given SQL store database.
@@ -37,6 +39,10 @@ type Services struct {
 func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
 	metrics = observability.EnsureMetrics(metrics)
 	graphStore := graph.NewSQLiteStore(db, metrics)
+	// Knowledge service starts without an embedder; one is attached later via
+	// services.Knowledge = knowledge.NewService(repo, embedder) once the LLM
+	// adapter is wired in cmd/joecored/main.go.
+	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
 	return &Services{
 		Config:         cfg,
 		Store:          sqlStore,
@@ -44,6 +50,7 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry 
 		Adapters:       adapterRegistry,
 		Metrics:        metrics,
 		Clarifications: NewClarificationService(graphStore, sqlStore),
+		Knowledge:      knowledgeSvc,
 	}
 }
 
