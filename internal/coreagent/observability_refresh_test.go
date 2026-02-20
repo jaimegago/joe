@@ -43,8 +43,9 @@ func (f *fakePrometheusAdapter) Targets(_ context.Context) ([]prometheusadapter.
 
 // fakeLokiAdapter satisfies lokiadapter.LokiAdapter.
 type fakeLokiAdapter struct {
-	result *lokiadapter.QueryResult
-	err    error
+	result   *lokiadapter.QueryResult
+	services []string
+	err      error
 }
 
 func (f *fakeLokiAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
@@ -58,11 +59,15 @@ func (f *fakeLokiAdapter) Query(_ context.Context, _ string, _ int, _ time.Durat
 func (f *fakeLokiAdapter) QueryRange(_ context.Context, _ string, _, _ time.Time, _ int) (*lokiadapter.QueryResult, error) {
 	return f.result, f.err
 }
+func (f *fakeLokiAdapter) ListServices(_ context.Context) ([]string, error) {
+	return f.services, f.err
+}
 
 // fakeTempoAdapter satisfies tempoadapter.TempoAdapter.
 type fakeTempoAdapter struct {
 	searchResults []tempoadapter.TraceSearchResult
 	trace         *tempoadapter.Trace
+	services      []string
 	err           error
 }
 
@@ -76,6 +81,9 @@ func (f *fakeTempoAdapter) Search(_ context.Context, _, _ string, _, _, _ int) (
 }
 func (f *fakeTempoAdapter) GetTrace(_ context.Context, _ string) (*tempoadapter.Trace, error) {
 	return f.trace, f.err
+}
+func (f *fakeTempoAdapter) ListServices(_ context.Context) ([]string, error) {
+	return f.services, f.err
 }
 
 // fakeJaegerAdapter satisfies jaegeradapter.JaegerAdapter.
@@ -285,6 +293,41 @@ func TestRefreshLokiSource(t *testing.T) {
 	}
 }
 
+func TestRefreshLokiSource_ListServicesError(t *testing.T) {
+	graphStore := setupGraphStore(t)
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-loki-2", Type: store.SourceTypeLoki, Name: "test-loki"}
+	adapter := &fakeLokiAdapter{err: errors.New("connection refused")}
+
+	// Should still succeed (skips edge discovery).
+	if err := r.refreshLokiSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshLokiSource should not error on ListServices failure, got: %v", err)
+	}
+}
+
+func TestRefreshLokiSource_WithMatchingService(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	svcNode := graph.Node{ID: "svc/checkout", Type: "service", SourceID: "src-k8s"}
+	if err := graphStore.AddNode(context.Background(), svcNode); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-loki-3", Type: store.SourceTypeLoki, Name: "test-loki"}
+	adapter := &fakeLokiAdapter{services: []string{"checkout"}}
+
+	if err := r.refreshLokiSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshLokiSource error: %v", err)
+	}
+}
+
 // ---- refreshTempoSource ----
 
 func TestRefreshTempoSource(t *testing.T) {
@@ -309,6 +352,41 @@ func TestRefreshTempoSource(t *testing.T) {
 	}
 	if nodes[0].Type != "tempo_source" {
 		t.Errorf("node type = %q, want tempo_source", nodes[0].Type)
+	}
+}
+
+func TestRefreshTempoSource_ListServicesError(t *testing.T) {
+	graphStore := setupGraphStore(t)
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-tempo-2", Type: store.SourceTypeTempo, Name: "test-tempo"}
+	adapter := &fakeTempoAdapter{err: errors.New("connection refused")}
+
+	// Should still succeed (skips edge discovery).
+	if err := r.refreshTempoSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshTempoSource should not error on ListServices failure, got: %v", err)
+	}
+}
+
+func TestRefreshTempoSource_WithMatchingService(t *testing.T) {
+	graphStore := setupGraphStore(t)
+
+	svcNode := graph.Node{ID: "svc/shipping", Type: "deployment", SourceID: "src-k8s"}
+	if err := graphStore.AddNode(context.Background(), svcNode); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	r := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+	source := &store.Source{ID: "src-tempo-3", Type: store.SourceTypeTempo, Name: "test-tempo"}
+	adapter := &fakeTempoAdapter{services: []string{"shipping"}}
+
+	if err := r.refreshTempoSource(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshTempoSource error: %v", err)
 	}
 }
 

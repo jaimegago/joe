@@ -48,6 +48,8 @@ type LokiAdapter interface {
 	Query(ctx context.Context, query string, limit int, since time.Duration) (*QueryResult, error)
 	// QueryRange executes a range LogQL query.
 	QueryRange(ctx context.Context, query string, start, end time.Time, limit int) (*QueryResult, error)
+	// ListServices returns values of the "app" label from Loki for logs_in edge discovery.
+	ListServices(ctx context.Context) ([]string, error)
 }
 
 // httpDoer abstracts net/http.Client for testing.
@@ -206,6 +208,49 @@ func (a *Adapter) QueryRange(ctx context.Context, query string, start, end time.
 	a.addHeaders(req, a.config)
 
 	return a.execQuery(req)
+}
+
+// ListServices returns the unique values of the "app" label from Loki.
+// These are used to discover which services ship logs to this Loki instance.
+func (a *Adapter) ListServices(ctx context.Context) ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+
+	u := strings.TrimRight(a.config.URL, "/") + "/loki/api/v1/label/app/values"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build label-values request: %w", err)
+	}
+	a.addHeaders(req, a.config)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("label-values request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read label-values response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("label-values failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var raw struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("parse label-values response: %w", err)
+	}
+
+	return raw.Data, nil
 }
 
 // execQuery parses Loki's query response into a QueryResult.

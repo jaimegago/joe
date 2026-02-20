@@ -168,6 +168,9 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 		}
 	}
 
+	// Cross-source: match Azure VMs to K8s nodes by VM name → is_k8s_node edges.
+	desiredEdges = append(desiredEdges, r.buildIsK8sNodeEdgesFromVMs(ctx, source, vms, now)...)
+
 	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err
@@ -180,6 +183,49 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 
 	r.logger.Info("azure refresh completed", "source_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
 	return nil
+}
+
+// buildIsK8sNodeEdgesFromVMs creates is_k8s_node edges by matching Azure VM names
+// against K8s node names or hostnames already in the graph. AKS node names typically
+// match the VM name.
+func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *store.Source, vms []azureadapter.VM, now time.Time) []graph.Edge {
+	// Build a lookup index: node name (and hostname) → K8s node graph ID.
+	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
+	if err != nil || len(k8sNodes) == 0 {
+		return nil
+	}
+	nameToK8sNodeID := make(map[string]string, len(k8sNodes))
+	for _, n := range k8sNodes {
+		if name, ok := n.Metadata["name"].(string); ok && name != "" {
+			nameToK8sNodeID[name] = n.ID
+		}
+		if hostname, ok := n.Metadata["hostname"].(string); ok && hostname != "" {
+			nameToK8sNodeID[hostname] = n.ID
+		}
+	}
+
+	var edges []graph.Edge
+	for _, vm := range vms {
+		if vm.Name == "" {
+			continue
+		}
+		k8sNodeID, ok := nameToK8sNodeID[vm.Name]
+		if !ok {
+			continue
+		}
+		vmID := azureResourceID(vm.ID, vm.Name)
+		edges = append(edges, graph.Edge{
+			From:       azureNodeID(source.ID, "vm", vmID),
+			To:         k8sNodeID,
+			Relation:   graph.RelationIsK8sNode,
+			Confidence: graph.Inferred,
+			Source:     "azure_k8s_name_match",
+			SourceID:   source.ID,
+			Context:    "vm_name=" + vm.Name,
+			CreatedAt:  now,
+		})
+	}
+	return edges
 }
 
 func azureNodeID(sourceID, service, resourceID string) string {

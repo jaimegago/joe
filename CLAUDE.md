@@ -192,12 +192,12 @@ Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-la
 - [x] T3 blocking notification in REPL, T2 post-execution log — `internal/repl/notifier.go`, `internal/safety/notifier.go`
 - [x] API auth (Bearer token) + request size limits — `internal/api/middleware.go`
 
-### Phase 6: Infrastructure Adapters ← CURRENT
+### Phase 6: Infrastructure Adapters ✅ COMPLETE
 
 All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
 - [x] 6.1 Core foundations (source types, registry wiring, graph edges)
 - [x] 6.2 Cloud adapters (AWS: EC2/EKS/RDS/VPC, Azure: VMs/AKS/SQL/VNets)
-- [x] 6.3 Observability open-source (Prometheus/Mimir, Loki, Tempo/Jaeger) — proprietary vendors deferred to last
+- [x] 6.3 Observability open-source (Prometheus/Mimir, Loki, Tempo/Jaeger)
 - [x] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
 - [x] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
 - [x] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
@@ -206,8 +206,9 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
 - [x] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
 - [x] 6.11 Security & runtime (Falco)
-- [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions
-- [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags
+- [x] 6.12 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
+- [x] Graph edges: all 17 types wired (metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions)
+- [x] Safety: credential encryption (AES-256-GCM), TLS, rate limiting, T1/T2/T3 tier classification
 
 ### Phase 7: Knowledge Store
 - [ ] Knowledge tiers (curated, synced, derived)
