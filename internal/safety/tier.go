@@ -108,6 +108,15 @@ var toolRegistry = map[string]ToolClassification{
 	"cilium_policies":  {Tier: TierObserve, Description: "List Cilium network policies"},
 	"cilium_endpoints": {Tier: TierObserve, Description: "List Cilium endpoints with identity and health"},
 
+	// K8s CRD-based tools (Phase 6.10) — read-only queries, T1
+	"certmanager_certs":    {Tier: TierObserve, Description: "List cert-manager Certificate resources with expiry and readiness"},
+	"certmanager_issuers":  {Tier: TierObserve, Description: "List cert-manager Issuer and ClusterIssuer resources with status"},
+	"keda_scaledobjects":   {Tier: TierObserve, Description: "List KEDA ScaledObject and ScaledJob resources with scaling config"},
+	"opa_constraints":      {Tier: TierObserve, Description: "List OPA/Gatekeeper ConstraintTemplates and constraint instances with violation counts"},
+	"opa_violations":       {Tier: TierObserve, Description: "Get violation details for a specific OPA/Gatekeeper constraint"},
+	"crossplane_providers": {Tier: TierObserve, Description: "List Crossplane Provider resources with health status"},
+	"crossplane_resources": {Tier: TierObserve, Description: "List Crossplane CompositeResourceDefinitions and Compositions"},
+
 	// GitOps, CD & IaC tools (Phase 6.8) — read-only queries, T1
 	"argocd_apps":        {Tier: TierObserve, Description: "List Argo CD applications with sync and health status"},
 	"argocd_app":         {Tier: TierObserve, Description: "Get details for one Argo CD application"},

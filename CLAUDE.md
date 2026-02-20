@@ -200,11 +200,11 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] 6.3 Observability open-source (Prometheus/Mimir, Loki, Tempo/Jaeger) — proprietary vendors deferred to last
 - [x] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
 - [x] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
-- [ ] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
-- [ ] 6.7 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
-- [ ] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
-- [ ] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
-- [ ] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
+- [x] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
+- [x] 6.7 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+- [x] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
+- [x] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
+- [x] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
 - [ ] 6.11 Security & runtime (Falco)
 - [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions
 - [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags

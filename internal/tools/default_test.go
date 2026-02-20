@@ -179,6 +179,14 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"helm_releases":      true,
 		"helm_release":       true,
 		"helm_history":       true,
+		// K8s CRD-based tools (Phase 6.10)
+		"certmanager_certs":    true,
+		"certmanager_issuers":  true,
+		"keda_scaledobjects":   true,
+		"opa_constraints":      true,
+		"opa_violations":       true,
+		"crossplane_providers": true,
+		"crossplane_resources": true,
 	}
 
 	for toolName := range expectedTools {

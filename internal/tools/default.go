@@ -133,5 +133,14 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewCiliumPoliciesTool(coreClient))
 	registry.Register(coretools.NewCiliumEndpointsTool(coreClient))
 
+	// K8s CRD-based tools (Phase 6.10)
+	registry.Register(coretools.NewCertManagerCertsTool(coreClient))
+	registry.Register(coretools.NewCertManagerIssuersTool(coreClient))
+	registry.Register(coretools.NewKEDAScaledObjectsTool(coreClient))
+	registry.Register(coretools.NewOPAConstraintsTool(coreClient))
+	registry.Register(coretools.NewOPAViolationsTool(coreClient))
+	registry.Register(coretools.NewCrossplaneProvidersTool(coreClient))
+	registry.Register(coretools.NewCrossplaneResourcesTool(coreClient))
+
 	return registry
 }
