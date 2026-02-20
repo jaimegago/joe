@@ -11,6 +11,11 @@ import (
 	"github.com/jaimegago/joe/internal/tools/local/readfile"
 	"github.com/jaimegago/joe/internal/tools/local/runcmd"
 	"github.com/jaimegago/joe/internal/tools/local/writefile"
+	"github.com/jaimegago/joe/internal/tools/shared/dnsquery"
+	"github.com/jaimegago/joe/internal/tools/shared/httpreq"
+	"github.com/jaimegago/joe/internal/tools/shared/netcheck"
+	"github.com/jaimegago/joe/internal/tools/shared/sysinfo"
+	"github.com/jaimegago/joe/internal/tools/shared/traceroute"
 )
 
 // NewDefaultRegistry creates a registry with all default tools registered.
@@ -44,6 +49,16 @@ func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
 	registry.Register(runcmd.New([]string{
 		"ls", "cat", "head", "tail", "grep", "find", "wc",
 	}))
+
+	// Register shared diagnostic tools (T1, Go-native, no CLI deps).
+	// These run in-process and work from both joe (user's machine perspective)
+	// and joecored (cluster/server perspective).
+	registry.Register(netcheck.NewTCPConnectTool())
+	registry.Register(netcheck.NewPortScanTool())
+	registry.Register(dnsquery.NewDNSLookupTool())
+	registry.Register(httpreq.NewHTTPRequestTool())
+	registry.Register(sysinfo.NewSystemInfoTool())
+	registry.Register(traceroute.NewTraceRouteTool())
 
 	return registry
 }

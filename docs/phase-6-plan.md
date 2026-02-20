@@ -393,6 +393,10 @@ Tests
 - Unit tests with mock dialers/resolvers.
 - Table-driven tests for edge cases (timeout, unreachable, DNS failure).
 
+Status
+
+- Done (2026-02-20) — all 6 tools implemented (tcp_connect, port_scan, dns_lookup, http_request, system_info, trace_route), registered in default registry and safety tier.go (T1). Coverage: netcheck 94.3%, httpreq 93.8%, sysinfo 90.9%, dnsquery 84.5%, traceroute 72.6% (ICMP ProbeHop requires root; all reachable paths covered via mockHopProber).
+
 ---
 
 ## 6.7 Data Store Adapters
@@ -779,8 +783,8 @@ Tests
 3) 6.3 Open source observability (Prometheus, Loki, Tempo/Jaeger) (done)
 4) 6.4 Alerting and dashboards (done)
 5) 6.5 Safety and hardening (done)
-6) 6.6 Network & system diagnostic tools (Go-native, shared) ← current
-7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+6) 6.6 Network & system diagnostic tools (Go-native, shared) ← done (2026-02-20)
+7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) ← current
 8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
 9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium)
 10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort

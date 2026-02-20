@@ -74,6 +74,14 @@ var toolRegistry = map[string]ToolClassification{
 	"pagerduty_incidents": {Tier: TierObserve, Description: "List PagerDuty incidents"},
 	"grafana_dashboards":  {Tier: TierObserve, Description: "List Grafana dashboards and alerts"},
 
+	// Shared diagnostic tools (Phase 6.6) — Go-native, no CLI deps, T1 read-only
+	"tcp_connect":  {Tier: TierObserve, Description: "Check TCP connectivity to a host:port"},
+	"port_scan":    {Tier: TierObserve, Description: "Scan multiple ports on a host"},
+	"dns_lookup":   {Tier: TierObserve, Description: "Resolve DNS records for a hostname"},
+	"http_request": {Tier: TierObserve, Description: "Probe an HTTP/HTTPS endpoint"},
+	"system_info":  {Tier: TierObserve, Description: "Return system stats: disk, memory, load, OS"},
+	"trace_route":  {Tier: TierObserve, Description: "Trace network path to a host (hop-by-hop)"},
+
 	// === T2: Record (internal state mutations) ===
 
 	// Core Agent tools (joecored — graph/fact mutations)
