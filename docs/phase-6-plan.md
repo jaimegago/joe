@@ -519,6 +519,10 @@ Acceptance (all 6.7.x)
 Tests
 - Table-driven unit tests with mock responses for each adapter.
 
+Status
+
+- Done (2026-02-20) — all 6 adapters implemented (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) with interface-injectable test seams. 10 core tools (postgres_stat, postgres_query, mysql_stat, mysql_query, redis_info, redis_slowlog, mongodb_stat, kafka_topics, kafka_brokers, kafka_consumers, elasticsearch_health, elasticsearch_indices). API endpoints and HTTP client methods wired. All source types registered. Safety tier classified (T1). Coverage: tools/core 94.9%, elasticsearch 82.1%, postgres 70.3%, redis 70.1%, mongodb 73.8%, mysql 65.3%, kafka 62.6%.
+
 ---
 
 ## 6.8 GitOps, CD & IaC Adapters
@@ -784,8 +788,8 @@ Tests
 4) 6.4 Alerting and dashboards (done)
 5) 6.5 Safety and hardening (done)
 6) 6.6 Network & system diagnostic tools (Go-native, shared) ← done (2026-02-20)
-7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) ← current
-8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
+7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) ← done (2026-02-20)
+8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm) ← current
 9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium)
 10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
 11) 6.11 Security & runtime (Falco)

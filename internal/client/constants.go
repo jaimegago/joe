@@ -22,4 +22,11 @@ const (
 	apiAlertmanagerBasePath = "/api/v1/alertmanager"
 	apiPagerDutyBasePath    = "/api/v1/pagerduty"
 	apiGrafanaBasePath      = "/api/v1/grafana"
+	// Datastore base paths.
+	apiPostgresBasePath      = "/api/v1/postgresql"
+	apiMySQLBasePath         = "/api/v1/mysql"
+	apiRedisBasePath         = "/api/v1/redis"
+	apiMongoDBBasePath       = "/api/v1/mongodb"
+	apiKafkaBasePath         = "/api/v1/kafka"
+	apiElasticsearchBasePath = "/api/v1/elasticsearch"
 )

@@ -38,6 +38,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerAWSRoutes(mux, apiPrefix)
 	s.registerObservabilityRoutes(mux, apiPrefix)
 	s.registerAlertingRoutes(mux, apiPrefix)
+	s.registerDatastoreRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
 	s.registerControlRoutes(mux, apiPrefix)
 }
