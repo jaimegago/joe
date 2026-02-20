@@ -790,6 +790,10 @@ Acceptance
 Tests
 - Unit tests with mock event responses.
 
+Status
+
+- Done (2026-02-20) — Falco HTTP adapter targeting Falco Sidekick UI backend. `ListEvents` queries `/api/v1/events` with optional priority/source/rule/limit filters. `ListRules` derives unique rules from recent events (name, priority, source, count). 2 T1 tools registered (`falco_alerts`, `falco_rules`). API endpoints (`GET /api/v1/falco/{sourceID}/events`, `GET /api/v1/falco/{sourceID}/rules`), client methods, source wiring (create + startup reconnect), and safety tier classification complete. Coverage: falco adapter 89.0%.
+
 ---
 
 ## Execution Order (Recommended)

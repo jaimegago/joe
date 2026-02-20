@@ -16,6 +16,7 @@ import (
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -401,6 +402,20 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 		}
 		registry.Register(src.ID, adapter)
 		slog.Info("connected azure source", "id", src.ID, "name", src.Name)
+	}
+
+	falcoSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeFalco)
+	if err != nil {
+		slog.Warn("failed to load falco sources", "error", err)
+	}
+	for _, src := range falcoSources {
+		adapter := falcoadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect falco source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected falco source", "id", src.ID, "name", src.Name)
 	}
 }
 

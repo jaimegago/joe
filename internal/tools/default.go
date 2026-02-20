@@ -142,5 +142,9 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewCrossplaneProvidersTool(coreClient))
 	registry.Register(coretools.NewCrossplaneResourcesTool(coreClient))
 
+	// Security & runtime tools (Phase 6.11)
+	registry.Register(coretools.NewFalcoAlertsTool(coreClient))
+	registry.Register(coretools.NewFalcoRulesTool(coreClient))
+
 	return registry
 }

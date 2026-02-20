@@ -22,6 +22,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
 	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
+	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
@@ -267,6 +268,13 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		adapter := envoyadapter.New()
 		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect envoy source", "failed to connect to Envoy admin API")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeFalco:
+		adapter := falcoadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect falco source", "failed to connect to Falco")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)

@@ -108,6 +108,10 @@ var toolRegistry = map[string]ToolClassification{
 	"cilium_policies":  {Tier: TierObserve, Description: "List Cilium network policies"},
 	"cilium_endpoints": {Tier: TierObserve, Description: "List Cilium endpoints with identity and health"},
 
+	// Security & runtime tools (Phase 6.11) — read-only queries, T1
+	"falco_alerts": {Tier: TierObserve, Description: "List recent Falco runtime security events"},
+	"falco_rules":  {Tier: TierObserve, Description: "List Falco rules observed in recent events"},
+
 	// K8s CRD-based tools (Phase 6.10) — read-only queries, T1
 	"certmanager_certs":    {Tier: TierObserve, Description: "List cert-manager Certificate resources with expiry and readiness"},
 	"certmanager_issuers":  {Tier: TierObserve, Description: "List cert-manager Issuer and ClusterIssuer resources with status"},

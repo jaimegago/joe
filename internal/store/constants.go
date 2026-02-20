@@ -38,6 +38,9 @@ const (
 	// Phase 6.9 Networking & Ingress source types.
 	SourceTypeNginx = "nginx-ingress"
 	SourceTypeEnvoy = "envoy"
+
+	// Phase 6.11 Security & runtime source types.
+	SourceTypeFalco = "falco"
 )
 
 // AllowedSourceTypes returns the supported source types.
@@ -72,6 +75,7 @@ func AllowedSourceTypes() []string {
 		SourceTypeHelm,
 		SourceTypeNginx,
 		SourceTypeEnvoy,
+		SourceTypeFalco,
 	}
 }
 
@@ -107,7 +111,8 @@ func IsValidSourceType(sourceType string) bool {
 		SourceTypeTerraform,
 		SourceTypeHelm,
 		SourceTypeNginx,
-		SourceTypeEnvoy:
+		SourceTypeEnvoy,
+		SourceTypeFalco:
 		return true
 	default:
 		return false

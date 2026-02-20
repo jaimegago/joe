@@ -187,6 +187,8 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"opa_violations":       true,
 		"crossplane_providers": true,
 		"crossplane_resources": true,
+		"falco_alerts":         true,
+		"falco_rules":          true,
 	}
 
 	for toolName := range expectedTools {
