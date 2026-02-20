@@ -210,11 +210,12 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] Graph edges: all 17 types wired (metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions)
 - [x] Safety: credential encryption (AES-256-GCM), TLS, rate limiting, T1/T2/T3 tier classification
 
-### Phase 7: Knowledge Store
-- [ ] Knowledge tiers (curated, synced, derived)
-- [ ] Synced sources (Confluence, Notion)
-- [ ] LLM-derived insights from sessions
-- [ ] Semantic search with embeddings
+### Phase 7: Knowledge Store ✅ COMPLETE
+
+- [x] Knowledge tiers (curated, synced, derived)
+- [x] Synced sources (Confluence, Notion)
+- [x] LLM-derived insights from sessions
+- [x] Semantic search with embeddings
 
 ### Phase 8: Documentation Co-Pilot
 - [ ] Write adapters for wikis

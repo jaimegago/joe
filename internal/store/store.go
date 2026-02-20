@@ -12,6 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/observability"
 )
 
@@ -26,6 +27,7 @@ type Store struct {
 	Clarifications ClarificationRepository
 	Cache          CacheRepository
 	Facts          FactRepository
+	Knowledge      knowledge.Repository
 	Metrics        *observability.Metrics
 }
 
@@ -52,6 +54,7 @@ func New(dbPath string, metrics *observability.Metrics) (*Store, error) {
 		Clarifications: &sqlClarificationRepository{db: db, metrics: metrics},
 		Cache:          &sqlCacheRepository{db: db, metrics: metrics},
 		Facts:          &sqlFactRepository{db: db, metrics: metrics},
+		Knowledge:      knowledge.NewRepository(db, metrics),
 		Metrics:        metrics,
 	}
 

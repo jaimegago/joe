@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
@@ -125,6 +126,7 @@ func registerCoreAgentTools(registry *tools.Registry, services *core.Services, l
 	registry.Register(NewGraphUpdateNodeTool(services, logger))
 	registry.Register(NewRegisterSourceTool(services, logger))
 	registry.Register(NewSaveOnboardingFactTool(services, logger))
+	registry.Register(NewSaveKnowledgeEntryTool(services, logger))
 
 	logger.Info("registered core agent tools", "count", len(registry.GetAll()))
 }
@@ -505,4 +507,111 @@ func (t *SaveOnboardingFactTool) Execute(ctx context.Context, args map[string]an
 
 	t.logger.Info("saved onboarding fact", "id", fact.ID, "type", factType)
 	return fmt.Sprintf("Saved fact: %s", description), nil
+}
+
+// SaveKnowledgeEntryTool saves a Tier 3 (derived) knowledge entry.
+// Tier: T2 (Record) — records to the knowledge store, does not mutate infrastructure.
+type SaveKnowledgeEntryTool struct {
+	services *core.Services
+	logger   *slog.Logger
+}
+
+func NewSaveKnowledgeEntryTool(services *core.Services, logger *slog.Logger) *SaveKnowledgeEntryTool {
+	return &SaveKnowledgeEntryTool{
+		services: services,
+		logger:   logger.With("tool", "save_knowledge_entry"),
+	}
+}
+
+func (t *SaveKnowledgeEntryTool) Name() string { return "save_knowledge_entry" }
+
+func (t *SaveKnowledgeEntryTool) Description() string {
+	return "Save a derived (Tier 3) knowledge entry — a reusable pattern, insight, or failure mode learned during a session."
+}
+
+func (t *SaveKnowledgeEntryTool) Parameters() llm.ParameterSchema {
+	return llm.ParameterSchema{
+		Type: "object",
+		Properties: map[string]llm.Property{
+			"title": {
+				Type:        "string",
+				Description: "Short descriptive title (≤80 chars)",
+			},
+			"content": {
+				Type:        "string",
+				Description: "Full description of the knowledge item",
+			},
+			"entry_type": {
+				Type:        "string",
+				Description: "One of: pattern, failure_mode, best_practice, insight, runbook, doc, fact",
+			},
+			"session_id": {
+				Type:        "string",
+				Description: "Session ID this was derived from (for provenance)",
+			},
+			"confidence": {
+				Type:        "number",
+				Description: "Confidence score 0-1 (how reusable this is)",
+			},
+			"related_nodes": {
+				Type:        "array",
+				Description: "Graph node IDs this knowledge applies to",
+				Items:       &llm.Property{Type: "string"},
+			},
+		},
+		Required: []string{"title", "content", "entry_type"},
+	}
+}
+
+func (t *SaveKnowledgeEntryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
+	if t.services.Knowledge == nil {
+		return nil, fmt.Errorf("knowledge service not available")
+	}
+
+	title, _ := args["title"].(string)
+	content, _ := args["content"].(string)
+	entryType, _ := args["entry_type"].(string)
+	sessionID, _ := args["session_id"].(string)
+
+	if title == "" || content == "" || entryType == "" {
+		return nil, fmt.Errorf("title, content, and entry_type are required")
+	}
+
+	confidence := 0.8
+	if c, ok := args["confidence"].(float64); ok && c > 0 {
+		confidence = c
+	}
+
+	var relatedNodes []string
+	if rn, ok := args["related_nodes"].([]any); ok {
+		for _, n := range rn {
+			if s, ok := n.(string); ok {
+				relatedNodes = append(relatedNodes, s)
+			}
+		}
+	}
+
+	metaBytes, _ := json.Marshal(map[string]string{
+		"session_id": sessionID,
+	})
+
+	entry := &knowledge.Entry{
+		Tier:         knowledge.TierDerived,
+		Type:         knowledge.EntryType(entryType),
+		Title:        title,
+		Content:      content,
+		SourceType:   knowledge.SourceTypeSession,
+		SourceID:     sessionID,
+		Confidence:   confidence,
+		RelatedNodes: relatedNodes,
+		Metadata:     metaBytes,
+	}
+
+	if err := t.services.Knowledge.Create(ctx, entry); err != nil {
+		t.logger.Error("failed to save knowledge entry", "error", err)
+		return nil, fmt.Errorf("save knowledge entry: %w", err)
+	}
+
+	t.logger.Info("saved knowledge entry", "id", entry.ID, "title", title, "type", entryType)
+	return map[string]any{"id": entry.ID, "title": title, "tier": "derived"}, nil
 }

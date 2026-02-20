@@ -189,6 +189,8 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"crossplane_resources": true,
 		"falco_alerts":         true,
 		"falco_rules":          true,
+		// Knowledge store tools (Phase 7)
+		"search_knowledge": true,
 	}
 
 	for toolName := range expectedTools {

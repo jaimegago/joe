@@ -231,7 +231,12 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll need source IDs:
 - If you don't know the available sources, call list_sources first to discover them
 - Then use the source_id from list_sources in subsequent tool calls like k8s_get or k8s_logs
-- If there's only one source of the needed type, use that one automatically`
+- If there's only one source of the needed type, use that one automatically
+
+You have access to a knowledge store via the search_knowledge tool. Use it proactively when:
+- Asked about how something works, known issues, or operational patterns
+- Troubleshooting — relevant runbooks or failure modes may already be documented
+- Before answering from general knowledge, check if curated or synced docs are available`
 	agentInstance := useragent.NewAgent(
 		llmAdapter,
 		executor,

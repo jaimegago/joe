@@ -44,6 +44,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerSecurityRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
 	s.registerControlRoutes(mux, apiPrefix)
+	s.registerKnowledgeRoutes(mux, apiPrefix)
 }
 
 // registerStatusRoutes registers status and health check routes

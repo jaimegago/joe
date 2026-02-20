@@ -26,4 +26,8 @@ const (
 	// Provider names.
 	providerClaude = "claude"
 	providerGemini = "gemini"
+
+	// Default knowledge configuration.
+	defaultKnowledgeSemanticTopK      = 5
+	defaultKnowledgeMinConfidence     = float32(0.0)
 )
