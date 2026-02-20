@@ -93,23 +93,13 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// Add tools if provided
 	if len(req.Tools) > 0 {
 		tools := make([]*genai.Tool, 0, len(req.Tools))
-		var toolNames []string
 		for i, tool := range req.Tools {
-			convertedTool := c.convertToolDefinition(tool)
-			// Validate tool has required fields
-			if convertedTool == nil || len(convertedTool.FunctionDeclarations) == 0 {
-				return nil, fmt.Errorf("tool %d (%s) converted to invalid format", i, tool.Name)
+			convertedTool, err := c.convertToolDefinition(tool)
+			if err != nil {
+				return nil, fmt.Errorf("tool %d (%q): %w", i, tool.Name, err)
 			}
 			tools = append(tools, convertedTool)
-			toolNames = append(toolNames, tool.Name)
 		}
-
-		// Log tool names being registered (for debugging)
-		if len(toolNames) > 0 {
-			// Tools: [echo, ask_user, read_file, write_file, local_git_status, local_git_diff, run_command]
-			_ = toolNames
-		}
-
 		model.Tools = tools
 	}
 
@@ -199,8 +189,11 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, fmt.Errorf("embeddings not yet implemented")
 }
 
-// convertToolDefinition converts our tool definition to Gemini format
-func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
+// convertToolDefinition converts our tool definition to Gemini format.
+// Returns an error if the schema is invalid — e.g. an array property with no
+// Items defined. Gemini rejects such schemas with a silent 400, so we catch
+// the problem here with a clear message rather than at API call time.
+func (c *Client) convertToolDefinition(tool llm.ToolDefinition) (*genai.Tool, error) {
 	// Gemini requires non-empty descriptions
 	if tool.Description == "" {
 		tool.Description = tool.Name
@@ -228,6 +221,17 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 			schemaType = genai.TypeString
 		}
 
+		// Gemini requires array properties to declare their item type.
+		// Without Items, Gemini returns a silent 400 with no helpful message.
+		if schemaType == genai.TypeArray && prop.Items == nil {
+			return nil, fmt.Errorf(
+				"parameter %q has type \"array\" but no Items schema — "+
+					"Gemini requires array properties to define their item type "+
+					"(set Items in the tool's Parameters() definition)",
+				name,
+			)
+		}
+
 		// Gemini requires property descriptions
 		desc := prop.Description
 		if desc == "" {
@@ -239,8 +243,8 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 			Description: desc,
 		}
 
-		// For array types, add Items schema if specified
-		if schemaType == genai.TypeArray && prop.Items != nil {
+		// For array types, add Items schema
+		if schemaType == genai.TypeArray {
 			itemType := genai.TypeString
 			switch prop.Items.Type {
 			case "string":
@@ -288,7 +292,7 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) *genai.Tool {
 				Parameters:  params,
 			},
 		},
-	}
+	}, nil
 }
 
 // convertResponse converts Gemini response to our response format

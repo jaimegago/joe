@@ -137,7 +137,7 @@ func (t *PortScanTool) Parameters() llm.ParameterSchema {
 		Type: "object",
 		Properties: map[string]llm.Property{
 			"host":       {Type: "string", Description: "Hostname or IP address to scan."},
-			"ports":      {Type: "array", Description: "Array of integer port numbers to check. Example: [80, 443, 8080]."},
+			"ports":      {Type: "array", Description: "Array of integer port numbers to check. Example: [80, 443, 8080].", Items: &llm.Property{Type: "integer", Description: "TCP port number."}},
 			"timeout_ms": {Type: "integer", Description: "Connection timeout per port in milliseconds. Default: 5000."},
 		},
 		Required: []string{"host", "ports"},
