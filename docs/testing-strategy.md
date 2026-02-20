@@ -53,7 +53,7 @@ joe/
 Create a predictable LLM adapter for testing:
 
 ```go
-// test/mocks/llm.go
+// test/mocks/llm.go  (see actual implementation in test/mocks/llm.go)
 package mocks
 
 import (
@@ -62,62 +62,36 @@ import (
 )
 
 type MockLLM struct {
-    // Predefined responses mapped by conversation context
-    Responses map[string]llm.Response
-    CallCount int
-    LastRequest llm.Request
+    Responses   map[string]*llm.ChatResponse
+    CallCount   int
+    LastRequest *llm.ChatRequest
+    ShouldError bool
 }
 
 func NewMockLLM() *MockLLM {
     return &MockLLM{
-        Responses: make(map[string]llm.Response),
+        Responses: make(map[string]*llm.ChatResponse),
+        DefaultResponse: &llm.ChatResponse{Content: "Mock response"},
     }
 }
 
-func (m *MockLLM) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+// Chat implements llm.LLMAdapter
+func (m *MockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
     m.CallCount++
-    m.LastRequest = req
-    
-    // Return canned response based on last user message
-    lastMsg := req.Messages[len(req.Messages)-1].Content
-    if resp, ok := m.Responses[lastMsg]; ok {
-        return resp, nil
-    }
-    
-    // Default response
-    return llm.Response{
-        Content: "Mock response",
-        Model: "mock-model",
-    }, nil
-}
+    reqCopy := req
+    m.LastRequest = &reqCopy
 
-// Helper to set up common test scenarios
-func (m *MockLLM) SetupScenario(scenario string) {
-    switch scenario {
-    case "simple_question":
-        m.Responses["what is kubernetes?"] = llm.Response{
-            Content: "Kubernetes is a container orchestration platform.",
-            Model: "mock-model",
-        }
-    case "tool_call":
-        m.Responses["read my config.yaml"] = llm.Response{
-            Content: "I'll read that file for you.",
-            ToolCalls: []llm.ToolCall{{
-                Name: "read_file",
-                Args: map[string]any{"path": "config.yaml"},
-            }},
-            Model: "mock-model",
-        }
-    case "multi_turn":
-        m.Responses["hello"] = llm.Response{
-            Content: "Hi! How can I help?",
-            Model: "mock-model",
-        }
-        m.Responses["what can you do?"] = llm.Response{
-            Content: "I can help with infrastructure tasks.",
-            Model: "mock-model",
+    if m.ShouldError {
+        return nil, errors.New("mock LLM error")
+    }
+
+    if len(req.Messages) > 0 {
+        lastMsg := req.Messages[len(req.Messages)-1]
+        if resp, ok := m.Responses[lastMsg.Content]; ok {
+            return resp, nil
         }
     }
+    return m.DefaultResponse, nil
 }
 ```
 

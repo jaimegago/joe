@@ -110,10 +110,17 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	}
 
 	// Connect to joecored
-	joecoreURL := "http://" + cfg.Server.Address
+	scheme := "http"
+	if cfg.Server.TLSEnabled {
+		scheme = "https"
+	}
+	joecoreURL := scheme + "://" + cfg.Server.Address
 	var clientOpts []client.ClientOption
 	if cfg.Server.APIKey != "" {
 		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	}
+	if cfg.Server.TLSEnabled {
+		clientOpts = append(clientOpts, client.WithTLS())
 	}
 	coreClient := deps.newClient(joecoreURL, clientOpts...)
 

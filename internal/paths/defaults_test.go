@@ -132,3 +132,85 @@ func TestDatabasePath_Error(t *testing.T) {
 		t.Fatal("DatabasePath() expected error, got nil")
 	}
 }
+
+// --- ExpandPath ---
+
+func TestExpandPath_Tilde(t *testing.T) {
+	home, err := getSecureHomeDir()
+	if err != nil {
+		t.Skipf("Cannot get home directory: %v", err)
+	}
+
+	got, err := ExpandPath("~/.joe/config.yaml")
+	if err != nil {
+		t.Fatalf("ExpandPath() error = %v", err)
+	}
+	want := filepath.Join(home, ".joe/config.yaml")
+	if got != want {
+		t.Errorf("ExpandPath(~/.joe/config.yaml) = %q, want %q", got, want)
+	}
+}
+
+func TestExpandPath_TildeOnly(t *testing.T) {
+	home, err := getSecureHomeDir()
+	if err != nil {
+		t.Skipf("Cannot get home directory: %v", err)
+	}
+	got, err := ExpandPath("~")
+	if err != nil {
+		t.Fatalf("ExpandPath(~) error = %v", err)
+	}
+	if got != home {
+		t.Errorf("ExpandPath(~) = %q, want %q", got, home)
+	}
+}
+
+func TestExpandPath_Absolute(t *testing.T) {
+	got, err := ExpandPath("/etc/joe/config.yaml")
+	if err != nil {
+		t.Fatalf("ExpandPath() error = %v", err)
+	}
+	if got != "/etc/joe/config.yaml" {
+		t.Errorf("ExpandPath(/etc/...) = %q, want /etc/joe/config.yaml", got)
+	}
+}
+
+func TestExpandPath_Error(t *testing.T) {
+	orig := getSecureHomeDir
+	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }
+	defer func() { getSecureHomeDir = orig }()
+
+	_, err := ExpandPath("~/something")
+	if err == nil {
+		t.Fatal("ExpandPath(~) expected error, got nil")
+	}
+}
+
+// --- EncryptionKeyPath ---
+
+func TestEncryptionKeyPath_UsesHome(t *testing.T) {
+	home, err := getSecureHomeDir()
+	if err != nil {
+		t.Skipf("Cannot get home directory: %v", err)
+	}
+
+	got, err := EncryptionKeyPath()
+	if err != nil {
+		t.Fatalf("EncryptionKeyPath() error = %v", err)
+	}
+	want := filepath.Join(home, JoeDir, EncryptionKeyFile)
+	if got != want {
+		t.Errorf("EncryptionKeyPath() = %q, want %q", got, want)
+	}
+}
+
+func TestEncryptionKeyPath_Error(t *testing.T) {
+	orig := getSecureHomeDir
+	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }
+	defer func() { getSecureHomeDir = orig }()
+
+	_, err := EncryptionKeyPath()
+	if err == nil {
+		t.Fatal("EncryptionKeyPath() expected error, got nil")
+	}
+}

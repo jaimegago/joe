@@ -63,6 +63,17 @@ var toolRegistry = map[string]ToolClassification{
 	"aws_rds":       {Tier: TierObserve, Description: "Describe AWS RDS instances"},
 	"aws_vpc":       {Tier: TierObserve, Description: "Describe AWS VPC resources"},
 
+	// Observability tools (Phase 6.3) — read-only queries
+	"prometheus_query": {Tier: TierObserve, Description: "Query Prometheus/Mimir metrics via PromQL"},
+	"loki_query":       {Tier: TierObserve, Description: "Query Loki logs via LogQL"},
+	"tempo_search":     {Tier: TierObserve, Description: "Search traces in Tempo"},
+	"jaeger_traces":    {Tier: TierObserve, Description: "Query traces from Jaeger"},
+
+	// Alerting and dashboard tools (Phase 6.4) — read-only queries
+	"alertmanager_alerts": {Tier: TierObserve, Description: "List active Alertmanager alerts"},
+	"pagerduty_incidents": {Tier: TierObserve, Description: "List PagerDuty incidents"},
+	"grafana_dashboards":  {Tier: TierObserve, Description: "List Grafana dashboards and alerts"},
+
 	// === T2: Record (internal state mutations) ===
 
 	// Core Agent tools (joecored — graph/fact mutations)

@@ -172,31 +172,49 @@ Joe Local communicates with Joe Core exclusively via HTTP:
 ```
 joecored HTTP API (default :7777)
 
-# Graph queries (User Agent tools)
-GET  /api/v1/graph/query?q=...              Query graph
-GET  /api/v1/graph/related/:nodeID          Get related nodes
-GET  /api/v1/graph/summary                  Graph summary for LLM context
+# Status
+GET  /api/v1/status                              Core status (health, version, time)
 
-# Infrastructure queries (User Agent tools)  
-GET  /api/v1/k8s/:cluster/:resource/:ns/:name    Get K8s resource
-GET  /api/v1/k8s/:cluster/logs/:ns/:pod          Get pod logs
-GET  /api/v1/argocd/:instance/apps/:name         Get ArgoCD app
-POST /api/v1/prom/query                          Query Prometheus
-POST /api/v1/git/:repo/read                      Read file from cloned repo
+# Graph queries
+GET  /api/v1/graph/query?q=...                   Query graph by string
+GET  /api/v1/graph/related?nodeID=...&depth=...  Get related nodes (depth optional)
+GET  /api/v1/graph/summary                       Graph summary for LLM context
 
 # Sources
-GET  /api/v1/sources                        List sources
-POST /api/v1/sources                        Register source
+GET    /api/v1/sources                           List sources
+POST   /api/v1/sources                           Register source
+GET    /api/v1/sources/{id}                      Get source by ID
+DELETE /api/v1/sources/{id}                      Delete and disconnect source
 
-# Clarifications (for human-in-the-loop)
-GET  /api/v1/clarifications                 List pending clarifications
-POST /api/v1/clarifications/:id/answer      Answer a clarification
-POST /api/v1/clarifications/:id/dismiss     Dismiss a clarification
+# Kubernetes
+GET  /api/v1/k8s/{sourceID}/resources                                  List resources (kind via ?kind=)
+GET  /api/v1/k8s/{sourceID}/resources/{resource}/{namespace}/{name}    Get a K8s resource
+GET  /api/v1/k8s/{sourceID}/logs/{namespace}/{pod}                     Get pod logs
+
+# Git
+GET  /api/v1/git/{sourceID}/file?path=...        Read file from cloned repo
+GET  /api/v1/git/{sourceID}/files?path=...       List files in directory
+GET  /api/v1/git/{sourceID}/log                  Git commit log
+GET  /api/v1/git/{sourceID}/diff                 Git diff
+
+# AWS
+GET  /api/v1/aws/{sourceID}/ec2/instances                Get EC2 instance list
+GET  /api/v1/aws/{sourceID}/ec2/instances/{instanceID}   Get EC2 instance
+GET  /api/v1/aws/{sourceID}/eks/clusters                 List EKS clusters
+GET  /api/v1/aws/{sourceID}/eks/clusters/{clusterName}   Get EKS cluster
+GET  /api/v1/aws/{sourceID}/rds/instances                List RDS instances
+GET  /api/v1/aws/{sourceID}/rds/instances/{dbInstanceID} Get RDS instance
+GET  /api/v1/aws/{sourceID}/vpc/vpcs                     List VPCs
+GET  /api/v1/aws/{sourceID}/vpc/vpcs/{vpcID}             Get VPC
+
+# Clarifications (human-in-the-loop)
+GET  /api/v1/clarifications                      List pending clarifications
+POST /api/v1/clarifications/{id}/answer          Answer a clarification
+POST /api/v1/clarifications/{id}/dismiss         Dismiss a clarification
 
 # Control
-POST /api/v1/onboarding                     Start onboarding flow
-POST /api/v1/refresh                        Trigger manual refresh
-GET  /api/v1/status                         Core status (health, graph stats)
+POST /api/v1/onboarding                          Start onboarding flow
+POST /api/v1/refresh                             Trigger full or per-source refresh
 ```
 
 ---

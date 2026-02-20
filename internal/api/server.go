@@ -36,6 +36,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerK8sRoutes(mux, apiPrefix)
 	s.registerGitRoutes(mux, apiPrefix)
 	s.registerAWSRoutes(mux, apiPrefix)
+	s.registerObservabilityRoutes(mux, apiPrefix)
+	s.registerAlertingRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
 	s.registerControlRoutes(mux, apiPrefix)
 }
@@ -91,6 +93,95 @@ func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/rds/instances/{dbInstanceID}", prefix), handler.handleRDSGetInstance)
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs", prefix), handler.handleVPCListVPCs)
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
+}
+
+// registerObservabilityRoutes registers observability query routes (Prometheus, Loki, Tempo, Jaeger).
+func (s *Server) registerObservabilityRoutes(mux *http.ServeMux, prefix string) {
+	h := &observabilityHandler{server: s}
+	// Prometheus / Mimir
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/query", prefix), h.handlePrometheusQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/query_range", prefix), h.handlePrometheusQueryRange)
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/targets", prefix), h.handlePrometheusTargets)
+	// Loki
+	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{sourceID}/query", prefix), h.handleLokiQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{sourceID}/query_range", prefix), h.handleLokiQueryRange)
+	// Tempo
+	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{sourceID}/search", prefix), h.handleTempoSearch)
+	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{sourceID}/traces/{traceID}", prefix), h.handleTempoGetTrace)
+	// Jaeger
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/services", prefix), h.handleJaegerServices)
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces", prefix), h.handleJaegerTraces)
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces/{traceID}", prefix), h.handleJaegerGetTrace)
+}
+
+// observabilityHandler delegates to Server observability methods.
+type observabilityHandler struct{ server *Server }
+
+func (h *observabilityHandler) handlePrometheusQuery(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePrometheusQuery(w, r)
+}
+func (h *observabilityHandler) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePrometheusQueryRange(w, r)
+}
+func (h *observabilityHandler) handlePrometheusTargets(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePrometheusTargets(w, r)
+}
+func (h *observabilityHandler) handleLokiQuery(w http.ResponseWriter, r *http.Request) {
+	h.server.handleLokiQuery(w, r)
+}
+func (h *observabilityHandler) handleLokiQueryRange(w http.ResponseWriter, r *http.Request) {
+	h.server.handleLokiQueryRange(w, r)
+}
+func (h *observabilityHandler) handleTempoSearch(w http.ResponseWriter, r *http.Request) {
+	h.server.handleTempoSearch(w, r)
+}
+func (h *observabilityHandler) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
+	h.server.handleTempoGetTrace(w, r)
+}
+func (h *observabilityHandler) handleJaegerServices(w http.ResponseWriter, r *http.Request) {
+	h.server.handleJaegerServices(w, r)
+}
+func (h *observabilityHandler) handleJaegerTraces(w http.ResponseWriter, r *http.Request) {
+	h.server.handleJaegerTraces(w, r)
+}
+func (h *observabilityHandler) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
+	h.server.handleJaegerGetTrace(w, r)
+}
+
+// registerAlertingRoutes registers alerting query routes (Alertmanager, PagerDuty, Grafana).
+func (s *Server) registerAlertingRoutes(mux *http.ServeMux, prefix string) {
+	h := &alertingHandler{server: s}
+	// Alertmanager
+	mux.HandleFunc(fmt.Sprintf("GET %s/alertmanager/{sourceID}/alerts", prefix), h.handleAlertmanagerAlerts)
+	// PagerDuty
+	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{sourceID}/incidents", prefix), h.handlePagerDutyIncidents)
+	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{sourceID}/services", prefix), h.handlePagerDutyServices)
+	// Grafana
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/dashboards", prefix), h.handleGrafanaDashboards)
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/dashboards/{uid}", prefix), h.handleGrafanaGetDashboard)
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/alerts", prefix), h.handleGrafanaAlerts)
+}
+
+// alertingHandler delegates to Server alerting methods.
+type alertingHandler struct{ server *Server }
+
+func (h *alertingHandler) handleAlertmanagerAlerts(w http.ResponseWriter, r *http.Request) {
+	h.server.handleAlertmanagerAlerts(w, r)
+}
+func (h *alertingHandler) handlePagerDutyIncidents(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePagerDutyIncidents(w, r)
+}
+func (h *alertingHandler) handlePagerDutyServices(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePagerDutyServices(w, r)
+}
+func (h *alertingHandler) handleGrafanaDashboards(w http.ResponseWriter, r *http.Request) {
+	h.server.handleGrafanaDashboards(w, r)
+}
+func (h *alertingHandler) handleGrafanaGetDashboard(w http.ResponseWriter, r *http.Request) {
+	h.server.handleGrafanaGetDashboard(w, r)
+}
+func (h *alertingHandler) handleGrafanaAlerts(w http.ResponseWriter, r *http.Request) {
+	h.server.handleGrafanaAlerts(w, r)
 }
 
 // registerClarificationRoutes registers clarification management routes

@@ -251,15 +251,17 @@ make run
 
 ```
 internal/
-├── observability/              # NEW: Observability package
-│   ├── otel.go                # OpenTelemetry setup
-│   ├── llm_middleware.go      # LLM instrumentation
-│   └── metrics.go             # Metric definitions (future)
+├── observability/              # Observability package (OpenTelemetry setup)
+│   ├── otel.go                # Provider setup (traces + metrics), config from env
+│   ├── llm_middleware.go      # LLM decorator: spans, counters, histograms
+│   ├── metrics.go             # Named metric definitions
+│   ├── metric_names.go        # Metric name constants
+│   └── http_metrics.go        # HTTP middleware metrics
 │
-├── llm/                       # LLM clients (no instrumentation)
+├── llm/                       # LLM clients (business logic only)
 │   ├── claude/
 │   ├── gemini/
-│   └── instrumented.go        # DEPRECATED: Use observability package
+│   └── instrumented.go        # InstrumentedAdapter: wraps LLMAdapter with OTel metrics/traces
 ```
 
 **Design Principles:**
@@ -267,26 +269,6 @@ internal/
 - ✅ Decorator pattern for composability
 - ✅ Standard OpenTelemetry conventions
 - ✅ Vendor-neutral exporters
-
-## Migration from Simple Logging
-
-**Old approach** (internal/llm/instrumented.go):
-```go
-// Simple slog-based logging
-instrumented := llm.NewInstrumentedAdapter(adapter, logger)
-```
-
-**New approach** (internal/observability):
-```go
-// Full OpenTelemetry with traces, metrics, context propagation
-middleware, _ := observability.NewLLMMiddleware(adapter, "gemini", "gemini-2.0-flash")
-```
-
-**Why migrate?**
-- OpenTelemetry is the industry standard
-- Richer data: traces + metrics + logs
-- Better tooling ecosystem
-- Distributed tracing support
 - Vendor-neutral
 
 ## Cost Tracking

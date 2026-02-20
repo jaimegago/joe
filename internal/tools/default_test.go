@@ -84,6 +84,13 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"aws_eks":          true,
 		"aws_rds":          true,
 		"aws_vpc":          true,
+		"prometheus_query":    true,
+		"loki_query":          true,
+		"tempo_search":        true,
+		"jaeger_traces":       true,
+		"alertmanager_alerts": true,
+		"pagerduty_incidents": true,
+		"grafana_dashboards":  true,
 	}
 
 	for toolName := range expectedTools {

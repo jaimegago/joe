@@ -99,6 +99,18 @@ func WithAPIKey(key string) ClientOption {
 	}
 }
 
+// WithTLS configures the client to use HTTPS with the system's default TLS
+// trust store. Use this when joecored is started with a CA-signed certificate.
+// For self-signed certificates use WithTLSConfig instead.
+func WithTLS() ClientOption {
+	return func(c *Client) {
+		c.httpClient = &http.Client{
+			Timeout:   DefaultTimeout,
+			Transport: &http.Transport{},
+		}
+	}
+}
+
 func (c *Client) doJSON(ctx context.Context, method, url string, body io.Reader, expectedStatus int, out any, errPrefix string) error {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {

@@ -67,5 +67,16 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewAWSRDSTool(coreClient))
 	registry.Register(coretools.NewAWSVPCTool(coreClient))
 
+	// Observability tools
+	registry.Register(coretools.NewPrometheusQueryTool(coreClient))
+	registry.Register(coretools.NewLokiQueryTool(coreClient))
+	registry.Register(coretools.NewTempoSearchTool(coreClient))
+	registry.Register(coretools.NewJaegerTracesTool(coreClient))
+
+	// Alerting tools
+	registry.Register(coretools.NewAlertmanagerAlertsTool(coreClient))
+	registry.Register(coretools.NewPagerDutyIncidentsTool(coreClient))
+	registry.Register(coretools.NewGrafanaDashboardsTool(coreClient))
+
 	return registry
 }

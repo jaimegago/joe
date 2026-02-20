@@ -232,7 +232,132 @@ func TestAWSEC2Tool(t *testing.T) {
 	}
 }
 
-func TestAWSToolsRegistration(t *testing.T) {
-	// Test that all AWS tools are correctly named
+// fakeEC2Client implements AWSEC2Client for testing.
+type fakeEC2Client struct {
+	listFunc func(ctx context.Context, sourceID string) ([]*awsadapter.EC2Instance, error)
+	getFunc  func(ctx context.Context, sourceID, instanceID string) (*awsadapter.EC2Instance, error)
+}
 
+func (f *fakeEC2Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]*awsadapter.EC2Instance, error) {
+	return f.listFunc(ctx, sourceID)
+}
+
+func (f *fakeEC2Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID string) (*awsadapter.EC2Instance, error) {
+	return f.getFunc(ctx, sourceID, instanceID)
+}
+
+func TestAWSEC2Tool_Execute(t *testing.T) {
+	fake := &fakeEC2Client{
+		listFunc: func(_ context.Context, sourceID string) ([]*awsadapter.EC2Instance, error) {
+			if sourceID == "src" {
+				return []*awsadapter.EC2Instance{{InstanceID: "i-1"}, {InstanceID: "i-2"}}, nil
+			}
+			return nil, errors.New("bad source")
+		},
+		getFunc: func(_ context.Context, sourceID, instanceID string) (*awsadapter.EC2Instance, error) {
+			if sourceID == "src" && instanceID == "i-1" {
+				return &awsadapter.EC2Instance{InstanceID: "i-1"}, nil
+			}
+			return nil, errors.New("not found")
+		},
+	}
+	tool := coretools.NewAWSEC2Tool(fake)
+	tests := []struct {
+		name    string
+		args    map[string]any
+		wantErr bool
+		wantGet bool
+	}{
+		{"missing source_id", map[string]any{}, true, false},
+		{"list success", map[string]any{"source_id": "src"}, false, false},
+		{"list error", map[string]any{"source_id": "bad"}, true, false},
+		{"get success", map[string]any{"source_id": "src", "instance_id": "i-1"}, false, true},
+		{"get error", map[string]any{"source_id": "src", "instance_id": "bad"}, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := tool.Execute(context.Background(), tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && tt.wantGet {
+				m := res.(map[string]any)
+				if m["instance"] == nil {
+					t.Error("expected instance, got nil")
+				}
+			}
+		})
+	}
+}
+
+func TestAWSEKSTool_Metadata(t *testing.T) {
+	tool := coretools.NewAWSEKSTool(&fakeEKSRDSVPCClient{
+		AWSEKSListClustersFunc: func(_ context.Context, _ string) ([]*awsadapter.EKSCluster, error) {
+			return nil, nil
+		},
+		AWSEKSGetClusterFunc: func(_ context.Context, _, _ string) (*awsadapter.EKSCluster, error) {
+			return nil, nil
+		},
+	})
+	if tool.Name() != "aws_eks" {
+		t.Errorf("Name() = %q, want aws_eks", tool.Name())
+	}
+	if tool.Description() == "" {
+		t.Error("Description() should not be empty")
+	}
+	params := tool.Parameters()
+	if params.Type != "object" {
+		t.Errorf("Parameters().Type = %q, want object", params.Type)
+	}
+	if _, ok := params.Properties["source_id"]; !ok {
+		t.Error("Parameters() missing source_id")
+	}
+}
+
+func TestAWSRDSTool_Metadata(t *testing.T) {
+	tool := coretools.NewAWSRDSTool(&fakeEKSRDSVPCClient{
+		AWSRDSListInstancesFunc: func(_ context.Context, _ string) ([]*awsadapter.RDSInstance, error) {
+			return nil, nil
+		},
+		AWSRDSGetInstanceFunc: func(_ context.Context, _, _ string) (*awsadapter.RDSInstance, error) {
+			return nil, nil
+		},
+	})
+	if tool.Name() != "aws_rds" {
+		t.Errorf("Name() = %q, want aws_rds", tool.Name())
+	}
+	if tool.Description() == "" {
+		t.Error("Description() should not be empty")
+	}
+	params := tool.Parameters()
+	if params.Type != "object" {
+		t.Errorf("Parameters().Type = %q, want object", params.Type)
+	}
+	if _, ok := params.Properties["source_id"]; !ok {
+		t.Error("Parameters() missing source_id")
+	}
+}
+
+func TestAWSVPCTool_Metadata(t *testing.T) {
+	tool := coretools.NewAWSVPCTool(&fakeEKSRDSVPCClient{
+		AWSVPCListFunc: func(_ context.Context, _ string) ([]*awsadapter.VPC, error) {
+			return nil, nil
+		},
+		AWSVPCGetFunc: func(_ context.Context, _, _ string) (*awsadapter.VPC, error) {
+			return nil, nil
+		},
+	})
+	if tool.Name() != "aws_vpc" {
+		t.Errorf("Name() = %q, want aws_vpc", tool.Name())
+	}
+	if tool.Description() == "" {
+		t.Error("Description() should not be empty")
+	}
+	params := tool.Parameters()
+	if params.Type != "object" {
+		t.Errorf("Parameters().Type = %q, want object", params.Type)
+	}
+	if _, ok := params.Properties["source_id"]; !ok {
+		t.Error("Parameters() missing source_id")
+	}
 }

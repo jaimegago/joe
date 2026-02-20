@@ -155,7 +155,12 @@ Acceptance
 - Graph relations created when sources are associated to services.
 
 Tests
+
 - Tool execution unit tests with fake responses.
+
+Status
+
+- Done (2026-02-19)
 
 ### 6.3.4 Proprietary vendors
 
@@ -164,6 +169,10 @@ Tests
 
 Acceptance
 - Query-only T1 functionality; credentials stored safely.
+
+Status
+
+- Deferred to last in execution order (step 12).
 
 ---
 
@@ -194,6 +203,10 @@ Acceptance
 Tests
 - Unit tests for adapters and tools.
 
+Status
+
+- Done (2026-02-19)
+
 ---
 
 ## 6.5 Safety and Hardening
@@ -212,7 +225,12 @@ Acceptance
 - Backward compatible migration or re-encryption path.
 
 Tests
+
 - Encrypt/decrypt round-trip tests.
+
+Status
+
+- Done (2026-02-19)
 
 ### 6.5.2 TLS support for joe <-> joecored
 
@@ -220,43 +238,64 @@ Tests
 - Update server/client to use TLS when enabled.
 
 Touchpoints
+
 - internal/api (server)
 - internal/client (http transport)
 - config/config.go
 
 Acceptance
+
 - Can run with and without TLS.
 
 Tests
+
 - Unit tests for config parsing.
+
+Status
+
+- Done (2026-02-19)
 
 ### 6.5.3 Rate limiting middleware
 
 - Add rate limiting to API middleware with config settings.
 
 Touchpoints
+
 - internal/api/middleware.go
 - internal/config
 
 Acceptance
+
 - Requests over limit are rejected with clear error.
 
 Tests
+
 - Middleware tests for limit enforcement.
+
+Status
+
+- Done (2026-02-19)
 
 ### 6.5.4 Tool tier classification
 
 - Classify each new tool (T1/T2/T3) and enforce policy flags.
 
 Touchpoints
+
 - internal/safety/tier.go
 - internal/tools/executor.go
 
 Acceptance
+
 - T2/T3 tools blocked without policy allowance.
 
 Tests
+
 - Executor tests for new tool tiers.
+
+Status
+
+- Done (2026-02-19)
 
 ---
 
@@ -737,10 +776,10 @@ Tests
 
 1) 6.1 Core foundations (done)
 2) 6.2 Cloud adapters (done)
-3) 6.3 Open source observability (Prometheus, Loki, Tempo/Jaeger) ← current
-4) 6.4 Alerting and dashboards
-5) 6.5 Safety and hardening
-6) 6.6 Network & system diagnostic tools (Go-native, shared)
+3) 6.3 Open source observability (Prometheus, Loki, Tempo/Jaeger) (done)
+4) 6.4 Alerting and dashboards (done)
+5) 6.5 Safety and hardening (done)
+6) 6.6 Network & system diagnostic tools (Go-native, shared) ← current
 7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
 8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm)
 9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium)

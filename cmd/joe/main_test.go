@@ -11,11 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/env"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
 )
 
@@ -387,4 +389,68 @@ type closingFakeAdapter struct {
 func (c *closingFakeAdapter) Close() error {
 	c.closed = true
 	return nil
+}
+
+// TestRun_DirectCall covers the run() wrapper so its body is counted as executed.
+func TestRun_DirectCall(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{"-unknown-flag-xyz"}, &stdout, &stderr)
+	if exitCode != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitCode)
+	}
+}
+
+// TestRun_WithTLSEnabled covers the cfg.Server.TLSEnabled branches (scheme=https, WithTLS opt).
+func TestRun_WithTLSEnabled(t *testing.T) {
+	server := statusServer(t, http.StatusOK)
+	addr := strings.TrimPrefix(server.URL, "http://")
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	cfgContent := fmt.Sprintf(
+		"llm:\n  current: test\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\n  tls_enabled: true\nlogging:\n  level: info\n  file: \"\"\n",
+		addr,
+	)
+	if err := os.WriteFile(configPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv(env.AnthropicAPIKey, "test-key")
+
+	fake := &fakeRepl{}
+	deps := testDeps(t, fake, t.TempDir())
+
+	var gotURL string
+	deps.newClient = func(baseURL string, opts ...client.ClientOption) *client.Client {
+		gotURL = baseURL
+		// Point to the HTTP test server so Ping succeeds without a real TLS handshake.
+		return client.New(server.URL)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := runWithDeps(context.Background(), []string{"-config", configPath}, &stdout, &stderr, deps)
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
+	}
+	if !strings.HasPrefix(gotURL, "https://") {
+		t.Errorf("expected HTTPS URL when TLS enabled, got %q", gotURL)
+	}
+}
+
+// TestDefaultRunDeps_NewReplClosure covers the newRepl closure body in defaultRunDeps.
+func TestDefaultRunDeps_NewReplClosure(t *testing.T) {
+	deps := defaultRunDeps()
+
+	policy := safety.DefaultPolicy()
+	coreClient := client.New("http://localhost:9999")
+	registry := tools.NewDefaultRegistryWithClient(coreClient, policy)
+	metrics := observability.NewMetrics()
+	executor := tools.NewExecutor(registry, metrics)
+	agent := useragent.NewAgent(&fakeAdapter{}, executor, registry, "system prompt")
+	cfg := &config.Config{}
+	session := useragent.NewSession(nil)
+
+	r := deps.newRepl(agent, cfg, session)
+	if r == nil {
+		t.Error("newRepl closure returned nil")
+	}
 }

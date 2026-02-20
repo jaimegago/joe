@@ -40,7 +40,7 @@ These are non-negotiable and must be hardcoded (not bypassable by LLM or configu
 | T3 notification contract | Blocking 3-second countdown before T3 actions with Ctrl+C cancel; post-execution summary for T2/T3 (`internal/repl/notifier.go`) |
 | API authentication | Bearer token middleware on all `/api/v1/` routes; configurable via `server.api_key` or `JOE_API_KEY` env (`internal/api/middleware.go`) |
 | Request size limits | `http.MaxBytesReader` wraps all request bodies (default 1 MB) (`internal/api/middleware.go`) |
-| Secure home resolution | `paths.JoeDirPath()` uses `os/user.Current()`, bypasses `HOME` env var to prevent path manipulation |
+| Secure home resolution | `paths.JoeDirPath()` uses `os/user.Current()` (via `secure_unix.go`/`secure_windows.go`), bypasses `HOME` env var to prevent path manipulation |
 
 ---
 
@@ -355,7 +355,7 @@ All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, t
 - `~/.joe/` blocked for all read/write operations (hardcoded, symlink-aware, case-insensitive): `internal/safety/invariants.go`
 - `write_file` enforces `allowed_directories` from safety policy: `internal/tools/local/writefile/writefile.go`
 - `..` traversal normalized via `filepath.Clean`, symlinks resolved via `filepath.EvalSymlinks`
-- Secure home directory resolution bypasses `HOME` env var: `internal/paths/secure.go`
+- Secure home directory resolution bypasses `HOME` env var: `internal/paths/secure_unix.go`, `internal/paths/secure_windows.go`
 
 **3. run_command subcommand validation** ✅
 

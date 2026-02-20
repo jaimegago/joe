@@ -8,10 +8,17 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
+	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
+	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
+	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
@@ -175,6 +182,48 @@ func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (er
 			return fmt.Errorf("adapter for source %s is not azure", source.ID)
 		}
 		return r.refreshAzureSource(ctx, source, azureAdapter)
+	case store.SourceTypePrometheus, store.SourceTypeMimir:
+		pa, ok := adapter.(prometheusadapter.PrometheusAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not prometheus", source.ID)
+		}
+		return r.refreshPrometheusSource(ctx, source, pa)
+	case store.SourceTypeLoki:
+		la, ok := adapter.(lokiadapter.LokiAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not loki", source.ID)
+		}
+		return r.refreshLokiSource(ctx, source, la)
+	case store.SourceTypeTempo:
+		ta, ok := adapter.(tempoadapter.TempoAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not tempo", source.ID)
+		}
+		return r.refreshTempoSource(ctx, source, ta)
+	case store.SourceTypeJaeger:
+		ja, ok := adapter.(jaegeradapter.JaegerAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not jaeger", source.ID)
+		}
+		return r.refreshJaegerSource(ctx, source, ja)
+	case store.SourceTypeAlertmanager:
+		aa, ok := adapter.(alertmanageradapter.AlertmanagerAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not alertmanager", source.ID)
+		}
+		return r.refreshAlertmanagerSource(ctx, source, aa)
+	case store.SourceTypePagerDuty:
+		pa, ok := adapter.(pagerdutyadapter.PagerDutyAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not pagerduty", source.ID)
+		}
+		return r.refreshPagerDutySource(ctx, source, pa)
+	case store.SourceTypeGrafana:
+		ga, ok := adapter.(grafanaadapter.GrafanaAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not grafana", source.ID)
+		}
+		return r.refreshGrafanaSource(ctx, source, ga)
 	default:
 		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)
 		return nil
