@@ -29,7 +29,9 @@
       "Read(//Users/jaimegago/go/pkg/mod/github.com/google/generative-ai-go@v0.20.1/genai/**)",
       "Bash(find:*)",
       "Bash(sort:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(staticcheck:*)",
+      "Bash(revive:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"

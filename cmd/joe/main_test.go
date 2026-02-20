@@ -45,7 +45,7 @@ func (f *fakeRepl) Run(ctx context.Context) error {
 	return f.err
 }
 
-func testDeps(t *testing.T, repl *fakeRepl, joeDir string) runDeps {
+func testDeps(repl *fakeRepl, joeDir string) runDeps {
 	deps := defaultRunDeps()
 	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
 		return func(context.Context) error { return nil }, nil
@@ -102,7 +102,7 @@ func TestRun_Success(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -122,7 +122,7 @@ func TestRun_InvalidConfig(t *testing.T) {
 	}
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -146,7 +146,7 @@ func TestRun_InvalidFlag(t *testing.T) {
 
 func TestRun_ConfigLoadError(t *testing.T) {
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.loadConfig = func(path string) (*config.Config, error) {
 		return nil, fmt.Errorf("boom")
 	}
@@ -204,7 +204,7 @@ func TestRun_JoeDirError(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.joeDirPath = func() (string, error) {
 		return "", fmt.Errorf("no home")
 	}
@@ -225,7 +225,7 @@ func TestRun_LoadPolicyError(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.loadPolicy = func(configDir string) (*safety.SafetyPolicy, error) {
 		return nil, fmt.Errorf("bad policy")
 	}
@@ -246,7 +246,7 @@ func TestRun_NewAdapterError(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.newAdapter = func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
 		return nil, fmt.Errorf("adapter failed")
 	}
@@ -267,7 +267,7 @@ func TestRun_ReplError(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{err: fmt.Errorf("repl failed")}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -285,7 +285,7 @@ func TestRun_DebugOutputAndOTelFailure(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
 		return nil, fmt.Errorf("otel down")
 	}
@@ -345,7 +345,7 @@ func TestRun_APIKeyConfigApplied(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -365,7 +365,7 @@ func TestRun_AdapterWithCloser(t *testing.T) {
 	closingAdapterInstance := &closingFakeAdapter{}
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 	deps.newAdapter = func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
 		return closingAdapterInstance, nil
 	}
@@ -417,7 +417,7 @@ func TestRun_WithTLSEnabled(t *testing.T) {
 	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
-	deps := testDeps(t, fake, t.TempDir())
+	deps := testDeps(fake, t.TempDir())
 
 	var gotURL string
 	deps.newClient = func(baseURL string, opts ...client.ClientOption) *client.Client {

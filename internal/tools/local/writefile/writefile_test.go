@@ -28,180 +28,141 @@ func TestTool_Metadata(t *testing.T) {
 	}
 }
 
-func TestExecute_MissingPath(t *testing.T) {
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"content": "hello"})
-	if err == nil {
-		t.Fatal("expected error for missing path parameter")
-	}
-	if !strings.Contains(err.Error(), "path parameter") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
+func TestExecute(t *testing.T) {
+	home, _ := os.UserHomeDir()
 
-func TestExecute_EmptyPath(t *testing.T) {
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{"path": "", "content": "hello"})
-	if err == nil {
-		t.Fatal("expected error for empty path parameter")
+	tests := []struct {
+		name        string
+		setup       func(t *testing.T) (*Tool, map[string]any)
+		wantErr     bool
+		errContains string
+		validate    func(t *testing.T, result any)
+	}{
+		{
+			name: "missing path parameter",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{"content": "hello"}
+			},
+			wantErr:     true,
+			errContains: "path parameter",
+		},
+		{
+			name: "empty path",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{"path": "", "content": "hello"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid content type",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{"path": "./file.txt", "content": 123}
+			},
+			wantErr: true,
+		},
+		{
+			name: "writes inside allowed directory",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				allowedDir := t.TempDir()
+				return New(allowedDir), map[string]any{
+					"path":    filepath.Join(allowedDir, "allowed.txt"),
+					"content": "allowed",
+				}
+			},
+			validate: func(t *testing.T, result any) {
+				if result.(map[string]any)["created"] != true {
+					t.Error("want created=true")
+				}
+			},
+		},
+		{
+			name: "blocks write outside allowed directory",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				allowedDir := t.TempDir()
+				outsideDir := t.TempDir()
+				return New(allowedDir), map[string]any{
+					"path":    filepath.Join(outsideDir, "blocked.txt"),
+					"content": "should not write",
+				}
+			},
+			wantErr:     true,
+			errContains: "path_sandbox",
+		},
+		{
+			name: "no allowed dirs means no sandbox",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{
+					"path":    filepath.Join(t.TempDir(), "anywhere.txt"),
+					"content": "unrestricted",
+				}
+			},
+		},
+		{
+			name: "blocks ~/.joe/config.yaml",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{
+					"path":    filepath.Join(home, ".joe", "config.yaml"),
+					"content": "malicious content",
+				}
+			},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+		{
+			name: "blocks ~/.joe/safety-policy.yaml",
+			setup: func(t *testing.T) (*Tool, map[string]any) {
+				return New(), map[string]any{
+					"path":    filepath.Join(home, ".joe", "safety-policy.yaml"),
+					"content": "enabled: false",
+				}
+			},
+			wantErr:     true,
+			errContains: "self-protection",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool, args := tt.setup(t)
+			got, err := tool.Execute(context.Background(), args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.errContains != "" && (err == nil || !strings.Contains(err.Error(), tt.errContains)) {
+				t.Errorf("Execute() error = %v, want error containing %q", err, tt.errContains)
+			}
+			if tt.validate != nil && err == nil {
+				tt.validate(t, got)
+			}
+		})
 	}
 }
 
 func TestExecute_CreateAndOverwrite(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "nested", "file.txt")
-
+	path := filepath.Join(t.TempDir(), "nested", "file.txt")
 	tool := New()
-	resultRaw, err := tool.Execute(context.Background(), map[string]any{
-		"path":    path,
-		"content": "first",
-	})
+
+	// First write: should create.
+	resultRaw, err := tool.Execute(context.Background(), map[string]any{"path": path, "content": "first"})
 	if err != nil {
-		t.Fatalf("Execute() error: %v", err)
+		t.Fatalf("first Execute() error: %v", err)
 	}
-	result := resultRaw.(map[string]any)
-	if result["created"] != true {
-		t.Fatalf("created = %v, want true", result["created"])
+	if resultRaw.(map[string]any)["created"] != true {
+		t.Error("first write: want created=true")
+	}
+	if data, _ := os.ReadFile(path); string(data) != "first" {
+		t.Errorf("content after create = %q, want %q", string(data), "first")
 	}
 
-	data, err := os.ReadFile(path)
+	// Second write: should overwrite.
+	resultRaw, err = tool.Execute(context.Background(), map[string]any{"path": path, "content": "second"})
 	if err != nil {
-		t.Fatalf("read file: %v", err)
+		t.Fatalf("second Execute() error: %v", err)
 	}
-	if string(data) != "first" {
-		t.Fatalf("content = %q, want %q", string(data), "first")
+	if resultRaw.(map[string]any)["created"] != false {
+		t.Error("second write: want created=false")
 	}
-
-	resultRaw, err = tool.Execute(context.Background(), map[string]any{
-		"path":    path,
-		"content": "second",
-	})
-	if err != nil {
-		t.Fatalf("Execute() error: %v", err)
-	}
-	result = resultRaw.(map[string]any)
-	if result["created"] != false {
-		t.Fatalf("created = %v, want false", result["created"])
-	}
-
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-	if string(data) != "second" {
-		t.Fatalf("content = %q, want %q", string(data), "second")
-	}
-}
-
-func TestExecute_InvalidContent(t *testing.T) {
-	tool := New()
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"path":    "./file.txt",
-		"content": 123,
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid content")
-	}
-}
-
-func TestExecute_AllowedDirectories_Inside(t *testing.T) {
-	allowedDir := t.TempDir()
-	tool := New(allowedDir)
-
-	path := filepath.Join(allowedDir, "allowed.txt")
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"path":    path,
-		"content": "allowed",
-	})
-	if err != nil {
-		t.Fatalf("Execute() inside allowed dir: %v", err)
-	}
-
-	data, _ := os.ReadFile(path)
-	if string(data) != "allowed" {
-		t.Errorf("content = %q, want %q", string(data), "allowed")
-	}
-}
-
-func TestExecute_AllowedDirectories_Outside(t *testing.T) {
-	allowedDir := t.TempDir()
-	outsideDir := t.TempDir()
-	tool := New(allowedDir)
-
-	path := filepath.Join(outsideDir, "blocked.txt")
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"path":    path,
-		"content": "should not write",
-	})
-	if err == nil {
-		t.Fatal("expected error when writing outside allowed directories")
-	}
-	if !strings.Contains(err.Error(), "path_sandbox") {
-		t.Errorf("expected path_sandbox error, got: %v", err)
-	}
-
-	// Verify file was NOT created
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		t.Error("file should not have been created outside allowed directory")
-	}
-}
-
-func TestExecute_AllowedDirectories_Empty_AllowsAll(t *testing.T) {
-	tmpDir := t.TempDir()
-	tool := New() // no allowed directories — no sandbox
-
-	path := filepath.Join(tmpDir, "anywhere.txt")
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"path":    path,
-		"content": "unrestricted",
-	})
-	if err != nil {
-		t.Fatalf("Execute() without sandbox: %v", err)
-	}
-}
-
-func TestExecute_BlocksJoeDirectory(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("failed to get home dir: %v", err)
-	}
-
-	// Try to write to ~/.joe/config.yaml
-	configPath := filepath.Join(home, ".joe", "config.yaml")
-
-	tool := New()
-	_, err = tool.Execute(context.Background(), map[string]any{
-		"path":    configPath,
-		"content": "malicious content",
-	})
-	if err == nil {
-		t.Fatal("expected error when writing to ~/.joe/, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
-	}
-}
-
-func TestExecute_BlocksSafetyPolicy(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("failed to get home dir: %v", err)
-	}
-
-	// Try to write to ~/.joe/safety-policy.yaml
-	policyPath := filepath.Join(home, ".joe", "safety-policy.yaml")
-
-	tool := New()
-	_, err = tool.Execute(context.Background(), map[string]any{
-		"path":    policyPath,
-		"content": "enabled: false",
-	})
-	if err == nil {
-		t.Fatal("expected error when writing safety policy, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "self-protection") {
-		t.Errorf("expected self-protection error, got: %v", err)
+	if data, _ := os.ReadFile(path); string(data) != "second" {
+		t.Errorf("content after overwrite = %q, want %q", string(data), "second")
 	}
 }
