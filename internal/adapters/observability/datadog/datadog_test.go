@@ -281,3 +281,198 @@ func TestAdapter_LogsSearch_DefaultLimit(t *testing.T) {
 		t.Errorf("Count = %d, want 0", result.Count)
 	}
 }
+
+// --- ListActiveServices ---
+
+func TestAdapter_ListActiveServices(t *testing.T) {
+	respBody := `{
+		"host_list": [
+			{
+				"host_name": "web-1",
+				"tags_by_source": {
+					"Datadog": ["service:api", "env:prod"],
+					"AWS": ["region:us-east-1"]
+				}
+			},
+			{
+				"host_name": "worker-1",
+				"tags_by_source": {
+					"Datadog": ["service:worker", "service:api", "env:prod"]
+				}
+			}
+		],
+		"total_matching": 2,
+		"total_returned": 2
+	}`
+
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+
+	services, err := adapter.ListActiveServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveServices() error = %v", err)
+	}
+
+	// "api" appears twice but should be deduplicated; "worker" once.
+	if len(services) != 2 {
+		t.Errorf("len(services) = %d, want 2, got %v", len(services), services)
+	}
+	found := make(map[string]bool)
+	for _, s := range services {
+		found[s] = true
+	}
+	if !found["api"] {
+		t.Error("expected service 'api' in results")
+	}
+	if !found["worker"] {
+		t.Error("expected service 'worker' in results")
+	}
+}
+
+func TestAdapter_ListActiveServices_NoServiceTags(t *testing.T) {
+	respBody := `{
+		"host_list": [
+			{
+				"host_name": "web-1",
+				"tags_by_source": {
+					"AWS": ["region:us-east-1", "env:prod"]
+				}
+			}
+		],
+		"total_matching": 1,
+		"total_returned": 1
+	}`
+
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+
+	services, err := adapter.ListActiveServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveServices() error = %v", err)
+	}
+	if len(services) != 0 {
+		t.Errorf("len(services) = %d, want 0", len(services))
+	}
+}
+
+func TestAdapter_ListActiveServices_NotConnected(t *testing.T) {
+	adapter := datadog.New()
+	_, err := adapter.ListActiveServices(context.Background())
+	if err == nil {
+		t.Error("expected error when not connected, got nil")
+	}
+}
+
+func TestAdapter_ListActiveServices_ServerError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusUnauthorized, `{"errors":["forbidden"]}`),
+	})
+	_, err := adapter.ListActiveServices(context.Background())
+	if err == nil {
+		t.Error("expected error for server error response, got nil")
+	}
+}
+
+func TestAdapter_ListActiveServices_EmptyHostList(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `{"host_list":[],"total_matching":0,"total_returned":0}`),
+	})
+	services, err := adapter.ListActiveServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveServices() error = %v", err)
+	}
+	if len(services) != 0 {
+		t.Errorf("len(services) = %d, want 0", len(services))
+	}
+}
+
+// --- ListLogServices ---
+
+func TestAdapter_ListLogServices(t *testing.T) {
+	respBody := `{
+		"data": [
+			{"attributes": {"service": "api", "message": "ok"}},
+			{"attributes": {"service": "worker", "message": "ok"}},
+			{"attributes": {"service": "api", "message": "err"}}
+		]
+	}`
+
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+
+	services, err := adapter.ListLogServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListLogServices() error = %v", err)
+	}
+
+	// "api" duplicated → dedup; "worker" once.
+	if len(services) != 2 {
+		t.Errorf("len(services) = %d, want 2, got %v", len(services), services)
+	}
+	found := make(map[string]bool)
+	for _, s := range services {
+		found[s] = true
+	}
+	if !found["api"] {
+		t.Error("expected service 'api' in results")
+	}
+	if !found["worker"] {
+		t.Error("expected service 'worker' in results")
+	}
+}
+
+func TestAdapter_ListLogServices_EmptyService(t *testing.T) {
+	// Log entries with no service field should be skipped.
+	respBody := `{
+		"data": [
+			{"attributes": {"service": "", "message": "no service"}},
+			{"attributes": {"service": "payment", "message": "ok"}}
+		]
+	}`
+
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+
+	services, err := adapter.ListLogServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListLogServices() error = %v", err)
+	}
+	if len(services) != 1 || services[0] != "payment" {
+		t.Errorf("services = %v, want [payment]", services)
+	}
+}
+
+func TestAdapter_ListLogServices_NotConnected(t *testing.T) {
+	adapter := datadog.New()
+	_, err := adapter.ListLogServices(context.Background())
+	if err == nil {
+		t.Error("expected error when not connected, got nil")
+	}
+}
+
+func TestAdapter_ListLogServices_ServerError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusBadRequest, `{"errors":["bad request"]}`),
+	})
+	_, err := adapter.ListLogServices(context.Background())
+	if err == nil {
+		t.Error("expected error for server error response, got nil")
+	}
+}
+
+func TestAdapter_ListLogServices_NoData(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `{"data":[]}`),
+	})
+	services, err := adapter.ListLogServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListLogServices() error = %v", err)
+	}
+	if len(services) != 0 {
+		t.Errorf("len(services) = %d, want 0", len(services))
+	}
+}

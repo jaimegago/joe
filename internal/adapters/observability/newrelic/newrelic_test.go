@@ -2,7 +2,6 @@ package newrelic_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,15 +9,6 @@ import (
 	"github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	"github.com/jaimegago/joe/internal/store"
 )
-
-func mustMarshal(t *testing.T, v any) []byte {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	return data
-}
 
 func httpResponse(code int, body string) *http.Response {
 	rec := httptest.NewRecorder()
