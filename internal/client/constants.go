@@ -38,4 +38,7 @@ const (
 	// Networking & Ingress base paths.
 	apiNginxBasePath = "/api/v1/nginx"
 	apiEnvoyBasePath = "/api/v1/envoy"
+
+	// Security & runtime base paths.
+	apiFalcoBasePath = "/api/v1/falco"
 )

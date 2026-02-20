@@ -205,7 +205,7 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
 - [x] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
 - [x] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
-- [ ] 6.11 Security & runtime (Falco)
+- [x] 6.11 Security & runtime (Falco)
 - [ ] Graph edges: metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions
 - [ ] Safety: credential encryption, TLS, rate limiting, T2/T3 policy flags
 

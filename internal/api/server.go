@@ -41,6 +41,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerDatastoreRoutes(mux, apiPrefix)
 	s.registerGitOpsRoutes(mux, apiPrefix)
 	s.registerNetworkingRoutes(mux, apiPrefix)
+	s.registerSecurityRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
 	s.registerControlRoutes(mux, apiPrefix)
 }
