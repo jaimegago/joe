@@ -205,5 +205,6 @@
     ],
     "chat.tools.terminal.autoApprove": {
         "gofmt": true
-    }
+    },
+    "markdownlint.enable": false
 }
