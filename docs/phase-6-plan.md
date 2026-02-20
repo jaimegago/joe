@@ -760,6 +760,10 @@ Acceptance
 Tests
 - Unit tests with mock CRD responses.
 
+Status
+
+- Done (2026-02-20) — cert-manager (certmanager_certs, certmanager_issuers), KEDA (keda_scaledobjects), OPA/Gatekeeper (opa_constraints, opa_violations with dynamic constraint CRD discovery), Crossplane (crossplane_providers, crossplane_resources). 7 new T1 tools registered in default registry and safety tier.go. Coverage: tools/core 88.9%.
+
 ---
 
 ## 6.11 Security & Runtime Adapters
@@ -799,7 +803,7 @@ Tests
 7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) ← done (2026-02-20)
 8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm) ← done (2026-02-20)
 9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium) ← done (2026-02-20)
-10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
+10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) ← done (2026-02-20)
 11) 6.11 Security & runtime (Falco)
 12) 6.3.4 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
 
