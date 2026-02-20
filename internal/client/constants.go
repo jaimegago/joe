@@ -41,4 +41,10 @@ const (
 
 	// Security & runtime base paths.
 	apiFalcoBasePath = "/api/v1/falco"
+
+	// Proprietary observability vendor base paths (Phase 6, Step 12).
+	apiDatadogBasePath   = "/api/v1/datadog"
+	apiSplunkBasePath    = "/api/v1/splunk"
+	apiDynatraceBasePath = "/api/v1/dynatrace"
+	apiNewRelicBasePath  = "/api/v1/newrelic"
 )

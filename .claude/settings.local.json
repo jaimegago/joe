@@ -31,7 +31,8 @@
       "Bash(sort:*)",
       "Read(//tmp/**)",
       "Bash(staticcheck:*)",
-      "Bash(revive:*)"
+      "Bash(revive:*)",
+      "Bash(xargs basename:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"

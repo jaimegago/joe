@@ -99,7 +99,7 @@ func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
 }
 
-// registerObservabilityRoutes registers observability query routes (Prometheus, Loki, Tempo, Jaeger).
+// registerObservabilityRoutes registers observability query routes (Prometheus, Loki, Tempo, Jaeger, and proprietary vendors).
 func (s *Server) registerObservabilityRoutes(mux *http.ServeMux, prefix string) {
 	h := &observabilityHandler{server: s}
 	// Prometheus / Mimir
@@ -116,6 +116,16 @@ func (s *Server) registerObservabilityRoutes(mux *http.ServeMux, prefix string) 
 	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/services", prefix), h.handleJaegerServices)
 	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces", prefix), h.handleJaegerTraces)
 	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces/{traceID}", prefix), h.handleJaegerGetTrace)
+	// Datadog (Phase 6, Step 12)
+	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{sourceID}/metrics", prefix), h.handleDatadogMetrics)
+	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{sourceID}/logs", prefix), h.handleDatadogLogs)
+	// Splunk
+	mux.HandleFunc(fmt.Sprintf("GET %s/splunk/{sourceID}/search", prefix), h.handleSplunkSearch)
+	// Dynatrace
+	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{sourceID}/metrics", prefix), h.handleDynatraceMetrics)
+	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{sourceID}/events", prefix), h.handleDynatraceEvents)
+	// New Relic
+	mux.HandleFunc(fmt.Sprintf("GET %s/newrelic/{sourceID}/nrql", prefix), h.handleNewRelicNRQL)
 }
 
 // observabilityHandler delegates to Server observability methods.
@@ -150,6 +160,24 @@ func (h *observabilityHandler) handleJaegerTraces(w http.ResponseWriter, r *http
 }
 func (h *observabilityHandler) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
 	h.server.handleJaegerGetTrace(w, r)
+}
+func (h *observabilityHandler) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
+	h.server.handleDatadogMetrics(w, r)
+}
+func (h *observabilityHandler) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
+	h.server.handleDatadogLogs(w, r)
+}
+func (h *observabilityHandler) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
+	h.server.handleSplunkSearch(w, r)
+}
+func (h *observabilityHandler) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) {
+	h.server.handleDynatraceMetrics(w, r)
+}
+func (h *observabilityHandler) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
+	h.server.handleDynatraceEvents(w, r)
+}
+func (h *observabilityHandler) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
+	h.server.handleNewRelicNRQL(w, r)
 }
 
 // registerAlertingRoutes registers alerting query routes (Alertmanager, PagerDuty, Grafana).

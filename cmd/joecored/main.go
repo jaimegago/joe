@@ -16,6 +16,10 @@ import (
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
@@ -416,6 +420,63 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 		}
 		registry.Register(src.ID, adapter)
 		slog.Info("connected falco source", "id", src.ID, "name", src.Name)
+	}
+
+	// Phase 6, Step 12 — proprietary observability vendors.
+	datadogSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeDatadog)
+	if err != nil {
+		slog.Warn("failed to load datadog sources", "error", err)
+	}
+	for _, src := range datadogSources {
+		adapter := datadogadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect datadog source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected datadog source", "id", src.ID, "name", src.Name)
+	}
+
+	splunkSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeSplunk)
+	if err != nil {
+		slog.Warn("failed to load splunk sources", "error", err)
+	}
+	for _, src := range splunkSources {
+		adapter := splunkadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect splunk source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected splunk source", "id", src.ID, "name", src.Name)
+	}
+
+	dynatraceSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeDynatrace)
+	if err != nil {
+		slog.Warn("failed to load dynatrace sources", "error", err)
+	}
+	for _, src := range dynatraceSources {
+		adapter := dynatraceadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect dynatrace source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected dynatrace source", "id", src.ID, "name", src.Name)
+	}
+
+	newrelicSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeNewRelic)
+	if err != nil {
+		slog.Warn("failed to load newrelic sources", "error", err)
+	}
+	for _, src := range newrelicSources {
+		adapter := newrelicadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect newrelic source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected newrelic source", "id", src.ID, "name", src.Name)
 	}
 }
 

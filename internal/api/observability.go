@@ -7,9 +7,13 @@ import (
 	"strconv"
 	"time"
 
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 )
 
@@ -491,5 +495,349 @@ func (s *Server) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"trace":     trace,
 		"source_id": sourceID,
+	})
+}
+
+// --- Datadog adapter lookup & handlers ---
+
+func (s *Server) getDatadogAdapter(sourceID string) (datadogadapter.DatadogAdapter, error) {
+	adapter, err := s.getAdapter(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	da, ok := adapter.(datadogadapter.DatadogAdapter)
+	if !ok {
+		return nil, fmt.Errorf("%w: datadog", errInvalidSourceType)
+	}
+	return da, nil
+}
+
+// handleDatadogMetrics executes a Datadog metrics query.
+// GET /api/v1/datadog/{sourceID}/metrics?query=<q>&from=<unix>&to=<unix>
+func (s *Server) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: query")
+		return
+	}
+
+	now := time.Now()
+	from := now.Add(-time.Hour).Unix()
+	to := now.Unix()
+
+	if f := r.URL.Query().Get("from"); f != "" {
+		if v, err := strconv.ParseInt(f, 10, 64); err == nil {
+			from = v
+		}
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		if v, err := strconv.ParseInt(t, 10, 64); err == nil {
+			to = v
+		}
+	}
+
+	da, err := s.getDatadogAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "Datadog") {
+		return
+	}
+
+	start := time.Now()
+	result, err := da.MetricsQuery(r.Context(), query, from, to)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "datadog", "metrics_query", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "datadog metrics query")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+		"query":     query,
+	})
+}
+
+// handleDatadogLogs searches Datadog log events.
+// GET /api/v1/datadog/{sourceID}/logs?query=<q>&from=<unix>&to=<unix>&limit=<n>
+func (s *Server) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: query")
+		return
+	}
+
+	now := time.Now()
+	from := now.Add(-time.Hour).Unix()
+	to := now.Unix()
+
+	if f := r.URL.Query().Get("from"); f != "" {
+		if v, err := strconv.ParseInt(f, 10, 64); err == nil {
+			from = v
+		}
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		if v, err := strconv.ParseInt(t, 10, 64); err == nil {
+			to = v
+		}
+	}
+
+	limit := 25
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	da, err := s.getDatadogAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "Datadog") {
+		return
+	}
+
+	start := time.Now()
+	result, err := da.LogsSearch(r.Context(), query, from, to, limit)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "datadog", "logs_search", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "datadog logs search")
+		return
+	}
+
+	if result == nil {
+		result = &datadogadapter.LogsResult{Logs: []datadogadapter.LogEntry{}}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+		"query":     query,
+	})
+}
+
+// --- Splunk adapter lookup & handlers ---
+
+func (s *Server) getSplunkAdapter(sourceID string) (splunkadapter.SplunkAdapter, error) {
+	adapter, err := s.getAdapter(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	sa, ok := adapter.(splunkadapter.SplunkAdapter)
+	if !ok {
+		return nil, fmt.Errorf("%w: splunk", errInvalidSourceType)
+	}
+	return sa, nil
+}
+
+// handleSplunkSearch executes a Splunk SPL search.
+// GET /api/v1/splunk/{sourceID}/search?query=<spl>&earliest=<t>&latest=<t>&limit=<n>
+func (s *Server) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: query")
+		return
+	}
+
+	earliest := r.URL.Query().Get("earliest")
+	if earliest == "" {
+		earliest = "-1h"
+	}
+	latest := r.URL.Query().Get("latest")
+	if latest == "" {
+		latest = "now"
+	}
+
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	sa, err := s.getSplunkAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "Splunk") {
+		return
+	}
+
+	start := time.Now()
+	result, err := sa.Search(r.Context(), query, earliest, latest, limit)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "splunk", "search", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "splunk search")
+		return
+	}
+
+	if result == nil {
+		result = &splunkadapter.SearchResult{Events: []splunkadapter.SearchEvent{}}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+		"query":     query,
+	})
+}
+
+// --- Dynatrace adapter lookup & handlers ---
+
+func (s *Server) getDynatraceAdapter(sourceID string) (dynatraceadapter.DynatraceAdapter, error) {
+	adapter, err := s.getAdapter(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	da, ok := adapter.(dynatraceadapter.DynatraceAdapter)
+	if !ok {
+		return nil, fmt.Errorf("%w: dynatrace", errInvalidSourceType)
+	}
+	return da, nil
+}
+
+// handleDynatraceMetrics executes a Dynatrace metrics selector query.
+// GET /api/v1/dynatrace/{sourceID}/metrics?query=<selector>&from=<ms>&to=<ms>
+func (s *Server) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: query")
+		return
+	}
+
+	now := time.Now()
+	from := now.Add(-time.Hour).UnixMilli()
+	to := now.UnixMilli()
+
+	if f := r.URL.Query().Get("from"); f != "" {
+		if v, err := strconv.ParseInt(f, 10, 64); err == nil {
+			from = v
+		}
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		if v, err := strconv.ParseInt(t, 10, 64); err == nil {
+			to = v
+		}
+	}
+
+	da, err := s.getDynatraceAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "Dynatrace") {
+		return
+	}
+
+	start := time.Now()
+	result, err := da.MetricsQuery(r.Context(), query, from, to)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "dynatrace", "metrics_query", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "dynatrace metrics query")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+		"query":     query,
+	})
+}
+
+// handleDynatraceEvents returns Dynatrace events.
+// GET /api/v1/dynatrace/{sourceID}/events?from=<ms>&to=<ms>&limit=<n>
+func (s *Server) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	now := time.Now()
+	from := now.Add(-time.Hour).UnixMilli()
+	to := now.UnixMilli()
+
+	if f := r.URL.Query().Get("from"); f != "" {
+		if v, err := strconv.ParseInt(f, 10, 64); err == nil {
+			from = v
+		}
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		if v, err := strconv.ParseInt(t, 10, 64); err == nil {
+			to = v
+		}
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	da, err := s.getDynatraceAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "Dynatrace") {
+		return
+	}
+
+	start := time.Now()
+	result, err := da.Events(r.Context(), from, to, limit)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "dynatrace", "events", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "dynatrace events")
+		return
+	}
+
+	if result == nil {
+		result = &dynatraceadapter.EventsResult{Events: []dynatraceadapter.DynatraceEvent{}}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+	})
+}
+
+// --- New Relic adapter lookup & handlers ---
+
+func (s *Server) getNewRelicAdapter(sourceID string) (newrelicadapter.NewRelicAdapter, error) {
+	adapter, err := s.getAdapter(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	na, ok := adapter.(newrelicadapter.NewRelicAdapter)
+	if !ok {
+		return nil, fmt.Errorf("%w: newrelic", errInvalidSourceType)
+	}
+	return na, nil
+}
+
+// handleNewRelicNRQL executes a New Relic NRQL query.
+// GET /api/v1/newrelic/{sourceID}/nrql?query=<nrql>&account_id=<id>
+func (s *Server) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("sourceID")
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: query")
+		return
+	}
+
+	accountID := 0
+	if id := r.URL.Query().Get("account_id"); id != "" {
+		if v, err := strconv.Atoi(id); err == nil {
+			accountID = v
+		}
+	}
+
+	na, err := s.getNewRelicAdapter(sourceID)
+	if handleAdapterLookupError(w, err, sourceID, "New Relic") {
+		return
+	}
+
+	start := time.Now()
+	result, err := na.NRQLQuery(r.Context(), accountID, query)
+	s.services.Metrics.RecordAdapterCall(r.Context(), "newrelic", "nrql_query", time.Since(start), err)
+	if err != nil {
+		writeInternalError(w, err, "newrelic nrql query")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":    result,
+		"source_id": sourceID,
+		"query":     query,
 	})
 }

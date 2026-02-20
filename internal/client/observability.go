@@ -8,9 +8,13 @@ import (
 	"strconv"
 	"time"
 
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 )
 
@@ -205,4 +209,125 @@ func (c *Client) JaegerTraces(ctx context.Context, sourceID, service, operation 
 	}
 
 	return result.Traces, nil
+}
+
+// --- Datadog ---
+
+// DatadogMetricsQuery executes a Datadog metrics query.
+func (c *Client) DatadogMetricsQuery(ctx context.Context, sourceID, query string, from, to int64) (*datadogadapter.MetricsResult, error) {
+	u := fmt.Sprintf("%s%s/%s/metrics?query=%s&from=%d&to=%d",
+		c.baseURL, apiDatadogBasePath,
+		url.PathEscape(sourceID),
+		url.QueryEscape(query),
+		from, to)
+
+	var result struct {
+		Result   *datadogadapter.MetricsResult `json:"result"`
+		SourceID string                        `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "datadog metrics query"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
+}
+
+// DatadogLogsSearch searches Datadog log events.
+func (c *Client) DatadogLogsSearch(ctx context.Context, sourceID, query string, from, to int64, limit int) (*datadogadapter.LogsResult, error) {
+	u := fmt.Sprintf("%s%s/%s/logs?query=%s&from=%d&to=%d&limit=%d",
+		c.baseURL, apiDatadogBasePath,
+		url.PathEscape(sourceID),
+		url.QueryEscape(query),
+		from, to, limit)
+
+	var result struct {
+		Result   *datadogadapter.LogsResult `json:"result"`
+		SourceID string                     `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "datadog logs search"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
+}
+
+// --- Splunk ---
+
+// SplunkSearch executes a Splunk SPL one-shot search.
+func (c *Client) SplunkSearch(ctx context.Context, sourceID, query, earliest, latest string, limit int) (*splunkadapter.SearchResult, error) {
+	u := fmt.Sprintf("%s%s/%s/search?query=%s&limit=%d",
+		c.baseURL, apiSplunkBasePath,
+		url.PathEscape(sourceID),
+		url.QueryEscape(query),
+		limit)
+	if earliest != "" {
+		u += "&earliest=" + url.QueryEscape(earliest)
+	}
+	if latest != "" {
+		u += "&latest=" + url.QueryEscape(latest)
+	}
+
+	var result struct {
+		Result   *splunkadapter.SearchResult `json:"result"`
+		SourceID string                      `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "splunk search"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
+}
+
+// --- Dynatrace ---
+
+// DynatraceMetricsQuery executes a Dynatrace metrics selector query.
+func (c *Client) DynatraceMetricsQuery(ctx context.Context, sourceID, query string, from, to int64) (*dynatraceadapter.MetricsResult, error) {
+	u := fmt.Sprintf("%s%s/%s/metrics?query=%s&from=%d&to=%d",
+		c.baseURL, apiDynatraceBasePath,
+		url.PathEscape(sourceID),
+		url.QueryEscape(query),
+		from, to)
+
+	var result struct {
+		Result   *dynatraceadapter.MetricsResult `json:"result"`
+		SourceID string                          `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "dynatrace metrics query"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
+}
+
+// DynatraceEvents returns Dynatrace events in the given time range.
+func (c *Client) DynatraceEvents(ctx context.Context, sourceID string, from, to int64, limit int) (*dynatraceadapter.EventsResult, error) {
+	u := fmt.Sprintf("%s%s/%s/events?from=%d&to=%d&limit=%d",
+		c.baseURL, apiDynatraceBasePath,
+		url.PathEscape(sourceID),
+		from, to, limit)
+
+	var result struct {
+		Result   *dynatraceadapter.EventsResult `json:"result"`
+		SourceID string                         `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "dynatrace events"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
+}
+
+// --- New Relic ---
+
+// NewRelicNRQLQuery executes a New Relic NRQL query.
+func (c *Client) NewRelicNRQLQuery(ctx context.Context, sourceID string, accountID int, query string) (*newrelicadapter.NRQLResult, error) {
+	u := fmt.Sprintf("%s%s/%s/nrql?query=%s&account_id=%s",
+		c.baseURL, apiNewRelicBasePath,
+		url.PathEscape(sourceID),
+		url.QueryEscape(query),
+		strconv.Itoa(accountID))
+
+	var result struct {
+		Result   *newrelicadapter.NRQLResult `json:"result"`
+		SourceID string                      `json:"source_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "newrelic nrql query"); err != nil {
+		return nil, err
+	}
+	return result.Result, nil
 }
