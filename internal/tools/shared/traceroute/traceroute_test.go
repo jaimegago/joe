@@ -13,8 +13,6 @@ import (
 type mockHopProber struct {
 	// hops maps TTL → (respondIP, latencyMS, err)
 	hops map[int]hopResponse
-	// dst is the IP we consider "reached"
-	dst string
 }
 
 type hopResponse struct {

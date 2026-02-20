@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/llm"
 )
 
 func TestNewDefaultRegistry(t *testing.T) {
@@ -59,6 +61,40 @@ func TestNewDefaultRegistry(t *testing.T) {
 		if !expectedTools[def.Name] {
 			t.Errorf("Unexpected tool in definitions: %s", def.Name)
 		}
+	}
+}
+
+// validatePropertySchema checks a single property for schema correctness.
+// Returns a non-nil error describing the exact problem so the developer knows
+// what to fix in the tool's Parameters() definition.
+func validatePropertySchema(toolName, propName string, prop llm.Property) error {
+	if prop.Type == "array" && prop.Items == nil {
+		return fmt.Errorf(
+			"tool %q: parameter %q has type \"array\" but no Items defined — "+
+				"LLM providers (e.g. Gemini) reject array properties without an item type; "+
+				"add Items: &llm.Property{Type: \"...\", Description: \"...\"} in Parameters()",
+			toolName, propName,
+		)
+	}
+	return nil
+}
+
+// TestToolSchemaValidity ensures every registered tool produces a schema that
+// is valid for all LLM providers.  It acts as a compile-time-level gate so
+// schema bugs are caught by `go test` rather than at runtime against a live API.
+func TestToolSchemaValidity(t *testing.T) {
+	coreClient := client.New("http://localhost:7777")
+	registry := NewDefaultRegistryWithClient(coreClient, nil)
+
+	for _, tool := range registry.GetAll() {
+		t.Run(tool.Name(), func(t *testing.T) {
+			params := tool.Parameters()
+			for propName, prop := range params.Properties {
+				if err := validatePropertySchema(tool.Name(), propName, prop); err != nil {
+					t.Error(err)
+				}
+			}
+		})
 	}
 }
 

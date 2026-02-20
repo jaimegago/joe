@@ -195,7 +195,10 @@ func TestConvertToolDefinition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := client.convertToolDefinition(tt.tool)
+			result, err := client.convertToolDefinition(tt.tool)
+			if err != nil {
+				t.Fatalf("convertToolDefinition() unexpected error: %v", err)
+			}
 
 			// Verify the tool was created
 			if result == nil {
@@ -334,11 +337,50 @@ func TestConvertToolDefinition_AllTypes(t *testing.T) {
 					},
 				},
 			}
-			result := client.convertToolDefinition(tool)
+			result, err := client.convertToolDefinition(tool)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if result == nil {
 				t.Fatal("Expected non-nil tool definition")
 			}
 		})
+	}
+}
+
+// TestConvertToolDefinition_ArrayWithoutItems verifies that the converter
+// returns a clear, actionable error instead of silently producing an invalid
+// schema that Gemini would reject with an opaque 400.
+func TestConvertToolDefinition_ArrayWithoutItems(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	tool := llm.ToolDefinition{
+		Name:        "port_scan",
+		Description: "Scan ports",
+		Parameters: llm.ParameterSchema{
+			Type: "object",
+			Properties: map[string]llm.Property{
+				"host":  {Type: "string", Description: "Host to scan."},
+				"ports": {Type: "array", Description: "Port numbers."}, // missing Items
+			},
+			Required: []string{"host", "ports"},
+		},
+	}
+
+	_, err := client.convertToolDefinition(tool)
+	if err == nil {
+		t.Fatal("expected error for array property without Items, got nil")
+	}
+	if !strings.Contains(err.Error(), "ports") {
+		t.Errorf("error should mention the offending parameter name, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "Items") {
+		t.Errorf("error should mention 'Items' to guide the fix, got: %s", err.Error())
 	}
 }
 
@@ -365,7 +407,10 @@ func TestConvertToolDefinition_ArrayWithItems(t *testing.T) {
 		},
 	}
 
-	result := client.convertToolDefinition(tool)
+	result, err := client.convertToolDefinition(tool)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if result == nil {
 		t.Fatal("Expected non-nil tool definition")
 	}
@@ -404,7 +449,10 @@ func TestConvertToolDefinition_EmptyDescriptions(t *testing.T) {
 		},
 	}
 
-	result := client.convertToolDefinition(tool)
+	result, err := client.convertToolDefinition(tool)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if result == nil {
 		t.Fatal("Expected non-nil tool definition")
 	}
@@ -437,7 +485,10 @@ func TestConvertToolDefinition_ArrayWithItemsAllTypes(t *testing.T) {
 					},
 				},
 			}
-			result := client.convertToolDefinition(tool)
+			result, err := client.convertToolDefinition(tool)
+			if err != nil {
+				t.Fatalf("unexpected error for item type %q: %v", itemType, err)
+			}
 			if result == nil {
 				t.Fatalf("Expected non-nil result for item type %q", itemType)
 			}
