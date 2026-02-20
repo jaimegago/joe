@@ -605,6 +605,10 @@ Acceptance (all 6.8.x)
 Tests
 - Unit tests with mock API/state responses.
 
+Status
+
+- Done (2026-02-20) — Argo CD HTTP REST adapter (argocd_apps, argocd_app, argocd_diff, argocd_history), Flux CRD wrapper tools (flux_status, flux_resource), Terraform state file reader (terraform_state, terraform_resource, terraform_outputs), Helm K8s-secret-based adapter (helm_releases, helm_release, helm_history). 12 new T1 tools registered. API endpoints, client methods, source wiring, and safety tier classification complete. Coverage: argocd 76.2%, terraform 72.1%, helm 67.5%, tools/core 90.8%.
+
 ---
 
 ## 6.9 Networking & Ingress Adapters
@@ -687,6 +691,10 @@ Acceptance (all 6.9.x)
 
 Tests
 - Unit tests with mock API/CRD responses.
+
+Status
+
+- Done (2026-02-20) — NGINX adapter (K8s Ingress CRDs + HTTP status endpoint, nginx_ingresses, nginx_status, nginx_config), Envoy HTTP REST adapter (envoy_clusters, envoy_config, envoy_stats), Istio CRD wrapper tools (istio_config, istio_resource), Cilium CRD wrapper tools (cilium_policies, cilium_endpoints). 10 new T1 tools registered. API endpoints, client methods, source wiring (nginx-ingress, envoy source types), and safety tier classification complete. Coverage: envoy 71.8%, nginx 66.4%, tools/core 88.1%.
 
 ---
 
@@ -789,8 +797,8 @@ Tests
 5) 6.5 Safety and hardening (done)
 6) 6.6 Network & system diagnostic tools (Go-native, shared) ← done (2026-02-20)
 7) 6.7 Data store adapters (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch) ← done (2026-02-20)
-8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm) ← current
-9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium)
+8) 6.8 GitOps, CD & IaC (Argo CD, Flux, Terraform, Helm) ← done (2026-02-20)
+9) 6.9 Networking & ingress (NGINX, Envoy, Istio, Cilium) ← done (2026-02-20)
 10) 6.10 K8s CRD-based (cert-manager, KEDA, OPA/Gatekeeper, Crossplane) — low effort
 11) 6.11 Security & runtime (Falco)
 12) 6.3.4 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)

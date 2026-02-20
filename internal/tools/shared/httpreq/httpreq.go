@@ -21,7 +21,7 @@ const maxBodyBytes = 4096
 // blockedHosts lists addresses that must not be reached to prevent SSRF attacks.
 // These are cloud metadata endpoints and localhost loopback addresses.
 var blockedHosts = []string{
-	"169.254.169.254",       // AWS/GCP/Azure/DO metadata
+	"169.254.169.254", // AWS/GCP/Azure/DO metadata
 	"metadata.google.internal",
 	"metadata.internal",
 }
@@ -172,12 +172,12 @@ func (t *HTTPRequestTool) Execute(ctx context.Context, args map[string]any) (any
 	defer resp.Body.Close()
 
 	result := HTTPRequestResult{
-		URL:       rawURL,
-		Method:    method,
+		URL:        rawURL,
+		Method:     method,
 		StatusCode: resp.StatusCode,
-		Status:    resp.Status,
-		LatencyMS: latency,
-		Headers:   flattenHeaders(resp.Header),
+		Status:     resp.Status,
+		LatencyMS:  latency,
+		Headers:    flattenHeaders(resp.Header),
 	}
 
 	if resp.TLS != nil {

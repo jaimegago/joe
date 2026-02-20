@@ -194,8 +194,8 @@ func TestHTTPRequestTool_Execute_ResponseHeaders(t *testing.T) {
 		StatusCode: 200,
 		Status:     "200 OK",
 		Header: http.Header{
-			"Content-Type":   []string{"application/json"},
-			"X-Request-Id":   []string{"abc123"},
+			"Content-Type": []string{"application/json"},
+			"X-Request-Id": []string{"abc123"},
 		},
 		Body: io.NopCloser(strings.NewReader("")),
 	}

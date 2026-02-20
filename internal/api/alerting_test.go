@@ -26,7 +26,7 @@ type mockAlertmanagerAdapter struct {
 }
 
 func (m *mockAlertmanagerAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockAlertmanagerAdapter) Disconnect() error                                { return nil }
+func (m *mockAlertmanagerAdapter) Disconnect() error                               { return nil }
 func (m *mockAlertmanagerAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -43,7 +43,7 @@ type mockPagerDutyAdapter struct {
 }
 
 func (m *mockPagerDutyAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockPagerDutyAdapter) Disconnect() error                                { return nil }
+func (m *mockPagerDutyAdapter) Disconnect() error                               { return nil }
 func (m *mockPagerDutyAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -64,7 +64,7 @@ type mockGrafanaAdapter struct {
 }
 
 func (m *mockGrafanaAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockGrafanaAdapter) Disconnect() error                                { return nil }
+func (m *mockGrafanaAdapter) Disconnect() error                               { return nil }
 func (m *mockGrafanaAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }

@@ -29,7 +29,7 @@ type mockPrometheusAdapter struct {
 }
 
 func (m *mockPrometheusAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockPrometheusAdapter) Disconnect() error                                { return nil }
+func (m *mockPrometheusAdapter) Disconnect() error                               { return nil }
 func (m *mockPrometheusAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -51,7 +51,7 @@ type mockLokiAdapter struct {
 }
 
 func (m *mockLokiAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockLokiAdapter) Disconnect() error                                { return nil }
+func (m *mockLokiAdapter) Disconnect() error                               { return nil }
 func (m *mockLokiAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -71,7 +71,7 @@ type mockTempoAdapter struct {
 }
 
 func (m *mockTempoAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockTempoAdapter) Disconnect() error                                { return nil }
+func (m *mockTempoAdapter) Disconnect() error                               { return nil }
 func (m *mockTempoAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -92,7 +92,7 @@ type mockJaegerAdapter struct {
 }
 
 func (m *mockJaegerAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockJaegerAdapter) Disconnect() error                                { return nil }
+func (m *mockJaegerAdapter) Disconnect() error                               { return nil }
 func (m *mockJaegerAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }

@@ -49,16 +49,16 @@ func (r *defaultResolver) LookupAddr(ctx context.Context, addr string) ([]string
 
 // DNSResult holds all resolved DNS records for a hostname.
 type DNSResult struct {
-	Hostname string         `json:"hostname"`
-	Type     string         `json:"type"`
-	A        []string       `json:"a,omitempty"`
-	AAAA     []string       `json:"aaaa,omitempty"`
-	CNAME    string         `json:"cname,omitempty"`
-	MX       []MXRecord     `json:"mx,omitempty"`
-	TXT      []string       `json:"txt,omitempty"`
-	NS       []string       `json:"ns,omitempty"`
-	PTR      []string       `json:"ptr,omitempty"`
-	Error    string         `json:"error,omitempty"`
+	Hostname string     `json:"hostname"`
+	Type     string     `json:"type"`
+	A        []string   `json:"a,omitempty"`
+	AAAA     []string   `json:"aaaa,omitempty"`
+	CNAME    string     `json:"cname,omitempty"`
+	MX       []MXRecord `json:"mx,omitempty"`
+	TXT      []string   `json:"txt,omitempty"`
+	NS       []string   `json:"ns,omitempty"`
+	PTR      []string   `json:"ptr,omitempty"`
+	Error    string     `json:"error,omitempty"`
 }
 
 // MXRecord holds a single MX record.

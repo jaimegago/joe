@@ -43,9 +43,9 @@ type TraceSearchResult struct {
 
 // Trace is the full trace data returned by GetTrace.
 type Trace struct {
-	TraceID  string `json:"trace_id"`
-	Batches  []any  `json:"batches,omitempty"` // raw OTLP batches
-	SpanCount int   `json:"span_count,omitempty"`
+	TraceID   string `json:"trace_id"`
+	Batches   []any  `json:"batches,omitempty"` // raw OTLP batches
+	SpanCount int    `json:"span_count,omitempty"`
 }
 
 // TempoAdapter extends the base Adapter with Tempo-specific operations.

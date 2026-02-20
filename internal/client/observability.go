@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
-	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
-	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
+	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 )
 
 // --- Prometheus ---
@@ -26,8 +26,8 @@ func (c *Client) PrometheusQuery(ctx context.Context, sourceID, query string, qu
 	}
 
 	var result struct {
-		Result    *prometheusadapter.QueryResult `json:"result"`
-		SourceID  string                         `json:"source_id"`
+		Result   *prometheusadapter.QueryResult `json:"result"`
+		SourceID string                         `json:"source_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "prometheus query"); err != nil {
 		return nil, err
