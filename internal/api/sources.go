@@ -17,11 +17,16 @@ import (
 	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
 	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	argocdadapter "github.com/jaimegago/joe/internal/adapters/gitops/argocd"
+	terraformadapter "github.com/jaimegago/joe/internal/adapters/iac/terraform"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
+	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
+	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
+	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -227,6 +232,41 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		adapter := elasticsearchadapter.New()
 		if err := adapter.Connect(ctx, *source); err != nil {
 			writeBadRequest(w, err, "connect elasticsearch source", "failed to connect to Elasticsearch")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeArgoCd:
+		adapter := argocdadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect argocd source", "failed to connect to Argo CD")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeTerraform:
+		adapter := terraformadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect terraform source", "failed to load Terraform state")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeHelm:
+		adapter := helmadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect helm source", "failed to connect to Helm")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeNginx:
+		adapter := nginxadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect nginx source", "failed to connect to NGINX Ingress Controller")
+			return
+		}
+		s.services.Adapters.Register(req.ID, adapter)
+	case store.SourceTypeEnvoy:
+		adapter := envoyadapter.New()
+		if err := adapter.Connect(ctx, *source); err != nil {
+			writeBadRequest(w, err, "connect envoy source", "failed to connect to Envoy admin API")
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)

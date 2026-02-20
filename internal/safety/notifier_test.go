@@ -76,9 +76,9 @@ func TestLogNotifier(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		nilFunc   bool
-		wantMsgs  int
+		name       string
+		nilFunc    bool
+		wantMsgs   int
 		wantBefore string
 		wantAfter  string
 	}{

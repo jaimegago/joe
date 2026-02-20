@@ -36,7 +36,7 @@ type Service struct {
 type Incident struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
-	Status      string    `json:"status"` // "triggered", "acknowledged", "resolved"
+	Status      string    `json:"status"`  // "triggered", "acknowledged", "resolved"
 	Urgency     string    `json:"urgency"` // "high", "low"
 	Service     Service   `json:"service"`
 	CreatedAt   time.Time `json:"created_at"`

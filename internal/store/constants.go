@@ -23,12 +23,21 @@ const (
 	SourceTypeGrafana      = "grafana"
 
 	// Phase 6.7 data store source types.
-	SourceTypePostgreSQL      = "postgresql"
-	SourceTypeMySQL           = "mysql"
-	SourceTypeRedis           = "redis"
-	SourceTypeMongoDB         = "mongodb"
-	SourceTypeKafka           = "kafka"
-	SourceTypeElasticsearch   = "elasticsearch"
+	SourceTypePostgreSQL    = "postgresql"
+	SourceTypeMySQL         = "mysql"
+	SourceTypeRedis         = "redis"
+	SourceTypeMongoDB       = "mongodb"
+	SourceTypeKafka         = "kafka"
+	SourceTypeElasticsearch = "elasticsearch"
+
+	// Phase 6.8 GitOps, CD & IaC source types.
+	SourceTypeArgoCd    = "argocd"
+	SourceTypeTerraform = "terraform"
+	SourceTypeHelm      = "helm"
+
+	// Phase 6.9 Networking & Ingress source types.
+	SourceTypeNginx = "nginx-ingress"
+	SourceTypeEnvoy = "envoy"
 )
 
 // AllowedSourceTypes returns the supported source types.
@@ -58,6 +67,11 @@ func AllowedSourceTypes() []string {
 		SourceTypeMongoDB,
 		SourceTypeKafka,
 		SourceTypeElasticsearch,
+		SourceTypeArgoCd,
+		SourceTypeTerraform,
+		SourceTypeHelm,
+		SourceTypeNginx,
+		SourceTypeEnvoy,
 	}
 }
 
@@ -88,7 +102,12 @@ func IsValidSourceType(sourceType string) bool {
 		SourceTypeRedis,
 		SourceTypeMongoDB,
 		SourceTypeKafka,
-		SourceTypeElasticsearch:
+		SourceTypeElasticsearch,
+		SourceTypeArgoCd,
+		SourceTypeTerraform,
+		SourceTypeHelm,
+		SourceTypeNginx,
+		SourceTypeEnvoy:
 		return true
 	default:
 		return false

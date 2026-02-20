@@ -116,8 +116,8 @@ func matchICMPResponse(buf []byte, n int, addr net.Addr) (ip string, matched boo
 // buildICMPEcho constructs a minimal ICMP Echo Request message.
 func buildICMPEcho(id int) []byte {
 	msg := make([]byte, 8)
-	msg[0] = 8    // Type: Echo Request
-	msg[1] = 0    // Code: 0
+	msg[0] = 8 // Type: Echo Request
+	msg[1] = 0 // Code: 0
 	msg[4] = byte(id >> 8)
 	msg[5] = byte(id)
 	msg[6] = 0 // Sequence high

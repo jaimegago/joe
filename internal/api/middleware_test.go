@@ -342,4 +342,3 @@ func TestRemoteIP_XForwardedFor(t *testing.T) {
 		t.Errorf("remoteIP() = %q, want 10.1.2.3", got)
 	}
 }
-

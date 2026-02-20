@@ -265,8 +265,8 @@ func (a *Adapter) GetDashboard(ctx context.Context, uid string) (*DashboardDetai
 	var raw struct {
 		Dashboard rawDashboard `json:"dashboard"`
 		Meta      struct {
-			URL       string    `json:"url"`
-			Updated   time.Time `json:"updated"`
+			URL     string    `json:"url"`
+			Updated time.Time `json:"updated"`
 		} `json:"meta"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -327,7 +327,7 @@ func (a *Adapter) ListAlerts(ctx context.Context) ([]GrafanaAlert, error) {
 	}
 
 	var raw []struct {
-		Fingerprint string            `json:"fingerprint"`
+		Fingerprint string `json:"fingerprint"`
 		Status      struct {
 			State string `json:"state"`
 		} `json:"status"`
@@ -356,12 +356,12 @@ func (a *Adapter) ListAlerts(ctx context.Context) ([]GrafanaAlert, error) {
 }
 
 type rawDashboard struct {
-	ID          int    `json:"id"`
-	UID         string `json:"uid"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	ID          int      `json:"id"`
+	UID         string   `json:"uid"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
-	Version     int    `json:"version"`
+	Version     int      `json:"version"`
 	Panels      []struct {
 		ID    int    `json:"id"`
 		Title string `json:"title"`

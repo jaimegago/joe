@@ -308,8 +308,8 @@ func (a *Adapter) execQuery(req *http.Request) (*QueryResult, error) {
 	var raw struct {
 		Status string `json:"status"`
 		Data   struct {
-			ResultType string            `json:"resultType"`
-			Result     json.RawMessage   `json:"result"`
+			ResultType string          `json:"resultType"`
+			Result     json.RawMessage `json:"result"`
 		} `json:"data"`
 		Error     string `json:"error,omitempty"`
 		ErrorType string `json:"errorType,omitempty"`
