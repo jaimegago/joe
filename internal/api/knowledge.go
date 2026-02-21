@@ -302,4 +302,3 @@ func (h *knowledgeHandler) handleTriggerSync(w http.ResponseWriter, r *http.Requ
 		"message": "sync will be performed by the background coordinator",
 	})
 }
-

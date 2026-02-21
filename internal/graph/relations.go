@@ -15,8 +15,8 @@ const (
 	RelationQueuesIn = "queues_in" // service → message broker (kafka)
 
 	// Phase 6.8 — GitOps / CD / IaC relations.
-	RelationManagedBy  = "managed_by"  // k8s resource → argo cd app / flux / helm release
-	RelationProvisions = "provisions"  // terraform resource / crossplane → cloud resource
+	RelationManagedBy  = "managed_by" // k8s resource → argo cd app / flux / helm release
+	RelationProvisions = "provisions" // terraform resource / crossplane → cloud resource
 
 	// Phase 6.9 — Networking & ingress relations.
 	RelationIngressFor = "ingress_for" // nginx ingress → backend service

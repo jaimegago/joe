@@ -22,12 +22,12 @@ import (
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
 	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
-	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
+	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/store"
 )
 

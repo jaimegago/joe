@@ -95,7 +95,7 @@ func (e *Extractor) ExtractFromSession(ctx context.Context, sessionID string) er
 // --- LLM extraction ---
 
 type extractedLearning struct {
-	Type         string   `json:"type"`          // "pattern", "failure_mode", "best_practice", "insight"
+	Type         string   `json:"type"` // "pattern", "failure_mode", "best_practice", "insight"
 	Title        string   `json:"title"`
 	Description  string   `json:"description"`
 	RelatedNodes []string `json:"related_nodes"` // graph node IDs if identifiable

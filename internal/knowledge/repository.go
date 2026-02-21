@@ -195,12 +195,12 @@ type rowScanner interface {
 func scanEntry(row rowScanner) (*Entry, error) {
 	var e Entry
 	var (
-		tier, entryType                     string
-		sourceType, sourceID, sourceURL     sql.NullString
-		embBlob                             []byte
-		embModel, createdBy                 sql.NullString
-		embAt, lastSyncedAt                 sql.NullString
-		nodesJSON                           sql.NullString
+		tier, entryType                 string
+		sourceType, sourceID, sourceURL sql.NullString
+		embBlob                         []byte
+		embModel, createdBy             sql.NullString
+		embAt, lastSyncedAt             sql.NullString
+		nodesJSON                       sql.NullString
 	)
 	if err := row.Scan(
 		&e.ID, &tier, &entryType, &e.Title, &e.Content, &e.ContentHash,
