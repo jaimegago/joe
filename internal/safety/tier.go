@@ -141,6 +141,9 @@ var toolRegistry = map[string]ToolClassification{
 	"helm_release":       {Tier: TierObserve, Description: "Get full details for a specific Helm release"},
 	"helm_history":       {Tier: TierObserve, Description: "Get revision history for a Helm release"},
 
+	// Knowledge store drift detection (Phase 8) — read-only, T1
+	"detect_doc_drift": {Tier: TierObserve, Description: "Detect documentation drift between knowledge store and external sources"},
+
 	// === T2: Record (internal state mutations) ===
 
 	// Core Agent tools (joecored — graph/fact mutations)
@@ -150,10 +153,20 @@ var toolRegistry = map[string]ToolClassification{
 	"register_source":      {Tier: TierRecord, PolicyKey: "source_registration", Description: "Register infrastructure source"},
 	"save_onboarding_fact": {Tier: TierRecord, PolicyKey: "onboarding_facts", Description: "Save onboarding fact"},
 
+	// Phase 8: doc draft generation (creates proposal in internal state, not external)
+	"generate_doc_draft": {Tier: TierRecord, PolicyKey: "draft_generation", Description: "Generate a documentation draft proposal from knowledge store"},
+
 	// === T3: Act (external system mutations) ===
 
 	"write_file":  {Tier: TierAct, PolicyKey: "write_file", Description: "Write file to local filesystem"},
 	"run_command": {Tier: TierAct, PolicyKey: "run_command", Description: "Run shell command"},
+
+	// Phase 8: doc publish (writes to external systems)
+	"publish_doc_update_confluence": {Tier: TierAct, PolicyKey: "confluence_publish", Description: "Publish doc proposal to Confluence page"},
+	"publish_doc_update_notion":     {Tier: TierAct, PolicyKey: "notion_publish", Description: "Publish doc proposal to Notion page"},
+	"publish_doc_update_git":        {Tier: TierAct, PolicyKey: "git_push", Description: "Commit and push doc proposal to Git repo"},
+	// publish_doc_update selects the runtime-specific policy key per target type.
+	"publish_doc_update": {Tier: TierAct, PolicyKey: "confluence_publish", Description: "Publish an approved doc proposal to its target system"},
 }
 
 // ClassifyTool returns the classification for a tool by name.

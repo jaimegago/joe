@@ -195,6 +195,10 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"registry_query":    true,
 		"artifactory_query": true,
 		"ecr_query":         true,
+		// Documentation co-pilot tools (Phase 8)
+		"detect_doc_drift":   true,
+		"generate_doc_draft": true,
+		"publish_doc_update": true,
 	}
 
 	for toolName := range expectedTools {

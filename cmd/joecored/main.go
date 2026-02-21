@@ -27,6 +27,7 @@ import (
 	"github.com/jaimegago/joe/internal/coreagent"
 	"github.com/jaimegago/joe/internal/crypto"
 	"github.com/jaimegago/joe/internal/knowledge"
+	"github.com/jaimegago/joe/internal/knowledge/drafts"
 	"github.com/jaimegago/joe/internal/knowledge/embeddings"
 	knowledgesync "github.com/jaimegago/joe/internal/knowledge/sync"
 	"github.com/jaimegago/joe/internal/knowledge/sync/confluence"
@@ -244,6 +245,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	}
 	embedder := embeddings.New(llmAdapter, embModelName)
 	services.Knowledge = knowledge.NewService(sqlStore.Knowledge, embedder)
+	services.DocDrafter = drafts.New(services.Knowledge, services.Proposals, llmAdapter)
 	slog.Info("knowledge store ready", "embedding_model", embModelName)
 
 	// Start knowledge sync coordinator when sync is enabled.
