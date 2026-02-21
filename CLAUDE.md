@@ -207,7 +207,8 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
 - [x] 6.11 Security & runtime (Falco)
 - [x] 6.12 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
-- [x] Graph edges: all 17 types wired (metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions)
+- [x] 6.13 Artifact registries — OCI/DockerHub/GHCR/Harbor/Quay, JFrog Artifactory, AWS ECR (image_stored_in + publishes_to graph edges)
+- [x] Graph edges: all 19 types wired (metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions, image_stored_in, publishes_to)
 - [x] Safety: credential encryption (AES-256-GCM), TLS, rate limiting, T1/T2/T3 tier classification
 
 ### Phase 7: Knowledge Store ✅ COMPLETE

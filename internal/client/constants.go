@@ -52,4 +52,9 @@ const (
 	apiKnowledgeEntriesPath = "/api/v1/knowledge/entries"
 	apiKnowledgeSearchPath  = "/api/v1/knowledge/search"
 	apiKnowledgeSourcesPath = "/api/v1/knowledge/sources"
+
+	// Artifact registry base paths (Phase 6.13).
+	apiRegistryOCIBasePath         = "/api/v1/registry/oci"
+	apiRegistryArtifactoryBasePath = "/api/v1/registry/artifactory"
+	apiRegistryECRBasePath         = "/api/v1/registry/ecr"
 )
