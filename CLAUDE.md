@@ -228,11 +228,16 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 
-### Phase 9: Additional Clients + RBAC
+### Phase 9: Additional Clients + RBAC + Emergency Controls
 - [ ] Web UI, VS Code extension
 - [ ] RBAC / permissions layer — see `docs/JOE_RBAC_IMPLEMENTATION.md` (full spec: identity providers, policy engine, middleware pipeline, audit logging) and `docs/JOE_SECURITY.md` (architecture overview)
   - Triggered by multi-user scenarios (Web UI, VS Code); not required for Phase 7/8 (single-user)
   - Tier 1 knowledge immutability (Phase 7) is enforced as a store invariant, not an RBAC gate
+- [ ] Emergency Shutdown (Panic Mode) — see `docs/security-in-layers.md` Part 7
+  - `/panic` REPL command, `joe panic` CLI, `POST /api/v1/panic` endpoint, SIGUSR1 signal
+  - Safe mode on restart (T1 only until explicit unlock)
+  - `joe unlock --reason "..."` to resume normal operation
+  - Panic state persisted to `~/.joe/panic.state`
 
 ## Knowledge Store (Phase 7)
 
@@ -358,7 +363,9 @@ if len(resp.ToolCalls) > 0 {
 - `docs/joe-architecture.md` - Full architecture with diagrams
 - `docs/joe-dataflow.md` - Data flow details, .joe/ file processing
 - `docs/joe-prompt.md` - Prompt for coding LLMs to generate .joe/ files
-- `docs/security-in-layers.md` - Security posture, mutation audit, Action Safety Framework
+- `docs/security-in-layers.md` - Security posture, mutation audit, Action Safety Framework, Emergency Shutdown (Panic Mode)
+- `docs/JOE_RBAC_IMPLEMENTATION.md` - RBAC middleware spec (identity providers, policy engine, audit)
+- `docs/JOE_SECURITY.md` - Security architecture overview (RBAC + Safety layers)
 
 ## Go Standards
 
