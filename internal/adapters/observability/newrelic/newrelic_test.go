@@ -30,21 +30,21 @@ func (m *mockHTTPDoer) Do(_ *http.Request) (*http.Response, error) {
 
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
-		name      string
-		config    map[string]any
-		wantErr   bool
+		name       string
+		config     map[string]any
+		wantErr    bool
 		wantRegion string
 	}{
 		{
-			name:      "valid US config",
-			config:    map[string]any{"api_key": "NRAK-abc", "account_id": 12345},
-			wantErr:   false,
+			name:       "valid US config",
+			config:     map[string]any{"api_key": "NRAK-abc", "account_id": 12345},
+			wantErr:    false,
 			wantRegion: "US",
 		},
 		{
-			name:      "EU region",
-			config:    map[string]any{"api_key": "NRAK-abc", "account_id": 12345, "region": "EU"},
-			wantErr:   false,
+			name:       "EU region",
+			config:     map[string]any{"api_key": "NRAK-abc", "account_id": 12345, "region": "EU"},
+			wantErr:    false,
 			wantRegion: "EU",
 		},
 		{

@@ -41,26 +41,26 @@ const (
 
 // Entry is a single piece of knowledge in the store.
 type Entry struct {
-	ID             string          `json:"id"`
-	Tier           Tier            `json:"tier"`
-	Type           EntryType       `json:"type"`
-	Title          string          `json:"title"`
-	Content        string          `json:"content"`
-	ContentHash    string          `json:"content_hash"`
-	Embedding      []float32       `json:"embedding,omitempty"`
-	EmbeddingModel string          `json:"embedding_model,omitempty"`
-	EmbeddingAt    *time.Time      `json:"embedding_at,omitempty"`
-	SourceType     SourceType      `json:"source_type,omitempty"`
-	SourceID       string          `json:"source_id,omitempty"`
-	SourceURL      string          `json:"source_url,omitempty"`
-	RelatedNodes   []string        `json:"related_nodes,omitempty"`
-	Confidence     float64         `json:"confidence"`
-	CreatedBy      string          `json:"created_by,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
-	LastSyncedAt   *time.Time      `json:"last_synced_at,omitempty"`
+	ID             string     `json:"id"`
+	Tier           Tier       `json:"tier"`
+	Type           EntryType  `json:"type"`
+	Title          string     `json:"title"`
+	Content        string     `json:"content"`
+	ContentHash    string     `json:"content_hash"`
+	Embedding      []float32  `json:"embedding,omitempty"`
+	EmbeddingModel string     `json:"embedding_model,omitempty"`
+	EmbeddingAt    *time.Time `json:"embedding_at,omitempty"`
+	SourceType     SourceType `json:"source_type,omitempty"`
+	SourceID       string     `json:"source_id,omitempty"`
+	SourceURL      string     `json:"source_url,omitempty"`
+	RelatedNodes   []string   `json:"related_nodes,omitempty"`
+	Confidence     float64    `json:"confidence"`
+	CreatedBy      string     `json:"created_by,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
 	// Metadata holds extra provenance data (e.g. session_id for derived entries).
-	Metadata       json.RawMessage `json:"metadata,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 // KnowledgeSource is an external sync target (Confluence space, Notion database).
@@ -78,9 +78,9 @@ type KnowledgeSource struct {
 
 // SearchRequest specifies a semantic search query.
 type SearchRequest struct {
-	Query        string   `json:"query"`
-	TopK         int      `json:"top_k"`
-	TierFilter   []Tier   `json:"tier_filter,omitempty"`
+	Query         string  `json:"query"`
+	TopK          int     `json:"top_k"`
+	TierFilter    []Tier  `json:"tier_filter,omitempty"`
 	MinConfidence float64 `json:"min_confidence,omitempty"`
 }
 

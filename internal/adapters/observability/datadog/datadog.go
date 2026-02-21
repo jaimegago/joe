@@ -297,12 +297,12 @@ func (a *Adapter) LogsSearch(ctx context.Context, query string, from, to int64, 
 		Data []struct {
 			ID         string `json:"id"`
 			Attributes struct {
-				Timestamp  string            `json:"timestamp"`
-				Host       string            `json:"host"`
-				Service    string            `json:"service"`
-				Status     string            `json:"status"`
-				Message    string            `json:"message"`
-				Attributes map[string]any    `json:"attributes"`
+				Timestamp  string         `json:"timestamp"`
+				Host       string         `json:"host"`
+				Service    string         `json:"service"`
+				Status     string         `json:"status"`
+				Message    string         `json:"message"`
+				Attributes map[string]any `json:"attributes"`
 			} `json:"attributes"`
 		} `json:"data"`
 	}

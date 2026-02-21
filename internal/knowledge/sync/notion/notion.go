@@ -79,13 +79,13 @@ type queryDBResponse struct {
 }
 
 type notionPageResult struct {
-	ID         string                       `json:"id"`
-	Properties map[string]notionProperty    `json:"properties"`
+	ID         string                    `json:"id"`
+	Properties map[string]notionProperty `json:"properties"`
 }
 
 type notionProperty struct {
-	Type  string             `json:"type"`
-	Title []notionRichText   `json:"title,omitempty"`
+	Type  string           `json:"type"`
+	Title []notionRichText `json:"title,omitempty"`
 }
 
 type notionRichText struct {

@@ -28,6 +28,6 @@ const (
 	providerGemini = "gemini"
 
 	// Default knowledge configuration.
-	defaultKnowledgeSemanticTopK      = 5
-	defaultKnowledgeMinConfidence     = float32(0.0)
+	defaultKnowledgeSemanticTopK  = 5
+	defaultKnowledgeMinConfidence = float32(0.0)
 )
