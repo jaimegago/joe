@@ -56,7 +56,7 @@ func (e *Extractor) ExtractFromSession(ctx context.Context, sessionID string) er
 	}
 
 	// Ask the LLM to extract learnings.
-	learnings, err := e.extractLearnings(ctx, sessionID, transcript)
+	learnings, err := e.extractLearnings(ctx, transcript)
 	if err != nil {
 		return fmt.Errorf("extract learnings from session %s: %w", sessionID, err)
 	}
@@ -117,7 +117,7 @@ Output ONLY a JSON array of objects with fields:
 
 Return [] if no reusable knowledge is found. Do not explain or add commentary.`
 
-func (e *Extractor) extractLearnings(ctx context.Context, sessionID, transcript string) ([]extractedLearning, error) {
+func (e *Extractor) extractLearnings(ctx context.Context, transcript string) ([]extractedLearning, error) {
 	resp, err := e.llm.Chat(ctx, llm.ChatRequest{
 		SystemPrompt: extractionSystemPrompt,
 		Messages: []llm.Message{
