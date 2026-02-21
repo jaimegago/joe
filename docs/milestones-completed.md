@@ -1,10 +1,10 @@
-# Milestones 1-5.5: Completed Phases (Historical Reference)
+# Milestones 1-7: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Milestones 1-4 plus Phase 5.5). It serves as a historical reference for implementation decisions and architectural patterns established during the initial build.
+This document records the completed phases of Joe's development (Phases 1–7). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Milestones 1-4 complete + Phase 5.5 Action Safety Framework complete
+**Current Status:** ✅ Phases 1–7 complete
 
-**Current Phase:** Phase 6 - Cloud, Observability, and Alerting Adapters (see `CLAUDE.md` for planning)
+**Current Phase:** Phase 8 - Documentation Co-Pilot (see `CLAUDE.md` for planning)
 
 ---
 
@@ -15,6 +15,8 @@ This document records the completed phases of Joe's development (Milestones 1-4 
 - ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
 - ✅ **Milestone 4: .joe/ Processing and Cache Replay** - Complete (5 new tests passing)
 - ✅ **Phase 5.5: Action Safety Framework** - Complete (self-protection, policy gate, path sandboxing, command allowlists)
+- ✅ **Phase 6: Infrastructure Adapters** - Complete (40+ adapters, 17 graph edge types, AES-256-GCM credential encryption)
+- ✅ **Phase 7: Knowledge Store** - Complete (three-tier knowledge model, Confluence/Notion sync, LLM-derived insights, semantic search with embeddings)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -218,6 +220,128 @@ This document records the completed phases of Joe's development (Milestones 1-4 
 
 5.5 ✅ DONE: T3 notifications
 - Blocking pre-execution notification with cancel window; post-execution summary.
+
+---
+
+## 6) Phase 6: Infrastructure Adapters
+
+6.1 ✅ DONE: Core foundations
+
+- 30 source type constants in `internal/store/constants.go`
+- Generic adapter registry in `internal/adapters/registry.go`
+- 17 graph relation types in `internal/graph/relations.go`: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `provisions`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`
+
+6.2 ✅ DONE: Cloud adapters
+
+- AWS: EC2, EKS, RDS, VPC — `internal/adapters/aws/`
+- Azure: VMs, AKS, SQL databases, VNets — `internal/adapters/azure/`
+
+6.3 ✅ DONE: Observability open-source
+
+- Prometheus/Mimir (PromQL) — `internal/adapters/observability/prometheus/`
+- Loki (LogQL) — `internal/adapters/observability/loki/`
+- Tempo — `internal/adapters/observability/tempo/`
+- Jaeger — `internal/adapters/observability/jaeger/`
+
+6.4 ✅ DONE: Alerting & dashboards
+
+- Alertmanager — `internal/adapters/alerting/alertmanager/`
+- PagerDuty — `internal/adapters/alerting/pagerduty/`
+- Grafana — `internal/adapters/alerting/grafana/`
+
+6.5 ✅ DONE: Safety & hardening
+
+- AES-256-GCM credential encryption at rest — `internal/store/encrypted_sources.go`
+- TLS support for joe ↔ joecored API
+- Rate limiting middleware
+- T1/T2/T3 tool tier classification enforced at executor gate
+
+6.6 ✅ DONE: Network & system diagnostics (Go-native shared tools)
+
+- `internal/tools/shared/`: `netcheck/`, `dnsquery/`, `httpreq/`, `sysinfo/`, `traceroute/`
+- Tools: tcp_connect, port_scan, dns_lookup, http_request, system_info, trace_route
+- Used by both joe and joecored; no CLI dependencies
+
+6.7 ✅ DONE: Data store adapters
+
+- PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch — `internal/adapters/datastore/`
+- Refresh orchestration: `internal/coreagent/datastore_refresh.go`
+- Graph edges: `stores_in` (services → DBs), `queues_in` (services → Kafka)
+
+6.8 ✅ DONE: GitOps, CD & IaC adapters
+
+- Argo CD (full REST API) — `internal/adapters/gitops/argocd/`
+- Helm (K8s secret-based) — `internal/adapters/packaging/helm/`
+- Terraform (state file reader) — `internal/adapters/iac/terraform/`
+- Flux: handled via K8s CRD discovery (see 6.10)
+- Refresh orchestration: `internal/coreagent/gitops_refresh.go`
+
+6.9 ✅ DONE: Networking & ingress adapters
+
+- NGINX Ingress (K8s CRDs + HTTP status endpoint) — `internal/adapters/networking/nginx/`
+- Envoy (admin API: clusters, config, stats) — `internal/adapters/networking/envoy/`
+- Istio and Cilium: handled via K8s CRD discovery (see 6.10)
+- Refresh orchestration: `internal/coreagent/networking_refresh.go`
+
+6.10 ✅ DONE: K8s CRD-based adapters (dynamic discovery)
+
+- Dynamic CRD discovery in `internal/coreagent/crd_refresh.go`
+- KEDA, cert-manager, OPA/Gatekeeper, Cilium, Istio, Crossplane — each mapped to the appropriate graph edge type
+- CRD-specific tools: `internal/tools/core/certmanager_tools.go`, `keda_tools.go`, `opa_tools.go`, `crossplane_tools.go`
+
+6.11 ✅ DONE: Security & runtime adapters
+
+- Falco (runtime events via HTTP adapter) — `internal/adapters/security/falco/`
+- Tools: `internal/tools/core/falco_tools.go` (falco_alerts, falco_rules)
+
+6.12 ✅ DONE: Proprietary observability vendors
+
+- Datadog — `internal/adapters/observability/datadog/`
+- Splunk — `internal/adapters/observability/splunk/`
+- Dynatrace — `internal/adapters/observability/dynatrace/`
+- New Relic — `internal/adapters/observability/newrelic/`
+
+Status: ✅ Complete — 40+ adapters, all 17 graph edge types wired, test coverage 62–95% across packages
+
+---
+
+## 7) Phase 7: Knowledge Store
+
+7.1 ✅ DONE: Three-tier knowledge model
+
+- `internal/knowledge/knowledge.go`: Tier constants (`TierCurated`, `TierSynced`, `TierDerived`), `Entry` struct with embeddings, confidence, provenance
+- `internal/knowledge/service.go`: CRUD with Tier 1 immutability enforced at service layer (not just API)
+- `internal/knowledge/repository.go`: SQLite-backed, 2 tables — `knowledge_entries`, `knowledge_sources`
+- Migration: `internal/store/migrations/004_knowledge.up.sql`
+
+7.2 ✅ DONE: Semantic search with embeddings
+
+- `internal/knowledge/search.go`: Cosine similarity over float32 vector embeddings
+- Supports tier filtering and configurable confidence thresholds
+- `internal/knowledge/embeddings/`: LLM-backed embedding generation wrapping existing LLM adapters
+- Tracks embedding model name for cache invalidation on model change
+
+7.3 ✅ DONE: Synced sources (Tier 2)
+
+- Confluence adapter: `internal/knowledge/sync/confluence/confluence.go` — Confluence REST API v2, cursor-based pagination
+- Notion adapter: `internal/knowledge/sync/notion/notion.go` — Notion REST API, database query + block content extraction
+- Background sync coordinator: `internal/knowledge/sync/syncer.go` — polls `knowledge_sources` table, respects per-source `sync_interval_minutes`
+- Deduplication via SHA256 content hash (avoids unnecessary re-embeddings)
+
+7.4 ✅ DONE: LLM-derived insights (Tier 3)
+
+- `internal/knowledge/learning/extractor.go`: Analyzes completed sessions, extracts patterns/failure modes/insights via LLM
+- Stores entries with provenance metadata (`session_id`, `extracted_at`)
+- Deduplicates via `source_type + source_id`; LLM cannot create/modify Tier 1
+
+7.5 ✅ DONE: API, client, and agent integration
+
+- API handlers: `internal/api/knowledge.go` — 10 endpoints (entries CRUD, semantic search, source management, manual sync trigger)
+- HTTP client: `internal/client/knowledge.go`
+- Core tool: `internal/tools/core/knowledge_search.go` — `search_knowledge` (T1), registered for both User Agent and Core Agent
+- Core Agent tool: `save_knowledge_entry` (T2) registered in `internal/coreagent/agent.go`
+
+Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, semantic search operational, session learning wired
 
 ---
 
