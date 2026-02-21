@@ -8,6 +8,9 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/knowledge"
+	"github.com/jaimegago/joe/internal/knowledge/drafts"
+	"github.com/jaimegago/joe/internal/knowledge/drift"
+	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/store"
@@ -32,6 +35,9 @@ type Services struct {
 	Metrics        *observability.Metrics
 	Clarifications *ClarificationService
 	Knowledge      *knowledge.Service
+	Proposals      *proposals.Service
+	DocDrafter     *drafts.Generator
+	DriftDet       *drift.Detector
 }
 
 // New creates a new Services instance with the given SQL store database.
@@ -43,6 +49,9 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry 
 	// services.Knowledge = knowledge.NewService(repo, embedder) once the LLM
 	// adapter is wired in cmd/joecored/main.go.
 	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
+	proposalRepo := proposals.NewRepository(db)
+	proposalSvc := proposals.NewService(proposalRepo)
+	driftDet := drift.New(knowledgeSvc)
 	return &Services{
 		Config:         cfg,
 		Store:          sqlStore,
@@ -51,6 +60,9 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry 
 		Metrics:        metrics,
 		Clarifications: NewClarificationService(graphStore, sqlStore),
 		Knowledge:      knowledgeSvc,
+		Proposals:      proposalSvc,
+		DriftDet:       driftDet,
+		// DocDrafter is wired later in cmd/joecored/main.go once the LLM adapter is ready.
 	}
 }
 

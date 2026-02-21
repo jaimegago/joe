@@ -218,10 +218,15 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] LLM-derived insights from sessions
 - [x] Semantic search with embeddings
 
-### Phase 8: Documentation Co-Pilot
-- [ ] Write adapters for wikis
-- [ ] Draft generation, update proposals
-- [ ] Human approval flow
+### Phase 8: Documentation Co-Pilot ✅ COMPLETE
+
+- [x] Write adapters for wikis (Confluence PUT, Notion block replace, Git commit+push)
+- [x] Draft generation via LLM + knowledge store search → unified diff → proposal
+- [x] Human approval flow (pending → approved → published / rejected)
+- [x] Drift detection for Tier 2 synced entries (SHA-256 hash comparison)
+- [x] API endpoints: `/api/v1/knowledge/proposals`, `/api/v1/knowledge/drift`
+- [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
+- [x] SQL migration 005, proposals repository + service, tier registry entries
 
 ### Phase 9: Additional Clients + RBAC
 - [ ] Web UI, VS Code extension

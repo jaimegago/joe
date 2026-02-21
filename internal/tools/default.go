@@ -154,5 +154,10 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewArtifactoryQueryTool(coreClient))
 	registry.Register(coretools.NewECRQueryTool(coreClient))
 
+	// Documentation co-pilot tools (Phase 8)
+	registry.Register(coretools.NewDetectDocDriftTool(coreClient))
+	registry.Register(coretools.NewGenerateDocDraftTool(coreClient))
+	registry.Register(coretools.NewPublishDocUpdateTool(coreClient))
+
 	return registry
 }
