@@ -29,4 +29,8 @@ const (
 	// Phase 6.10 — K8s CRD relations.
 	RelationScaledBy = "scaled_by" // keda scaled object → workload
 	RelationSecures  = "secures"   // certificate → service/ingress
+
+	// Phase 6.13 — Artifact registry relations.
+	RelationImageStoredIn = "image_stored_in" // k8s deployment → image_repository
+	RelationPublishesTo   = "publishes_to"    // git_repo → image_repository
 )

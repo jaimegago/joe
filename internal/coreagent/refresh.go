@@ -34,6 +34,9 @@ import (
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
+	artifactoryadapter "github.com/jaimegago/joe/internal/adapters/registry/artifactory"
+	ecradapter "github.com/jaimegago/joe/internal/adapters/registry/ecr"
+	ociadapter "github.com/jaimegago/joe/internal/adapters/registry/oci"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
@@ -337,6 +340,29 @@ func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (er
 			return fmt.Errorf("adapter for source %s is not newrelic", source.ID)
 		}
 		return r.refreshNewRelicSource(ctx, source, na)
+
+	// Phase 6.13 — Artifact registry sources.
+	case store.SourceTypeOCIRegistry, store.SourceTypeDockerHub:
+		oa, ok := adapter.(ociadapter.OCIAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not oci_registry", source.ID)
+		}
+		if source.Type == store.SourceTypeDockerHub {
+			return r.refreshDockerHubSource(ctx, source, oa)
+		}
+		return r.refreshOCISource(ctx, source, oa)
+	case store.SourceTypeArtifactory:
+		aa, ok := adapter.(artifactoryadapter.ArtifactoryAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not artifactory", source.ID)
+		}
+		return r.refreshArtifactorySource(ctx, source, aa)
+	case store.SourceTypeECR:
+		ea, ok := adapter.(ecradapter.ECRAdapter)
+		if !ok {
+			return fmt.Errorf("adapter for source %s is not ecr", source.ID)
+		}
+		return r.refreshECRSource(ctx, source, ea)
 
 	default:
 		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)

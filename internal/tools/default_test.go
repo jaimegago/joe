@@ -191,6 +191,10 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"falco_rules":          true,
 		// Knowledge store tools (Phase 7)
 		"search_knowledge": true,
+		// Artifact registry tools (Phase 6.13)
+		"registry_query":    true,
+		"artifactory_query": true,
+		"ecr_query":         true,
 	}
 
 	for toolName := range expectedTools {

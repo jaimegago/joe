@@ -149,5 +149,10 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	// Knowledge store tools (Phase 7)
 	registry.Register(coretools.NewSearchKnowledgeTool(coreClient))
 
+	// Artifact registry tools (Phase 6.13)
+	registry.Register(coretools.NewRegistryQueryTool(coreClient))
+	registry.Register(coretools.NewArtifactoryQueryTool(coreClient))
+	registry.Register(coretools.NewECRQueryTool(coreClient))
+
 	return registry
 }

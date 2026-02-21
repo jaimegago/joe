@@ -41,6 +41,12 @@ const (
 
 	// Phase 6.11 Security & runtime source types.
 	SourceTypeFalco = "falco"
+
+	// Phase 6.13 — Artifact registry source types.
+	SourceTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
+	SourceTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
+	SourceTypeArtifactory = "artifactory"  // JFrog Artifactory
+	SourceTypeECR         = "ecr"          // AWS Elastic Container Registry
 )
 
 // AllowedSourceTypes returns the supported source types.
@@ -76,6 +82,10 @@ func AllowedSourceTypes() []string {
 		SourceTypeNginx,
 		SourceTypeEnvoy,
 		SourceTypeFalco,
+		SourceTypeOCIRegistry,
+		SourceTypeDockerHub,
+		SourceTypeArtifactory,
+		SourceTypeECR,
 	}
 }
 
@@ -112,7 +122,11 @@ func IsValidSourceType(sourceType string) bool {
 		SourceTypeHelm,
 		SourceTypeNginx,
 		SourceTypeEnvoy,
-		SourceTypeFalco:
+		SourceTypeFalco,
+		SourceTypeOCIRegistry,
+		SourceTypeDockerHub,
+		SourceTypeArtifactory,
+		SourceTypeECR:
 		return true
 	default:
 		return false

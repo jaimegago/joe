@@ -2,7 +2,7 @@
 
 This document records the completed phases of Joe's development (Phases 1–7). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Phases 1–7 complete
+**Current Status:** ✅ Phases 1–7 complete + Phase 6.13 (Artifact Registries)
 
 **Current Phase:** Phase 8 - Documentation Co-Pilot (see `CLAUDE.md` for planning)
 
@@ -15,7 +15,8 @@ This document records the completed phases of Joe's development (Phases 1–7). 
 - ✅ **Milestone 3: Clarifications System (MVP)** - Complete (20+ tests passing)
 - ✅ **Milestone 4: .joe/ Processing and Cache Replay** - Complete (5 new tests passing)
 - ✅ **Phase 5.5: Action Safety Framework** - Complete (self-protection, policy gate, path sandboxing, command allowlists)
-- ✅ **Phase 6: Infrastructure Adapters** - Complete (40+ adapters, 17 graph edge types, AES-256-GCM credential encryption)
+- ✅ **Phase 6: Infrastructure Adapters** - Complete (40+ adapters, 19 graph edge types, AES-256-GCM credential encryption)
+- ✅ **Phase 6.13: Artifact Registries** - Complete (OCI/DockerHub, Artifactory, ECR adapters; registry_query, artifactory_query, ecr_query tools)
 - ✅ **Phase 7: Knowledge Store** - Complete (three-tier knowledge model, Confluence/Notion sync, LLM-derived insights, semantic search with embeddings)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
@@ -301,7 +302,33 @@ This document records the completed phases of Joe's development (Phases 1–7). 
 - Dynatrace — `internal/adapters/observability/dynatrace/`
 - New Relic — `internal/adapters/observability/newrelic/`
 
-Status: ✅ Complete — 40+ adapters, all 17 graph edge types wired, test coverage 62–95% across packages
+6.13 ✅ DONE: Artifact registry adapters
+
+- OCI Registry adapter (DockerHub, GHCR, Harbor, Quay, any OCI Distribution Spec v2) — `internal/adapters/registry/oci/`
+  - Connect: `GET /v2/` (200 or 401 both valid)
+  - Catalog pagination via Link header
+  - Manifest fetching with `org.opencontainers.image.revision` label extraction (git commit SHA)
+- JFrog Artifactory adapter — `internal/adapters/registry/artifactory/`
+  - Connect: `GET /api/system/ping`
+  - Lists Docker + Helm repositories (PackageType filter); optional key allowlist
+  - Auth via `X-JFrog-Art-Api` header (API key) or HTTP Basic
+- AWS ECR adapter — `internal/adapters/registry/ecr/`
+  - AWS SDK v2; reuses `buildAWSConfig` credential pattern from existing AWS adapters
+  - `DescribeRegistry` for connectivity; paginated `DescribeRepositories`/`DescribeImages`
+  - Scan findings summary (`HIGH:N,MEDIUM:N`) included in `ImageDetail`
+- Refresh orchestration — `internal/coreagent/registry_refresh.go`
+  - Node types: `artifact_registry` (source), `image_repository` (per-repo)
+  - Node ID scheme: `registry/<sourceType>/<sourceID>` / `registry/<sourceID>/repo/<repoName>`
+  - Name-based `image_stored_in` edge inference against existing deployment/service nodes (`graph.Inferred`)
+- New graph relations (2): `image_stored_in` (K8s deployment → image_repository), `publishes_to` (git_repo → image_repository)
+- API routes (9) — `internal/api/registry.go`: repos, tags/images, manifest/artifact/image detail per registry type
+- HTTP client (9 methods) — `internal/client/registry.go`
+- LLM-callable core tools (3, all T1 Observe):
+  - `registry_query` — OCI-compatible registries (list repos / list tags / get manifest)
+  - `artifactory_query` — Artifactory (list repos / list Docker tags / get artifact info)
+  - `ecr_query` — ECR (list repos / list images / get image detail)
+
+Status: ✅ Complete — 40+ adapters, all 19 graph edge types wired, test coverage 62–95% across packages
 
 ---
 
