@@ -3,6 +3,12 @@
 ## Project Name
 **Joe** — Joe Operates Everything
 
+## Core Guarantee: Deterministic Safety
+
+Joe gives AI agents access to production infrastructure without giving them the keys to destroy it. Every mutation flows through **hardcoded, deterministic safety gates** — compiled into the binary, not instructed by the LLM. The LLM reasons about what to do; compiled code decides what actually executes.
+
+For a real-world example of what happens without these controls, see `docs/case-study-kiro-incident.md` (AWS Kiro: 13-hour outage from an AI agent deleting a production environment).
+
 ## Design Principle: AI Agnostic
 Joe treats LLMs as swappable inference backends. The orchestration, memory, and tooling are Joe's—not the AI provider's.
 

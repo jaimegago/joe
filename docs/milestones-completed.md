@@ -1,10 +1,10 @@
-# Milestones 1-7: Completed Phases (Historical Reference)
+# Milestones 1-8: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Phases 1–7). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
+This document records the completed phases of Joe's development (Phases 1–8). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Phases 1–7 complete + Phase 6.13 (Artifact Registries)
+**Current Status:** ✅ Phases 1–8 complete
 
-**Current Phase:** Phase 8 - Documentation Co-Pilot (see `CLAUDE.md` for planning)
+**Current Phase:** Phase 9 - Additional Clients + RBAC (see `CLAUDE.md` for planning)
 
 ---
 
@@ -18,6 +18,7 @@ This document records the completed phases of Joe's development (Phases 1–7). 
 - ✅ **Phase 6: Infrastructure Adapters** - Complete (40+ adapters, 19 graph edge types, AES-256-GCM credential encryption)
 - ✅ **Phase 6.13: Artifact Registries** - Complete (OCI/DockerHub, Artifactory, ECR adapters; registry_query, artifactory_query, ecr_query tools)
 - ✅ **Phase 7: Knowledge Store** - Complete (three-tier knowledge model, Confluence/Notion sync, LLM-derived insights, semantic search with embeddings)
+- ✅ **Phase 8: Documentation Co-Pilot** - Complete (write adapters for Confluence/Notion/Git, draft generation via LLM + knowledge search, human approval flow, drift detection, proposals API)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 

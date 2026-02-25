@@ -290,6 +290,128 @@ Examples of future T3 actions:
 | Git | Commit | `act.git_commit` |
 | Git | Push | `act.git_push` |
 
+### 3.6 Environment-Level Operation Blocking
+
+Operations that affect an entire namespace or cluster are categorically more dangerous than single-resource mutations. A single `kubectl delete namespace payments` has unbounded blast radius compared to `kubectl delete pod payment-svc-7f8b9c-x2k4`.
+
+**Deterministic rule (hardcoded, not LLM-instructed):**
+
+Any operation that targets an entire namespace, cluster, or environment is **always blocked** unless the specific environment is explicitly allow-listed in the safety policy. This applies regardless of the user's RBAC permissions or the action's T3 policy flag.
+
+**Detection heuristics (compiled-in):**
+
+| Pattern | Example | Action |
+|---------|---------|--------|
+| Namespace-scoped delete without resource name | `kubectl delete namespace payments` | **BLOCKED** |
+| Wildcard resource selectors | `kubectl delete pods --all -n payments` | **BLOCKED** |
+| Environment recreation | `terraform destroy` on a workspace | **BLOCKED** |
+| Bulk resource deletion | Operation affecting >N resources (configurable threshold) | **BLOCKED** unless allow-listed |
+
+**Policy configuration:**
+
+```yaml
+# In ~/.joe/safety-policy.yaml
+environment_operations:
+  # Maximum resources a single operation can affect
+  max_blast_radius: 10
+
+  # Environments where environment-level operations are allowed (empty = none)
+  # Even when allow-listed, T3 notification contract still applies
+  allow_environment_ops:
+    - dev        # Only dev environments can be fully recreated
+    # staging and prod are never allow-listed for bulk operations
+```
+
+**Key distinction from `MaxResourcesAffected`:** The blast radius limit (`max_blast_radius`) is a hard cap on any single tool execution. Environment-level blocking goes further — it pattern-matches on the *intent* of the operation (targeting a whole namespace/cluster) and blocks it even if the current resource count is below the threshold.
+
+### 3.7 Mutation Rate Limiting (Circuit Breaker)
+
+An LLM in a reasoning loop can chain multiple destructive actions faster than a human can review them. Even with T3 notifications, a runaway sequence of mutations (e.g., scale down service A → delete configmap B → restart deployment C) can cause cascading damage before the human processes the first notification.
+
+**Deterministic rule (hardcoded):**
+
+A circuit breaker tracks mutation frequency. If more than N mutations occur within M minutes, all further mutations are suspended until a human explicitly resets the breaker. This is independent of and in addition to the per-action T3 approval flow.
+
+**Behavior:**
+
+```
+Mutation 1: kubectl scale deployment/payment-svc --replicas=5
+  → T3 notification → human approves → executes → counter: 1
+
+Mutation 2: kubectl rollout restart deployment/payment-svc
+  → T3 notification → human approves → executes → counter: 2
+
+Mutation 3: kubectl delete configmap payment-config
+  → T3 notification → human approves → executes → counter: 3
+
+Mutation 4: (within window)
+  → CIRCUIT BREAKER TRIPPED
+  → "⚠ Safety: 3 mutations executed in 2 minutes.
+     Further mutations suspended. Review recent changes
+     and type 'joe safety reset' to continue."
+```
+
+**Policy configuration:**
+
+```yaml
+# In ~/.joe/safety-policy.yaml
+circuit_breaker:
+  max_mutations: 5           # Max T3 mutations within the window
+  window_minutes: 10         # Rolling window duration
+  cooldown_minutes: 5        # Minimum wait after trip before reset
+  auto_reset: false          # Require manual reset (recommended)
+```
+
+**Implementation notes:**
+- Counter tracks T3 (Act) actions only, not T2 (Record)
+- Counter is per-session in joe local, global in joecored
+- The breaker trips *before* the Nth+1 action executes, not after
+- `joe safety status` shows current counter and window
+- `joe safety reset` resets the counter (requires interactive confirmation)
+
+### 3.8 Credential Isolation (No Permission Inheritance)
+
+AI agents must never inherit the calling user's infrastructure credentials directly. If a user has cluster-admin on a production cluster and Joe inherits that credential, Joe can do anything the user can — including operations that Joe's safety policy is designed to prevent.
+
+**Deterministic rule (architectural constraint):**
+
+Joe's service account credentials are separate from and more restrictive than the user's credentials. Joe never proxies the user's kubeconfig, cloud credentials, or git tokens for infrastructure operations. Instead:
+
+1. **joecored uses its own service account** with pre-scoped permissions
+2. **RBAC maps user intent to Joe's capabilities**, not to the user's permissions
+3. **Joe's credentials are configured by operators**, not inherited at runtime
+
+**What this means in practice:**
+
+```
+WRONG (Kiro model):
+  User has cluster-admin → AI inherits cluster-admin → AI can delete anything
+
+RIGHT (Joe model):
+  User has cluster-admin (their own kubectl still works)
+  User talks to Joe → Joe uses joe-svc-account (read-only + scoped mutations)
+  Joe's RBAC checks: "Can this user ask Joe to do X?"
+  Joe's Safety checks: "Is X permitted by policy?"
+  Joe's credentials: "Can Joe's service account actually execute X?"
+```
+
+**Three independent permission boundaries:**
+
+| Boundary | Controls | Enforcement |
+|----------|----------|-------------|
+| User's RBAC | What the user can *ask* Joe to do | Middleware (pre-LLM) |
+| Safety Policy | What Joe is *allowed* to do | Executor gate (post-LLM) |
+| Joe's Service Account | What Joe *can* do at the infrastructure level | Cloud/K8s IAM |
+
+All three must allow an operation for it to proceed. This is defense in depth — even if RBAC is misconfigured, Joe's service account permissions limit the blast radius. Even if the service account is over-provisioned, the safety policy blocks unauthorized mutations.
+
+**Configuration guidance:**
+
+Joe's service account should follow least-privilege:
+- K8s: `ClusterRole` with only the verbs Joe needs (get, list, watch by default; scale, patch only for enabled healing actions)
+- AWS: IAM role with only Describe/List permissions (no Create/Delete/Modify unless explicitly needed)
+- Git: Read-only deploy key (no push unless `act.git_push` is enabled and a separate push-capable key is configured)
+
 ---
 
 ## Part 4: Gaps by Layer (non-mutation security)
@@ -391,6 +513,9 @@ All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, t
 **9. Rate limiting middleware**
 **10. Security headers**
 **11. Mutation audit log** — structured log of all T2/T3 actions with timestamp, tool, args, result
+**12. Environment-level operation blocking** — deterministic detection and blocking of namespace/cluster-scoped destructive operations (§3.6)
+**13. Mutation circuit breaker** — rolling window rate limiter on T3 actions with manual reset (§3.7)
+**14. Credential isolation enforcement** — validate that joecored never uses user-provided credentials for infrastructure operations; service account separation (§3.8)
 
 ### Do in Phase 9 (multi-user)
 
@@ -487,6 +612,12 @@ Even with healing enabled, the hardcoded safety invariants remain:
 4. **Audit log captures everything** — Every T2 and T3 action is logged with timestamp, tool, arguments, and result. This is the record of what Joe did and why.
 
 5. **Per-action granularity** — A team can enable `k8s_scale` and `alertmanager_silence` while keeping `k8s_apply` and `k8s_delete` disabled. Each mutation is a separate trust decision.
+
+6. **Environment-level operations are always blocked** — Operations targeting entire namespaces, clusters, or environments (e.g., `kubectl delete namespace`, `terraform destroy`) are rejected by deterministic pattern matching regardless of policy flags, unless the specific environment is explicitly allow-listed in `environment_operations.allow_environment_ops` (§3.6).
+
+7. **Mutation circuit breaker prevents runaway sequences** — A rolling-window rate limiter on T3 actions trips after a configurable threshold (default: 5 mutations in 10 minutes), suspending all further mutations until a human explicitly resets it. This catches LLM reasoning loops that chain destructive actions faster than humans can review (§3.7).
+
+8. **Joe never inherits user credentials** — Joe's infrastructure access uses its own service account with pre-scoped permissions, never the calling user's kubeconfig or cloud credentials. Even if a user has cluster-admin, Joe's operations are bounded by its service account's IAM/RBAC (§3.8).
 
 ### 6.5 Example: Enabling Healing in safety-policy.yaml
 

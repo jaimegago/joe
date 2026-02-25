@@ -229,7 +229,8 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 
 ### Phase 9: Additional Clients + RBAC + Emergency Controls
-- [ ] Web UI, VS Code extension
+- [ ] Web UI
+- [ ] MCP Server (Claude Code, Cursor, Codex, any MCP-compatible AI)
 - [ ] RBAC / permissions layer — see `docs/JOE_RBAC_IMPLEMENTATION.md` (full spec: identity providers, policy engine, middleware pipeline, audit logging) and `docs/JOE_SECURITY.md` (architecture overview)
   - Triggered by multi-user scenarios (Web UI, VS Code); not required for Phase 7/8 (single-user)
   - Tier 1 knowledge immutability (Phase 7) is enforced as a store invariant, not an RBAC gate
