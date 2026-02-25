@@ -4,14 +4,34 @@ Reference architecture for implementation. This document is the source of truth 
 
 ---
 
+## Safety-First Design
+
+Joe is an AI-powered infrastructure copilot. Unlike tools that give LLMs direct access to production systems, Joe enforces **deterministic safety rules** — compiled into the binary, not instructed by the LLM. The LLM suggests actions; hardcoded policy gates decide what executes.
+
+This matters because AI agents with production access will make catastrophic mistakes (see `docs/case-study-kiro-incident.md`). The question is not *if* the LLM hallucinates a dangerous action, but whether the system architecture makes that hallucination harmless.
+
+**Joe's safety guarantees:**
+
+- **Humans own all mutations.** No infrastructure, file, or configuration change without explicit human authorization.
+- **Deterministic enforcement.** Safety rules are compiled code, not LLM instructions. Prompt injection cannot bypass them.
+- **Defense in depth.** Six independent layers — RBAC, safety policy, environment-level blocking, risk tiers, human approval, and mutation circuit breaker — must all allow an operation. Any single layer blocks execution.
+- **No permission inheritance.** Joe uses its own service account with pre-scoped permissions, never the calling user's credentials.
+- **Default deny.** Every mutation starts disabled. Humans opt in per-action, per-environment.
+- **Blast radius limits.** Operations targeting entire namespaces/clusters are categorically blocked. A circuit breaker halts runaway mutation sequences.
+
+Full safety specification: `docs/security-in-layers.md`
+
+---
+
 ## Design Principles
 
-1. **Two binaries from day one** - `joe` (Local) and `joecored` (Core daemon) in a monorepo
-2. **Two agents, clear boundaries** - Core Agent maintains graph, User Agent assists users
-3. **HTTP API is the contract** - Joe Local calls Joe Core via HTTP, never direct function calls
-4. **Local context stays local** - User's files accessed by Joe Local only, never by Joe Core
-5. **Core Agent has autonomy levels** - Deterministic changes auto-apply, ambiguous ones queue for human
-6. **Humans own all mutations** - Joe never changes infrastructure, files, or configuration without explicit human authorization. Safety enforcement is hardcoded, not LLM-instructed. See [Action Safety Framework](#action-safety-framework) and `docs/security-in-layers.md`
+1. **Safety enforcement is hardcoded, not LLM-instructed** — Deterministic policy gates control all mutations. See [Action Safety Framework](#action-safety-framework) and `docs/security-in-layers.md`
+2. **Two binaries from day one** — `joe` (Local) and `joecored` (Core daemon) in a monorepo
+3. **Two agents, clear boundaries** — Core Agent maintains graph, User Agent assists users
+4. **HTTP API is the contract** — Joe Local calls Joe Core via HTTP, never direct function calls
+5. **Local context stays local** — User's files accessed by Joe Local only, never by Joe Core
+6. **Core Agent has autonomy levels** — Deterministic changes auto-apply, ambiguous ones queue for human
+7. **Humans own all mutations** — Joe never changes infrastructure, files, or configuration without explicit human authorization
 
 ---
 
@@ -931,7 +951,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  AWS (internal/adapters/aws/) 🚧 PLANNED                    │   │
+│  │  AWS (internal/adapters/aws/) ✅ IMPLEMENTED                │   │
 │  │  - Uses aws-sdk-go-v2                                       │   │
 │  │  - EC2, EKS, RDS, ALB/NLB, VPC, CloudWatch                  │   │
 │  │  - Multi-account support via profiles/roles                 │   │
@@ -939,7 +959,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Azure (internal/adapters/azure/) 🚧 PLANNED                │   │
+│  │  Azure (internal/adapters/azure/) ✅ IMPLEMENTED            │   │
 │  │  - Uses azure-sdk-for-go                                    │   │
 │  │  - VMs, AKS, Azure SQL, VNets, NSGs, Monitor                │   │
 │  │  - Multi-subscription support                               │   │
@@ -947,7 +967,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  ArgoCD (internal/adapters/argocd/) 🚧 PLANNED              │   │
+│  │  ArgoCD (internal/adapters/argocd/) ✅ IMPLEMENTED         │   │
 │  │  - REST API client                                          │   │
 │  │  - Token authentication                                     │   │
 │  │  - App listing, sync, diff                                  │   │
@@ -957,7 +977,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ──────────────────────                                             │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Prometheus/Mimir (internal/adapters/prometheus/) 🚧 PLANNED│   │
+│  │  Prometheus/Mimir (internal/adapters/prometheus/) ✅ IMPLEMENTED│   │
 │  │  - HTTP API client (compatible with Mimir, Thanos, Cortex) │   │
 │  │  - Instant query, range query                               │   │
 │  │  - Label discovery, series metadata                         │   │
@@ -965,7 +985,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Loki (internal/adapters/loki/) 🚧 PLANNED                  │   │
+│  │  Loki (internal/adapters/loki/) ✅ IMPLEMENTED              │   │
 │  │  - HTTP API client                                          │   │
 │  │  - LogQL queries (filter, parse, aggregate)                 │   │
 │  │  - Label discovery, stream metadata                         │   │
@@ -973,7 +993,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Tempo (internal/adapters/tempo/) 🚧 PLANNED                │   │
+│  │  Tempo (internal/adapters/tempo/) ✅ IMPLEMENTED            │   │
 │  │  - HTTP API client                                          │   │
 │  │  - TraceQL queries                                          │   │
 │  │  - Trace by ID lookup                                       │   │
@@ -981,7 +1001,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Jaeger (internal/adapters/jaeger/) 🚧 PLANNED              │   │
+│  │  Jaeger (internal/adapters/jaeger/) ✅ IMPLEMENTED          │   │
 │  │  - HTTP/gRPC API client                                     │   │
 │  │  - Trace search by service, operation, tags                 │   │
 │  │  - Trace by ID lookup                                       │   │
@@ -1008,7 +1028,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ─────────────────────────                                          │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Datadog (internal/adapters/datadog/) 🚧 PLANNED            │   │
+│  │  Datadog (internal/adapters/datadog/) ✅ IMPLEMENTED        │   │
 │  │  - REST API client (api.datadoghq.com)                      │   │
 │  │  - Metrics: query, submit                                   │   │
 │  │  - Logs: search, analytics                                  │   │
@@ -1017,7 +1037,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Splunk (internal/adapters/splunk/) 🚧 PLANNED              │   │
+│  │  Splunk (internal/adapters/splunk/) ✅ IMPLEMENTED          │   │
 │  │  - REST API client (Splunk Enterprise / Cloud)              │   │
 │  │  - Search: SPL queries                                      │   │
 │  │  - Observability Cloud: metrics, traces                     │   │
@@ -1025,7 +1045,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Dynatrace (internal/adapters/dynatrace/) 🚧 PLANNED        │   │
+│  │  Dynatrace (internal/adapters/dynatrace/) ✅ IMPLEMENTED    │   │
 │  │  - REST API client (Environment API v2)                     │   │
 │  │  - Metrics: query with DQL                                  │   │
 │  │  - Problems: list, get details                              │   │
@@ -1034,7 +1054,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  New Relic (internal/adapters/newrelic/) 🚧 PLANNED         │   │
+│  │  New Relic (internal/adapters/newrelic/) ✅ IMPLEMENTED     │   │
 │  │  - NerdGraph API (GraphQL)                                  │   │
 │  │  - NRQL queries for metrics, events, logs                   │   │
 │  │  - Distributed tracing                                      │   │
@@ -1045,7 +1065,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ──────────────────────────────                                     │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Alertmanager (internal/adapters/alertmanager/) 🚧 PLANNED  │   │
+│  │  Alertmanager (internal/adapters/alertmanager/) ✅ IMPLEMENTED│   │
 │  │  - HTTP API client                                          │   │
 │  │  - List alerts (active, silenced)                           │   │
 │  │  - Get alert groups                                         │   │
@@ -1054,7 +1074,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  PagerDuty (internal/adapters/pagerduty/) 🚧 PLANNED        │   │
+│  │  PagerDuty (internal/adapters/pagerduty/) ✅ IMPLEMENTED    │   │
 │  │  - REST API client                                          │   │
 │  │  - Incidents: list, get, acknowledge, resolve               │   │
 │  │  - On-call: who's on call now                               │   │
@@ -1063,7 +1083,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Grafana (internal/adapters/grafana/) 🚧 PLANNED            │   │
+│  │  Grafana (internal/adapters/grafana/) ✅ IMPLEMENTED        │   │
 │  │  - HTTP API client                                          │   │
 │  │  - Dashboards: list, get, create, update                    │   │
 │  │  - Alerts: list rules, get state, silence                   │   │
@@ -1076,42 +1096,42 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ────────────────────                                                  │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  PostgreSQL (internal/adapters/postgres/) 🚧 PLANNED        │   │
+│  │  PostgreSQL (internal/adapters/postgres/) ✅ IMPLEMENTED    │   │
 │  │  - pgx driver, read-only connection                         │   │
 │  │  - pg_stat_activity, pg_stat_user_tables, pg_stat_replication│  │
 │  │  - Methods: Stat, Query (SELECT only)                       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  MySQL (internal/adapters/mysql/) 🚧 PLANNED                │   │
+│  │  MySQL (internal/adapters/mysql/) ✅ IMPLEMENTED            │   │
 │  │  - go-sql-driver/mysql, read-only user                      │   │
 │  │  - SHOW PROCESSLIST, SHOW REPLICA STATUS, INNODB_TRX        │   │
 │  │  - Methods: Stat, Query (SELECT only)                       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Redis (internal/adapters/redis/) 🚧 PLANNED                │   │
+│  │  Redis (internal/adapters/redis/) ✅ IMPLEMENTED            │   │
 │  │  - go-redis client, operational stats only                  │   │
 │  │  - INFO, SLOWLOG GET, CLIENT LIST, DBSIZE                   │   │
 │  │  - Methods: Info, SlowLog                                   │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  MongoDB (internal/adapters/mongodb/) 🚧 PLANNED            │   │
+│  │  MongoDB (internal/adapters/mongodb/) ✅ IMPLEMENTED        │   │
 │  │  - mongo-driver, read-only user                             │   │
 │  │  - serverStatus, rs.status, currentOp                       │   │
 │  │  - Methods: Stat, Query (find only)                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Kafka (internal/adapters/kafka/) 🚧 PLANNED                │   │
+│  │  Kafka (internal/adapters/kafka/) ✅ IMPLEMENTED            │   │
 │  │  - Admin client, no message consumption                     │   │
 │  │  - Topics, consumer groups, lag, broker metadata            │   │
 │  │  - Methods: Topics, Consumers, Brokers                      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Elasticsearch (internal/adapters/elasticsearch/) 🚧 PLANNED│   │
+│  │  Elasticsearch (internal/adapters/elasticsearch/) ✅ IMPLEMENTED│   │
 │  │  - HTTP REST API (compatible with OpenSearch)               │   │
 │  │  - _cluster/health, _cat/indices, _nodes/stats              │   │
 │  │  - Methods: Health, Indices                                 │   │
@@ -1121,27 +1141,27 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ─────────────────────────                                            │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  ArgoCD (internal/adapters/argocd/) 🚧 PLANNED              │   │
+│  │  ArgoCD (internal/adapters/argocd/) ✅ IMPLEMENTED         │   │
 │  │  - REST API client, token auth                              │   │
 │  │  - App listing, sync status, diff, history                  │   │
 │  │  - Methods: Apps, App, Diff, History                        │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Flux (via K8s CRDs) 🚧 PLANNED                             │   │
+│  │  Flux (via K8s CRDs) ✅ IMPLEMENTED                         │   │
 │  │  - GitRepository, Kustomization, HelmRelease CRDs           │   │
 │  │  - Reconciliation status, conditions                        │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Terraform (internal/adapters/terraform/) 🚧 PLANNED        │   │
+│  │  Terraform (internal/adapters/terraform/) ✅ IMPLEMENTED    │   │
 │  │  - State file parser (JSON), sensitive attribute redaction  │   │
 │  │  - Managed resources, outputs, drift detection              │   │
 │  │  - Methods: State, Resource, Outputs                        │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Helm (internal/adapters/helm/) 🚧 PLANNED                  │   │
+│  │  Helm (internal/adapters/helm/) ✅ IMPLEMENTED              │   │
 │  │  - Helm v3 SDK                                              │   │
 │  │  - Release listing, status, values, revision history        │   │
 │  │  - Methods: Releases, Release, History                      │   │
@@ -1151,27 +1171,27 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ─────────────────────────────                                        │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  NGINX Ingress (internal/adapters/nginx/) 🚧 PLANNED        │   │
+│  │  NGINX Ingress (internal/adapters/nginx/) ✅ IMPLEMENTED    │   │
 │  │  - K8s Ingress CRDs + NGINX status endpoint                │   │
 │  │  - Ingress rules, backends, upstream health                 │   │
 │  │  - Methods: Ingresses, Status, Config                       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Envoy (internal/adapters/envoy/) 🚧 PLANNED                │   │
+│  │  Envoy (internal/adapters/envoy/) ✅ IMPLEMENTED            │   │
 │  │  - Admin API (/config_dump, /clusters, /stats)              │   │
 │  │  - Cluster health, endpoints, circuit breaker state         │   │
 │  │  - Methods: Clusters, Config, Stats                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Istio (via K8s CRDs) 🚧 PLANNED                            │   │
+│  │  Istio (via K8s CRDs) ✅ IMPLEMENTED                        │   │
 │  │  - VirtualService, DestinationRule, Gateway CRDs            │   │
 │  │  - mTLS status, traffic policies                            │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Cilium (internal/adapters/cilium/) 🚧 PLANNED              │   │
+│  │  Cilium (internal/adapters/cilium/) ✅ IMPLEMENTED          │   │
 │  │  - CiliumNetworkPolicy CRDs + Hubble API                   │   │
 │  │  - Network policies, endpoint health, flow visibility       │   │
 │  │  - Methods: Policies, Endpoints, Flows                      │   │
@@ -1181,25 +1201,25 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ───────────────────────────────────                                  │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  cert-manager (via K8s CRDs) 🚧 PLANNED                     │   │
+│  │  cert-manager (via K8s CRDs) ✅ IMPLEMENTED                 │   │
 │  │  - Certificate, Issuer, ClusterIssuer CRDs                  │   │
 │  │  - Expiry, readiness, issuer status                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  KEDA (via K8s CRDs) 🚧 PLANNED                             │   │
+│  │  KEDA (via K8s CRDs) ✅ IMPLEMENTED                         │   │
 │  │  - ScaledObject, ScaledJob, TriggerAuthentication CRDs      │   │
 │  │  - Scaling targets, triggers, replica counts                │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  OPA/Gatekeeper (via K8s CRDs) 🚧 PLANNED                   │   │
+│  │  OPA/Gatekeeper (via K8s CRDs) ✅ IMPLEMENTED               │   │
 │  │  - ConstraintTemplate, Constraint CRDs                      │   │
 │  │  - Constraint violations from audit                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Crossplane (via K8s CRDs) 🚧 PLANNED                       │   │
+│  │  Crossplane (via K8s CRDs) ✅ IMPLEMENTED                   │   │
 │  │  - Provider, ProviderConfig, XRD, Claims CRDs               │   │
 │  │  - Provider health, resource sync status                    │   │
 │  └─────────────────────────────────────────────────────────────┘   │
@@ -1208,7 +1228,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ────────────────────────────                                          │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Falco (internal/adapters/falco/) 🚧 PLANNED                │   │
+│  │  Falco (internal/adapters/falco/) ✅ IMPLEMENTED            │   │
 │  │  - gRPC/HTTP output API                                     │   │
 │  │  - Runtime security events by severity/rule                 │   │
 │  │  - Methods: Alerts, Rules                                   │   │
@@ -1778,10 +1798,13 @@ joe/
 │   │       ├── gitread.go
 │   │       ├── argocdget.go
 │   │       ├── promquery.go       # Prometheus/Mimir
-│   │       ├── lokiquery.go       # 🚧 Planned
-│   │       ├── tempotrace.go      # 🚧 Planned
-│   │       ├── cloudwatchquery.go # 🚧 Planned
-│   │       └── azuremonitor.go    # 🚧 Planned
+│   │       ├── lokiquery.go       # Loki
+│   │       ├── tempotrace.go      # Tempo/Jaeger
+│   │       ├── datadog_tools.go   # Datadog
+│   │       ├── splunk_tools.go    # Splunk
+│   │       ├── falco_tools.go     # Falco
+│   │       ├── knowledge_search.go# Knowledge Store
+│   │       └── ...                # (many more: certmanager, keda, opa, crossplane, registry, etc.)
 │   │
 │   ├── graph/                    # Graph store (used by joecored)
 │   │   ├── store.go              # Interface
@@ -1798,15 +1821,33 @@ joe/
 │   ├── adapters/                 # Infrastructure adapters (used by joecored)
 │   │   ├── k8s/                  # ✅ Implemented
 │   │   ├── git/                  # ✅ Implemented
-│   │   ├── aws/                  # 🚧 Planned
-│   │   ├── azure/                # 🚧 Planned
-│   │   ├── argocd/               # 🚧 Planned
-│   │   ├── prometheus/           # 🚧 Planned (also covers Mimir)
-│   │   ├── loki/                 # 🚧 Planned
-│   │   ├── tempo/                # 🚧 Planned
-│   │   ├── jaeger/               # 🚧 Planned
-│   │   ├── cloudwatch/           # 🚧 Planned
-│   │   ├── azuremonitor/         # 🚧 Planned
+│   │   ├── aws/                  # ✅ Implemented (EC2, EKS, RDS, VPC)
+│   │   ├── azure/                # ✅ Implemented (VMs, AKS, SQL, VNets)
+│   │   ├── gitops/argocd/        # ✅ Implemented
+│   │   ├── packaging/helm/       # ✅ Implemented
+│   │   ├── iac/terraform/        # ✅ Implemented
+│   │   ├── observability/
+│   │   │   ├── prometheus/       # ✅ Implemented (also covers Mimir)
+│   │   │   ├── loki/             # ✅ Implemented
+│   │   │   ├── tempo/            # ✅ Implemented
+│   │   │   ├── jaeger/           # ✅ Implemented
+│   │   │   ├── datadog/          # ✅ Implemented
+│   │   │   ├── splunk/           # ✅ Implemented
+│   │   │   ├── dynatrace/        # ✅ Implemented
+│   │   │   └── newrelic/         # ✅ Implemented
+│   │   ├── alerting/
+│   │   │   ├── alertmanager/     # ✅ Implemented
+│   │   │   ├── pagerduty/        # ✅ Implemented
+│   │   │   └── grafana/          # ✅ Implemented
+│   │   ├── datastore/            # ✅ Implemented (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
+│   │   ├── networking/
+│   │   │   ├── nginx/            # ✅ Implemented
+│   │   │   └── envoy/            # ✅ Implemented
+│   │   ├── security/falco/       # ✅ Implemented
+│   │   ├── registry/
+│   │   │   ├── oci/              # ✅ Implemented (DockerHub, GHCR, Harbor, Quay)
+│   │   │   ├── artifactory/      # ✅ Implemented
+│   │   │   └── ecr/              # ✅ Implemented
 │   │   └── http/                 # Generic HTTP client
 │   │
 │   ├── repl/                     # REPL (used by joe)
@@ -1905,7 +1946,7 @@ logging:
 
 Joe enforces a hardcoded safety layer that governs what it can change and under what conditions. This is not LLM-instructed — it is compiled into the binary and configured by humans outside Joe's reach.
 
-Full details in `docs/security-in-layers.md`. This section captures the architectural decisions that affect every phase.
+Full details in `docs/security-in-layers.md`. For a real-world case study demonstrating these controls, see `docs/case-study-kiro-incident.md`.
 
 ### Action Tiers
 
@@ -1933,6 +1974,14 @@ These are constants in the source code. No configuration can override them:
 - Joe cannot write to `~/.joe/` (its own config directory)
 - Joe cannot run `joe`, `joecored`, `kill`, `pkill`, or `killall` via `run_command`
 - `kubectl`, `helm`, `argocd` are not in the default `run_command` allowlist; when enabled by policy, only read-only subcommands (`get`, `describe`, `logs`) are permitted unless the human explicitly allows mutation subcommands
+
+### Deterministic Blast Radius Controls
+
+These rules are hardcoded and cannot be bypassed by LLM reasoning, user permissions, or policy configuration:
+
+- **Environment-level blocking:** Operations targeting entire namespaces, clusters, or environments (e.g., `kubectl delete namespace`, `--all` selectors, `terraform destroy`) are categorically blocked unless the specific environment is explicitly allow-listed. See §3.6 in `docs/security-in-layers.md`.
+- **Mutation circuit breaker:** A rolling-window rate limiter on T3 actions trips after a configurable threshold (default: 5 mutations in 10 minutes), suspending all further mutations until a human explicitly resets. See §3.7 in `docs/security-in-layers.md`.
+- **Credential isolation:** Joe uses its own service account with pre-scoped permissions, never the calling user's credentials. Three independent permission boundaries (RBAC, Safety Policy, Service Account IAM) must all allow an operation. See §3.8 in `docs/security-in-layers.md`.
 
 ### Notification Contract
 
@@ -2010,49 +2059,54 @@ Implements the safety enforcement layer before any new adapters or mutation capa
 - [x] **Tests:** Safety gate rejects denied actions; notifications emitted; self-protection paths blocked; policy loading works
 - [x] **Milestone: No tool can mutate anything without passing through the safety gate**
 
-### Phase 6: Infrastructure Adapters ← CURRENT
+### Phase 6: Infrastructure Adapters ✅ COMPLETE
+
 All new adapters in this phase are read-only (T1) by default. Any mutation capability (silence creation, incident acknowledgment) must be registered as T3 with a corresponding policy flag.
 
 - [x] **6.1 Core foundations:** Source types, adapter registry wiring, graph edge definitions
 - [x] **6.2 Cloud:** AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets)
-- [ ] **6.3 Observability:** Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces); Proprietary: Datadog, Splunk, Dynatrace, New Relic; Cloud: CloudWatch, Azure Monitor
-- [ ] **6.4 Alerting & Dashboards:** Alertmanager, PagerDuty, Grafana
-- [ ] **6.5 Safety & Hardening:** Credential encryption, TLS, rate limiting, tool tier classification
-- [ ] **6.6 Data Stores:** PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch (read-only diagnostic queries)
-- [ ] **6.7 GitOps, CD & IaC:** Argo CD (full adapter), Flux (CRDs), Terraform (state), Helm (releases)
-- [ ] **6.8 Networking & Ingress:** NGINX Ingress, Envoy (admin API), Istio (CRDs), Cilium (CRDs + Hubble)
-- [ ] **6.9 K8s CRD-Based (low effort):** cert-manager, KEDA, OPA/Gatekeeper, Crossplane
-- [ ] **6.10 Security & Runtime:** Falco (runtime events)
-- [ ] API endpoints + core tools for each adapter
-- [ ] Graph edges: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`, `provisions`
-- [ ] **Safety:** Classify each new tool as T1/T2/T3; add policy flags for any T2/T3 actions (e.g., `act.alertmanager_silence`, `act.pagerduty_ack`); implement notification contract for mutation actions
-- [ ] **Safety:** Credential encryption at rest for `sources.config` column
-- [ ] **Safety:** TLS support for joe-joecored communication
-- [ ] **Safety:** Rate limiting middleware
-- [ ] **Milestone: Joe queries cloud, observability, data stores, GitOps, networking, and policy with safety enforcement on all mutation paths**
+- [x] **6.3 Observability open-source:** Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces)
+- [x] **6.4 Alerting & Dashboards:** Alertmanager, PagerDuty, Grafana
+- [x] **6.5 Safety & Hardening:** Credential encryption (AES-256-GCM), TLS, rate limiting, tool tier classification
+- [x] **6.6 Network & system diagnostics:** Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
+- [x] **6.7 Data Stores:** PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch (read-only diagnostic queries)
+- [x] **6.8 GitOps, CD & IaC:** Argo CD (full adapter), Flux (via K8s CRDs), Terraform (state), Helm (releases)
+- [x] **6.9 Networking & Ingress:** NGINX Ingress, Envoy (admin API), Istio (via K8s CRDs), Cilium (CRDs + Hubble)
+- [x] **6.10 K8s CRD-Based (low effort):** cert-manager, KEDA, OPA/Gatekeeper, Crossplane
+- [x] **6.11 Security & Runtime:** Falco (runtime events)
+- [x] **6.12 Proprietary observability:** Datadog, Splunk, Dynatrace, New Relic
+- [x] **6.13 Artifact registries:** OCI/DockerHub/GHCR/Harbor/Quay, JFrog Artifactory, AWS ECR
+- [x] API endpoints + core tools for each adapter
+- [x] Graph edges: all 19 types wired (`metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`, `provisions`, `image_stored_in`, `publishes_to`)
+- [x] **Milestone: Joe queries cloud, observability, data stores, GitOps, networking, and policy with safety enforcement on all mutation paths**
 
-### Phase 7: Knowledge Store
-- [ ] Knowledge items table (tiers: curated, synced, derived)
-- [ ] Tier 1: Human-curated notes attached to nodes
-- [ ] Tier 2: Synced sources (Confluence, Notion adapters)
-- [ ] Tier 3: LLM-derived insights from sessions
-- [ ] Knowledge retrieval integrated into User Agent context
-- [ ] Embeddings for semantic search
-- [ ] **Safety:** Tier 1 writes are T3 (human-only content, must not be LLM-writable); Tier 3 writes are T2 (internal derived knowledge); synced source fetches are T1
-- [ ] **Milestone: Joe references runbooks and past learnings**
+### Phase 7: Knowledge Store ✅ COMPLETE
 
-### Phase 8: Documentation Co-Pilot
-- [ ] Write adapters for Confluence, Notion, Git (docs-as-code)
-- [ ] Draft generation from tribal knowledge
-- [ ] Update proposals with human approval flow
-- [ ] Drift detection (docs vs reality)
-- [ ] **Safety:** All doc write/publish actions are T3 with individual policy flags (e.g., `act.confluence_publish`, `act.git_commit`, `act.git_push`); draft generation is T2; reads are T1
-- [ ] **Milestone: Joe can propose and publish doc updates with safety enforcement**
+- [x] Knowledge items table (tiers: curated, synced, derived) — SQLite-backed, migration 004
+- [x] Tier 1: Human-curated notes attached to nodes (immutability enforced at service layer)
+- [x] Tier 2: Synced sources (Confluence, Notion adapters with background sync coordinator)
+- [x] Tier 3: LLM-derived insights from sessions (provenance metadata, deduplication)
+- [x] Knowledge retrieval integrated into User Agent context via `search_knowledge` tool (T1)
+- [x] Embeddings for semantic search (cosine similarity, tier/confidence filtering)
+- [x] 10 API endpoints: entries CRUD, semantic search, source management, manual sync trigger
+- [x] **Milestone: Joe references runbooks and past learnings**
 
-### Phase 9: Additional Clients & Polish
+### Phase 8: Documentation Co-Pilot ✅ COMPLETE
+
+- [x] Write adapters for Confluence (PUT), Notion (block replace), Git (commit + push)
+- [x] Draft generation via LLM + knowledge store search → unified diff → proposal
+- [x] Human approval flow (pending → approved → published / rejected)
+- [x] Drift detection for Tier 2 synced entries (SHA-256 hash comparison)
+- [x] API endpoints: `/api/v1/knowledge/proposals`, `/api/v1/knowledge/drift`
+- [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
+- [x] SQL migration 005, proposals repository + service, tier registry entries
+- [x] **Milestone: Joe can propose and publish doc updates with safety enforcement**
+
+### Phase 9: Additional Clients & Polish ← CURRENT
+
 - [ ] Notifications (desktop, Slack)
 - [ ] Web UI
-- [ ] VS Code extension
+- [ ] [ ] MCP Server (Claude Code, Cursor, Codex, any MCP-compatible AI) 
 - [ ] In-cluster deployment for joecored
 - [ ] **Safety:** RBAC / per-user permissions layer; per-user safety policies; audit logging for all T2/T3 actions
 - [ ] **Milestone: Multi-user Joe with per-user safety boundaries**
