@@ -67,7 +67,7 @@ Joe has two distinct agents with different jobs:
 │  USER AGENT (assists users with questions and tasks)                                    │
 │  ───────────────────────────────────────────────────                                    │
 │                                                                                          │
-│  Runs:        Client-side (CLI, IDE extension, Web UI)                                  │
+│  Runs:        Client-side (CLI, MCP Server, Web UI)                                     │
 │  Triggered:   User message                                                              │
 │  Reads:       Local files + Core API (graph, K8s, Git, etc.)                           │
 │  Writes:      User's local files (with permission)                                      │
@@ -374,7 +374,7 @@ Core Services run inside `joecored` and are accessed via HTTP API:
 │  User Agent                                                          │
 │  ──────────                                                          │
 │                                                                      │
-│  Runs: In client (CLI, IDE, browser)                                │
+│  Runs: In client (CLI, MCP Server, browser)                          │
 │  Purpose: Help user understand and operate infrastructure           │
 │                                                                      │
 │  type UserAgent struct {                                            │
@@ -582,6 +582,47 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │        stream response to stdout                                    │
 │                                                                      │
 │  Local tools execute here (read_file, write_file, local_git_*)     │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.5 MCP Server (Claude Code / Cursor / Codex Integration)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  MCP Server                                                          │
+│  ──────────                                                          │
+│  Exposes Joe as an MCP server for AI coding assistants              │
+│  Location: cmd/joe-mcp/ (planned)                                   │
+│                                                                      │
+│  Purpose:                                                           │
+│    - Claude Code, Cursor, Codex, any MCP-compatible AI can use Joe │
+│    - Provides infrastructure intelligence during coding             │
+│    - Replaces need for dedicated VS Code extension                  │
+│                                                                      │
+│  MCP Tools exposed:                                                 │
+│    joe_graph_query      Query infrastructure relationships          │
+│    joe_graph_related    Traverse from a node                        │
+│    joe_k8s_get          Get K8s resources                           │
+│    joe_k8s_logs         Get pod logs                                │
+│    joe_metrics_query    Query Prometheus/Datadog/etc                │
+│    joe_logs_search      Search Loki/Splunk/etc                      │
+│    joe_knowledge_search Search runbooks/tribal knowledge            │
+│    joe_incidents        List PagerDuty incidents                    │
+│                                                                      │
+│  Architecture:                                                      │
+│    Claude Code ──► MCP Server ──► joecored HTTP API                │
+│                                                                      │
+│  The MCP server is a thin wrapper that:                             │
+│    1. Exposes Joe tools as MCP tool definitions                     │
+│    2. Translates MCP tool calls to joecored HTTP API calls          │
+│    3. Returns results in MCP format                                 │
+│                                                                      │
+│  Use cases:                                                         │
+│    - "Will this Helm change break anything?" (checks graph)         │
+│    - "What services depend on this API?" (traverses graph)          │
+│    - "Is prod healthy right now?" (queries metrics/alerts)          │
+│    - "Show me the runbook for this service" (knowledge search)      │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -2102,11 +2143,12 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 - [x] **Milestone: Joe can propose and publish doc updates with safety enforcement**
 
-### Phase 9: Additional Clients & Polish ← CURRENT
+### Phase 9: Additional Clients + RBAC + Emergency Controls ← CURRENT
 
-- [ ] Notifications (desktop, Slack)
-- [ ] Web UI
-- [ ] [ ] MCP Server (Claude Code, Cursor, Codex, any MCP-compatible AI) 
+- [ ] Web UI (dashboards, graph visualization, planning)
+- [ ] MCP Server (Claude Code, Cursor, Codex — replaces need for VS Code extension)
+- [ ] Slack Bot (ChatOps for on-call, optional)
 - [ ] In-cluster deployment for joecored
-- [ ] **Safety:** RBAC / per-user permissions layer; per-user safety policies; audit logging for all T2/T3 actions
-- [ ] **Milestone: Multi-user Joe with per-user safety boundaries**
+- [ ] **RBAC:** Per-user permissions layer; see `docs/JOE_RBAC_IMPLEMENTATION.md` and `docs/JOE_SECURITY.md`
+- [ ] **Emergency Shutdown:** Panic mode with safe-mode restart; see `docs/security-in-layers.md` Part 7
+- [ ] **Milestone: Multi-user Joe with per-user safety boundaries and emergency controls**

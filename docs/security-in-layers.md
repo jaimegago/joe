@@ -672,6 +672,184 @@ act:
 
 ---
 
+## Part 7: Emergency Shutdown (Panic Mode)
+
+Joe needs a kill switch. When something goes wrong—runaway automation, unexpected behavior, or human error—operators must be able to immediately halt all Joe operations.
+
+### 7.1 Panic Triggers
+
+Multiple ways to trigger emergency stop:
+
+| Method | Command / Endpoint | Use Case |
+|--------|-------------------|----------|
+| REPL command | `/panic` | User in active session sees problem |
+| CLI command | `joe panic` | Operator not in active session |
+| API endpoint | `POST /api/v1/panic` | Automation, external monitoring |
+| Signal | `SIGUSR1` to joecored | Unix-native, works when API unreachable |
+| Dead man's switch | Heartbeat timeout | joecored loses contact with control plane |
+
+### 7.2 Panic Sequence
+
+When panic is triggered:
+
+```
+1. IMMEDIATE (< 100ms)
+   ├── Stop accepting new requests (HTTP 503)
+   ├── Set global panic flag (atomic bool)
+   └── Log panic event with trigger source
+
+2. IN-FLIGHT OPERATIONS (< 1s)
+   ├── Cancel all running tool contexts
+   ├── Abort LLM streaming responses
+   └── Interrupt background refresh loop
+
+3. ROLLBACK (best effort)
+   ├── If mid-transaction, attempt rollback
+   └── Record incomplete operations to audit log
+
+4. NOTIFY (< 5s)
+   ├── Log panic completion with state dump
+   ├── Send alert via configured channels (Slack, PagerDuty)
+   └── Write panic state to ~/.joe/panic.state
+
+5. EXIT
+   └── Process exits with code 2 (panic exit)
+       Orchestrator (systemd, k8s) will restart in safe mode
+```
+
+### 7.3 Safe Mode
+
+After a panic, joecored restarts in **safe mode**:
+
+```yaml
+# ~/.joe/panic.state (written on panic, read on startup)
+triggered_at: "2025-02-21T14:32:01Z"
+trigger_source: "api"  # repl | cli | api | signal | heartbeat
+trigger_user: "jaime@company.com"
+reason: "runaway scaling detected"
+incomplete_operations:
+  - tool: k8s_scale
+    args: {deployment: payment-svc, replicas: 50}
+    status: cancelled
+```
+
+**Safe mode restrictions:**
+- T1 (Observe) operations only — all mutations disabled
+- Background refresh paused
+- Core Agent autonomous operations suspended
+- Explicit unlock required to resume normal operation
+
+### 7.4 Unlock Procedure
+
+To exit safe mode:
+
+```bash
+# CLI unlock with reason (logged to audit)
+joe unlock --reason "investigated panic, false alarm - operator error"
+
+# Or via API
+curl -X POST http://localhost:7777/api/v1/unlock \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"reason": "investigated panic, root cause identified and fixed"}'
+```
+
+Unlock requirements:
+- Authenticated user with appropriate RBAC permissions
+- Reason field mandatory (audit trail)
+- Unlock event logged with user identity and reason
+- Incomplete operations from panic shown to user before unlock
+
+### 7.5 Implementation
+
+**Panic package:** `internal/safety/panic.go`
+
+```
+internal/safety/
+├── panic.go           # Panic trigger, state management
+├── panic_state.go     # State file read/write
+├── safemode.go        # Safe mode enforcement
+└── unlock.go          # Unlock handler
+```
+
+**Key components:**
+
+1. **Global panic flag** — Atomic bool checked by:
+   - HTTP middleware (reject requests if panicked)
+   - Tool executor (cancel if panicked)
+   - Core Agent (stop refresh if panicked)
+
+2. **Context cancellation** — All operations use contexts derived from a root panic context. Triggering panic cancels the root context, propagating to all in-flight operations.
+
+3. **State persistence** — Panic state written to disk before exit, read on startup to detect if previous run panicked.
+
+4. **Signal handler** — SIGUSR1 registered at startup, triggers panic sequence.
+
+### 7.6 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/panic` | POST | Trigger emergency shutdown |
+| `/api/v1/panic/status` | GET | Check if in safe mode |
+| `/api/v1/unlock` | POST | Exit safe mode (requires reason) |
+
+**Panic request:**
+```json
+POST /api/v1/panic
+{
+  "reason": "runaway scaling detected"  // optional but recommended
+}
+```
+
+**Status response:**
+```json
+GET /api/v1/panic/status
+{
+  "safe_mode": true,
+  "triggered_at": "2025-02-21T14:32:01Z",
+  "trigger_source": "api",
+  "trigger_user": "jaime@company.com",
+  "reason": "runaway scaling detected",
+  "incomplete_operations": [...]
+}
+```
+
+### 7.7 REPL Integration
+
+```
+> /panic
+⚠️  EMERGENCY SHUTDOWN
+
+This will immediately:
+- Cancel all in-flight operations
+- Stop accepting new requests  
+- Exit joecored (will restart in safe mode)
+
+Type 'CONFIRM PANIC' to proceed, or press Enter to cancel: CONFIRM PANIC
+
+🛑 Panic triggered. joecored shutting down...
+   Cancelled 2 in-flight operations
+   State saved to ~/.joe/panic.state
+   
+Reconnect after restart. Joe will be in safe mode (read-only).
+Use 'joe unlock --reason "..."' to resume normal operation.
+```
+
+### 7.8 Safety Guarantees
+
+1. **Panic always works** — No dependencies on LLM, external services, or database. Pure in-memory flag + signal handling.
+
+2. **Panic is fast** — Target <1s from trigger to process exit.
+
+3. **Panic is audited** — Trigger event, incomplete operations, and unlock all logged.
+
+4. **Panic survives restart** — State persisted to disk, safe mode enforced on next startup.
+
+5. **Panic requires explicit recovery** — No automatic unlock. Human must acknowledge and provide reason.
+
+6. **Panic is idempotent** — Multiple panic triggers are safe (no-op if already panicking).
+
+---
+
 ## Risk Matrix (updated post-Phase 5.5)
 
 ```
