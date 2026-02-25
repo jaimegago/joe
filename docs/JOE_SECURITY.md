@@ -231,6 +231,13 @@ LLM selects: kubectl delete pvc data-postgres-0
 - Resource limits applied (CPU, memory, execution time)
 - Network policies enforced
 
+**Emergency Shutdown (Panic Mode)**:
+- Kill switch for immediate halt: `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, `SIGUSR1`
+- Cancels all in-flight operations, stops accepting requests
+- Restarts in safe mode (T1 read-only until explicit unlock)
+- Requires `joe unlock --reason "..."` to resume normal operation
+- Full details in `docs/security-in-layers.md` Part 7
+
 ## Security Best Practices
 
 ### For Operators
