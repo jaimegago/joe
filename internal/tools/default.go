@@ -5,7 +5,6 @@ import (
 	"github.com/jaimegago/joe/internal/safety"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
 	"github.com/jaimegago/joe/internal/tools/local/askuser"
-	"github.com/jaimegago/joe/internal/tools/local/echo"
 	"github.com/jaimegago/joe/internal/tools/local/gitdiff"
 	"github.com/jaimegago/joe/internal/tools/local/gitstatus"
 	"github.com/jaimegago/joe/internal/tools/local/readfile"
@@ -25,7 +24,6 @@ func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
 	registry := NewRegistry()
 
 	// Register basic tools
-	registry.Register(echo.NewTool())
 	registry.Register(askuser.NewTool())
 
 	// Register file tools

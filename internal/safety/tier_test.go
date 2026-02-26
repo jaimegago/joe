@@ -14,7 +14,6 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"read_file", TierObserve},
 		{"local_git_status", TierObserve},
 		{"local_git_diff", TierObserve},
-		{"echo", TierObserve},
 		{"ask_user", TierObserve},
 		{"list_sources", TierObserve},
 		{"graph_query", TierObserve},
@@ -73,7 +72,7 @@ func TestCheckAccess_T1AlwaysAllowed(t *testing.T) {
 	// T1 tools should be allowed even with the most restrictive policy
 	policy := &SafetyPolicy{Version: 1} // zero-value = all disabled
 
-	t1Tools := []string{"read_file", "echo", "graph_query", "k8s_get", "aws_ec2"}
+	t1Tools := []string{"read_file", "ask_user", "graph_query", "k8s_get", "aws_ec2"}
 	for _, tool := range t1Tools {
 		t.Run(tool, func(t *testing.T) {
 			err := CheckAccess(tool, policy)

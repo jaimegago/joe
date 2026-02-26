@@ -17,7 +17,6 @@ func TestNewDefaultRegistry(t *testing.T) {
 
 	// Define expected tools (local tools + shared diagnostic tools)
 	expectedTools := map[string]bool{
-		"echo":             true,
 		"ask_user":         true,
 		"read_file":        true,
 		"write_file":       true,
@@ -108,7 +107,6 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 
 	// Should have all local tools + shared diagnostic tools + core tools
 	expectedTools := map[string]bool{
-		"echo":             true,
 		"ask_user":         true,
 		"read_file":        true,
 		"write_file":       true,
