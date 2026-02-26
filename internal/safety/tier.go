@@ -46,7 +46,7 @@ var toolRegistry = map[string]ToolClassification{
 	"read_file":        {Tier: TierObserve, Description: "Read file contents"},
 	"local_git_status": {Tier: TierObserve, Description: "Show git working tree status"},
 	"local_git_diff":   {Tier: TierObserve, Description: "Show git diff"},
-	"ask_user": {Tier: TierObserve, Description: "Ask user a question"},
+	"ask_user":         {Tier: TierObserve, Description: "Ask user a question"},
 
 	// Core tools (call joecored API — query only)
 	"list_sources":  {Tier: TierObserve, Description: "List registered sources"},
