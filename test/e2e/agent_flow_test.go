@@ -41,10 +41,11 @@ func (m *sequentialMockLLM) Embed(_ context.Context, _ string) ([]float32, error
 }
 
 // TestAgentFlow_ToolCallRoundtrip verifies the full loop:
-//   user message → MockLLM emits graph_query tool call →
-//   core tool calls joecored API (empty graph store) →
-//   tool result returned to MockLLM → MockLLM emits final text →
-//   agent returns response.
+//
+//	user message → MockLLM emits graph_query tool call →
+//	core tool calls joecored API (empty graph store) →
+//	tool result returned to MockLLM → MockLLM emits final text →
+//	agent returns response.
 func TestAgentFlow_ToolCallRoundtrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
