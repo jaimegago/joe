@@ -408,6 +408,60 @@ Core Services run inside `joecored` and are accessed via HTTP API:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Review Agent (infrastructure-aware code reviews) — Phase 10
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Review Agent                                                        │
+│  ────────────                                                        │
+│                                                                      │
+│  Runs: In joecored (triggered by webhook or manual request)         │
+│  Purpose: Provide infrastructure-aware PR/MR reviews                │
+│                                                                      │
+│  Trigger methods:                                                   │
+│  • Webhook: POST /api/v1/webhooks/github (PR opened/updated)        │
+│  • Manual: joe review owner/repo#123                                │
+│  • Manual: joe review https://github.com/owner/repo/pull/123        │
+│                                                                      │
+│  Flow:                                                              │
+│    1. Fetch PR diff from GitHub/GitLab                              │
+│    2. Parse changed files → identify affected resources             │
+│       (Helm values, K8s manifests, Terraform, Dockerfiles)          │
+│    3. Query graph: what services/infra depend on these?             │
+│    4. Query knowledge: relevant runbooks, past incidents            │
+│    5. Query live state: does change match current reality?          │
+│    6. LLM analysis: generate infrastructure-aware review            │
+│    7. Post review comments via GitHub/GitLab API                    │
+│    8. Submit review (approve/request changes/comment)               │
+│                                                                      │
+│  Tools available:                                                   │
+│  • github_get_pr(repo, number) → PR metadata (T1)                   │
+│  • github_get_diff(repo, number) → diff content (T1)                │
+│  • github_post_comment(repo, pr, file, line, body) → comment (T2)   │
+│  • github_submit_review(repo, pr, status, body) → review (T3)       │
+│  • All Core tools (graph_query, k8s_get, prom_query, etc.)          │
+│                                                                      │
+│  Example review output:                                             │
+│  ─────────────────────                                              │
+│  "This change sets replicas: 1 for payment-svc.                     │
+│                                                                      │
+│   **Graph context:**                                                │
+│   - 3 services depend on payment-svc: checkout, refunds, reporting  │
+│   - payment-svc connects to rds/prod/payment-db                     │
+│                                                                      │
+│   **Historical context:**                                           │
+│   - Incident #4521 (2025-01-15): Single replica caused 23min outage │
+│   - Runbook recommends minimum 2 replicas for production            │
+│                                                                      │
+│   **Current state:**                                                │
+│   - payment-svc running 3 replicas (healthy)                        │
+│   - Node maintenance scheduled tomorrow                             │
+│                                                                      │
+│   **Recommendation:** Keep replicas >= 2 for production stability." │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Core Agent Decision Flow
@@ -1776,6 +1830,130 @@ Each tier is presented with provenance: "According to your runbook..." vs "From 
 
 ---
 
+## Concurrency Model
+
+Joe is designed for concurrent multi-user access. Understanding the concurrency model is critical for safely implementing features like PR reviews and background jobs.
+
+### What's Already Thread-Safe
+
+| Component | Concurrency Model | Notes |
+|-----------|------------------|-------|
+| HTTP Server | goroutine-per-request | Go's http.Server handles this |
+| SQLite | WAL mode with serialized writes | Concurrent reads safe, writes queue |
+| Adapter state | Mutex-protected | Connection state in adapters uses sync.Mutex |
+| External API calls | Stateless | K8s, GitHub, Prometheus calls are independent |
+| Context cancellation | Propagated | Each request has isolated context |
+
+### Areas Requiring Coordination
+
+**1. Graph Mutations During Background Refresh**
+
+```
+Timeline:
+  00:00  Background refresh starts, reading K8s state
+  00:01  User request: "add note to payment-svc node"
+  00:02  Refresh writes: delete stale nodes, add new nodes
+  00:03  User request writes: update payment-svc metadata
+
+Problem: Refresh might delete/recreate node that user is annotating
+```
+
+**Solution:** Optimistic locking with node version field. User writes fail if node version changed; retry with fresh data.
+
+**2. Clarification Answer Races**
+
+```
+User A: GET /clarifications → sees #42 pending
+User B: GET /clarifications → sees #42 pending
+User A: POST /clarifications/42/answer {answer: "yes"}
+User B: POST /clarifications/42/answer {answer: "no"}  ← Should fail
+```
+
+**Solution:** Optimistic locking via WHERE status = 'pending':
+```sql
+UPDATE clarifications SET status = 'answered', answer = ?
+WHERE id = ? AND status = 'pending'
+-- Returns 0 rows if already answered → return 409 Conflict
+```
+
+**3. Circuit Breaker Counter**
+
+The mutation circuit breaker must use atomic operations:
+```go
+// Correct: atomic increment
+func (cb *CircuitBreaker) RecordMutation() bool {
+    count := atomic.AddInt64(&cb.count, 1)
+    return count <= cb.max
+}
+```
+
+### Job Queue Pattern (for Webhooks, PR Reviews)
+
+For background processing (webhooks, PR reviews, scheduled tasks), use a SQLite-backed job queue with single worker:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Webhook Receiver                                                    │
+│  ─────────────────                                                   │
+│  POST /api/v1/webhooks/github                                       │
+│    1. Validate signature (HMAC)                                     │
+│    2. Check delivery_id (dedupe)                                    │
+│    3. Parse event                                                   │
+│    4. INSERT into job queue                                         │
+│    5. Return 202 Accepted (don't block)                             │
+└───────────────────────────────────────────────────────────────────┬─┘
+                                                                    │
+                                                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Job Queue (SQLite table)                                           │
+│  ─────────────────────────                                          │
+│  review_jobs:                                                       │
+│    id, repo, pr_number, commit_sha,                                │
+│    status (queued|in_progress|completed|failed),                   │
+│    created_at, started_at, completed_at, error                     │
+│                                                                      │
+│  webhook_events (for deduplication):                                │
+│    delivery_id PK, event_type, received_at, processed_at           │
+└───────────────────────────────────────────────────────────────────┬─┘
+                                                                    │
+                                                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Job Worker (single goroutine)                                      │
+│  ─────────────────────────────                                      │
+│  Loop:                                                              │
+│    1. SELECT ... WHERE status = 'queued' ORDER BY created_at       │
+│    2. UPDATE status = 'in_progress' WHERE id = ? AND status = 'queued'│
+│    3. If 0 rows updated → job claimed by another worker, skip      │
+│    4. Execute job (Review Agent, etc.)                              │
+│    5. UPDATE status = 'completed' or 'failed'                       │
+│                                                                      │
+│  Single worker = no job races                                       │
+│  Multiple workers = use SELECT FOR UPDATE or advisory locks         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Why single worker?** Simpler, no job races, sufficient throughput for PR reviews (not high-volume). Scale to multiple workers later if needed with pessimistic locking.
+
+### Idempotency Requirements
+
+| Operation | Idempotency Key | Behavior on Duplicate |
+|-----------|----------------|----------------------|
+| GitHub webhook | X-GitHub-Delivery header | Skip (already processed) |
+| GitLab webhook | X-Gitlab-Event-UUID header | Skip (already processed) |
+| PR review job | (repo, pr_number, commit_sha) | Skip if in_progress/completed |
+| Clarification answer | (id, status=pending) | 409 Conflict if already answered |
+
+### Summary: Concurrency Checklist for New Features
+
+- [ ] HTTP handlers: Rely on goroutine-per-request isolation
+- [ ] Database writes: Use transactions, optimistic or pessimistic locking
+- [ ] Shared counters: Use atomic operations
+- [ ] Background jobs: Use job queue with idempotency tracking
+- [ ] Webhooks: Validate signature, dedupe by delivery ID, respond 202 fast
+- [ ] Long-running work: Use context cancellation, respect panic shutdown
+
+---
+
 ## Directory Structure
 
 ```
@@ -2152,3 +2330,39 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [ ] **RBAC:** Per-user permissions layer; see `docs/JOE_RBAC_IMPLEMENTATION.md` and `docs/JOE_SECURITY.md`
 - [ ] **Emergency Shutdown:** Panic mode with safe-mode restart; see `docs/security-in-layers.md` Part 7
 - [ ] **Milestone: Multi-user Joe with per-user safety boundaries and emergency controls**
+
+### Phase 10: Code Review Integration
+
+- [ ] GitHub adapter (`internal/adapters/github/`)
+  - PR read operations (T1): GetPullRequest, GetPullRequestDiff, ListPullRequestComments
+  - Review write operations: PostReviewComment (T2), SubmitReview (T3)
+  - Webhook parsing and HMAC signature validation
+- [ ] GitLab adapter (`internal/adapters/gitlab/`)
+  - MR read operations (T1): GetMergeRequest, GetMergeRequestDiff, ListMergeRequestComments
+  - Review write operations: PostNote (T2), ApproveMergeRequest (T3)
+  - Webhook parsing and token validation
+- [ ] Webhook receiver endpoints
+  - `POST /api/v1/webhooks/github` — receives PR events
+  - `POST /api/v1/webhooks/gitlab` — receives MR events
+  - Idempotency via delivery_id/event_id tracking in `webhook_events` table
+- [ ] Review job queue (`internal/reviewagent/queue.go`)
+  - SQLite-backed queue with single worker (avoids concurrency complexity)
+  - Job states: queued → in_progress → completed/failed
+  - Deduplication: one active job per (repo, pr_number, commit_sha)
+- [ ] Review Agent (`internal/reviewagent/agent.go`)
+  - Triggered by webhook or manual `joe review PR#123`
+  - Flow: fetch diff → identify affected resources → query graph → query knowledge → LLM analysis → post review
+  - Infrastructure-aware reviews (blast radius, dependencies, incident history)
+- [ ] Safety policy for reviews:
+  ```yaml
+  act:
+    github_comment:
+      enabled: true              # T2: can post comments
+    github_approve:
+      enabled: false             # T3: cannot auto-approve (default)
+    github_request_changes:
+      enabled: true              # T3: can request changes
+    github_merge:
+      enabled: false             # T3: never auto-merge
+  ```
+- [ ] **Milestone: Joe as infrastructure-aware code reviewer**

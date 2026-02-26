@@ -34,7 +34,8 @@
       "Bash(revive:*)",
       "Bash(xargs basename:*)",
       "Bash(npx --yes markdownlint-cli:*)",
-      "Bash(golangci-lint run:*)"
+      "Bash(golangci-lint run:*)",
+      "Read(//Users/jaimegago/joe/**)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"

@@ -240,6 +240,19 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
   - Safe mode on restart (T1 only until explicit unlock)
   - `joe unlock --reason "..."` to resume normal operation
 
+### Phase 10: Code Review Integration
+- [ ] GitHub/GitLab adapters with PR/MR capabilities
+  - GetPullRequest, GetPullRequestDiff, ListPullRequestComments (T1)
+  - PostReviewComment (T2), SubmitReview (T3)
+- [ ] Webhook receiver for PR events (`POST /api/v1/webhooks/github`, `/gitlab`)
+  - Signature validation (HMAC for GitHub, token for GitLab)
+  - Idempotency via delivery_id tracking
+- [ ] Review job queue (SQLite-backed, single worker)
+  - Deduplication: one review per (repo, pr_number, commit_sha)
+  - States: queued → in_progress → completed/failed
+- [ ] Review Agent: fetch diff → query graph → query knowledge → LLM analysis → post review
+- [ ] Safety policy for reviews: `github_comment` (T2), `github_request_changes` (T3), `github_approve` (T3, disabled by default)
+
 ## Knowledge Store (Phase 7)
 
 Joe captures tribal knowledge in three tiers:
