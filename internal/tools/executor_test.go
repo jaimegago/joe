@@ -34,13 +34,13 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "execute successful tool",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "echo",
+					name: "ask_user",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"echoed": args["message"].(string)}, nil
 					},
 				})
 			},
-			toolName: "echo",
+			toolName: "ask_user",
 			args:     map[string]any{"message": "hello"},
 			want:     map[string]string{"echoed": "hello"},
 			wantErr:  false,
@@ -48,7 +48,7 @@ func TestExecutor_Execute(t *testing.T) {
 		{
 			name: "tool not found",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "echo"})
+				r.Register(&mockTool{name: "ask_user"})
 			},
 			toolName: "nonexistent",
 			args:     map[string]any{},
@@ -147,7 +147,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			name: "execute multiple successful tools",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "echo",
+					name: "read_file",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"echoed": args["message"].(string)}, nil
 					},
@@ -160,7 +160,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 				})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "echo", Args: map[string]any{"message": "hello"}},
+				{ID: "call-1", Name: "read_file", Args: map[string]any{"message": "hello"}},
 				{ID: "call-2", Name: "ask_user", Args: map[string]any{"text": "hello"}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -185,7 +185,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			name: "execute with some failures",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "echo",
+					name: "read_file",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return "ok", nil
 					},
@@ -198,9 +198,9 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 				})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "echo", Args: map[string]any{}},
+				{ID: "call-1", Name: "read_file", Args: map[string]any{}},
 				{ID: "call-2", Name: "ask_user", Args: map[string]any{}},
-				{ID: "call-3", Name: "echo", Args: map[string]any{}},
+				{ID: "call-3", Name: "read_file", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 3 {
@@ -220,10 +220,10 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute with non-existent tool",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "echo"})
+				r.Register(&mockTool{name: "read_file"})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "echo", Args: map[string]any{}},
+				{ID: "call-1", Name: "read_file", Args: map[string]any{}},
 				{ID: "call-2", Name: "nonexistent_tool_xyz", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -241,7 +241,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute empty batch",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "echo"})
+				r.Register(&mockTool{name: "read_file"})
 			},
 			calls: []ToolCallRequest{},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -275,9 +275,9 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 
 func TestExecutor_ContextCancellation(t *testing.T) {
 	registry := NewRegistry()
-	// Use "echo" (T1) so safety gate passes — we're testing context cancellation
+	// Use "ask_user" (T1) so safety gate passes — we're testing context cancellation
 	registry.Register(&mockTool{
-		name: "echo",
+		name: "ask_user",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -288,7 +288,7 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := executor.Execute(ctx, "echo", map[string]any{})
+	_, err := executor.Execute(ctx, "ask_user", map[string]any{})
 	if err == nil {
 		t.Error("Execute() with cancelled context should return error")
 	}
@@ -452,9 +452,9 @@ func TestExecutor_ResultsToMessages(t *testing.T) {
 
 func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
 	registry := NewRegistry()
-	// "echo" is classified as T1 (Observe) in the safety tier registry
+	// "ask_user" is classified as T1 (Observe) in the safety tier registry
 	registry.Register(&mockTool{
-		name: "echo",
+		name: "ask_user",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "ok", nil
 		},
@@ -463,7 +463,7 @@ func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
 	// Even with most restrictive policy, T1 tools should work
 	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
 
-	result, err := executor.Execute(context.Background(), "echo", map[string]any{"message": "hi"})
+	result, err := executor.Execute(context.Background(), "ask_user", map[string]any{"message": "hi"})
 	if err != nil {
 		t.Fatalf("T1 tool should always be allowed, got error: %v", err)
 	}
@@ -632,7 +632,7 @@ func TestExecutor_Notifier_T2_OnlyAfter(t *testing.T) {
 func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "echo",
+		name: "ask_user",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "ok", nil
 		},
@@ -641,7 +641,7 @@ func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
 	notifier := &trackingNotifier{}
 	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()), WithNotifier(notifier))
 
-	_, err := executor.Execute(context.Background(), "echo", map[string]any{})
+	_, err := executor.Execute(context.Background(), "ask_user", map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
