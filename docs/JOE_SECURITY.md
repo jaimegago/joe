@@ -2,12 +2,13 @@
 
 ## Overview
 
-Joe implements defense-in-depth security with two independent layers:
+Joe implements defense-in-depth security with three independent layers:
 
 1. **RBAC Layer**: Controls what humans can request (pre-LLM)
 2. **Safety Layer**: Controls what LLMs can execute (post-LLM)
+3. **Security Service**: Manages security configuration outside Joe's reach
 
-Both layers are required. RBAC prevents unauthorized requests from reaching the LLM. Safety controls prevent accidents even for authorized users.
+All layers are required. RBAC prevents unauthorized requests from reaching the LLM. Safety controls prevent accidents even for authorized users. The Security Service ensures Joe cannot modify its own security rules.
 
 ## Security Layers
 
@@ -18,8 +19,8 @@ User Request
 ┌─────────────────────────────────────────┐
 │ LAYER 1: RBAC (Human Authorization)    │
 │ - Who are you?                          │
-│ - What can you request?                 │
-│ - Env/namespace/resource scope          │
+│ - What zones can you access?            │
+│ - What actions in each zone?            │
 └───────────┬─────────────────────────────┘
             │ DENY → "Access denied"
             │
@@ -28,15 +29,15 @@ User Request
 ┌─────────────────────────────────────────┐
 │ LLM Reasoning                           │
 │ - Analyzes request                      │
-│ - Picks tools                           │
+│ - Picks tools + target sources          │
 └───────────┬─────────────────────────────┘
             │
             ▼
 ┌─────────────────────────────────────────┐
 │ LAYER 2: Safety (LLM Controls)         │
-│ - Dry-run by default                    │
-│ - Risk assessment                       │
-│ - Approval workflows                    │
+│ - T1/T2/T3 classification               │
+│ - Dry-run + human approval              │
+│ - Circuit breaker                       │
 │ - Audit logging                         │
 └───────────┬─────────────────────────────┘
             │
@@ -44,320 +45,399 @@ User Request
        Tool Execution
 ```
 
-## RBAC Layer (Pre-LLM)
+---
 
-**Purpose**: Control what users can ask Joe to do based on their identity and role.
+## Security Zones
 
-**Examples**:
-- Junior engineer can query dev/staging logs, but not prod
-- Senior engineer can modify dev/staging, read prod
-- SRE can do everything, but destructive prod ops require approval
-- Security team can read secrets and audit logs, but not modify anything
+Security zones solve the problem of managing permissions across dynamic infrastructure sources. Instead of writing policies against specific source IDs (which are created dynamically), policies reference **zones** — pre-defined security boundaries.
 
-**Components**:
+### Why Zones?
 
-### Authentication (Who are you?)
+```
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ Policies         │      │ Security Zones   │      │ Sources          │
+│ (static, git)    │─────►│ (admin-managed)  │◄─────│ (dynamic, DB)    │
+│                  │      │                  │      │                  │
+│ "sre-team can    │      │ "prod-readonly"  │      │ grafana/xyz-prod │
+│  write to        │      │ "prod-write"     │      │   zone: prod-ro  │
+│  dev-full zone"  │      │ "dev-full"       │      │                  │
+│                  │      │                  │      │ k8s/bar-test     │
+│                  │      │                  │      │   zone: dev-full │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+```
 
-Supports multiple identity providers via adapters:
-- **LDAP/Active Directory**: Corporate directory integration
-- **Azure Entra ID**: Azure SSO
-- **AWS IAM**: AWS identity federation
-- **GCP Identity**: Google Cloud identity
-- **OIDC/SAML**: Generic SSO providers
-- **API Keys**: For automation/service accounts
-- **mTLS**: Certificate-based auth
-- **Local Dev**: No auth (development only)
-
-**Token Flow**:
-1. User authenticates via chosen provider
-2. Joe receives identity token
-3. Token cached in `~/.joe/token` (CLI) or browser session (Web UI)
-4. Token validated on each request (cached for TTL)
-5. Groups/roles extracted from identity
-
-### Authorization (What can you do?)
-
-**Permission Model**:
-
-Each user/group gets permissions defining:
-- **Environments**: `[dev, staging, prod, all]`
-- **Namespaces**: `[payments, platform, monitoring, all]`
-- **Resources**: `[pods, deployments, secrets, logs, all]`
-- **Actions**: `[Read, Query, Mutate, Delete]`
-
-**Action Types**:
-- `Read`: View current state (pod status, deployment config)
-- `Query`: Execute read-only queries (logs, metrics, graph traversal)
-- `Mutate`: Modify configuration (scale deployment, update config)
-- `Delete`: Remove resources (delete pod, remove PVC)
-
-**Policy Examples**:
+### Zone Definitions
 
 ```yaml
-# Junior Engineers
-- environments: ["dev", "staging"]
-  namespaces: ["*"]
-  resources: ["*"]
-  actions: [Read, Query]
-
-# Senior Engineers  
-- environments: ["dev", "staging"]
-  namespaces: ["*"]
-  resources: ["*"]
-  actions: [Read, Query, Mutate]
-- environments: ["prod"]
-  namespaces: ["*"]
-  resources: ["pods", "deployments"]
-  actions: [Read, Query]
-
-# SRE Team
-- environments: ["*"]
-  namespaces: ["*"]
-  resources: ["*"]
-  actions: [Read, Query, Mutate, Delete]
-  constraints:
-    - require-approval: [Delete]
-      for-environments: [prod]
-
-# Security Team
-- environments: ["*"]
-  namespaces: ["*"]
-  resources: ["secrets", "audit-logs"]
-  actions: [Read]
+# Managed by joe-security (NOT accessible to LLM)
+security_zones:
+  prod-readonly:
+    description: "Production systems - read only"
+    actions: [Read, Query]
+    
+  prod-write:
+    description: "Production systems - with write access"
+    actions: [Read, Query, Mutate]
+    constraints:
+      require_approval: [Mutate]
+      
+  prod-critical:
+    description: "Critical production - restricted"
+    actions: [Read, Query]
+    constraints:
+      require_approval: [Query]
+      
+  dev-full:
+    description: "Development - full access"
+    actions: [Read, Query, Mutate, Delete]
+    
+  unassigned:
+    description: "Default for new sources"
+    actions: [Read]  # Most restrictive
 ```
 
-### Enforcement Point
+### Source → Zone Assignment Flow
 
-**Pre-LLM Check**:
 ```
-User: "show prod payment service logs"
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. Joe registers new source (via LLM tool)                         │
+│                                                                      │
+│  INSERT INTO sources (id, type, config) VALUES (...)                │
+│  → Allowed ✅ (sources table is NOT protected)                      │
+│                                                                      │
+│  Zone lookup → No row found → defaults to 'unassigned' (Read only) │
+└─────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  2. Joe notifies admin                                              │
+│                                                                      │
+│  "New source registered: grafana/xyz-experiment                     │
+│   Status: unassigned (read-only by default)                         │
+│   Assign a security zone via joe-security admin API."               │
+└─────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  3. Admin assigns zone (via joe-security, NOT via LLM)              │
+│                                                                      │
+│  joe-security assign-zone grafana/xyz-experiment dev-full           │
+│    --reason "approved for dev experimentation"                      │
+│                                                                      │
+│  → Writes to protected table (joe-security only)                   │
+│  → Logged to audit_log                                              │
+└─────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  4. Joe now respects new zone                                       │
+│                                                                      │
+│  Zone lookup → Returns 'dev-full'                                   │
+│  Actions allowed: [Read, Query, Mutate, Delete]                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Policy → Zone → Principal
+
+```yaml
+policies:
+  - principal: "junior-engineers"
+    zones: [prod-readonly, dev-full]
+    
+  - principal: "senior-engineers"
+    zones: [prod-readonly, prod-write, dev-full]
+    
+  - principal: "sre-team"
+    zones: [prod-readonly, prod-write, prod-critical, dev-full]
+```
+
+### Permission Evaluation Example
+
+```
+User: "create a dashboard in grafana for payment-svc"
+         │
+         ▼
+    Tool: grafana_create_dashboard
+    Source: grafana/xyz-prod
+         │
+         ▼
+    Lookup: grafana/xyz-prod → zone: prod-readonly
          │
          ▼
     Policy Check:
     - User: jaime@company.com
-    - Groups: [sre, platform]
-    - Request: {env: prod, namespace: payments, 
-                resource: logs, action: Query}
-    - Policies: Load for [sre, platform] groups
-    - Evaluation: Match found → ALLOW
+    - Groups: [sre-team]
+    - Zone: prod-readonly allows: [Read, Query]
+    - Action requested: Mutate
+    - Mutate not in [Read, Query] → DENY
          │
          ▼
-    Request forwarded to LLM
+    "Access denied: grafana/xyz-prod is in zone 'prod-readonly'.
+     To create dashboards, use a source in 'dev-full' or 'prod-write'."
 ```
 
-**Denial Example**:
+---
+
+## Pluggable Security Architecture
+
+| Mode | joecored talks to | Security data | Use case |
+|------|-------------------|---------------|----------|
+| `embedded` | Local protected tables | Same DB, hardcoded protection | Development, small teams |
+| `remote` | joe-security service | Separate process + DB | Production, high security |
+
+### Mode 1: Embedded (Single Process)
+
 ```
-User: "delete prod payment database"
-         │
-         ▼
-    Policy Check:
-    - User: junior@company.com
-    - Groups: [engineering-junior]
-    - Request: {env: prod, resource: database, action: Delete}
-    - Policies: No match for prod access
-    - Evaluation: DENY
-         │
-         ▼
-    "Access denied: You don't have permissions to 
-     perform Delete actions in prod environment"
+┌─────────────────────────────────────────────────────────────────────┐
+│  joecored (single binary, single DB)                                │
+│                                                                      │
+│  LLM Tools can write to:                                           │
+│    ✅ sources, sessions, graph, knowledge                          │
+│                                                                      │
+│  LLM Tools CANNOT write to (hardcoded):                            │
+│    ❌ security_zones                                                │
+│    ❌ source_zone_assignments                                       │
+│    ❌ rbac_policies                                                 │
+│    ❌ audit_log (append-only)                                       │
+│                                                                      │
+│  Admin API (separate auth, not LLM-accessible):                    │
+│    POST /api/v1/admin/zones                                        │
+│    POST /api/v1/admin/source-zones                                 │
+│    POST /api/v1/admin/policies                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Performance
+**Protection**: Hardcoded table checks in tool executor:
 
-**Latency**: <1ms per request (in-memory evaluation)
+```go
+// internal/safety/invariants.go (compiled)
+var writeProtectedTables = map[string]bool{
+    "security_zones":          true,
+    "source_zone_assignments": true,
+    "rbac_policies":           true,
+}
+var appendOnlyTables = map[string]bool{
+    "audit_log": true,
+}
+```
 
-**Caching Strategy**:
-- Identity tokens cached for token TTL (~1 hour)
-- First request: 50-100ms (validate with IdP)
-- Subsequent requests: <1ms (cache hit)
-- Policies loaded at startup, refreshed every 60s
-- No network calls on hot path
+### Mode 2: Remote (Separate Process)
 
-**Overhead**: ~0.05-0.2% of total request time
-- Policy check: <1ms
-- LLM inference: 500-2000ms
-- Tool execution: 10-500ms
+```
+┌───────────────────────────┐      ┌───────────────────────────┐
+│  joecored                 │      │  joe-security             │
+│                           │      │                           │
+│  main.db (read-write)     │      │  security.db (read-write) │
+│  - sources                │      │  - zones                  │
+│  - sessions               │ gRPC │  - assignments            │
+│  - graph        ─────────────────│  - policies               │
+│  - knowledge              │      │  - audit_log              │
+│                           │      │                           │
+│  No security tables       │      │  Admin API (no LLM code)  │
+└───────────────────────────┘      └───────────────────────────┘
+```
 
-### Audit Trail
+**Why more secure:**
+- joecored has NO write access to security data
+- Even RCE in joecored cannot modify zone assignments
+- joe-security has no LLM code — smaller attack surface
 
-Every request logged:
-- **Timestamp**: When request occurred
-- **User**: Identity (email, user ID)
-- **Groups**: User's groups at time of request
-- **Request**: What was requested (full query)
-- **Decision**: Allow/Deny
-- **Policy**: Which policy matched (or why denied)
-- **Result**: What happened (if allowed)
+### Configuration
+
+```yaml
+# ~/.joe/config.yaml
+
+# Embedded mode
+security:
+  mode: embedded
+  admin_token_env: "JOE_ADMIN_TOKEN"
+
+# Remote mode
+security:
+  mode: remote
+  endpoint: "localhost:7778"         # Sidecar
+  # Or: "joe-security.svc:7778"      # K8s service
+  tls:
+    enabled: true
+    ca_cert: "/etc/joe/ca.crt"
+```
+
+### The Interface
+
+```go
+// internal/security/interface.go
+
+type SecurityPolicy interface {
+    GetSourceZone(ctx context.Context, sourceID string) (Zone, error)
+    ListZones(ctx context.Context) ([]Zone, error)
+    IsAllowed(ctx context.Context, principal, sourceID string, action Action) (bool, error)
+    ListUnassignedSources(ctx context.Context) ([]string, error)
+}
+
+type SecurityAdmin interface {
+    CreateZone(ctx context.Context, zone Zone) error
+    AssignSourceZone(ctx context.Context, sourceID, zoneID, assignedBy, reason string) error
+    SetPolicy(ctx context.Context, principal string, zones []string) error
+}
+```
+
+---
+
+## Deployment Options
+
+### Development: Embedded
+
+```bash
+joecored --config config.yaml
+# security.mode: embedded
+```
+
+### Production: Sidecar
+
+```yaml
+spec:
+  containers:
+    - name: joecored
+      env:
+        - name: JOE_SECURITY_MODE
+          value: "remote"
+        - name: JOE_SECURITY_ENDPOINT
+          value: "localhost:7778"
+          
+    - name: joe-security
+      command: ["joe-security"]
+```
+
+### High Security: Separate Service
+
+```yaml
+# joe-security in separate namespace
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: joe-security
+  namespace: security-system
+```
+
+---
 
 ## Safety Layer (Post-LLM)
 
-**Purpose**: Prevent accidental or dangerous operations, even for authorized users.
+Independent of RBAC. Even if RBAC allows an action, Safety controls still apply.
 
-**Risk Levels**:
-- **Read-only**: No approval needed (get pod status)
-- **Config-change**: Dry-run shown, approval required (scale deployment)
-- **Destructive**: Explicit confirmation required (delete PVC)
+### Risk Tiers
 
-**Approval Workflow**:
+| Tier | Name | Examples | Behavior |
+|------|------|----------|----------|
+| T1 | Observe | Get pod status, query metrics | Execute immediately |
+| T2 | Record | Add note, create dashboard | Execute with logging |
+| T3 | Act | Delete pod, scale deployment | Dry-run + 3s countdown |
 
+### Emergency Shutdown
+
+- Triggers: `/panic`, `joe panic`, `POST /api/v1/panic`, `SIGUSR1`
+- Cancels in-flight operations
+- Restarts in safe mode (T1 only)
+- Requires `joe unlock --reason "..."` to resume
+
+---
+
+## Protected Data Model
+
+```sql
+-- PROTECTED TABLES (LLM cannot write)
+
+CREATE TABLE security_zones (
+    id          TEXT PRIMARY KEY,
+    description TEXT,
+    actions     TEXT NOT NULL,
+    constraints TEXT
+);
+
+CREATE TABLE source_zone_assignments (
+    source_id   TEXT PRIMARY KEY,
+    zone_id     TEXT NOT NULL REFERENCES security_zones(id),
+    assigned_by TEXT NOT NULL,
+    assigned_at TIMESTAMP NOT NULL,
+    reason      TEXT
+);
+
+CREATE TABLE rbac_policies (
+    id          TEXT PRIMARY KEY,
+    principal   TEXT NOT NULL,
+    zones       TEXT NOT NULL,
+    created_by  TEXT NOT NULL,
+    created_at  TIMESTAMP NOT NULL
+);
+
+-- APPEND-ONLY (LLM can INSERT only)
+CREATE TABLE audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actor       TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    target      TEXT,
+    details     TEXT
+);
 ```
-LLM selects: kubectl delete pvc data-postgres-0
-         │
-         ▼
-    Risk Assessment: DESTRUCTIVE
-         │
-         ▼
-    Dry-run execution (show what would happen)
-         │
-         ▼
-    User prompt: 
-    "This will DELETE persistent volume claim data-postgres-0
-     containing 50GB of data in prod.
-     
-     Type 'confirm' to proceed or 'cancel' to abort:"
-         │
-         ├─ cancel → Operation aborted
-         │
-         └─ confirm → Execute + Audit log
-```
 
-**Rollback Capabilities**:
-- Configuration changes stored before mutation
-- Automatic rollback on execution failure
-- Manual rollback command available
-
-**Sandboxing**:
-- All tool executions run in isolated contexts
-- Resource limits applied (CPU, memory, execution time)
-- Network policies enforced
-
-**Emergency Shutdown (Panic Mode)**:
-- Kill switch for immediate halt: `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, `SIGUSR1`
-- Cancels all in-flight operations, stops accepting requests
-- Restarts in safe mode (T1 read-only until explicit unlock)
-- Requires `joe unlock --reason "..."` to resume normal operation
-- Full details in `docs/security-in-layers.md` Part 7
-
-## Security Best Practices
-
-### For Operators
-
-1. **Principle of Least Privilege**: Grant minimum required permissions
-2. **Regular Policy Audits**: Review who has access to what
-3. **Time-limited Elevated Access**: Use approval constraints for sensitive ops
-4. **Monitor Audit Logs**: Watch for anomalous access patterns
-5. **Rotate API Keys**: Regular rotation for automation accounts
-
-### For Developers
-
-1. **Identity Provider Integration**: Use existing corporate IdP
-2. **Policy as Code**: Store policies in git with review process
-3. **Separate Dev/Prod Policies**: Different rules for different environments
-4. **Secret Management**: Never log or cache secrets
-5. **Token Security**: Short TTLs, secure storage, rotation
-
-### For Users
-
-1. **Token Protection**: Treat Joe tokens like passwords
-2. **Verify Scope**: Check what environment you're working in
-3. **Review Dry-runs**: Read what will happen before confirming
-4. **Report Issues**: Notify security team of suspicious activity
-5. **Use MFA**: Enable multi-factor auth where supported
+---
 
 ## Threat Model
 
 ### Threats Mitigated
 
-1. **Unauthorized Access**: RBAC prevents users without permissions
-2. **Privilege Escalation**: Scoped permissions per environment/namespace
-3. **Accidental Deletion**: Approval workflows for destructive ops
-4. **LLM Hallucination**: Dry-run + human approval catches mistakes
-5. **Audit Trail Gaps**: Comprehensive logging of all operations
-6. **Token Theft**: Short TTLs, revocation capability
+| Threat | Mitigation |
+|--------|------------|
+| Prompt injection modifies zones | Protected tables / separate service |
+| LLM escalates permissions | Zone assignments require admin |
+| Unauthorized source access | Sources default to unassigned (read-only) |
+| Accidental destructive action | T3: dry-run + countdown |
+| Runaway mutations | Circuit breaker |
+| Audit log tampering | Append-only |
 
-### Threats NOT Mitigated
+### Embedded vs Remote Mode
 
-1. **Compromised Admin Account**: User with full permissions can do anything
-   - Mitigation: MFA, approval constraints, audit monitoring
-2. **Social Engineering**: User tricks authorized person into action
-   - Mitigation: Approval workflows, audit trail
-3. **LLM Prompt Injection**: Crafted inputs might confuse LLM
-   - Mitigation: Input sanitization, RBAC still enforces limits
-4. **Insider Threat**: Authorized user acts maliciously
-   - Mitigation: Audit logs, approval workflows, separation of duties
+| Threat | Embedded | Remote |
+|--------|----------|--------|
+| Bug bypasses table check | ❌ Vulnerable | ✅ Protected |
+| RCE in joecored | ❌ Full DB access | ✅ Can't write security.db |
+| Supply chain attack | ❌ Vulnerable | ✅ joe-security has no LLM deps |
 
-## Compliance Considerations
+---
 
-**SOC 2**:
-- Audit logging: All access recorded
-- Access controls: RBAC with least privilege
-- Change management: Approval workflows
+## CLI Reference
 
-**GDPR**:
-- Right to deletion: Audit log retention policies
-- Access transparency: Users can see their permissions
-- Data minimization: Only necessary identity info cached
+### joe-security CLI
 
-**HIPAA** (if handling healthcare data):
-- Access controls: RBAC with environment/namespace isolation
-- Audit trails: Comprehensive logging
-- Encryption: Tokens encrypted at rest and in transit
+```bash
+# List zones
+joe-security zones list
 
-## Configuration
+# Create zone
+joe-security zones create staging-write \
+  --actions Read,Query,Mutate
 
-### Policy Storage
+# Assign source to zone
+joe-security assign-zone grafana/staging staging-write \
+  --reason "approved"
 
-Policies can be stored in:
-1. **Local config**: `~/.joe/policies.yaml` (development)
-2. **Git repository**: Versioned, reviewed (recommended)
-3. **External policy engine**: OPA, Cedar (enterprise)
+# List unassigned sources
+joe-security sources unassigned
 
-### Identity Provider Setup
-
-Example Entra ID configuration:
-```yaml
-identity:
-  provider: entra
-  config:
-    tenant_id: "your-tenant-id"
-    client_id: "joe-app-id"
-    client_secret_env: "ENTRA_CLIENT_SECRET"
+# View audit log
+joe-security audit --since 24h
 ```
 
-Example LDAP configuration:
-```yaml
-identity:
-  provider: ldap
-  config:
-    url: "ldaps://ldap.company.com:636"
-    bind_dn: "cn=joe-service,ou=services,dc=company,dc=com"
-    bind_password_env: "LDAP_BIND_PASSWORD"
-    user_base_dn: "ou=users,dc=company,dc=com"
-    group_base_dn: "ou=groups,dc=company,dc=com"
-```
+---
 
 ## FAQ
 
-**Q: Can I bypass RBAC for emergencies?**  
-A: No. Use a break-glass account with full permissions. All access is audited.
+**Q: Can Joe modify its own security zones?**
+A: No. Protected by hardcoded checks (embedded) or separate process (remote).
 
-**Q: What if my token expires mid-operation?**  
-A: Joe will prompt for re-authentication. Long-running ops use token refresh.
+**Q: What happens when Joe registers a new source?**
+A: Defaults to `unassigned` zone (read-only). Admin must assign zone.
 
-**Q: Can I have different permissions in different clusters?**  
-A: Yes. Policies can include cluster selectors.
-
-**Q: How are groups synced from IdP?**  
-A: Automatically during token validation. Changes take effect on next request.
-
-**Q: What's the performance impact?**  
-A: <1ms per request. Negligible compared to LLM and tool execution times.
-
-**Q: Can service accounts use Joe?**  
-A: Yes. Use API key authentication with scoped permissions.
-
-**Q: How do I debug policy denials?**  
-A: Audit logs show which policy was evaluated and why it denied access.
-
-**Q: Is there a UI for policy management?**  
-A: Roadmap feature. Currently policies managed via YAML in git.
+**Q: What if joe-security is down?**
+A: joecored fails closed — all requests denied. Intentional for security.

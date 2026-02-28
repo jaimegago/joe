@@ -13,6 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -38,6 +39,7 @@ type Services struct {
 	Proposals      *proposals.Service
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
+	RBAC           rbac.Repository // nil when RBAC is not configured
 }
 
 // New creates a new Services instance with the given SQL store database.

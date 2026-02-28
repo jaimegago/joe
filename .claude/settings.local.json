@@ -35,7 +35,9 @@
       "Bash(xargs basename:*)",
       "Bash(npx --yes markdownlint-cli:*)",
       "Bash(golangci-lint run:*)",
-      "Read(//Users/jaimegago/joe/**)"
+      "Read(//Users/jaimegago/joe/**)",
+      "Bash(go list -m github.com/mark3labs/mcp-go)",
+      "Read(//Users/jaimegago/go/pkg/mod/**)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs"

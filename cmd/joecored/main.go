@@ -37,6 +37,8 @@ import (
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
+	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -189,6 +191,23 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	}
 	slog.Info("database ready", "path", dbPath)
 
+	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
+	rbacRepo := rbac.NewRepository(sqlStore.DB())
+
+	// Check for panic.state from a previous run and boot in safe mode if found.
+	panicState, err := safety.ReadPanicState(joeDir)
+	if err != nil {
+		slog.Warn("failed to read panic state on startup", "error", err)
+	} else if panicState != nil {
+		safety.ActivateSafeMode()
+		slog.Warn("SAFE MODE ACTIVE — previous run triggered emergency shutdown",
+			"triggered_at", panicState.TriggeredAt,
+			"trigger_source", string(panicState.TriggerSource),
+			"trigger_reason", panicState.TriggerReason,
+		)
+		slog.Warn("use 'joe unlock --reason \"...\"' to resume normal operation")
+	}
+
 	// Load or create encryption key for source configs.
 	encKeyPath, err := paths.EncryptionKeyPath()
 	if err != nil {
@@ -214,6 +233,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 
 	// Initialize core services (graph store uses same SQLite DB)
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), adapterRegistry, metrics)
+	services.RBAC = rbacRepo
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 
@@ -283,7 +303,18 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	apiServer := deps.newAPIServer(services)
 	apiServer.RegisterRoutes(mux)
 
-	// Build middleware chain: rate limit → metrics → auth → request size limit → mux
+	// Build RBAC identity provider and policy engine.
+	// The policy engine is only enabled when API key auth is configured.
+	// When auth is disabled (empty api_key), enforcement is skipped so that
+	// single-user / local setups are not blocked by empty policy tables.
+	rbacPrincipal := rbac.Principal(cfg.Server.Principal)
+	identityProvider := rbac.NewAPIKeyProvider(cfg.Server.APIKey, rbacPrincipal)
+	var policyEngine *rbac.PolicyEngine
+	if cfg.Server.APIKey != "" {
+		policyEngine = rbac.NewPolicyEngine(rbacRepo)
+	}
+
+	// Build middleware chain: rate limit → metrics → auth → identity → RBAC → request size limit → mux
 	handler := api.Chain(
 		mux,
 		api.RateLimit(cfg.Server.RateLimitRPS, cfg.Server.RateLimitBurst),
@@ -291,6 +322,8 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 			return observability.HTTPMetricsMiddleware(h, metrics)
 		},
 		api.BearerAuth(cfg.Server.APIKey),
+		rbac.IdentityMiddleware(identityProvider),
+		rbac.EnforcementMiddleware(policyEngine),
 		api.MaxRequestBody(api.DefaultMaxRequestBytes),
 	)
 
@@ -365,12 +398,30 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 
 func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
 	done := make(chan struct{})
 	go func() {
 		select {
-		case <-quit:
+		case sig := <-quit:
+			if sig == syscall.SIGUSR1 {
+				joeDir, err := paths.JoeDirPath()
+				if err != nil {
+					slog.Error("SIGUSR1 panic: failed to resolve joe dir", "error", err)
+				} else {
+					safety.Trigger(safety.PanicSourceSignal, "SIGUSR1 received")
+					state := safety.PanicState{
+						TriggeredAt:   timeNow(),
+						TriggerSource: safety.PanicSourceSignal,
+						TriggerReason: "SIGUSR1 received",
+					}
+					if err := safety.WritePanicState(joeDir, state); err != nil {
+						slog.Error("SIGUSR1 panic: failed to write panic.state", "error", err)
+					}
+				}
+				slog.Error("SIGUSR1: emergency shutdown triggered — exiting with code 2")
+				os.Exit(2)
+			}
 			close(done)
 		case <-ctx.Done():
 			close(done)
@@ -378,6 +429,9 @@ func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
 	}()
 	return done
 }
+
+// timeNow is a package-level variable so tests can stub it.
+var timeNow = func() time.Time { return time.Now().UTC() }
 
 func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry *adapters.Registry) {
 	k8sSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeKubernetes)

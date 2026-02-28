@@ -40,6 +40,7 @@ type KnowledgeConfig struct {
 type ServerConfig struct {
 	Address        string  `yaml:"address"`          // e.g., ":7777" or "localhost:7777"
 	APIKey         string  `yaml:"api_key"`          // Bearer token for API authentication (optional)
+	Principal      string  `yaml:"principal"`        // RBAC principal name for the API key (default: "default-operator")
 	TLSCertFile    string  `yaml:"tls_cert_file"`    // Path to TLS certificate (enables HTTPS on server)
 	TLSKeyFile     string  `yaml:"tls_key_file"`     // Path to TLS private key (enables HTTPS on server)
 	TLSEnabled     bool    `yaml:"tls_enabled"`      // joe client: connect over HTTPS (must match server TLS setting)

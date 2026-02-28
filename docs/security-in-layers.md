@@ -875,6 +875,133 @@ Resolved in Phase 5.5:
 
 ---
 
+## Part 8: Security Zones and Protected Tables
+
+### 8.1 Security Zones
+
+Security zones decouple RBAC policies from dynamic sources. Admins define zones with allowed actions, then assign sources to zones.
+
+**Zone Definitions:**
+```yaml
+security_zones:
+  prod-readonly:
+    description: "Production systems - read only"
+    actions: [Read, Query]
+    
+  prod-write:
+    description: "Production systems - with write access"
+    actions: [Read, Query, Mutate]
+    constraints:
+      require_approval: [Mutate]
+      
+  dev-full:
+    description: "Development - full access"
+    actions: [Read, Query, Mutate, Delete]
+    
+  unassigned:
+    description: "Default zone for new sources"
+    actions: [Read]  # Most restrictive
+```
+
+**Flow:**
+1. Joe registers source (e.g., `grafana/xyz-prod`) → goes to `sources` table (LLM can write)
+2. Zone lookup: no assignment found → defaults to `unassigned` (read-only)
+3. Joe notifies: "New source registered, needs zone assignment"
+4. Admin assigns zone via Admin API → goes to `source_zone_assignments` table (LLM cannot write)
+5. Subsequent requests respect the assigned zone
+
+**Permission Evaluation:**
+```
+Tool execution: grafana_create_dashboard
+Target source: grafana/xyz-prod
+Zone: prod-readonly
+Required action: Mutate
+Zone allows: [Read, Query]
+Result: DENIED
+```
+
+### 8.2 Protected Tables
+
+**Critical invariant:** LLM tools cannot modify security configuration.
+
+| Table | LLM Can Read | LLM Can Write | Purpose |
+|-------|--------------|---------------|---------|
+| `sources` | ✅ | ✅ | Connection details |
+| `sessions`, `graph_*`, `knowledge_*` | ✅ | ✅ | Operational data |
+| `security_zones` | ✅ | ❌ **NO** | Zone definitions |
+| `source_zone_assignments` | ✅ | ❌ **NO** | Source → Zone mapping |
+| `rbac_policies` | ✅ | ❌ **NO** | User/group permissions |
+| `audit_log` | ✅ | ⚠️ Append only | Immutable audit trail |
+
+**Enforcement (hardcoded in `internal/safety/invariants.go`):**
+```go
+var writeProtectedTables = map[string]bool{
+    "security_zones":          true,
+    "source_zone_assignments": true,
+    "rbac_policies":           true,
+}
+
+var appendOnlyTables = map[string]bool{
+    "audit_log": true,
+}
+
+func CanWriteTable(table string, operation string) bool {
+    if writeProtectedTables[table] {
+        return false
+    }
+    if appendOnlyTables[table] && operation != "INSERT" {
+        return false
+    }
+    return true
+}
+```
+
+This check runs in the tool executor BEFORE any SQL operation. It is:
+- **Compiled** — not configurable at runtime
+- **Hardcoded** — not bypassable by LLM reasoning or prompt injection
+- **Universal** — applies to all tools, all code paths
+
+### 8.3 Pluggable Security Architecture
+
+Joe supports two deployment modes:
+
+**Mode 1: Embedded (default)**
+- Single joecored process, single DB
+- Protected tables enforced by hardcoded invariants
+- Admin API in joecored (requires admin auth)
+- Suitable for: development, small teams
+
+**Mode 2: Remote (hardened)**
+- Separate `joe-security` process with own `security.db`
+- joecored queries joe-security for policy decisions
+- Even if joecored is compromised (RCE), cannot write to security.db
+- Suitable for: production, compliance, multi-tenant
+
+**Configuration:**
+```yaml
+security:
+  mode: embedded  # or 'remote'
+  endpoint: "joe-security:7778"  # for remote mode
+```
+
+See `docs/JOE_SECURITY.md` for full architecture details.
+
+### 8.4 Admin API
+
+Separate from LLM-accessible API. Requires admin authentication.
+
+```
+POST /api/v1/admin/zones              # Create/update zones
+POST /api/v1/admin/source-zones       # Assign source to zone
+GET  /api/v1/admin/source-zones/unassigned  # List unassigned sources
+POST /api/v1/admin/policies           # Manage RBAC policies
+```
+
+In embedded mode: routes in joecored, separate auth
+In remote mode: routes in joe-security only
+
+---
+
 ## References
 
 - OWASP Top 10: https://owasp.org/www-project-top-ten/

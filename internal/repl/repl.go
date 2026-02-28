@@ -2,9 +2,12 @@ package repl
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -118,6 +121,8 @@ func (r *REPL) handleCommand(ctx context.Context, input string) error {
 		return r.handleModelCommand(ctx)
 	case "help":
 		return r.handleHelpCommand()
+	case "panic":
+		return r.handlePanicCommand(ctx)
 	case "exit", "quit":
 		return ErrExit
 	default:
@@ -174,10 +179,63 @@ func (r *REPL) handleModelCommand(ctx context.Context) error {
 	return nil
 }
 
+// handlePanicCommand triggers an emergency shutdown of joecored.
+// It prompts for confirmation before sending the request.
+func (r *REPL) handlePanicCommand(ctx context.Context) error {
+	fmt.Println("⚠  EMERGENCY SHUTDOWN")
+	fmt.Println()
+	fmt.Println("This will immediately:")
+	fmt.Println("  • Stop all in-flight operations")
+	fmt.Println("  • Shut down joecored")
+	fmt.Println("  • Restart joecored in safe mode (T1/read-only)")
+	fmt.Println()
+	fmt.Print("Type 'yes' to confirm: ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return fmt.Errorf("cancelled")
+	}
+	if strings.TrimSpace(scanner.Text()) != "yes" {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	scheme := "http"
+	if r.config.Server.TLSEnabled {
+		scheme = "https"
+	}
+	panicURL := scheme + "://" + r.config.Server.Address + "/api/v1/panic"
+
+	body, _ := json.Marshal(map[string]string{"reason": "operator triggered via REPL"})
+	req, err := http.NewRequestWithContext(ctx, "POST", panicURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create panic request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if r.config.Server.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+r.config.Server.APIKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to reach joecored: %w", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Println()
+	fmt.Println("🛑 Panic triggered. joecored shutting down...")
+	fmt.Printf("   State saved to ~/.joe/panic.state\n")
+	fmt.Println()
+	fmt.Println("Reconnect after restart. Joe will be in safe mode (read-only).")
+	fmt.Println("Use 'joe unlock --reason \"...\"' to resume normal operation.")
+	return nil
+}
+
 // handleHelpCommand displays available commands
 func (r *REPL) handleHelpCommand() error {
 	help := `Available commands:
   /model    - Switch LLM model
+  /panic    - Emergency shutdown (kills joecored, restarts in safe mode)
   /help     - Show this help
   /exit     - Exit Joe (or use Ctrl+D)
 `
