@@ -1,52 +1,51 @@
-# Joe - AI-Powered Infrastructure Copilot
+# Joe — AI-Powered Infrastructure Copilot
 
 Joe (Joe Operates Everything) helps platform engineers understand, debug, and operate their infrastructure through natural conversation.
 
-## Status
+## What Joe Does
 
-📈 **Phase 5.5 Complete** - Core Agent + Action Safety Framework
-🧭 **Phase 6 In Progress** - Cloud, Observability, and Alerting adapters
+- **Ask questions** — "Why is the payment service slow?" — Joe queries your live infrastructure and knowledge store
+- **Debug incidents** — Joe correlates K8s events, metrics, logs, and alerts in a single conversation
+- **Explore relationships** — Joe maintains a knowledge graph linking services, databases, clusters, and cloud resources
+- **Document your systems** — Joe drafts runbooks and wiki pages from real infrastructure state
 
-Architecture & Foundation:
-- ✅ Two-binary architecture (`joe` client + `joecored` daemon)
-- ✅ HTTP API with full client-server separation
-- ✅ LLM adapter interface (AI-agnostic design)
-- ✅ Claude 4 Sonnet + Gemini 2.5 adapters with tool support
-- ✅ Hot model switching without restart
-- ✅ OpenTelemetry instrumentation (tokens, latency, costs)
+---
 
-User Agent & Tools:
-- ✅ Interactive REPL with agentic conversation loop
-- ✅ Tool execution framework (registry, executor, safety)
-- ✅ Local tools (file I/O, git operations, command execution)
-- ✅ Core tools (graph queries, K8s resources, git repos via API)
-- ✅ Session management with conversation history
+## Architecture
 
-Data Layer & Infrastructure:
-- ✅ SQL Store (SQLite) - sources, sessions, cache, facts
-- ✅ Graph Store (SQLite-based) - nodes, edges, relationships
-- ✅ Migration system with schema versioning
-- ✅ Kubernetes adapter (client-go, dynamic discovery)
-- ✅ Git adapter (go-git, clone/read/log/diff operations)
-- ✅ AWS adapter (EC2, EKS, RDS, VPC discovery)
+Joe runs as two binaries with a clean HTTP boundary:
 
-Testing & Observability:
-- ✅ Unit tests, integration tests, E2E test harness
-- ✅ OpenTelemetry metrics and tracing
-- ✅ Structured logging with configurable levels
+```text
+joe (User Agent)                    joecored (Core Daemon)
+─────────────────                   ──────────────────────
+Interactive REPL           HTTP     API (:7777)
+Agentic loop → LLM  ──────────────► Graph store (SQLite)
+Local tools (direct)                SQL store (sources, sessions)
+Core tools (via API)                Infrastructure adapters
+                                    Core Agent (background refresh)
+                                    Knowledge store (embeddings)
+```
 
-**Current Phase 6:** Cloud, observability, and alerting adapters
+An optional third binary `joe-mcp` exposes Joe's tools to MCP-compatible editors:
+
+```text
+Claude Code / Cursor / Codex
+    ↓ MCP stdio JSON-RPC
+joe-mcp
+    ↓ HTTP + Bearer auth
+joecored (:7777)
+```
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.25.0 or later
-- API key for your chosen LLM provider:
-  - Anthropic API key (for Claude 4 Sonnet)
-  - Google API key (for Gemini 2.5 Flash/Pro)
+- Go 1.22 or later
+- An LLM API key (Anthropic or Google)
 
-### Installation
+### Build
 
 ```bash
 git clone https://github.com/jaimegago/joe.git
@@ -54,23 +53,22 @@ cd joe
 make build
 ```
 
-This builds two binaries:
-- `joe` - Interactive CLI client
-- `joecored` - Background daemon that handles LLM interactions
+Produces three binaries:
 
-### Configuration
+| Binary     | Purpose                             |
+| ---------- | ----------------------------------- |
+| `joe`      | Interactive CLI client              |
+| `joecored` | Background daemon                   |
+| `joe-mcp`  | MCP server for Claude Code / Cursor |
+
+### Configure
 
 Create `~/.joe/config.yaml`:
 
 ```yaml
-# Joe Configuration Example
-# Copy to ~/.joe/config.yaml and customize
-
 llm:
-  # Currently active model key (must match a key in 'available')
-  current: claude-sonnet
+  current: claude-sonnet          # active model key
 
-  # All configured models
   available:
     claude-sonnet:
       provider: claude
@@ -78,256 +76,478 @@ llm:
     gemini-flash:
       provider: gemini
       model: gemini-2.5-flash
-    gemini-pro:
-      provider: gemini  
-      model: gemini-2.5-pro
 
-  # Note: API keys are NEVER stored in config files
-  # Set via environment variables:
-  #   - Claude: ANTHROPIC_API_KEY
-  #   - Gemini: GEMINI_API_KEY or GOOGLE_API_KEY
+  # API keys are NEVER stored in config — set via env vars:
+  #   ANTHROPIC_API_KEY   (Claude)
+  #   GEMINI_API_KEY      (Gemini)
 
 server:
   address: "localhost:7777"
+  api_key: ""                     # Bearer token for API auth (recommended in production)
+  principal: "default-operator"   # RBAC principal name for this API key
 
 refresh:
-  # Background refresh interval in minutes
   interval_minutes: 5
 
-  # LLM usage limits during background refresh
+logging:
+  level: info                     # debug | info | warn | error
+```
+
+Or copy the bundled example:
+
+```bash
+cp config.example.yaml ~/.joe/config.yaml
+```
+
+### Set API Keys
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."   # for Claude
+export GEMINI_API_KEY="AIza..."         # for Gemini
+```
+
+### Run
+
+```bash
+# Terminal 1 — start the daemon
+joecored
+
+# Terminal 2 — start the interactive client
+joe
+```
+
+```text
+Using claude/claude-sonnet-4-20250514
+> why is the payment service slow?
+[Joe queries K8s, metrics, graph, and responds]
+```
+
+---
+
+## Configuration Reference
+
+### `~/.joe/config.yaml`
+
+```yaml
+llm:
+  current: <model-key>            # key from llm.available
+  available:
+    <key>:
+      provider: claude | gemini | ollama
+      model: <model-id>
+
+server:
+  address: "localhost:7777"       # joecored listen address
+  api_key: ""                     # Bearer token (empty = auth disabled)
+  principal: "default-operator"   # RBAC identity for this API key
+  tls_cert_file: ""               # path to TLS cert (enables HTTPS)
+  tls_key_file: ""                # path to TLS key
+  tls_enabled: false              # joe client: connect over HTTPS
+  rate_limit_rps: 0               # requests/sec per IP (0 = disabled)
+  rate_limit_burst: 10
+
+refresh:
+  interval_minutes: 5
   llm_budget:
     max_calls_per_hour: 100
     batch_threshold: 10
     batch_timeout_sec: 30
 
 logging:
-  level: info                   # debug | info | warn | error
-```
+  level: info                     # debug | info | warn | error
+  file: ""                        # log file path (empty = stderr only)
 
-Or use the example config:
-```bash
-cp config.example.yaml ~/.joe/config.yaml
+knowledge:
+  embedding_model: ""             # model key for embeddings (defaults to llm.current)
+  semantic_top_k: 5
+  sync_enabled: false             # enable Confluence/Notion background sync
 ```
 
 ### Environment Variables
 
-Override config with environment variables:
+| Variable              | Config equivalent  | Notes               |
+| --------------------- | ------------------ | ------------------- |
+| `ANTHROPIC_API_KEY`   | —                  | Required for Claude |
+| `GEMINI_API_KEY`      | —                  | Required for Gemini |
+| `JOE_SERVER_ADDRESS`  | `server.address`   |                     |
+| `JOE_API_KEY`         | `server.api_key`   | Bearer token        |
+| `JOE_LOG_LEVEL`       | `logging.level`    |                     |
 
-```bash
-# LLM Provider & Model Key (from config.yaml)
-export JOE_LLM_CURRENT=claude-sonnet
+---
 
-# API Keys (required - not stored in config)
-export ANTHROPIC_API_KEY="your-anthropic-key"  # For Claude 4 Sonnet
-export GEMINI_API_KEY="your-google-key"        # For Gemini 2.5 models
-export GOOGLE_API_KEY="your-google-key"        # For Gemini (fallback)
+## REPL Commands
 
-# Server & Logging
-export JOE_SERVER_ADDRESS=localhost:7777
-export JOE_LOG_LEVEL=debug
+Inside `joe`, type `/` followed by a command:
 
-# Background refresh (optional)
-export JOE_REFRESH_INTERVAL_MINUTES=5
-export JOE_REFRESH_MAX_CALLS_PER_HOUR=100
-```
+| Command   | Description                                                              |
+| --------- | ------------------------------------------------------------------------ |
+| `/model`  | Interactively switch LLM models without restart                         |
+| `/panic`  | **Emergency shutdown** — halt all ops, restart in safe mode             |
+| `/help`   | Show all available commands                                             |
+| `/exit`   | Exit                                                                    |
 
-### Run
+### Model Switching
 
-Start the daemon, then the client:
-
-```bash
-# Terminal 1: Start the daemon
-make run-joecored
-# or: ./joecored
-
-# Terminal 2: Start the interactive client
-make run-joe
-# or: ./joe
-```
-
-Or use convenience target to build and run:
-```bash
-make run-joe
-```
-
-## Features
-
-### Interactive REPL
-
-Joe provides an interactive command-line interface:
-
-```
-> who are you?
-I am Joe, an infrastructure assistant.
-
-> read the README.md file
-[Joe reads and displays the file]
-
-> what's the git status?
-[Joe runs git status and shows results]
-```
-
-### REPL Commands
-
-- `/model` - Interactively switch between LLM models without restart
-- `/help` - Show available commands
-- `/exit` - Exit Joe
-
-### Available Tools
-
-Joe provides two categories of tools:
-
-**Local Tools** (User Agent executes locally):
-- **read_file** - Read contents of local files  
-- **write_file** - Write content to local files
-- **local_git_status** - Check git repository status  
-- **local_git_diff** - Show git diff
-- **run_command** - Execute safe shell commands (ls, pwd, date, etc.)
-- **echo** - Echo back text (for testing)
-- **ask_user** - Prompt user for additional input
-
-**Core Tools** (User Agent calls joecored API):
-- **graph_query** - Query infrastructure knowledge graph
-- **graph_related** - Find connected infrastructure nodes
-- **graph_summary** - Get contextual graph information
-- **list_sources** - Show registered infrastructure sources
-- **k8s_get** - Get Kubernetes resources (pods, deployments, etc.)
-- **k8s_logs** - Fetch pod logs from connected clusters  
-- **git_read** - Read files from registered git repositories
-- **git_log** - Get commit history from repositories
-- **git_diff** - Show diffs between commits
-
-### Model Hot-Swapping
-
-Switch between configured LLM models on the fly:
-
-```
+```text
 > /model
-Use arrow keys to navigate:
-▸ claude-sonnet (current)
-  gemini-flash
-  gemini-pro
+
+Select model:
+  • claude-sonnet (current)
+    gemini-flash
+    gemini-pro
+
+Use ↑/↓ to navigate, Enter to select, Esc to cancel
 ```
 
-Configure available models in `~/.joe/config.yaml` under `llm.available`.
+---
 
-## Architecture
+## Emergency Shutdown (Panic Mode)
 
-Joe uses a client-server architecture:
+Joe has a kill switch for runaway operations. Four ways to trigger it:
 
-- **joe (client)** - Interactive REPL that connects to the daemon
-- **joecored (daemon)** - Background service that handles LLM interactions and tool execution
+**From the REPL:**
 
-**Architecture Highlights:**
-- **Two-binary design** - `joe` (client) + `joecored` (daemon) with HTTP API boundary
-- **Dual agents** - User Agent (interactive) + Core Agent (autonomous)
-- **AI-agnostic** - Swappable LLM backends (Claude 4, Gemini 2.5)
-- **Tool-based execution** - LLM calls tools to perform actions
-- **Hot-swappable models** - Change models without restarting
-- **Knowledge graph** - SQLite-based graph for infrastructure relationships
-- **Full observability** - OpenTelemetry tracing, metrics, structured logging
+```text
+> /panic
+⚠️  This will halt all Joe operations and restart joecored in safe mode.
+Type 'yes' to confirm: yes
+Emergency shutdown triggered. joecored will restart in safe mode.
+```
 
-See [docs/joe-architecture.md](docs/joe-architecture.md) for complete architecture details.
+**From the CLI:**
+
+```bash
+joe panic --reason "runaway mutation detected"
+```
+
+**Via HTTP API:**
+
+```bash
+curl -X POST http://localhost:7777/api/v1/panic \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -d '{"reason": "runaway mutation detected"}'
+```
+
+**Via Unix signal:**
+
+```bash
+kill -USR1 $(pidof joecored)
+```
+
+### What Happens
+
+1. joecored writes `~/.joe/panic.state` and exits with code 2
+2. On restart, joecored reads `panic.state` and boots in **safe mode**
+3. In safe mode, only T1 (read-only) tools are allowed — no writes or mutations
+4. Joe logs a warning on every startup until safe mode is cleared
+
+### Check Status
+
+```bash
+curl http://localhost:7777/api/v1/panic/status \
+  -H "Authorization: Bearer $JOE_API_KEY"
+# {"safe_mode":true,"triggered_at":"...","trigger_source":"api","trigger_reason":"..."}
+```
+
+### Resume Normal Operation
+
+A reason is required for the audit log:
+
+```bash
+# CLI
+joe unlock --reason "false alarm — incident resolved"
+
+# HTTP
+curl -X POST http://localhost:7777/api/v1/unlock \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -d '{"reason": "false alarm — incident resolved"}'
+```
+
+---
+
+## Action Safety Tiers
+
+Every tool Joe can execute is classified into one of three tiers. The tier determines confirmation behavior and safe-mode restrictions.
+
+| Tier | Name    | Examples                                        | Safe Mode  |
+| ---- | ------- | ----------------------------------------------- | ---------- |
+| T1   | Observe | `read_file`, `k8s_get`, `graph_query`           | ✅ Allowed |
+| T2   | Record  | `write_file`, `graph_add_node`                  | ❌ Blocked |
+| T3   | Act     | `run_command` (mutations), `kubectl apply`      | ❌ Blocked |
+
+Configure tier behavior in `~/.joe/safety-policy.yaml`:
+
+```yaml
+# ~/.joe/safety-policy.yaml
+
+# Allow T3 tools (disabled by default — explicit opt-in required)
+allow_t3: false
+
+# Directories write_file is allowed to write to (empty = unrestricted)
+allowed_directories:
+  - /tmp/joe-workspace
+  - /home/me/projects
+
+# run_command allowlist by subcommand
+run_command:
+  allowed_subcommands:
+    - kubectl get
+    - kubectl logs
+    - kubectl describe
+    - helm list
+```
+
+---
+
+## RBAC (Role-Based Access Control)
+
+Joe supports security zones for multi-user scenarios. Sources are assigned to zones; principals are granted access to zones.
+
+### Default Zones
+
+| Zone            | Allowed Actions                      |
+| --------------- | ------------------------------------ |
+| `prod-readonly` | read, query                          |
+| `prod-write`    | read, query, mutate                  |
+| `dev-full`      | read, query, mutate, delete          |
+| `unassigned`    | read (default for new sources)       |
+
+### Managing Zones via Admin API
+
+All admin endpoints require Bearer auth.
+
+**List zones:**
+
+```bash
+curl http://localhost:7777/api/v1/admin/zones \
+  -H "Authorization: Bearer $JOE_API_KEY"
+```
+
+**Create a zone:**
+
+```bash
+curl -X POST http://localhost:7777/api/v1/admin/zones \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -d '{"id":"staging","name":"Staging","allowed_actions":["read","query","mutate"]}'
+```
+
+**Assign a source to a zone:**
+
+```bash
+curl -X POST http://localhost:7777/api/v1/admin/source-zones \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -d '{"source_id":"k8s-prod","zone_id":"prod-readonly","assigned_by":"alice","reason":"initial setup"}'
+```
+
+**Grant a principal access to a zone:**
+
+```bash
+curl -X POST http://localhost:7777/api/v1/admin/policies \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -d '{"principal":"alice","zone_id":"prod-readonly"}'
+```
+
+**List unassigned sources:**
+
+```bash
+curl http://localhost:7777/api/v1/admin/unassigned \
+  -H "Authorization: Bearer $JOE_API_KEY"
+```
+
+### Configure the Principal for Your API Key
+
+```yaml
+# ~/.joe/config.yaml
+server:
+  api_key: "my-secret-token"
+  principal: "ops-team"   # RBAC identity mapped to this token
+```
+
+---
+
+## MCP Server (Claude Code / Cursor / Codex)
+
+`joe-mcp` exposes 8 Joe tools over the Model Context Protocol, letting your editor query live infrastructure directly.
+
+### Setup
+
+```bash
+# Build
+make build
+
+# Install joe-mcp to PATH
+cp joe-mcp ~/.local/bin/
+```
+
+Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "joe": {
+      "command": "joe-mcp",
+      "env": {
+        "JOE_SERVER": "http://localhost:7777",
+        "JOE_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+| Tool                   | Description                                   |
+| ---------------------- | --------------------------------------------- |
+| `joe_graph_query`      | Search infrastructure graph nodes            |
+| `joe_graph_related`    | Find nodes related to a given node            |
+| `joe_k8s_get`          | List or get Kubernetes resources              |
+| `joe_k8s_logs`         | Fetch pod logs                                |
+| `joe_metrics_query`    | Run a PromQL query                            |
+| `joe_logs_search`      | Search logs with LogQL                        |
+| `joe_knowledge_search` | Semantic search over runbooks and docs        |
+| `joe_incidents`        | List active alerts from Alertmanager          |
+
+---
+
+## Infrastructure Adapters
+
+Joe connects to your infrastructure through registered sources. Add sources via the API:
+
+```bash
+# Register a Kubernetes cluster
+curl -X POST http://localhost:7777/api/v1/sources \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "k8s-prod",
+    "name": "Production Cluster",
+    "type": "kubernetes",
+    "config": {"kubeconfig_path": "/home/me/.kube/config"}
+  }'
+
+# Register a Prometheus instance
+curl -X POST http://localhost:7777/api/v1/sources \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "prom-prod",
+    "name": "Production Prometheus",
+    "type": "prometheus",
+    "config": {"endpoint": "http://prometheus.monitoring.svc:9090"}
+  }'
+```
+
+**Supported adapter types:** Kubernetes, Git, AWS (EC2/EKS/RDS/VPC), Azure, Prometheus/Mimir, Loki, Tempo, Jaeger, Alertmanager, PagerDuty, Grafana, Datadog, Splunk, Dynatrace, New Relic, PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch, Argo CD, Flux, Terraform, Helm, NGINX Ingress, Envoy, Istio, Cilium, cert-manager, KEDA, OPA/Gatekeeper, Crossplane, Falco, OCI/DockerHub/GHCR/Harbor, ECR, Artifactory
+
+---
+
+## Knowledge Store
+
+Joe learns from your documentation and operations:
+
+- **Curated** (Tier 1) — Notes attached to graph nodes; human-managed, immutable by LLM
+- **Synced** (Tier 2) — Confluence / Notion pages fetched and cached
+- **Derived** (Tier 3) — Patterns inferred from sessions; shown with provenance
+
+Enable background sync in config:
+
+```yaml
+knowledge:
+  sync_enabled: true
+  embedding_model: claude-sonnet  # model used for semantic embeddings
+```
+
+---
 
 ## Testing
 
-Joe has comprehensive testing at multiple levels:
-
 ```bash
-# Build both binaries
-make build
+# Run all unit tests
+go test ./...
 
-# Run unit tests (fast, no external dependencies) 
-make test-unit
+# With coverage
+go test -cover ./...
 
-# Run integration tests with mocks (no external services)
-make test-integration  
+# Integration tests only
+go test -tags=integration ./...
 
-# Run end-to-end tests (requires built binaries)
-make test-e2e
+# Build check
+go build ./...
 
-# Run all test types sequentially
-make test-all
-
-# Run tests with coverage
-make test-coverage
-
-# Verify code quality
+# Lint
 go vet ./...
 ```
 
-Test categories:
-- **Unit tests** - Individual component testing with mocks
-- **Integration tests** - API contracts, conversation flows with mock LLM
-- **E2E tests** - Full binary lifecycle with automated harness
-
-## Development Phases
-
-Joe is built in iterative phases:
-
-**✅ Phase 1-5.5: Complete** - Core foundation + Core Agent + safety framework  
-**🚧 Phase 6: Current** - Cloud, observability, and alerting adapters  
-**📋 Phase 7: Planned** - Knowledge store with embedding search  
-**📋 Phase 8: Planned** - Documentation co-pilot  
-**📋 Phase 9: Planned** - Additional clients (Web UI, VS Code)  
-
-See [docs/next-steps-plan.md](docs/next-steps-plan.md) for detailed status.
+---
 
 ## Project Structure
 
 ```text
 joe/
 ├── cmd/
-│   ├── joe/                  # CLI client entry point
-│   └── joecored/             # Daemon entry point  
+│   ├── joe/            # Interactive CLI client
+│   ├── joecored/       # Background daemon
+│   └── joe-mcp/        # MCP server (Claude Code, Cursor, Codex)
 ├── internal/
-│   ├── adapters/             # Infrastructure adapter registry
-│   │   ├── k8s/              # Kubernetes adapter (client-go)
-│   │   ├── git/              # Git adapter (go-git)
-│   │   └── aws/              # AWS adapter (SDK)
-│   ├── api/                  # HTTP API server (joecored)
-│   ├── client/               # HTTP client (joe→joecored)
-│   ├── config/               # Configuration loading & validation
-│   ├── core/                 # Core services container
-│   ├── coreagent/            # Core agent logic
-│   ├── llm/                  # LLM interface and implementations
-│   │   ├── claude/           # Claude 4 Sonnet adapter
-│   │   └── gemini/           # Gemini 2.5 adapters
-│   ├── llmfactory/           # LLM adapter factory with hot-swap
-│   ├── repl/                 # Interactive REPL and model selector
-│   ├── tools/                # Tool framework
-│   │   ├── core/             # Core tools (API-based)
-│   │   └── local/            # Local tools (filesystem, git, commands)
-│   ├── useragent/            # User agent orchestration
-│   ├── session/              # Session management
-│   ├── store/                # SQL storage layer (SQLite)
-│   ├── graph/                # Graph store (SQLite-based)
-│   ├── observability/        # OpenTelemetry logging and telemetry
-│   ├── logging/              # Structured logging setup
-│   └── notify/               # Notification service (Phase 6)
-├── docs/                     # Architecture and design documentation  
-├── test/                     # Testing infrastructure
-│   ├── e2e/                  # End-to-end tests
-│   ├── integration/          # Integration tests with mocks
-│   └── fixtures/             # Test data and configurations
-├── Makefile                  # Build, test, and run targets
-└── config.example.yaml       # Example configuration file
+│   ├── adapters/       # Infrastructure adapters (K8s, AWS, Prometheus, ...)
+│   ├── api/            # HTTP API handlers (joecored)
+│   ├── client/         # HTTP client (joe → joecored)
+│   ├── config/         # Configuration loading
+│   ├── core/           # Core services container
+│   ├── coreagent/      # Core Agent (background refresh, onboarding)
+│   ├── graph/          # Graph store (SQLite)
+│   ├── knowledge/      # Knowledge store, embeddings, sync, proposals
+│   ├── llm/            # LLM adapter interface + Claude/Gemini implementations
+│   ├── llmfactory/     # LLM adapter factory
+│   ├── mcp/            # MCP server implementation
+│   ├── observability/  # OpenTelemetry metrics + tracing
+│   ├── paths/          # ~/.joe/ path helpers
+│   ├── rbac/           # RBAC zones, policy engine, middleware
+│   ├── repl/           # Interactive REPL + model selector
+│   ├── safety/         # Action tiers, panic mode, safe mode, policy loader
+│   ├── store/          # SQL store (SQLite) + migrations (001–006)
+│   ├── tools/          # Tool registry, executor, tier enforcement
+│   │   ├── core/       # Core tools (graph, K8s, cloud via HTTP)
+│   │   ├── local/      # Local tools (file I/O, git, run_command)
+│   │   └── shared/     # Shared tools (dns, http, netcheck, traceroute)
+│   └── useragent/      # User Agent orchestration + session
+├── docs/               # Architecture and design docs
+├── test/               # Integration + E2E test harness
+├── config.example.yaml
+└── Makefile
 ```
+
+---
+
+## Development Status
+
+| Phase | Description                                                                                    | Status        |
+| ----- | ---------------------------------------------------------------------------------------------- | ------------- |
+| 1     | Foundation — two-binary architecture, LLM interface                                           | ✅ Complete   |
+| 2     | User Agent loop — REPL, tools, session management                                             | ✅ Complete   |
+| 3     | Core Services + API — SQL/graph store, API handlers                                           | ✅ Complete   |
+| 4     | Infrastructure Adapters — K8s, Git                                                            | ✅ Complete   |
+| 5     | Core Agent — background refresh, clarifications, onboarding                                   | ✅ Complete   |
+| 5.5   | Action Safety Framework — tiers, policy, self-protection                                      | ✅ Complete   |
+| 6     | Infrastructure Adapters — cloud, observability, alerting, data stores, GitOps, networking     | ✅ Complete   |
+| 7     | Knowledge Store — curated, synced, derived; semantic search                                   | ✅ Complete   |
+| 8     | Documentation Co-Pilot — draft generation, drift detection, proposal flow                     | ✅ Complete   |
+| 9     | Emergency Controls + MCP Server + RBAC                                                        | ✅ Complete   |
+| 10    | Code Review Integration — GitHub/GitLab PR adapters, review agent                            | 📋 Planned    |
+
+---
 
 ## Documentation
 
-- [CLAUDE.md](CLAUDE.md) - Project context for AI assistants
-- [CONFIG.md](CONFIG.md) - Configuration guide
-- [docs/joe-architecture.md](docs/joe-architecture.md) - Full architecture
-- [docs/joe-dataflow.md](docs/joe-dataflow.md) - Data flow details
-- [docs/joe-prompt.md](docs/joe-prompt.md) - System prompts and behavior
-- [docs/go-standards.md](docs/go-standards.md) - Go coding standards
-- [docs/observability.md](docs/observability.md) - Logging and telemetry
-- [docs/instrumentation.md](docs/instrumentation.md) - LLM instrumentation
+- [docs/joe-architecture.md](docs/joe-architecture.md) — Full architecture and component diagrams
+- [docs/joe-dataflow.md](docs/joe-dataflow.md) — Data flow and `.joe/` file processing
+- [docs/security-in-layers.md](docs/security-in-layers.md) — Action Safety Framework and Panic Mode spec
+- [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview
+- [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
+- [docs/go-standards.md](docs/go-standards.md) — Go coding conventions
 
-## Contributing
-
-This project is in active development. See [docs/go-standards.md](docs/go-standards.md) for coding conventions.
+---
 
 ## License
 

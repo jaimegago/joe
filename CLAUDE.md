@@ -228,30 +228,39 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 
-### Phase 9: Additional Clients + RBAC + Emergency Controls
+### Phase 9: Security Architecture + Additional Clients ← CURRENT
+
+**Security Zones & Pluggable Architecture:**
+- [ ] `cmd/joe-security/` binary (optional, for hardened deployments)
+- [ ] Security zones: prod-readonly, prod-write, dev-full, unassigned (default)
+- [ ] Source → Zone assignments (admin-controlled, LLM cannot modify)
+- [ ] Pluggable: embedded mode (same DB) or remote mode (separate joe-security process)
+- [ ] Protected tables: security_zones, source_zone_assignments, rbac_policies (hardcoded, LLM cannot write)
+
+**RBAC & Admin API:**
+- [ ] Principal → Zones policy model
+- [ ] Admin API: `/api/v1/admin/zones`, `/api/v1/admin/source-zones`, `/api/v1/admin/policies`
+- [ ] Authentication adapters (Entra ID, LDAP, OIDC, API keys)
+- [ ] Notification for unassigned sources
+
+**Emergency Shutdown (Panic Mode):**
+- [ ] `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1
+- [ ] Safe mode on restart (T1 only until explicit unlock)
+- [ ] `joe unlock --reason "..."` to resume
+
+**Additional Clients:**
 - [ ] Web UI (dashboards, graph visualization, planning)
-- [ ] MCP Server (Claude Code, Cursor, Codex — replaces need for VS Code extension)
-- [ ] Slack Bot (ChatOps for on-call, optional)
-- [ ] RBAC / permissions layer — see `docs/JOE_RBAC_IMPLEMENTATION.md` and `docs/JOE_SECURITY.md`
-  - Triggered by multi-user scenarios (Web UI, MCP); not required for Phase 7/8 (single-user)
-  - Tier 1 knowledge immutability (Phase 7) is enforced as a store invariant, not an RBAC gate
-- [ ] Emergency Shutdown (Panic Mode) — see `docs/security-in-layers.md` Part 7
-  - `/panic` REPL command, `joe panic` CLI, `POST /api/v1/panic` endpoint, SIGUSR1 signal
-  - Safe mode on restart (T1 only until explicit unlock)
-  - `joe unlock --reason "..."` to resume normal operation
+- [ ] MCP Server (Claude Code, Cursor, Codex)
+- [ ] Slack Bot (ChatOps, optional)
+
+**See:** `docs/JOE_SECURITY.md` (comprehensive), `docs/security-in-layers.md` Part 7
 
 ### Phase 10: Code Review Integration
 - [ ] GitHub/GitLab adapters with PR/MR capabilities
-  - GetPullRequest, GetPullRequestDiff, ListPullRequestComments (T1)
-  - PostReviewComment (T2), SubmitReview (T3)
-- [ ] Webhook receiver for PR events (`POST /api/v1/webhooks/github`, `/gitlab`)
-  - Signature validation (HMAC for GitHub, token for GitLab)
-  - Idempotency via delivery_id tracking
-- [ ] Review job queue (SQLite-backed, single worker)
-  - Deduplication: one review per (repo, pr_number, commit_sha)
-  - States: queued → in_progress → completed/failed
+- [ ] Webhook receiver (`POST /api/v1/webhooks/github`, `/gitlab`)
+- [ ] Review job queue (SQLite-backed, idempotent)
 - [ ] Review Agent: fetch diff → query graph → query knowledge → LLM analysis → post review
-- [ ] Safety policy for reviews: `github_comment` (T2), `github_request_changes` (T3), `github_approve` (T3, disabled by default)
+- [ ] Safety policy: github_comment (T2), github_request_changes (T3), github_approve (T3, disabled)
 
 ## Knowledge Store (Phase 7)
 

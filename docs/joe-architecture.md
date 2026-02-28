@@ -1962,14 +1962,29 @@ joe/
 │   ├── joe/                      # Joe Local (User Agent CLI)
 │   │   └── main.go               # Connects to joecored, runs REPL
 │   │
-│   └── joecored/                 # Joe Core (daemon)
-│       └── main.go               # Starts API server, Core Agent
+│   ├── joecored/                 # Joe Core (daemon)
+│   │   └── main.go               # Starts API server, Core Agent
+│   │
+│   └── joe-security/             # Security Service (optional, for hardened deployments)
+│       └── main.go               # Separate process with own DB
 │
 ├── internal/
 │   ├── api/                      # HTTP API (for joecored)
 │   │   ├── server.go             # HTTP server setup
 │   │   ├── handlers.go           # Route handlers
-│   │   └── middleware.go         # Logging, auth
+│   │   ├── middleware.go         # Logging, auth
+│   │   └── admin.go              # Admin API handlers (zones, policies)
+│   │
+│   ├── security/                 # Security policy (pluggable)
+│   │   ├── interface.go          # SecurityPolicy, SecurityAdmin interfaces
+│   │   ├── embedded.go           # EmbeddedSecurityPolicy (same DB)
+│   │   ├── remote.go             # RemoteSecurityPolicy (gRPC client)
+│   │   └── zones.go              # Zone definitions and evaluation
+│   │
+│   ├── securitysvc/              # joe-security server (for remote mode)
+│   │   ├── server.go             # gRPC/HTTP server
+│   │   ├── store.go              # security.db access
+│   │   └── admin.go              # Admin API implementation
 │   │
 │   ├── client/                   # HTTP client (for joe)
 │   │   └── client.go             # CoreClient HTTP implementation
@@ -2321,15 +2336,59 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 - [x] **Milestone: Joe can propose and publish doc updates with safety enforcement**
 
-### Phase 9: Additional Clients + RBAC + Emergency Controls ← CURRENT
+### Phase 9: Security Architecture + Additional Clients ← CURRENT
 
+**Security Service (pluggable architecture):**
+- [ ] `cmd/joe-security/` binary (optional, for hardened deployments)
+- [ ] `internal/security/interface.go` — SecurityPolicy interface
+- [ ] `internal/security/embedded.go` — EmbeddedSecurityPolicy (same DB, protected tables)
+- [ ] `internal/security/remote.go` — RemoteSecurityPolicy (gRPC client to joe-security)
+- [ ] `internal/securitysvc/` — joe-security server implementation
+- [ ] Config: `security.mode: embedded | remote`
+
+**Security Zones:**
+- [ ] Zone definitions: prod-readonly, prod-write, dev-full, unassigned (default)
+- [ ] Source → Zone assignments (admin-controlled, LLM cannot modify)
+- [ ] Zone-based permission evaluation in tool executor
+- [ ] Notification for unassigned sources
+
+**Protected Tables (hardcoded invariants):**
+- [ ] `internal/safety/invariants.go` — writeProtectedTables, appendOnlyTables
+- [ ] Tables protected: security_zones, source_zone_assignments, rbac_policies
+- [ ] Audit log: append-only (INSERT allowed, UPDATE/DELETE blocked)
+- [ ] Enforcement in tool executor before any SQL operation
+
+**RBAC Implementation:**
+- [ ] Principal → Zones policy model
+- [ ] Authentication adapters (Entra ID, LDAP, OIDC, API keys)
+- [ ] Token validation and caching
+- [ ] Policy evaluation middleware
+
+**Admin API (separate from LLM-accessible API):**
+- [ ] `POST /api/v1/admin/zones` — create/update zones
+- [ ] `POST /api/v1/admin/source-zones` — assign sources to zones
+- [ ] `POST /api/v1/admin/policies` — manage RBAC policies
+- [ ] `GET /api/v1/admin/source-zones/unassigned` — list unassigned sources
+- [ ] Requires admin authentication (separate from user auth)
+
+**Emergency Shutdown (Panic Mode):**
+- [ ] `/panic` REPL command, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1
+- [ ] Safe mode on restart (T1 only until explicit unlock)
+- [ ] `joe unlock --reason "..."` to resume
+- [ ] Panic state persistence (~/.joe/panic.state)
+
+**Additional Clients:**
 - [ ] Web UI (dashboards, graph visualization, planning)
-- [ ] MCP Server (Claude Code, Cursor, Codex — replaces need for VS Code extension)
+- [ ] MCP Server (Claude Code, Cursor, Codex — replaces VS Code extension)
 - [ ] Slack Bot (ChatOps for on-call, optional)
 - [ ] In-cluster deployment for joecored
-- [ ] **RBAC:** Per-user permissions layer; see `docs/JOE_RBAC_IMPLEMENTATION.md` and `docs/JOE_SECURITY.md`
-- [ ] **Emergency Shutdown:** Panic mode with safe-mode restart; see `docs/security-in-layers.md` Part 7
-- [ ] **Milestone: Multi-user Joe with per-user safety boundaries and emergency controls**
+
+**Database Migrations:**
+- [ ] Migration 006: security_zones table
+- [ ] Migration 007: source_zone_assignments table
+- [ ] Migration 008: rbac_policies table (replaces environment-based model)
+
+**Milestone: Multi-user Joe with zone-based security, pluggable security service, and emergency controls**
 
 ### Phase 10: Code Review Integration
 

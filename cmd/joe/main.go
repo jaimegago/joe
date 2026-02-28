@@ -60,7 +60,96 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return runWithDeps(ctx, args, stdout, stderr, defaultRunDeps())
 }
 
+// runPanicCommand sends an emergency shutdown request to joecored.
+func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	fs := flag.NewFlagSet("joe panic", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
+	reason := fs.String("reason", "operator triggered via CLI", "reason for the emergency shutdown")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	cfg, err := deps.loadConfig(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+
+	scheme := "http"
+	if cfg.Server.TLSEnabled {
+		scheme = "https"
+	}
+	joecoreURL := scheme + "://" + cfg.Server.Address
+	var clientOpts []client.ClientOption
+	if cfg.Server.APIKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	}
+	c := deps.newClient(joecoreURL, clientOpts...)
+
+	if err := c.TriggerPanic(ctx, *reason); err != nil {
+		fmt.Fprintf(stderr, "Error: failed to trigger panic: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, "Emergency shutdown triggered. joecored will restart in safe mode.")
+	fmt.Fprintln(stdout, "Use 'joe unlock --reason \"...\"' to resume normal operation.")
+	return 0
+}
+
+// runUnlockCommand exits joecored's safe mode.
+func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
+	reason := fs.String("reason", "", "reason for unlocking (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *reason == "" {
+		fmt.Fprintln(stderr, "Error: --reason is required")
+		fmt.Fprintln(stderr, "Usage: joe unlock --reason \"incident resolved\"")
+		return 1
+	}
+
+	cfg, err := deps.loadConfig(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+
+	scheme := "http"
+	if cfg.Server.TLSEnabled {
+		scheme = "https"
+	}
+	joecoreURL := scheme + "://" + cfg.Server.Address
+	var clientOpts []client.ClientOption
+	if cfg.Server.APIKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	}
+	c := deps.newClient(joecoreURL, clientOpts...)
+
+	if err := c.Unlock(ctx, *reason); err != nil {
+		fmt.Fprintf(stderr, "Error: failed to unlock: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, "Safe mode lifted. Normal operation resumed.")
+	return 0
+}
+
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	// Dispatch subcommands before parsing REPL flags.
+	if len(args) > 0 {
+		switch args[0] {
+		case "panic":
+			return runPanicCommand(ctx, args[1:], stdout, stderr, deps)
+		case "unlock":
+			return runUnlockCommand(ctx, args[1:], stdout, stderr, deps)
+		}
+	}
+
 	fs := flag.NewFlagSet("joe", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")

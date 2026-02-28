@@ -78,6 +78,15 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 
 	// Step 2: Classify and check safety policy
 	classification := safety.ClassifyTool(name)
+
+	// Safe mode: only T1 (Observe) tools are permitted while joecored is in
+	// emergency shutdown recovery mode.
+	if safety.IsSafeModeActive() && classification.Tier > safety.TierObserve {
+		err := fmt.Errorf("safe mode active: only read-only (T1) tools are allowed — run 'joe unlock --reason \"...\"' to resume")
+		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
+		return nil, err
+	}
+
 	if err := safety.CheckAccess(name, e.policy); err != nil {
 		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, err
