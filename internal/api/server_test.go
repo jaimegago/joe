@@ -99,6 +99,15 @@ func seedTestGraph(t *testing.T, store graph.GraphStore) {
 	}
 }
 
+func TestNew_NilServices_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("api.New(nil) should panic")
+		}
+	}()
+	api.New(nil) //nolint:staticcheck // intentional nil to verify panic
+}
+
 func TestHandleStatus(t *testing.T) {
 	server, _ := setupTestServer(t)
 	mux := setupMux(t, server)

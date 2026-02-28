@@ -169,8 +169,11 @@ func (d *Detector) fetchConfluencePage(ctx context.Context, cfg confluenceSource
 	if err != nil {
 		return "", fmt.Errorf("fetch confluence page: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if err != nil {
+		return "", fmt.Errorf("read confluence response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("confluence API error (status %d)", resp.StatusCode)
 	}
@@ -201,8 +204,11 @@ func (d *Detector) fetchNotionPage(ctx context.Context, token, pageID string) (s
 	if err != nil {
 		return "", fmt.Errorf("fetch notion page: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if err != nil {
+		return "", fmt.Errorf("read notion response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("notion API error (status %d)", resp.StatusCode)
 	}

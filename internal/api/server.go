@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -20,11 +21,14 @@ type Server struct {
 	services *core.Services
 }
 
-// New creates a new API server with access to core services
+// New creates a new API server with access to core services.
+// services must not be nil; callers that do not have all sub-services wired
+// should pass zero-value sub-service fields rather than a nil pointer.
 func New(services *core.Services) *Server {
-	if services != nil {
-		services.Metrics = observability.EnsureMetrics(services.Metrics)
+	if services == nil {
+		panic("api.New: services must not be nil")
 	}
+	services.Metrics = observability.EnsureMetrics(services.Metrics)
 	return &Server{services: services}
 }
 
@@ -222,9 +226,12 @@ func (h *alertingHandler) handleGrafanaAlerts(w http.ResponseWriter, r *http.Req
 	h.server.handleGrafanaAlerts(w, r)
 }
 
-// registerClarificationRoutes registers clarification management routes
+// registerClarificationRoutes registers clarification management routes.
+// Routes are only registered when the store sub-service is available;
+// callers that omit the store (e.g. lightweight deployments) get no
+// clarification endpoints rather than a panic at request time.
 func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) {
-	if s.services == nil || s.services.Store == nil {
+	if s.services.Store == nil {
 		return
 	}
 	handler := &clarificationHandler{
@@ -468,7 +475,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// Empty body is OK, treat as full refresh
-		if err.Error() != "EOF" {
+		if !errors.Is(err, io.EOF) {
 			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON payload", map[string]any{
 				"error": err.Error(),
 			})
