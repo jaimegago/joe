@@ -167,21 +167,21 @@ func TestRegisterPanicRoutes(t *testing.T) {
 	s := &Server{}
 	s.registerPanicRoutes(mux, "/api/v1")
 
-	routes := []struct {
-		method string
-		path   string
-	}{
-		{"POST", "/api/v1/panic"},
-		{"GET", "/api/v1/panic/status"},
-		{"POST", "/api/v1/unlock"},
+	// Use wrong-method (OPTIONS) requests to confirm routes are registered (405)
+	// without invoking handlers. POST /panic in particular schedules os.Exit,
+	// so we must never call it with its real method in tests.
+	paths := []string{
+		"/api/v1/panic",
+		"/api/v1/panic/status",
+		"/api/v1/unlock",
 	}
 
-	for _, r := range routes {
-		req := httptest.NewRequest(r.method, r.path, nil)
+	for _, p := range paths {
+		req := httptest.NewRequest("OPTIONS", p, nil)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
-		if w.Code == http.StatusMethodNotAllowed || w.Code == http.StatusNotFound {
-			t.Errorf("route %s %s not registered (got %d)", r.method, r.path, w.Code)
+		if w.Code == http.StatusNotFound {
+			t.Errorf("route %s not registered (got 404)", p)
 		}
 	}
 }
