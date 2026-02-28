@@ -40,7 +40,9 @@
       "Read(//Users/jaimegago/go/pkg/mod/**)"
     ],
     "additionalDirectories": [
-      "/Users/jaimegago/joe/docs"
+      "/Users/jaimegago/joe/docs",
+      "/tmp",
+      "/Users/jaimegago/joe"
     ]
   }
 }

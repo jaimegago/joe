@@ -69,8 +69,11 @@ func GetPageVersion(ctx context.Context, cfg *Config, pageID string) (int, error
 	if err != nil {
 		return 0, fmt.Errorf("get confluence page: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if err != nil {
+		return 0, fmt.Errorf("read confluence response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("confluence get error (status %d)", resp.StatusCode)

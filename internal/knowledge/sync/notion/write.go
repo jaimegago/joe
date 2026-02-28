@@ -46,8 +46,11 @@ func listBlockChildren(ctx context.Context, client *http.Client, token, blockID 
 	if err != nil {
 		return nil, err
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read notion response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("list blocks (status %d)", resp.StatusCode)
 	}
