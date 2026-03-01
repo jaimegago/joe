@@ -255,12 +255,15 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 
 **See:** `docs/JOE_SECURITY.md` (comprehensive), `docs/security-in-layers.md` Part 7
 
-### Phase 10: Code Review Integration
-- [ ] GitHub/GitLab adapters with PR/MR capabilities
-- [ ] Webhook receiver (`POST /api/v1/webhooks/github`, `/gitlab`)
-- [ ] Review job queue (SQLite-backed, idempotent)
-- [ ] Review Agent: fetch diff → query graph → query knowledge → LLM analysis → post review
-- [ ] Safety policy: github_comment (T2), github_request_changes (T3), github_approve (T3, disabled)
+### Phase 10: Code Review Integration ✅ COMPLETE
+- [x] GitHub/GitLab adapters with PR/MR capabilities (`internal/adapters/github/`, `internal/adapters/gitlab/`)
+- [x] Webhook receiver (`POST /api/v1/webhooks/github`, `/gitlab`) — HMAC + token validation, idempotent
+- [x] Review job queue (SQLite-backed, idempotent via `event_id UNIQUE` + `INSERT OR IGNORE`)
+- [x] Review Agent: fetch diff → query graph → query knowledge → LLM analysis → post review (`internal/review/agent.go`)
+- [x] Safety policy: github_comment (T2), github_request_changes (T3), gitlab_comment (T2)
+- [x] Core tools: `github_pr_get`, `github_pr_diff`, `github_comment`, `github_request_changes`, `gitlab_mr_get`, `gitlab_mr_diff`, `gitlab_comment`
+- [x] CLI: `joe review enqueue|list|get`
+- [x] Client bindings (`internal/client/review.go`)
 
 ## Knowledge Store (Phase 7)
 

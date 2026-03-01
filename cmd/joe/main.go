@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jaimegago/joe/internal/client"
@@ -17,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/repl"
+	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
@@ -139,6 +141,116 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	return 0
 }
 
+// runReviewCommand handles the `joe review` subcommand for managing review jobs.
+func runReviewCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: joe review <enqueue|list|get> [flags]")
+		fmt.Fprintln(stderr, "  enqueue  --platform <github|gitlab> --source <id> --owner <owner> --repo <repo> --pr <number>")
+		fmt.Fprintln(stderr, "  list     [--platform <github|gitlab>] [--status <pending|running|done|failed>] [--limit N]")
+		fmt.Fprintln(stderr, "  get      <job-id>")
+		return 2
+	}
+
+	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+	scheme := "http"
+	if cfg.Server.TLSEnabled {
+		scheme = "https"
+	}
+	joecoreURL := scheme + "://" + cfg.Server.Address
+	var clientOpts []client.ClientOption
+	if cfg.Server.APIKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	}
+	c := deps.newClient(joecoreURL, clientOpts...)
+
+	switch args[0] {
+	case "enqueue":
+		fs := flag.NewFlagSet("joe review enqueue", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		platform := fs.String("platform", "github", "platform: github or gitlab")
+		sourceID := fs.String("source", "", "source ID (required)")
+		owner := fs.String("owner", "", "repository owner or GitLab project ID (required)")
+		repo := fs.String("repo", "", "repository name (required for GitHub)")
+		pr := fs.Int("pr", 0, "PR/MR number (required)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *sourceID == "" || *owner == "" || *pr == 0 {
+			fmt.Fprintln(stderr, "Error: --source, --owner, and --pr are required")
+			return 1
+		}
+		job := &review.ReviewJob{
+			Platform: review.Platform(*platform),
+			SourceID: *sourceID,
+			Owner:    *owner,
+			Repo:     *repo,
+			PRNumber: *pr,
+		}
+		created, err := c.EnqueueReview(ctx, job)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Review job enqueued: %s (status: %s)\n", created.ID, created.Status)
+		return 0
+
+	case "list":
+		fs := flag.NewFlagSet("joe review list", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		platform := fs.String("platform", "", "filter by platform")
+		status := fs.String("status", "", "filter by status")
+		limit := fs.Int("limit", 20, "maximum number of results")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		jobs, err := c.ListReviews(ctx, review.Platform(*platform), review.JobStatus(*status), *limit)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(jobs) == 0 {
+			fmt.Fprintln(stdout, "No review jobs found.")
+			return 0
+		}
+		fmt.Fprintf(stdout, "%-36s  %-8s  %-8s  %s/%s #%s\n", "ID", "PLATFORM", "STATUS", "OWNER", "REPO", "PR")
+		for _, j := range jobs {
+			fmt.Fprintf(stdout, "%-36s  %-8s  %-8s  %s/%s #%s\n",
+				j.ID, j.Platform, j.Status, j.Owner, j.Repo, strconv.Itoa(j.PRNumber))
+		}
+		return 0
+
+	case "get":
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "Usage: joe review get <job-id>")
+			return 2
+		}
+		job, err := c.GetReview(ctx, args[1])
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "ID:       %s\n", job.ID)
+		fmt.Fprintf(stdout, "Platform: %s\n", job.Platform)
+		fmt.Fprintf(stdout, "Status:   %s\n", job.Status)
+		fmt.Fprintf(stdout, "Repo:     %s/%s #%d\n", job.Owner, job.Repo, job.PRNumber)
+		if job.Error != "" {
+			fmt.Fprintf(stdout, "Error:    %s\n", job.Error)
+		}
+		if job.ReviewBody != "" {
+			fmt.Fprintf(stdout, "\n--- Review ---\n%s\n", job.ReviewBody)
+		}
+		return 0
+
+	default:
+		fmt.Fprintf(stderr, "Unknown review subcommand: %s\n", args[0])
+		return 2
+	}
+}
+
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	// Dispatch subcommands before parsing REPL flags.
 	if len(args) > 0 {
@@ -147,6 +259,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runPanicCommand(ctx, args[1:], stdout, stderr, deps)
 		case "unlock":
 			return runUnlockCommand(ctx, args[1:], stdout, stderr, deps)
+		case "review":
+			return runReviewCommand(ctx, args[1:], stdout, stderr, deps)
 		}
 	}
 

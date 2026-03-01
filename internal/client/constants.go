@@ -57,4 +57,9 @@ const (
 	apiRegistryOCIBasePath         = "/api/v1/registry/oci"
 	apiRegistryArtifactoryBasePath = "/api/v1/registry/artifactory"
 	apiRegistryECRBasePath         = "/api/v1/registry/ecr"
+
+	// Code review base paths (Phase 10).
+	apiGitHubBasePath = "/api/v1/github"
+	apiGitLabBasePath = "/api/v1/gitlab"
+	apiReviewsPath    = "/api/v1/reviews"
 )

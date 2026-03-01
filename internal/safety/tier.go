@@ -166,6 +166,25 @@ var toolRegistry = map[string]ToolClassification{
 	"publish_doc_update_git":        {Tier: TierAct, PolicyKey: "git_push", Description: "Commit and push doc proposal to Git repo"},
 	// publish_doc_update selects the runtime-specific policy key per target type.
 	"publish_doc_update": {Tier: TierAct, PolicyKey: "confluence_publish", Description: "Publish an approved doc proposal to its target system"},
+
+	// === Phase 10: Code Review Integration ===
+
+	// T1: Observe — read-only PR/MR data
+	"github_pr_get":   {Tier: TierObserve, Description: "Get GitHub pull request metadata"},
+	"github_pr_diff":  {Tier: TierObserve, Description: "Get GitHub pull request unified diff"},
+	"github_list_prs": {Tier: TierObserve, Description: "List GitHub pull requests for a repository"},
+	"gitlab_mr_get":   {Tier: TierObserve, Description: "Get GitLab merge request metadata"},
+	"gitlab_mr_diff":  {Tier: TierObserve, Description: "Get GitLab merge request unified diff"},
+	"gitlab_list_mrs": {Tier: TierObserve, Description: "List GitLab merge requests for a project"},
+
+	// T2: Record — posts a comment (external write, low blast radius, informational)
+	"github_comment": {Tier: TierRecord, PolicyKey: "github_comment", Description: "Post a review comment on a GitHub pull request"},
+	"gitlab_comment": {Tier: TierRecord, PolicyKey: "gitlab_comment", Description: "Post a note on a GitLab merge request"},
+
+	// T3: Act — requests changes (gates merging, high-impact external action)
+	"github_request_changes": {Tier: TierAct, PolicyKey: "github_request_changes", Description: "Submit a GitHub review requesting changes on a pull request"},
+	// NOTE: github_approve (T3) is intentionally not registered as a tool in this phase.
+	// To enable, add PolicyKey "github_approve" to safety policy and register the tool manually.
 }
 
 // ClassifyTool returns the classification for a tool by name.

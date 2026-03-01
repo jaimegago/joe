@@ -47,6 +47,10 @@ const (
 	SourceTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
 	SourceTypeArtifactory = "artifactory"  // JFrog Artifactory
 	SourceTypeECR         = "ecr"          // AWS Elastic Container Registry
+
+	// Phase 10 — Code review source types.
+	SourceTypeGitHub = "github"
+	SourceTypeGitLab = "gitlab"
 )
 
 // AllowedSourceTypes returns the supported source types.
@@ -86,6 +90,8 @@ func AllowedSourceTypes() []string {
 		SourceTypeDockerHub,
 		SourceTypeArtifactory,
 		SourceTypeECR,
+		SourceTypeGitHub,
+		SourceTypeGitLab,
 	}
 }
 
@@ -126,9 +132,13 @@ func IsValidSourceType(sourceType string) bool {
 		SourceTypeOCIRegistry,
 		SourceTypeDockerHub,
 		SourceTypeArtifactory,
-		SourceTypeECR:
+		SourceTypeECR,
+		SourceTypeGitHub,
+		SourceTypeGitLab:
 		return true
 	default:
 		return false
 	}
 }
+
+// Phase 10 constants are appended below — source types for GitHub and GitLab.

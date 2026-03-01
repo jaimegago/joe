@@ -15,6 +15,8 @@ import (
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	githubadapter "github.com/jaimegago/joe/internal/adapters/github"
+	gitlabadapter "github.com/jaimegago/joe/internal/adapters/gitlab"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
 	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
@@ -38,6 +40,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -46,6 +49,84 @@ type coreAgentRunner interface {
 	core.CoreAgent
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
+}
+
+// adapterRegistryOps wraps the adapter registry to implement review.GitHubOps and review.GitLabOps.
+// It looks up the appropriate adapter by sourceID and delegates the call.
+type adapterRegistryOps struct {
+	registry *adapters.Registry
+}
+
+func (o adapterRegistryOps) GitHubGetPR(ctx context.Context, sourceID, owner, repo string, number int) (*githubadapter.PRInfo, error) {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("github adapter %q: %w", sourceID, err)
+	}
+	gh, ok := a.(githubadapter.GitHubAdapter)
+	if !ok {
+		return nil, fmt.Errorf("source %q is not a GitHub adapter", sourceID)
+	}
+	return gh.GetPR(ctx, owner, repo, number)
+}
+
+func (o adapterRegistryOps) GitHubGetPRDiff(ctx context.Context, sourceID, owner, repo string, number int) (string, error) {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return "", fmt.Errorf("github adapter %q: %w", sourceID, err)
+	}
+	gh, ok := a.(githubadapter.GitHubAdapter)
+	if !ok {
+		return "", fmt.Errorf("source %q is not a GitHub adapter", sourceID)
+	}
+	return gh.GetPRDiff(ctx, owner, repo, number)
+}
+
+func (o adapterRegistryOps) GitHubPostComment(ctx context.Context, sourceID, owner, repo string, number int, body string) error {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return fmt.Errorf("github adapter %q: %w", sourceID, err)
+	}
+	gh, ok := a.(githubadapter.GitHubAdapter)
+	if !ok {
+		return fmt.Errorf("source %q is not a GitHub adapter", sourceID)
+	}
+	return gh.PostComment(ctx, owner, repo, number, body)
+}
+
+func (o adapterRegistryOps) GitLabGetMR(ctx context.Context, sourceID, projectID string, iid int) (*gitlabadapter.MRInfo, error) {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
+	}
+	gl, ok := a.(gitlabadapter.GitLabAdapter)
+	if !ok {
+		return nil, fmt.Errorf("source %q is not a GitLab adapter", sourceID)
+	}
+	return gl.GetMR(ctx, projectID, iid)
+}
+
+func (o adapterRegistryOps) GitLabGetMRDiff(ctx context.Context, sourceID, projectID string, iid int) (string, error) {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return "", fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
+	}
+	gl, ok := a.(gitlabadapter.GitLabAdapter)
+	if !ok {
+		return "", fmt.Errorf("source %q is not a GitLab adapter", sourceID)
+	}
+	return gl.GetMRDiff(ctx, projectID, iid)
+}
+
+func (o adapterRegistryOps) GitLabPostNote(ctx context.Context, sourceID, projectID string, iid int, body string) error {
+	a, err := o.registry.Get(sourceID)
+	if err != nil {
+		return fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
+	}
+	gl, ok := a.(gitlabadapter.GitLabAdapter)
+	if !ok {
+		return fmt.Errorf("source %q is not a GitLab adapter", sourceID)
+	}
+	return gl.PostNote(ctx, projectID, iid, body)
 }
 
 type runDeps struct {
@@ -267,6 +348,22 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.Knowledge = knowledge.NewService(sqlStore.Knowledge, embedder)
 	services.DocDrafter = drafts.New(services.Knowledge, services.Proposals, llmAdapter)
 	slog.Info("knowledge store ready", "embedding_model", embModelName)
+
+	// Wire up the Review Agent (Phase 10).
+	// The agent uses the adapter registry for GitHub/GitLab ops and the
+	// knowledge/graph stores for context enrichment.
+	if services.Review != nil {
+		reviewAgent := review.NewReviewAgent(
+			adapterRegistryOps{adapterRegistry},
+			adapterRegistryOps{adapterRegistry},
+			services.Knowledge,
+			services.Graph,
+			llmAdapter,
+			services.Review,
+		)
+		services.ReviewAgent = reviewAgent
+		slog.Info("review agent ready")
+	}
 
 	// Start knowledge sync coordinator when sync is enabled.
 	if cfg.Knowledge.SyncEnabled {
@@ -559,6 +656,35 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 		}
 		registry.Register(src.ID, adapter)
 		slog.Info("connected newrelic source", "id", src.ID, "name", src.Name)
+	}
+
+	// Phase 10 — GitHub and GitLab sources for code review.
+	githubSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeGitHub)
+	if err != nil {
+		slog.Warn("failed to load github sources", "error", err)
+	}
+	for _, src := range githubSources {
+		adapter := githubadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect github source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected github source", "id", src.ID, "name", src.Name)
+	}
+
+	gitlabSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeGitLab)
+	if err != nil {
+		slog.Warn("failed to load gitlab sources", "error", err)
+	}
+	for _, src := range gitlabSources {
+		adapter := gitlabadapter.New()
+		if err := adapter.Connect(ctx, *src); err != nil {
+			slog.Warn("failed to connect gitlab source", "id", src.ID, "error", err)
+			continue
+		}
+		registry.Register(src.ID, adapter)
+		slog.Info("connected gitlab source", "id", src.ID, "name", src.Name)
 	}
 }
 

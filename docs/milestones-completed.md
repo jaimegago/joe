@@ -1,10 +1,10 @@
-# Milestones 1-8: Completed Phases (Historical Reference)
+# Milestones 1-9: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Phases 1–8). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
+This document records the completed phases of Joe's development (Phases 1–9). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Phases 1–8 complete
+**Current Status:** ✅ Phases 1–9 complete
 
-**Current Phase:** Phase 9 - Additional Clients + RBAC (see `CLAUDE.md` for planning)
+**Current Phase:** Phase 10 - Code Review Integration (see `CLAUDE.md` for planning)
 
 ---
 
@@ -19,6 +19,9 @@ This document records the completed phases of Joe's development (Phases 1–8). 
 - ✅ **Phase 6.13: Artifact Registries** - Complete (OCI/DockerHub, Artifactory, ECR adapters; registry_query, artifactory_query, ecr_query tools)
 - ✅ **Phase 7: Knowledge Store** - Complete (three-tier knowledge model, Confluence/Notion sync, LLM-derived insights, semantic search with embeddings)
 - ✅ **Phase 8: Documentation Co-Pilot** - Complete (write adapters for Confluence/Notion/Git, draft generation via LLM + knowledge search, human approval flow, drift detection, proposals API)
+- ✅ **Phase 9.1: Emergency Shutdown / Panic Mode** - Complete (REPL `/panic`, CLI `joe panic`, API endpoints, SIGUSR1 signal handler, safe mode persistence, `joe unlock`)
+- ✅ **Phase 9.2: MCP Server** - Complete (`cmd/joe-mcp/` binary, stdio transport, 8 Joe tools, Claude Code / Cursor integration)
+- ✅ **Phase 9.3: RBAC** - Complete (`internal/rbac/`, migration 006, 4 default zones, Admin API, API key identity provider, RBAC enforcement middleware)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -370,6 +373,105 @@ Status: ✅ Complete — 40+ adapters, all 19 graph edge types wired, test cover
 - Core Agent tool: `save_knowledge_entry` (T2) registered in `internal/coreagent/agent.go`
 
 Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, semantic search operational, session learning wired
+
+---
+
+## 8) Phase 9: Security Architecture + Additional Clients
+
+### 9.1 Emergency Shutdown (Panic Mode)
+
+9.1.1 ✅ DONE: Panic trigger system
+
+- Global atomic panic flag; `TriggerPanic(source, user, reason)` sets flag and cancels root context
+- Signal handler: `SIGUSR1` on joecored triggers panic sequence
+- REPL `/panic` command: confirmation prompt ("Type 'CONFIRM PANIC'"), then calls panic API
+- CLI `joe panic`: subcommand in `cmd/joe/main.go`
+
+9.1.2 ✅ DONE: Panic state persistence
+
+- `PanicState` YAML written to `~/.joe/panic.state` on panic exit
+- Loaded at joecored startup; if present, safe mode is activated automatically
+- Fields: `triggered_at`, `trigger_source`, `trigger_user`, `reason`, `incomplete_operations`
+
+9.1.3 ✅ DONE: Safe mode enforcement
+
+- `SafeMode` checks flag before every tool execute; T2/T3 tools return `ErrSafeMode`
+- Tool executor gate queries safe mode state from `internal/safety/safemode.go`
+- Background refresh loop paused while in safe mode
+
+9.1.4 ✅ DONE: Unlock flow
+
+- `POST /api/v1/unlock` + `joe unlock --reason "..."` CLI
+- Reason field mandatory; unlock event logged with user and reason
+- Clears safe mode flag and removes `~/.joe/panic.state`
+
+9.1.5 ✅ DONE: API endpoints + tests
+
+- `POST /api/v1/panic` — trigger shutdown
+- `GET /api/v1/panic/status` — check safe mode state
+- `POST /api/v1/unlock` — exit safe mode
+
+**Status: ✅ Complete** — `internal/safety/panic.go`, `panic_state.go`, `safemode.go`, `unlock.go`
+
+---
+
+### 9.2 MCP Server
+
+9.2.1 ✅ DONE: MCP binary
+
+- `cmd/joe-mcp/main.go`: reads `JOE_SERVER` + `JOE_API_KEY` env vars
+- Stdio transport (JSON-RPC over stdin/stdout) using `github.com/mark3labs/mcp-go v0.44.1`
+
+9.2.2 ✅ DONE: 8 tool definitions
+
+- `graph_query`, `graph_related` (graph traversal)
+- `k8s_get`, `k8s_logs` (Kubernetes)
+- `metrics_query` (Prometheus/Datadog)
+- `logs_search` (Loki/Splunk)
+- `knowledge_search` (knowledge store semantic search)
+- `incidents` (PagerDuty/Alertmanager incidents)
+
+9.2.3 ✅ DONE: Dispatcher + client wiring
+
+- `internal/mcp/dispatcher.go` routes tool calls to `*client.Client`
+- `internal/mcp/server.go` creates MCP server with tool registrations
+
+**Status: ✅ Complete** — `cmd/joe-mcp/`, `internal/mcp/`
+
+---
+
+### 9.3 RBAC
+
+9.3.1 ✅ DONE: Security zones
+
+- 4 default zones: `prod-readonly`, `prod-write`, `dev-full`, `unassigned`
+- Zone definitions and source-to-zone assignments in `internal/rbac/zones.go`
+- New sources default to `unassigned` (read-only) until admin assigns a zone
+
+9.3.2 ✅ DONE: Policy engine + identity provider
+
+- `internal/rbac/policy.go`: principal → zone permission evaluation
+- `internal/rbac/identity.go`: API key → principal mapping via `rbac.NewAPIKeyProvider`
+- `server.Principal` config field for API key → principal name mapping
+
+9.3.3 ✅ DONE: RBAC middleware
+
+- `internal/rbac/middleware.go`: enforces zone permissions on adapter routes (`/api/v1/{adapter}/{sourceID}/...`)
+- Wired in `cmd/joecored/main.go` as `services.RBAC`
+- Non-source routes (graph, control, admin) bypass zone enforcement
+
+9.3.4 ✅ DONE: Admin API
+
+- `GET/POST /api/v1/admin/zones` — list/create zones
+- `GET/POST /api/v1/admin/source-zones` — get/assign source→zone mappings
+- `GET /api/v1/admin/source-zones/unassigned` — list unassigned sources
+- `GET/POST /api/v1/admin/policies` — manage principal policies
+
+9.3.5 ✅ DONE: SQL migration
+
+- Migration `006_rbac.up.sql`: tables `security_zones`, `source_zone_assignments`, `rbac_policies` (write-protected per invariants)
+
+**Status: ✅ Complete** — `internal/rbac/`, `internal/store/migrations/006_rbac.up.sql`
 
 ---
 

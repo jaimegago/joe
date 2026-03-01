@@ -421,7 +421,7 @@ Joe's service account should follow least-privilege:
 | Gap | Severity | Status | Detail |
 | ----- | -------- | ------ | ------ |
 | ~~No authentication~~ | ~~CRITICAL~~ | **FIXED** | Bearer token middleware on all `/api/v1/` routes (`internal/api/middleware.go`) |
-| No rate limiting | HIGH | Open | No middleware to prevent DoS or brute-force |
+| ~~No rate limiting~~ | ~~HIGH~~ | **FIXED** | Rate limiting middleware added in Phase 6.5 (`internal/api/middleware.go`) |
 | ~~No request size limits~~ | ~~HIGH~~ | **FIXED** | `http.MaxBytesReader` wraps all request bodies, default 1 MB (`internal/api/middleware.go`) |
 | Plaintext HTTP | HIGH | Open | joe↔joecored traffic unencrypted; credentials in transit exposed |
 | No CORS / security headers | MEDIUM | Open | Missing `X-Content-Type-Options`, `X-Frame-Options`, etc. |
@@ -453,8 +453,8 @@ Joe's service account should follow least-privilege:
 
 | Gap | Severity | Status | Detail |
 | ----- | -------- | ------ | ------ |
-| No per-source access control | HIGH | Open | Any client can query any infrastructure source |
-| No user identity model | HIGH | Open | No concept of who is making a request |
+| ~~No per-source access control~~ | ~~HIGH~~ | **FIXED** | Security zones + RBAC middleware enforce per-source access control (Phase 9.3) |
+| ~~No user identity model~~ | ~~HIGH~~ | **FIXED** | API key → principal identity mapping via `rbac.NewAPIKeyProvider` (Phase 9.3) |
 | No audit logging | MEDIUM | Open | No record of who did what, when |
 
 ---
@@ -517,11 +517,11 @@ All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, t
 **13. Mutation circuit breaker** — rolling window rate limiter on T3 actions with manual reset (§3.7)
 **14. Credential isolation enforcement** — validate that joecored never uses user-provided credentials for infrastructure operations; service account separation (§3.8)
 
-### Do in Phase 9 (multi-user)
+### Phase 9 (multi-user) — COMPLETE
 
-**12. RBAC / per-source authorization**
-**13. Per-user safety policies**
-**14. Credential rotation**
+**12. RBAC / per-source authorization** ✅ — security zones, RBAC middleware, Admin API (`internal/rbac/`)
+**13. Emergency shutdown / panic mode** ✅ — `internal/safety/panic.go`, `safemode.go`, `unlock.go`
+**14. Credential rotation** — still open
 
 ---
 
