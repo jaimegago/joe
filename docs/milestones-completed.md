@@ -1,10 +1,10 @@
-# Milestones 1-9: Completed Phases (Historical Reference)
+# Milestones 1-11: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Phases 1–9). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
+This document records the completed phases of Joe's development (Phases 1–11). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Phases 1–9 complete
+**Current Status:** ✅ Phases 1–11 complete
 
-**Current Phase:** Phase 10 - Code Review Integration (see `CLAUDE.md` for planning)
+**Current Phase:** Phase 12 - Web UI (see `CLAUDE.md` for planning)
 
 ---
 
@@ -22,6 +22,8 @@ This document records the completed phases of Joe's development (Phases 1–9). 
 - ✅ **Phase 9.1: Emergency Shutdown / Panic Mode** - Complete (REPL `/panic`, CLI `joe panic`, API endpoints, SIGUSR1 signal handler, safe mode persistence, `joe unlock`)
 - ✅ **Phase 9.2: MCP Server** - Complete (`cmd/joe-mcp/` binary, stdio transport, 8 Joe tools, Claude Code / Cursor integration)
 - ✅ **Phase 9.3: RBAC** - Complete (`internal/rbac/`, migration 006, 4 default zones, Admin API, API key identity provider, RBAC enforcement middleware)
+- ✅ **Phase 10: Code Review Integration** - Complete (GitHub/GitLab adapters, webhook receiver, review job queue, Review Agent, 7 core tools, `joe review` CLI)
+- ✅ **Phase 11: Slack Bot** - Complete (`cmd/joe-slack/` binary, Socket Mode, `/joe ask|status|help`, DM + mention handling, Block Kit formatting)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -472,6 +474,128 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 - Migration `006_rbac.up.sql`: tables `security_zones`, `source_zone_assignments`, `rbac_policies` (write-protected per invariants)
 
 **Status: ✅ Complete** — `internal/rbac/`, `internal/store/migrations/006_rbac.up.sql`
+
+---
+
+## 9) Phase 10: Code Review Integration
+
+### 10.1 GitHub & GitLab Adapters
+
+10.1.1 ✅ DONE: GitHub adapter
+
+- `internal/adapters/github/` — REST API client for PRs, diffs, and comments
+- `GetPR`, `GetDiff`, `PostComment`, `RequestChanges` methods
+- HMAC signature validation for webhook payloads
+
+10.1.2 ✅ DONE: GitLab adapter
+
+- `internal/adapters/gitlab/` — REST API client for MRs, diffs, and comments
+- `GetMR`, `GetDiff`, `PostComment` methods
+- Token-based webhook validation
+
+### 10.2 Webhook Receiver
+
+10.2.1 ✅ DONE: Webhook endpoints
+
+- `POST /api/v1/webhooks/github` — HMAC + token validation, idempotent via `event_id UNIQUE`
+- `POST /api/v1/webhooks/gitlab` — token validation, idempotent
+- Both enqueue a `ReviewJob` into the SQLite-backed job queue (`INSERT OR IGNORE`)
+
+### 10.3 Review Job Queue
+
+10.3.1 ✅ DONE: Job store and repository
+
+- `internal/review/job.go`: `ReviewJob` struct with status lifecycle (pending → running → done/failed)
+- `internal/review/repository.go`: SQLite-backed, idempotent enqueue via `event_id UNIQUE + INSERT OR IGNORE`
+- `internal/review/service.go`: job orchestration, retry handling
+
+### 10.4 Review Agent
+
+10.4.1 ✅ DONE: Automated review pipeline
+
+- `internal/review/agent.go`: fetch diff → query graph → query knowledge → LLM analysis → post review
+- Pulls PR/MR diff via GitHub/GitLab adapter
+- Enriches context with graph nodes (services touched by changed files)
+- Searches knowledge store for relevant runbooks/patterns
+- LLM generates structured review comment
+- Posts comment via adapter (T2 safety) or requests changes (T3 safety)
+
+### 10.5 Core Tools
+
+10.5.1 ✅ DONE: 7 core tools registered
+
+- `github_pr_get` (T1) — fetch PR metadata
+- `github_pr_diff` (T1) — fetch PR unified diff
+- `github_comment` (T2) — post review comment
+- `github_request_changes` (T3) — request changes on PR
+- `gitlab_mr_get` (T1) — fetch MR metadata
+- `gitlab_mr_diff` (T1) — fetch MR unified diff
+- `gitlab_comment` (T2) — post review comment on MR
+
+### 10.6 CLI & Client
+
+10.6.1 ✅ DONE: `joe review` subcommand
+
+- `joe review enqueue --provider github --repo owner/repo --pr 42` — manually enqueue a review job
+- `joe review list` — list recent review jobs with status
+- `joe review get <id>` — fetch a specific review job
+
+10.6.2 ✅ DONE: Client bindings
+
+- `internal/client/review.go`: `EnqueueReview`, `ListReviews`, `GetReview` methods
+
+**Status: ✅ Complete** — `internal/adapters/{github,gitlab}/`, `internal/review/`, `internal/api/review.go`, `internal/tools/core/github_*.go`, `internal/tools/core/gitlab_*.go`, `internal/client/review.go`
+
+---
+
+## 10) Phase 11: Slack Bot (ChatOps)
+
+### 11.1 Bot Binary
+
+11.1.1 ✅ DONE: `cmd/joe-slack/` binary
+
+- Reads `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `JOE_SERVER`, `JOE_API_KEY` env vars
+- Uses Socket Mode (WebSocket) via `github.com/slack-go/slack v0.18.0` — no public URL required
+- Connects to joecored via the existing `*client.Client`
+
+### 11.2 Event Handling
+
+11.2.1 ✅ DONE: Slash commands
+
+- `/joe ask <query>` — searches graph + knowledge store, posts Block Kit reply
+- `/joe status` — posts graph summary (node counts by type, edge count, recently added)
+- `/joe help` — shows available commands
+
+11.2.2 ✅ DONE: Conversational interface
+
+- DM handling: responds to any message in IM channels (bot ignores sub-types and other bots)
+- Channel mention: strips `<@UXXXXXX>` prefix, treats rest as query
+
+### 11.3 Agent & Formatter
+
+11.3.1 ✅ DONE: `JoeClient` interface + Agent
+
+- `internal/slack/agent.go`: `JoeClient` interface (GraphQuery, GraphSummary, SearchKnowledge)
+- `Agent.Ask()` — graph query + knowledge search → formatted text
+- `Agent.Status()` — wraps GraphSummary
+- Interface-based design allows full unit testing with mock client
+
+11.3.2 ✅ DONE: Block Kit formatter
+
+- `internal/slack/formatter.go`: StatusBlocks, AskBlocks, ErrorBlock, HelpBlocks
+- Sorted node-type breakdown in status, recent-additions section
+- Graceful truncation for large result sets (max 5 nodes shown)
+
+### 11.4 Tests
+
+11.4.1 ✅ DONE: Unit tests
+
+- `agent_test.go`: 6 tests (graph nodes, knowledge entries, no-results, errors, best-effort knowledge)
+- `handler_test.go`: 4 tests (strip mention, no-results, truncation, knowledge entries)
+- `formatter_test.go`: 5 tests (all block builders)
+- All 15 tests passing
+
+**Status: ✅ Complete** — `cmd/joe-slack/`, `internal/slack/{agent,server,handler,formatter}.go`
 
 ---
 

@@ -228,30 +228,33 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 
-### Phase 9: Security Architecture + Additional Clients ← CURRENT
+### Phase 9: Security Architecture + Additional Clients ✅ COMPLETE
 
 **Security Zones & Pluggable Architecture:**
-- [ ] `cmd/joe-security/` binary (optional, for hardened deployments)
-- [ ] Security zones: prod-readonly, prod-write, dev-full, unassigned (default)
-- [ ] Source → Zone assignments (admin-controlled, LLM cannot modify)
-- [ ] Pluggable: embedded mode (same DB) or remote mode (separate joe-security process)
-- [ ] Protected tables: security_zones, source_zone_assignments, rbac_policies (hardcoded, LLM cannot write)
+
+- [x] Security zones: prod-readonly, prod-write, dev-full, unassigned (default) — `internal/rbac/zones.go`
+- [x] Source → Zone assignments (admin-controlled, LLM cannot modify) — admin API + RBAC middleware
+- [x] Protected tables: security_zones, source_zone_assignments, rbac_policies — `internal/store/migrations/006_rbac.up.sql`
+- [x] Embedded mode (RBAC in-process, no separate binary needed)
 
 **RBAC & Admin API:**
-- [ ] Principal → Zones policy model
-- [ ] Admin API: `/api/v1/admin/zones`, `/api/v1/admin/source-zones`, `/api/v1/admin/policies`
-- [ ] Authentication adapters (Entra ID, LDAP, OIDC, API keys)
-- [ ] Notification for unassigned sources
+
+- [x] Principal → Zones policy model — `internal/rbac/policy.go`
+- [x] Admin API: `/api/v1/admin/zones`, `/api/v1/admin/source-zones`, `/api/v1/admin/policies`, `/api/v1/admin/source-zones/unassigned`
+- [x] Authentication: API key → principal mapping — `internal/rbac/identity.go`
+- [x] Notification for unassigned sources — `GET /api/v1/admin/source-zones/unassigned`
 
 **Emergency Shutdown (Panic Mode):**
-- [ ] `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1
-- [ ] Safe mode on restart (T1 only until explicit unlock)
-- [ ] `joe unlock --reason "..."` to resume
+
+- [x] `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1 — `internal/safety/panic.go`
+- [x] Safe mode on restart (T1 only until explicit unlock) — `internal/safety/safemode.go`
+- [x] `joe unlock --reason "..."` to resume — `internal/safety/unlock.go`
 
 **Additional Clients:**
-- [ ] Web UI (dashboards, graph visualization, planning)
-- [ ] MCP Server (Claude Code, Cursor, Codex)
-- [ ] Slack Bot (ChatOps, optional)
+
+- [x] MCP Server (Claude Code, Cursor, Codex) — `cmd/joe-mcp/`, `internal/mcp/`
+- [ ] Slack Bot (ChatOps) — deferred to Phase 11
+- [ ] Web UI (dashboards, graph visualization) — deferred to Phase 12
 
 **See:** `docs/JOE_SECURITY.md` (comprehensive), `docs/security-in-layers.md` Part 7
 
@@ -264,6 +267,40 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - [x] Core tools: `github_pr_get`, `github_pr_diff`, `github_comment`, `github_request_changes`, `gitlab_mr_get`, `gitlab_mr_diff`, `gitlab_comment`
 - [x] CLI: `joe review enqueue|list|get`
 - [x] Client bindings (`internal/client/review.go`)
+
+### Phase 11: Slack Bot (ChatOps) ✅ COMPLETE
+
+**Bot binary:**
+
+- [x] `cmd/joe-slack/` binary — reads `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `JOE_SERVER`, `JOE_API_KEY`
+- [x] Socket Mode transport (WebSocket, no public URL required) — `github.com/slack-go/slack v0.18.0`
+
+**Slash commands:**
+
+- [x] `/joe ask <query>` — queries graph + knowledge store, posts Block Kit reply
+- [x] `/joe status` — posts graph summary (node counts by type, edge count)
+- [x] `/joe help` — shows available commands
+
+**Conversational interface:**
+
+- [x] DM conversations with Joe (`@joe` in IM channels)
+- [x] Channel mention handling (`@joe <query>` in any channel)
+
+**Key files:**
+
+- `cmd/joe-slack/main.go` — binary entry point
+- `internal/slack/server.go` — Socket Mode event loop
+- `internal/slack/handler.go` — slash command + event dispatcher
+- `internal/slack/formatter.go` — Block Kit message builder
+- `internal/slack/agent.go` — `JoeClient` interface + Agent (graph query + knowledge search)
+
+### Phase 12: Web UI (dashboards, graph visualization) ← CURRENT — PLANNED
+
+- React + TypeScript frontend served by joecored on `:7778`
+- Graph visualization (D3.js force-directed)
+- Infrastructure dashboard (node counts, health, recent events)
+- Planning UI for T3 action approval
+- Review job management
 
 ## Knowledge Store (Phase 7)
 
