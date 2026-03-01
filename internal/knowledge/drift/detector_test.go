@@ -113,23 +113,6 @@ func seedConfluenceSource(t *testing.T, svc *knowledge.Service, serverURL string
 	}
 }
 
-// seedNotionSource registers a Notion knowledge source in the service.
-func seedNotionSource(t *testing.T, svc *knowledge.Service) {
-	t.Helper()
-	cfgJSON, _ := json.Marshal(map[string]string{
-		"api_token": "secret-test-token",
-	})
-	src := &knowledge.KnowledgeSource{
-		Type:   "notion",
-		Name:   "Test Notion",
-		Config: cfgJSON,
-		Status: "active",
-	}
-	if err := svc.CreateSource(context.Background(), src); err != nil {
-		t.Fatalf("seedNotionSource: %v", err)
-	}
-}
-
 // --- unit tests ---
 
 func TestHashContent(t *testing.T) {

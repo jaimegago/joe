@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -39,7 +40,9 @@ type Services struct {
 	Proposals      *proposals.Service
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
-	RBAC           rbac.Repository // nil when RBAC is not configured
+	RBAC           rbac.Repository     // nil when RBAC is not configured
+	Review         *review.Service     // nil when code review is not configured
+	ReviewAgent    *review.ReviewAgent // nil when review agent is not configured
 }
 
 // New creates a new Services instance with the given SQL store database.
@@ -54,6 +57,8 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry 
 	proposalRepo := proposals.NewRepository(db)
 	proposalSvc := proposals.NewService(proposalRepo)
 	driftDet := drift.New(knowledgeSvc)
+	reviewRepo := review.NewRepository(db)
+	reviewSvc := review.NewService(reviewRepo)
 	return &Services{
 		Config:         cfg,
 		Store:          sqlStore,
@@ -64,7 +69,8 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry 
 		Knowledge:      knowledgeSvc,
 		Proposals:      proposalSvc,
 		DriftDet:       driftDet,
-		// DocDrafter is wired later in cmd/joecored/main.go once the LLM adapter is ready.
+		Review:         reviewSvc,
+		// DocDrafter and ReviewAgent are wired later in cmd/joecored/main.go.
 	}
 }
 

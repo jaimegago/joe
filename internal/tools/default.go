@@ -157,5 +157,14 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewGenerateDocDraftTool(coreClient))
 	registry.Register(coretools.NewPublishDocUpdateTool(coreClient))
 
+	// Code review tools (Phase 10)
+	registry.Register(coretools.NewGitHubPRGetTool(coreClient))
+	registry.Register(coretools.NewGitHubPRDiffTool(coreClient))
+	registry.Register(coretools.NewGitHubCommentTool(coreClient))
+	registry.Register(coretools.NewGitHubRequestChangesTool(coreClient))
+	registry.Register(coretools.NewGitLabMRGetTool(coreClient))
+	registry.Register(coretools.NewGitLabMRDiffTool(coreClient))
+	registry.Register(coretools.NewGitLabCommentTool(coreClient))
+
 	return registry
 }

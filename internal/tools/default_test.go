@@ -197,6 +197,14 @@ func TestNewDefaultRegistryWithClient(t *testing.T) {
 		"detect_doc_drift":   true,
 		"generate_doc_draft": true,
 		"publish_doc_update": true,
+		// Code review tools (Phase 10)
+		"github_pr_get":          true,
+		"github_pr_diff":         true,
+		"github_comment":         true,
+		"github_request_changes": true,
+		"gitlab_mr_get":          true,
+		"gitlab_mr_diff":         true,
+		"gitlab_comment":         true,
 	}
 
 	for toolName := range expectedTools {

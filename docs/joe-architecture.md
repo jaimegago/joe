@@ -235,6 +235,20 @@ POST /api/v1/clarifications/{id}/dismiss         Dismiss a clarification
 # Control
 POST /api/v1/onboarding                          Start onboarding flow
 POST /api/v1/refresh                             Trigger full or per-source refresh
+
+# Emergency shutdown (Phase 9.1)
+POST /api/v1/panic                               Trigger emergency shutdown
+GET  /api/v1/panic/status                        Check safe mode state
+POST /api/v1/unlock                              Exit safe mode (requires reason)
+
+# Admin / RBAC (Phase 9.3)
+GET  /api/v1/admin/zones                         List security zones
+POST /api/v1/admin/zones                         Create/update zone
+GET  /api/v1/admin/source-zones                  Get source→zone assignments
+POST /api/v1/admin/source-zones                  Assign source to zone
+GET  /api/v1/admin/source-zones/unassigned       List sources with no zone assignment
+GET  /api/v1/admin/policies                      List RBAC policies
+POST /api/v1/admin/policies                      Create/update RBAC policy
 ```
 
 ---
@@ -246,6 +260,7 @@ The Joe Local REPL supports slash commands for control operations:
 | Command | Description |
 |---------|-------------|
 | `/model` | Interactive model selector |
+| `/panic` | Emergency shutdown (prompts for confirmation, then halts joecored in safe mode) |
 | `/help` | Show available commands |
 | `/exit`, `/quit` | Exit Joe |
 

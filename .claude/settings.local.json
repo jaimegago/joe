@@ -37,7 +37,9 @@
       "Bash(golangci-lint run:*)",
       "Read(//Users/jaimegago/joe/**)",
       "Bash(go list -m github.com/mark3labs/mcp-go)",
-      "Read(//Users/jaimegago/go/pkg/mod/**)"
+      "Read(//Users/jaimegago/go/pkg/mod/**)",
+      "Bash(internal/store/constants.go:*)",
+      "Bash(internal/client/constants.go:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs",
