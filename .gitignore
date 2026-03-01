@@ -1,0 +1,38 @@
+# Binaries
+joe
+joecored
+joe-mcp
+joe-security
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Go workspace file
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Build cache
+/dist/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Joe runtime data (local dev)
+~/.joe/
