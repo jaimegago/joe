@@ -55,6 +55,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerPanicRoutes(mux, apiPrefix)
 	s.registerAdminRoutes(mux, apiPrefix)
 	s.registerReviewRoutes(mux, apiPrefix)
+	s.registerWebUIRoutes(mux, apiPrefix)
 }
 
 // registerStatusRoutes registers status and health check routes

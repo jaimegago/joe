@@ -98,8 +98,13 @@ func TestHandleUnlock_MissingReason(t *testing.T) {
 }
 
 func TestHandleUnlock_Success(t *testing.T) {
+	// Activate safe mode directly without calling Trigger. handleUnlock does not
+	// require IsPanicked()==true — it calls safety.Unlock unconditionally — so
+	// calling Trigger here is unnecessary and emits a spurious
+	// "EMERGENCY SHUTDOWN TRIGGERED" slog.Error in test output.
+	safety.DeactivateSafeMode()
+	safety.Reset()
 	safety.ActivateSafeMode()
-	safety.Trigger(safety.PanicSourceAPI, "test")
 	t.Cleanup(func() {
 		safety.DeactivateSafeMode()
 		safety.Reset()

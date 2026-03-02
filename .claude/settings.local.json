@@ -39,7 +39,19 @@
       "Bash(go list -m github.com/mark3labs/mcp-go)",
       "Read(//Users/jaimegago/go/pkg/mod/**)",
       "Bash(internal/store/constants.go:*)",
-      "Bash(internal/client/constants.go:*)"
+      "Bash(internal/client/constants.go:*)",
+      "Bash(npm create vite@latest ui -- --template react-ts --yes)",
+      "Bash(npm install)",
+      "Bash(npm install react-router-dom@6 @tanstack/react-query@5 reactflow@11 recharts@2 tailwindcss@3 postcss autoprefixer clsx tailwind-merge lucide-react sonner)",
+      "Bash(npx tailwindcss init -p)",
+      "Bash(npm run build)",
+      "Bash(npm install -D @types/node)",
+      "Bash(npm install class-variance-authority @radix-ui/react-slot @radix-ui/react-dialog @radix-ui/react-select @radix-ui/react-tabs @radix-ui/react-separator @radix-ui/react-label @radix-ui/react-checkbox)",
+      "Bash(npm install date-fns)",
+      "Bash(curl -s -I -X OPTIONS http://localhost:7777/api/v1/graph -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: GET\")",
+      "Bash(curl -s -X POST http://localhost:7777/api/v1/chat -H \"Content-Type: application/json\" -H \"Origin: http://localhost:5173\" -d '{\"\"session_id\"\":\"\"test-session\"\",\"\"message\"\":\"\"hello\"\"}')",
+      "Bash(npm install react-markdown remark-gfm)",
+      "Bash(npx tsc --noEmit)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs",

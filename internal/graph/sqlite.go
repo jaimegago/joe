@@ -478,6 +478,47 @@ func (s *SQLiteStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, e
 	return &edge, nil
 }
 
+// ListAll returns all nodes and edges in the graph.
+func (s *SQLiteStore) ListAll(ctx context.Context) (result *Subgraph, err error) {
+	start := time.Now()
+	defer func() { s.metrics.RecordGraphOperation(ctx, "list_all", time.Since(start), err) }()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, source_id, metadata, first_seen, last_seen
+		FROM graph_nodes
+		ORDER BY id
+		LIMIT 5000
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list all nodes: %w", err)
+	}
+	defer rows.Close()
+
+	nodes, err := scanNodes(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nodes) == 0 {
+		return &Subgraph{Nodes: []Node{}, Edges: []Edge{}}, nil
+	}
+
+	nodeIDs := make([]string, len(nodes))
+	for i, n := range nodes {
+		nodeIDs[i] = n.ID
+	}
+
+	edges, err := s.edgesBetween(ctx, nodeIDs)
+	if err != nil {
+		return nil, err
+	}
+	if edges == nil {
+		edges = []Edge{}
+	}
+
+	return &Subgraph{Nodes: nodes, Edges: edges}, nil
+}
+
 func scanNodes(rows *sql.Rows) ([]Node, error) {
 	var nodes []Node
 	for rows.Next() {

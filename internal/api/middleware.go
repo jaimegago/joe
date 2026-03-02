@@ -67,6 +67,25 @@ func MaxRequestBody(maxBytes int64) func(http.Handler) http.Handler {
 	}
 }
 
+// CORS returns middleware that adds permissive CORS headers for local
+// development. It allows requests from any origin and handles OPTIONS
+// preflight requests so the browser does not block cross-origin calls
+// from the Vite dev server (localhost:5173) to joecored (localhost:7777).
+func CORS() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Chain applies a sequence of middleware to a handler, in order.
 // The first middleware in the slice wraps outermost (runs first).
 func Chain(handler http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
