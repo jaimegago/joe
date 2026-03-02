@@ -294,13 +294,25 @@ All new adapters T1 (read-only) by default. Mutations require T3 classification 
 - `internal/slack/formatter.go` — Block Kit message builder
 - `internal/slack/agent.go` — `JoeClient` interface + Agent (graph query + knowledge search)
 
-### Phase 12: Web UI (dashboards, graph visualization) ← CURRENT — PLANNED
+### Phase 12: Web UI ← CURRENT
 
-- React + TypeScript frontend served by joecored on `:7778`
-- Graph visualization (D3.js force-directed)
-- Infrastructure dashboard (node counts, health, recent events)
-- Planning UI for T3 action approval
-- Review job management
+**See `docs/web-ui.md` for full specification.**
+
+Stack: React 18 + TypeScript + Vite + Tailwind + shadcn/ui
+Location: `ui/` directory (monorepo)
+
+**Pages:**
+- [ ] Graph Page — Infrastructure topology with React Flow
+- [ ] Dashboard Page — Sources health, alerts, recent sessions
+- [ ] Sources Page — View and manage connected sources
+- [ ] Admin Page — Security zones, source assignments, RBAC policies
+- [ ] Chat Page — Web REPL interface
+
+**Key Libraries:**
+- React Flow (graph visualization)
+- Recharts (dashboards)
+- TanStack Query (server state)
+- shadcn/ui (components)
 
 ## Knowledge Store (Phase 7)
 
