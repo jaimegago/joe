@@ -2110,8 +2110,25 @@ joe/
 │   └── config/                 # Configuration
 │       └── config.go
 │
+├── ui/                           # Web UI (React + TypeScript)
+│   ├── src/
+│   │   ├── api/                  # API client + types
+│   │   ├── components/           # React components
+│   │   │   ├── ui/               # shadcn/ui components
+│   │   │   ├── graph/            # Infrastructure graph (React Flow)
+│   │   │   ├── dashboard/        # Dashboard widgets
+│   │   │   ├── admin/            # Security zones, policies
+│   │   │   └── chat/             # Chat interface
+│   │   ├── pages/                # Route pages
+│   │   ├── hooks/                # Custom React hooks
+│   │   └── lib/                  # Utilities
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tailwind.config.js
+│
 ├── docs/
 │   ├── architecture.md         # This file
+│   ├── web-ui.md               # Web UI specification
 │   ├── joe-dataflow.md
 │   └── joe-prompt.md
 │
@@ -2393,7 +2410,12 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [ ] Panic state persistence (~/.joe/panic.state)
 
 **Additional Clients:**
-- [ ] Web UI (dashboards, graph visualization, planning)
+- [ ] Web UI — see `docs/web-ui.md` for full specification
+  - React + TypeScript + Vite + Tailwind + shadcn/ui
+  - React Flow for infrastructure graph visualization
+  - TanStack Query for server state
+  - Location: `ui/` directory (monorepo)
+  - Pages: Graph, Dashboard, Sources, Admin (zones/policies), Chat
 - [ ] MCP Server (Claude Code, Cursor, Codex — replaces VS Code extension)
 - [ ] Slack Bot (ChatOps for on-call, optional)
 - [ ] In-cluster deployment for joecored
