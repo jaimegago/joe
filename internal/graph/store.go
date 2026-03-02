@@ -46,6 +46,9 @@ type GraphStore interface {
 
 	// ListEdgesForNodes returns edges where both endpoints are in nodeIDs
 	ListEdgesForNodes(ctx context.Context, nodeIDs []string) ([]Edge, error)
+
+	// ListAll returns all nodes and edges in the graph (capped at 5000 nodes).
+	ListAll(ctx context.Context) (*Subgraph, error)
 }
 
 // Node represents a node in the infrastructure graph

@@ -138,6 +138,10 @@ func (f *fakeGraph) ListEdgesForNodes(ctx context.Context, nodeIDs []string) ([]
 	return nil, nil
 }
 
+func (f *fakeGraph) ListAll(ctx context.Context) (*graph.Subgraph, error) {
+	return &graph.Subgraph{}, nil
+}
+
 func baseConfig() *config.Config {
 	return &config.Config{
 		LLM: config.LLMConfig{

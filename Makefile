@@ -1,4 +1,4 @@
-.PHONY: run run-joe run-joecored run-default build build-joe build-joecored test clean fmt vet deps test-coverage-packages
+.PHONY: run run-joe run-joecored run-default run-ui run-stack build build-joe build-joecored test clean fmt vet deps test-coverage-packages
 
 # Run joecored (daemon) - start this first
 run-joecored:
@@ -11,6 +11,19 @@ run-joe:
 # Run joe with default config location
 run-default:
 	go run ./cmd/joe
+
+# Run the web UI dev server (requires joecored to be running)
+run-ui:
+	cd ui && npm run dev
+
+# Run joecored + web UI together (requires two terminals; use this as a reminder)
+# In practice, run each in a separate terminal: make run-joecored / make run-ui
+run-stack:
+	@echo "Start the stack in two terminals:"
+	@echo "  Terminal 1: make run-joecored"
+	@echo "  Terminal 2: make run-ui"
+	@echo ""
+	@echo "Then open http://localhost:5173"
 
 # Alias: "make run" starts joecored (the component you run first)
 run: run-joecored

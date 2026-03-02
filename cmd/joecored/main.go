@@ -338,6 +338,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
 		return 1
 	}
+	services.LLM = llmAdapter // expose to web UI chat handler
 
 	// Wire the LLM embedder into the Knowledge Service now that the adapter is ready.
 	embModelName := cfg.Knowledge.EmbeddingModel
@@ -411,9 +412,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		policyEngine = rbac.NewPolicyEngine(rbacRepo)
 	}
 
-	// Build middleware chain: rate limit → metrics → auth → identity → RBAC → request size limit → mux
+	// Build middleware chain: CORS → rate limit → metrics → auth → identity → RBAC → request size limit → mux
+	// CORS must be outermost so OPTIONS preflight requests are answered before auth runs.
 	handler := api.Chain(
 		mux,
+		api.CORS(),
 		api.RateLimit(cfg.Server.RateLimitRPS, cfg.Server.RateLimitBurst),
 		func(h http.Handler) http.Handler {
 			return observability.HTTPMetricsMiddleware(h, metrics)

@@ -74,6 +74,10 @@ func (m *mockGraphStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string
 	return nil, nil
 }
 
+func (m *mockGraphStore) ListAll(ctx context.Context) (*graph.Subgraph, error) {
+	return &graph.Subgraph{}, nil
+}
+
 func setupClarificationServiceTest(t *testing.T) (*ClarificationService, *mockGraphStore, *store.Store) {
 	t.Helper()
 

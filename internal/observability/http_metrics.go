@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -131,5 +132,19 @@ func HTTPMetricsMiddleware(next http.Handler, metrics *Metrics) http.Handler {
 		}
 
 		span.SetAttributes(semconv.HTTPStatusCodeKey.Int(status))
+
+		// Structured access log — visible in joecored output for every request.
+		logFn := slog.Debug
+		if status >= http.StatusInternalServerError {
+			logFn = slog.Error
+		} else if status >= http.StatusBadRequest {
+			logFn = slog.Warn
+		}
+		logFn("http request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", duration.Milliseconds(),
+		)
 	})
 }
