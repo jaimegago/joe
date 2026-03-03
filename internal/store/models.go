@@ -20,11 +20,12 @@ type Source struct {
 
 // Session represents a conversation session.
 type Session struct {
-	ID        string          `json:"id"`
-	StartedAt time.Time       `json:"started_at"`
-	EndedAt   *time.Time      `json:"ended_at,omitempty"`
-	Summary   string          `json:"summary,omitempty"`
-	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	ID           string          `json:"id"`
+	StartedAt    time.Time       `json:"started_at"`
+	EndedAt      *time.Time      `json:"ended_at,omitempty"`
+	Summary      string          `json:"summary,omitempty"`
+	Metadata     json.RawMessage `json:"metadata,omitempty"`
+	MessageCount int             `json:"message_count"`
 }
 
 // SessionMessage represents a message in a session.
