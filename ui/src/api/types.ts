@@ -87,7 +87,7 @@ export interface Session {
   started_at: string;
   ended_at?: string;
   summary?: string;
-  messageCount?: number;
+  message_count: number;
 }
 
 // Dashboard types

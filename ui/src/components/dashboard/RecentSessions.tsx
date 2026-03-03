@@ -1,6 +1,7 @@
 import type { Session } from '@/api/types';
 import { formatDistanceToNow } from 'date-fns';
 import { MessageSquare } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface RecentSessionsProps {
   sessions: Session[];
@@ -13,16 +14,21 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
   return (
     <ul className="space-y-2">
       {sessions.map((s) => (
-        <li key={s.id} className="flex items-start gap-2 text-sm">
-          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="truncate">{s.summary ?? 'Session'}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatDistanceToNow(new Date(s.started_at), { addSuffix: true })}
-              {' · '}
-              {s.messageCount ?? 0} messages
-            </p>
-          </div>
+        <li key={s.id}>
+          <Link
+            to={`/chat/${s.id}`}
+            className="flex items-start gap-2 text-sm rounded-md px-1 py-1 -mx-1 hover:bg-muted transition-colors"
+          >
+            <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="truncate">{s.summary ?? 'Session'}</p>
+              <p className="text-xs text-muted-foreground">
+                {formatDistanceToNow(new Date(s.started_at), { addSuffix: true })}
+                {' · '}
+                {s.message_count} messages
+              </p>
+            </div>
+          </Link>
         </li>
       ))}
     </ul>

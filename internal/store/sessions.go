@@ -139,8 +139,12 @@ func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) (sessi
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.list_recent", time.Since(start), err) }()
 
 	query := `
-		SELECT id, started_at, ended_at, summary, metadata
-		FROM sessions ORDER BY started_at DESC LIMIT ?
+		SELECT s.id, s.started_at, s.ended_at, s.summary, s.metadata,
+		       COUNT(m.id) AS message_count
+		FROM sessions s
+		LEFT JOIN session_messages m ON m.session_id = s.id
+		GROUP BY s.id
+		ORDER BY s.started_at DESC LIMIT ?
 	`
 	rows, err := r.db.QueryContext(ctx, query, limit)
 	if err != nil {
@@ -151,7 +155,7 @@ func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) (sessi
 	for rows.Next() {
 		var s Session
 		var endedAt, summary, metadata sql.NullString
-		if err := rows.Scan(&s.ID, &s.StartedAt, &endedAt, &summary, &metadata); err != nil {
+		if err := rows.Scan(&s.ID, &s.StartedAt, &endedAt, &summary, &metadata, &s.MessageCount); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		if endedAt.Valid {
