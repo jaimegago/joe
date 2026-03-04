@@ -454,9 +454,10 @@ if len(resp.ToolCalls) > 0 {
 - `docs/JOE_SECURITY.md` - Security architecture overview (RBAC + Safety layers)
 - `docs/JOE_RBAC_IMPLEMENTATION.md` - RBAC middleware spec (identity providers, policy engine, audit)
 
-## Go Standards
+## Skills
 
-Follow `docs/go-standards.md` (the full Go Backend Standards document). Key points for Joe:
+- **Go backend**: Follow the `go-backend` skill (`.claude/skills/go-backend/`) for all Go code — services, APIs, tools, adapters.
+- **Frontend**: Follow the `frontend-dev` skill (`.claude/skills/frontend-dev/`) for all `ui/` work — React, TypeScript, Tailwind, shadcn/ui.
 
 ### Package Organization Note
 The standards say "organize by domain, not technical layer." Joe uses technical layers (`internal/llm/`, `internal/tools/`, `internal/graph/`) because Joe itself IS the domain—it's a single-purpose tool, not a multi-domain business application. The "layers" here represent distinct capabilities, not arbitrary technical groupings.
