@@ -14,7 +14,7 @@ export const DependencyEdge = memo(function DependencyEdge({
   markerEnd,
 }: EdgeProps) {
   const edgeType = (data as { type?: string } | undefined)?.type ?? 'depends_on';
-  const cfg = EDGE_TYPE_CONFIG[edgeType] ?? EDGE_TYPE_CONFIG['depends_on'];
+  const cfg = EDGE_TYPE_CONFIG[edgeType] ?? EDGE_TYPE_CONFIG.depends_on;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,

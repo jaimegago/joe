@@ -1,21 +1,19 @@
 import { apiClient } from './client';
-import type { Graph, GraphNode, GraphEdge } from './types';
-
-export interface Subgraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
+import { GraphSchema, GraphNodeSchema, SubgraphSchema } from './schemas';
+import type { Graph, GraphNode, Subgraph } from './types';
 
 export function fetchGraph(): Promise<Graph> {
-  return apiClient.get<Graph>('/api/v1/graph');
+  return apiClient.get<unknown>('/api/v1/graph').then((r) => GraphSchema.parse(r));
 }
 
 export function fetchNode(id: string): Promise<GraphNode> {
-  return apiClient.get<GraphNode>(`/api/v1/graph/node/${encodeURIComponent(id)}`);
+  return apiClient
+    .get<unknown>(`/api/v1/graph/node/${encodeURIComponent(id)}`)
+    .then((r) => GraphNodeSchema.parse(r));
 }
 
 export function fetchRelated(id: string, depth = 1): Promise<Subgraph> {
-  return apiClient.get<Subgraph>(
-    `/api/v1/graph/node/${encodeURIComponent(id)}/related?depth=${depth}`
-  );
+  return apiClient
+    .get<unknown>(`/api/v1/graph/node/${encodeURIComponent(id)}/related?depth=${depth}`)
+    .then((r) => SubgraphSchema.parse(r));
 }

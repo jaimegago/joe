@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -96,8 +96,10 @@ export function InfraGraph({ graph, onRefresh }: InfraGraphProps) {
   const [nodes, setNodes] = useState(rfNodes);
   const [edges, setEdges] = useState(rfEdges);
 
-  // Sync when data changes
-  useMemo(() => {
+  // Sync React Flow's controlled state when derived graph data changes.
+  // React Flow requires controlled nodes/edges state to enable interactive node dragging;
+  // updating it inside an effect is the React Flow recommended pattern for external data changes.
+  useEffect(() => {
     setNodes(rfNodes);
     setEdges(rfEdges);
   }, [rfNodes, rfEdges]);

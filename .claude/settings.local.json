@@ -51,7 +51,12 @@
       "Bash(curl -s -I -X OPTIONS http://localhost:7777/api/v1/graph -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: GET\")",
       "Bash(curl -s -X POST http://localhost:7777/api/v1/chat -H \"Content-Type: application/json\" -H \"Origin: http://localhost:5173\" -d '{\"\"session_id\"\":\"\"test-session\"\",\"\"message\"\":\"\"hello\"\"}')",
       "Bash(npm install react-markdown remark-gfm)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm install --save-dev prettier eslint-config-prettier)",
+      "Bash(npm run lint)",
+      "Bash(npm install zod)",
+      "Bash(npm install --save-dev vitest @vitest/coverage-v8 @testing-library/react @testing-library/user-event @testing-library/jest-dom jsdom)",
+      "Bash(npm run test -- --run)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs",

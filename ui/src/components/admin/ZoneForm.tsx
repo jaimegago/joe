@@ -97,7 +97,7 @@ export function ZoneForm({ open, onOpenChange, initial, onSubmit, isLoading }: Z
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading || !id || !name}>
+            <Button type="submit" disabled={(isLoading ?? false) || !id || !name}>
               {initial?.id ? 'Save' : 'Create'}
             </Button>
           </DialogFooter>

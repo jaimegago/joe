@@ -14,7 +14,7 @@ function CodeBlock({ children }: { children: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(children).then(() => {
+    void navigator.clipboard.writeText(children).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });

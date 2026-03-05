@@ -11,7 +11,7 @@ interface NodeDetailsProps {
 
 export function NodeDetails({ node, onClose }: NodeDetailsProps) {
   const cfg = NODE_KIND_CONFIG[node.kind] ?? DEFAULT_NODE_CONFIG;
-  const status = STATUS_CONFIG[node.status ?? 'unknown'] ?? STATUS_CONFIG['unknown'];
+  const status = STATUS_CONFIG[node.status ?? 'unknown'] ?? STATUS_CONFIG.unknown;
 
   const metaEntries = Object.entries(node.metadata ?? {}).slice(0, 12);
 

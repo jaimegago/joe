@@ -61,11 +61,11 @@ export function useChat(initialSessionId?: string) {
     void qc.removeQueries({ queryKey: ['messages'] });
   }, [qc]);
 
-  const fetched = messagesQ.data ?? [];
   const messages = useMemo(() => {
+    const fetched = messagesQ.data ?? [];
     if (pending.length === 0) return fetched;
     return [...fetched, ...pending];
-  }, [fetched, pending]);
+  }, [messagesQ.data, pending]);
 
   return {
     sessionId,
