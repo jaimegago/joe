@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:7777';
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:7777';
 
 interface ApiError {
   error: string;
@@ -24,7 +24,7 @@ class ApiClient {
     };
 
     if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+      headers.Authorization = `Bearer ${this.token}`;
     }
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -35,7 +35,7 @@ class ApiClient {
     if (!response.ok) {
       let errMsg = 'API request failed';
       try {
-        const err: ApiError = await response.json();
+        const err = (await response.json()) as ApiError;
         errMsg = err.message || errMsg;
       } catch {
         // ignore parse error

@@ -10,7 +10,7 @@ export function SourcesHealth({ sources }: SourcesHealthProps) {
   return (
     <div className="flex flex-wrap gap-3">
       {sources.map((s) => {
-        const status = STATUS_CONFIG[s.status] ?? STATUS_CONFIG['unknown'];
+        const status = STATUS_CONFIG[s.status] ?? STATUS_CONFIG.unknown;
         return (
           <div key={s.id} className="flex items-center gap-1.5">
             <span

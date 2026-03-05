@@ -64,7 +64,7 @@ export function PolicyForm({ open, onOpenChange, zones, onSubmit, isLoading }: P
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isLoading || !principal || !selectedZone}>
+            <Button type="submit" disabled={(isLoading ?? false) || !principal || !selectedZone}>
               Create
             </Button>
           </DialogFooter>

@@ -5,7 +5,7 @@ import type { GraphNode } from '@/api/types';
 
 export const GenericNode = memo(function GenericNode({ data, selected }: NodeProps<GraphNode>) {
   const cfg = NODE_KIND_CONFIG[data.kind] ?? DEFAULT_NODE_CONFIG;
-  const status = STATUS_CONFIG[data.status ?? 'unknown'] ?? STATUS_CONFIG['unknown'];
+  const status = STATUS_CONFIG[data.status ?? 'unknown'] ?? STATUS_CONFIG.unknown;
 
   return (
     <div

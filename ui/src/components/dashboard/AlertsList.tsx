@@ -14,7 +14,7 @@ export function AlertsList({ alerts }: AlertsListProps) {
   return (
     <ul className="space-y-2">
       {alerts.slice(0, 10).map((alert) => {
-        const sev = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG['info'];
+        const sev = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
         return (
           <li key={alert.id} className="flex items-start gap-2 text-sm">
             <Badge variant={sev.variant} className="mt-0.5 shrink-0">

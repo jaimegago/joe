@@ -22,7 +22,7 @@ import type { Source } from '@/api/types';
 import { Database, RefreshCw } from 'lucide-react';
 
 function StatusDot({ status }: { status: Source['status'] }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG['unknown'];
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
   return (
     <span className="flex items-center gap-1.5 text-sm" style={{ color: cfg.color }}>
       {cfg.dot} {cfg.label}

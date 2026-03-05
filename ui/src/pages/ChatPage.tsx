@@ -25,7 +25,7 @@ export function ChatPage() {
           messages={chat.messages}
           isSending={chat.isSending}
           sendError={chat.sendError}
-          onSend={chat.send}
+          onSend={(msg) => { void chat.send(msg); }}
         />
       </div>
     </div>
