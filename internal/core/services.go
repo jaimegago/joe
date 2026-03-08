@@ -46,18 +46,18 @@ type Services struct {
 }
 
 // New creates a new Services instance with the given SQL store database.
-// The db is used for both the SQL store and the SQLite-backed graph store.
-func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
+// driver is the database driver name (store.DriverSQLite or store.DriverPostgres).
+func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
 	metrics = observability.EnsureMetrics(metrics)
-	graphStore := graph.NewSQLiteStore(db, metrics)
+	graphStore := graph.NewSQLStore(db, driver, metrics)
 	// Knowledge service starts without an embedder; one is attached later via
 	// services.Knowledge = knowledge.NewService(repo, embedder) once the LLM
 	// adapter is wired in cmd/joecored/main.go.
 	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
-	proposalRepo := proposals.NewRepository(db)
+	proposalRepo := proposals.NewRepository(db, driver)
 	proposalSvc := proposals.NewService(proposalRepo)
 	driftDet := drift.New(knowledgeSvc)
-	reviewRepo := review.NewRepository(db)
+	reviewRepo := review.NewRepository(db, driver)
 	reviewSvc := review.NewService(reviewRepo)
 	return &Services{
 		Config:         cfg,

@@ -19,7 +19,7 @@ import (
 func setupKnowledgeTestServer(t *testing.T) (*http.ServeMux, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

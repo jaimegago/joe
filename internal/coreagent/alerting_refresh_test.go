@@ -73,7 +73,7 @@ func (f *fakeGrafanaAdapter) ListAlerts(_ context.Context) ([]grafanaadapter.Gra
 // setupAlertingTestServices creates a full services stack (with store) for refreshSource tests.
 func setupAlertingTestServices(t *testing.T) (*core.Services, *adapters.Registry) {
 	t.Helper()
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -83,7 +83,7 @@ func setupAlertingTestServices(t *testing.T) (*core.Services, *adapters.Registry
 	}
 	reg := adapters.NewRegistry()
 	cfg := &config.Config{}
-	svc := core.New(cfg, sqlStore, sqlStore.DB(), reg, nil)
+	svc := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), reg, nil)
 	return svc, reg
 }
 

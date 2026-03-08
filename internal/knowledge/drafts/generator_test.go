@@ -26,7 +26,7 @@ func (m *mockEmbedder) ModelName() string { return "mock" }
 
 func newTestSetup(t *testing.T, mockLLM *mocks.MockLLM) (*Generator, *proposals.Service, *knowledge.Service) {
 	t.Helper()
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -36,7 +36,7 @@ func newTestSetup(t *testing.T, mockLLM *mocks.MockLLM) (*Generator, *proposals.
 	t.Cleanup(func() { sqlStore.Close() })
 
 	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, &mockEmbedder{})
-	proposalRepo := proposals.NewRepository(sqlStore.DB())
+	proposalRepo := proposals.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	proposalSvc := proposals.NewService(proposalRepo)
 	gen := New(knowledgeSvc, proposalSvc, mockLLM)
 	return gen, proposalSvc, knowledgeSvc

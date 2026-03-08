@@ -19,7 +19,7 @@ import (
 func setupClarificationsTestServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}

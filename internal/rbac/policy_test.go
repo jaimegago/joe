@@ -65,7 +65,7 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// Assign k8s-prod to prod-readonly zone.
@@ -91,7 +91,7 @@ func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 
 func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
@@ -111,7 +111,7 @@ func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 
 func TestPolicyEngine_IsAllowed_Unassigned(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// k8s-dev has no zone assignment — defaults to "unassigned" (read only).
@@ -129,7 +129,7 @@ func TestPolicyEngine_IsAllowed_Unassigned(t *testing.T) {
 
 func TestPolicyEngine_IsAllowed_NoPolicyDenied(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
@@ -146,7 +146,7 @@ func TestPolicyEngine_IsAllowed_NoPolicyDenied(t *testing.T) {
 
 func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{

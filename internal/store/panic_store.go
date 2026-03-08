@@ -11,22 +11,23 @@ import (
 // cluster_panic_state table (created by migration 008).
 // All joecored instances sharing the same SQLite file see the same row.
 type sqlPanicStore struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
 // NewPanicStore returns a safety.ClusterPanicStore backed by db.
-func NewPanicStore(db *sql.DB) *sqlPanicStore {
-	return &sqlPanicStore{db: db}
+func NewPanicStore(db *sql.DB, driver string) *sqlPanicStore {
+	return &sqlPanicStore{db: db, driver: driver}
 }
 
 func (s *sqlPanicStore) SetPanicked(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, Rebind(s.driver, `
 		UPDATE cluster_panic_state
 		SET panicked=1, triggered_at=?
-		WHERE id=1`,
+		WHERE id=1`),
 		time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -39,10 +40,10 @@ func (s *sqlPanicStore) ClearPanicked(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, Rebind(s.driver, `
 		UPDATE cluster_panic_state
 		SET panicked=0, triggered_at=NULL, trigger_source=NULL, trigger_reason=NULL
-		WHERE id=1`,
+		WHERE id=1`),
 	)
 	if err != nil {
 		return fmt.Errorf("clear cluster panic state: %w", err)

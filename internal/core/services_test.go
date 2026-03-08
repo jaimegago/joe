@@ -9,7 +9,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestNew(t *testing.T) {
 	cfg := &config.Config{}
 	registry := adapters.NewRegistry()
 
-	svc := New(cfg, sqlStore, db, registry, nil)
+	svc := New(cfg, sqlStore, db, sqlStore.Driver(), registry, nil)
 
 	if svc == nil {
 		t.Fatal("New returned nil")
@@ -48,7 +48,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNew_WithMetrics(t *testing.T) {
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestNew_WithMetrics(t *testing.T) {
 	db := sqlStore.DB()
 	registry := adapters.NewRegistry()
 
-	svc := New(&config.Config{}, sqlStore, db, registry, nil)
+	svc := New(&config.Config{}, sqlStore, db, sqlStore.Driver(), registry, nil)
 	if svc.Metrics == nil {
 		t.Error("Metrics should be non-nil when passed as nil (EnsureMetrics)")
 	}

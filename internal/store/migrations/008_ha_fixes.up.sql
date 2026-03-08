@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS cluster_panic_state (
 );
 
 -- Seed the single row so all subsequent operations can use UPDATE.
-INSERT OR IGNORE INTO cluster_panic_state (id, panicked) VALUES (1, 0);
+INSERT INTO cluster_panic_state (id, panicked) VALUES (1, 0)
+ON CONFLICT (id) DO NOTHING;
 
 -- Prevent two pending proposals for the same target from being created
 -- concurrently by two instances.  Once a proposal is approved/rejected a new

@@ -12,7 +12,6 @@ import (
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
-	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
@@ -88,7 +87,7 @@ func (m *MockAWSAdapter) GetVPC(ctx context.Context, vpcID string) (*awsadapter.
 
 func TestAWSIntegration(t *testing.T) {
 	// Create test database
-	db, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	db, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -130,7 +129,7 @@ func TestAWSIntegration(t *testing.T) {
 
 	// Create core services
 	cfg := &config.Config{}
-	services := core.New(cfg, db, db.DB(), registry, nil)
+	services := core.New(cfg, db, db.DB(), db.Driver(), registry, nil)
 
 	// Set up HTTP server
 	server := api.New(services)

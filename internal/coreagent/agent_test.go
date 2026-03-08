@@ -38,7 +38,7 @@ func (m *mockLLMAdapter) Embed(ctx context.Context, text string) ([]float32, err
 
 func TestNewCoreAgent(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestNewCoreAgent(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
@@ -96,7 +96,7 @@ func TestNewCoreAgent(t *testing.T) {
 
 func TestCoreAgentStartStop(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCoreAgentStartStop(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
@@ -139,7 +139,7 @@ func TestCoreAgentStartStop(t *testing.T) {
 
 func TestCoreAgentProcessOnboarding(t *testing.T) {
 	// Create in-memory database for testing
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create test store: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCoreAgentProcessOnboarding(t *testing.T) {
 
 	// Create mock services
 	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), adapterRegistry, nil)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, nil)
 	defer services.Close()
 
 	// Create mock LLM adapter
@@ -189,7 +189,7 @@ func TestCoreAgentProcessOnboarding(t *testing.T) {
 // makeTestServices creates a fully migrated in-memory services for unit tests.
 func makeTestServices(t *testing.T) *core.Services {
 	t.Helper()
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -202,7 +202,7 @@ func makeTestServices(t *testing.T) *core.Services {
 		Refresh: config.RefreshConfig{IntervalMinutes: 1},
 	}
 	reg := adapters.NewRegistry()
-	svc := core.New(cfg, sqlStore, sqlStore.DB(), reg, nil)
+	svc := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), reg, nil)
 	t.Cleanup(func() { svc.Close() })
 	return svc
 }

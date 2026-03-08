@@ -21,6 +21,7 @@ type CacheRepository interface {
 
 type sqlCacheRepository struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
@@ -28,7 +29,7 @@ func (r *sqlCacheRepository) Get(ctx context.Context, filePath string) (cache *J
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "cache.get", time.Since(start), err) }()
 
-	query := `SELECT file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at FROM joe_file_cache WHERE file_path = ?`
+	query := Rebind(r.driver, `SELECT file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at FROM joe_file_cache WHERE file_path = ?`)
 	var c JoeFileCache
 	var toolCalls sql.NullString
 	var processedAt sql.NullTime
@@ -60,10 +61,16 @@ func (r *sqlCacheRepository) Set(ctx context.Context, cache *JoeFileCache) (err 
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "cache.set", time.Since(start), err) }()
 
-	query := `
-		INSERT OR REPLACE INTO joe_file_cache (file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at)
+	query := Rebind(r.driver, `
+		INSERT INTO joe_file_cache (file_path, content_hash, parsed_data, parsed_at, tool_calls, processed_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`
+		ON CONFLICT(file_path) DO UPDATE SET
+			content_hash = excluded.content_hash,
+			parsed_data  = excluded.parsed_data,
+			parsed_at    = excluded.parsed_at,
+			tool_calls   = excluded.tool_calls,
+			processed_at = excluded.processed_at
+	`)
 	cache.ParsedAt = time.Now()
 	_, err = r.db.ExecContext(ctx, query, cache.FilePath, cache.ContentHash, cache.ParsedData, cache.ParsedAt, cache.ToolCalls, cache.ProcessedAt)
 	if err != nil {
@@ -76,7 +83,7 @@ func (r *sqlCacheRepository) Delete(ctx context.Context, filePath string) (err e
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "cache.delete", time.Since(start), err) }()
 
-	_, err = r.db.ExecContext(ctx, "DELETE FROM joe_file_cache WHERE file_path = ?", filePath)
+	_, err = r.db.ExecContext(ctx, Rebind(r.driver, "DELETE FROM joe_file_cache WHERE file_path = ?"), filePath)
 	if err != nil {
 		return fmt.Errorf("delete cache entry: %w", err)
 	}

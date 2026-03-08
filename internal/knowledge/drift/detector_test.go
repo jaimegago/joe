@@ -63,7 +63,7 @@ func newTestService(t *testing.T) *knowledge.Service {
 		t.Fatalf("create schema: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	repo := knowledge.NewRepository(db, observability.EnsureMetrics(nil))
+	repo := knowledge.NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	return knowledge.NewService(repo, nil)
 }
 

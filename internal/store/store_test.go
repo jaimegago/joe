@@ -7,13 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
 
 func setupTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -577,7 +576,7 @@ func TestForeignKeyEnforcement(t *testing.T) {
 func TestNewErrorHandling(t *testing.T) {
 	t.Run("invalid database path", func(t *testing.T) {
 		// Try to create a database in a non-existent directory
-		s, err := store.New("/nonexistent/path/to/db.sqlite", nil)
+		s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: "/nonexistent/path/to/db.sqlite"}, nil)
 		if err == nil {
 			t.Error("expected error opening database in invalid path, got nil")
 			if s != nil {
@@ -700,7 +699,7 @@ func TestRepositoryErrorPaths(t *testing.T) {
 }
 
 func TestCloseStore(t *testing.T) {
-	s, err := store.New(":memory:", nil)
+	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

@@ -52,7 +52,7 @@ func openRBACTestDB(t *testing.T) *sql.DB {
 func newAdminServer(t *testing.T) (*httptest.Server, rbac.Repository) {
 	t.Helper()
 	db := openRBACTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 
 	svc := &core.Services{RBAC: repo}
 	srv := api.New(svc)

@@ -42,7 +42,7 @@ func newTestDB(t *testing.T) *sql.DB {
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 	db := newTestDB(t)
-	return NewService(NewRepository(db))
+	return NewService(NewRepository(db, "sqlite"))
 }
 
 func makeTestProposal(id string) *Proposal {

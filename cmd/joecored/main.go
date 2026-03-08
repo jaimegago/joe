@@ -137,12 +137,12 @@ type runDeps struct {
 	joeDirPath             func() (string, error)
 	mkdirAll               func(path string, perm os.FileMode) error
 	databasePath           func() (string, error)
-	newStore               func(path string, metrics *observability.Metrics) (*store.Store, error)
+	newStore               func(cfg store.DatabaseConfig, metrics *observability.Metrics) (*store.Store, error)
 	migrateStore           func(store *store.Store) error
 	closeStore             func(store *store.Store) error
 	newAdapterRegistry     func() *adapters.Registry
 	connectSources         func(ctx context.Context, store *store.Store, registry *adapters.Registry)
-	newServices            func(cfg *config.Config, store *store.Store, db *sql.DB, registry *adapters.Registry, metrics *observability.Metrics) *core.Services
+	newServices            func(cfg *config.Config, store *store.Store, db *sql.DB, driver string, registry *adapters.Registry, metrics *observability.Metrics) *core.Services
 	registerBusinessMetric func(services *core.Services) error
 	newLLMAdapter          func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
 	newCoreAgent           func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner
@@ -257,7 +257,17 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		return 1
 	}
 
-	sqlStore, err := deps.newStore(dbPath+paths.DatabaseFlags, metrics)
+	dbCfg := store.DatabaseConfig{
+		Driver: store.DriverSQLite,
+		DSN:    dbPath,
+	}
+	if cfg.Database.Driver != "" {
+		dbCfg.Driver = cfg.Database.Driver
+	}
+	if cfg.Database.DSN != "" {
+		dbCfg.DSN = cfg.Database.DSN
+	}
+	sqlStore, err := deps.newStore(dbCfg, metrics)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		return 1
@@ -273,7 +283,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	slog.Info("database ready", "path", dbPath)
 
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
-	rbacRepo := rbac.NewRepository(sqlStore.DB())
+	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
 	// Register the DB-backed cluster panic store so that safety.Trigger /
 	// safety.Unlock propagate across all joecored instances sharing this DB.
@@ -327,7 +337,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	deps.connectSources(ctx, sqlStore, adapterRegistry)
 
 	// Initialize core services (graph store uses same SQLite DB)
-	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), adapterRegistry, metrics)
+	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
 	services.RBAC = rbacRepo
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))

@@ -39,7 +39,7 @@ func TestIdentityMiddleware_InjectsContext(t *testing.T) {
 func TestEnforcementMiddleware_AllowsWhenNoSourceID(t *testing.T) {
 	// Paths without a sourceID (e.g. /api/v1/status) should pass through.
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	engine := rbac.NewPolicyEngine(repo)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +60,7 @@ func TestEnforcementMiddleware_AllowsWhenNoSourceID(t *testing.T) {
 
 func TestEnforcementMiddleware_AllowsAccessWithPolicy(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// k8s-prod in prod-readonly; alice has access.
@@ -91,7 +91,7 @@ func TestEnforcementMiddleware_AllowsAccessWithPolicy(t *testing.T) {
 
 func TestEnforcementMiddleware_DeniesWithoutPolicy(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// k8s-prod in prod-readonly; eve has no policy.
@@ -120,7 +120,7 @@ func TestEnforcementMiddleware_DeniesWithoutPolicy(t *testing.T) {
 
 func TestEnforcementMiddleware_DeniesWriteOnReadOnlyZone(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{

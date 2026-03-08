@@ -139,7 +139,7 @@ func (f *fakeDatadogAdapter) ListLogServices(_ context.Context) ([]string, error
 // setupObsTestServices creates a full services stack for refreshSource tests.
 func setupObsTestServices(t *testing.T) (*core.Services, *adapters.Registry) {
 	t.Helper()
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -149,7 +149,7 @@ func setupObsTestServices(t *testing.T) (*core.Services, *adapters.Registry) {
 	}
 	reg := adapters.NewRegistry()
 	cfg := &config.Config{}
-	svc := core.New(cfg, sqlStore, sqlStore.DB(), reg, nil)
+	svc := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), reg, nil)
 	return svc, reg
 }
 

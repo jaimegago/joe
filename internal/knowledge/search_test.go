@@ -44,7 +44,7 @@ func TestCosineSimilarity(t *testing.T) {
 
 func TestSemanticSearch(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db, "sqlite", nil)
 
 	embedder := &mockEmbedder{
 		vecs: map[string][]float32{
@@ -91,7 +91,7 @@ func TestSemanticSearch(t *testing.T) {
 
 func TestSemanticSearchNoEmbedder(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db, "sqlite", nil)
 	svc := NewService(repo, nil) // no embedder
 
 	_, err := svc.Search(context.Background(), SearchRequest{Query: "anything"})
@@ -102,7 +102,7 @@ func TestSemanticSearchNoEmbedder(t *testing.T) {
 
 func TestSemanticSearchTierFilter(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, nil)
+	repo := NewRepository(db, "sqlite", nil)
 	embedder := &mockEmbedder{}
 	svc := NewService(repo, embedder)
 	ctx := context.Background()

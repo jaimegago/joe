@@ -20,7 +20,7 @@ import (
 
 func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.Store) {
 	t.Helper()
-	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	testStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -28,7 +28,7 @@ func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.S
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	t.Cleanup(func() { testStore.Close() })
-	services := core.New(&config.Config{}, testStore, testStore.DB(), adapters.NewRegistry(), nil)
+	services := core.New(&config.Config{}, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
 	server := api.New(services)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
@@ -79,7 +79,7 @@ func TestIntegration_API_NotImplemented(t *testing.T) {
 
 func TestIntegration_Store_CRUD(t *testing.T) {
 	// Setup in-memory store
-	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	testStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 
 // TestIntegration_Store_Transactions tests transactional behavior
 func TestIntegration_Store_Transactions(t *testing.T) {
-	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	testStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}

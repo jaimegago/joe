@@ -26,6 +26,7 @@ type SourceRepository interface {
 
 type sqlSourceRepository struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
@@ -33,10 +34,10 @@ func (r *sqlSourceRepository) Create(ctx context.Context, source *Source) (err e
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.create", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		INSERT INTO sources (id, type, name, config, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`
+	`)
 	now := time.Now()
 	source.CreatedAt = now
 	source.UpdatedAt = now
@@ -58,10 +59,10 @@ func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Sourc
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.get", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
 		FROM sources WHERE id = ?
-	`
+	`)
 	var s Source
 	var config []byte
 	var lastSyncAt, lastError sql.NullString
@@ -109,10 +110,10 @@ func (r *sqlSourceRepository) ListByType(ctx context.Context, sourceType string)
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.list_by_type", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
 		FROM sources WHERE type = ? ORDER BY name
-	`
+	`)
 	rows, err := r.db.QueryContext(ctx, query, sourceType)
 	if err != nil {
 		return nil, fmt.Errorf("query sources by type: %w", err)
@@ -152,11 +153,11 @@ func (r *sqlSourceRepository) Update(ctx context.Context, source *Source) (err e
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.update", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		UPDATE sources
 		SET type = ?, name = ?, config = ?, status = ?, updated_at = ?
 		WHERE id = ?
-	`
+	`)
 	source.UpdatedAt = time.Now()
 	_, err = r.db.ExecContext(ctx, query,
 		source.Type, source.Name, source.Config, source.Status,
@@ -172,11 +173,11 @@ func (r *sqlSourceRepository) UpdateSyncStatus(ctx context.Context, id string, s
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.update_sync_status", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		UPDATE sources
 		SET last_sync_at = ?, last_error = ?, status = ?, updated_at = ?
 		WHERE id = ?
-	`
+	`)
 	status := "active"
 	if lastError != "" {
 		status = "error"
@@ -192,7 +193,7 @@ func (r *sqlSourceRepository) Delete(ctx context.Context, id string) (err error)
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sources.delete", time.Since(start), err) }()
 
-	_, err = r.db.ExecContext(ctx, "DELETE FROM sources WHERE id = ?", id)
+	_, err = r.db.ExecContext(ctx, Rebind(r.driver, "DELETE FROM sources WHERE id = ?"), id)
 	if err != nil {
 		return fmt.Errorf("delete source: %w", err)
 	}

@@ -29,6 +29,7 @@ type ClarificationRepository interface {
 
 type sqlClarificationRepository struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
@@ -36,10 +37,10 @@ func (r *sqlClarificationRepository) Create(ctx context.Context, c *Clarificatio
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.create", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		INSERT INTO clarifications (id, type, context, question, options, status, graph_operations, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`
+	`)
 	c.CreatedAt = time.Now()
 	if c.Status == "" {
 		c.Status = ClarificationPending
@@ -68,11 +69,11 @@ func (r *sqlClarificationRepository) Get(ctx context.Context, id string) (clarif
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.get", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, type, context, question, options, status, answer,
 		       answered_by, answered_at, graph_operations, created_at, notified_at
 		FROM clarifications WHERE id = ?
-	`
+	`)
 	return r.scanOne(r.db.QueryRowContext(ctx, query, id))
 }
 
@@ -87,13 +88,13 @@ func (r *sqlClarificationRepository) ListByStatus(ctx context.Context, status st
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.list_by_status", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, type, context, question, options, status, answer,
 		       answered_by, answered_at, graph_operations, created_at, notified_at
 		FROM clarifications
 		WHERE status = ?
 		ORDER BY created_at ASC
-	`
+	`)
 	rows, err := r.db.QueryContext(ctx, query, status)
 	if err != nil {
 		return nil, fmt.Errorf("query clarifications: %w", err)
@@ -126,11 +127,11 @@ func (r *sqlClarificationRepository) Answer(ctx context.Context, id, answer, ans
 
 	// Guard with AND status = 'pending' so that two joecored instances racing
 	// to answer the same clarification produce exactly one winner.
-	query := `
+	query := Rebind(r.driver, `
 		UPDATE clarifications
 		SET answer = ?, answered_by = ?, answered_at = ?, status = ?
 		WHERE id = ? AND status = ?
-	`
+	`)
 	var res sql.Result
 	res, err = r.db.ExecContext(ctx, query, answer, answeredBy, time.Now(), ClarificationAnswered, id, ClarificationPending)
 	if err != nil {
@@ -150,7 +151,7 @@ func (r *sqlClarificationRepository) Dismiss(ctx context.Context, id string) (er
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.dismiss", time.Since(start), err) }()
 
-	query := `UPDATE clarifications SET status = ? WHERE id = ?`
+	query := Rebind(r.driver, `UPDATE clarifications SET status = ? WHERE id = ?`)
 	_, err = r.db.ExecContext(ctx, query, ClarificationDismissed, id)
 	if err != nil {
 		return fmt.Errorf("dismiss clarification: %w", err)
@@ -162,7 +163,7 @@ func (r *sqlClarificationRepository) MarkNotified(ctx context.Context, id string
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.mark_notified", time.Since(start), err) }()
 
-	query := `UPDATE clarifications SET notified_at = ? WHERE id = ?`
+	query := Rebind(r.driver, `UPDATE clarifications SET notified_at = ? WHERE id = ?`)
 	_, err = r.db.ExecContext(ctx, query, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("mark notified: %w", err)

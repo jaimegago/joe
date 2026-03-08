@@ -37,7 +37,7 @@ func (s *stubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 func setupWebUIServer(t *testing.T, withLLM bool) (*Server, *http.ServeMux) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

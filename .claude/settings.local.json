@@ -59,7 +59,11 @@
       "Bash(npm run test -- --run)",
       "Read(//Users/jaimegago/.claude/skills/go-backend/**)",
       "Bash(wait)",
-      "Bash(make run-joe --dry-run)"
+      "Bash(make run-joe --dry-run)",
+      "Bash(python3 -:*)",
+      "Bash(sed -i '' 's/proposals\\\\.NewRepository\\(sqlStore\\\\.DB\\(\\)\\)/proposals.NewRepository\\(sqlStore.DB\\(\\), sqlStore.Driver\\(\\)\\)/g' /Users/jaimegago/joe/internal/knowledge/drafts/generator_test.go /Users/jaimegago/joe/internal/api/proposals_test.go)",
+      "Bash(__NEW_LINE_2f1915b2d9a1856f__ sed -i '' 's/knowledge\\\\.NewRepository\\(db, observability\\\\.EnsureMetrics\\(nil\\)\\)/knowledge.NewRepository\\(db, \"\"sqlite\"\", observability.EnsureMetrics\\(nil\\)\\)/g' /Users/jaimegago/joe/internal/knowledge/drift/detector_test.go)",
+      "Bash(__NEW_LINE_2f1915b2d9a1856f__ sed -i '' 's/NewService\\(NewRepository\\(db\\)\\)/NewService\\(NewRepository\\(db, \"\"sqlite\"\"\\)\\)/g' /Users/jaimegago/joe/internal/knowledge/proposals/service_test.go)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs",

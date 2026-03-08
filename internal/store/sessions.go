@@ -23,6 +23,7 @@ type SessionRepository interface {
 
 type sqlSessionRepository struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
@@ -30,7 +31,7 @@ func (r *sqlSessionRepository) Create(ctx context.Context, session *Session) (er
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.create", time.Since(start), err) }()
 
-	query := `INSERT INTO sessions (id, started_at) VALUES (?, ?)`
+	query := Rebind(r.driver, `INSERT INTO sessions (id, started_at) VALUES (?, ?)`)
 	session.StartedAt = time.Now()
 	_, err = r.db.ExecContext(ctx, query, session.ID, session.StartedAt)
 	if err != nil {
@@ -43,7 +44,7 @@ func (r *sqlSessionRepository) Get(ctx context.Context, id string) (session *Ses
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.get", time.Since(start), err) }()
 
-	query := `SELECT id, started_at, ended_at, summary, metadata FROM sessions WHERE id = ?`
+	query := Rebind(r.driver, `SELECT id, started_at, ended_at, summary, metadata FROM sessions WHERE id = ?`)
 	var s Session
 	var endedAt sql.NullString
 	var summary, metadata sql.NullString
@@ -75,7 +76,7 @@ func (r *sqlSessionRepository) End(ctx context.Context, id string, summary strin
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.end", time.Since(start), err) }()
 
-	query := `UPDATE sessions SET ended_at = ?, summary = ?, metadata = ? WHERE id = ?`
+	query := Rebind(r.driver, `UPDATE sessions SET ended_at = ?, summary = ?, metadata = ? WHERE id = ?`)
 	_, err = r.db.ExecContext(ctx, query, time.Now(), summary, metadata, id)
 	if err != nil {
 		return fmt.Errorf("end session: %w", err)
@@ -87,18 +88,18 @@ func (r *sqlSessionRepository) AddMessage(ctx context.Context, msg *SessionMessa
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.add_message", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		INSERT INTO session_messages (session_id, role, content, tool_name, tool_args, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`
+		RETURNING id
+	`)
 	msg.CreatedAt = time.Now()
-	result, err := r.db.ExecContext(ctx, query,
+	err = r.db.QueryRowContext(ctx, query,
 		msg.SessionID, msg.Role, msg.Content, msg.ToolName, msg.ToolArgs, msg.CreatedAt,
-	)
+	).Scan(&msg.ID)
 	if err != nil {
 		return fmt.Errorf("insert message: %w", err)
 	}
-	msg.ID, _ = result.LastInsertId()
 	return nil
 }
 
@@ -106,10 +107,10 @@ func (r *sqlSessionRepository) GetMessages(ctx context.Context, sessionID string
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.get_messages", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, session_id, role, content, tool_name, tool_args, created_at
 		FROM session_messages WHERE session_id = ? ORDER BY id
-	`
+	`)
 	rows, err := r.db.QueryContext(ctx, query, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("query messages: %w", err)
@@ -138,14 +139,14 @@ func (r *sqlSessionRepository) ListRecent(ctx context.Context, limit int) (sessi
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "sessions.list_recent", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT s.id, s.started_at, s.ended_at, s.summary, s.metadata,
 		       COUNT(m.id) AS message_count
 		FROM sessions s
 		LEFT JOIN session_messages m ON m.session_id = s.id
 		GROUP BY s.id
 		ORDER BY s.started_at DESC LIMIT ?
-	`
+	`)
 	rows, err := r.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query sessions: %w", err)

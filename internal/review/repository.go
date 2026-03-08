@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // ErrDuplicateEvent is returned by Enqueue when the event_id already exists.
@@ -48,22 +50,24 @@ type statusExtra struct {
 	Error      string
 }
 
-// sqlRepository is the SQLite-backed Repository implementation.
+// sqlRepository is the SQL-backed Repository implementation.
 type sqlRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
 // NewRepository creates a new SQL-backed review Repository.
-func NewRepository(db *sql.DB) Repository {
-	return &sqlRepository{db: db}
+func NewRepository(db *sql.DB, driver string) Repository {
+	return &sqlRepository{db: db, driver: driver}
 }
 
 func (r *sqlRepository) Enqueue(ctx context.Context, job *ReviewJob) error {
-	res, err := r.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO review_jobs
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		INSERT INTO review_jobs
 		  (id, event_id, platform, source_id, owner, repo, pr_number, head_sha,
 		   status, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(event_id) DO NOTHING`),
 		job.ID, job.EventID, string(job.Platform), job.SourceID,
 		job.Owner, job.Repo, job.PRNumber, job.HeadSHA,
 		string(JobStatusPending), job.CreatedAt.UTC().Format(time.RFC3339),
@@ -127,9 +131,9 @@ func (r *sqlRepository) List(ctx context.Context, f Filter) ([]*ReviewJob, error
 }
 
 func (r *sqlRepository) ClaimJob(ctx context.Context, id string, startedAt time.Time) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE review_jobs SET status=?, started_at=?
-		WHERE id=? AND status=?`,
+		WHERE id=? AND status=?`),
 		string(JobStatusRunning),
 		startedAt.UTC().Format(time.RFC3339),
 		id,
@@ -146,10 +150,10 @@ func (r *sqlRepository) ClaimJob(ctx context.Context, id string, startedAt time.
 }
 
 func (r *sqlRepository) UpdateStatus(ctx context.Context, id string, status JobStatus, extra statusExtra) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE review_jobs SET
 		  status=?, started_at=?, finished_at=?, review_body=?, error=?
-		WHERE id=?`,
+		WHERE id=?`),
 		string(status),
 		nullTime(extra.StartedAt),
 		nullTime(extra.FinishedAt),

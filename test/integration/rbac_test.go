@@ -27,7 +27,7 @@ type rbacTestEnv struct {
 func newRBACEnv(t *testing.T) *rbacTestEnv {
 	t.Helper()
 
-	testStore, err := store.New(":memory:"+paths.DatabaseFlags, nil)
+	testStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -38,7 +38,7 @@ func newRBACEnv(t *testing.T) *rbacTestEnv {
 
 	repo := rbac.NewRepository(testStore.DB())
 
-	services := core.New(&config.Config{}, testStore, testStore.DB(), adapters.NewRegistry(), nil)
+	services := core.New(&config.Config{}, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
 	services.RBAC = repo
 
 	mux := http.NewServeMux()
