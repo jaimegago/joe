@@ -11,7 +11,7 @@ import (
 
 func TestSQLRepository_ListZones(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	zones, err := repo.ListZones(ctx)
@@ -25,7 +25,7 @@ func TestSQLRepository_ListZones(t *testing.T) {
 
 func TestSQLRepository_GetZone(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	t.Run("existing zone", func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestSQLRepository_GetZone(t *testing.T) {
 
 func TestSQLRepository_CreateZone(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	newZone := rbac.Zone{
@@ -99,7 +99,7 @@ func TestSQLRepository_CreateZone(t *testing.T) {
 
 func TestSQLRepository_UpsertAssignment(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	a := rbac.SourceZoneAssignment{
@@ -142,7 +142,7 @@ func TestSQLRepository_UpsertAssignment(t *testing.T) {
 
 func TestSQLRepository_GetAssignment_NotFound(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	got, err := repo.GetAssignment(ctx, "no-such-source")
@@ -156,7 +156,7 @@ func TestSQLRepository_GetAssignment_NotFound(t *testing.T) {
 
 func TestSQLRepository_ListAssignments(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// Initially no assignments
@@ -184,7 +184,7 @@ func TestSQLRepository_ListAssignments(t *testing.T) {
 
 func TestSQLRepository_CreatePolicy(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	p := rbac.Policy{
@@ -206,7 +206,7 @@ func TestSQLRepository_CreatePolicy(t *testing.T) {
 
 func TestSQLRepository_ListPolicies(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// Create two policies
@@ -229,7 +229,7 @@ func TestSQLRepository_ListPolicies(t *testing.T) {
 
 func TestSQLRepository_ListPoliciesForPrincipal(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// alice gets two zones, bob gets one
@@ -273,7 +273,7 @@ func TestSQLRepository_ListPoliciesForPrincipal(t *testing.T) {
 
 func TestSQLRepository_DeletePolicy(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	created, err := repo.CreatePolicy(ctx, rbac.Policy{
@@ -300,7 +300,7 @@ func TestSQLRepository_DeletePolicy(t *testing.T) {
 
 func TestSQLRepository_ListUnassignedSourceIDs(t *testing.T) {
 	db := openTestDB(t)
-	repo := rbac.NewRepository(db)
+	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	// Both seeded sources (k8s-prod, k8s-dev) are initially unassigned

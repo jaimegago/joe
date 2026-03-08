@@ -11,24 +11,35 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/store"
 )
 
-// SQLiteStore implements GraphStore using SQLite with graph_nodes and graph_edges tables.
-type SQLiteStore struct {
+// sqlGraphStore implements GraphStore using a SQL database.
+type sqlGraphStore struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
-// NewSQLiteStore creates a new SQLite-backed graph store.
+// SQLiteStore is a backward-compatible alias kept for test helpers.
+// New code should use NewSQLStore.
+type SQLiteStore = sqlGraphStore
+
+// NewSQLStore creates a SQL-backed graph store for the given driver.
 // The provided db must have the graph_nodes and graph_edges tables (via migration 002).
-func NewSQLiteStore(db *sql.DB, metrics *observability.Metrics) *SQLiteStore {
-	return &SQLiteStore{db: db, metrics: observability.EnsureMetrics(metrics)}
+func NewSQLStore(db *sql.DB, driver string, metrics *observability.Metrics) *sqlGraphStore {
+	return &sqlGraphStore{db: db, driver: driver, metrics: observability.EnsureMetrics(metrics)}
+}
+
+// NewSQLiteStore is a backward-compatible constructor (equivalent to NewSQLStore with DriverSQLite).
+func NewSQLiteStore(db *sql.DB, metrics *observability.Metrics) *sqlGraphStore {
+	return NewSQLStore(db, store.DriverSQLite, metrics)
 }
 
 // AddNode performs an upsert: inserts a new node or updates an existing one.
 // On conflict (same ID), it updates type, source_id, metadata, and last_seen
 // while preserving the original first_seen timestamp.
-func (s *SQLiteStore) AddNode(ctx context.Context, node Node) (err error) {
+func (s *sqlGraphStore) AddNode(ctx context.Context, node Node) (err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "add_node", time.Since(start), err) }()
 
@@ -48,7 +59,7 @@ func (s *SQLiteStore) AddNode(ctx context.Context, node Node) (err error) {
 		node.LastSeen = now
 	}
 
-	query := `
+	query := store.Rebind(s.driver, `
 		INSERT INTO graph_nodes (id, type, source_id, metadata, first_seen, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -56,7 +67,7 @@ func (s *SQLiteStore) AddNode(ctx context.Context, node Node) (err error) {
 			source_id = excluded.source_id,
 			metadata = excluded.metadata,
 			last_seen = excluded.last_seen
-	`
+	`)
 	_, err = s.db.ExecContext(ctx, query,
 		node.ID, node.Type, node.SourceID, string(metadata),
 		node.FirstSeen, node.LastSeen,
@@ -67,7 +78,7 @@ func (s *SQLiteStore) AddNode(ctx context.Context, node Node) (err error) {
 	return nil
 }
 
-func (s *SQLiteStore) AddEdge(ctx context.Context, edge Edge) (err error) {
+func (s *sqlGraphStore) AddEdge(ctx context.Context, edge Edge) (err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "add_edge", time.Since(start), err) }()
 
@@ -75,14 +86,14 @@ func (s *SQLiteStore) AddEdge(ctx context.Context, edge Edge) (err error) {
 		edge.CreatedAt = time.Now()
 	}
 
-	query := `
+	query := store.Rebind(s.driver, `
 		INSERT INTO graph_edges (from_node, to_node, relation, confidence, source, context, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(from_node, to_node, relation) DO UPDATE SET
 			confidence = excluded.confidence,
 			source = excluded.source,
 			context = excluded.context
-	`
+	`)
 	_, err = s.db.ExecContext(ctx, query,
 		edge.From, edge.To, edge.Relation,
 		int(edge.Confidence), edge.Source, edge.Context, edge.CreatedAt,
@@ -93,14 +104,14 @@ func (s *SQLiteStore) AddEdge(ctx context.Context, edge Edge) (err error) {
 	return nil
 }
 
-func (s *SQLiteStore) GetNode(ctx context.Context, id string) (node *Node, err error) {
+func (s *sqlGraphStore) GetNode(ctx context.Context, id string) (node *Node, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "get_node", time.Since(start), err) }()
 
-	query := `
+	query := store.Rebind(s.driver, `
 		SELECT id, type, source_id, metadata, first_seen, last_seen
 		FROM graph_nodes WHERE id = ?
-	`
+	`)
 	var result Node
 	var metadataStr string
 	var sourceID sql.NullString
@@ -128,7 +139,7 @@ func (s *SQLiteStore) GetNode(ctx context.Context, id string) (node *Node, err e
 	return &result, nil
 }
 
-func (s *SQLiteStore) Query(ctx context.Context, query string) (nodes []Node, err error) {
+func (s *sqlGraphStore) Query(ctx context.Context, query string) (nodes []Node, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "query", time.Since(start), err) }()
 
@@ -143,20 +154,20 @@ func (s *SQLiteStore) Query(ctx context.Context, query string) (nodes []Node, er
 	// Support "type:deployment" syntax for filtering by type
 	if strings.HasPrefix(query, "type:") {
 		nodeType := strings.TrimPrefix(query, "type:")
-		sqlQuery = `
+		sqlQuery = store.Rebind(s.driver, `
 			SELECT id, type, source_id, metadata, first_seen, last_seen
 			FROM graph_nodes WHERE type = ? ORDER BY id
-		`
+		`)
 		args = []any{nodeType}
 	} else {
 		// Search by ID pattern or metadata content
 		pattern := "%" + query + "%"
-		sqlQuery = `
+		sqlQuery = store.Rebind(s.driver, `
 			SELECT id, type, source_id, metadata, first_seen, last_seen
 			FROM graph_nodes
 			WHERE id LIKE ? OR type LIKE ? OR metadata LIKE ?
 			ORDER BY id
-		`
+		`)
 		args = []any{pattern, pattern, pattern}
 	}
 
@@ -169,7 +180,7 @@ func (s *SQLiteStore) Query(ctx context.Context, query string) (nodes []Node, er
 	return scanNodes(rows)
 }
 
-func (s *SQLiteStore) Related(ctx context.Context, nodeID string, depth int) (subgraph *Subgraph, err error) {
+func (s *sqlGraphStore) Related(ctx context.Context, nodeID string, depth int) (subgraph *Subgraph, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "related", time.Since(start), err) }()
 
@@ -183,7 +194,7 @@ func (s *SQLiteStore) Related(ctx context.Context, nodeID string, depth int) (su
 	}
 
 	// Bidirectional recursive CTE to find all connected nodes within depth
-	nodesQuery := `
+	nodesQuery := store.Rebind(s.driver, `
 		WITH RECURSIVE connected(node_id, d) AS (
 			SELECT ?, 0
 			UNION
@@ -199,7 +210,7 @@ func (s *SQLiteStore) Related(ctx context.Context, nodeID string, depth int) (su
 		FROM graph_nodes n
 		JOIN connected c ON n.id = c.node_id
 		ORDER BY n.id
-	`
+	`)
 
 	rows, err := s.db.QueryContext(ctx, nodesQuery, nodeID, depth)
 	if err != nil {
@@ -230,14 +241,14 @@ func (s *SQLiteStore) Related(ctx context.Context, nodeID string, depth int) (su
 	return &Subgraph{Nodes: nodes, Edges: edges}, nil
 }
 
-func (s *SQLiteStore) Path(ctx context.Context, from, to string) (edges []Edge, err error) {
+func (s *sqlGraphStore) Path(ctx context.Context, from, to string) (edges []Edge, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "path", time.Since(start), err) }()
 
 	// Recursive CTE to find a path from source to target.
 	// We track the path as a comma-separated string of node IDs to avoid cycles.
 
-	pathQuery := `
+	pathQuery := store.Rebind(s.driver, `
 		WITH RECURSIVE pathfinder(current, target, path, depth) AS (
 			SELECT ?, ?, ',' || ? || ',', 0
 			UNION ALL
@@ -256,7 +267,7 @@ func (s *SQLiteStore) Path(ctx context.Context, from, to string) (edges []Edge, 
 		WHERE current = target
 		ORDER BY depth
 		LIMIT 1
-	`
+	`)
 
 	var pathStr string
 	err = s.db.QueryRowContext(ctx, pathQuery, from, to, from).Scan(&pathStr)
@@ -284,11 +295,11 @@ func (s *SQLiteStore) Path(ctx context.Context, from, to string) (edges []Edge, 
 	return edges, nil
 }
 
-func (s *SQLiteStore) DeleteNode(ctx context.Context, id string) (err error) {
+func (s *sqlGraphStore) DeleteNode(ctx context.Context, id string) (err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "delete_node", time.Since(start), err) }()
 
-	result, err := s.db.ExecContext(ctx, "DELETE FROM graph_nodes WHERE id = ?", id)
+	result, err := s.db.ExecContext(ctx, store.Rebind(s.driver, "DELETE FROM graph_nodes WHERE id = ?"), id)
 	if err != nil {
 		return fmt.Errorf("delete node %s: %w", id, err)
 	}
@@ -299,12 +310,12 @@ func (s *SQLiteStore) DeleteNode(ctx context.Context, id string) (err error) {
 	return nil
 }
 
-func (s *SQLiteStore) DeleteEdge(ctx context.Context, from, to, relation string) (err error) {
+func (s *sqlGraphStore) DeleteEdge(ctx context.Context, from, to, relation string) (err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "delete_edge", time.Since(start), err) }()
 
 	_, err = s.db.ExecContext(ctx,
-		"DELETE FROM graph_edges WHERE from_node = ? AND to_node = ? AND relation = ?",
+		store.Rebind(s.driver, "DELETE FROM graph_edges WHERE from_node = ? AND to_node = ? AND relation = ?"),
 		from, to, relation,
 	)
 	if err != nil {
@@ -313,7 +324,7 @@ func (s *SQLiteStore) DeleteEdge(ctx context.Context, from, to, relation string)
 	return nil
 }
 
-func (s *SQLiteStore) Summary(ctx context.Context) (summary GraphSummary, err error) {
+func (s *sqlGraphStore) Summary(ctx context.Context) (summary GraphSummary, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "summary", time.Since(start), err) }()
 
@@ -385,14 +396,14 @@ func (s *SQLiteStore) Summary(ctx context.Context) (summary GraphSummary, err er
 }
 
 // ListNodesBySource returns all nodes for a given source_id.
-func (s *SQLiteStore) ListNodesBySource(ctx context.Context, sourceID string) (nodes []Node, err error) {
+func (s *sqlGraphStore) ListNodesBySource(ctx context.Context, sourceID string) (nodes []Node, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "list_nodes_by_source", time.Since(start), err) }()
 
-	query := `
+	query := store.Rebind(s.driver, `
 		SELECT id, type, source_id, metadata, first_seen, last_seen
 		FROM graph_nodes WHERE source_id = ? ORDER BY id
-	`
+	`)
 	rows, err := s.db.QueryContext(ctx, query, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("query nodes by source %s: %w", sourceID, err)
@@ -403,7 +414,7 @@ func (s *SQLiteStore) ListNodesBySource(ctx context.Context, sourceID string) (n
 }
 
 // ListEdgesForNodes returns edges where both endpoints are in nodeIDs.
-func (s *SQLiteStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string) (edges []Edge, err error) {
+func (s *sqlGraphStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string) (edges []Edge, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "list_edges_for_nodes", time.Since(start), err) }()
 
@@ -411,7 +422,7 @@ func (s *SQLiteStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string) (
 }
 
 // edgesBetween returns all edges where both endpoints are in the given node ID set.
-func (s *SQLiteStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edge, error) {
+func (s *sqlGraphStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edge, error) {
 	if len(nodeIDs) == 0 {
 		return nil, nil
 	}
@@ -428,12 +439,12 @@ func (s *SQLiteStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edg
 		args = append(args, id)
 	}
 
-	query := fmt.Sprintf(`
+	query := store.Rebind(s.driver, fmt.Sprintf(`
 		SELECT from_node, to_node, relation, confidence, source, context, created_at
 		FROM graph_edges
 		WHERE from_node IN (%s) AND to_node IN (%s)
 		ORDER BY from_node, to_node
-	`, placeholders, placeholders)
+	`, placeholders, placeholders))
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -445,13 +456,13 @@ func (s *SQLiteStore) edgesBetween(ctx context.Context, nodeIDs []string) ([]Edg
 }
 
 // getEdgeBetween returns the first edge connecting two adjacent nodes (in either direction).
-func (s *SQLiteStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, error) {
-	query := `
+func (s *sqlGraphStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, error) {
+	query := store.Rebind(s.driver, `
 		SELECT from_node, to_node, relation, confidence, source, context, created_at
 		FROM graph_edges
 		WHERE (from_node = ? AND to_node = ?) OR (from_node = ? AND to_node = ?)
 		LIMIT 1
-	`
+	`)
 	var edge Edge
 	var confidence int
 	var source, edgeContext sql.NullString
@@ -479,7 +490,7 @@ func (s *SQLiteStore) getEdgeBetween(ctx context.Context, a, b string) (*Edge, e
 }
 
 // ListAll returns all nodes and edges in the graph.
-func (s *SQLiteStore) ListAll(ctx context.Context) (result *Subgraph, err error) {
+func (s *sqlGraphStore) ListAll(ctx context.Context) (result *Subgraph, err error) {
 	start := time.Now()
 	defer func() { s.metrics.RecordGraphOperation(ctx, "list_all", time.Since(start), err) }()
 

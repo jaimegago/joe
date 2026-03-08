@@ -47,7 +47,7 @@ func makeJob(platform Platform, owner, repo string, pr int, sha string) *ReviewJ
 
 func TestRepository_Enqueue(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db)
+	repo := NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	job := makeJob(PlatformGitHub, "org", "myrepo", 1, "abc123")
@@ -74,7 +74,7 @@ func TestRepository_Enqueue(t *testing.T) {
 
 func TestRepository_Get(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db)
+	repo := NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	job := makeJob(PlatformGitHub, "org", "myrepo", 2, "def456")
@@ -96,7 +96,7 @@ func TestRepository_Get(t *testing.T) {
 
 func TestRepository_GetByEventID(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db)
+	repo := NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	job := makeJob(PlatformGitLab, "group", "project", 5, "fff000")
@@ -115,7 +115,7 @@ func TestRepository_GetByEventID(t *testing.T) {
 
 func TestRepository_UpdateStatus(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db)
+	repo := NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	job := makeJob(PlatformGitHub, "org", "svc", 10, "aaa111")
@@ -155,7 +155,7 @@ func TestRepository_UpdateStatus(t *testing.T) {
 
 func TestRepository_List(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db)
+	repo := NewRepository(db, "sqlite")
 	ctx := context.Background()
 
 	jobs := []*ReviewJob{

@@ -81,7 +81,7 @@ func (m *mockGraphStore) ListAll(ctx context.Context) (*graph.Subgraph, error) {
 func setupClarificationServiceTest(t *testing.T) (*ClarificationService, *mockGraphStore, *store.Store) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestApplyAnswer_BadJSON(t *testing.T) {
 
 func TestApplyAnswer_OperationErrors_Aggregated(t *testing.T) {
 	mockGraph := &mockGraphStore{err: fmt.Errorf("graph error")}
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

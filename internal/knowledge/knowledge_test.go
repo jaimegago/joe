@@ -61,7 +61,7 @@ func newTestDB(t *testing.T) *sql.DB {
 
 func TestServiceCRUD(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil) // no embedder
 	ctx := context.Background()
 
@@ -92,7 +92,7 @@ func TestServiceCRUD(t *testing.T) {
 
 func TestTierCuratedImmutable(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 
@@ -120,7 +120,7 @@ func TestTierCuratedImmutable(t *testing.T) {
 
 func TestTierDerivedMutable(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 
@@ -146,7 +146,7 @@ func TestTierDerivedMutable(t *testing.T) {
 
 func TestUpsertSynced(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 
@@ -193,7 +193,7 @@ func TestUpsertSynced(t *testing.T) {
 
 func TestSourceCRUD(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 
@@ -228,7 +228,7 @@ func TestSourceCRUD(t *testing.T) {
 
 func TestListEntriesFilter(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 
@@ -270,7 +270,7 @@ func TestHashContent(t *testing.T) {
 
 func TestUpdateSourceSyncStatus(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewRepository(db, observability.EnsureMetrics(nil))
+	repo := NewRepository(db, "sqlite", observability.EnsureMetrics(nil))
 	svc := NewService(repo, nil)
 	ctx := context.Background()
 

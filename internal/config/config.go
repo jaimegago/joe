@@ -20,6 +20,19 @@ type Config struct {
 	Notifications NotificationConfig `yaml:"notifications"`
 	Logging       LoggingConfig      `yaml:"logging"`
 	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
+	Database      DatabaseConfig     `yaml:"database"`
+}
+
+// DatabaseConfig selects the backing database driver and connection string.
+// When Driver is empty, joecored defaults to SQLite at the standard path.
+type DatabaseConfig struct {
+	// Driver is "sqlite" (default) or "pgx" (PostgreSQL via pgx/v5 stdlib).
+	Driver string `yaml:"driver"`
+	// DSN is the data source name.
+	// For SQLite: an absolute file path (e.g. ~/.joe/joe.db).
+	// For pgx:    a libpq-style connection string (e.g. postgres://user:pass@host:5432/joe).
+	// When empty with Driver "sqlite", joecored uses the default database path.
+	DSN string `yaml:"dsn"`
 }
 
 // KnowledgeConfig configures the Phase 7 Knowledge Store.

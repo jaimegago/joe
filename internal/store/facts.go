@@ -20,6 +20,7 @@ type FactRepository interface {
 
 type sqlFactRepository struct {
 	db      *sql.DB
+	driver  string
 	metrics *observability.Metrics
 }
 
@@ -27,18 +28,18 @@ func (r *sqlFactRepository) Create(ctx context.Context, fact *OnboardingFact) (e
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.create", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		INSERT INTO onboarding_facts (fact_type, subject, content, source, source_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`
+		RETURNING id
+	`)
 	fact.CreatedAt = time.Now()
-	result, err := r.db.ExecContext(ctx, query,
+	err = r.db.QueryRowContext(ctx, query,
 		fact.FactType, fact.Subject, fact.Content, fact.Source, fact.SourceID, fact.CreatedAt,
-	)
+	).Scan(&fact.ID)
 	if err != nil {
 		return fmt.Errorf("insert fact: %w", err)
 	}
-	fact.ID, _ = result.LastInsertId()
 	return nil
 }
 
@@ -46,10 +47,10 @@ func (r *sqlFactRepository) GetBySubject(ctx context.Context, subject string) (f
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_subject", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts WHERE subject = ? ORDER BY created_at
-	`
+	`)
 	return r.queryFacts(ctx, query, subject)
 }
 
@@ -57,10 +58,10 @@ func (r *sqlFactRepository) GetByType(ctx context.Context, factType string) (fac
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_type", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts WHERE fact_type = ? ORDER BY created_at
-	`
+	`)
 	return r.queryFacts(ctx, query, factType)
 }
 
@@ -68,12 +69,12 @@ func (r *sqlFactRepository) Search(ctx context.Context, searchQuery string) (fac
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.search", time.Since(start), err) }()
 
-	query := `
+	query := Rebind(r.driver, `
 		SELECT id, fact_type, subject, content, source, source_id, created_at
 		FROM onboarding_facts
 		WHERE subject LIKE ? OR content LIKE ?
 		ORDER BY created_at
-	`
+	`)
 	pattern := "%" + searchQuery + "%"
 	return r.queryFacts(ctx, query, pattern, pattern)
 }
@@ -107,7 +108,7 @@ func (r *sqlFactRepository) Delete(ctx context.Context, id int64) (err error) {
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.delete", time.Since(start), err) }()
 
-	_, err = r.db.ExecContext(ctx, "DELETE FROM onboarding_facts WHERE id = ?", id)
+	_, err = r.db.ExecContext(ctx, Rebind(r.driver, "DELETE FROM onboarding_facts WHERE id = ?"), id)
 	if err != nil {
 		return fmt.Errorf("delete fact: %w", err)
 	}

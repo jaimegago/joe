@@ -28,7 +28,7 @@ CREATE TABLE rbac_policies (
 
 -- Seed default zones
 INSERT INTO security_zones (id, name, description, allowed_actions, created_at) VALUES
-    ('prod-readonly', 'Production Read-Only', 'Read and query operations only', '["read","query"]',          datetime('now')),
-    ('prod-write',    'Production Write',     'Read, query, and mutate',         '["read","query","mutate"]', datetime('now')),
-    ('dev-full',      'Development Full',     'All operations',                  '["read","query","mutate","delete"]', datetime('now')),
-    ('unassigned',    'Unassigned',           'Default zone for new sources',    '["read"]',                 datetime('now'));
+    ('prod-readonly', 'Production Read-Only', 'Read and query operations only', '["read","query"]',          CURRENT_TIMESTAMP),
+    ('prod-write',    'Production Write',     'Read, query, and mutate',         '["read","query","mutate"]', CURRENT_TIMESTAMP),
+    ('dev-full',      'Development Full',     'All operations',                  '["read","query","mutate","delete"]', CURRENT_TIMESTAMP),
+    ('unassigned',    'Unassigned',           'Default zone for new sources',    '["read"]',                 CURRENT_TIMESTAMP);

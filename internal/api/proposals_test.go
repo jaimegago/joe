@@ -20,7 +20,7 @@ import (
 func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -30,7 +30,7 @@ func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service,
 	t.Cleanup(func() { sqlStore.Close() })
 
 	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
-	proposalRepo := proposals.NewRepository(sqlStore.DB())
+	proposalRepo := proposals.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	proposalSvc := proposals.NewService(proposalRepo)
 
 	services := &core.Services{
@@ -53,7 +53,7 @@ func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service,
 func setupProposalsWithPublisherTestServer(t *testing.T) (*http.ServeMux, *proposals.Service, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -63,7 +63,7 @@ func setupProposalsWithPublisherTestServer(t *testing.T) (*http.ServeMux, *propo
 	t.Cleanup(func() { sqlStore.Close() })
 
 	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
-	proposalRepo := proposals.NewRepository(sqlStore.DB())
+	proposalRepo := proposals.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	proposalSvc := proposals.NewService(proposalRepo)
 	docDrafter := drafts.New(knowledgeSvc, proposalSvc, mocks.NewMockLLM())
 

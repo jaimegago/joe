@@ -13,10 +13,10 @@ CREATE TABLE doc_proposals (
     context TEXT,
     knowledge_entry_ids TEXT,    -- JSON array of entry IDs used
     rejected_reason TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    approved_at DATETIME,
-    published_at DATETIME
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    published_at TIMESTAMP
 );
 
 CREATE INDEX idx_proposals_status ON doc_proposals(status);

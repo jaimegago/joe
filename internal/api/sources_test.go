@@ -21,7 +21,7 @@ import (
 func setupFullTestServer(t *testing.T) *api.Server {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestHandleDeleteSource_NotFound(t *testing.T) {
 func setupTestServerWithStore(t *testing.T) (*api.Server, *store.Store, *http.ServeMux) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -188,7 +188,7 @@ func newTestDeps(t *testing.T, cfg *config.Config, capture *runCapture) runDeps 
 	deps.databasePath = func() (string, error) {
 		return "test.db", nil
 	}
-	deps.newStore = func(path string, metrics *observability.Metrics) (*store.Store, error) {
+	deps.newStore = func(cfg store.DatabaseConfig, metrics *observability.Metrics) (*store.Store, error) {
 		return &store.Store{}, nil
 	}
 	deps.migrateStore = func(store *store.Store) error {
@@ -199,7 +199,7 @@ func newTestDeps(t *testing.T, cfg *config.Config, capture *runCapture) runDeps 
 	}
 	deps.newAdapterRegistry = adapters.NewRegistry
 	deps.connectSources = func(ctx context.Context, store *store.Store, registry *adapters.Registry) {}
-	deps.newServices = func(cfg *config.Config, store *store.Store, db *sql.DB, registry *adapters.Registry, metrics *observability.Metrics) *core.Services {
+	deps.newServices = func(cfg *config.Config, store *store.Store, db *sql.DB, driver string, registry *adapters.Registry, metrics *observability.Metrics) *core.Services {
 		return &core.Services{
 			Config:   cfg,
 			Store:    store,
@@ -311,7 +311,7 @@ func TestRun_StoreOpenError(t *testing.T) {
 	capture := &runCapture{}
 	cfg := baseConfig()
 	deps := newTestDeps(t, cfg, capture)
-	deps.newStore = func(path string, metrics *observability.Metrics) (*store.Store, error) {
+	deps.newStore = func(cfg store.DatabaseConfig, metrics *observability.Metrics) (*store.Store, error) {
 		return nil, errors.New("store failed")
 	}
 
@@ -695,7 +695,7 @@ func TestRun_WithTLSConfigured(t *testing.T) {
 func TestDefaultRunDeps_MigrateCloseClosures(t *testing.T) {
 	deps := defaultRunDeps()
 
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -726,7 +726,7 @@ func TestDefaultRunDeps_ShutdownClosures(t *testing.T) {
 func TestDefaultRunDeps_NewCoreAgent(t *testing.T) {
 	deps := defaultRunDeps()
 
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestDefaultRunDeps_NewCoreAgent(t *testing.T) {
 
 	reg := adapters.NewRegistry()
 	cfg := &config.Config{}
-	services := core.New(cfg, sqlStore, sqlStore.DB(), reg, nil)
+	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), reg, nil)
 
 	agent := deps.newCoreAgent(services, &fakeLLMAdapter{}, observability.NewMetrics())
 	if agent == nil {
@@ -748,7 +748,7 @@ func TestDefaultRunDeps_NewCoreAgent(t *testing.T) {
 func TestDefaultRunDeps_RegisterBusinessMetric(t *testing.T) {
 	deps := defaultRunDeps()
 
-	sqlStore, err := store.New(":memory:", nil)
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -759,7 +759,7 @@ func TestDefaultRunDeps_RegisterBusinessMetric(t *testing.T) {
 
 	reg := adapters.NewRegistry()
 	cfg := &config.Config{}
-	services := core.New(cfg, sqlStore, sqlStore.DB(), reg, observability.NewMetrics())
+	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), reg, observability.NewMetrics())
 
 	if err := deps.registerBusinessMetric(services); err != nil {
 		t.Errorf("registerBusinessMetric error: %v", err)

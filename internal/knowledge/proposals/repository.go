@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // Repository defines CRUD operations for proposals.
@@ -30,14 +32,15 @@ type statusExtra struct {
 	RejectedReason string
 }
 
-// sqlRepository is the SQLite-backed Repository implementation.
+// sqlRepository is the SQL-backed Repository implementation.
 type sqlRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
 // NewRepository creates a new SQL-backed proposal Repository.
-func NewRepository(db *sql.DB) Repository {
-	return &sqlRepository{db: db}
+func NewRepository(db *sql.DB, driver string) Repository {
+	return &sqlRepository{db: db, driver: driver}
 }
 
 func (r *sqlRepository) Create(ctx context.Context, p *Proposal) error {
@@ -52,13 +55,13 @@ func (r *sqlRepository) Create(ctx context.Context, p *Proposal) error {
 		p.Status = StatusPending
 	}
 
-	_, err = r.db.ExecContext(ctx, `
+	_, err = r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO doc_proposals
 		  (id, title, target_type, target_id, target_url,
 		   current_content, proposed_content, diff,
 		   status, context, knowledge_entry_ids,
 		   created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`),
 		p.ID, p.Title, string(p.TargetType), p.TargetID, nullStr(p.TargetURL),
 		nullStr(p.CurrentContent), p.ProposedContent, nullStr(p.Diff),
 		string(p.Status), nullStr(p.Context), string(entryIDs),
@@ -101,11 +104,11 @@ func (r *sqlRepository) List(ctx context.Context, f Filter) ([]*Proposal, error)
 
 func (r *sqlRepository) UpdateStatus(ctx context.Context, id string, status ProposalStatus, extra statusExtra) error {
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE doc_proposals SET
 		  status=?, updated_at=?,
 		  approved_at=?, published_at=?, rejected_reason=?
-		WHERE id=?`,
+		WHERE id=?`),
 		string(status), now,
 		nullTime(extra.ApprovedAt), nullTime(extra.PublishedAt), nullStr(extra.RejectedReason),
 		id,
@@ -117,11 +120,11 @@ func (r *sqlRepository) UpdateStatus(ctx context.Context, id string, status Prop
 }
 
 func (r *sqlRepository) query(ctx context.Context, where string, args ...any) ([]*Proposal, error) {
-	q := `SELECT id, title, target_type, target_id, target_url,
+	q := store.Rebind(r.driver, `SELECT id, title, target_type, target_id, target_url,
 		current_content, proposed_content, diff,
 		status, context, knowledge_entry_ids, rejected_reason,
 		created_at, updated_at, approved_at, published_at
-		FROM doc_proposals ` + where + ` ORDER BY created_at DESC`
+		FROM doc_proposals `+where+` ORDER BY created_at DESC`)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {

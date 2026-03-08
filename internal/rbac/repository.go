@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // Repository provides read/write access to RBAC data.
@@ -32,12 +34,13 @@ type Repository interface {
 
 // SQLRepository implements Repository on top of a *sql.DB.
 type SQLRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
 // NewRepository creates a new SQL-backed RBAC repository.
-func NewRepository(db *sql.DB) *SQLRepository {
-	return &SQLRepository{db: db}
+func NewRepository(db *sql.DB, driver string) *SQLRepository {
+	return &SQLRepository{db: db, driver: driver}
 }
 
 // --- Zones ---
@@ -70,9 +73,9 @@ func (r *SQLRepository) ListZones(ctx context.Context) ([]Zone, error) {
 func (r *SQLRepository) GetZone(ctx context.Context, id string) (*Zone, error) {
 	var z Zone
 	var actionsJSON, createdAtStr string
-	err := r.db.QueryRowContext(ctx, `
+	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		SELECT id, name, COALESCE(description,''), allowed_actions, created_at
-		FROM security_zones WHERE id = ?`, id).
+		FROM security_zones WHERE id = ?`), id).
 		Scan(&z.ID, &z.Name, &z.Description, &actionsJSON, &createdAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -95,9 +98,9 @@ func (r *SQLRepository) CreateZone(ctx context.Context, z Zone) (*Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal allowed_actions: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `
+	_, err = r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO security_zones (id, name, description, allowed_actions, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?)`),
 		z.ID, z.Name, z.Description, string(actionsJSON), z.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("create zone: %w", err)
@@ -132,9 +135,9 @@ func (r *SQLRepository) ListAssignments(ctx context.Context) ([]SourceZoneAssign
 func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*SourceZoneAssignment, error) {
 	var a SourceZoneAssignment
 	var assignedAtStr string
-	err := r.db.QueryRowContext(ctx, `
+	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		SELECT source_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM source_zone_assignments WHERE source_id = ?`, sourceID).
+		FROM source_zone_assignments WHERE source_id = ?`), sourceID).
 		Scan(&a.SourceID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -150,14 +153,14 @@ func (r *SQLRepository) UpsertAssignment(ctx context.Context, a SourceZoneAssign
 	if a.AssignedAt.IsZero() {
 		a.AssignedAt = time.Now().UTC()
 	}
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(source_id) DO UPDATE SET
 			zone_id     = excluded.zone_id,
 			assigned_by = excluded.assigned_by,
 			reason      = excluded.reason,
-			assigned_at = excluded.assigned_at`,
+			assigned_at = excluded.assigned_at`),
 		a.SourceID, a.ZoneID, a.AssignedBy, a.Reason, a.AssignedAt.Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upsert assignment: %w", err)
@@ -190,9 +193,9 @@ func (r *SQLRepository) ListPolicies(ctx context.Context) ([]Policy, error) {
 }
 
 func (r *SQLRepository) ListPoliciesForPrincipal(ctx context.Context, principal string) ([]Policy, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
 		SELECT id, principal, zone_id, created_at
-		FROM rbac_policies WHERE principal = ? ORDER BY id`, principal)
+		FROM rbac_policies WHERE principal = ? ORDER BY id`), principal)
 	if err != nil {
 		return nil, fmt.Errorf("list policies for principal: %w", err)
 	}
@@ -215,20 +218,19 @@ func (r *SQLRepository) CreatePolicy(ctx context.Context, p Policy) (*Policy, er
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now().UTC()
 	}
-	res, err := r.db.ExecContext(ctx, `
+	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO rbac_policies (principal, zone_id, created_at)
-		VALUES (?, ?, ?)`,
-		p.Principal, p.ZoneID, p.CreatedAt.Format(time.RFC3339))
+		VALUES (?, ?, ?)
+		RETURNING id`),
+		p.Principal, p.ZoneID, p.CreatedAt.Format(time.RFC3339)).Scan(&p.ID)
 	if err != nil {
 		return nil, fmt.Errorf("create policy: %w", err)
 	}
-	id, _ := res.LastInsertId()
-	p.ID = id
 	return &p, nil
 }
 
 func (r *SQLRepository) DeletePolicy(ctx context.Context, id int64) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM rbac_policies WHERE id = ?`, id)
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `DELETE FROM rbac_policies WHERE id = ?`), id)
 	if err != nil {
 		return fmt.Errorf("delete policy: %w", err)
 	}
