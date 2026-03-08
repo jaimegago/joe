@@ -44,17 +44,19 @@ func (s *Service) List(ctx context.Context, platform Platform, status JobStatus,
 	return s.repo.List(ctx, Filter{Platform: platform, Status: status, Limit: limit})
 }
 
-// MarkRunning transitions a pending job to running.
+// MarkRunning atomically transitions a pending job to running.
+// Returns an error (wrapping ErrAlreadyClaimed) when another instance
+// already claimed the job — callers should treat this as a signal to skip.
 func (s *Service) MarkRunning(ctx context.Context, id string) error {
-	job, err := s.repo.Get(ctx, id)
+	now := time.Now().UTC()
+	claimed, err := s.repo.ClaimJob(ctx, id, now)
 	if err != nil {
 		return err
 	}
-	if job.Status != JobStatusPending {
-		return fmt.Errorf("cannot mark job %s running: status is %q, must be %q", id, job.Status, JobStatusPending)
+	if !claimed {
+		return fmt.Errorf("%w: job %s", ErrAlreadyClaimed, id)
 	}
-	now := time.Now().UTC()
-	return s.repo.UpdateStatus(ctx, id, JobStatusRunning, statusExtra{StartedAt: &now})
+	return nil
 }
 
 // MarkDone transitions a running job to done with the review body.

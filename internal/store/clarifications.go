@@ -12,6 +12,10 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 )
 
+// ErrAlreadyAnswered is returned by Answer when the clarification has already
+// been answered or dismissed by another joecored instance.
+var ErrAlreadyAnswered = errors.New("clarification: already answered")
+
 // ClarificationRepository defines operations on clarifications.
 type ClarificationRepository interface {
 	Create(ctx context.Context, c *Clarification) error
@@ -120,14 +124,24 @@ func (r *sqlClarificationRepository) Answer(ctx context.Context, id, answer, ans
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "clarifications.answer", time.Since(start), err) }()
 
+	// Guard with AND status = 'pending' so that two joecored instances racing
+	// to answer the same clarification produce exactly one winner.
 	query := `
 		UPDATE clarifications
 		SET answer = ?, answered_by = ?, answered_at = ?, status = ?
-		WHERE id = ?
+		WHERE id = ? AND status = ?
 	`
-	_, err = r.db.ExecContext(ctx, query, answer, answeredBy, time.Now(), ClarificationAnswered, id)
+	var res sql.Result
+	res, err = r.db.ExecContext(ctx, query, answer, answeredBy, time.Now(), ClarificationAnswered, id, ClarificationPending)
 	if err != nil {
 		return fmt.Errorf("answer clarification: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("answer clarification rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrAlreadyAnswered
 	}
 	return nil
 }

@@ -15,6 +15,10 @@ var ErrDuplicateEvent = errors.New("review: duplicate event")
 // ErrNotFound is returned when a job is not found.
 var ErrNotFound = errors.New("review: job not found")
 
+// ErrAlreadyClaimed is returned by MarkRunning when another instance has
+// already transitioned the job out of pending state.
+var ErrAlreadyClaimed = errors.New("review: job already claimed")
+
 // Repository defines persistence for ReviewJobs.
 type Repository interface {
 	// Enqueue inserts a new job. Returns ErrDuplicateEvent if event_id already exists.
@@ -23,6 +27,10 @@ type Repository interface {
 	GetByEventID(ctx context.Context, eventID string) (*ReviewJob, error)
 	List(ctx context.Context, f Filter) ([]*ReviewJob, error)
 	UpdateStatus(ctx context.Context, id string, status JobStatus, extra statusExtra) error
+	// ClaimJob atomically transitions a job from pending → running in a single UPDATE.
+	// Returns (true, nil) when this caller won the race; (false, nil) when another
+	// instance already claimed it; (false, err) on a database error.
+	ClaimJob(ctx context.Context, id string, startedAt time.Time) (bool, error)
 }
 
 // Filter scopes a List call.
@@ -116,6 +124,25 @@ func (r *sqlRepository) List(ctx context.Context, f Filter) ([]*ReviewJob, error
 	}
 	where += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
 	return r.query(ctx, where, args...)
+}
+
+func (r *sqlRepository) ClaimJob(ctx context.Context, id string, startedAt time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE review_jobs SET status=?, started_at=?
+		WHERE id=? AND status=?`,
+		string(JobStatusRunning),
+		startedAt.UTC().Format(time.RFC3339),
+		id,
+		string(JobStatusPending),
+	)
+	if err != nil {
+		return false, fmt.Errorf("claim review_job: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim review_job rows affected: %w", err)
+	}
+	return rows > 0, nil
 }
 
 func (r *sqlRepository) UpdateStatus(ctx context.Context, id string, status JobStatus, extra statusExtra) error {
