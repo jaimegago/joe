@@ -9,7 +9,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/store"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type fakeGitAdapter struct {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 )
 
 // Service enforces business rules on proposals.
@@ -21,7 +21,7 @@ func NewService(repo Repository) *Service {
 // Create persists a new proposal (always starts as pending).
 func (s *Service) Create(ctx context.Context, p *Proposal) error {
 	if p.ID == "" {
-		p.ID = uuid.New().String()
+		p.ID = uid.New()
 	}
 	p.Status = StatusPending
 	return s.repo.Create(ctx, p)

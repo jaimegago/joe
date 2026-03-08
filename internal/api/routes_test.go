@@ -10,14 +10,14 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // setupTestServer creates a minimal test server for route registration tests
 func setupTestServer(t *testing.T) *Server {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

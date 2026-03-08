@@ -14,13 +14,13 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/test/mocks"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -53,7 +53,7 @@ func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service,
 func setupProposalsWithPublisherTestServer(t *testing.T) (*http.ServeMux, *proposals.Service, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

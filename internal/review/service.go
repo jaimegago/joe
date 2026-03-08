@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 )
 
 // Service enforces business rules on review jobs.
@@ -22,7 +22,7 @@ func NewService(repo Repository) *Service {
 // Returns ErrDuplicateEvent if the event_id already exists in the queue.
 func (s *Service) Enqueue(ctx context.Context, job *ReviewJob) (*ReviewJob, error) {
 	if job.ID == "" {
-		job.ID = uuid.New().String()
+		job.ID = uid.New()
 	}
 	if job.CreatedAt.IsZero() {
 		job.CreatedAt = time.Now().UTC()

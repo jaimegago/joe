@@ -15,7 +15,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.Store) {

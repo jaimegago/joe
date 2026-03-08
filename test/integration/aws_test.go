@@ -16,7 +16,7 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // MockAWSAdapter for integration testing

@@ -12,7 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/test/mocks"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 

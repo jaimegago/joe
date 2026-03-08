@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/jaimegago/joe/internal/knowledge"
@@ -88,7 +88,7 @@ func (g *Generator) Generate(ctx context.Context, req GenerateRequest) (*proposa
 
 	// 5. Persist proposal.
 	p := &proposals.Proposal{
-		ID:                uuid.New().String(),
+		ID:                uid.New(),
 		Title:             title,
 		TargetType:        req.TargetType,
 		TargetID:          req.TargetID,
