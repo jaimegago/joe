@@ -176,6 +176,30 @@ func (r *OrderRepository) Save(ctx context.Context, order *orders.Order) error {
 }
 ```
 
+### No ORMs
+
+Use `database/sql` with raw SQL queries. Do NOT use ORMs (GORM, ent, bun, sqlx, squirrel, etc.).
+
+**Why:**
+
+- Raw SQL is explicit, readable, and debuggable
+- ORMs hide query behavior and make performance problems hard to trace
+- `database/sql` + `rows.Scan` is sufficient for all needs
+- SQL is a first-class skill — don't abstract it away
+
+```go
+// CORRECT: raw database/sql
+rows, err := r.db.QueryContext(ctx, `SELECT id, name FROM users WHERE active = true`)
+// ...
+for rows.Next() {
+    var u User
+    if err := rows.Scan(&u.ID, &u.Name); err != nil { ... }
+}
+
+// WRONG: ORM
+db.Where("active = ?", true).Find(&users)  // never do this
+```
+
 ## Error Boundaries
 
 ### Where to Log

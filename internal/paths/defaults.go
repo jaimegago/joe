@@ -11,7 +11,7 @@ const (
 	JoeDir        = ".joe"
 	ConfigFile    = "config.yaml"
 	DatabaseFile  = "joe.db"
-	DatabaseFlags = "?_foreign_keys=on"
+	DatabaseFlags = "?_pragma=foreign_keys(1)"
 )
 
 // DefaultConfigPath returns the default configuration file path.

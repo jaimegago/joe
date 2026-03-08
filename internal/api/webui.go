@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/store"
@@ -208,7 +208,7 @@ func (h *webUIHandler) handleCreateSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	session := &store.Session{
-		ID:        uuid.New().String(),
+		ID:        uid.New(),
 		StartedAt: time.Now().UTC(),
 	}
 
@@ -279,7 +279,7 @@ func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := req.SessionID
 	if sessionID == "" {
-		sessionID = uuid.New().String()
+		sessionID = uid.New()
 	}
 
 	// Ensure session exists

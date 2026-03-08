@@ -12,7 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -56,7 +56,7 @@ func (f *fakeK8sAdapter) GetPodLogs(_ context.Context, _, _, _ string, _ int) (s
 func setupK8sGraphStore(t *testing.T) graph.GraphStore {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(1)")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

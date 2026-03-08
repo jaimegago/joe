@@ -88,7 +88,6 @@ func (m *ModelSelector) View() string {
 		line := fmt.Sprintf("%s %s %s%s", cursor, marker, model, suffix)
 
 		if i == m.cursor {
-			// Highlight the line under cursor
 			highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("cyan"))
 			line = highlightStyle.Render(line)
 		}
@@ -104,8 +103,8 @@ func (m *ModelSelector) View() string {
 	return b.String()
 }
 
-// RunModelSelector runs the interactive model selector and returns the selected model key
-// Returns empty string if cancelled
+// RunModelSelector runs the interactive model selector and returns the selected model key.
+// Returns empty string if cancelled.
 func RunModelSelector(models []string, current string) (string, error) {
 	if len(models) == 0 {
 		return "", fmt.Errorf("no models available")

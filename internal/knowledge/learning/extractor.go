@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
@@ -68,7 +68,7 @@ func (e *Extractor) ExtractFromSession(ctx context.Context, sessionID string) er
 			"extracted_at": time.Now().UTC().Format(time.RFC3339),
 		})
 		entry := &knowledge.Entry{
-			ID:         uuid.New().String(),
+			ID:         uid.New(),
 			Tier:       knowledge.TierDerived,
 			Type:       knowledge.EntryType(l.Type),
 			Title:      l.Title,

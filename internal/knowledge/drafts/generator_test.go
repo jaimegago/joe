@@ -13,7 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/test/mocks"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // mockEmbedder always returns the same unit vector so searches succeed.
@@ -26,7 +26,7 @@ func (m *mockEmbedder) ModelName() string { return "mock" }
 
 func newTestSetup(t *testing.T, mockLLM *mocks.MockLLM) (*Generator, *proposals.Service, *knowledge.Service) {
 	t.Helper()
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

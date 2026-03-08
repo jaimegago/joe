@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/core"
@@ -19,7 +19,7 @@ import (
 // openRBACTestDB creates an in-memory SQLite DB with the RBAC schema seeded.
 func openRBACTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

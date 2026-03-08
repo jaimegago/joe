@@ -9,7 +9,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNew_WithMetrics(t *testing.T) {
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

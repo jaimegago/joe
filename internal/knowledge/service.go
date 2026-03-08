@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jaimegago/joe/internal/uid"
 )
 
 // Embedder generates an embedding vector for a piece of text.
@@ -38,7 +38,7 @@ func NewService(repo Repository, embedder Embedder) *Service {
 // and persists the entry.
 func (s *Service) Create(ctx context.Context, e *Entry) error {
 	if e.ID == "" {
-		e.ID = uuid.New().String()
+		e.ID = uid.New()
 	}
 	e.ContentHash = hashContent(e.Content)
 	if e.Confidence == 0 {
@@ -134,7 +134,7 @@ func (s *Service) UpsertSynced(ctx context.Context, e *Entry) error {
 
 	// New entry.
 	if e.ID == "" {
-		e.ID = uuid.New().String()
+		e.ID = uid.New()
 	}
 	if err := s.embedAndAttach(ctx, e); err != nil {
 		s.logger.Warn("failed to embed synced entry, storing without embedding",
@@ -148,7 +148,7 @@ func (s *Service) UpsertSynced(ctx context.Context, e *Entry) error {
 // CreateSource registers a new external knowledge source.
 func (s *Service) CreateSource(ctx context.Context, src *KnowledgeSource) error {
 	if src.ID == "" {
-		src.ID = uuid.New().String()
+		src.ID = uid.New()
 	}
 	if src.Status == "" {
 		src.Status = "active"

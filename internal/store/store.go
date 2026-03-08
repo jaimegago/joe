@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	migrateSQLite "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/observability"
@@ -32,10 +32,10 @@ type Store struct {
 }
 
 // New creates a new Store with the given database path.
-// The dbPath should include any SQLite flags (e.g., "joe.db?_foreign_keys=on").
+// The dbPath should include any SQLite flags (e.g., "joe.db?_pragma=foreign_keys(1)").
 // Use ":memory:" for in-memory database (testing).
 func New(dbPath string, metrics *observability.Metrics) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -63,7 +63,7 @@ func New(dbPath string, metrics *observability.Metrics) (*Store, error) {
 
 // Migrate runs all pending migrations.
 func (s *Store) Migrate() error {
-	driver, err := sqlite3.WithInstance(s.db, &sqlite3.Config{})
+	driver, err := migrateSQLite.WithInstance(s.db, &migrateSQLite.Config{})
 	if err != nil {
 		return fmt.Errorf("create migration driver: %w", err)
 	}
@@ -73,7 +73,7 @@ func (s *Store) Migrate() error {
 		return fmt.Errorf("create migration source: %w", err)
 	}
 
-	m, err := migrate.NewWithInstance("iofs", source, "sqlite3", driver)
+	m, err := migrate.NewWithInstance("iofs", source, "sqlite", driver)
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}

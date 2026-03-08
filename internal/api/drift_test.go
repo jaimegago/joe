@@ -12,14 +12,14 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/knowledge/drift"
 	"github.com/jaimegago/joe/internal/store"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // setupDriftTestServer wires DriftDet with a real drift.Detector.
 func setupDriftTestServer(t *testing.T) (*http.ServeMux, *knowledge.Service) {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -49,7 +49,7 @@ func setupDriftTestServer(t *testing.T) (*http.ServeMux, *knowledge.Service) {
 func setupNoDriftDetectorServer(t *testing.T) *http.ServeMux {
 	t.Helper()
 
-	sqlStore, err := store.New(":memory:?_foreign_keys=on", nil)
+	sqlStore, err := store.New(":memory:?_pragma=foreign_keys(1)", nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
