@@ -8,10 +8,14 @@ import (
 
 const (
 	// Joe directory and files
-	JoeDir        = ".joe"
-	ConfigFile    = "config.yaml"
-	DatabaseFile  = "joe.db"
-	DatabaseFlags = "?_pragma=foreign_keys(1)"
+	JoeDir       = ".joe"
+	ConfigFile   = "config.yaml"
+	DatabaseFile = "joe.db"
+	// DatabaseFlags sets SQLite pragmas for correctness and HA safety:
+	// - foreign_keys: enforce referential integrity
+	// - journal_mode=WAL: allows concurrent readers alongside one writer (required for multi-instance)
+	// - busy_timeout=5000: retry writes for up to 5 s before returning SQLITE_BUSY
+	DatabaseFlags = "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 )
 
 // DefaultConfigPath returns the default configuration file path.

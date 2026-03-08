@@ -275,17 +275,31 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
 	rbacRepo := rbac.NewRepository(sqlStore.DB())
 
-	// Check for panic.state from a previous run and boot in safe mode if found.
+	// Register the DB-backed cluster panic store so that safety.Trigger /
+	// safety.Unlock propagate across all joecored instances sharing this DB.
+	clusterPanicStore := sqlStore.PanicStore()
+	safety.SetClusterStore(clusterPanicStore)
+
+	// Boot in safe mode if either the local panic.state file or the shared
+	// cluster_panic_state row indicates a previous emergency shutdown.
 	panicState, err := safety.ReadPanicState(joeDir)
 	if err != nil {
-		slog.Warn("failed to read panic state on startup", "error", err)
-	} else if panicState != nil {
+		slog.Warn("failed to read panic state file on startup", "error", err)
+	}
+	dbPanicked, dbPanicErr := clusterPanicStore.IsPanicked(ctx)
+	if dbPanicErr != nil {
+		slog.Warn("failed to read cluster panic state on startup", "error", dbPanicErr)
+	}
+	if panicState != nil || dbPanicked {
 		safety.ActivateSafeMode()
-		slog.Warn("SAFE MODE ACTIVE — previous run triggered emergency shutdown",
-			"triggered_at", panicState.TriggeredAt,
-			"trigger_source", string(panicState.TriggerSource),
-			"trigger_reason", panicState.TriggerReason,
-		)
+		slog.Warn("SAFE MODE ACTIVE — previous run triggered emergency shutdown")
+		if panicState != nil {
+			slog.Warn("panic state (file)",
+				"triggered_at", panicState.TriggeredAt,
+				"trigger_source", string(panicState.TriggerSource),
+				"trigger_reason", panicState.TriggerReason,
+			)
+		}
 		slog.Warn("use 'joe unlock --reason \"...\"' to resume normal operation")
 	}
 

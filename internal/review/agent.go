@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -85,6 +86,10 @@ func (a *ReviewAgent) Run(ctx context.Context, job *ReviewJob) error {
 		"owner", job.Owner, "repo", job.Repo, "pr", job.PRNumber)
 
 	if err := a.svc.MarkRunning(ctx, job.ID); err != nil {
+		if errors.Is(err, ErrAlreadyClaimed) {
+			log.Info("review job already claimed by another instance, skipping")
+			return nil
+		}
 		return fmt.Errorf("mark running: %w", err)
 	}
 	log.Info("review job started")

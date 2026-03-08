@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"context"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -16,9 +17,30 @@ const (
 	PanicSourceSignal PanicSource = "signal"
 )
 
-var panicked atomic.Bool
+// ClusterPanicStore persists panic state to a shared store (e.g. SQLite) that
+// is visible to all joecored instances pointing at the same database.
+// Implement this interface in the store package and register it via
+// SetClusterStore so that Trigger / Unlock propagate cluster-wide.
+type ClusterPanicStore interface {
+	SetPanicked(ctx context.Context) error
+	ClearPanicked(ctx context.Context) error
+	IsPanicked(ctx context.Context) (bool, error)
+}
+
+var (
+	panicked     atomic.Bool
+	clusterStore ClusterPanicStore
+)
+
+// SetClusterStore registers the DB-backed store. Call once at startup before
+// the first possible Trigger call.
+func SetClusterStore(s ClusterPanicStore) {
+	clusterStore = s
+}
 
 // Trigger sets the global panic flag and logs the event.
+// It also persists the state to the cluster store (if registered) so that
+// sibling joecored instances boot in safe mode on their next startup.
 // It is idempotent — calling it when already panicked is a no-op and returns false.
 // Returns true if this call triggered the panic (first caller), false if already panicked.
 func Trigger(source PanicSource, reason string) bool {
@@ -30,6 +52,11 @@ func Trigger(source PanicSource, reason string) bool {
 		"reason", reason,
 		"timestamp", time.Now().UTC().Format(time.RFC3339),
 	)
+	if clusterStore != nil {
+		if err := clusterStore.SetPanicked(context.Background()); err != nil {
+			slog.Error("failed to persist cluster panic state", "error", err)
+		}
+	}
 	return true
 }
 

@@ -45,6 +45,13 @@ func New(dbPath string, metrics *observability.Metrics) (*Store, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	// Tune the connection pool for HA multi-instance use with WAL mode.
+	// WAL allows concurrent readers + one writer; capping open connections
+	// prevents file descriptor exhaustion when two joecored instances share the DB.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(time.Hour)
+
 	metrics = observability.EnsureMetrics(metrics)
 
 	store := &Store{
@@ -93,6 +100,12 @@ func (s *Store) Close() error {
 // DB returns the underlying database connection (for transactions).
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+// PanicStore returns a ClusterPanicStore backed by this store's database.
+// Wire this into safety.SetClusterStore at joecored startup.
+func (s *Store) PanicStore() *sqlPanicStore {
+	return NewPanicStore(s.db)
 }
 
 // parseTimeOrWarn parses a time string in RFC3339 format and logs a warning if

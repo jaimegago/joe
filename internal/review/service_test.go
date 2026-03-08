@@ -61,6 +61,19 @@ func (m *mockRepo) List(_ context.Context, f Filter) ([]*ReviewJob, error) {
 	return result, nil
 }
 
+func (m *mockRepo) ClaimJob(_ context.Context, id string, startedAt time.Time) (bool, error) {
+	j, ok := m.jobs[id]
+	if !ok {
+		return false, ErrNotFound
+	}
+	if j.Status != JobStatusPending {
+		return false, nil
+	}
+	j.Status = JobStatusRunning
+	j.StartedAt = &startedAt
+	return true, nil
+}
+
 func (m *mockRepo) UpdateStatus(_ context.Context, id string, status JobStatus, extra statusExtra) error {
 	j, ok := m.jobs[id]
 	if !ok {
