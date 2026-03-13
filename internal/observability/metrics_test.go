@@ -83,6 +83,119 @@ func TestRegisterBusinessMetrics(t *testing.T) {
 	}
 }
 
+func TestRegisterBusinessMetrics_NilProviders(t *testing.T) {
+	m := NewMetrics()
+
+	// All provider callbacks are nil — the callback should still register without error
+	unregister, err := m.RegisterBusinessMetrics(BusinessMetricsProvider{})
+	if err != nil {
+		t.Fatalf("RegisterBusinessMetrics(nil providers) error: %v", err)
+	}
+	if unregister == nil {
+		t.Fatal("expected unregister func")
+	}
+	if err := unregister(); err != nil {
+		t.Fatalf("unregister error: %v", err)
+	}
+}
+
+func TestRegisterBusinessMetrics_ProviderErrors(t *testing.T) {
+	m := NewMetrics()
+
+	// Providers return errors — callback should swallow them gracefully
+	unregister, err := m.RegisterBusinessMetrics(BusinessMetricsProvider{
+		SourcesByType: func(ctx context.Context) (map[string]int, error) {
+			return nil, errStub
+		},
+		GraphSummary: func(ctx context.Context) (GraphMetricsSummary, error) {
+			return GraphMetricsSummary{}, errStub
+		},
+		AdapterCount: func() int { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("RegisterBusinessMetrics error: %v", err)
+	}
+	_ = unregister()
+}
+
+func TestLogMetricInitError_NoError(t *testing.T) {
+	// Should be a no-op — no panic, no log
+	logMetricInitError("test.metric", nil)
+}
+
+func TestGetEnvBool_FalseValues(t *testing.T) {
+	t.Setenv("TEST_BOOL_FALSE", "false")
+	if getEnvBool("TEST_BOOL_FALSE", true) {
+		t.Fatal("expected false for 'false' value")
+	}
+
+	t.Setenv("TEST_BOOL_ZERO", "0")
+	if getEnvBool("TEST_BOOL_ZERO", true) {
+		t.Fatal("expected false for '0' value")
+	}
+}
+
+func TestGetEnvBool_TrueValue(t *testing.T) {
+	t.Setenv("TEST_BOOL_TRUE", "true")
+	if !getEnvBool("TEST_BOOL_TRUE", false) {
+		t.Fatal("expected true for 'true' value")
+	}
+}
+
+func TestSetup_WithStdoutTracing(t *testing.T) {
+	ResetMetricsHandler()
+	shutdown, err := Setup(context.Background(), Config{
+		Enabled:        true,
+		TracesEnabled:  true,
+		TracesExporter: "stdout",
+		MetricsEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("Setup(stdout tracing) error: %v", err)
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+}
+
+func TestSetup_WithPrometheusMetrics(t *testing.T) {
+	ResetMetricsHandler()
+	shutdown, err := Setup(context.Background(), Config{
+		Enabled:         true,
+		TracesEnabled:   false,
+		MetricsEnabled:  true,
+		MetricsExporter: "prometheus",
+	})
+	if err != nil {
+		t.Fatalf("Setup(prometheus) error: %v", err)
+	}
+	if MetricsHandler() == nil {
+		t.Fatal("expected metrics handler after prometheus setup")
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+	ResetMetricsHandler()
+}
+
+func TestSetup_TracesDisabledMetricsDisabled(t *testing.T) {
+	ResetMetricsHandler()
+	shutdown, err := Setup(context.Background(), Config{
+		Enabled:        true,
+		TracesEnabled:  false,
+		MetricsEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("Setup error: %v", err)
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+}
+
+// errStub is a sentinel error for tests.
+var errStub = errors.New("stub error")
+
 func TestSetupAndHelpers_Branches(t *testing.T) {
 	t.Run("enabled with none exporters", func(t *testing.T) {
 		ResetMetricsHandler()

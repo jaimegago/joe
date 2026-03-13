@@ -25,7 +25,9 @@ type Config struct {
 }
 
 const notionAPIVersion = "2022-06-28"
-const notionBaseURL = "https://api.notion.com/v1"
+
+// notionBaseURL is a var so tests can override it with an httptest.Server URL.
+var notionBaseURL = "https://api.notion.com/v1"
 
 // Syncer implements sync.Syncer for Notion.
 type Syncer struct{}

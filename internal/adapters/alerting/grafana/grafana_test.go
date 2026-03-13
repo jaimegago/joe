@@ -476,6 +476,244 @@ func TestAdapter_ListDashboards_WithQuery(t *testing.T) {
 	}
 }
 
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := grafana.New()
+	// Empty config — no URL, no api_key — should fail ParseConfig.
+	source := store.Source{}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+func TestAdapter_ListDashboards_DefaultLimit(t *testing.T) {
+	var gotLimit string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+		case "/api/search":
+			gotLimit = r.URL.Query().Get("limit")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListDashboards(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("ListDashboards() error = %v", err)
+	}
+	if gotLimit != "50" {
+		t.Errorf("default limit = %q, want 50", gotLimit)
+	}
+}
+
+func TestAdapter_ListDashboards_DoError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListDashboards(context.Background(), "", 10)
+	if err == nil {
+		t.Error("expected error from connection close, got nil")
+	}
+}
+
+func TestAdapter_ListDashboards_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListDashboards(context.Background(), "", 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestAdapter_GetDashboard_DoError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.GetDashboard(context.Background(), "uid1")
+	if err == nil {
+		t.Error("expected error from connection close, got nil")
+	}
+}
+
+func TestAdapter_GetDashboard_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.GetDashboard(context.Background(), "uid1")
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestAdapter_GetDashboard_OtherServerError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`internal error`))
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.GetDashboard(context.Background(), "uid1")
+	if err == nil {
+		t.Error("expected error for 500, got nil")
+	}
+}
+
+func TestAdapter_ListAlerts_DoError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListAlerts(context.Background())
+	if err == nil {
+		t.Error("expected error from connection close, got nil")
+	}
+}
+
+func TestAdapter_ListAlerts_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"database":"ok"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := grafana.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":     srv.URL,
+		"api_key": "key",
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListAlerts(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
 // mockHTTPDoer is a minimal mock for the httpDoer interface.
 type mockHTTPDoer struct {
 	resp *http.Response

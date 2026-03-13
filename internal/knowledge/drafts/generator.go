@@ -28,6 +28,9 @@ type GenerateRequest struct {
 	Context    string               `json:"context,omitempty"`
 }
 
+// notionAPIBase is a var so tests can override it with an httptest.Server URL.
+var notionAPIBase = "https://api.notion.com/v1"
+
 // Generator creates documentation proposals using knowledge store + LLM.
 type Generator struct {
 	svc         *knowledge.Service
@@ -263,7 +266,7 @@ func (g *Generator) fetchConfluencePage(ctx context.Context, cfg confluenceSourc
 }
 
 func (g *Generator) fetchNotionPage(ctx context.Context, token, pageID string) (string, error) {
-	u := fmt.Sprintf("https://api.notion.com/v1/blocks/%s/children?page_size=100", pageID)
+	u := fmt.Sprintf("%s/blocks/%s/children?page_size=100", notionAPIBase, pageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)

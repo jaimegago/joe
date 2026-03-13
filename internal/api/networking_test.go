@@ -211,3 +211,114 @@ func TestHandleEnvoyStats_NotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", w.Code)
 	}
 }
+
+func TestHandleNginxConfigMaps(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockNginxAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockNginxAdapter{configMaps: []nginxadapter.ConfigMapSummary{{Name: "nginx-config", Namespace: "default"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockNginxAdapter{configMaps: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockNginxAdapter{err: fmt.Errorf("k8s error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupNetworkingServer(t, "nginx-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/nginx/nginx-src/config", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleNginxStatus_Error(t *testing.T) {
+	mock := &mockNginxAdapter{err: fmt.Errorf("k8s error")}
+	mux := setupNetworkingServer(t, "nginx-src", mock)
+	req := httptest.NewRequest("GET", "/api/v1/nginx/nginx-src/status", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestHandleEnvoyConfigDump(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockEnvoyAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockEnvoyAdapter{config: map[string]any{"configs": []any{}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockEnvoyAdapter{err: fmt.Errorf("envoy error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupNetworkingServer(t, "envoy-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/envoy/envoy-src/config", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleEnvoyStats(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockEnvoyAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockEnvoyAdapter{stats: []envoyidapter.Stat{{Name: "cluster.upstream_rq_total", Value: 1000}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockEnvoyAdapter{stats: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockEnvoyAdapter{err: fmt.Errorf("envoy error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupNetworkingServer(t, "envoy-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/envoy/envoy-src/stats", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}

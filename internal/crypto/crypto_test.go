@@ -231,3 +231,22 @@ func TestDecrypt_CiphertextTooShort(t *testing.T) {
 		t.Error("expected error for too-short ciphertext, got nil")
 	}
 }
+
+func TestLoadOrCreateKey_MkdirError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write to any directory, skipping permission test")
+	}
+	dir := t.TempDir()
+	// Make the temp dir read-only so MkdirAll cannot create a subdirectory.
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0755) //nolint:errcheck
+
+	// Key path requires creating a new subdirectory inside the read-only dir.
+	keyPath := filepath.Join(dir, "newsubdir", "encryption.key")
+	_, err := LoadOrCreateKey(keyPath)
+	if err == nil {
+		t.Error("expected error when MkdirAll fails, got nil")
+	}
+}

@@ -2,7 +2,6 @@ package llmfactory
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
@@ -25,9 +24,7 @@ func NewAdapter(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, err
 	switch mc.Provider {
 	case "claude":
 		return claude.NewClient(mc.Model)
-	case "gemini":
+	default: // "gemini" — ValidateAPIKeys already rejects unknown providers above
 		return gemini.NewClient(ctx, mc.Model)
-	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %q (supported: claude, gemini)", mc.Provider)
 	}
 }

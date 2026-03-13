@@ -80,6 +80,54 @@ func TestNewAdapter_ClaudeMissingKey(t *testing.T) {
 	}
 }
 
+func TestNewAdapter_GeminiSuccessWithGoogleKey(t *testing.T) {
+	// Exercise the GOOGLE_API_KEY fallback path in gemini.NewClient.
+	origGemini := os.Getenv("GEMINI_API_KEY")
+	os.Unsetenv("GEMINI_API_KEY")
+	os.Setenv("GOOGLE_API_KEY", "google-api-key-long-enough-to-pass-validation-1234")
+	defer func() {
+		os.Unsetenv("GOOGLE_API_KEY")
+		if origGemini != "" {
+			os.Setenv("GEMINI_API_KEY", origGemini)
+		}
+	}()
+
+	adapter, err := NewAdapter(context.Background(), config.ModelConfig{
+		Provider: "gemini",
+		Model:    "gemini-2.0-flash-lite",
+	})
+	if err != nil {
+		t.Fatalf("expected no error with GOOGLE_API_KEY set, got %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+	if closer, ok := adapter.(io.Closer); ok {
+		closer.Close()
+	}
+}
+
+func TestNewAdapter_GeminiClientError(t *testing.T) {
+	// ValidateAPIKeys passes (key is set) but gemini.NewClient rejects the short key.
+	origGemini := os.Getenv("GEMINI_API_KEY")
+	os.Setenv("GEMINI_API_KEY", "short")
+	defer func() {
+		if origGemini != "" {
+			os.Setenv("GEMINI_API_KEY", origGemini)
+		} else {
+			os.Unsetenv("GEMINI_API_KEY")
+		}
+	}()
+
+	_, err := NewAdapter(context.Background(), config.ModelConfig{
+		Provider: "gemini",
+		Model:    "gemini-2.0-flash-lite",
+	})
+	if err == nil {
+		t.Fatal("expected error for short/invalid Gemini API key")
+	}
+}
+
 func TestNewAdapter_GeminiMissingKey(t *testing.T) {
 	origGemini := os.Getenv("GEMINI_API_KEY")
 	origGoogle := os.Getenv("GOOGLE_API_KEY")

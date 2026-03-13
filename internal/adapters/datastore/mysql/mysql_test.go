@@ -384,3 +384,154 @@ func TestStat_NumericFallbacks(t *testing.T) {
 		t.Errorf("User = %q, want 99", stat.Processes[0].User)
 	}
 }
+
+func TestToInt64_Float64(t *testing.T) {
+	// float64 → int64 branch is not exercised via Stat; test directly.
+	procRows := []map[string]any{
+		{
+			"Id":      float64(7),
+			"User":    "test",
+			"Host":    "h",
+			"db":      "db",
+			"Command": "Query",
+			"Time":    float64(1.9),
+			"State":   "",
+			"Info":    "",
+		},
+	}
+
+	q := &mockQuerier{
+		responses: [][]map[string]any{procRows, {}},
+	}
+	a := NewWithQuerier(q)
+
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Processes[0].ID != 7 {
+		t.Errorf("ID from float64 = %d, want 7", stat.Processes[0].ID)
+	}
+	if stat.Processes[0].Time != 1 {
+		t.Errorf("Time from float64 = %d, want 1", stat.Processes[0].Time)
+	}
+}
+
+func TestStat_ReplicaStatusFallback_BothFail(t *testing.T) {
+	// Both SHOW REPLICA STATUS and SHOW SLAVE STATUS fail; Stat should still
+	// succeed and leave Replica nil.
+	callCount := 0
+	q := &errOnCallQuerier{
+		firstOK: []map[string]any{
+			{"Id": int64(1), "User": "root", "Host": "h", "db": "d",
+				"Command": "Query", "Time": int64(0), "State": "", "Info": ""},
+		},
+		callThreshold: 1, // fail from second call onwards
+		err:           errors.New("replica status not supported"),
+	}
+	a := NewWithQuerier(q)
+
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Replica != nil {
+		t.Error("Replica should be nil when both replica status calls fail")
+	}
+	_ = callCount
+}
+
+// errOnCallQuerier returns firstOK on the first call then errors thereafter.
+type errOnCallQuerier struct {
+	firstOK       []map[string]any
+	callThreshold int
+	err           error
+	calls         int
+}
+
+func (e *errOnCallQuerier) ping(_ context.Context) error { return nil }
+func (e *errOnCallQuerier) close()                       {}
+func (e *errOnCallQuerier) scan(_ context.Context, _ string) ([]map[string]any, error) {
+	e.calls++
+	if e.calls <= e.callThreshold {
+		return e.firstOK, nil
+	}
+	return nil, e.err
+}
+
+func TestStat_ReplicaRunning_SlaveRunningField(t *testing.T) {
+	// Stat with Slave_Running=Yes (old-style field) and replica nil for Running.
+	procRows := []map[string]any{
+		{"Id": int64(1), "User": "r", "Host": "h", "db": "d",
+			"Command": "Sleep", "Time": int64(0), "State": "", "Info": ""},
+	}
+	replicaRows := []map[string]any{
+		{
+			"Replica_Running":       "No",
+			"Slave_Running":         "Yes",
+			"Seconds_Behind_Master": int64(3),
+			"Last_Error":            "",
+			"Master_Log_File":       "bin.001",
+			"Read_Master_Log_Pos":   int64(0),
+		},
+	}
+	q := &mockQuerier{responses: [][]map[string]any{procRows, replicaRows}}
+	a := NewWithQuerier(q)
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Replica == nil {
+		t.Fatal("expected Replica non-nil")
+	}
+	if !stat.Replica.Running {
+		t.Error("expected Running=true when Slave_Running=Yes")
+	}
+}
+
+func TestConnect_EmptyConfig(t *testing.T) {
+	a := New()
+	src := store.Source{Config: nil}
+	// Empty config is missing host — ParseConfig should error.
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for empty config, got nil")
+	}
+}
+
+func TestConnect_PingFails(t *testing.T) {
+	a := New()
+	src := store.Source{
+		Config: mustMarshal(t, map[string]any{
+			"host": "127.0.0.1", "port": float64(19998),
+			"user": "nobody", "database": "nodb",
+		}),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected ping error for unreachable host, got nil")
+	}
+}
+
+func TestToInt64_InvalidBytes(t *testing.T) {
+	// []byte with non-numeric value should return 0.
+	procRows := []map[string]any{
+		{
+			"Id":      []byte("notanumber"),
+			"User":    "u",
+			"Host":    "h",
+			"db":      "d",
+			"Command": "Q",
+			"Time":    []byte("abc"),
+			"State":   "",
+			"Info":    "",
+		},
+	}
+	q := &mockQuerier{responses: [][]map[string]any{procRows, {}}}
+	a := NewWithQuerier(q)
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Processes[0].ID != 0 {
+		t.Errorf("ID from invalid bytes = %d, want 0", stat.Processes[0].ID)
+	}
+}

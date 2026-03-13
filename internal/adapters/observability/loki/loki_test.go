@@ -393,6 +393,164 @@ func TestAdapter_Query_LokiErrorStatus(t *testing.T) {
 	}
 }
 
+func TestAdapter_ListServices(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/loki/api/v1/labels":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		case "/loki/api/v1/label/app/values":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":["payment","orders","auth"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := loki.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	services, err := adapter.ListServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListServices() error = %v", err)
+	}
+	if len(services) != 3 {
+		t.Errorf("len(services) = %d, want 3", len(services))
+	}
+}
+
+func TestAdapter_ListServices_NotConnected(t *testing.T) {
+	adapter := loki.New()
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error when not connected, got nil")
+	}
+}
+
+func TestAdapter_ListServices_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/loki/api/v1/labels":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		case "/loki/api/v1/label/app/values":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`error`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := loki.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for server error, got nil")
+	}
+}
+
+func TestAdapter_ListServices_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/loki/api/v1/labels":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		case "/loki/api/v1/label/app/values":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not-json`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := loki.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestAdapter_ListServices_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+	}))
+
+	adapter := loki.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	// Close the server to cause a request error on subsequent calls.
+	srv.Close()
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error when server is closed, got nil")
+	}
+}
+
+func TestAdapter_Query_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/loki/api/v1/labels":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		case "/loki/api/v1/query":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not-json`))
+		}
+	}))
+	defer srv.Close()
+
+	adapter := loki.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.Query(context.Background(), `{app="test"}`, 10, time.Hour)
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := loki.New()
+	// Empty config bytes triggers the else branch (configMap = make(map[string]any))
+	// then ParseConfig returns error because url is missing.
+	source := store.Source{Config: nil}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+func TestAdapter_ParseConfig_WithOptionalFields(t *testing.T) {
+	cfg, err := loki.ParseConfig(map[string]any{
+		"url":     "http://loki:3100",
+		"api_key": "mykey",
+		"org_id":  "tenant1",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIKey != "mykey" {
+		t.Errorf("APIKey = %q, want mykey", cfg.APIKey)
+	}
+	if cfg.OrgID != "tenant1" {
+		t.Errorf("OrgID = %q, want tenant1", cfg.OrgID)
+	}
+}
+
 // mockHTTPDoer is a simple mock for the httpDoer interface.
 type mockHTTPDoer struct {
 	resp *http.Response

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters/networking/envoy"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // mockHTTP implements httpDoer for tests.
@@ -256,5 +258,107 @@ func TestParseConfig(t *testing.T) {
 				t.Errorf("URL = %q, want %q", cfg.URL, tt.wantURL)
 			}
 		})
+	}
+}
+
+func TestParseConfig_DefaultTimeout(t *testing.T) {
+	// Test that default timeout is applied when timeout_ms is 0.
+	cfg, err := envoy.ParseConfig([]byte(`{"url":"http://envoy:9901"}`))
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.TimeoutMS != 10000 {
+		t.Errorf("default TimeoutMS = %d, want 10000", cfg.TimeoutMS)
+	}
+}
+
+func TestAdapter_ConfigDump_Error(t *testing.T) {
+	cli := &mockHTTP{
+		responses: map[string]mockResponse{
+			"/config_dump": {status: 500, body: "internal error"},
+		},
+	}
+	a := envoy.NewWithClient(cli, envoy.Config{URL: "http://envoy:9901"})
+	_, err := a.ConfigDump(context.Background(), "")
+	if err == nil {
+		t.Error("expected error for 500, got nil")
+	}
+}
+
+func TestAdapter_Stats_Error(t *testing.T) {
+	cli := &mockHTTP{
+		responses: map[string]mockResponse{
+			"/stats?format=json": {status: 503, body: "service unavailable"},
+		},
+	}
+	a := envoy.NewWithClient(cli, envoy.Config{URL: "http://envoy:9901"})
+	_, err := a.Stats(context.Background(), "")
+	if err == nil {
+		t.Error("expected error for 503, got nil")
+	}
+}
+
+func TestAdapter_Get_NetworkError(t *testing.T) {
+	cli := &mockHTTP{err: errors.New("connection refused")}
+	a := envoy.NewWithClient(cli, envoy.Config{URL: "http://envoy:9901"})
+	_, err := a.Clusters(context.Background())
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestAdapter_Status_Connected(t *testing.T) {
+	a := envoy.NewWithClient(&mockHTTP{}, envoy.Config{URL: "http://envoy:9901"})
+	s := a.Status()
+	if !s.Connected {
+		t.Error("expected connected status")
+	}
+	if s.Message == "" {
+		t.Error("expected non-empty status message")
+	}
+}
+
+func TestConnect_ViaSource(t *testing.T) {
+	// Test Connect via httptest server.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/server_info", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"version":"1.28.0"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := envoy.New()
+	src := store.Source{
+		Config: []byte(`{"url":"` + srv.URL + `"}`),
+	}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("expected connected after Connect()")
+	}
+}
+
+func TestConnect_BadStatus(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/server_info", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := envoy.New()
+	src := store.Source{Config: []byte(`{"url":"` + srv.URL + `"}`)}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error for 503 ping response")
+	}
+}
+
+func TestConnect_BadConfig(t *testing.T) {
+	a := envoy.New()
+	src := store.Source{Config: []byte(`{}`)}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error for missing url")
 	}
 }

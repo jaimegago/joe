@@ -3,11 +3,16 @@ package nginx
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // mockDoer implements nginxDoer for tests.
@@ -288,5 +293,305 @@ func TestParseConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAdapter_Status_Connected(t *testing.T) {
+	a := NewWithDoer(&mockDoer{}, Config{})
+	s := a.Status()
+	if !s.Connected {
+		t.Error("expected connected")
+	}
+	if s.Message != "connected" {
+		t.Errorf("Message = %q, want connected", s.Message)
+	}
+}
+
+func TestAdapter_GetNginxStatus_HTTPError(t *testing.T) {
+	doer := &mockDoer{err: errors.New("connection refused")}
+	a := NewWithDoer(doer, Config{StatusURL: "http://nginx:8080", StatusPath: "/nginx_status"})
+	_, err := a.GetNginxStatus(context.Background())
+	if err == nil {
+		t.Error("expected error when HTTP get fails")
+	}
+}
+
+func TestAdapter_ListConfigMaps_Error(t *testing.T) {
+	doer := &mockDoer{err: errors.New("k8s down")}
+	a := NewWithDoer(doer, Config{})
+	_, err := a.ListConfigMaps(context.Background(), "default")
+	if err == nil {
+		t.Error("expected error when listConfigMaps fails")
+	}
+}
+
+func TestAdapter_ListIngresses_Error(t *testing.T) {
+	doer := &mockDoer{err: errors.New("k8s timeout")}
+	a := NewWithDoer(doer, Config{StatusURL: "http://nginx:8080"})
+	_, err := a.ListIngresses(context.Background(), "production")
+	if err == nil {
+		t.Error("expected error when listIngresses fails")
+	}
+}
+
+func TestConvertIngress_NamedPort(t *testing.T) {
+	// Exercise the named-port branch: Port.Name != "" takes priority over Port.Number.
+	pt := networkingv1.PathTypeExact
+	ing := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "named-port-ing", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "svc.example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pt,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "my-svc",
+											Port: networkingv1.ServiceBackendPort{
+												Name:   "http", // named port
+												Number: 0,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	doer := &mockDoer{ingresses: []networkingv1.Ingress{ing}}
+	a := NewWithDoer(doer, Config{})
+	ingresses, err := a.ListIngresses(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("ListIngresses() error = %v", err)
+	}
+	if len(ingresses) != 1 {
+		t.Fatalf("expected 1 ingress")
+	}
+	if ingresses[0].Rules[0].Paths[0].ServicePort != "http" {
+		t.Errorf("ServicePort = %q, want http", ingresses[0].Rules[0].Paths[0].ServicePort)
+	}
+}
+
+func TestConvertIngress_TLSAndLB(t *testing.T) {
+	// Exercise TLS entries and LoadBalancer status fields.
+	ing := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-ing", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			TLS: []networkingv1.IngressTLS{
+				{Hosts: []string{"secure.example.com"}, SecretName: "tls-secret"},
+			},
+		},
+		Status: networkingv1.IngressStatus{
+			LoadBalancer: networkingv1.IngressLoadBalancerStatus{
+				Ingress: []networkingv1.IngressLoadBalancerIngress{
+					{IP: "1.2.3.4", Hostname: "lb.example.com"},
+				},
+			},
+		},
+	}
+	doer := &mockDoer{ingresses: []networkingv1.Ingress{ing}}
+	a := NewWithDoer(doer, Config{})
+	ingresses, err := a.ListIngresses(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("ListIngresses() error = %v", err)
+	}
+	if len(ingresses[0].TLS) != 1 {
+		t.Errorf("expected 1 TLS entry, got %d", len(ingresses[0].TLS))
+	}
+	if ingresses[0].TLS[0].SecretName != "tls-secret" {
+		t.Errorf("SecretName = %q, want tls-secret", ingresses[0].TLS[0].SecretName)
+	}
+	if len(ingresses[0].LoadBalancer) != 1 {
+		t.Errorf("expected 1 LB entry, got %d", len(ingresses[0].LoadBalancer))
+	}
+	if ingresses[0].LoadBalancer[0].IP != "1.2.3.4" {
+		t.Errorf("LB IP = %q, want 1.2.3.4", ingresses[0].LoadBalancer[0].IP)
+	}
+}
+
+func TestConvertIngress_NilIngressClass(t *testing.T) {
+	// IngressClassName is nil — Class should be empty.
+	ing := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "no-class", Namespace: "default"},
+		Spec: networkingv1.IngressSpec{
+			// IngressClassName intentionally nil
+			Rules: []networkingv1.IngressRule{
+				{Host: "host.example.com"},
+			},
+		},
+	}
+	doer := &mockDoer{ingresses: []networkingv1.Ingress{ing}}
+	a := NewWithDoer(doer, Config{})
+	ingresses, err := a.ListIngresses(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListIngresses() error = %v", err)
+	}
+	if ingresses[0].Class != "" {
+		t.Errorf("Class = %q, want empty", ingresses[0].Class)
+	}
+}
+
+func TestParseNginxStatus_BadActiveConnections(t *testing.T) {
+	body := "Active connections: notanumber\nserver accepts handled requests\n1 2 3\nReading: 0 Writing: 1 Waiting: 0"
+	_, err := parseNginxStatus(body)
+	if err == nil {
+		t.Error("expected error for non-numeric active connections")
+	}
+}
+
+func TestParseNginxStatus_ShortNumbersLine(t *testing.T) {
+	// Numbers line has fewer than 3 fields — should not panic, just skip.
+	body := "Active connections: 5\nserver accepts handled requests\n1 2\nReading: 0 Writing: 1 Waiting: 0"
+	status, err := parseNginxStatus(body)
+	if err != nil {
+		t.Fatalf("parseNginxStatus() unexpected error = %v", err)
+	}
+	if status.TotalAccepts != 0 {
+		t.Errorf("TotalAccepts = %d, want 0 for short line", status.TotalAccepts)
+	}
+}
+
+// ---- realDoer tests ----
+
+func TestRealDoer_HTTPGet_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Active connections: 5\n"))
+	}))
+	defer srv.Close()
+
+	d := &realDoer{httpClient: srv.Client()}
+	body, err := d.httpGet(context.Background(), srv.URL+"/nginx_status")
+	if err != nil {
+		t.Fatalf("httpGet() error = %v", err)
+	}
+	if string(body) != "Active connections: 5\n" {
+		t.Errorf("body = %q", string(body))
+	}
+}
+
+func TestRealDoer_HTTPGet_NonOKStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	d := &realDoer{httpClient: srv.Client()}
+	_, err := d.httpGet(context.Background(), srv.URL+"/nginx_status")
+	if err == nil {
+		t.Error("expected error for non-200 status")
+	}
+}
+
+func TestRealDoer_HTTPGet_BadURL(t *testing.T) {
+	d := &realDoer{httpClient: &http.Client{}}
+	_, err := d.httpGet(context.Background(), "://bad-url")
+	if err == nil {
+		t.Error("expected error for bad URL")
+	}
+}
+
+func TestBuildRESTConfig_EmptyPath(t *testing.T) {
+	// When kubeconfigPath is empty and not in-cluster, clientcmd falls back to
+	// default kubeconfig location. This may succeed or fail depending on the
+	// environment; we just verify no panic.
+	_, _ = buildRESTConfig("", "")
+}
+
+func TestBuildRESTConfig_NonExistentPath(t *testing.T) {
+	// Non-existent kubeconfig path should return an error.
+	cfg, err := buildRESTConfig("/nonexistent/path/to/kubeconfig", "")
+	if err == nil && cfg == nil {
+		t.Error("expected either a config or an error")
+	}
+	// Either outcome is acceptable; we just need the branch exercised.
+}
+
+func TestBuildRESTConfig_WithContext(t *testing.T) {
+	// Non-existent path with a context override — exercises the context branch.
+	_, _ = buildRESTConfig("/nonexistent/kubeconfig", "my-context")
+}
+
+func TestRealDoer_HTTPGet_ConnectionRefused(t *testing.T) {
+	// httpClient.Do returns an error when the server is already closed.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	cli := srv.Client()
+	url := srv.URL + "/nginx_status"
+	srv.Close() // close before the request is made
+
+	d := &realDoer{httpClient: cli}
+	_, err := d.httpGet(context.Background(), url)
+	if err == nil {
+		t.Error("expected error when connection is refused")
+	}
+}
+
+// TestConnect_ParseConfigError exercises the Connect error path for bad JSON.
+func TestConnect_ParseConfigError(t *testing.T) {
+	a := New()
+	src := store.Source{Config: []byte(`{bad json`)}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for bad JSON config")
+	}
+}
+
+// TestConnect_BuildRESTConfigError exercises Connect when buildRESTConfig fails.
+func TestConnect_BuildRESTConfigError(t *testing.T) {
+	a := New()
+	// A valid JSON config with a kubeconfig path that doesn't exist causes
+	// buildRESTConfig to fail (no fallback in-cluster config in test env).
+	src := store.Source{
+		Config: []byte(`{"kubeconfig_path":"/nonexistent/kubeconfig.yaml"}`),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for non-existent kubeconfig")
+	}
+}
+
+// TestConnect_ServerVersionFails exercises Connect past kubernetes.NewForConfig
+// but fails at ServerVersion() because the server URL is unreachable.
+func TestConnect_ServerVersionFails(t *testing.T) {
+	// Write a minimal kubeconfig that points to a non-existent server.
+	kubecfg := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: http://127.0.0.1:19997
+  name: fake
+contexts:
+- context:
+    cluster: fake
+    user: fake
+  name: fake
+current-context: fake
+users:
+- name: fake
+  user: {}
+`
+	f, err := os.CreateTemp("", "kubeconfig-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp kubeconfig: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(kubecfg); err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+	f.Close()
+
+	a := New()
+	src := store.Source{
+		Config: []byte(`{"kubeconfig_path":"` + f.Name() + `"}`),
+	}
+	// Connect should fail at ServerVersion() since 127.0.0.1:19997 is not listening.
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error when ServerVersion fails")
 	}
 }

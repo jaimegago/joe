@@ -258,3 +258,232 @@ func TestSync_BadConfig(t *testing.T) {
 		t.Error("Sync() expected error for invalid config, got nil")
 	}
 }
+
+func TestSync_EmptySpace(t *testing.T) {
+	srv := httptest.NewServer(confluencePagesHandler([]map[string]any{}, ""))
+	defer srv.Close()
+
+	svc := newTestKnowledgeSvc(t)
+	src := makeConfluenceSource(srv.URL)
+	syncer := New()
+
+	if err := syncer.Sync(context.Background(), src, svc); err != nil {
+		t.Fatalf("Sync() error for empty space = %v", err)
+	}
+	entries, _ := svc.List(context.Background(), knowledge.EntryFilter{Tier: knowledge.TierSynced})
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty space, got %d", len(entries))
+	}
+}
+
+func TestSync_MalformedJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{invalid json`))
+	}))
+	defer srv.Close()
+
+	svc := newTestKnowledgeSvc(t)
+	src := makeConfluenceSource(srv.URL)
+	syncer := New()
+
+	if err := syncer.Sync(context.Background(), src, svc); err == nil {
+		t.Error("Sync() expected error for malformed JSON response, got nil")
+	}
+}
+
+func TestFetchPages_NextLinkNoCursor(t *testing.T) {
+	// Server returns has_more with a next link that has no cursor param → stops pagination.
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"id": "p1", "title": "Page 1",
+					"body":   map[string]any{"storage": map[string]any{"value": "content"}},
+					"_links": map[string]any{"webui": "/wiki/p1"},
+				},
+			},
+			"_links": map[string]any{"next": "?limit=25"}, // no cursor param
+		})
+	}))
+	defer srv.Close()
+
+	svc := newTestKnowledgeSvc(t)
+	src := makeConfluenceSource(srv.URL)
+	syncer := New()
+
+	if err := syncer.Sync(context.Background(), src, svc); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 API call (no cursor → stop), got %d", callCount)
+	}
+}
+
+func TestFetchPages_MalformedNextLink(t *testing.T) {
+	// Server returns an unparseable next link → url.Parse error → pagination stops gracefully.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"id": "p1", "title": "Page 1",
+					"body":   map[string]any{"storage": map[string]any{"value": "content"}},
+					"_links": map[string]any{"webui": "/wiki/p1"},
+				},
+			},
+			"_links": map[string]any{"next": "://invalid-url"},
+		})
+	}))
+	defer srv.Close()
+
+	svc := newTestKnowledgeSvc(t)
+	src := makeConfluenceSource(srv.URL)
+	syncer := New()
+
+	if err := syncer.Sync(context.Background(), src, svc); err != nil {
+		t.Fatalf("Sync() error with malformed next link = %v", err)
+	}
+}
+
+func TestFetchPages_PageLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"id": "p1", "title": "Page 1",
+					"body":   map[string]any{"storage": map[string]any{"value": "c"}},
+					"_links": map[string]any{"webui": "/wiki/p1"},
+				},
+			},
+			"_links": map[string]any{"next": "?cursor=next&limit=25"},
+		})
+	}))
+	defer srv.Close()
+
+	// PageLimit=1 with a server always returning has_more → only one page fetched.
+	cfgBytes, _ := json.Marshal(Config{
+		BaseURL:   srv.URL,
+		APIToken:  "tok",
+		Email:     "test@example.com",
+		SpaceKey:  "ENG",
+		PageLimit: 1,
+	})
+	src := &knowledge.KnowledgeSource{
+		ID:     "src-limited",
+		Name:   "Limited Confluence",
+		Type:   "confluence",
+		Config: json.RawMessage(cfgBytes),
+	}
+	svc := newTestKnowledgeSvc(t)
+	syncer := New()
+
+	if err := syncer.Sync(context.Background(), src, svc); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	entries, _ := svc.List(context.Background(), knowledge.EntryFilter{Tier: knowledge.TierSynced})
+	if len(entries) != 1 {
+		t.Errorf("PageLimit=1: expected 1 entry, got %d", len(entries))
+	}
+}
+
+// --- UpdatePage tests ---
+
+func TestUpdatePage_Success(t *testing.T) {
+	var receivedPayload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			json.NewDecoder(r.Body).Decode(&receivedPayload)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{}`))
+		} else {
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	err := UpdatePage(context.Background(), cfg, "page-1", "My Title", "<p>content</p>", 3)
+	if err != nil {
+		t.Fatalf("UpdatePage() error = %v", err)
+	}
+	if receivedPayload["title"] != "My Title" {
+		t.Errorf("title = %v, want %q", receivedPayload["title"], "My Title")
+	}
+}
+
+func TestUpdatePage_VersionConflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"message":"version conflict"}`))
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	err := UpdatePage(context.Background(), cfg, "page-1", "Title", "content", 2)
+	if err == nil {
+		t.Error("UpdatePage() expected error for 409 conflict, got nil")
+	}
+}
+
+func TestUpdatePage_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	err := UpdatePage(context.Background(), cfg, "page-missing", "Title", "content", 1)
+	if err == nil {
+		t.Error("UpdatePage() expected error for 404, got nil")
+	}
+}
+
+// --- GetPageVersion tests ---
+
+func TestGetPageVersion_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"version": map[string]any{"number": 7},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	v, err := GetPageVersion(context.Background(), cfg, "page-1")
+	if err != nil {
+		t.Fatalf("GetPageVersion() error = %v", err)
+	}
+	if v != 7 {
+		t.Errorf("version = %d, want 7", v)
+	}
+}
+
+func TestGetPageVersion_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	_, err := GetPageVersion(context.Background(), cfg, "page-missing")
+	if err == nil {
+		t.Error("GetPageVersion() expected error for 404, got nil")
+	}
+}
+
+func TestGetPageVersion_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{invalid`))
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL, APIToken: "tok", Email: "test@example.com"}
+	_, err := GetPageVersion(context.Background(), cfg, "page-1")
+	if err == nil {
+		t.Error("GetPageVersion() expected error for invalid JSON, got nil")
+	}
+}

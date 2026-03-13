@@ -153,6 +153,63 @@ func TestRepository_UpdateStatus(t *testing.T) {
 	}
 }
 
+func TestRepository_ClaimJob(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	job := makeJob(PlatformGitHub, "org", "claimrepo", 1, "ccc111")
+	if err := repo.Enqueue(ctx, job); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	// First claim should succeed.
+	claimed, err := repo.ClaimJob(ctx, job.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("ClaimJob: %v", err)
+	}
+	if !claimed {
+		t.Error("expected claimed=true on first attempt")
+	}
+
+	// Second claim should return false (already running).
+	claimed2, err := repo.ClaimJob(ctx, job.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("ClaimJob (second): %v", err)
+	}
+	if claimed2 {
+		t.Error("expected claimed=false on second attempt")
+	}
+
+	// Verify status is running.
+	got, _ := repo.Get(ctx, job.ID)
+	if got.Status != JobStatusRunning {
+		t.Errorf("status after ClaimJob = %s, want running", got.Status)
+	}
+}
+
+func TestRepository_GetNotFound(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_, err := repo.Get(ctx, "nonexistent")
+	if err == nil {
+		t.Fatal("Get on nonexistent ID should return error")
+	}
+}
+
+func TestRepository_GetByEventIDNotFound(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_, err := repo.GetByEventID(ctx, "nonexistent-event")
+	if err == nil {
+		t.Fatal("GetByEventID on nonexistent event_id should return error")
+	}
+}
+
 func TestRepository_List(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewRepository(db, "sqlite")

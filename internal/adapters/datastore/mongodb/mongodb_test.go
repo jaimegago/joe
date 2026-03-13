@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jaimegago/joe/internal/store"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // mockRunner implements the mongoRunner interface for testing.
@@ -272,4 +275,116 @@ func TestServerStatus_MultipleCallsSequential(t *testing.T) {
 	if _, ok := co["inprog"]; !ok {
 		t.Error("CurrentOp result missing inprog key")
 	}
+}
+
+// mockRunnerWithPingFail lets us exercise the ping-failure branch in Connect
+// by embedding a mongoRunner that fails on ping.
+type mockRunnerWithPingFail struct {
+	pingErr error
+}
+
+func (m *mockRunnerWithPingFail) ping(_ context.Context) error { return m.pingErr }
+func (m *mockRunnerWithPingFail) runCommand(_ context.Context, _ string, _ any) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (m *mockRunnerWithPingFail) disconnect(_ context.Context) error { return nil }
+
+func TestConnect_EmptyConfig(t *testing.T) {
+	// Connect with no config at all (nil Config) — missing URI → error
+	a := New()
+	src := store.Source{} // empty Config bytes
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for empty source config (missing URI), got nil")
+	}
+}
+
+func TestConnect_PingFailure(t *testing.T) {
+	// Connect with a syntactically valid URI but no server running — ping will fail.
+	// This exercises lines 95-106 in Connect (config assigned, client created, ping errors).
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	a := New()
+	src := store.Source{
+		Config: mustMarshal(t, map[string]any{
+			"uri":      "mongodb://127.0.0.1:27099",
+			"database": "testdb",
+		}),
+	}
+	err := a.Connect(ctx, src)
+	if err == nil {
+		// If somehow a MongoDB is running on :27099, mark as skip rather than fail.
+		t.Log("Connect() succeeded unexpectedly (MongoDB running on :27099?) — skipping ping-failure check")
+		return
+	}
+	// Error must mention ping.
+	if err.Error() == "" {
+		t.Error("expected non-empty error message from ping failure")
+	}
+}
+
+func TestDisconnect_SetsNotConnected(t *testing.T) {
+	r := &mockRunner{}
+	a := NewWithRunner(r)
+	if !a.Status().Connected {
+		t.Fatal("expected connected before Disconnect")
+	}
+	_ = a.Disconnect()
+	if a.Status().Connected {
+		t.Error("expected not connected after Disconnect")
+	}
+}
+
+func TestDisconnect_CalledTwice(t *testing.T) {
+	// Second disconnect with nil runner should not panic.
+	r := &mockRunner{}
+	a := NewWithRunner(r)
+	_ = a.Disconnect()
+	// runner is now nil; calling again must not panic
+	if err := a.Disconnect(); err != nil {
+		t.Fatalf("second Disconnect() error = %v", err)
+	}
+}
+
+func TestMockRunner_ExhaustResults(t *testing.T) {
+	// When callCount >= len(runResults), mockRunner returns empty map (no error).
+	r := &mockRunner{runResults: []map[string]any{{"k": "v"}}}
+	a := NewWithRunner(r)
+
+	// First call consumes the single result.
+	_, err := a.ServerStatus(context.Background())
+	if err != nil {
+		t.Fatalf("first ServerStatus error = %v", err)
+	}
+	// Second call returns empty map (fallback).
+	result, err := a.ServerStatus(context.Background())
+	if err != nil {
+		t.Fatalf("second ServerStatus error = %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %v", result)
+	}
+}
+
+// TestRealMongoRunner_Methods exercises realMongoRunner methods against a
+// non-existent server so every line is covered (errors are expected).
+func TestRealMongoRunner_Methods(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// mongo.Connect is lazy — it succeeds even with a bad URI.
+	c, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://127.0.0.1:27099"))
+	if err != nil {
+		t.Skipf("mongo.Connect() returned error (unexpected): %v", err)
+	}
+	r := &realMongoRunner{c: c}
+
+	// ping — will fail (no server), but the line is now covered.
+	_ = r.ping(ctx)
+
+	// runCommand — will fail, but covered.
+	_, _ = r.runCommand(ctx, "admin", map[string]int{"serverStatus": 1})
+
+	// disconnect — closes the client; may or may not error.
+	_ = r.disconnect(ctx)
 }

@@ -389,3 +389,168 @@ func TestDisconnect_NoClient(t *testing.T) {
 		t.Fatalf("Disconnect() error = %v", err)
 	}
 }
+
+func TestToInt_AdditionalBranches(t *testing.T) {
+	// Test toInt with int64 via Stat (PID field).
+	activityRows := []map[string]any{
+		{
+			"pid":         int64(200),
+			"state":       "active",
+			"wait_event":  "",
+			"duration_ms": "10",
+			"query":       "SELECT 3",
+		},
+	}
+	q := &mockQuerier{
+		responses: [][]map[string]any{activityRows, {}, {}},
+	}
+	a := NewWithQuerier(q)
+
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Activity[0].PID != 200 {
+		t.Errorf("PID from int64 = %d, want 200", stat.Activity[0].PID)
+	}
+}
+
+func TestToInt_IntBranch(t *testing.T) {
+	// toInt with plain int — exercise via Stat PID field.
+	activityRows := []map[string]any{
+		{
+			"pid":         int(42),
+			"state":       "active",
+			"wait_event":  "",
+			"duration_ms": "0",
+			"query":       "SELECT 4",
+		},
+	}
+	q := &mockQuerier{
+		responses: [][]map[string]any{activityRows, {}, {}},
+	}
+	a := NewWithQuerier(q)
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Activity[0].PID != 42 {
+		t.Errorf("PID from int = %d, want 42", stat.Activity[0].PID)
+	}
+}
+
+func TestToInt_Float64Branch(t *testing.T) {
+	// toInt with float64.
+	activityRows := []map[string]any{
+		{
+			"pid":         float64(77),
+			"state":       "active",
+			"wait_event":  "",
+			"duration_ms": "0",
+			"query":       "SELECT 5",
+		},
+	}
+	q := &mockQuerier{
+		responses: [][]map[string]any{activityRows, {}, {}},
+	}
+	a := NewWithQuerier(q)
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Activity[0].PID != 77 {
+		t.Errorf("PID from float64 = %d, want 77", stat.Activity[0].PID)
+	}
+}
+
+func TestToInt_Int32Branch(t *testing.T) {
+	// toInt with int32.
+	activityRows := []map[string]any{
+		{
+			"pid":         int32(55),
+			"state":       "active",
+			"wait_event":  "",
+			"duration_ms": "0",
+			"query":       "SELECT 6",
+		},
+	}
+	q := &mockQuerier{
+		responses: [][]map[string]any{activityRows, {}, {}},
+	}
+	a := NewWithQuerier(q)
+	stat, err := a.Stat(context.Background())
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if stat.Activity[0].PID != 55 {
+		t.Errorf("PID from int32 = %d, want 55", stat.Activity[0].PID)
+	}
+}
+
+func TestStat_TableScanError(t *testing.T) {
+	// Activity succeeds, table scan fails.
+	callCount := 0
+	q := &mockQuerier{}
+	q.responses = [][]map[string]any{
+		{{"pid": int64(1), "state": "active", "wait_event": "", "duration_ms": "0", "query": "SELECT 1"}},
+	}
+	// Override scan to fail on the second call.
+	_ = callCount
+	qFail := &failOnCallQuerier{after: 1, err: errors.New("table scan failed")}
+	a := NewWithQuerier(qFail)
+	_, err := a.Stat(context.Background())
+	if err == nil {
+		t.Error("Stat() expected error when table scan fails, got nil")
+	}
+}
+
+func TestStat_ReplicationScanError(t *testing.T) {
+	// Activity and tables succeed, replication scan fails.
+	qFail := &failOnCallQuerier{after: 2, err: errors.New("replication scan failed")}
+	a := NewWithQuerier(qFail)
+	_, err := a.Stat(context.Background())
+	if err == nil {
+		t.Error("Stat() expected error when replication scan fails, got nil")
+	}
+}
+
+func TestConnect_EmptyConfig(t *testing.T) {
+	// Connect with empty (nil) config should fail because host is required.
+	a := New()
+	src := store.Source{Config: nil}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for empty config (missing host), got nil")
+	}
+}
+
+func TestConnect_PingFails(t *testing.T) {
+	// The real Connect path tries to open and ping a real DB; provide an invalid
+	// DSN so that Open succeeds but Ping fails (pgx doesn't validate on Open).
+	a := New()
+	src := store.Source{
+		Config: mustMarshal(t, map[string]any{
+			"host": "127.0.0.1", "port": float64(19999),
+			"user": "nobody", "database": "nodb",
+		}),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected ping error for unreachable host, got nil")
+	}
+}
+
+// failOnCallQuerier returns one empty row-set per call until `after` calls, then errors.
+type failOnCallQuerier struct {
+	after int
+	err   error
+	calls int
+}
+
+func (f *failOnCallQuerier) ping(_ context.Context) error { return nil }
+func (f *failOnCallQuerier) close()                       {}
+func (f *failOnCallQuerier) scan(_ context.Context, _ string) ([]map[string]any, error) {
+	f.calls++
+	if f.calls > f.after {
+		return nil, f.err
+	}
+	return nil, nil
+}

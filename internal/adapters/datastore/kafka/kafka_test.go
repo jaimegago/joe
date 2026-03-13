@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"testing"
+
+	kafkago "github.com/segmentio/kafka-go"
+	listgroupsproto "github.com/segmentio/kafka-go/protocol/listgroups"
+	metadataproto "github.com/segmentio/kafka-go/protocol/metadata"
 
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -297,5 +302,232 @@ func TestDisconnect_NoAdmin(t *testing.T) {
 	a := New()
 	if err := a.Disconnect(); err != nil {
 		t.Fatalf("Disconnect() error = %v", err)
+	}
+}
+
+// TestConnect_EmptySourceConfig exercises the branch where source.Config is nil/empty,
+// causing configMap to be initialised as an empty map (which then fails ParseConfig).
+func TestConnect_EmptySourceConfig(t *testing.T) {
+	a := New()
+	// source.Config == nil → empty configMap → ParseConfig returns error (no brokers).
+	src := store.Source{Config: nil}
+	err := a.Connect(context.Background(), src)
+	if err == nil {
+		t.Error("Connect() expected error for empty source config, got nil")
+	}
+}
+
+// TestConnect_DialFails exercises the DialContext failure branch inside Connect.
+// A listener is started then immediately closed so the dial gets "connection refused".
+func TestConnect_DialFails(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // close before Connect dials so DialContext fails
+
+	a := New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected dial error, got nil")
+	}
+}
+
+// TestConnect_Success exercises the full success path of Connect by providing
+// a TCP listener that accepts the probe connection.
+func TestConnect_Success(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	// Accept connections in the background so DialContext succeeds.
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	a := New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() unexpected error: %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("Status().Connected = false after successful Connect, want true")
+	}
+
+	// Clean up.
+	_ = a.Disconnect()
+}
+
+// TestRealKafkaAdmin_Close exercises the close() method on realKafkaAdmin.
+func TestRealKafkaAdmin_Close(t *testing.T) {
+	r := &realKafkaAdmin{c: nil}
+	if err := r.close(); err != nil {
+		t.Errorf("close() error = %v, want nil", err)
+	}
+}
+
+// cancelledContext returns a context that is already cancelled, guaranteeing
+// that any network call made with it fails immediately.
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+// mockTransport implements kafkago.RoundTripper and returns a pre-configured
+// response or error, allowing tests to drive realKafkaAdmin without a real broker.
+type mockTransport struct {
+	resp kafkago.Response
+	err  error
+}
+
+func (m *mockTransport) RoundTrip(_ context.Context, _ net.Addr, _ kafkago.Request) (kafkago.Response, error) {
+	return m.resp, m.err
+}
+
+// TestRealKafkaAdmin_FetchMetadata_Success exercises the happy-path of
+// fetchMetadata including the t.Error != nil skip branch.
+func TestRealKafkaAdmin_FetchMetadata_Success(t *testing.T) {
+	metaResp := &metadataproto.Response{
+		Brokers: []metadataproto.ResponseBroker{
+			{NodeID: 1, Host: "kafka1", Port: 9092},
+		},
+		Topics: []metadataproto.ResponseTopic{
+			// ErrorCode == 0 → included
+			{ErrorCode: 0, Name: "orders", IsInternal: false, Partitions: []metadataproto.ResponsePartition{{}}},
+			// ErrorCode != 0 → skipped
+			{ErrorCode: 3, Name: "bad-topic"},
+		},
+	}
+	transport := &mockTransport{resp: metaResp}
+	c := &kafkago.Client{
+		Addr:      kafkago.TCP("127.0.0.1:9092"),
+		Transport: transport,
+	}
+	r := &realKafkaAdmin{c: c}
+
+	topics, brokers, err := r.fetchMetadata(context.Background())
+	if err != nil {
+		t.Fatalf("fetchMetadata() unexpected error: %v", err)
+	}
+	// "bad-topic" is skipped because its ErrorCode != 0.
+	if len(topics) != 1 {
+		t.Errorf("len(topics) = %d, want 1", len(topics))
+	}
+	if topics[0].Name != "orders" {
+		t.Errorf("topics[0].Name = %q, want orders", topics[0].Name)
+	}
+	if len(brokers) != 1 {
+		t.Errorf("len(brokers) = %d, want 1", len(brokers))
+	}
+	if brokers[0].Host != "kafka1" {
+		t.Errorf("brokers[0].Host = %q, want kafka1", brokers[0].Host)
+	}
+}
+
+// TestRealKafkaAdmin_ListGroups_Success exercises the happy-path of listGroups.
+func TestRealKafkaAdmin_ListGroups_Success(t *testing.T) {
+	lgResp := &listgroupsproto.Response{
+		ErrorCode: 0,
+		Groups: []listgroupsproto.ResponseGroup{
+			{GroupID: "g1", ProtocolType: "consumer"},
+			{GroupID: "g2", ProtocolType: "connect"},
+		},
+	}
+	transport := &mockTransport{resp: lgResp}
+	c := &kafkago.Client{
+		Addr:      kafkago.TCP("127.0.0.1:9092"),
+		Transport: transport,
+	}
+	r := &realKafkaAdmin{c: c}
+
+	groups, err := r.listGroups(context.Background())
+	if err != nil {
+		t.Fatalf("listGroups() unexpected error: %v", err)
+	}
+	if len(groups) != 2 {
+		t.Errorf("len(groups) = %d, want 2", len(groups))
+	}
+	if groups[0].GroupID != "g1" {
+		t.Errorf("groups[0].GroupID = %q, want g1", groups[0].GroupID)
+	}
+}
+
+// TestRealKafkaAdmin_ListGroups_RespError exercises the resp.Error != nil branch.
+func TestRealKafkaAdmin_ListGroups_RespError(t *testing.T) {
+	// ErrorCode 15 = GroupAuthorizationFailed — non-zero triggers makeError.
+	lgResp := &listgroupsproto.Response{
+		ErrorCode: 15,
+	}
+	transport := &mockTransport{resp: lgResp}
+	c := &kafkago.Client{
+		Addr:      kafkago.TCP("127.0.0.1:9092"),
+		Transport: transport,
+	}
+	r := &realKafkaAdmin{c: c}
+
+	groups, err := r.listGroups(context.Background())
+	if err == nil {
+		t.Error("listGroups() expected error for non-zero ErrorCode, got nil")
+	}
+	if groups != nil {
+		t.Errorf("listGroups() groups = %v, want nil on error", groups)
+	}
+}
+
+// TestRealKafkaAdmin_FetchMetadata_Error exercises the error path of
+// fetchMetadata by providing a context that is already cancelled.
+func TestRealKafkaAdmin_FetchMetadata_Error(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	defer ln.Close()
+
+	c := &kafkago.Client{Addr: kafkago.TCP(addr)}
+	r := &realKafkaAdmin{c: c}
+
+	topics, brokers, err := r.fetchMetadata(cancelledContext())
+	if err == nil {
+		t.Error("fetchMetadata() expected error for cancelled context, got nil")
+	}
+	if topics != nil {
+		t.Errorf("fetchMetadata() topics = %v, want nil on error", topics)
+	}
+	if brokers != nil {
+		t.Errorf("fetchMetadata() brokers = %v, want nil on error", brokers)
+	}
+}
+
+// TestRealKafkaAdmin_ListGroups_Error exercises the error path of listGroups
+// by providing a context that is already cancelled.
+func TestRealKafkaAdmin_ListGroups_Error(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	defer ln.Close()
+
+	c := &kafkago.Client{Addr: kafkago.TCP(addr)}
+	r := &realKafkaAdmin{c: c}
+
+	groups, err := r.listGroups(cancelledContext())
+	if err == nil {
+		t.Error("listGroups() expected error for cancelled context, got nil")
+	}
+	if groups != nil {
+		t.Errorf("listGroups() groups = %v, want nil on error", groups)
 	}
 }

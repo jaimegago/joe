@@ -2,13 +2,19 @@ package git_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/store"
@@ -446,6 +452,436 @@ func TestDiff_BranchName(t *testing.T) {
 	}
 	if diff == "" {
 		t.Error("expected non-empty diff when comparing against branch head")
+	}
+}
+
+func TestCommitAndPush_SSHMissingKey(t *testing.T) {
+	// buildDocAuth should fail: ssh auth without key path.
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		"file:///nonexistent",
+		"",
+		"file.md",
+		"content",
+		"msg",
+		gitadapter.DocAuthConfig{AuthType: "ssh"},
+	)
+	if err == nil {
+		t.Error("expected error for ssh auth without key path")
+	}
+}
+
+func TestCommitAndPush_HTTPSMissingToken(t *testing.T) {
+	// buildDocAuth should fail: https auth without token.
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		"https://invalid.example.invalid/repo.git",
+		"",
+		"file.md",
+		"content",
+		"msg",
+		gitadapter.DocAuthConfig{AuthType: "https"},
+	)
+	if err == nil {
+		t.Error("expected error for https auth without token")
+	}
+}
+
+func TestCommitAndPush_HTTPSCloneError(t *testing.T) {
+	// buildDocAuth succeeds (returns BasicAuth), but clone fails with invalid URL.
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		"https://invalid.example.invalid/repo.git",
+		"",
+		"file.md",
+		"content",
+		"msg",
+		gitadapter.DocAuthConfig{AuthType: "https", HTTPToken: "tok"},
+	)
+	if err == nil {
+		t.Error("expected error for clone failure with https auth")
+	}
+}
+
+func TestCommitAndPush_LocalBareRepo(t *testing.T) {
+	// Create a source repo with commits.
+	_, srcDir, _, _ := newTestRepo(t)
+
+	// Create a bare clone to act as "remote".
+	bareDir := t.TempDir()
+	_, err := gogit.PlainClone(bareDir, true, &gogit.CloneOptions{
+		URL: srcDir,
+	})
+	if err != nil {
+		t.Fatalf("bare clone: %v", err)
+	}
+
+	// CommitAndPush should succeed: clone bare, write file, commit, push back.
+	err = gitadapter.CommitAndPush(
+		context.Background(),
+		bareDir,
+		"",
+		"docs/test.md",
+		"# Test\n",
+		"docs: add test.md",
+		gitadapter.DocAuthConfig{AuthType: "none"},
+	)
+	if err != nil {
+		t.Fatalf("CommitAndPush() error = %v", err)
+	}
+}
+
+func TestConnect_PullExisting(t *testing.T) {
+	// Override HOME so clones go to temp dir.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	_, srcDir, _, _ := newTestRepo(t)
+
+	// First connect: clones the repo.
+	a := gitadapter.New()
+	src := store.Source{Config: json.RawMessage(`{"url":"` + srcDir + `"}`)}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("first Connect() error = %v", err)
+	}
+
+	// Second connect with same HOME: PlainOpen succeeds → exercises the pull path.
+	b := gitadapter.New()
+	if err := b.Connect(context.Background(), src); err != nil {
+		t.Fatalf("second Connect() (pull path) error = %v", err)
+	}
+	if !b.Status().Connected {
+		t.Error("expected connected after second Connect()")
+	}
+}
+
+func TestDiff_TagRef(t *testing.T) {
+	repo, dir, hash1, _ := newTestRepo(t)
+
+	// Create a lightweight tag at the first commit.
+	tagName := "v0.1.0"
+	h := plumbing.NewHash(hash1)
+	tagRef := plumbing.NewHashReference(plumbing.NewTagReferenceName(tagName), h)
+	if err := repo.Storer.SetReference(tagRef); err != nil {
+		t.Fatalf("create tag: %v", err)
+	}
+
+	a := gitadapter.NewWithRepo(repo, dir)
+	diff, err := a.Diff(context.Background(), tagName, "HEAD")
+	if err != nil {
+		t.Fatalf("Diff(tag) error = %v", err)
+	}
+	if diff == "" {
+		t.Error("expected non-empty diff from tag to HEAD")
+	}
+}
+
+func TestConnect_HTTPSAuth(t *testing.T) {
+	// Override HOME so clones go to temp dir.
+	t.Setenv("HOME", t.TempDir())
+	_, srcDir, _, _ := newTestRepo(t)
+
+	// https auth with a token — buildAuth should succeed returning BasicAuth.
+	// The local file URL doesn't require auth so clone succeeds despite fake token.
+	a := gitadapter.New()
+	src := store.Source{Config: json.RawMessage(
+		`{"url":"` + srcDir + `","auth_type":"https","http_token":"fake-token"}`,
+	)}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Skipf("Connect with https auth on local dir not supported: %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("expected connected after Connect() with https auth")
+	}
+}
+
+// --- Disconnected adapter error paths ---
+
+func TestReadFile_Disconnected(t *testing.T) {
+	a := gitadapter.New()
+	_, err := a.ReadFile(context.Background(), "README.md")
+	if err == nil {
+		t.Error("ReadFile() on disconnected adapter should return error")
+	}
+}
+
+func TestListFiles_Disconnected(t *testing.T) {
+	a := gitadapter.New()
+	_, err := a.ListFiles(context.Background(), "")
+	if err == nil {
+		t.Error("ListFiles() on disconnected adapter should return error")
+	}
+}
+
+func TestLog_Disconnected(t *testing.T) {
+	a := gitadapter.New()
+	_, err := a.Log(context.Background(), 10)
+	if err == nil {
+		t.Error("Log() on disconnected adapter should return error")
+	}
+}
+
+func TestDiff_Disconnected(t *testing.T) {
+	a := gitadapter.New()
+	_, err := a.Diff(context.Background(), "HEAD", "HEAD")
+	if err == nil {
+		t.Error("Diff() on disconnected adapter should return error")
+	}
+}
+
+// --- CommitAndPush additional paths ---
+
+func TestCommitAndPush_DefaultCommitMsg(t *testing.T) {
+	// Commit message empty — exercises the default message branch.
+	_, srcDir, _, _ := newTestRepo(t)
+
+	bareDir := t.TempDir()
+	_, err := gogit.PlainClone(bareDir, true, &gogit.CloneOptions{URL: srcDir})
+	if err != nil {
+		t.Fatalf("bare clone: %v", err)
+	}
+
+	err = gitadapter.CommitAndPush(
+		context.Background(),
+		bareDir,
+		"",
+		"docs/auto.md",
+		"auto content",
+		"", // empty message → default
+		gitadapter.DocAuthConfig{AuthType: "none"},
+	)
+	if err != nil {
+		t.Fatalf("CommitAndPush() with default msg error = %v", err)
+	}
+}
+
+func TestCommitAndPush_WithBranch(t *testing.T) {
+	// Clone with an explicit branch name to exercise the branch path.
+	_, srcDir, _, _ := newTestRepo(t)
+
+	bareDir := t.TempDir()
+	_, cloneErr := gogit.PlainClone(bareDir, true, &gogit.CloneOptions{URL: srcDir})
+	if cloneErr != nil {
+		t.Fatalf("bare clone: %v", cloneErr)
+	}
+
+	// Determine which branch the test repo uses (master or main).
+	tmpRepo, openErr := gogit.PlainOpen(srcDir)
+	if openErr != nil {
+		t.Fatalf("open src repo: %v", openErr)
+	}
+	head, headErr := tmpRepo.Head()
+	if headErr != nil {
+		t.Fatalf("get HEAD: %v", headErr)
+	}
+	branchName := head.Name().Short()
+
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		bareDir,
+		branchName,
+		"docs/branch.md",
+		"branch content",
+		"docs: branch test",
+		gitadapter.DocAuthConfig{AuthType: "none"},
+	)
+	if err != nil {
+		t.Fatalf("CommitAndPush() with branch error = %v", err)
+	}
+}
+
+func TestCommitAndPush_SSHWithKey(t *testing.T) {
+	// buildDocAuth ssh path with a key path that doesn't exist → load error.
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		"file:///nonexistent",
+		"",
+		"file.md",
+		"content",
+		"msg",
+		gitadapter.DocAuthConfig{AuthType: "ssh", SSHKeyPath: "/nonexistent/key"},
+	)
+	if err == nil {
+		t.Error("expected error for ssh auth with nonexistent key file")
+	}
+}
+
+func TestReadFile_LargeFile(t *testing.T) {
+	// Create a repo with a file larger than maxFileSize (1 MB) to hit the truncation guard.
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("init repo: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+
+	// Write a 2 MB file.
+	bigContent := make([]byte, 2<<20)
+	for i := range bigContent {
+		bigContent[i] = 'x'
+	}
+	largePath := filepath.Join(dir, "large.bin")
+	if err := os.WriteFile(largePath, bigContent, 0644); err != nil {
+		t.Fatalf("write large file: %v", err)
+	}
+	wt.Add("large.bin")
+	sig := &object.Signature{Name: "test", Email: "t@t.com", When: time.Now()}
+	if _, err := wt.Commit("add large file", &gogit.CommitOptions{Author: sig}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	a := gitadapter.NewWithRepo(repo, dir)
+	_, err = a.ReadFile(context.Background(), "large.bin")
+	if err == nil {
+		t.Error("ReadFile() expected error for file larger than maxFileSize")
+	}
+}
+
+func TestListFiles_RootWithSlash(t *testing.T) {
+	// Exercise the "/" dir path branch in ListFiles.
+	a, _, _ := newTestAdapter(t)
+	files, err := a.ListFiles(context.Background(), "/")
+	if err != nil {
+		t.Fatalf("ListFiles(\"/\") error = %v", err)
+	}
+	if len(files) == 0 {
+		t.Error("ListFiles(\"/\") should return files")
+	}
+}
+
+func TestListFiles_DotDir(t *testing.T) {
+	// Exercise the "." dir path branch in ListFiles.
+	a, _, _ := newTestAdapter(t)
+	files, err := a.ListFiles(context.Background(), ".")
+	if err != nil {
+		t.Fatalf("ListFiles(\".\") error = %v", err)
+	}
+	if len(files) == 0 {
+		t.Error("ListFiles(\".\") should return files")
+	}
+}
+
+func TestConnect_InvalidConfig(t *testing.T) {
+	a := gitadapter.New()
+	src := store.Source{Config: json.RawMessage(`not-json`)}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for invalid config JSON")
+	}
+}
+
+// writeTempSSHKey generates an ECDSA key and writes it to a temp file in PEM format.
+func writeTempSSHKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	block := &pem.Block{Type: "EC PRIVATE KEY", Bytes: der}
+	path := filepath.Join(t.TempDir(), "id_ecdsa")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		t.Fatalf("create key file: %v", err)
+	}
+	defer f.Close()
+	if err := pem.Encode(f, block); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	return path
+}
+
+func TestConnect_SSHAuthWithKey(t *testing.T) {
+	// buildAuth ssh path: key file exists → NewPublicKeysFromFile succeeds,
+	// then connect will fail (no ssh remote) but auth is built.
+	keyPath := writeTempSSHKey(t)
+	a := gitadapter.New()
+	// HOME doesn't matter here — it will fail at clone, not at auth build.
+	t.Setenv("HOME", t.TempDir())
+	src := store.Source{Config: json.RawMessage(
+		`{"url":"git@github.example.invalid:org/repo.git","auth_type":"ssh","ssh_key_path":"` + keyPath + `"}`,
+	)}
+	err := a.Connect(context.Background(), src)
+	// We expect clone to fail, but buildAuth should have succeeded.
+	// The error should mention clone/network, not key loading.
+	if err == nil {
+		t.Skip("unexpected success connecting to fake SSH remote")
+	}
+	// Ensure error is from clone, not from auth
+	errStr := err.Error()
+	for _, bad := range []string{"load ssh key", "ssh_key_path required"} {
+		if containsHelper(errStr, bad) {
+			t.Errorf("unexpected auth error: %v", err)
+		}
+	}
+}
+
+func TestDiff_Truncation(t *testing.T) {
+	// Create a repo with a diff that exceeds maxDiffSize (1 MB).
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("init repo: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	sig := &object.Signature{Name: "test", Email: "t@t.com", When: time.Now().Add(-time.Hour)}
+
+	// Commit 1: empty file.
+	writeTestFile(t, dir, "big.txt", "")
+	wt.Add("big.txt")
+	hash1, err := wt.Commit("empty", &gogit.CommitOptions{Author: sig})
+	if err != nil {
+		t.Fatalf("commit1: %v", err)
+	}
+
+	// Commit 2: file with >1MB of unique lines so the diff is large.
+	bigContent := make([]byte, 2<<20)
+	for i := range bigContent {
+		bigContent[i] = byte('a' + (i % 26))
+	}
+	writeTestFile(t, dir, "big.txt", string(bigContent))
+	wt.Add("big.txt")
+	sig2 := &object.Signature{Name: "test", Email: "t@t.com", When: time.Now()}
+	hash2, err := wt.Commit("big", &gogit.CommitOptions{Author: sig2})
+	if err != nil {
+		t.Fatalf("commit2: %v", err)
+	}
+
+	a := gitadapter.NewWithRepo(repo, dir)
+	diff, err := a.Diff(context.Background(), hash1.String(), hash2.String())
+	if err != nil {
+		t.Fatalf("Diff() error = %v", err)
+	}
+	if !containsHelper(diff, "truncated") {
+		t.Error("Diff() expected truncation marker for large diff")
+	}
+}
+
+func TestCommitAndPush_SSHWithKeyLoadError(t *testing.T) {
+	// buildDocAuth: ssh with an existing path but not a valid key → load error.
+	keyPath := writeTempSSHKey(t)
+	// Overwrite with garbage so it parses as a file but fails as an SSH key.
+	if err := os.WriteFile(keyPath, []byte("not a pem key"), 0600); err != nil {
+		t.Fatalf("write bad key: %v", err)
+	}
+	err := gitadapter.CommitAndPush(
+		context.Background(),
+		"file:///nonexistent",
+		"",
+		"file.md",
+		"content",
+		"msg",
+		gitadapter.DocAuthConfig{AuthType: "ssh", SSHKeyPath: keyPath},
+	)
+	if err == nil {
+		t.Error("expected error for ssh auth with bad key file content")
 	}
 }
 

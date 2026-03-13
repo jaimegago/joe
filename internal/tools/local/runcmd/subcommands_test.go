@@ -281,3 +281,66 @@ func TestSubcommandDeniedError(t *testing.T) {
 		t.Fatal("error message should not be empty")
 	}
 }
+
+// TestIsFlagWithValue exercises the isFlagWithValue function directly via
+// ValidateSubcommand paths that rely on flag skipping.
+func TestIsFlagWithValue_AllFlagsThatTakeValues(t *testing.T) {
+	// Each of these flags should cause the next token to be consumed as a value.
+	// We test via ValidateSubcommand("kubectl", ...) since isFlagWithValue is unexported.
+	// Pattern: <flag> <value> <subcommand> — if isFlagWithValue works, subcommand is found.
+	valueFlagCases := []struct {
+		name string
+		args []string
+	}{
+		{"short -n", []string{"-n", "default", "get", "pods"}},
+		{"short -l", []string{"-l", "app=foo", "get", "pods"}},
+		{"short -o", []string{"-o", "json", "get", "pods"}},
+		{"short -f", []string{"-f", "file.yaml", "get", "pods"}},
+		{"short -c", []string{"-c", "myctx", "get", "pods"}},
+		{"short -s", []string{"-s", "https://server", "get", "pods"}},
+		{"--namespace", []string{"--namespace", "kube-system", "get", "pods"}},
+		{"--context", []string{"--context", "prod", "get", "pods"}},
+		{"--kubeconfig", []string{"--kubeconfig", "/tmp/kube", "get", "pods"}},
+		{"--output", []string{"--output", "yaml", "get", "pods"}},
+		{"--selector", []string{"--selector", "app=foo", "get", "pods"}},
+		{"--field-selector", []string{"--field-selector", "status=Running", "get", "pods"}},
+		{"--server", []string{"--server", "https://k8s", "get", "pods"}},
+	}
+
+	for _, tt := range valueFlagCases {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateSubcommand("kubectl", tt.args); err != nil {
+				t.Errorf("ValidateSubcommand(kubectl, %v) = %v, want nil", tt.args, err)
+			}
+		})
+	}
+}
+
+// TestValidateSubcommand_ArgocdAppWithFlagsBeforeApp covers the argocd path where
+// a value-taking flag (--grpc-web-root-path) appears before "app".
+func TestValidateSubcommand_ArgocdGRPCFlag(t *testing.T) {
+	// --grpc-web-root-path takes a value, so the next token is consumed.
+	err := ValidateSubcommand("argocd", []string{"--grpc-web-root-path", "/argocd", "app", "list"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestValidateSubcommand_ArgocdAppFlagsBeforeAction covers validateArgocdApp
+// when flags appear between "app" and the action token.
+func TestValidateSubcommand_ArgocdAppFlagsBeforeAllowedAction(t *testing.T) {
+	// --server takes a value; after it the action is "get" (allowed).
+	err := ValidateSubcommand("argocd", []string{"app", "--server", "https://argocd", "get", "my-app"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestValidateSubcommand_ArgocdAppFlagsOnlyAfterApp exercises the path in
+// validateArgocdApp where only flags follow "app" with no action token.
+func TestValidateSubcommand_ArgocdAppOnlyFlagsAfterApp(t *testing.T) {
+	err := ValidateSubcommand("argocd", []string{"app", "--server", "https://argocd"})
+	if err == nil {
+		t.Fatal("expected error when no action follows 'argocd app'")
+	}
+}

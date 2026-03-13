@@ -10,6 +10,50 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// setupTestStoreWithDB returns both the GraphStore and the raw *sql.DB,
+// allowing tests to inject raw rows (e.g., invalid JSON) to cover error paths.
+func setupTestStoreWithDB(t *testing.T) (graph.GraphStore, *sql.DB) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE graph_nodes (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			source_id TEXT,
+			metadata TEXT DEFAULT '{}',
+			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+
+		CREATE TABLE graph_edges (
+			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+			to_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+			relation TEXT NOT NULL,
+			confidence INTEGER DEFAULT 3,
+			source TEXT,
+			context TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (from_node, to_node, relation)
+		);
+		CREATE INDEX idx_graph_edges_from ON graph_edges(from_node);
+		CREATE INDEX idx_graph_edges_to ON graph_edges(to_node);
+		CREATE INDEX idx_graph_edges_relation ON graph_edges(relation);
+	`)
+	if err != nil {
+		t.Fatalf("create tables: %v", err)
+	}
+
+	t.Cleanup(func() { db.Close() })
+	return graph.NewSQLiteStore(db, nil), db
+}
+
 func setupTestStore(t *testing.T) graph.GraphStore {
 	t.Helper()
 
@@ -574,6 +618,250 @@ func TestSummary(t *testing.T) {
 		}
 		if len(summary.RecentlyUpdated) == 0 {
 			t.Error("RecentlyUpdated should not be empty")
+		}
+	})
+}
+
+func TestScanNodes_InvalidJSON(t *testing.T) {
+	// Insert a node with invalid JSON metadata directly via raw SQL to exercise
+	// the json.Unmarshal fallback path in scanNodes.
+	store, db := setupTestStoreWithDB(t)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO graph_nodes (id, type, source_id, metadata, first_seen, last_seen)
+		VALUES ('bad-json-node', 'service', 'src1', 'NOT_VALID_JSON', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`)
+	if err != nil {
+		t.Fatalf("insert raw node: %v", err)
+	}
+
+	t.Run("GetNode falls back to empty metadata on bad JSON", func(t *testing.T) {
+		node, err := store.GetNode(ctx, "bad-json-node")
+		if err != nil {
+			t.Fatalf("GetNode() error = %v", err)
+		}
+		if node.Metadata == nil {
+			t.Error("expected non-nil Metadata fallback, got nil")
+		}
+	})
+
+	t.Run("Summary with bad JSON node succeeds", func(t *testing.T) {
+		_, err := store.Summary(ctx)
+		if err != nil {
+			t.Fatalf("Summary() error = %v", err)
+		}
+	})
+
+	t.Run("ListAll with bad JSON node succeeds", func(t *testing.T) {
+		sg, err := store.ListAll(ctx)
+		if err != nil {
+			t.Fatalf("ListAll() error = %v", err)
+		}
+		if len(sg.Nodes) == 0 {
+			t.Error("expected at least 1 node")
+		}
+	})
+
+	t.Run("ListNodesBySource with bad JSON node succeeds", func(t *testing.T) {
+		nodes, err := store.ListNodesBySource(ctx, "src1")
+		if err != nil {
+			t.Fatalf("ListNodesBySource() error = %v", err)
+		}
+		if len(nodes) == 0 {
+			t.Error("expected at least 1 node")
+		}
+	})
+}
+
+func TestClosedDB_ErrorPaths(t *testing.T) {
+	// By closing the DB we can exercise error-return paths that are otherwise
+	// unreachable in normal operation (query failures, scan failures, etc.).
+	ctx := context.Background()
+
+	newClosedStore := func(t *testing.T) graph.GraphStore {
+		t.Helper()
+		store, db := setupTestStoreWithDB(t)
+		db.Close() // deliberately close so all queries fail
+		return store
+	}
+
+	t.Run("AddNode error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		err := s.AddNode(ctx, graph.Node{ID: "x", Type: "service"})
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("Summary error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.Summary(ctx)
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("ListNodesBySource error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.ListNodesBySource(ctx, "src1")
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("ListAll error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.ListAll(ctx)
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("Related error on closed db (depth>0)", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.Related(ctx, "x", 1)
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("Related error on closed db (depth=0)", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.Related(ctx, "x", 0)
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("DeleteEdge error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		err := s.DeleteEdge(ctx, "a", "b", "calls")
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+
+	t.Run("Query error on closed db", func(t *testing.T) {
+		s := newClosedStore(t)
+		_, err := s.Query(ctx, "payment")
+		if err == nil {
+			t.Fatal("expected error on closed db")
+		}
+	})
+}
+
+func TestListNodesBySource(t *testing.T) {
+	store := setupTestStore(t)
+	seedGraph(t, store)
+	ctx := context.Background()
+
+	t.Run("returns nodes for source", func(t *testing.T) {
+		nodes, err := store.ListNodesBySource(ctx, "k8s/prod")
+		if err != nil {
+			t.Fatalf("ListNodesBySource() error = %v", err)
+		}
+		if len(nodes) != 4 {
+			t.Errorf("ListNodesBySource(k8s/prod) returned %d nodes, want 4", len(nodes))
+		}
+	})
+
+	t.Run("returns empty for unknown source", func(t *testing.T) {
+		nodes, err := store.ListNodesBySource(ctx, "unknown-source")
+		if err != nil {
+			t.Fatalf("ListNodesBySource() error = %v", err)
+		}
+		if len(nodes) != 0 {
+			t.Errorf("ListNodesBySource(unknown) returned %d nodes, want 0", len(nodes))
+		}
+	})
+}
+
+func TestListEdgesForNodes(t *testing.T) {
+	store := setupTestStore(t)
+	seedGraph(t, store)
+	ctx := context.Background()
+
+	t.Run("returns edges between nodes", func(t *testing.T) {
+		nodeIDs := []string{"deployment/prod/payment-svc", "deployment/prod/user-svc"}
+		edges, err := store.ListEdgesForNodes(ctx, nodeIDs)
+		if err != nil {
+			t.Fatalf("ListEdgesForNodes() error = %v", err)
+		}
+		if len(edges) != 1 {
+			t.Errorf("ListEdgesForNodes() returned %d edges, want 1", len(edges))
+		}
+	})
+
+	t.Run("empty node IDs returns nil", func(t *testing.T) {
+		edges, err := store.ListEdgesForNodes(ctx, []string{})
+		if err != nil {
+			t.Fatalf("ListEdgesForNodes([]) error = %v", err)
+		}
+		if edges != nil {
+			t.Errorf("ListEdgesForNodes([]) = %v, want nil", edges)
+		}
+	})
+
+	t.Run("single node returns no edges", func(t *testing.T) {
+		edges, err := store.ListEdgesForNodes(ctx, []string{"deployment/prod/payment-svc"})
+		if err != nil {
+			t.Fatalf("ListEdgesForNodes() error = %v", err)
+		}
+		if len(edges) != 0 {
+			t.Errorf("ListEdgesForNodes() returned %d edges, want 0 (no both-endpoints-in-set)", len(edges))
+		}
+	})
+}
+
+func TestListAll(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("empty graph returns empty subgraph", func(t *testing.T) {
+		store := setupTestStore(t)
+		sg, err := store.ListAll(ctx)
+		if err != nil {
+			t.Fatalf("ListAll() error = %v", err)
+		}
+		if sg == nil {
+			t.Fatal("ListAll() returned nil")
+		}
+		if len(sg.Nodes) != 0 {
+			t.Errorf("ListAll() empty graph nodes = %d, want 0", len(sg.Nodes))
+		}
+		if len(sg.Edges) != 0 {
+			t.Errorf("ListAll() empty graph edges = %d, want 0", len(sg.Edges))
+		}
+	})
+
+	t.Run("populated graph returns all nodes and edges", func(t *testing.T) {
+		store := setupTestStore(t)
+		seedGraph(t, store)
+		sg, err := store.ListAll(ctx)
+		if err != nil {
+			t.Fatalf("ListAll() error = %v", err)
+		}
+		if len(sg.Nodes) != 4 {
+			t.Errorf("ListAll() nodes = %d, want 4", len(sg.Nodes))
+		}
+		if len(sg.Edges) != 3 {
+			t.Errorf("ListAll() edges = %d, want 3", len(sg.Edges))
+		}
+	})
+
+	t.Run("nodes without edges", func(t *testing.T) {
+		store := setupTestStore(t)
+		store.AddNode(ctx, graph.Node{ID: "isolated-1", Type: "service"})
+		store.AddNode(ctx, graph.Node{ID: "isolated-2", Type: "service"})
+		sg, err := store.ListAll(ctx)
+		if err != nil {
+			t.Fatalf("ListAll() error = %v", err)
+		}
+		if len(sg.Nodes) != 2 {
+			t.Errorf("ListAll() nodes = %d, want 2", len(sg.Nodes))
+		}
+		if len(sg.Edges) != 0 {
+			t.Errorf("ListAll() edges = %d, want 0", len(sg.Edges))
 		}
 	})
 }

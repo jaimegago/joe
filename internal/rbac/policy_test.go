@@ -3,12 +3,57 @@ package rbac_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/rbac"
 )
+
+// errRepository is a mock rbac.Repository that returns errors on demand.
+type errRepository struct {
+	getAssignmentErr            error
+	getAssignmentResult         *rbac.SourceZoneAssignment
+	getZoneErr                  error
+	getZoneResult               *rbac.Zone
+	listPoliciesForPrincipalErr error
+	listPoliciesResult          []rbac.Policy
+}
+
+func (r *errRepository) ListZones(_ context.Context) ([]rbac.Zone, error) {
+	return nil, nil
+}
+func (r *errRepository) GetZone(_ context.Context, _ string) (*rbac.Zone, error) {
+	return r.getZoneResult, r.getZoneErr
+}
+func (r *errRepository) CreateZone(_ context.Context, z rbac.Zone) (*rbac.Zone, error) {
+	return &z, nil
+}
+func (r *errRepository) ListAssignments(_ context.Context) ([]rbac.SourceZoneAssignment, error) {
+	return nil, nil
+}
+func (r *errRepository) GetAssignment(_ context.Context, _ string) (*rbac.SourceZoneAssignment, error) {
+	return r.getAssignmentResult, r.getAssignmentErr
+}
+func (r *errRepository) UpsertAssignment(_ context.Context, _ rbac.SourceZoneAssignment) error {
+	return nil
+}
+func (r *errRepository) ListPolicies(_ context.Context) ([]rbac.Policy, error) {
+	return nil, nil
+}
+func (r *errRepository) ListPoliciesForPrincipal(_ context.Context, _ string) ([]rbac.Policy, error) {
+	return r.listPoliciesResult, r.listPoliciesForPrincipalErr
+}
+func (r *errRepository) CreatePolicy(_ context.Context, p rbac.Policy) (*rbac.Policy, error) {
+	return &p, nil
+}
+func (r *errRepository) DeletePolicy(_ context.Context, _ int64) error {
+	return nil
+}
+func (r *errRepository) ListUnassignedSourceIDs(_ context.Context) ([]string, error) {
+	return nil, nil
+}
 
 // openTestDB opens an in-memory SQLite database with the RBAC schema seeded.
 func openTestDB(t *testing.T) *sql.DB {
@@ -160,5 +205,110 @@ func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 		if !engine.IsAllowed(ctx, "eve", "k8s-dev", action) {
 			t.Errorf("eve should be allowed action %q in dev-full zone", action)
 		}
+	}
+}
+
+// TestPolicyEngine_IsAllowed_ZoneNotFound covers the path where a source is
+// assigned to a zone ID that does not exist in the security_zones table. The
+// engine must deny access (zone == nil branch in IsAllowed).
+func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// Insert a source and a direct assignment to a zone that does not exist.
+	_, err := db.Exec(`INSERT INTO sources VALUES ('orphan-src', 'Orphan Source')`)
+	if err != nil {
+		t.Fatalf("insert source: %v", err)
+	}
+	// Bypass the FK constraint (SQLite does not enforce FKs by default) to put
+	// the source into a non-existent zone.
+	_, err = db.Exec(`
+		INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
+		VALUES ('orphan-src', 'ghost-zone', 'test', '', '2026-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("insert assignment: %v", err)
+	}
+	// Give the principal a policy for the ghost zone (also bypassing FK).
+	_, err = db.Exec(`
+		INSERT INTO rbac_policies (principal, zone_id, created_at)
+		VALUES ('frank', 'ghost-zone', '2026-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("insert policy: %v", err)
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// Even though frank has a policy for ghost-zone, the zone doesn't exist so
+	// GetZone returns nil and IsAllowed must deny.
+	if engine.IsAllowed(ctx, "frank", "orphan-src", rbac.ActionRead) {
+		t.Error("expected denial when source zone does not exist in security_zones")
+	}
+}
+
+// TestPolicyEngine_IsAllowed_PrincipalHasPolicyButZoneActionDenied ensures the
+// action-check branch is exercised: principal has a valid policy for the zone
+// but the zone does not allow the requested action.
+func TestPolicyEngine_IsAllowed_ActionNotInZone(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "grace", ZoneID: "prod-readonly"})
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// prod-readonly only allows read/query; delete is denied at the zone level.
+	if engine.IsAllowed(ctx, "grace", "k8s-prod", rbac.ActionDelete) {
+		t.Error("grace should NOT be able to delete in prod-readonly zone")
+	}
+}
+
+// TestPolicyEngine_IsAllowed_GetAssignmentError covers the branch in IsAllowed
+// where GetAssignment returns an error (defaults to "unassigned" zone).
+func TestPolicyEngine_IsAllowed_GetAssignmentError(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &errRepository{
+		getAssignmentErr: errors.New("db connection lost"),
+		// When assignment lookup fails, engine defaults to "unassigned" zone.
+		// GetZone will then be called with "unassigned" — return nil to deny.
+		getZoneResult: nil,
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// GetAssignment errors → engine logs warning + falls back to unassigned zone.
+	// GetZone("unassigned") returns nil → deny.
+	if engine.IsAllowed(ctx, "alice", "some-source", rbac.ActionRead) {
+		t.Error("expected denial when GetAssignment errors and zone lookup returns nil")
+	}
+}
+
+// TestPolicyEngine_IsAllowed_ListPoliciesError covers the branch in IsAllowed
+// where ListPoliciesForPrincipal returns an error → must deny.
+func TestPolicyEngine_IsAllowed_ListPoliciesError(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &errRepository{
+		// No assignment error — source defaults to unassigned.
+		getAssignmentResult: nil,
+		// Zone exists and allows the action.
+		getZoneResult: &rbac.Zone{
+			ID:             "unassigned",
+			Name:           "Unassigned",
+			AllowedActions: []rbac.Action{rbac.ActionRead},
+		},
+		// But listing policies fails.
+		listPoliciesForPrincipalErr: errors.New("policy table locked"),
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	if engine.IsAllowed(ctx, "alice", "some-source", rbac.ActionRead) {
+		t.Error("expected denial when ListPoliciesForPrincipal errors")
 	}
 }

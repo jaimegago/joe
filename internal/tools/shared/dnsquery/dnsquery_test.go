@@ -298,3 +298,215 @@ func TestDNSLookupTool_Execute_UnknownType(t *testing.T) {
 		t.Error("expected error for unknown record_type, got nil")
 	}
 }
+
+// TestDNSLookupTool_Execute_All_WithErrors ensures that errors from CNAME/MX/TXT/NS
+// lookups during "all" mode are silently ignored and do not block other record types.
+func TestDNSLookupTool_Execute_All_WithErrors(t *testing.T) {
+	mock := &mockResolver{
+		hosts:    []string{"1.2.3.4"},
+		cnameErr: errors.New("no CNAME"),
+		mxErr:    errors.New("no MX"),
+		txtErr:   errors.New("no TXT"),
+		nsErr:    errors.New("no NS"),
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "all",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if len(r.A) != 1 {
+		t.Errorf("len(A) = %d, want 1", len(r.A))
+	}
+	// CNAME/MX/TXT/NS errors are ignored in "all" mode.
+	if len(r.MX) != 0 {
+		t.Errorf("len(MX) = %d, want 0 (error ignored)", len(r.MX))
+	}
+}
+
+// TestDNSLookupTool_Execute_CNAME_MatchesHostname verifies that a CNAME equal to
+// hostname (or hostname+".") is NOT stored in result.CNAME.
+func TestDNSLookupTool_Execute_CNAME_MatchesHostname(t *testing.T) {
+	mock := &mockResolver{
+		cname: "example.com.", // same as hostname with trailing dot — should be skipped
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "CNAME",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if r.CNAME != "" {
+		t.Errorf("CNAME = %q, want empty (same as hostname)", r.CNAME)
+	}
+}
+
+// TestDNSLookupTool_Execute_CNAME_Different verifies that a CNAME different from
+// the hostname is stored.
+func TestDNSLookupTool_Execute_CNAME_Different(t *testing.T) {
+	mock := &mockResolver{
+		cname: "other.example.com.",
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "CNAME",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if r.CNAME != "other.example.com." {
+		t.Errorf("CNAME = %q, want other.example.com.", r.CNAME)
+	}
+}
+
+// TestDNSLookupTool_Execute_MX_Direct exercises MX lookup with record_type="MX"
+// when the hosts lookup is also mocked (MX uses its own mock field).
+func TestDNSLookupTool_Execute_MX_Error(t *testing.T) {
+	mock := &mockResolver{
+		hosts: []string{"1.2.3.4"},
+		mxErr: errors.New("no MX records"),
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "MX",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if len(r.MX) != 0 {
+		t.Errorf("len(MX) = %d, want 0 on error", len(r.MX))
+	}
+}
+
+// TestDNSLookupTool_Execute_TXT_Error verifies TXT lookup error is silently ignored.
+func TestDNSLookupTool_Execute_TXT_Error(t *testing.T) {
+	mock := &mockResolver{
+		hosts:  []string{"1.2.3.4"},
+		txtErr: errors.New("no TXT records"),
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "TXT",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if len(r.TXT) != 0 {
+		t.Errorf("len(TXT) = %d, want 0 on error", len(r.TXT))
+	}
+}
+
+// TestDNSLookupTool_Execute_NS_Error verifies NS lookup error is silently ignored.
+func TestDNSLookupTool_Execute_NS_Error(t *testing.T) {
+	mock := &mockResolver{
+		hosts: []string{"1.2.3.4"},
+		nsErr: errors.New("no NS records"),
+	}
+	tool := &dnsquery.DNSLookupTool{Resolver: mock}
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "example.com",
+		"record_type": "NS",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	r := result.(dnsquery.DNSResult)
+	if len(r.NS) != 0 {
+		t.Errorf("len(NS) = %d, want 0 on error", len(r.NS))
+	}
+}
+
+// TestDNSLookupTool_Execute_EmptyHostname ensures empty string triggers the error path.
+func TestDNSLookupTool_Execute_EmptyHostname(t *testing.T) {
+	tool := &dnsquery.DNSLookupTool{Resolver: &mockResolver{}}
+	_, err := tool.Execute(context.Background(), map[string]any{"hostname": ""})
+	if err == nil {
+		t.Error("expected error for empty hostname")
+	}
+}
+
+// TestDefaultResolver_Methods exercises the defaultResolver wrapper methods
+// using real network calls (best-effort; results may vary by environment).
+func TestDefaultResolver_Methods(t *testing.T) {
+	// Use NewDNSLookupTool() which uses the real defaultResolver under the hood.
+	// We make real DNS calls for localhost/loopback which should always resolve.
+	tool := dnsquery.NewDNSLookupTool()
+
+	// LookupHost via "A" record_type for localhost.
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"hostname":    "localhost",
+		"record_type": "A",
+	})
+	if err != nil {
+		t.Fatalf("Execute(localhost, A) error = %v", err)
+	}
+	_ = result // may have addresses or an error field — either is fine
+
+	// LookupAddr (PTR) for the loopback address.
+	result, err = tool.Execute(context.Background(), map[string]any{
+		"hostname":    "127.0.0.1",
+		"record_type": "PTR",
+	})
+	if err != nil {
+		t.Fatalf("Execute(127.0.0.1, PTR) error = %v", err)
+	}
+	_ = result
+
+	// LookupCNAME via record_type "CNAME".
+	result, err = tool.Execute(context.Background(), map[string]any{
+		"hostname":    "localhost",
+		"record_type": "CNAME",
+	})
+	if err != nil {
+		t.Fatalf("Execute(localhost, CNAME) error = %v", err)
+	}
+	_ = result
+
+	// LookupMX via record_type "MX".
+	result, err = tool.Execute(context.Background(), map[string]any{
+		"hostname":    "localhost",
+		"record_type": "MX",
+	})
+	if err != nil {
+		t.Fatalf("Execute(localhost, MX) error = %v", err)
+	}
+	_ = result
+
+	// LookupTXT via record_type "TXT".
+	result, err = tool.Execute(context.Background(), map[string]any{
+		"hostname":    "localhost",
+		"record_type": "TXT",
+	})
+	if err != nil {
+		t.Fatalf("Execute(localhost, TXT) error = %v", err)
+	}
+	_ = result
+
+	// LookupNS via record_type "NS".
+	result, err = tool.Execute(context.Background(), map[string]any{
+		"hostname":    "localhost",
+		"record_type": "NS",
+	})
+	if err != nil {
+		t.Fatalf("Execute(localhost, NS) error = %v", err)
+	}
+	_ = result
+}

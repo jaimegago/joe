@@ -3,6 +3,7 @@ package jaeger_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -445,4 +446,121 @@ func mustMarshal(t *testing.T, v any) []byte {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	return data
+}
+
+// --- Connect: empty config ---
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := jaeger.New()
+	source := store.Source{} // empty Config → ParseConfig fails (missing url)
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+// --- ParseConfig: with api_key ---
+
+func TestParseConfig_WithAPIKey(t *testing.T) {
+	cfg, err := jaeger.ParseConfig(map[string]any{
+		"url":     "http://jaeger:16686",
+		"api_key": "secret",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIKey != "secret" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "secret")
+	}
+}
+
+// --- ListServices: Do error ---
+
+func TestAdapter_ListServices_DoError(t *testing.T) {
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- ListServices: invalid JSON ---
+
+func TestAdapter_ListServices_InvalidJSON(t *testing.T) {
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+// --- SearchTraces: Do error ---
+
+func TestAdapter_SearchTraces_DoError(t *testing.T) {
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.SearchTraces(context.Background(), "svc", "", 10)
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- SearchTraces: invalid JSON ---
+
+func TestAdapter_SearchTraces_InvalidJSON(t *testing.T) {
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.SearchTraces(context.Background(), "svc", "", 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON traces response, got nil")
+	}
+}
+
+// --- SearchTraces: trace with no spans (StartTime/Duration/Operation not set) ---
+
+func TestAdapter_SearchTraces_NoSpans(t *testing.T) {
+	respBody := `{"data":[{"traceID":"trace-empty","spans":[],"processes":{}}]}`
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+	results, err := adapter.SearchTraces(context.Background(), "svc", "", 10)
+	if err != nil {
+		t.Fatalf("SearchTraces() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].TraceID != "trace-empty" {
+		t.Errorf("TraceID = %q, want %q", results[0].TraceID, "trace-empty")
+	}
+	if results[0].Operation != "" {
+		t.Errorf("Operation = %q, want empty (no spans)", results[0].Operation)
+	}
+	if results[0].Duration != 0 {
+		t.Errorf("Duration = %v, want 0 (no spans)", results[0].Duration)
+	}
+}
+
+// --- GetTrace: invalid JSON ---
+
+func TestAdapter_GetTrace_InvalidJSON(t *testing.T) {
+	adapter := jaeger.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.GetTrace(context.Background(), "trace001")
+	if err == nil {
+		t.Error("expected error for invalid JSON trace response, got nil")
+	}
+}
+
+func httpResponse(code int, body string) *http.Response {
+	rec := httptest.NewRecorder()
+	rec.WriteHeader(code)
+	_, _ = rec.WriteString(body)
+	return rec.Result()
 }

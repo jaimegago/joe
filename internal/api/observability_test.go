@@ -10,9 +10,13 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
+	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
 	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
+	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
+	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
@@ -763,5 +767,500 @@ func TestHandleJaegerGetTrace(t *testing.T) {
 				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
 			}
 		})
+	}
+}
+
+// --- Datadog mock ---
+
+type mockDatadogAdapter struct {
+	metricsResult *datadogadapter.MetricsResult
+	logsResult    *datadogadapter.LogsResult
+	err           error
+}
+
+func (m *mockDatadogAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (m *mockDatadogAdapter) Disconnect() error                               { return nil }
+func (m *mockDatadogAdapter) Status() adapters.Status {
+	return adapters.Status{Connected: true}
+}
+func (m *mockDatadogAdapter) MetricsQuery(_ context.Context, _ string, _, _ int64) (*datadogadapter.MetricsResult, error) {
+	return m.metricsResult, m.err
+}
+func (m *mockDatadogAdapter) LogsSearch(_ context.Context, _ string, _, _ int64, _ int) (*datadogadapter.LogsResult, error) {
+	return m.logsResult, m.err
+}
+func (m *mockDatadogAdapter) ListActiveServices(_ context.Context) ([]string, error) { return nil, nil }
+func (m *mockDatadogAdapter) ListLogServices(_ context.Context) ([]string, error)    { return nil, nil }
+
+// --- Splunk mock ---
+
+type mockSplunkAdapter struct {
+	result *splunkadapter.SearchResult
+	err    error
+}
+
+func (m *mockSplunkAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (m *mockSplunkAdapter) Disconnect() error                               { return nil }
+func (m *mockSplunkAdapter) Status() adapters.Status {
+	return adapters.Status{Connected: true}
+}
+func (m *mockSplunkAdapter) Search(_ context.Context, _, _, _ string, _ int) (*splunkadapter.SearchResult, error) {
+	return m.result, m.err
+}
+
+// --- Dynatrace mock ---
+
+type mockDynatraceAdapter struct {
+	metricsResult *dynatraceadapter.MetricsResult
+	eventsResult  *dynatraceadapter.EventsResult
+	err           error
+}
+
+func (m *mockDynatraceAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (m *mockDynatraceAdapter) Disconnect() error                               { return nil }
+func (m *mockDynatraceAdapter) Status() adapters.Status {
+	return adapters.Status{Connected: true}
+}
+func (m *mockDynatraceAdapter) MetricsQuery(_ context.Context, _ string, _, _ int64) (*dynatraceadapter.MetricsResult, error) {
+	return m.metricsResult, m.err
+}
+func (m *mockDynatraceAdapter) Events(_ context.Context, _, _ int64, _ int) (*dynatraceadapter.EventsResult, error) {
+	return m.eventsResult, m.err
+}
+
+// --- New Relic mock ---
+
+type mockNewRelicAdapter struct {
+	result *newrelicadapter.NRQLResult
+	err    error
+}
+
+func (m *mockNewRelicAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (m *mockNewRelicAdapter) Disconnect() error                               { return nil }
+func (m *mockNewRelicAdapter) Status() adapters.Status {
+	return adapters.Status{Connected: true}
+}
+func (m *mockNewRelicAdapter) NRQLQuery(_ context.Context, _ int, _ string) (*newrelicadapter.NRQLResult, error) {
+	return m.result, m.err
+}
+
+// --- Setup helpers ---
+
+func setupDatadogTestServer(t *testing.T, mock *mockDatadogAdapter) *http.ServeMux {
+	t.Helper()
+	registry := adapters.NewRegistry()
+	registry.Register("test-dd", mock)
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	return mux
+}
+
+func setupSplunkTestServer(t *testing.T, mock *mockSplunkAdapter) *http.ServeMux {
+	t.Helper()
+	registry := adapters.NewRegistry()
+	registry.Register("test-splunk", mock)
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	return mux
+}
+
+func setupDynatraceTestServer(t *testing.T, mock *mockDynatraceAdapter) *http.ServeMux {
+	t.Helper()
+	registry := adapters.NewRegistry()
+	registry.Register("test-dt", mock)
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	return mux
+}
+
+func setupNewRelicTestServer(t *testing.T, mock *mockNewRelicAdapter) *http.ServeMux {
+	t.Helper()
+	registry := adapters.NewRegistry()
+	registry.Register("test-nr", mock)
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	return mux
+}
+
+// --- Datadog tests ---
+
+func TestHandleDatadogMetrics(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		metricsResult *datadogadapter.MetricsResult
+		err           error
+		wantStatus    int
+	}{
+		{
+			name:          "success",
+			url:           "/api/v1/datadog/test-dd/metrics?query=avg:system.cpu.user{*}",
+			metricsResult: &datadogadapter.MetricsResult{},
+			wantStatus:    http.StatusOK,
+		},
+		{
+			name:          "with from and to params",
+			url:           "/api/v1/datadog/test-dd/metrics?query=avg:system.cpu.user{*}&from=1609459200&to=1609462800",
+			metricsResult: &datadogadapter.MetricsResult{},
+			wantStatus:    http.StatusOK,
+		},
+		{
+			name:       "missing query",
+			url:        "/api/v1/datadog/test-dd/metrics",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/datadog/test-dd/metrics?query=avg:system.cpu.user{*}",
+			err:        fmt.Errorf("datadog error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupDatadogTestServer(t, &mockDatadogAdapter{metricsResult: tt.metricsResult, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleDatadogMetrics_MissingSource(t *testing.T) {
+	registry := adapters.NewRegistry()
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/datadog/nonexistent/metrics?query=up", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleDatadogLogs(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		logsResult *datadogadapter.LogsResult
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/datadog/test-dd/logs?query=service:payment",
+			logsResult: &datadogadapter.LogsResult{Logs: []datadogadapter.LogEntry{{Message: "test log"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised to empty",
+			url:        "/api/v1/datadog/test-dd/logs?query=service:payment",
+			logsResult: nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "with time and limit params",
+			url:        "/api/v1/datadog/test-dd/logs?query=service:payment&from=1609459200&to=1609462800&limit=50",
+			logsResult: &datadogadapter.LogsResult{Logs: []datadogadapter.LogEntry{}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing query",
+			url:        "/api/v1/datadog/test-dd/logs",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/datadog/test-dd/logs?query=service:payment",
+			err:        fmt.Errorf("datadog logs error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupDatadogTestServer(t, &mockDatadogAdapter{logsResult: tt.logsResult, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+// --- Splunk tests ---
+
+func TestHandleSplunkSearch(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		result     *splunkadapter.SearchResult
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/splunk/test-splunk/search?query=index%3Dmain+error",
+			result:     &splunkadapter.SearchResult{Events: []splunkadapter.SearchEvent{{Raw: "error occurred"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised to empty",
+			url:        "/api/v1/splunk/test-splunk/search?query=index%3Dmain+error",
+			result:     nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "with earliest latest and limit",
+			url:        "/api/v1/splunk/test-splunk/search?query=index%3Dmain&earliest=-2h&latest=now&limit=200",
+			result:     &splunkadapter.SearchResult{Events: []splunkadapter.SearchEvent{}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing query",
+			url:        "/api/v1/splunk/test-splunk/search",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/splunk/test-splunk/search?query=index%3Dmain",
+			err:        fmt.Errorf("splunk error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupSplunkTestServer(t, &mockSplunkAdapter{result: tt.result, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleSplunkSearch_MissingSource(t *testing.T) {
+	registry := adapters.NewRegistry()
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/splunk/nonexistent/search?query=up", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+// --- Dynatrace tests ---
+
+func TestHandleDynatraceMetrics(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		metricsResult *dynatraceadapter.MetricsResult
+		err           error
+		wantStatus    int
+	}{
+		{
+			name:          "success",
+			url:           "/api/v1/dynatrace/test-dt/metrics?query=builtin:host.cpu.usage",
+			metricsResult: &dynatraceadapter.MetricsResult{Resolution: "1m"},
+			wantStatus:    http.StatusOK,
+		},
+		{
+			name:          "with from and to params",
+			url:           "/api/v1/dynatrace/test-dt/metrics?query=builtin:host.cpu.usage&from=1609459200000&to=1609462800000",
+			metricsResult: &dynatraceadapter.MetricsResult{},
+			wantStatus:    http.StatusOK,
+		},
+		{
+			name:       "missing query",
+			url:        "/api/v1/dynatrace/test-dt/metrics",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/dynatrace/test-dt/metrics?query=builtin:host.cpu.usage",
+			err:        fmt.Errorf("dynatrace error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupDynatraceTestServer(t, &mockDynatraceAdapter{metricsResult: tt.metricsResult, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleDynatraceMetrics_MissingSource(t *testing.T) {
+	registry := adapters.NewRegistry()
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/dynatrace/nonexistent/metrics?query=up", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleDynatraceEvents(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		eventsResult *dynatraceadapter.EventsResult
+		err          error
+		wantStatus   int
+	}{
+		{
+			name: "success with events",
+			url:  "/api/v1/dynatrace/test-dt/events",
+			eventsResult: &dynatraceadapter.EventsResult{
+				Events: []dynatraceadapter.DynatraceEvent{{Title: "CPU spike", Type: "PERFORMANCE_EVENT"}},
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:         "nil result normalised to empty",
+			url:          "/api/v1/dynatrace/test-dt/events",
+			eventsResult: nil,
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:         "with time and limit params",
+			url:          "/api/v1/dynatrace/test-dt/events?from=1609459200000&to=1609462800000&limit=20",
+			eventsResult: &dynatraceadapter.EventsResult{Events: []dynatraceadapter.DynatraceEvent{}},
+			wantStatus:   http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/dynatrace/test-dt/events",
+			err:        fmt.Errorf("dynatrace events error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupDynatraceTestServer(t, &mockDynatraceAdapter{eventsResult: tt.eventsResult, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+// --- New Relic tests ---
+
+func TestHandleNewRelicNRQL(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		result     *newrelicadapter.NRQLResult
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/newrelic/test-nr/nrql?query=SELECT+count(*)+FROM+Transaction",
+			result:     &newrelicadapter.NRQLResult{},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "with account_id",
+			url:        "/api/v1/newrelic/test-nr/nrql?query=SELECT+count(*)+FROM+Transaction&account_id=12345",
+			result:     &newrelicadapter.NRQLResult{},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing query",
+			url:        "/api/v1/newrelic/test-nr/nrql",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/newrelic/test-nr/nrql?query=SELECT+count(*)+FROM+Transaction",
+			err:        fmt.Errorf("newrelic error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupNewRelicTestServer(t, &mockNewRelicAdapter{result: tt.result, err: tt.err})
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status: got %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleNewRelicNRQL_MissingSource(t *testing.T) {
+	registry := adapters.NewRegistry()
+	services := &core.Services{Config: &config.Config{}, Adapters: registry}
+	server := api.New(services)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/newrelic/nonexistent/nrql?query=SELECT+1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusNotFound)
 	}
 }

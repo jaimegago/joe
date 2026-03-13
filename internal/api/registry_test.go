@@ -234,3 +234,242 @@ func TestHandleArtifactoryListTags_NotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", w.Code)
 	}
 }
+
+func TestHandleOCIListTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockOCIAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockOCIAdapter{tags: []string{"latest", "v1.0", "v1.1"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockOCIAdapter{tags: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockOCIAdapter{err: fmt.Errorf("registry error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "oci-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/registry/oci/oci-src/repos/nginx/tags", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleOCIGetManifest(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		mock       *mockOCIAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/registry/oci/oci-src/repos/nginx/manifest?reference=latest",
+			mock:       &mockOCIAdapter{manifest: &ociadapter.Manifest{MediaType: "application/vnd.docker.distribution.manifest.v2+json"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing reference",
+			url:        "/api/v1/registry/oci/oci-src/repos/nginx/manifest",
+			mock:       &mockOCIAdapter{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/registry/oci/oci-src/repos/nginx/manifest?reference=latest",
+			mock:       &mockOCIAdapter{err: fmt.Errorf("registry error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "oci-src", tt.mock)
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleECRListImages(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockECRAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockECRAdapter{images: []ecradapter.ImageDetail{{Tags: []string{"latest"}, Digest: "sha256:abc"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockECRAdapter{images: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockECRAdapter{err: fmt.Errorf("ecr error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "ecr-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/registry/ecr/ecr-src/repos/my-app/images", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleECRGetImage(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockECRAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockECRAdapter{image: &ecradapter.ImageDetail{Tags: []string{"v1.0"}, Digest: "sha256:abc"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockECRAdapter{err: fmt.Errorf("ecr error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "ecr-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/registry/ecr/ecr-src/repos/my-app/images/v1.0", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleECRGetImage_NotFound(t *testing.T) {
+	server, _ := setupTestServer(t)
+	mux := setupMux(t, server)
+	req := httptest.NewRequest("GET", "/api/v1/registry/ecr/nonexistent/repos/my-app/images/v1.0", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHandleArtifactoryListTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		mock       *mockArtifactoryAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/tags?image=my-image",
+			mock:       &mockArtifactoryAdapter{tags: []string{"latest", "1.0"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing image param",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/tags",
+			mock:       &mockArtifactoryAdapter{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/tags?image=my-image",
+			mock:       &mockArtifactoryAdapter{err: fmt.Errorf("artifactory error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "art-src", tt.mock)
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleArtifactoryGetArtifact(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		mock       *mockArtifactoryAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/artifact?path=com/example/lib/1.0/lib-1.0.jar",
+			mock:       &mockArtifactoryAdapter{artifact: &artifactoryadapter.ArtifactInfo{Repo: "my-repo", Path: "com/example"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing path param",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/artifact",
+			mock:       &mockArtifactoryAdapter{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "adapter error",
+			url:        "/api/v1/registry/artifactory/art-src/repos/my-repo/artifact?path=some/path",
+			mock:       &mockArtifactoryAdapter{err: fmt.Errorf("artifactory error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupRegistryServer(t, "art-src", tt.mock)
+			req := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleArtifactoryGetArtifact_NotFound(t *testing.T) {
+	server, _ := setupTestServer(t)
+	mux := setupMux(t, server)
+	req := httptest.NewRequest("GET", "/api/v1/registry/artifactory/nonexistent/repos/my-repo/artifact?path=some/path", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}

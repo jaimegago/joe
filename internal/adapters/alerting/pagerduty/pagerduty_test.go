@@ -320,6 +320,248 @@ func TestAdapter_ListServices_ServerError(t *testing.T) {
 	}
 }
 
+func TestParseConfig_WithAPIURL(t *testing.T) {
+	cfg, err := pagerduty.ParseConfig(map[string]any{
+		"api_key": "key-abc",
+		"api_url": "https://custom.pagerduty.example.com",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIURL != "https://custom.pagerduty.example.com" {
+		t.Errorf("APIURL = %q, want custom URL", cfg.APIURL)
+	}
+}
+
+func TestParseConfig_DefaultAPIURL(t *testing.T) {
+	cfg, err := pagerduty.ParseConfig(map[string]any{"api_key": "key-abc"})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIURL == "" {
+		t.Error("APIURL should be defaulted, got empty string")
+	}
+}
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := pagerduty.New()
+	source := store.Source{}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+func TestAdapter_ListIncidents_DefaultStatus(t *testing.T) {
+	var gotStatuses []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/abilities":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+		case "/incidents":
+			gotStatuses = r.URL.Query()["statuses[]"]
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"incidents":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListIncidents(context.Background(), "", "", 10)
+	if err != nil {
+		t.Fatalf("ListIncidents() error = %v", err)
+	}
+	if len(gotStatuses) != 2 {
+		t.Errorf("expected 2 default statuses, got %v", gotStatuses)
+	}
+}
+
+func TestAdapter_ListIncidents_WithServiceID(t *testing.T) {
+	var gotServiceIDs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/abilities":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+		case "/incidents":
+			gotServiceIDs = r.URL.Query()["service_ids[]"]
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"incidents":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListIncidents(context.Background(), "SVC001", "triggered", 10)
+	if err != nil {
+		t.Fatalf("ListIncidents() error = %v", err)
+	}
+	if len(gotServiceIDs) != 1 || gotServiceIDs[0] != "SVC001" {
+		t.Errorf("service_ids[] = %v, want [SVC001]", gotServiceIDs)
+	}
+}
+
+func TestAdapter_ListIncidents_DefaultLimit(t *testing.T) {
+	var gotLimit string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/abilities":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+		case "/incidents":
+			gotLimit = r.URL.Query().Get("limit")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"incidents":[]}`))
+		}
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListIncidents(context.Background(), "", "", 0)
+	if err != nil {
+		t.Fatalf("ListIncidents() error = %v", err)
+	}
+	if gotLimit != "25" {
+		t.Errorf("default limit = %q, want 25", gotLimit)
+	}
+}
+
+func TestAdapter_ListIncidents_DoError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListIncidents(context.Background(), "", "", 10)
+	if err == nil {
+		t.Error("expected error from connection close, got nil")
+	}
+}
+
+func TestAdapter_ListIncidents_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListIncidents(context.Background(), "", "", 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestAdapter_ListServices_DoError(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error from connection close, got nil")
+	}
+}
+
+func TestAdapter_ListServices_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"abilities":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := pagerduty.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{
+		"api_key": "key",
+		"api_url": srv.URL,
+	})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
 // mockHTTPDoer is a minimal mock for the httpDoer interface.
 type mockHTTPDoer struct {
 	resp *http.Response
