@@ -120,14 +120,36 @@ func NewWithDoer(doer nginxDoer, cfg Config) *Adapter {
 	return &Adapter{doer: doer, cfg: cfg, connected: true}
 }
 
-// Connect establishes K8s connectivity and optionally verifies the status URL.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+// Connect parses and stores the source config. The K8s client is built lazily
+// on first use so that Connect succeeds even when no kubeconfig is available yet.
+func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
 		return err
 	}
 
-	restCfg, err := buildRESTConfig(cfg.KubeconfigPath, cfg.Context)
+	a.mu.Lock()
+	a.cfg = cfg
+	a.connected = true
+	a.mu.Unlock()
+	return nil
+}
+
+// ensureDoer lazily builds the K8s client on first operation.
+func (a *Adapter) ensureDoer() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.initDoer()
+}
+
+// initDoer builds the K8s client if it has not been initialised yet.
+// Must be called with a.mu held for writing.
+func (a *Adapter) initDoer() error {
+	if a.doer != nil {
+		return nil
+	}
+
+	restCfg, err := buildRESTConfig(a.cfg.KubeconfigPath, a.cfg.Context)
 	if err != nil {
 		return fmt.Errorf("build k8s config: %w", err)
 	}
@@ -142,14 +164,10 @@ func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
 		return fmt.Errorf("ping k8s cluster: %w", err)
 	}
 
-	httpCli := &http.Client{Timeout: 10 * time.Second}
-	doer := &realDoer{clientset: clientset, httpClient: httpCli}
-
-	a.mu.Lock()
-	a.cfg = cfg
-	a.doer = doer
-	a.connected = true
-	a.mu.Unlock()
+	a.doer = &realDoer{
+		clientset:  clientset,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
 	return nil
 }
 
@@ -176,6 +194,9 @@ func (a *Adapter) ListIngresses(ctx context.Context, namespace string) ([]Ingres
 	if err := a.checkConnected(); err != nil {
 		return nil, err
 	}
+	if err := a.ensureDoer(); err != nil {
+		return nil, err
+	}
 	list, err := a.doer.listIngresses(ctx, namespace, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list ingresses: %w", err)
@@ -190,6 +211,9 @@ func (a *Adapter) ListIngresses(ctx context.Context, namespace string) ([]Ingres
 // GetNginxStatus fetches the NGINX status page and parses it.
 func (a *Adapter) GetNginxStatus(ctx context.Context) (*NginxStatus, error) {
 	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+	if err := a.ensureDoer(); err != nil {
 		return nil, err
 	}
 	a.mu.RLock()
@@ -212,6 +236,9 @@ func (a *Adapter) GetNginxStatus(ctx context.Context) (*NginxStatus, error) {
 // If namespace is empty, lists from all namespaces.
 func (a *Adapter) ListConfigMaps(ctx context.Context, namespace string) ([]ConfigMapSummary, error) {
 	if err := a.checkConnected(); err != nil {
+		return nil, err
+	}
+	if err := a.ensureDoer(); err != nil {
 		return nil, err
 	}
 	list, err := a.doer.listConfigMaps(ctx, namespace, metav1.ListOptions{})
