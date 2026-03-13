@@ -12,7 +12,6 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
-	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -36,7 +35,7 @@ func newRBACEnv(t *testing.T) *rbacTestEnv {
 	}
 	t.Cleanup(func() { testStore.Close() })
 
-	repo := rbac.NewRepository(testStore.DB())
+	repo := rbac.NewRepository(testStore.DB(), testStore.Driver())
 
 	services := core.New(&config.Config{}, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
 	services.RBAC = repo
