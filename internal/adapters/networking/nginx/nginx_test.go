@@ -543,21 +543,26 @@ func TestConnect_ParseConfigError(t *testing.T) {
 	}
 }
 
-// TestConnect_BuildRESTConfigError exercises Connect when buildRESTConfig fails.
+// TestConnect_BuildRESTConfigError exercises that a bad kubeconfig path surfaces
+// on first use (lazy init), not at Connect time.
 func TestConnect_BuildRESTConfigError(t *testing.T) {
 	a := New()
 	// A valid JSON config with a kubeconfig path that doesn't exist causes
-	// buildRESTConfig to fail (no fallback in-cluster config in test env).
+	// buildRESTConfig to fail lazily on first operation.
 	src := store.Source{
 		Config: []byte(`{"kubeconfig_path":"/nonexistent/kubeconfig.yaml"}`),
 	}
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() expected error for non-existent kubeconfig")
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() unexpected error: %v", err)
+	}
+	// Error surfaces on first use.
+	if _, err := a.ListIngresses(context.Background(), ""); err == nil {
+		t.Error("ListIngresses() expected error for non-existent kubeconfig")
 	}
 }
 
-// TestConnect_ServerVersionFails exercises Connect past kubernetes.NewForConfig
-// but fails at ServerVersion() because the server URL is unreachable.
+// TestConnect_ServerVersionFails exercises that a reachable kubeconfig pointing
+// to an unreachable server surfaces the error on first use (lazy init).
 func TestConnect_ServerVersionFails(t *testing.T) {
 	// Write a minimal kubeconfig that points to a non-existent server.
 	kubecfg := `apiVersion: v1
@@ -590,8 +595,11 @@ users:
 	src := store.Source{
 		Config: []byte(`{"kubeconfig_path":"` + f.Name() + `"}`),
 	}
-	// Connect should fail at ServerVersion() since 127.0.0.1:19997 is not listening.
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() expected error when ServerVersion fails")
+	// Connect succeeds (lazy); error surfaces on first use.
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() unexpected error: %v", err)
+	}
+	if _, err := a.ListIngresses(context.Background(), ""); err == nil {
+		t.Error("ListIngresses() expected error when ServerVersion fails")
 	}
 }
