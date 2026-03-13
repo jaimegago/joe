@@ -182,16 +182,19 @@ func (a *Adapter) Status() adapters.Status {
 // Releases lists all Helm releases, optionally filtered by namespace.
 // Passing an empty namespace string lists across all namespaces.
 func (a *Adapter) Releases(ctx context.Context, namespace string) ([]Release, error) {
+	a.mu.RLock()
+	if err := a.checkConnected(); err != nil {
+		a.mu.RUnlock()
+		return nil, err
+	}
+	a.mu.RUnlock()
+
 	if err := a.ensureLister(); err != nil {
 		return nil, err
 	}
 
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-
-	if err := a.checkConnected(); err != nil {
-		return nil, err
-	}
 
 	secrets, err := a.lister.listSecrets(ctx, namespace, metav1.ListOptions{
 		LabelSelector: helmOwnerLabel + "=" + helmOwnerValue,
@@ -232,16 +235,19 @@ func (a *Adapter) Releases(ctx context.Context, namespace string) ([]Release, er
 
 // GetRelease returns full details for one Helm release.
 func (a *Adapter) GetRelease(ctx context.Context, namespace, name string) (*ReleaseDetail, error) {
+	a.mu.RLock()
+	if err := a.checkConnected(); err != nil {
+		a.mu.RUnlock()
+		return nil, err
+	}
+	a.mu.RUnlock()
+
 	if err := a.ensureLister(); err != nil {
 		return nil, err
 	}
 
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-
-	if err := a.checkConnected(); err != nil {
-		return nil, err
-	}
 
 	secrets, err := a.lister.listSecrets(ctx, namespace, metav1.ListOptions{
 		LabelSelector: helmOwnerLabel + "=" + helmOwnerValue + "," + helmNameLabel + "=" + name,
@@ -283,16 +289,19 @@ func (a *Adapter) GetRelease(ctx context.Context, namespace, name string) (*Rele
 
 // History returns the revision history for a Helm release.
 func (a *Adapter) History(ctx context.Context, namespace, name string, limit int) ([]RevisionEntry, error) {
+	a.mu.RLock()
+	if err := a.checkConnected(); err != nil {
+		a.mu.RUnlock()
+		return nil, err
+	}
+	a.mu.RUnlock()
+
 	if err := a.ensureLister(); err != nil {
 		return nil, err
 	}
 
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-
-	if err := a.checkConnected(); err != nil {
-		return nil, err
-	}
 
 	secrets, err := a.lister.listSecrets(ctx, namespace, metav1.ListOptions{
 		LabelSelector: helmOwnerLabel + "=" + helmOwnerValue + "," + helmNameLabel + "=" + name,
