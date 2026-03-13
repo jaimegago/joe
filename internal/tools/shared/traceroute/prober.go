@@ -17,11 +17,6 @@ type packetSender interface {
 	Close() error
 }
 
-// ttlSetter sets the IP TTL on a raw socket. Abstracted for testing.
-type ttlSetter interface {
-	SetTTL(ttl int) error
-}
-
 // icmpProber implements HopProber using raw ICMP sockets.
 // Requires CAP_NET_RAW on Linux or root on macOS.
 //

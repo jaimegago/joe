@@ -277,18 +277,6 @@ func TestServerStatus_MultipleCallsSequential(t *testing.T) {
 	}
 }
 
-// mockRunnerWithPingFail lets us exercise the ping-failure branch in Connect
-// by embedding a mongoRunner that fails on ping.
-type mockRunnerWithPingFail struct {
-	pingErr error
-}
-
-func (m *mockRunnerWithPingFail) ping(_ context.Context) error { return m.pingErr }
-func (m *mockRunnerWithPingFail) runCommand(_ context.Context, _ string, _ any) (map[string]any, error) {
-	return map[string]any{}, nil
-}
-func (m *mockRunnerWithPingFail) disconnect(_ context.Context) error { return nil }
-
 func TestConnect_EmptyConfig(t *testing.T) {
 	// Connect with no config at all (nil Config) — missing URI → error
 	a := New()

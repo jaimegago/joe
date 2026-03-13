@@ -610,12 +610,16 @@ func TestConnect_InvalidConfig(t *testing.T) {
 }
 
 func TestConnect_BadKubeconfigPath(t *testing.T) {
-	// Connect with a kubeconfig path that doesn't exist — buildRESTConfig should fail.
+	// Connect succeeds (lazy init); the bad path surfaces on first operation.
 	a := New()
 	cfgJSON, _ := json.Marshal(Config{KubeconfigPath: "/nonexistent/path/kubeconfig"})
 	src := store.Source{Config: cfgJSON}
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() expected error for non-existent kubeconfig path, got nil")
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() unexpected error: %v", err)
+	}
+	_, err := a.Releases(context.Background(), "")
+	if err == nil {
+		t.Error("Releases() expected error for non-existent kubeconfig path, got nil")
 	}
 }
 
