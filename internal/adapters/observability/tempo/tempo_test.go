@@ -403,6 +403,224 @@ func TestAdapter_GetTrace_NotConnected(t *testing.T) {
 	}
 }
 
+func TestAdapter_ListServices(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+		case "/api/search/tag/service.name/values":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"tagValues":[{"value":"payment"},{"value":"orders"},{"value":""}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	services, err := adapter.ListServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListServices() error = %v", err)
+	}
+	// empty-string entry is filtered out
+	if len(services) != 2 {
+		t.Errorf("len(services) = %d, want 2", len(services))
+	}
+}
+
+func TestAdapter_ListServices_NotConnected(t *testing.T) {
+	adapter := tempo.New()
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error when not connected, got nil")
+	}
+}
+
+func TestAdapter_ListServices_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+		case "/api/search/tag/service.name/values":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`error`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for server error, got nil")
+	}
+}
+
+func TestAdapter_ListServices_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+		case "/api/search/tag/service.name/values":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not-json`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestAdapter_ListServices_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+	}))
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	// Close the server to cause a request error on subsequent calls.
+	srv.Close()
+
+	_, err := adapter.ListServices(context.Background())
+	if err == nil {
+		t.Error("expected error when server is closed, got nil")
+	}
+}
+
+func TestAdapter_Search_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+		case "/api/search":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not-json`))
+		}
+	}))
+	defer srv.Close()
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.Search(context.Background(), "payment", "", 0, 0, 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+func TestAdapter_Search_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+	}))
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	srv.Close()
+
+	_, err := adapter.Search(context.Background(), "payment", "", 0, 0, 10)
+	if err == nil {
+		t.Error("expected error when server is closed, got nil")
+	}
+}
+
+func TestAdapter_GetTrace_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+	}))
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	srv.Close()
+
+	_, err := adapter.GetTrace(context.Background(), "trace001")
+	if err == nil {
+		t.Error("expected error when server is closed, got nil")
+	}
+}
+
+func TestAdapter_GetTrace_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"2.0.0"}`))
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not-json`))
+		}
+	}))
+	defer srv.Close()
+
+	adapter := tempo.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	_ = adapter.Connect(context.Background(), source)
+
+	_, err := adapter.GetTrace(context.Background(), "trace001")
+	if err == nil {
+		t.Error("expected error for invalid JSON in trace response, got nil")
+	}
+}
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := tempo.New()
+	// nil Config bytes triggers the else branch (configMap = make(map[string]any))
+	// then ParseConfig returns error because url is missing.
+	source := store.Source{Config: nil}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+func TestAdapter_ParseConfig_WithOptionalFields(t *testing.T) {
+	cfg, err := tempo.ParseConfig(map[string]any{
+		"url":     "http://tempo:3200",
+		"api_key": "secret",
+		"org_id":  "tenant1",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIKey != "secret" {
+		t.Errorf("APIKey = %q, want secret", cfg.APIKey)
+	}
+	if cfg.OrgID != "tenant1" {
+		t.Errorf("OrgID = %q, want tenant1", cfg.OrgID)
+	}
+}
+
 // mockHTTPDoer is a simple mock for the httpDoer interface.
 type mockHTTPDoer struct {
 	resp *http.Response

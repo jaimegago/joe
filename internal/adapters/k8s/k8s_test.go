@@ -3,6 +3,7 @@ package k8s_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters/k8s"
@@ -12,9 +13,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func newTestAdapter(objects ...runtime.Object) *k8s.Adapter {
+	_, _, adapter := newTestAdapterWithClients(objects...)
+	return adapter
+}
+
+// newTestAdapterWithClients returns the fake dynamic client, fake clientset, and the adapter so
+// tests can prepend reactors to inject errors.
+func newTestAdapterWithClients(objects ...runtime.Object) (*fakedynamic.FakeDynamicClient, *fakeclientset.Clientset, *k8s.Adapter) {
 	scheme := runtime.NewScheme()
 	dynClient := fakedynamic.NewSimpleDynamicClientWithCustomListKinds(scheme,
 		map[schema.GroupVersionResource]string{
@@ -25,7 +34,7 @@ func newTestAdapter(objects ...runtime.Object) *k8s.Adapter {
 		objects...,
 	)
 	clientset := fakeclientset.NewSimpleClientset()
-	return k8s.NewWithClients(dynClient, clientset)
+	return dynClient, clientset, k8s.NewWithClients(dynClient, clientset)
 }
 
 func testPod(name, namespace string) *unstructured.Unstructured {
@@ -618,5 +627,85 @@ func TestGetPodLogs_WithContainer(t *testing.T) {
 	_, err := adapter.GetPodLogs(context.Background(), "default", "pod", "nginx", 50)
 	if err != nil {
 		t.Fatalf("GetPodLogs() with container error = %v", err)
+	}
+}
+
+// TestGetResource_NotConnected verifies GetResource returns error when adapter is disconnected.
+func TestGetResource_NotConnected(t *testing.T) {
+	adapter := newTestAdapter()
+	if err := adapter.Disconnect(); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	_, err := adapter.GetResource(context.Background(), "pods", "default", "pod-a")
+	if err == nil {
+		t.Error("GetResource() should fail when not connected")
+	}
+}
+
+// TestGetResource_UnknownResourceType verifies GetResource returns error for unknown resource types.
+func TestGetResource_UnknownResourceType(t *testing.T) {
+	adapter := newTestAdapter()
+	_, err := adapter.GetResource(context.Background(), "foobar", "default", "some-name")
+	if err == nil {
+		t.Error("GetResource() should fail for unknown resource type")
+	}
+}
+
+// TestListResources_NotConnected verifies ListResources returns error when adapter is disconnected
+// via a freshly disconnected adapter (covers the !a.connected guard in ListResources).
+func TestListResources_NotConnected(t *testing.T) {
+	adapter := newTestAdapter()
+	if err := adapter.Disconnect(); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	// Verify via GetResource path too — both share the guard pattern.
+	_, err := adapter.ListResources(context.Background(), "pods", "default")
+	if err == nil {
+		t.Error("ListResources() should fail when not connected")
+	}
+}
+
+// TestConnect_EmptyConfig exercises the kubeconfig=="" && !InCluster branch in buildRESTConfig,
+// which falls back to the default kubeconfig loading rules (~/.kube/config or $KUBECONFIG).
+// The test exercises the code path regardless of whether a cluster is reachable.
+func TestConnect_EmptyConfig(t *testing.T) {
+	a := k8s.New()
+	src := store.Source{Config: json.RawMessage(`{}`)}
+	// buildRESTConfig falls into the default-rules path (no explicit kubeconfig, no in_cluster).
+	// This exercises the cfg.Kubeconfig == "" branch. It may succeed or fail depending on
+	// whether a kubeconfig/cluster is available in the test environment.
+	_ = a.Connect(context.Background(), src)
+}
+
+// TestExpandPath_HomeDirError exercises the os.UserHomeDir() error path in expandPath.
+// Unsetting HOME and USERPROFILE causes UserHomeDir to return an error on most platforms.
+func TestExpandPath_HomeDirError(t *testing.T) {
+	// Save and clear the environment variables that UserHomeDir uses.
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+
+	a := k8s.New()
+	// A tilde kubeconfig triggers expandPath, which calls os.UserHomeDir().
+	// With HOME unset, UserHomeDir returns an error → Connect returns that error.
+	src := store.Source{Config: json.RawMessage(`{"kubeconfig": "~/some-config.yaml"}`)}
+	err := a.Connect(context.Background(), src)
+	if err == nil {
+		t.Error("Connect() should fail when HOME is not set (UserHomeDir error)")
+	}
+}
+
+// TestListResources_DynClientError exercises the dynClient.List() error path in ListResources
+// by injecting a reactor that returns an error for list actions.
+func TestListResources_DynClientError(t *testing.T) {
+	dynClient, _, adapter := newTestAdapterWithClients()
+	dynClient.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("injected list error")
+	})
+
+	_, err := adapter.ListResources(context.Background(), "pods", "default")
+	if err == nil {
+		t.Error("ListResources() should propagate dynamic client List error")
 	}
 }

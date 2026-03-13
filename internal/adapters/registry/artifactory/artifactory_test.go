@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters/registry/artifactory"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 func newTestServer(t *testing.T, mux *http.ServeMux) (*httptest.Server, *http.Client) {
@@ -174,5 +175,282 @@ func TestDisconnect(t *testing.T) {
 	}
 	if a.Status().Connected {
 		t.Error("expected disconnected after Disconnect()")
+	}
+}
+
+func TestParseConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     []byte
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			raw:  []byte(`{"base_url":"https://company.jfrog.io/artifactory"}`),
+		},
+		{
+			name: "with api key",
+			raw:  []byte(`{"base_url":"https://company.jfrog.io/artifactory","api_key":"my-key"}`),
+		},
+		{
+			name:    "missing base_url",
+			raw:     []byte(`{}`),
+			wantErr: true,
+		},
+		{
+			name:    "invalid json",
+			raw:     []byte(`{bad}`),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := artifactory.ParseConfig(tt.raw)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseConfig() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && cfg.BaseURL == "" {
+				t.Error("BaseURL should not be empty on valid config")
+			}
+		})
+	}
+}
+
+func TestStatus_NotConnected(t *testing.T) {
+	a := artifactory.New()
+	s := a.Status()
+	if s.Connected {
+		t.Error("expected not connected for New() adapter")
+	}
+}
+
+func TestListRepositories_NotConnected(t *testing.T) {
+	a := artifactory.New()
+	_, err := a.ListRepositories(context.Background())
+	if err == nil {
+		t.Error("expected error for not connected adapter")
+	}
+}
+
+func TestListDockerTags_NotConnected(t *testing.T) {
+	a := artifactory.New()
+	_, err := a.ListDockerTags(context.Background(), "docker-local", "myapp")
+	if err == nil {
+		t.Error("expected error for not connected adapter")
+	}
+}
+
+func TestGetArtifactInfo_NotConnected(t *testing.T) {
+	a := artifactory.New()
+	_, err := a.GetArtifactInfo(context.Background(), "docker-local", "myapp/latest")
+	if err == nil {
+		t.Error("expected error for not connected adapter")
+	}
+}
+
+func TestListDockerTags_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/docker/docker-local/v2/myapp/tags/list", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListDockerTags(context.Background(), "docker-local", "myapp")
+	if err == nil {
+		t.Error("expected error for 500, got nil")
+	}
+}
+
+func TestGetArtifactInfo_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/storage/docker-local/myapp/latest", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.GetArtifactInfo(context.Background(), "docker-local", "myapp/latest")
+	if err == nil {
+		t.Error("expected error for 500, got nil")
+	}
+}
+
+func TestBasicAuthHeader(t *testing.T) {
+	var gotAuth string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/repositories", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode([]artifactory.Repository{})
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{
+		BaseURL:  srv.URL,
+		Username: "myuser",
+	})
+	a.ListRepositories(context.Background())
+
+	if gotAuth == "" {
+		t.Error("expected Authorization header for basic auth")
+	}
+}
+
+func TestConnect_Success(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/system/ping", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := artifactory.New()
+	src := store.Source{
+		Config: []byte(`{"base_url":"` + srv.URL + `"}`),
+	}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("expected connected after Connect()")
+	}
+}
+
+func TestConnect_BadStatus(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/system/ping", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := artifactory.New()
+	src := store.Source{
+		Config: []byte(`{"base_url":"` + srv.URL + `"}`),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error for 401 ping response")
+	}
+}
+
+func TestConnect_BadConfig(t *testing.T) {
+	a := artifactory.New()
+	src := store.Source{Config: []byte(`{}`)}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error for missing base_url")
+	}
+}
+
+func TestConnect_NetworkError(t *testing.T) {
+	// Server that closes immediately so the ping request fails.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	srvURL := srv.URL
+	srv.Close()
+
+	a := artifactory.New()
+	src := store.Source{
+		Config: []byte(`{"base_url":"` + srvURL + `"}`),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error when server is unreachable")
+	}
+}
+
+func TestListRepositories_NetworkError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	client := srv.Client()
+	srv.Close()
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListRepositories(context.Background())
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestListRepositories_BadJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/repositories", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{bad json}`))
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListRepositories(context.Background())
+	if err == nil {
+		t.Fatal("expected error for bad JSON, got nil")
+	}
+}
+
+func TestListRepositories_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/repositories", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListRepositories(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+}
+
+func TestListDockerTags_NetworkError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	client := srv.Client()
+	srv.Close()
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListDockerTags(context.Background(), "docker-local", "myapp")
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestListDockerTags_BadJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/docker/docker-local/v2/myapp/tags/list", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{bad json}`))
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.ListDockerTags(context.Background(), "docker-local", "myapp")
+	if err == nil {
+		t.Fatal("expected error for bad JSON, got nil")
+	}
+}
+
+func TestGetArtifactInfo_NetworkError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	client := srv.Client()
+	srv.Close()
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.GetArtifactInfo(context.Background(), "docker-local", "myapp/latest")
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestGetArtifactInfo_BadJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/storage/docker-local/myapp/latest", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{bad json}`))
+	})
+	srv, client := newTestServer(t, mux)
+
+	a := artifactory.NewWithClient(client, artifactory.Config{BaseURL: srv.URL})
+	_, err := a.GetArtifactInfo(context.Background(), "docker-local", "myapp/latest")
+	if err == nil {
+		t.Fatal("expected error for bad JSON, got nil")
 	}
 }

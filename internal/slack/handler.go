@@ -10,9 +10,15 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
+// slackPoster is the subset of *gslack.Client used by Handler, allowing tests
+// to inject a mock without a real Slack connection.
+type slackPoster interface {
+	PostMessage(channelID string, options ...gslack.MsgOption) (string, string, error)
+}
+
 // Handler dispatches Slack events to the appropriate command handler.
 type Handler struct {
-	api   *gslack.Client
+	api   slackPoster
 	agent *Agent
 	fmt   *Formatter
 }

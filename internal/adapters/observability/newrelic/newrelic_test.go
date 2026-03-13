@@ -2,6 +2,7 @@ package newrelic_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -307,5 +308,88 @@ func TestAdapter_Connect_WithTestServer(t *testing.T) {
 	})
 	if !adapter.Status().Connected {
 		t.Error("expected connected adapter")
+	}
+}
+
+// --- Connect early-exit error paths ---
+
+func TestAdapter_Connect_MissingAPIKey(t *testing.T) {
+	adapter := newrelic.New()
+	// Valid JSON but no api_key → ParseConfig returns error before any network call.
+	source := store.Source{Config: []byte(`{"account_id": 12345}`)}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for missing api_key, got nil")
+	}
+}
+
+func TestAdapter_Connect_MissingAccountID(t *testing.T) {
+	adapter := newrelic.New()
+	// Valid JSON but no account_id → ParseConfig returns error before any network call.
+	source := store.Source{Config: []byte(`{"api_key": "NRAK-abc"}`)}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for missing account_id, got nil")
+	}
+}
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := newrelic.New()
+	// Nil config bytes → empty configMap → ParseConfig fails on missing api_key.
+	source := store.Source{Config: nil}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+// --- nerdGraphDo error paths ---
+
+func TestAdapter_NRQLQuery_NetworkError(t *testing.T) {
+	// mockHTTPDoer.Do returns a network-level error → nerdGraphDo's client.Do path.
+	adapter := newrelic.NewWithClient(&mockHTTPDoer{
+		err: errors.New("connection refused"),
+	})
+	_, err := adapter.NRQLQuery(context.Background(), 12345, "SELECT count(*) FROM Transaction")
+	if err == nil {
+		t.Error("expected error for network failure, got nil")
+	}
+}
+
+func TestAdapter_NRQLQuery_HTTP429(t *testing.T) {
+	// Non-200 status (rate limit) → nerdGraphDo returns error.
+	adapter := newrelic.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusTooManyRequests, `rate limit exceeded`),
+	})
+	_, err := adapter.NRQLQuery(context.Background(), 12345, "SELECT count(*) FROM Transaction")
+	if err == nil {
+		t.Error("expected error for HTTP 429 response, got nil")
+	}
+}
+
+func TestAdapter_NRQLQuery_InvalidJSON(t *testing.T) {
+	// 200 OK but body is not valid JSON → json.Unmarshal error in NRQLQuery.
+	adapter := newrelic.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not json at all`),
+	})
+	_, err := adapter.NRQLQuery(context.Background(), 12345, "SELECT count(*) FROM Transaction")
+	if err == nil {
+		t.Error("expected error for invalid JSON body, got nil")
+	}
+}
+
+// --- ParseConfig edge cases ---
+
+func TestParseConfig_ExplicitUSRegion(t *testing.T) {
+	cfg, err := newrelic.ParseConfig(map[string]any{
+		"api_key":    "NRAK-abc",
+		"account_id": 12345,
+		"region":     "US",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() unexpected error: %v", err)
+	}
+	if cfg.Region != "US" {
+		t.Errorf("Region = %q, want US", cfg.Region)
+	}
+	if cfg.NerdGraphURL() != "https://api.newrelic.com/graphql" {
+		t.Errorf("NerdGraphURL() = %q, want US endpoint", cfg.NerdGraphURL())
 	}
 }

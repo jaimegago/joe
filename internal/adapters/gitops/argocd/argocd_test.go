@@ -9,7 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"net/http/httptest"
+
 	"github.com/jaimegago/joe/internal/adapters/gitops/argocd"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // mockHTTP is a fake httpDoer that returns preconfigured responses.
@@ -333,5 +336,313 @@ func TestAdapter_Disconnect(t *testing.T) {
 	s := a.Status()
 	if s.Connected {
 		t.Error("expected not connected after Disconnect")
+	}
+}
+
+func TestTruncate_LongString(t *testing.T) {
+	// Test the truncate function via the doJSON error path which calls truncate.
+	// A 400+ response body longer than 200 chars triggers the truncation branch.
+	longBody := strings.Repeat("x", 250)
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/long-error": {status: 500, body: longBody},
+	}}, testConfig())
+
+	_, err := a.GetApp(context.Background(), "long-error")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	// Verify the error message is truncated (contains "...").
+	if !strings.Contains(err.Error(), "...") {
+		t.Errorf("expected truncated error message with ..., got: %v", err)
+	}
+}
+
+func TestGetDiff_Error(t *testing.T) {
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/missing-app": {status: 404, body: `{"message":"not found"}`},
+	}}, testConfig())
+
+	_, err := a.GetDiff(context.Background(), "missing-app")
+	if err == nil {
+		t.Error("expected error for 404, got nil")
+	}
+}
+
+func TestGetHistory_Error(t *testing.T) {
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/bad-app": {status: 403, body: `{"message":"forbidden"}`},
+	}}, testConfig())
+
+	_, err := a.GetHistory(context.Background(), "bad-app", 0)
+	if err == nil {
+		t.Error("expected error for 403, got nil")
+	}
+}
+
+func TestDoJSON_NetworkError(t *testing.T) {
+	errHTTP := &mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications": {err: errors.New("connection refused")},
+	}}
+	a := argocd.NewWithClient(errHTTP, testConfig())
+	_, err := a.Apps(context.Background(), "")
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestConnect_ViaSource(t *testing.T) {
+	// Test Connect via httptest server.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Version":"v2.8.0"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := argocd.New()
+	src := store.Source{
+		Config: []byte(`{"url":"` + srv.URL + `","token":"tok"}`),
+	}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if !a.Status().Connected {
+		t.Error("expected connected after Connect()")
+	}
+}
+
+func TestConnect_BadConfig(t *testing.T) {
+	a := argocd.New()
+	src := store.Source{Config: []byte(`{}`)} // missing url
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error for missing url in config")
+	}
+}
+
+func TestConnect_PingError(t *testing.T) {
+	// Server that returns 500 on /api/version.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("internal error"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := argocd.New()
+	src := store.Source{
+		Config: []byte(`{"url":"` + srv.URL + `","token":"tok"}`),
+	}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("expected error when ping returns 500")
+	}
+}
+
+func TestGetApp_NotConnected(t *testing.T) {
+	a := argocd.New()
+	_, err := a.GetApp(context.Background(), "my-app")
+	if !errors.Is(err, argocd.ErrNotConnected) {
+		t.Errorf("expected ErrNotConnected, got %v", err)
+	}
+}
+
+func TestGetDiff_NotConnected(t *testing.T) {
+	a := argocd.New()
+	_, err := a.GetDiff(context.Background(), "my-app")
+	if !errors.Is(err, argocd.ErrNotConnected) {
+		t.Errorf("expected ErrNotConnected, got %v", err)
+	}
+}
+
+func TestGetHistory_NotConnected(t *testing.T) {
+	a := argocd.New()
+	_, err := a.GetHistory(context.Background(), "my-app", 0)
+	if !errors.Is(err, argocd.ErrNotConnected) {
+		t.Errorf("expected ErrNotConnected, got %v", err)
+	}
+}
+
+func TestGetDiff_WithOperationState(t *testing.T) {
+	// Build an app with operationState set.
+	appData := map[string]any{
+		"metadata": map[string]any{"name": "my-app", "namespace": "argocd"},
+		"spec": map[string]any{
+			"project": "default",
+			"source":  map[string]any{"repoURL": "https://github.com/org/repo"},
+			"destination": map[string]any{
+				"server":    "https://kubernetes.default.svc",
+				"namespace": "production",
+			},
+		},
+		"status": map[string]any{
+			"health": map[string]any{"status": "Healthy"},
+			"sync":   map[string]any{"status": "OutOfSync", "revision": "abc123"},
+			"operationState": map[string]any{
+				"phase":   "Failed",
+				"message": "sync failed: resource conflict",
+			},
+		},
+	}
+	body, _ := json.Marshal(appData)
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/my-app": {status: 200, body: string(body)},
+	}}, testConfig())
+
+	diff, err := a.GetDiff(context.Background(), "my-app")
+	if err != nil {
+		t.Fatalf("GetDiff() error = %v", err)
+	}
+	if diff.Message != "sync failed: resource conflict" {
+		t.Errorf("diff.Message = %q, want 'sync failed: resource conflict'", diff.Message)
+	}
+}
+
+func TestGetHistory_WithRepoURL(t *testing.T) {
+	// Build app with history entries that have a source.repoURL.
+	appData := map[string]any{
+		"metadata": map[string]any{"name": "my-app", "namespace": "argocd"},
+		"spec": map[string]any{
+			"project": "default",
+			"source":  map[string]any{"repoURL": "https://github.com/org/repo"},
+			"destination": map[string]any{
+				"server":    "https://kubernetes.default.svc",
+				"namespace": "production",
+			},
+		},
+		"status": map[string]any{
+			"health": map[string]any{"status": "Healthy"},
+			"sync":   map[string]any{"status": "Synced", "revision": "abc123"},
+			"history": []map[string]any{
+				{
+					"revision":        "abc123",
+					"deployedAt":      "2026-02-20T10:00:00Z",
+					"deployStartedAt": "2026-02-20T09:59:00Z",
+					"source":          map[string]any{"repoURL": "https://github.com/org/repo"},
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(appData)
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/my-app": {status: 200, body: string(body)},
+	}}, testConfig())
+
+	history, err := a.GetHistory(context.Background(), "my-app", 0)
+	if err != nil {
+		t.Fatalf("GetHistory() error = %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(history))
+	}
+	if history[0].Initiator != "https://github.com/org/repo" {
+		t.Errorf("Initiator = %q, want repo URL", history[0].Initiator)
+	}
+	if history[0].FinishedAt != "2026-02-20T10:00:00Z" {
+		t.Errorf("FinishedAt = %q, want 2026-02-20T10:00:00Z", history[0].FinishedAt)
+	}
+	if history[0].Phase != "Succeeded" {
+		t.Errorf("Phase = %q, want Succeeded", history[0].Phase)
+	}
+}
+
+func TestGetHistory_LimitTruncation(t *testing.T) {
+	// Build app with 3 history entries; request limit=2.
+	appData := map[string]any{
+		"metadata": map[string]any{"name": "my-app", "namespace": "argocd"},
+		"spec": map[string]any{
+			"project": "default",
+			"source":  map[string]any{"repoURL": "https://github.com/org/repo"},
+			"destination": map[string]any{
+				"server":    "https://kubernetes.default.svc",
+				"namespace": "production",
+			},
+		},
+		"status": map[string]any{
+			"health": map[string]any{"status": "Healthy"},
+			"sync":   map[string]any{"status": "Synced", "revision": "rev3"},
+			"history": []map[string]any{
+				{"revision": "rev1", "deployedAt": "2026-01-01T10:00:00Z", "deployStartedAt": "2026-01-01T09:59:00Z"},
+				{"revision": "rev2", "deployedAt": "2026-01-02T10:00:00Z", "deployStartedAt": "2026-01-02T09:59:00Z"},
+				{"revision": "rev3", "deployedAt": "2026-01-03T10:00:00Z", "deployStartedAt": "2026-01-03T09:59:00Z"},
+			},
+		},
+	}
+	body, _ := json.Marshal(appData)
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/my-app": {status: 200, body: string(body)},
+	}}, testConfig())
+
+	history, err := a.GetHistory(context.Background(), "my-app", 2)
+	if err != nil {
+		t.Fatalf("GetHistory() error = %v", err)
+	}
+	if len(history) != 2 {
+		t.Errorf("expected 2 entries (limit=2), got %d", len(history))
+	}
+	// Most recent first.
+	if history[0].Revision != "rev3" {
+		t.Errorf("first entry Revision = %q, want rev3 (most recent)", history[0].Revision)
+	}
+}
+
+func TestGetApp_WithNilResourceHealth(t *testing.T) {
+	// Resource with nil health field - exercises the nil health check branch.
+	appData := map[string]any{
+		"metadata": map[string]any{"name": "my-app", "namespace": "argocd"},
+		"spec": map[string]any{
+			"project": "default",
+			"source":  map[string]any{"repoURL": "https://github.com/org/repo"},
+			"destination": map[string]any{
+				"server":    "https://kubernetes.default.svc",
+				"namespace": "production",
+			},
+		},
+		"status": map[string]any{
+			"health": map[string]any{"status": "Healthy"},
+			"sync":   map[string]any{"status": "Synced", "revision": "abc"},
+			"resources": []map[string]any{
+				{
+					"group":     "apps",
+					"kind":      "Deployment",
+					"name":      "web",
+					"namespace": "production",
+					"status":    "Synced",
+					// no "health" key — nil health pointer branch
+				},
+			},
+			"conditions": []map[string]any{
+				{"type": "SyncError", "message": "some condition"},
+			},
+		},
+	}
+	body, _ := json.Marshal(appData)
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications/my-app": {status: 200, body: string(body)},
+	}}, testConfig())
+
+	detail, err := a.GetApp(context.Background(), "my-app")
+	if err != nil {
+		t.Fatalf("GetApp() error = %v", err)
+	}
+	if len(detail.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(detail.Resources))
+	}
+	if detail.Resources[0].Health != "" {
+		t.Errorf("expected empty health for nil health pointer, got %q", detail.Resources[0].Health)
+	}
+	if len(detail.Conditions) != 1 {
+		t.Errorf("expected 1 condition, got %d", len(detail.Conditions))
+	}
+}
+
+func TestDoJSON_DecodeError(t *testing.T) {
+	// Return 200 with invalid JSON to trigger the unmarshal error branch.
+	a := argocd.NewWithClient(&mockHTTP{responses: map[string]mockResp{
+		"/api/v1/applications": {status: 200, body: `{invalid json`},
+	}}, testConfig())
+	_, err := a.Apps(context.Background(), "")
+	if err == nil {
+		t.Error("expected error for invalid JSON response")
 	}
 }

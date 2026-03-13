@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -558,6 +559,86 @@ func TestFactRepository(t *testing.T) {
 	})
 }
 
+func TestSourceRepository_ListAfterSync(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	src := &store.Source{
+		ID:     "sync-src",
+		Type:   "prometheus",
+		Name:   "Synced Prometheus",
+		Config: json.RawMessage(`{"url":"http://prom:9090"}`),
+	}
+	if err := s.Sources.Create(ctx, src); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	// Set sync status so last_sync_at is populated.
+	if err := s.Sources.UpdateSyncStatus(ctx, "sync-src", time.Now(), ""); err != nil {
+		t.Fatalf("UpdateSyncStatus() error = %v", err)
+	}
+
+	// List — scanSources should now hit the lastSyncAt.Valid branch.
+	sources, err := s.Sources.List(ctx)
+	if err != nil {
+		t.Fatalf("List() after sync error = %v", err)
+	}
+	var found *store.Source
+	for _, s := range sources {
+		if s.ID == "sync-src" {
+			found = s
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("List() did not return synced source")
+	}
+	if found.LastSyncAt == nil {
+		t.Error("LastSyncAt should be set after UpdateSyncStatus")
+	}
+
+	// ListByType — also exercises scanSources with lastSyncAt.Valid.
+	byType, err := s.Sources.ListByType(ctx, "prometheus")
+	if err != nil {
+		t.Fatalf("ListByType() after sync error = %v", err)
+	}
+	if len(byType) == 0 {
+		t.Fatal("ListByType() returned empty after sync")
+	}
+	if byType[0].LastSyncAt == nil {
+		t.Error("LastSyncAt should be set in ListByType result")
+	}
+}
+
+func TestClarification_AnswerAlreadyAnswered(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	c := &store.Clarification{
+		ID:       "clar-race",
+		Type:     store.ClarificationNewService,
+		Context:  json.RawMessage(`{}`),
+		Question: "Race condition test?",
+	}
+	if err := s.Clarifications.Create(ctx, c); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	// First answer succeeds.
+	if err := s.Clarifications.Answer(ctx, "clar-race", "Yes", "user1"); err != nil {
+		t.Fatalf("Answer() first call error = %v", err)
+	}
+
+	// Second answer on an already-answered clarification must return ErrAlreadyAnswered.
+	err := s.Clarifications.Answer(ctx, "clar-race", "No", "user2")
+	if err == nil {
+		t.Fatal("Answer() second call: expected ErrAlreadyAnswered, got nil")
+	}
+	if !errors.Is(err, store.ErrAlreadyAnswered) {
+		t.Errorf("Answer() second call error = %v, want ErrAlreadyAnswered", err)
+	}
+}
+
 func TestForeignKeyEnforcement(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
@@ -696,6 +777,166 @@ func TestRepositoryErrorPaths(t *testing.T) {
 			t.Error("expected nil LastSyncAt for new source")
 		}
 	})
+}
+
+func TestAllowedSourceTypes(t *testing.T) {
+	types := store.AllowedSourceTypes()
+	if len(types) == 0 {
+		t.Fatal("AllowedSourceTypes() returned empty slice")
+	}
+
+	// Check a few well-known types are present.
+	want := []string{"kubernetes", "git", "prometheus", "github"}
+	found := make(map[string]bool, len(types))
+	for _, tp := range types {
+		found[tp] = true
+	}
+	for _, w := range want {
+		if !found[w] {
+			t.Errorf("AllowedSourceTypes() missing %q", w)
+		}
+	}
+}
+
+func TestIsValidSourceType(t *testing.T) {
+	tests := []struct {
+		sourceType string
+		want       bool
+	}{
+		{"kubernetes", true},
+		{"git", true},
+		{"aws", true},
+		{"prometheus", true},
+		{"github", true},
+		{"gitlab", true},
+		{"unknown", false},
+		{"", false},
+		{"KUBERNETES", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.sourceType, func(t *testing.T) {
+			got := store.IsValidSourceType(tt.sourceType)
+			if got != tt.want {
+				t.Errorf("IsValidSourceType(%q) = %v, want %v", tt.sourceType, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStore_Driver(t *testing.T) {
+	s := setupTestStore(t)
+	if got := s.Driver(); got != store.DriverSQLite {
+		t.Errorf("Driver() = %q, want %q", got, store.DriverSQLite)
+	}
+}
+
+func TestStore_PanicStore(t *testing.T) {
+	s := setupTestStore(t)
+	ps := s.PanicStore()
+	if ps == nil {
+		t.Fatal("PanicStore() returned nil")
+	}
+}
+
+func TestPanicStore_StateTransitions(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	ps := s.PanicStore()
+
+	// Initially not panicked.
+	panicked, err := ps.IsPanicked(ctx)
+	if err != nil {
+		t.Fatalf("IsPanicked() error = %v", err)
+	}
+	if panicked {
+		t.Error("IsPanicked() = true before SetPanicked, want false")
+	}
+
+	// Set panicked.
+	if err := ps.SetPanicked(ctx); err != nil {
+		t.Fatalf("SetPanicked() error = %v", err)
+	}
+
+	panicked, err = ps.IsPanicked(ctx)
+	if err != nil {
+		t.Fatalf("IsPanicked() error after SetPanicked = %v", err)
+	}
+	if !panicked {
+		t.Error("IsPanicked() = false after SetPanicked, want true")
+	}
+
+	// Clear panicked.
+	if err := ps.ClearPanicked(ctx); err != nil {
+		t.Fatalf("ClearPanicked() error = %v", err)
+	}
+
+	panicked, err = ps.IsPanicked(ctx)
+	if err != nil {
+		t.Fatalf("IsPanicked() error after ClearPanicked = %v", err)
+	}
+	if panicked {
+		t.Error("IsPanicked() = true after ClearPanicked, want false")
+	}
+}
+
+func TestCacheRepository_WithToolCallsAndProcessedAt(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Second)
+	cache := &store.JoeFileCache{
+		FilePath:    "/repo/.joe/toolcalls.md",
+		ContentHash: "tc123",
+		ParsedData:  json.RawMessage(`{"service":"payments"}`),
+		ToolCalls:   json.RawMessage(`[{"name":"graph_query","args":{}}]`),
+		ProcessedAt: now,
+	}
+	if err := s.Cache.Set(ctx, cache); err != nil {
+		t.Fatalf("Set() with ToolCalls error = %v", err)
+	}
+
+	got, err := s.Cache.Get(ctx, "/repo/.joe/toolcalls.md")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got == nil {
+		t.Fatal("Get() returned nil")
+	}
+	if string(got.ToolCalls) != `[{"name":"graph_query","args":{}}]` {
+		t.Errorf("ToolCalls = %s, want original value", got.ToolCalls)
+	}
+	if got.ProcessedAt.IsZero() {
+		t.Error("ProcessedAt should not be zero")
+	}
+}
+
+func TestClarification_WithGraphOperations(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	graphOps := json.RawMessage(`[{"type":"add_edge","from":"svc-a","to":"svc-b"}]`)
+	c := &store.Clarification{
+		ID:              "clar-graphops",
+		Type:            store.ClarificationEdgeConfirm,
+		Context:         json.RawMessage(`{"service":"svc-a"}`),
+		Question:        "Does svc-a depend on svc-b?",
+		GraphOperations: graphOps,
+	}
+	if err := s.Clarifications.Create(ctx, c); err != nil {
+		t.Fatalf("Create() with GraphOperations error = %v", err)
+	}
+
+	got, err := s.Clarifications.Get(ctx, "clar-graphops")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got == nil {
+		t.Fatal("Get() returned nil")
+	}
+	if string(got.GraphOperations) != string(graphOps) {
+		t.Errorf("GraphOperations = %s, want %s", got.GraphOperations, graphOps)
+	}
 }
 
 func TestCloseStore(t *testing.T) {

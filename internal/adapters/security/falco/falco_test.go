@@ -380,3 +380,90 @@ type mockDoer struct {
 func (m *mockDoer) Do(_ *http.Request) (*http.Response, error) {
 	return m.resp, m.err
 }
+
+func TestAdapter_Connect_BadURL(t *testing.T) {
+	// A URL with an invalid scheme triggers http.NewRequestWithContext to error.
+	adapter := falco.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": "://bad url"})}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for bad URL, got nil")
+	}
+}
+
+func TestAdapter_ListEvents_InvalidJSON(t *testing.T) {
+	callCount := 0
+	srv := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusOK)
+		if callCount == 1 {
+			// health check OK
+			_, _ = w.Write([]byte(`{"events":[],"total":0}`))
+		} else {
+			// return invalid JSON
+			_, _ = w.Write([]byte(`not json at all`))
+		}
+	})
+	defer srv.Close()
+
+	adapter := falco.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	_, err := adapter.ListEvents(context.Background(), "", "", "", 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+func TestAdapter_ListRules_FetchError(t *testing.T) {
+	callCount := 0
+	srv := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// health check OK
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"events":[],"total":0}`))
+		} else {
+			// subsequent call (for ListRules) fails
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	defer srv.Close()
+
+	adapter := falco.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	_, err := adapter.ListRules(context.Background())
+	if err == nil {
+		t.Error("expected error from ListRules when fetchEvents fails, got nil")
+	}
+}
+
+func TestAdapter_ListEvents_DefaultLimit(t *testing.T) {
+	var gotLimit string
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotLimit = r.URL.Query().Get("limit")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"events":[],"total":0}`))
+	})
+	defer srv.Close()
+
+	adapter := falco.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	// health check consumes first call
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	// pass limit=0 to trigger the defaultEventsLimit branch
+	_, err := adapter.ListEvents(context.Background(), "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	// The limit param should be "50" (defaultEventsLimit)
+	if gotLimit != "50" {
+		t.Errorf("limit query param = %q, want %q", gotLimit, "50")
+	}
+}

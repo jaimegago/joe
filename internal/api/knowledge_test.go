@@ -360,3 +360,168 @@ func TestHandleTriggerSync_NotFound(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
+
+func TestHandleUpdateEntry_Success(t *testing.T) {
+	mux, knowledgeSvc := setupKnowledgeTestServer(t)
+	ctx := context.Background()
+
+	// Tier 3 (derived) entries are mutable.
+	entry := &knowledge.Entry{
+		ID: "update-me", Title: "Original", Content: "old content", Type: "doc", Tier: knowledge.TierDerived,
+	}
+	if err := knowledgeSvc.Create(ctx, entry); err != nil {
+		t.Fatalf("create entry: %v", err)
+	}
+
+	w := doRequest(mux, http.MethodPut, apiPrefix+"/knowledge/entries/update-me", map[string]any{
+		"title":   "Updated Title",
+		"content": "new content",
+		"type":    "doc",
+		"tier":    knowledge.TierDerived,
+	})
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestHandleUpdateEntry_InvalidJSON(t *testing.T) {
+	mux, _ := setupKnowledgeTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, apiPrefix+"/knowledge/entries/some-id", bytes.NewBufferString("{bad"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleDeleteEntry_Tier1_Protected(t *testing.T) {
+	mux, knowledgeSvc := setupKnowledgeTestServer(t)
+	ctx := context.Background()
+
+	entry := &knowledge.Entry{
+		ID: "protect-me", Title: "Protected", Content: "content", Type: "doc", Tier: knowledge.TierCurated,
+	}
+	if err := knowledgeSvc.Create(ctx, entry); err != nil {
+		t.Fatalf("create entry: %v", err)
+	}
+
+	w := doRequest(mux, http.MethodDelete, apiPrefix+"/knowledge/entries/protect-me", nil)
+	// Tier 1 entries cannot be deleted → 422
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d (tier 1 protected)", w.Code, http.StatusUnprocessableEntity)
+	}
+}
+
+func TestHandleSearch_Success(t *testing.T) {
+	// Build a server with an embedder so search succeeds.
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+
+	embedder := &stubKnowledgeEmbedder{}
+	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, embedder)
+	mux := http.NewServeMux()
+	New(&core.Services{
+		Config:    &config.Config{},
+		Store:     sqlStore,
+		Adapters:  adapters.NewRegistry(),
+		Knowledge: knowledgeSvc,
+	}).RegisterRoutes(mux)
+
+	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/search", map[string]any{
+		"query": "deployment runbook",
+		"top_k": 5,
+	})
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestHandleSearch_DefaultTopK(t *testing.T) {
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+
+	embedder := &stubKnowledgeEmbedder{}
+	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, embedder)
+	mux := http.NewServeMux()
+	New(&core.Services{
+		Config:    &config.Config{},
+		Store:     sqlStore,
+		Adapters:  adapters.NewRegistry(),
+		Knowledge: knowledgeSvc,
+	}).RegisterRoutes(mux)
+
+	// top_k=0 → uses default of 5.
+	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/search", map[string]any{
+		"query": "deployment",
+	})
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// setupKnowledgeNoServiceServer creates a server with Knowledge == nil (service unavailable).
+func setupKnowledgeNoServiceServer(t *testing.T) *http.ServeMux {
+	t.Helper()
+	mux := http.NewServeMux()
+	New(&core.Services{
+		Config:    &config.Config{},
+		Adapters:  adapters.NewRegistry(),
+		Knowledge: nil,
+	}).RegisterRoutes(mux)
+	return mux
+}
+
+// TestKnowledgeHandlers_ServiceUnavailable verifies that every knowledge endpoint
+// returns 503 when the knowledge service is nil.
+func TestKnowledgeHandlers_ServiceUnavailable(t *testing.T) {
+	mux := setupKnowledgeNoServiceServer(t)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{"create entry", http.MethodPost, apiPrefix + "/knowledge/entries", map[string]any{"title": "t", "content": "c"}},
+		{"list entries", http.MethodGet, apiPrefix + "/knowledge/entries", nil},
+		{"get entry", http.MethodGet, apiPrefix + "/knowledge/entries/x", nil},
+		{"update entry", http.MethodPut, apiPrefix + "/knowledge/entries/x", map[string]any{"title": "t", "content": "c"}},
+		{"delete entry", http.MethodDelete, apiPrefix + "/knowledge/entries/x", nil},
+		{"search", http.MethodPost, apiPrefix + "/knowledge/search", map[string]any{"query": "q"}},
+		{"create source", http.MethodPost, apiPrefix + "/knowledge/sources", map[string]any{"type": "confluence", "name": "n"}},
+		{"list sources", http.MethodGet, apiPrefix + "/knowledge/sources", nil},
+		{"delete source", http.MethodDelete, apiPrefix + "/knowledge/sources/x", nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doRequest(mux, tc.method, tc.path, tc.body)
+			if w.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s: status = %d, want 503", tc.name, w.Code)
+			}
+		})
+	}
+}
+
+// stubKnowledgeEmbedder satisfies knowledge.Embedder with fixed-size embeddings.
+type stubKnowledgeEmbedder struct{}
+
+func (s *stubKnowledgeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	return make([]float32, 384), nil
+}
+func (s *stubKnowledgeEmbedder) ModelName() string { return "stub" }

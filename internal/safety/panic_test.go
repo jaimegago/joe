@@ -1,6 +1,8 @@
 package safety
 
 import (
+	"context"
+	"fmt"
 	"testing"
 )
 
@@ -58,4 +60,53 @@ func TestPanicSources(t *testing.T) {
 			t.Errorf("PanicSource %v has empty string value", s)
 		}
 	}
+}
+
+func TestSetClusterStore(t *testing.T) {
+	// SetClusterStore sets the package-level clusterStore variable.
+	// Just verify it can be called without panicking.
+	orig := clusterStore
+	t.Cleanup(func() { clusterStore = orig })
+
+	SetClusterStore(nil)
+	if clusterStore != nil {
+		t.Error("expected clusterStore to be nil after SetClusterStore(nil)")
+	}
+}
+
+func TestTrigger_WithClusterStoreError(t *testing.T) {
+	panicked.Store(false)
+	t.Cleanup(func() {
+		panicked.Store(false)
+		clusterStore = nil
+	})
+
+	// Register a cluster store that returns an error on SetPanicked.
+	clusterStore = &errClusterStore{setPanickedErr: errTest}
+
+	// Trigger should still return true (in-process flag is set) even if the
+	// cluster store call fails; the error is only logged.
+	triggered := Trigger(PanicSourceAPI, "cluster store error test")
+	if !triggered {
+		t.Error("expected Trigger to return true even when cluster store errors")
+	}
+	if !IsPanicked() {
+		t.Error("expected IsPanicked() == true after Trigger with cluster store error")
+	}
+}
+
+var errTest = fmt.Errorf("simulated store error")
+
+// errClusterStore is a ClusterPanicStore that returns configured errors.
+type errClusterStore struct {
+	setPanickedErr   error
+	clearPanickedErr error
+	isPanickedVal    bool
+	isPanickedErr    error
+}
+
+func (s *errClusterStore) SetPanicked(_ context.Context) error   { return s.setPanickedErr }
+func (s *errClusterStore) ClearPanicked(_ context.Context) error { return s.clearPanickedErr }
+func (s *errClusterStore) IsPanicked(_ context.Context) (bool, error) {
+	return s.isPanickedVal, s.isPanickedErr
 }

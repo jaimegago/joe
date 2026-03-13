@@ -240,6 +240,62 @@ func TestHandleTerraformOutputs_NotFound(t *testing.T) {
 	}
 }
 
+func TestHandleTerraformGetResource_MissingAddress(t *testing.T) {
+	mock := &mockTerraformAdapter{}
+	mux := setupGitOpsServer(t, "tf-src", mock)
+	// No ?address= query param — should 400.
+	req := httptest.NewRequest("GET", "/api/v1/terraform/tf-src/state/resource", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestHandleTerraformGetResource_NotFound(t *testing.T) {
+	server, _ := setupTestServer(t)
+	mux := setupMux(t, server)
+	req := httptest.NewRequest("GET", "/api/v1/terraform/nonexistent/state/resource?address=aws_instance.web", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHandleTerraformGetResource(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockTerraformAdapter
+		wantStatus int
+	}{
+		{
+			name: "success",
+			mock: &mockTerraformAdapter{
+				resource: &terraformadapter.Resource{Address: "aws_instance.web", Type: "aws_instance"},
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockTerraformAdapter{err: fmt.Errorf("state error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "tf-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/terraform/tf-src/state/resource?address=aws_instance.web", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
 // --- Helm tests ---
 
 func TestHandleHelmReleases_NotFound(t *testing.T) {
@@ -288,6 +344,177 @@ func TestHandleHelmGetRelease_NotFound(t *testing.T) {
 	server, _ := setupTestServer(t)
 	mux := setupMux(t, server)
 	req := httptest.NewRequest("GET", "/api/v1/helm/nonexistent/releases/default/nginx", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHandleArgoCDDiff(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockArgoCDAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockArgoCDAdapter{diff: &argocdadapter.Diff{Name: "my-app", SyncStatus: "OutOfSync"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockArgoCDAdapter{appErr: fmt.Errorf("argocd error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "argocd-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/argocd/argocd-src/apps/my-app/diff", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleArgoCDHistory(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockArgoCDAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockArgoCDAdapter{history: []argocdadapter.SyncOperation{{Revision: "abc123", Phase: "Succeeded"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockArgoCDAdapter{appErr: fmt.Errorf("argocd error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "argocd-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/argocd/argocd-src/apps/my-app/history", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleTerraformOutputs(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockTerraformAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockTerraformAdapter{outputs: map[string]terraformadapter.Output{"vpc_id": {Value: "vpc-123", Sensitive: false}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockTerraformAdapter{outputs: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockTerraformAdapter{err: fmt.Errorf("terraform error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "tf-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/terraform/tf-src/outputs", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleHelmGetRelease(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockHelmAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockHelmAdapter{detail: &helmadapter.ReleaseDetail{Release: helmadapter.Release{Name: "nginx", Namespace: "ingress", Status: "deployed"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockHelmAdapter{err: fmt.Errorf("helm error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "helm-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/helm/helm-src/releases/default/nginx", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleHelmHistory(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockHelmAdapter
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			mock:       &mockHelmAdapter{history: []helmadapter.RevisionEntry{{Revision: 1, Status: "deployed"}}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "nil result normalised",
+			mock:       &mockHelmAdapter{history: nil},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "adapter error",
+			mock:       &mockHelmAdapter{err: fmt.Errorf("helm error")},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := setupGitOpsServer(t, "helm-src", tt.mock)
+			req := httptest.NewRequest("GET", "/api/v1/helm/helm-src/releases/default/nginx/history", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleHelmHistory_NotFound(t *testing.T) {
+	server, _ := setupTestServer(t)
+	mux := setupMux(t, server)
+	req := httptest.NewRequest("GET", "/api/v1/helm/nonexistent/releases/default/nginx/history", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {

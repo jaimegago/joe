@@ -122,3 +122,49 @@ func TestExecute(t *testing.T) {
 		})
 	}
 }
+
+func TestExecute_InvalidPath(t *testing.T) {
+	// A path containing a null byte should trigger an expand/stat error.
+	tool := New()
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path": string([]byte{0}),
+	})
+	if err == nil {
+		t.Fatal("expected error for path with null byte")
+	}
+}
+
+func TestExecute_PathIsNonString(t *testing.T) {
+	// Non-string path type should return the path-required error.
+	tool := New()
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path": 42,
+	})
+	if err == nil {
+		t.Fatal("expected error when path is not a string")
+	}
+	if !strings.Contains(err.Error(), "path parameter") {
+		t.Errorf("error = %v, want 'path parameter' message", err)
+	}
+}
+
+func TestExecute_SizeBytes(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "hello.txt")
+	content := "hello world"
+	if err := os.WriteFile(f, []byte(content), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	tool := New()
+	result, err := tool.Execute(context.Background(), map[string]any{"path": f})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	m := result.(map[string]any)
+	if m["size_bytes"].(int) != len(content) {
+		t.Errorf("size_bytes = %v, want %d", m["size_bytes"], len(content))
+	}
+	if m["path"].(string) != f {
+		t.Errorf("path = %q, want %q", m["path"], f)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -436,6 +437,120 @@ func TestClarificationsRaceAndConcurrency(t *testing.T) {
 
 		if int(countBefore) != int(countAfter)+1 {
 			t.Errorf("Expected one less clarification after answer: before=%v, after=%v", int(countBefore), int(countAfter))
+		}
+	})
+}
+
+// TestClarificationHandlers_NilStore directly invokes the handler methods with
+// a nil store to cover the nil-store guard branches that are otherwise
+// unreachable through the HTTP router (routes are not registered when store == nil).
+func TestClarificationHandlers_NilStore(t *testing.T) {
+	h := &clarificationHandler{storeInst: nil}
+
+	t.Run("list clarifications 503", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/clarifications", nil)
+		w := httptest.NewRecorder()
+		h.handleListClarifications(w, req)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", w.Code)
+		}
+	})
+
+	t.Run("answer clarification 503", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/v1/clarifications/x/answer", nil)
+		req.SetPathValue("id", "x")
+		w := httptest.NewRecorder()
+		h.handleAnswerClarification(w, req)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", w.Code)
+		}
+	})
+
+	t.Run("dismiss clarification 503", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/v1/clarifications/x/dismiss", nil)
+		req.SetPathValue("id", "x")
+		w := httptest.NewRecorder()
+		h.handleDismissClarification(w, req)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", w.Code)
+		}
+	})
+}
+
+// TestClarificationHandlers_StoreError covers the ListPending/GetClarification error
+// paths by using a closed store (all DB queries fail with "database is closed").
+func TestClarificationHandlers_StoreError(t *testing.T) {
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	sqlStore.Close() // close DB → all queries fail
+
+	h := &clarificationHandler{
+		storeInst:            sqlStore,
+		clarificationService: nil,
+	}
+
+	t.Run("list clarifications 500", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/clarifications", nil)
+		w := httptest.NewRecorder()
+		h.handleListClarifications(w, req)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500 (closed store)", w.Code)
+		}
+	})
+
+	t.Run("answer clarification 500", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/v1/clarifications/x/answer", nil)
+		req.SetPathValue("id", "x")
+		req.Body = io.NopCloser(bytes.NewReader([]byte(`{"answer":"yes"}`)))
+		w := httptest.NewRecorder()
+		h.handleAnswerClarification(w, req)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500 (closed store)", w.Code)
+		}
+	})
+
+	t.Run("dismiss clarification 500", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/v1/clarifications/x/dismiss", nil)
+		req.SetPathValue("id", "x")
+		w := httptest.NewRecorder()
+		h.handleDismissClarification(w, req)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500 (closed store)", w.Code)
+		}
+	})
+}
+
+// TestClarificationHandlers_EmptyID covers the id=="" guard branches by calling
+// handlers directly without setting a path value (id defaults to "").
+func TestClarificationHandlers_EmptyID(t *testing.T) {
+	server, storeInst := setupClarificationsTestServer(t)
+	h := &clarificationHandler{
+		storeInst:            storeInst,
+		clarificationService: nil,
+	}
+	_ = server
+
+	t.Run("dismiss empty id 400", func(t *testing.T) {
+		// No SetPathValue("id", ...) → id == "" → 400.
+		req := httptest.NewRequest("POST", "/api/v1/clarifications//dismiss", nil)
+		w := httptest.NewRecorder()
+		h.handleDismissClarification(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+	})
+
+	t.Run("answer empty id 400", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/v1/clarifications//answer", nil)
+		w := httptest.NewRecorder()
+		h.handleAnswerClarification(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
 		}
 	})
 }

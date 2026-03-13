@@ -219,6 +219,32 @@ func TestTraceRouteTool_RealProber_Smoke(t *testing.T) {
 	}
 }
 
+func TestTraceRouteTool_Execute_ContextCancelled(t *testing.T) {
+	// Prober returns a context.Canceled error on the first hop.
+	mock := &mockHopProber{
+		hops: map[int]hopResponse{
+			1: {err: context.Canceled},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	tool := &traceroute.TraceRouteTool{Prober: mock}
+	result, err := tool.Execute(ctx, map[string]any{
+		"host":     "8.8.8.8",
+		"max_hops": float64(5),
+	})
+	if err != nil {
+		t.Fatalf("Execute() should not return error, got: %v", err)
+	}
+	r := result.(traceroute.TraceResult)
+	// Should have stopped after the first hop due to ctx.Err() != nil.
+	if len(r.Hops) == 0 {
+		t.Error("expected at least one hop recorded before context break")
+	}
+}
+
 func TestTraceRouteTool_Execute_HopFields(t *testing.T) {
 	mock := &mockHopProber{
 		hops: map[int]hopResponse{

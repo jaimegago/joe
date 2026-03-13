@@ -3,6 +3,7 @@ package datadog_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -474,5 +475,160 @@ func TestAdapter_ListLogServices_NoData(t *testing.T) {
 	}
 	if len(services) != 0 {
 		t.Errorf("len(services) = %d, want 0", len(services))
+	}
+}
+
+// --- Connect: empty config (no JSON bytes) ---
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	// source.Config is empty → uses make(map[string]any), then ParseConfig fails (missing api_key).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	adapter := datadog.New()
+	source := store.Source{} // empty Config bytes
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config (missing api_key), got nil")
+	}
+}
+
+// --- ParseConfig: explicit site value preserved ---
+
+func TestParseConfig_ExplicitSite(t *testing.T) {
+	cfg, err := datadog.ParseConfig(map[string]any{
+		"api_key": "k",
+		"app_key": "a",
+		"site":    "datadoghq.eu",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.Site != "datadoghq.eu" {
+		t.Errorf("Site = %q, want %q", cfg.Site, "datadoghq.eu")
+	}
+}
+
+// --- MetricsQuery: invalid JSON response ---
+
+func TestAdapter_MetricsQuery_InvalidJSON(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.MetricsQuery(context.Background(), "foo{*}", 0, 0)
+	if err == nil {
+		t.Error("expected error for invalid JSON metrics response, got nil")
+	}
+}
+
+// --- MetricsQuery: network/Do error ---
+
+func TestAdapter_MetricsQuery_DoError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.MetricsQuery(context.Background(), "foo{*}", 0, 0)
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- LogsSearch: invalid JSON response ---
+
+func TestAdapter_LogsSearch_InvalidJSON(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.LogsSearch(context.Background(), "*", 0, 0, 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON logs response, got nil")
+	}
+}
+
+// --- LogsSearch: network/Do error ---
+
+func TestAdapter_LogsSearch_DoError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.LogsSearch(context.Background(), "*", 0, 0, 10)
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- ListActiveServices: invalid JSON response ---
+
+func TestAdapter_ListActiveServices_InvalidJSON(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.ListActiveServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON hosts response, got nil")
+	}
+}
+
+// --- ListActiveServices: network/Do error ---
+
+func TestAdapter_ListActiveServices_DoError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.ListActiveServices(context.Background())
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- ListActiveServices: "service:" tag with empty name (trimmed) ---
+
+func TestAdapter_ListActiveServices_EmptyServiceName(t *testing.T) {
+	// Tag "service:" → TrimPrefix leaves "", should be skipped.
+	respBody := `{
+		"host_list": [
+			{
+				"host_name": "web-1",
+				"tags_by_source": {
+					"Datadog": ["service:", "service:api"]
+				}
+			}
+		]
+	}`
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+	services, err := adapter.ListActiveServices(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveServices() error = %v", err)
+	}
+	// "service:" (empty name) skipped; "service:api" kept → 1 result
+	if len(services) != 1 || services[0] != "api" {
+		t.Errorf("services = %v, want [api]", services)
+	}
+}
+
+// --- ListLogServices: invalid JSON response ---
+
+func TestAdapter_ListLogServices_InvalidJSON(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.ListLogServices(context.Background())
+	if err == nil {
+		t.Error("expected error for invalid JSON log services response, got nil")
+	}
+}
+
+// --- ListLogServices: network/Do error ---
+
+func TestAdapter_ListLogServices_DoError(t *testing.T) {
+	adapter := datadog.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.ListLogServices(context.Background())
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
 	}
 }

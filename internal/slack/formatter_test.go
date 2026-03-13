@@ -37,6 +37,25 @@ func TestFormatter_StatusBlocks_WithData(t *testing.T) {
 	}
 }
 
+func TestFormatter_StatusBlocks_RecentlyAddedTruncated(t *testing.T) {
+	f := NewFormatter()
+	summary := &graph.GraphSummary{
+		NodeCount: 10,
+		EdgeCount: 4,
+		RecentlyAdded: []graph.Node{
+			{ID: "svc-1", Type: "deployment"},
+			{ID: "svc-2", Type: "deployment"},
+			{ID: "svc-3", Type: "deployment"},
+			{ID: "svc-4", Type: "deployment"},
+			{ID: "svc-5", Type: "deployment"},
+		},
+	}
+	blocks := f.StatusBlocks(summary)
+	if len(blocks) == 0 {
+		t.Fatal("StatusBlocks() returned no blocks")
+	}
+}
+
 func TestFormatter_AskBlocks(t *testing.T) {
 	f := NewFormatter()
 	blocks := f.AskBlocks("show payment service", "Found 3 nodes")

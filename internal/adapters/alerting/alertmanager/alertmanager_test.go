@@ -283,6 +283,87 @@ func TestAdapter_ListAlerts_ServerError(t *testing.T) {
 	}
 }
 
+func TestParseConfig_WithAPIKey(t *testing.T) {
+	cfg, err := alertmanager.ParseConfig(map[string]any{
+		"url":     "http://alertmanager:9093",
+		"api_key": "secret",
+	})
+	if err != nil {
+		t.Fatalf("ParseConfig() error = %v", err)
+	}
+	if cfg.APIKey != "secret" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "secret")
+	}
+}
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := alertmanager.New()
+	// Empty config (no URL) should fail ParseConfig.
+	source := store.Source{}
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+func TestAdapter_ListAlerts_DoError(t *testing.T) {
+	// Connect succeeds but subsequent ListAlerts call fails at network level.
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// health check succeeds
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		// Close the connection abruptly to trigger a Do error.
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+		}
+	}))
+	defer srv.Close()
+
+	adapter := alertmanager.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	_, err := adapter.ListAlerts(context.Background(), "")
+	if err == nil {
+		t.Error("expected error from abrupt close, got nil")
+	}
+}
+
+func TestAdapter_ListAlerts_BadJSON(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-valid-json`))
+	}))
+	defer srv.Close()
+
+	adapter := alertmanager.New()
+	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := adapter.Connect(context.Background(), source); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	_, err := adapter.ListAlerts(context.Background(), "")
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
 // mockHTTPDoer is a minimal mock for the httpDoer interface.
 type mockHTTPDoer struct {
 	resp *http.Response

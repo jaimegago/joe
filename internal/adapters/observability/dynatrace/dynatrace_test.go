@@ -3,6 +3,7 @@ package dynatrace_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -314,6 +315,167 @@ func TestAdapter_Events_DefaultLimit(t *testing.T) {
 		resp: httpResponse(http.StatusOK, `{"totalCount":0,"events":[]}`),
 	})
 	result, err := adapter.Events(context.Background(), 0, 0, 0)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	if result.Count != 0 {
+		t.Errorf("Count = %d, want 0", result.Count)
+	}
+}
+
+// --- Connect: empty config ---
+
+func TestAdapter_Connect_EmptyConfig(t *testing.T) {
+	adapter := dynatrace.New()
+	source := store.Source{} // empty Config → ParseConfig fails (missing url)
+	if err := adapter.Connect(context.Background(), source); err == nil {
+		t.Error("expected error for empty config, got nil")
+	}
+}
+
+// --- MetricsQuery: Do error ---
+
+func TestAdapter_MetricsQuery_DoError(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.MetricsQuery(context.Background(), "builtin:host.cpu.usage:avg", 0, 0)
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- MetricsQuery: invalid JSON ---
+
+func TestAdapter_MetricsQuery_InvalidJSON(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.MetricsQuery(context.Background(), "builtin:host.cpu.usage:avg", 0, 0)
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+// --- MetricsQuery: timestamps longer than values (zero-fill path) ---
+
+func TestAdapter_MetricsQuery_TimestampsLongerThanValues(t *testing.T) {
+	respBody := `{
+		"resolution": "1m",
+		"result": [
+			{
+				"metricId": "builtin:host.cpu.usage",
+				"data": [
+					{
+						"dimensionMap": {"dt.entity.host": "HOST-abc"},
+						"timestamps": [1700000000000, 1700000060000, 1700000120000],
+						"values": [45.2]
+					}
+				]
+			}
+		]
+	}`
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+	result, err := adapter.MetricsQuery(context.Background(), "builtin:host.cpu.usage:avg", 0, 0)
+	if err != nil {
+		t.Fatalf("MetricsQuery() error = %v", err)
+	}
+	if len(result.Series) != 1 {
+		t.Fatalf("len(Series) = %d, want 1", len(result.Series))
+	}
+	// 3 timestamps, only 1 value → indices 1 and 2 get val=0
+	if len(result.Series[0].Values) != 3 {
+		t.Errorf("len(Values) = %d, want 3", len(result.Series[0].Values))
+	}
+	if result.Series[0].Values[1].Value != 0 {
+		t.Errorf("Values[1].Value = %v, want 0 (zero-fill)", result.Series[0].Values[1].Value)
+	}
+}
+
+// --- MetricsQuery: with from/to > 0 (params set) ---
+
+func TestAdapter_MetricsQuery_WithFromTo(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `{"resolution":"1m","result":[]}`),
+	})
+	result, err := adapter.MetricsQuery(context.Background(), "builtin:host.cpu.usage:avg", 1700000000000, 1700003600000)
+	if err != nil {
+		t.Fatalf("MetricsQuery() error = %v", err)
+	}
+	if len(result.Series) != 0 {
+		t.Errorf("len(Series) = %d, want 0", len(result.Series))
+	}
+}
+
+// --- Events: Do error ---
+
+func TestAdapter_Events_DoError(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		err: fmt.Errorf("connection refused"),
+	})
+	_, err := adapter.Events(context.Background(), 0, 0, 10)
+	if err == nil {
+		t.Error("expected error for Do() failure, got nil")
+	}
+}
+
+// --- Events: invalid JSON ---
+
+func TestAdapter_Events_InvalidJSON(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `not-json`),
+	})
+	_, err := adapter.Events(context.Background(), 0, 0, 10)
+	if err == nil {
+		t.Error("expected error for invalid JSON response, got nil")
+	}
+}
+
+// --- Events: no properties (properties len==0 path) ---
+
+func TestAdapter_Events_NoProperties(t *testing.T) {
+	respBody := `{
+		"totalCount": 1,
+		"events": [
+			{
+				"eventId": "evt-2",
+				"eventType": "ERROR_EVENT",
+				"title": "High CPU",
+				"severity": "PERFORMANCE",
+				"startTime": 1700000000000,
+				"endTime": 1700001000000,
+				"entityId": {
+					"entityId": {"id": "SERVICE-xyz"},
+					"name": "order-service"
+				},
+				"properties": []
+			}
+		]
+	}`
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, respBody),
+	})
+	result, err := adapter.Events(context.Background(), 0, 0, 10)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	if result.Count != 1 {
+		t.Errorf("Count = %d, want 1", result.Count)
+	}
+	if result.Events[0].Properties != nil {
+		t.Errorf("Properties = %v, want nil (no properties)", result.Events[0].Properties)
+	}
+}
+
+// --- Events: with from/to > 0 (params set) ---
+
+func TestAdapter_Events_WithFromTo(t *testing.T) {
+	adapter := dynatrace.NewWithClient(&mockHTTPDoer{
+		resp: httpResponse(http.StatusOK, `{"totalCount":0,"events":[]}`),
+	})
+	result, err := adapter.Events(context.Background(), 1700000000000, 1700003600000, 25)
 	if err != nil {
 		t.Fatalf("Events() error = %v", err)
 	}

@@ -342,3 +342,51 @@ func TestRemoteIP_XForwardedFor(t *testing.T) {
 		t.Errorf("remoteIP() = %q, want 10.1.2.3", got)
 	}
 }
+
+// TestRemoteIP_NoPort covers the fallback path when RemoteAddr has no colon.
+func TestRemoteIP_NoPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.0.1" // no port
+	if got := remoteIP(req); got != "192.168.0.1" {
+		t.Errorf("remoteIP() = %q, want 192.168.0.1", got)
+	}
+}
+
+// ---------- CORS ----------
+
+func TestCORS_SetsHeaders(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := CORS()(inner)
+	req := httptest.NewRequest("GET", "/api/v1/graph", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("got status %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Error("Access-Control-Allow-Methods header missing")
+	}
+}
+
+func TestCORS_PreflightReturns204(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("inner handler should not be called for OPTIONS")
+	})
+	handler := CORS()(inner)
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/graph", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("got status %d, want 204 for OPTIONS preflight", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got == "" {
+		t.Error("Access-Control-Allow-Headers header missing in preflight response")
+	}
+}

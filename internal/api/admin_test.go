@@ -249,6 +249,129 @@ func TestAdminListUnassigned(t *testing.T) {
 	}
 }
 
+func TestAdminCreateZone_MissingName(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	body, _ := json.Marshal(map[string]any{"id": "dev"}) // name omitted
+	resp, err := http.Post(ts.URL+"/api/v1/admin/zones", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing name, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminAssignSourceZone_MissingFields(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	// assigned_by is missing — should 400.
+	body, _ := json.Marshal(map[string]any{"source_id": "src-1", "zone_id": "prod-readonly"})
+	resp, err := http.Post(ts.URL+"/api/v1/admin/source-zones", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminCreatePolicy_MissingFields(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	body, _ := json.Marshal(map[string]any{"principal": "bob"}) // zone_id omitted
+	resp, err := http.Post(ts.URL+"/api/v1/admin/policies", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing zone_id, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminDeletePolicy_BadID(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/admin/policies/not-a-number", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-numeric id, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminCreateZone_InvalidJSON(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	resp, err := http.Post(ts.URL+"/api/v1/admin/zones", "application/json", bytes.NewReader([]byte("{bad json")))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON body, got %d", resp.StatusCode)
+	}
+}
+
+// TestAdminCreateZone_NoAllowedActions verifies allowed_actions defaults to [read] when omitted.
+func TestAdminCreateZone_NoAllowedActions(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"id":   "dev-zone",
+		"name": "Dev Zone",
+		// allowed_actions omitted — should default to ["read"]
+	})
+	resp, err := http.Post(ts.URL+"/api/v1/admin/zones", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminAssignSourceZone_InvalidJSON(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	resp, err := http.Post(ts.URL+"/api/v1/admin/source-zones", "application/json", bytes.NewReader([]byte("{bad json")))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON body, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminCreatePolicy_InvalidJSON(t *testing.T) {
+	ts, _ := newAdminServer(t)
+
+	resp, err := http.Post(ts.URL+"/api/v1/admin/policies", "application/json", bytes.NewReader([]byte("{bad json")))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON body, got %d", resp.StatusCode)
+	}
+}
+
 func itoa(i int64) string {
 	return string(rune('0' + i)) // works for single-digit IDs in tests
 }

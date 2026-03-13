@@ -231,3 +231,57 @@ func TestExecute(t *testing.T) {
 		})
 	}
 }
+
+// TestExecute_MissingCommand verifies the error path when command is not a string.
+func TestExecute_MissingCommand(t *testing.T) {
+	tool := NewWithRunner([]string{"echo"}, &mockRunner{})
+	_, err := tool.Execute(context.Background(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing command")
+	}
+	if !strings.Contains(err.Error(), "command parameter") {
+		t.Errorf("error = %v, want 'command parameter' message", err)
+	}
+}
+
+// TestExecute_RunnerErrorWithExitZero covers the branch where err != nil but exitCode == 0.
+func TestExecute_RunnerErrorWithExitZero(t *testing.T) {
+	runner := &mockRunner{stdout: "", stderr: "bad", exitCode: 0, err: errors.New("exec failed")}
+	tool := NewWithRunner([]string{"cmd"}, runner)
+	_, err := tool.Execute(context.Background(), map[string]any{"command": "cmd"})
+	if err == nil {
+		t.Fatal("expected error when runner returns err with exit code 0")
+	}
+	if !strings.Contains(err.Error(), "failed to execute command") {
+		t.Errorf("error = %v, want 'failed to execute command'", err)
+	}
+}
+
+// TestExecRunner_Run exercises the real execRunner with an actual command.
+func TestExecRunner_Run(t *testing.T) {
+	r := &execRunner{}
+	stdout, stderr, code, err := r.Run(context.Background(), "echo", []string{"hello"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "hello") {
+		t.Errorf("stdout = %q, want 'hello'", stdout)
+	}
+	_ = stderr
+}
+
+// TestExecRunner_Run_NonZeroExit covers the exitErr branch in execRunner.Run.
+func TestExecRunner_Run_NonZeroExit(t *testing.T) {
+	r := &execRunner{}
+	// "false" always exits with code 1.
+	_, _, code, err := r.Run(context.Background(), "false", nil)
+	if err == nil {
+		t.Fatal("expected error for non-zero exit")
+	}
+	if code == 0 {
+		t.Error("exit code should be non-zero")
+	}
+}

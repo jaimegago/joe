@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+// packetSender is the subset of net.PacketConn used by probeWithConn.
+// Abstracted to allow injection in tests.
+type packetSender interface {
+	SetDeadline(t time.Time) error
+	WriteTo(b []byte, addr net.Addr) (int, error)
+	ReadFrom(b []byte) (int, net.Addr, error)
+	Close() error
+}
+
+// ttlSetter sets the IP TTL on a raw socket. Abstracted for testing.
+type ttlSetter interface {
+	SetTTL(ttl int) error
+}
+
 // icmpProber implements HopProber using raw ICMP sockets.
 // Requires CAP_NET_RAW on Linux or root on macOS.
 //
@@ -15,7 +29,44 @@ import (
 // Intermediate routers that drop the packet due to TTL exhaustion send back
 // an ICMP Time Exceeded message; the destination sends ICMP Echo Reply.
 // We listen for either response on a raw ICMP socket.
-type icmpProber struct{}
+type icmpProber struct {
+	// listenPacket is the factory used to open an ICMP packet connection.
+	// Defaults to net.ListenPacket; overridden in tests.
+	listenPacket func(network, address string) (net.PacketConn, error)
+
+	// setTTL sets the IP TTL on an open conn. Defaults to syscallTTLSetter.SetTTL;
+	// overridden in tests to inject errors without a real *net.IPConn.
+	setTTL func(conn net.PacketConn, ttl int) error
+}
+
+func (p *icmpProber) openConn() (net.PacketConn, error) {
+	fn := p.listenPacket
+	if fn == nil {
+		fn = net.ListenPacket
+	}
+	return fn("ip4:icmp", "0.0.0.0")
+}
+
+// syscallTTLSetter wraps a *net.IPConn and sets IP_TTL via setsockopt.
+type syscallTTLSetter struct{ conn *net.IPConn }
+
+func (s *syscallTTLSetter) SetTTL(ttl int) error {
+	rawConn, err := s.conn.SyscallConn()
+	if err != nil {
+		return fmt.Errorf("get raw conn: %w", err)
+	}
+	var setsockoptErr error
+	ctrlErr := rawConn.Control(func(fd uintptr) {
+		setsockoptErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
+	})
+	if ctrlErr != nil {
+		return fmt.Errorf("set TTL ctrl: %w", ctrlErr)
+	}
+	if setsockoptErr != nil {
+		return fmt.Errorf("setsockopt IP_TTL=%d: %w", ttl, setsockoptErr)
+	}
+	return nil
+}
 
 // ProbeHop sends a probe toward dst with the given TTL and returns the
 // IP address that responded, the round-trip latency, and any error.
@@ -32,7 +83,7 @@ func (p *icmpProber) ProbeHop(ctx context.Context, dst string, ttl int, timeout 
 
 	// Open a raw ICMP socket to listen for responses.
 	// This will fail with EPERM if the process lacks privileges.
-	conn, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
+	conn, err := p.openConn()
 	if err != nil {
 		if isPermissionError(err) {
 			return "", 0, fmt.Errorf("insufficient privileges for ICMP traceroute (requires root or CAP_NET_RAW): %v", err)
@@ -41,38 +92,39 @@ func (p *icmpProber) ProbeHop(ctx context.Context, dst string, ttl int, timeout 
 	}
 	defer conn.Close()
 
-	// Set TTL on the underlying socket.
-	rawConn, err := conn.(*net.IPConn).SyscallConn()
-	if err != nil {
-		return "", 0, fmt.Errorf("get raw conn: %w", err)
+	// Set TTL — use injected function if provided, otherwise fall back to the real
+	// syscall setter which requires conn to be a *net.IPConn.
+	if p.setTTL != nil {
+		if err := p.setTTL(conn, ttl); err != nil {
+			return "", 0, err
+		}
+	} else {
+		ipConn, ok := conn.(*net.IPConn)
+		if !ok {
+			return "", 0, fmt.Errorf("unexpected conn type %T", conn)
+		}
+		if err := (&syscallTTLSetter{conn: ipConn}).SetTTL(ttl); err != nil {
+			return "", 0, err
+		}
 	}
 
-	var setsockoptErr error
-	ctrlErr := rawConn.Control(func(fd uintptr) {
-		setsockoptErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
-	})
-	if ctrlErr != nil {
-		return "", 0, fmt.Errorf("set TTL: %w", ctrlErr)
-	}
-	if setsockoptErr != nil {
-		return "", 0, fmt.Errorf("setsockopt IP_TTL=%d: %w", ttl, setsockoptErr)
-	}
+	return probeWithConn(ctx, conn, dstIP, ttl, timeout)
+}
 
-	// Build ICMP Echo Request (type=8, code=0).
-	icmpMsg := buildICMPEcho(ttl) // use TTL as identifier
+// probeWithConn performs the send/receive loop given an already-open connection
+// with TTL already set. Separated for testability.
+func probeWithConn(ctx context.Context, conn packetSender, dstIP net.IP, ttl int, timeout time.Duration) (string, float64, error) {
+	icmpMsg := buildICMPEcho(ttl)
 
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 		return "", 0, fmt.Errorf("set deadline: %w", err)
 	}
 
-	// Send probe.
 	start := time.Now()
-	_, err = conn.WriteTo(icmpMsg, &net.IPAddr{IP: dstIP})
-	if err != nil {
+	if _, err := conn.WriteTo(icmpMsg, &net.IPAddr{IP: dstIP}); err != nil {
 		return "", 0, fmt.Errorf("send probe: %w", err)
 	}
 
-	// Listen for ICMP response.
 	buf := make([]byte, 1500)
 	for {
 		if ctx.Err() != nil {
@@ -81,7 +133,6 @@ func (p *icmpProber) ProbeHop(ctx context.Context, dst string, ttl int, timeout 
 
 		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
-			// Deadline exceeded → timeout, no response.
 			if isTimeoutError(err) {
 				return "", 0, nil
 			}

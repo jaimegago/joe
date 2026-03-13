@@ -138,6 +138,35 @@ func TestExecute(t *testing.T) {
 	}
 }
 
+func TestExecute_InvalidPath(t *testing.T) {
+	// A path with a null byte triggers an ExpandPath / stat error.
+	tool := New()
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"path":    string([]byte{0}),
+		"content": "data",
+	})
+	if err == nil {
+		t.Fatal("expected error for path with null byte")
+	}
+}
+
+func TestExecute_ContentIsEmpty(t *testing.T) {
+	// Empty string is a valid content value — should write an empty file.
+	path := filepath.Join(t.TempDir(), "empty.txt")
+	tool := New()
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"path":    path,
+		"content": "",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	m := result.(map[string]any)
+	if m["bytes_written"].(int) != 0 {
+		t.Errorf("bytes_written = %v, want 0", m["bytes_written"])
+	}
+}
+
 func TestExecute_CreateAndOverwrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "file.txt")
 	tool := New()

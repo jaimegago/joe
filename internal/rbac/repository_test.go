@@ -330,3 +330,376 @@ func TestSQLRepository_ListUnassignedSourceIDs(t *testing.T) {
 		t.Errorf("remaining unassigned = %q, want %q", unassigned[0], "k8s-dev")
 	}
 }
+
+// TestSQLRepository_ListZones_ScanRows verifies that all rows returned by
+// ListZones are scanned correctly (exercises the scan-in-loop body).
+func TestSQLRepository_ListZones_ScanRows(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	zones, err := repo.ListZones(ctx)
+	if err != nil {
+		t.Fatalf("ListZones: %v", err)
+	}
+	// Verify that allowed_actions were unmarshalled correctly for every row.
+	for _, z := range zones {
+		if len(z.AllowedActions) == 0 {
+			t.Errorf("zone %q has no allowed_actions after scan", z.ID)
+		}
+		if z.CreatedAt.IsZero() {
+			t.Errorf("zone %q has zero CreatedAt after scan", z.ID)
+		}
+	}
+}
+
+// TestSQLRepository_CreateZone_VerifyAllowedActions ensures the allowed_actions
+// JSON round-trips through CreateZone → GetZone correctly (covers the JSON
+// unmarshal branch in CreateZone / GetZone).
+func TestSQLRepository_CreateZone_VerifyAllowedActions(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	want := []rbac.Action{rbac.ActionRead, rbac.ActionQuery, rbac.ActionMutate, rbac.ActionDelete}
+	_, err := repo.CreateZone(ctx, rbac.Zone{
+		ID:             "full-custom",
+		Name:           "Full Custom Zone",
+		AllowedActions: want,
+	})
+	if err != nil {
+		t.Fatalf("CreateZone: %v", err)
+	}
+
+	got, err := repo.GetZone(ctx, "full-custom")
+	if err != nil {
+		t.Fatalf("GetZone: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetZone returned nil")
+	}
+	if len(got.AllowedActions) != len(want) {
+		t.Errorf("AllowedActions len = %d, want %d", len(got.AllowedActions), len(want))
+	}
+}
+
+// TestSQLRepository_UpsertAssignment_TimestampSet verifies that UpsertAssignment
+// auto-populates AssignedAt when it is zero (covers the IsZero branch).
+func TestSQLRepository_UpsertAssignment_TimestampSet(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// AssignedAt is intentionally left zero so the auto-populate branch fires.
+	a := rbac.SourceZoneAssignment{
+		SourceID:   "k8s-dev",
+		ZoneID:     "dev-full",
+		AssignedBy: "auto-test",
+	}
+	if err := repo.UpsertAssignment(ctx, a); err != nil {
+		t.Fatalf("UpsertAssignment: %v", err)
+	}
+
+	got, err := repo.GetAssignment(ctx, "k8s-dev")
+	if err != nil {
+		t.Fatalf("GetAssignment: %v", err)
+	}
+	if got == nil {
+		t.Fatal("assignment not found")
+	}
+	if got.AssignedAt.IsZero() {
+		t.Error("AssignedAt should have been auto-set, but is still zero")
+	}
+}
+
+// TestSQLRepository_ListAssignments_ScanRows exercises the scan body in
+// ListAssignments by verifying field values after inserting two assignments.
+func TestSQLRepository_ListAssignments_ScanRows(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	sources := []struct {
+		sourceID string
+		zoneID   string
+	}{
+		{"k8s-prod", "prod-readonly"},
+		{"k8s-dev", "dev-full"},
+	}
+	for _, s := range sources {
+		if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+			SourceID:   s.sourceID,
+			ZoneID:     s.zoneID,
+			AssignedBy: "admin",
+			Reason:     "test",
+		}); err != nil {
+			t.Fatalf("UpsertAssignment %s: %v", s.sourceID, err)
+		}
+	}
+
+	assignments, err := repo.ListAssignments(ctx)
+	if err != nil {
+		t.Fatalf("ListAssignments: %v", err)
+	}
+	if len(assignments) != 2 {
+		t.Fatalf("got %d assignments, want 2", len(assignments))
+	}
+	for _, a := range assignments {
+		if a.SourceID == "" {
+			t.Error("scanned assignment has empty SourceID")
+		}
+		if a.ZoneID == "" {
+			t.Error("scanned assignment has empty ZoneID")
+		}
+	}
+}
+
+// TestSQLRepository_ListPolicies_ScanRows exercises the scan body in
+// ListPolicies by verifying that multiple rows are scanned into valid structs.
+func TestSQLRepository_ListPolicies_ScanRows(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	principals := []string{"alice", "bob", "carol"}
+	for _, p := range principals {
+		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
+			Principal: p, ZoneID: "prod-readonly",
+		}); err != nil {
+			t.Fatalf("CreatePolicy %s: %v", p, err)
+		}
+	}
+
+	policies, err := repo.ListPolicies(ctx)
+	if err != nil {
+		t.Fatalf("ListPolicies: %v", err)
+	}
+	if len(policies) != len(principals) {
+		t.Errorf("got %d policies, want %d", len(policies), len(principals))
+	}
+	for _, p := range policies {
+		if p.ID == 0 {
+			t.Error("scanned policy has zero ID")
+		}
+		if p.Principal == "" {
+			t.Error("scanned policy has empty Principal")
+		}
+		if p.CreatedAt.IsZero() {
+			t.Error("scanned policy has zero CreatedAt")
+		}
+	}
+}
+
+// TestSQLRepository_ListPoliciesForPrincipal_ScanRows exercises the scan body
+// in ListPoliciesForPrincipal when the principal has multiple zone grants.
+func TestSQLRepository_ListPoliciesForPrincipal_ScanRows(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	zones := []string{"prod-readonly", "dev-full"}
+	for _, z := range zones {
+		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
+			Principal: "multi-zone-user", ZoneID: z,
+		}); err != nil {
+			t.Fatalf("CreatePolicy multi-zone-user/%s: %v", z, err)
+		}
+	}
+
+	policies, err := repo.ListPoliciesForPrincipal(ctx, "multi-zone-user")
+	if err != nil {
+		t.Fatalf("ListPoliciesForPrincipal: %v", err)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("got %d policies, want 2", len(policies))
+	}
+	for _, p := range policies {
+		if p.Principal != "multi-zone-user" {
+			t.Errorf("unexpected principal %q in result", p.Principal)
+		}
+		if p.CreatedAt.IsZero() {
+			t.Error("scanned policy has zero CreatedAt")
+		}
+	}
+}
+
+// TestSQLRepository_CreatePolicy_TimestampSet verifies the auto-populate branch
+// in CreatePolicy when CreatedAt is zero.
+func TestSQLRepository_CreatePolicy_TimestampSet(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// CreatedAt intentionally left zero.
+	created, err := repo.CreatePolicy(ctx, rbac.Policy{
+		Principal: "timestamp-test-user",
+		ZoneID:    "prod-readonly",
+	})
+	if err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+	if created.CreatedAt.IsZero() {
+		t.Error("CreatePolicy should auto-set CreatedAt when it is zero")
+	}
+}
+
+// TestSQLRepository_DeletePolicy_NonExistentID verifies that deleting a policy
+// that does not exist returns no error (SQL DELETE is a no-op on missing rows).
+func TestSQLRepository_DeletePolicy_NonExistentID(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// ID 9999 does not exist; ExecContext should succeed (0 rows affected).
+	if err := repo.DeletePolicy(ctx, 9999); err != nil {
+		t.Errorf("DeletePolicy for non-existent ID should not error, got: %v", err)
+	}
+}
+
+// TestSQLRepository_ListUnassignedSourceIDs_AllAssigned verifies the empty-result
+// path of ListUnassignedSourceIDs when every source has been assigned.
+func TestSQLRepository_ListUnassignedSourceIDs_AllAssigned(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// Assign both seeded sources.
+	for _, s := range []struct{ id, zone string }{
+		{"k8s-prod", "prod-readonly"},
+		{"k8s-dev", "dev-full"},
+	} {
+		if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+			SourceID: s.id, ZoneID: s.zone, AssignedBy: "admin",
+		}); err != nil {
+			t.Fatalf("UpsertAssignment %s: %v", s.id, err)
+		}
+	}
+
+	unassigned, err := repo.ListUnassignedSourceIDs(ctx)
+	if err != nil {
+		t.Fatalf("ListUnassignedSourceIDs: %v", err)
+	}
+	if len(unassigned) != 0 {
+		t.Errorf("expected 0 unassigned sources when all are assigned, got %d: %v", len(unassigned), unassigned)
+	}
+}
+
+// --- Error path tests (closed DB forces query errors) ---
+
+func TestSQLRepository_ListZones_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close() // force all subsequent calls to fail
+	_, err := repo.ListZones(context.Background())
+	if err == nil {
+		t.Error("expected error from ListZones on closed DB")
+	}
+}
+
+func TestSQLRepository_GetZone_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.GetZone(context.Background(), "prod-readonly")
+	if err == nil {
+		t.Error("expected error from GetZone on closed DB")
+	}
+}
+
+func TestSQLRepository_CreateZone_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.CreateZone(context.Background(), rbac.Zone{
+		ID:             "new-zone",
+		Name:           "New Zone",
+		AllowedActions: []rbac.Action{rbac.ActionRead},
+	})
+	if err == nil {
+		t.Error("expected error from CreateZone on closed DB")
+	}
+}
+
+func TestSQLRepository_ListAssignments_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.ListAssignments(context.Background())
+	if err == nil {
+		t.Error("expected error from ListAssignments on closed DB")
+	}
+}
+
+func TestSQLRepository_GetAssignment_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.GetAssignment(context.Background(), "k8s-prod")
+	if err == nil {
+		t.Error("expected error from GetAssignment on closed DB")
+	}
+}
+
+func TestSQLRepository_UpsertAssignment_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	err := repo.UpsertAssignment(context.Background(), rbac.SourceZoneAssignment{
+		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
+	})
+	if err == nil {
+		t.Error("expected error from UpsertAssignment on closed DB")
+	}
+}
+
+func TestSQLRepository_ListPolicies_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.ListPolicies(context.Background())
+	if err == nil {
+		t.Error("expected error from ListPolicies on closed DB")
+	}
+}
+
+func TestSQLRepository_ListPoliciesForPrincipal_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.ListPoliciesForPrincipal(context.Background(), "alice")
+	if err == nil {
+		t.Error("expected error from ListPoliciesForPrincipal on closed DB")
+	}
+}
+
+func TestSQLRepository_CreatePolicy_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.CreatePolicy(context.Background(), rbac.Policy{
+		Principal: "alice", ZoneID: "prod-readonly",
+	})
+	if err == nil {
+		t.Error("expected error from CreatePolicy on closed DB")
+	}
+}
+
+func TestSQLRepository_DeletePolicy_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	err := repo.DeletePolicy(context.Background(), 1)
+	if err == nil {
+		t.Error("expected error from DeletePolicy on closed DB")
+	}
+}
+
+func TestSQLRepository_ListUnassignedSourceIDs_DBError(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	db.Close()
+	_, err := repo.ListUnassignedSourceIDs(context.Background())
+	if err == nil {
+		t.Error("expected error from ListUnassignedSourceIDs on closed DB")
+	}
+}

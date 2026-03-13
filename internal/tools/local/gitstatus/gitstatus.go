@@ -11,7 +11,13 @@ import (
 	"github.com/jaimegago/joe/internal/tools/local"
 )
 
-type Tool struct{}
+// GitRunner runs a git command in dir and returns stdout or error.
+// Abstracted for testing.
+type GitRunner func(ctx context.Context, dir string, args ...string) (string, error)
+
+type Tool struct {
+	gitRunner GitRunner // nil means use local.RunGit
+}
 
 type FileStatus struct {
 	Path   string `json:"path"`
@@ -20,6 +26,18 @@ type FileStatus struct {
 
 func New() *Tool {
 	return &Tool{}
+}
+
+// newWithRunner creates a Tool with an injected GitRunner (test-only helper).
+func newWithRunner(r GitRunner) *Tool {
+	return &Tool{gitRunner: r}
+}
+
+func (t *Tool) runGit(ctx context.Context, dir string, args ...string) (string, error) {
+	if t.gitRunner != nil {
+		return t.gitRunner(ctx, dir, args...)
+	}
+	return local.RunGit(ctx, dir, args...)
 }
 
 func (t *Tool) Name() string {
@@ -63,14 +81,14 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	}
 
 	// Get current branch
-	branch, err := local.RunGit(ctx, dir, "branch", "--show-current")
+	branch, err := t.runGit(ctx, dir, "branch", "--show-current")
 	if err != nil {
 		return nil, err
 	}
 	branch = strings.TrimSpace(branch)
 
 	// Get status in porcelain format
-	statusOutput, err := local.RunGit(ctx, dir, "status", "--porcelain")
+	statusOutput, err := t.runGit(ctx, dir, "status", "--porcelain")
 	if err != nil {
 		return nil, err
 	}

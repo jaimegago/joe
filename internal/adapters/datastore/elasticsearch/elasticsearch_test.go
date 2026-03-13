@@ -266,3 +266,145 @@ func TestListIndices_InvalidJSON(t *testing.T) {
 		t.Error("ListIndices() expected error for invalid JSON, got nil")
 	}
 }
+
+func TestConnect_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close() // close before connect to trigger do error
+
+	a := elasticsearch.New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() expected error for closed server, got nil")
+	}
+}
+
+func TestClusterHealth_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"cluster_name":"test","status":"green","active_shards":5,"unassigned_shards":0,"number_of_nodes":1}`))
+	}))
+
+	a := elasticsearch.New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	srv.Close() // cause subsequent requests to fail
+
+	_, err := a.ClusterHealth(context.Background())
+	if err == nil {
+		t.Error("ClusterHealth() expected error for closed server, got nil")
+	}
+}
+
+func TestListIndices_DoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"cluster_name":"test","status":"green","active_shards":5,"unassigned_shards":0,"number_of_nodes":1}`))
+	}))
+
+	a := elasticsearch.New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+
+	srv.Close() // cause subsequent requests to fail
+
+	_, err := a.ListIndices(context.Background(), "")
+	if err == nil {
+		t.Error("ListIndices() expected error for closed server, got nil")
+	}
+}
+
+func TestConnect_WithAPIKey(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"cluster_name":"test","status":"green","active_shards":0,"unassigned_shards":0,"number_of_nodes":1}`))
+	}))
+	defer srv.Close()
+
+	a := elasticsearch.New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL, "api_key": "myapikey"})}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if gotAuth != "ApiKey myapikey" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "ApiKey myapikey")
+	}
+}
+
+func TestConnect_WithBasicAuth(t *testing.T) {
+	var gotUser, gotPass string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUser, gotPass, _ = r.BasicAuth()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"cluster_name":"test","status":"green","active_shards":0,"unassigned_shards":0,"number_of_nodes":1}`))
+	}))
+	defer srv.Close()
+
+	a := elasticsearch.New()
+	src := store.Source{Config: mustMarshal(t, map[string]any{
+		"url":      srv.URL,
+		"username": "elastic",
+		"password": "changeme",
+	})}
+	if err := a.Connect(context.Background(), src); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if gotUser != "elastic" {
+		t.Errorf("username = %q, want elastic", gotUser)
+	}
+	if gotPass != "changeme" {
+		t.Errorf("password = %q, want changeme", gotPass)
+	}
+}
+
+func TestListIndices_NumericFields(t *testing.T) {
+	// Test toInt64 and toInt with numeric JSON values (float64 from JSON decode)
+	body := `[{"index":"test","status":"open","health":"green","docs.count":12345,"store.size":"100mb","pri":3,"rep":1}]`
+	m := &mockHTTP{statusCode: http.StatusOK, body: body}
+	a := elasticsearch.NewWithClient(m)
+
+	indices, err := a.ListIndices(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListIndices() error = %v", err)
+	}
+	if len(indices) != 1 {
+		t.Fatalf("expected 1 index, got %d", len(indices))
+	}
+	if indices[0].Docs != 12345 {
+		t.Errorf("Docs = %d, want 12345", indices[0].Docs)
+	}
+	if indices[0].Primaries != 3 {
+		t.Errorf("Primaries = %d, want 3", indices[0].Primaries)
+	}
+	if indices[0].Replicas != 1 {
+		t.Errorf("Replicas = %d, want 1", indices[0].Replicas)
+	}
+}
+
+func TestListIndices_NullFields(t *testing.T) {
+	// Test toString with null/missing fields
+	body := `[{"index":null,"status":null,"health":null,"docs.count":null,"store.size":null,"pri":null,"rep":null}]`
+	m := &mockHTTP{statusCode: http.StatusOK, body: body}
+	a := elasticsearch.NewWithClient(m)
+
+	indices, err := a.ListIndices(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListIndices() error = %v", err)
+	}
+	if len(indices) != 1 {
+		t.Fatalf("expected 1 index, got %d", len(indices))
+	}
+	// null fields should become zero values
+	if indices[0].Name != "" {
+		t.Errorf("Name = %q, want empty string for null", indices[0].Name)
+	}
+	if indices[0].Docs != 0 {
+		t.Errorf("Docs = %d, want 0 for null", indices[0].Docs)
+	}
+}
