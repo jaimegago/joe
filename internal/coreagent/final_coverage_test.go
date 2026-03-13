@@ -727,19 +727,6 @@ func (c *errSetCache) Set(_ context.Context, _ *store.JoeFileCache) error {
 	return c.setErr
 }
 
-// badJSONCache returns cache entries with invalid JSON in ToolCalls
-type badJSONCache struct {
-	fakeCache
-}
-
-func (c *badJSONCache) Get(_ context.Context, filePath string) (*store.JoeFileCache, error) {
-	return &store.JoeFileCache{
-		FilePath:    filePath,
-		ContentHash: "", // will not match
-		ToolCalls:   []byte("{{invalid json}}"),
-	}, nil
-}
-
 func TestProcessJoeFiles_CacheSetError(t *testing.T) {
 	// cache.Set error should be non-fatal
 	cache := &errSetCache{
@@ -871,14 +858,7 @@ func TestRefreshPrometheusSource_ApplyDeltaError(t *testing.T) {
 	// Use the real graph for the query in buildMetricsInEdges.
 	r.services.Graph = realGs
 
-	// But override with error store for the apply step by calling refreshPrometheusSource
-	// which calls both Query (succeeds) and AddEdge (fails).
-	// We use an addEdgeErr store that delegates Query to the real store.
-	type delegatingErrStore struct {
-		addEdgeErrGraphStore
-		real graph.GraphStore
-	}
-	// Simpler: just test that when AddEdge fails, the function returns an error.
+	// Test that when AddEdge fails, the function returns an error.
 	errGs := &errorGraphStore{addEdgeErr: errors.New("constraint violation"), underlying: realGs}
 	r2 := &Refresher{
 		services: &core.Services{Graph: errGs},

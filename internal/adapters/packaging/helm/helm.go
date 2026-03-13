@@ -114,7 +114,8 @@ func NewWithLister(lister secretsLister, cfg Config) *Adapter {
 	}
 }
 
-// Connect builds the K8s client from kubeconfig.
+// Connect parses and stores the source config. The K8s client is built lazily
+// on first use so that Connect succeeds even when no kubeconfig is available yet.
 func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -124,20 +125,33 @@ func (a *Adapter) Connect(_ context.Context, source store.Source) error {
 		return fmt.Errorf("parse source config: %w", err)
 	}
 	a.config = cfg
+	a.connected = true
+	return nil
+}
 
-	restConfig, src, err := buildRESTConfig(cfg)
+// ensureLister lazily builds the K8s client on first operation.
+func (a *Adapter) ensureLister() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.initLister()
+}
+
+// initLister builds the K8s client if it has not been initialised yet.
+// Must be called with a.mu held for writing.
+func (a *Adapter) initLister() error {
+	if a.lister != nil {
+		return nil
+	}
+	restConfig, src, err := buildRESTConfig(a.config)
 	if err != nil {
 		return fmt.Errorf("build kubeconfig: %w", err)
 	}
-
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return fmt.Errorf("create kubernetes client: %w", err)
 	}
-
 	a.lister = &k8sSecretsLister{client: clientset}
 	a.configSrc = src
-	a.connected = true
 	return nil
 }
 
@@ -168,6 +182,10 @@ func (a *Adapter) Status() adapters.Status {
 // Releases lists all Helm releases, optionally filtered by namespace.
 // Passing an empty namespace string lists across all namespaces.
 func (a *Adapter) Releases(ctx context.Context, namespace string) ([]Release, error) {
+	if err := a.ensureLister(); err != nil {
+		return nil, err
+	}
+
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -214,6 +232,10 @@ func (a *Adapter) Releases(ctx context.Context, namespace string) ([]Release, er
 
 // GetRelease returns full details for one Helm release.
 func (a *Adapter) GetRelease(ctx context.Context, namespace, name string) (*ReleaseDetail, error) {
+	if err := a.ensureLister(); err != nil {
+		return nil, err
+	}
+
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -261,6 +283,10 @@ func (a *Adapter) GetRelease(ctx context.Context, namespace, name string) (*Rele
 
 // History returns the revision history for a Helm release.
 func (a *Adapter) History(ctx context.Context, namespace, name string, limit int) ([]RevisionEntry, error) {
+	if err := a.ensureLister(); err != nil {
+		return nil, err
+	}
+
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
