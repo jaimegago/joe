@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jaimegago/joe/internal/uid"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/uid"
 )
 
 // webUINode is the web UI representation of a graph node.

@@ -13,7 +13,6 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
-	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )

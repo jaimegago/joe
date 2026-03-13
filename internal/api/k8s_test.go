@@ -12,8 +12,8 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/test/mocks"
-	_ "modernc.org/sqlite"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	_ "modernc.org/sqlite"
 )
 
 func setupK8sTestServer(t *testing.T, mock *mocks.MockK8sAdapter) (*api.Server, *http.ServeMux) {

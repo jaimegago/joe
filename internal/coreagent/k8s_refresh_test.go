@@ -12,8 +12,8 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
-	_ "modernc.org/sqlite"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	_ "modernc.org/sqlite"
 )
 
 type fakeK8sAdapter struct {
