@@ -158,175 +158,31 @@ Use ↑/↓ to navigate, Enter to select, Esc to cancel
 - Esc cancels without changing
 - Model switch is hot (no restart needed, conversation continues)
 
-## Implementation Phases
+## Capabilities
 
-We're building incrementally. Each phase should be working before moving on.
+All features are implemented and working. Joe ships four binaries:
 
-### Phase 1: Foundation ✅ COMPLETE
-### Phase 2: User Agent Loop ✅ COMPLETE  
-### Phase 3: Core Services + API ✅ COMPLETE
-- SQL Store (8 tables), Graph Store (SQLite-based), API handlers, Core tools
+| Binary | Purpose |
+|--------|---------|
+| `cmd/joe` | User Agent CLI + REPL |
+| `cmd/joecored` | Core daemon, HTTP API on :7777 |
+| `cmd/joe-mcp` | MCP stdio server (Claude Code, Cursor, Codex) |
+| `cmd/joe-slack` | Slack Bot (Socket Mode, no public URL needed) |
 
-### Phase 4: Infrastructure Adapters ✅ COMPLETE
-- K8s adapter (Connect, ListResources, GetResource, GetPodLogs)
-- Git adapter (Connect, ReadFile, ListFiles, Log, Diff)
-- API endpoints and core tools for both
+**Feature summary:**
 
-### Phase 5: Core Agent ✅ COMPLETE
-- [x] Background refresh loop
-- [x] Auto-discovery implementation
-- [x] Clarifications system (list, answer, dismiss + graph ops)
-- [x] Onboarding flow
-- [x] .joe/ file processing with cache
+- **Graph store** — SQLite-backed infrastructure topology (19 edge types)
+- **Core Agent** — background refresh, auto-discovery, clarification queue, .joe/ file processing
+- **Infrastructure adapters** — K8s, Git, AWS, Azure, Prometheus/Mimir, Loki, Tempo/Jaeger, Datadog, Splunk, Dynatrace, New Relic, Alertmanager, PagerDuty, Grafana, PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch, Argo CD, Flux, Terraform, Helm, NGINX Ingress, Envoy, Istio, Cilium, cert-manager, KEDA, OPA/Gatekeeper, Crossplane, Falco, artifact registries
+- **Action Safety Framework** — T1/T2/T3 tiers, safety policy (`~/.joe/safety-policy.yaml`), self-protection invariants, credential encryption (AES-256-GCM)
+- **Knowledge store** — three tiers (curated/synced/derived), Confluence + Notion sync, semantic search with embeddings
+- **Documentation co-pilot** — draft generation, human approval flow, drift detection
+- **RBAC + Security zones** — 4 default zones, API key → principal, admin API, protected tables
+- **Emergency shutdown** — `/panic` REPL, `joe panic` CLI, `SIGUSR1`, safe mode on restart, `joe unlock`
+- **Code review** — GitHub/GitLab webhooks, review agent, PR/MR comment/request-changes tools
+- **Web UI** — React 18 + Vite + Tailwind + shadcn/ui; pages: Graph, Dashboard, Sources, Admin, Chat
 
-### Phase 5.5: Action Safety Framework ✅ COMPLETE
-
-Prerequisite for Phase 6. Hardcoded safety enforcement. See `docs/security-in-layers.md`.
-
-- [x] Safety policy loader (`~/.joe/safety-policy.yaml`) — `internal/safety/policy.go`
-- [x] Action tier registry (T1: Observe, T2: Record, T3: Act) — `internal/safety/tier.go`
-- [x] Tool executor gate (check tier + policy before every Execute) — `internal/tools/executor.go`
-- [x] Self-protection invariants (Joe can't touch `~/.joe/`, can't run joe/joecored/kill) — `internal/safety/invariants.go`
-- [x] Path sandboxing for write_file (`allowed_directories`) — `internal/tools/local/writefile/writefile.go`
-- [x] run_command subcommand validation for kubectl/helm/argocd — `internal/tools/local/runcmd/subcommands.go`
-- [x] T3 blocking notification in REPL, T2 post-execution log — `internal/repl/notifier.go`, `internal/safety/notifier.go`
-- [x] API auth (Bearer token) + request size limits — `internal/api/middleware.go`
-
-### Phase 6: Infrastructure Adapters ✅ COMPLETE
-
-All new adapters T1 (read-only) by default. Mutations require T3 classification + policy flag.
-- [x] 6.1 Core foundations (source types, registry wiring, graph edges)
-- [x] 6.2 Cloud adapters (AWS: EC2/EKS/RDS/VPC, Azure: VMs/AKS/SQL/VNets)
-- [x] 6.3 Observability open-source (Prometheus/Mimir, Loki, Tempo/Jaeger)
-- [x] 6.4 Alerting & dashboards (Alertmanager, PagerDuty, Grafana)
-- [x] 6.5 Safety & hardening (credential encryption, TLS, rate limiting, tool tier classification)
-- [x] 6.6 Network & system diagnostics — Go-native shared tools (tcp_connect, dns_lookup, http_request, system_info, trace_route)
-- [x] 6.7 Data stores (PostgreSQL, MySQL, Redis, MongoDB, Kafka, Elasticsearch)
-- [x] 6.8 GitOps, CD & IaC (Argo CD full adapter, Flux, Terraform, Helm)
-- [x] 6.9 Networking & ingress (NGINX Ingress, Envoy, Istio, Cilium)
-- [x] 6.10 K8s CRD-based — low effort (cert-manager, KEDA, OPA/Gatekeeper, Crossplane)
-- [x] 6.11 Security & runtime (Falco)
-- [x] 6.12 Proprietary observability vendors (Datadog, Splunk, Dynatrace, New Relic)
-- [x] 6.13 Artifact registries — OCI/DockerHub/GHCR/Harbor/Quay, JFrog Artifactory, AWS ECR (image_stored_in + publishes_to graph edges)
-- [x] Graph edges: all 19 types wired (metrics_in, logs_in, traces_in, alerts_in, paged_via, dashboard_in, is_k8s_node, stores_in, queues_in, managed_by, ingress_for, proxies, mesh_for, policy_enforces, scaled_by, secures, provisions, image_stored_in, publishes_to)
-- [x] Safety: credential encryption (AES-256-GCM), TLS, rate limiting, T1/T2/T3 tier classification
-
-### Phase 7: Knowledge Store ✅ COMPLETE
-
-- [x] Knowledge tiers (curated, synced, derived)
-- [x] Synced sources (Confluence, Notion)
-- [x] LLM-derived insights from sessions
-- [x] Semantic search with embeddings
-
-### Phase 8: Documentation Co-Pilot ✅ COMPLETE
-
-- [x] Write adapters for wikis (Confluence PUT, Notion block replace, Git commit+push)
-- [x] Draft generation via LLM + knowledge store search → unified diff → proposal
-- [x] Human approval flow (pending → approved → published / rejected)
-- [x] Drift detection for Tier 2 synced entries (SHA-256 hash comparison)
-- [x] API endpoints: `/api/v1/knowledge/proposals`, `/api/v1/knowledge/drift`
-- [x] Client bindings + 3 new tools: `detect_doc_drift` (T1), `generate_doc_draft` (T2), `publish_doc_update` (T3)
-- [x] SQL migration 005, proposals repository + service, tier registry entries
-
-### Phase 9: Security Architecture + Additional Clients ✅ COMPLETE
-
-**Security Zones & Pluggable Architecture:**
-
-- [x] Security zones: prod-readonly, prod-write, dev-full, unassigned (default) — `internal/rbac/zones.go`
-- [x] Source → Zone assignments (admin-controlled, LLM cannot modify) — admin API + RBAC middleware
-- [x] Protected tables: security_zones, source_zone_assignments, rbac_policies — `internal/store/migrations/006_rbac.up.sql`
-- [x] Embedded mode (RBAC in-process, no separate binary needed)
-
-**RBAC & Admin API:**
-
-- [x] Principal → Zones policy model — `internal/rbac/policy.go`
-- [x] Admin API: `/api/v1/admin/zones`, `/api/v1/admin/source-zones`, `/api/v1/admin/policies`, `/api/v1/admin/source-zones/unassigned`
-- [x] Authentication: API key → principal mapping — `internal/rbac/identity.go`
-- [x] Notification for unassigned sources — `GET /api/v1/admin/source-zones/unassigned`
-
-**Emergency Shutdown (Panic Mode):**
-
-- [x] `/panic` REPL, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1 — `internal/safety/panic.go`
-- [x] Safe mode on restart (T1 only until explicit unlock) — `internal/safety/safemode.go`
-- [x] `joe unlock --reason "..."` to resume — `internal/safety/unlock.go`
-
-**Additional Clients:**
-
-- [x] MCP Server (Claude Code, Cursor, Codex) — `cmd/joe-mcp/`, `internal/mcp/`
-- [ ] Slack Bot (ChatOps) — deferred to Phase 11
-- [ ] Web UI (dashboards, graph visualization) — deferred to Phase 12
-
-**See:** `docs/JOE_SECURITY.md` (comprehensive), `docs/security-in-layers.md` Part 7
-
-### Phase 10: Code Review Integration ✅ COMPLETE
-- [x] GitHub/GitLab adapters with PR/MR capabilities (`internal/adapters/github/`, `internal/adapters/gitlab/`)
-- [x] Webhook receiver (`POST /api/v1/webhooks/github`, `/gitlab`) — HMAC + token validation, idempotent
-- [x] Review job queue (SQLite-backed, idempotent via `event_id UNIQUE` + `INSERT OR IGNORE`)
-- [x] Review Agent: fetch diff → query graph → query knowledge → LLM analysis → post review (`internal/review/agent.go`)
-- [x] Safety policy: github_comment (T2), github_request_changes (T3), gitlab_comment (T2)
-- [x] Core tools: `github_pr_get`, `github_pr_diff`, `github_comment`, `github_request_changes`, `gitlab_mr_get`, `gitlab_mr_diff`, `gitlab_comment`
-- [x] CLI: `joe review enqueue|list|get`
-- [x] Client bindings (`internal/client/review.go`)
-
-### Phase 11: Slack Bot (ChatOps) ✅ COMPLETE
-
-**Bot binary:**
-
-- [x] `cmd/joe-slack/` binary — reads `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `JOE_SERVER`, `JOE_API_KEY`
-- [x] Socket Mode transport (WebSocket, no public URL required) — `github.com/slack-go/slack v0.18.0`
-
-**Slash commands:**
-
-- [x] `/joe ask <query>` — queries graph + knowledge store, posts Block Kit reply
-- [x] `/joe status` — posts graph summary (node counts by type, edge count)
-- [x] `/joe help` — shows available commands
-
-**Conversational interface:**
-
-- [x] DM conversations with Joe (`@joe` in IM channels)
-- [x] Channel mention handling (`@joe <query>` in any channel)
-
-**Key files:**
-
-- `cmd/joe-slack/main.go` — binary entry point
-- `internal/slack/server.go` — Socket Mode event loop
-- `internal/slack/handler.go` — slash command + event dispatcher
-- `internal/slack/formatter.go` — Block Kit message builder
-- `internal/slack/agent.go` — `JoeClient` interface + Agent (graph query + knowledge search)
-
-### Phase 12: Web UI ✅ COMPLETE
-
-**See `docs/web-ui.md` for full specification.**
-
-Stack: React 18 + TypeScript + Vite + Tailwind + shadcn/ui
-Location: `ui/` directory (monorepo)
-
-**Pages:**
-- [x] Graph Page — Infrastructure topology with React Flow
-- [x] Dashboard Page — Sources health, alerts, recent sessions
-- [x] Sources Page — View and manage connected sources
-- [x] Admin Page — Security zones, source assignments, RBAC policies
-- [x] Chat Page — Web REPL interface
-
-**Key Libraries:**
-
-- [x] React Flow (graph visualization)
-- [x] Recharts (dashboards)
-- [x] TanStack Query (server state)
-- [x] shadcn/ui (components)
-
-**Key files:**
-
-- `ui/src/api/` — ApiClient + typed functions for graph, sources, security, chat, alerts
-- `ui/src/components/layout/` — AppShell, Sidebar, Header, PageContainer
-- `ui/src/components/graph/` — InfraGraph, NodeDetails, GraphControls, GraphLegend, custom nodes/edges
-- `ui/src/components/dashboard/` — MetricsCard, SourcesHealth, AlertsList, RecentSessions
-- `ui/src/components/admin/` — ZonesTable, ZoneForm, UnassignedSources, SourceZoneAssign, PoliciesTable, PolicyForm
-- `ui/src/components/chat/` — ChatWindow, MessageList, MessageBubble, ChatInput, ToolCallDisplay
-- `internal/api/webui.go` — 9 new endpoints: graph list/node/related, sessions, chat, alerts, source test
-- `internal/graph/store.go` + `sqlite.go` — `ListAll` method added to GraphStore interface
-
-## Knowledge Store (Phase 7)
+## Knowledge Store
 
 Joe captures tribal knowledge in three tiers:
 
@@ -342,7 +198,7 @@ Key principles:
 - Derived insights show provenance ("Learned from session X")
 - Joe can propose doc updates, but human approves publish
 
-## Infrastructure Adapters (Phase 6)
+## Infrastructure Adapters
 
 **Scope (T1 read-only by default):**
 - Cloud: AWS (EC2, EKS, RDS, ALB, VPC, SecurityGroups), Azure (VMs, AKS, SQL, VNets, NSGs)
@@ -391,7 +247,7 @@ The LLM picks the right tool based on graph context — no generic abstraction l
 - Use containers or in-memory DBs
 - Run separately: `go test -tags=integration ./...`
 
-**For now:** Focus on unit tests. Integration/E2E come when we have adapters.
+**Default:** Focus on unit tests. Add integration/E2E tests for critical adapter paths.
 
 ## Common Patterns
 
@@ -553,7 +409,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 }
 ```
 
-OpenTelemetry instrumentation is in place. Phase 6 extends it to new adapters while keeping business logic clean from the start.
+OpenTelemetry instrumentation is in place. Keep business logic clean from instrumentation — it belongs in middleware/decorators only.
 
 ### Structured Logging
 Use `log/slog` for structured logging at boundaries:
@@ -568,9 +424,9 @@ slog.Info("tool executed",
 
 ---
 
-## Current Task
+## Working on Joe
 
-When starting work, check the phase we're in and pick the next unchecked item. Keep changes focused and testable.
+Keep changes focused and testable.
 
 **Before implementing:**
 1. Understand which component you're building
