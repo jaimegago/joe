@@ -16,11 +16,11 @@ import (
 	"time"
 )
 
-// JoeTestHarness manages joe and joecored for E2E testing
+// JoeTestHarness manages joe and joe-core for E2E testing
 type JoeTestHarness struct {
 	t            *testing.T
-	joecored     *exec.Cmd
-	joecoredLog  *os.File
+	joeCore      *exec.Cmd
+	joeCoreLog   *os.File
 	apiURL       string
 	httpClient   *http.Client
 	configPath   string
@@ -47,38 +47,38 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 	}
 }
 
-// Start builds and starts joecored
+// Start builds and starts joe-core
 func (h *JoeTestHarness) Start() error {
-	// Build joecored if needed
+	// Build joe-core if needed
 	if err := h.buildBinaries(); err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}
-	// Start joecored
-	logFile, err := os.Create(filepath.Join(h.tmpDir, "joecored.log"))
+	// Start joe-core
+	logFile, err := os.Create(filepath.Join(h.tmpDir, "joe-core.log"))
 	if err != nil {
 		return err
 	}
-	h.joecoredLog = logFile
-	// Find repository root and joecored binary
+	h.joeCoreLog = logFile
+	// Find repository root and joe-core binary
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		return fmt.Errorf("failed to find repo root: %w", err)
 	}
-	joecoredPath := filepath.Join(repoRoot, "joecored")
-	h.joecored = exec.Command(joecoredPath)
-	h.joecored.Env = append(os.Environ(),
+	joeCorePath := filepath.Join(repoRoot, "joe-core")
+	h.joeCore = exec.Command(joeCorePath)
+	h.joeCore.Env = append(os.Environ(),
 		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
 		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
 		"JOE_LOG_LEVEL=debug",
 		// Use mock/test API keys if needed
 		"GEMINI_API_KEY=test-key-for-e2e",
 	)
-	h.joecored.Stdout = logFile
-	h.joecored.Stderr = logFile
-	if err := h.joecored.Start(); err != nil {
-		return fmt.Errorf("failed to start joecored: %w", err)
+	h.joeCore.Stdout = logFile
+	h.joeCore.Stderr = logFile
+	if err := h.joeCore.Start(); err != nil {
+		return fmt.Errorf("failed to start joe-core: %w", err)
 	}
-	h.t.Logf("Started joecored (PID: %d) on port %s", h.joecored.Process.Pid, h.testPort)
+	h.t.Logf("Started joe-core (PID: %d) on port %s", h.joeCore.Process.Pid, h.testPort)
 	// Wait for API to be ready
 	if err := h.waitForAPI(30 * time.Second); err != nil {
 		h.Stop()
@@ -87,19 +87,19 @@ func (h *JoeTestHarness) Start() error {
 	return nil
 }
 
-// Stop stops joecored and cleans up
+// Stop stops joe-core and cleans up
 func (h *JoeTestHarness) Stop() {
-	if h.joecored != nil && h.joecored.Process != nil {
-		h.t.Logf("Stopping joecored (PID: %d)", h.joecored.Process.Pid)
-		h.joecored.Process.Kill()
-		h.joecored.Wait()
+	if h.joeCore != nil && h.joeCore.Process != nil {
+		h.t.Logf("Stopping joe-core (PID: %d)", h.joeCore.Process.Pid)
+		h.joeCore.Process.Kill()
+		h.joeCore.Wait()
 	}
-	if h.joecoredLog != nil {
-		h.joecoredLog.Close()
+	if h.joeCoreLog != nil {
+		h.joeCoreLog.Close()
 		// Print logs on failure
 		if h.t.Failed() {
-			h.t.Log("=== joecored logs ===")
-			content, _ := os.ReadFile(h.joecoredLog.Name())
+			h.t.Log("=== joe-core logs ===")
+			content, _ := os.ReadFile(h.joeCoreLog.Name())
 			h.t.Log(string(content))
 		}
 	}
@@ -153,9 +153,9 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 		select {
 		case <-ctx.Done():
 			// Print logs for debugging
-			if h.joecoredLog != nil {
-				content, _ := os.ReadFile(h.joecoredLog.Name())
-				h.t.Logf("joecored logs:\n%s", content)
+			if h.joeCoreLog != nil {
+				content, _ := os.ReadFile(h.joeCoreLog.Name())
+				h.t.Logf("joe-core logs:\n%s", content)
 			}
 			return fmt.Errorf("timeout waiting for API to start")
 		case <-ticker.C:
@@ -176,7 +176,7 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 	}
 }
 
-// buildBinaries builds joe and joecored
+// buildBinaries builds joe and joe-core
 func (h *JoeTestHarness) buildBinaries() error {
 	h.t.Log("Building binaries...")
 	// Find repository root (go up two directories from test/e2e)

@@ -16,7 +16,7 @@ Joe (Joe Operates Everything) helps platform engineers understand, debug, and op
 Joe runs as two binaries with a clean HTTP boundary:
 
 ```text
-joe (User Agent)                    joecored (Core Daemon)
+joe (User Agent)                    joe-core (Core Daemon)
 ─────────────────                   ──────────────────────
 Interactive REPL           HTTP     API (:7777)
 Agentic loop → LLM  ──────────────► Graph store (SQLite)
@@ -26,14 +26,11 @@ Core tools (via API)                Infrastructure adapters
                                     Knowledge store (embeddings)
 ```
 
-An optional third binary `joe-mcp` exposes Joe's tools to MCP-compatible editors:
+`joe` also ships two integrated modes via subcommands:
 
 ```text
-Claude Code / Cursor / Codex
-    ↓ MCP stdio JSON-RPC
-joe-mcp
-    ↓ HTTP + Bearer auth
-joecored (:7777)
+joe mcp    — MCP stdio server for Claude Code / Cursor / Codex
+joe slack  — Slack bot via Socket Mode (no public URL required)
 ```
 
 ---
@@ -53,13 +50,12 @@ cd joe
 make build
 ```
 
-Produces three binaries:
+Produces two binaries:
 
-| Binary     | Purpose                             |
-| ---------- | ----------------------------------- |
-| `joe`      | Interactive CLI client              |
-| `joecored` | Background daemon                   |
-| `joe-mcp`  | MCP server for Claude Code / Cursor |
+| Binary     | Purpose                          |
+| ---------- | -------------------------------- |
+| `joe`      | Interactive CLI + mode launcher  |
+| `joe-core` | Background daemon                |
 
 ### Configure
 
@@ -110,7 +106,7 @@ export GEMINI_API_KEY="AIza..."         # for Gemini
 
 ```bash
 # Terminal 1 — start the daemon
-joecored
+joe-core
 
 # Terminal 2 — start the interactive client
 joe
@@ -137,7 +133,7 @@ llm:
       model: <model-id>
 
 server:
-  address: "localhost:7777"       # joecored listen address
+  address: "localhost:7777"       # joe-core listen address
   api_key: ""                     # Bearer token (empty = auth disabled)
   principal: "default-operator"   # RBAC identity for this API key
   tls_cert_file: ""               # path to TLS cert (enables HTTPS)
@@ -209,9 +205,9 @@ Joe has a kill switch for runaway operations. Four ways to trigger it:
 
 ```text
 > /panic
-⚠️  This will halt all Joe operations and restart joecored in safe mode.
+⚠️  This will halt all Joe operations and restart joe-core in safe mode.
 Type 'yes' to confirm: yes
-Emergency shutdown triggered. joecored will restart in safe mode.
+Emergency shutdown triggered. joe-core will restart in safe mode.
 ```
 
 **From the CLI:**
@@ -231,13 +227,13 @@ curl -X POST http://localhost:7777/api/v1/panic \
 **Via Unix signal:**
 
 ```bash
-kill -USR1 $(pidof joecored)
+kill -USR1 $(pidof joe-core)
 ```
 
 ### What Happens
 
-1. joecored writes `~/.joe/panic.state` and exits with code 2
-2. On restart, joecored reads `panic.state` and boots in **safe mode**
+1. joe-core writes `~/.joe/panic.state` and exits with code 2
+2. On restart, joe-core reads `panic.state` and boots in **safe mode**
 3. In safe mode, only T1 (read-only) tools are allowed — no writes or mutations
 4. Joe logs a warning on every startup until safe mode is cleared
 
@@ -367,17 +363,9 @@ server:
 
 ## MCP Server (Claude Code / Cursor / Codex)
 
-`joe-mcp` exposes 8 Joe tools over the Model Context Protocol, letting your editor query live infrastructure directly.
+`joe mcp` exposes 8 Joe tools over the Model Context Protocol, letting your editor query live infrastructure directly.
 
 ### Setup
-
-```bash
-# Build
-make build
-
-# Install joe-mcp to PATH
-cp joe-mcp ~/.local/bin/
-```
 
 Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
 
@@ -385,7 +373,8 @@ Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
 {
   "mcpServers": {
     "joe": {
-      "command": "joe-mcp",
+      "command": "joe",
+      "args": ["mcp"],
       "env": {
         "JOE_SERVER": "http://localhost:7777",
         "JOE_API_KEY": "<your-api-key>"
@@ -407,6 +396,32 @@ Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
 | `joe_logs_search`      | Search logs with LogQL                        |
 | `joe_knowledge_search` | Semantic search over runbooks and docs        |
 | `joe_incidents`        | List active alerts from Alertmanager          |
+
+---
+
+## Slack Bot
+
+`joe slack` connects Joe to Slack via Socket Mode — no public URL required.
+
+### Setup
+
+```bash
+export SLACK_BOT_TOKEN="xoxb-..."    # Bot User OAuth token
+export SLACK_APP_TOKEN="xapp-..."    # App-Level token (connections:write scope)
+export JOE_SERVER="http://localhost:7777"
+export JOE_API_KEY="<your-api-key>"  # optional
+
+joe slack
+```
+
+### Available Slash Commands
+
+| Command             | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `/joe ask <query>`  | Query the infrastructure graph and knowledge store   |
+| `/joe status`       | Show graph summary                                   |
+| `/joe incidents`    | List active incidents (requires Alertmanager source) |
+| `/joe help`         | Show available commands                              |
 
 ---
 
@@ -486,13 +501,12 @@ go vet ./...
 ```text
 joe/
 ├── cmd/
-│   ├── joe/            # Interactive CLI client
-│   ├── joecored/       # Background daemon
-│   └── joe-mcp/        # MCP server (Claude Code, Cursor, Codex)
+│   ├── joe/            # Interactive CLI + mcp/slack subcommands
+│   └── joe-core/       # Background daemon
 ├── internal/
 │   ├── adapters/       # Infrastructure adapters (K8s, AWS, Prometheus, ...)
-│   ├── api/            # HTTP API handlers (joecored)
-│   ├── client/         # HTTP client (joe → joecored)
+│   ├── api/            # HTTP API handlers (joe-core)
+│   ├── client/         # HTTP client (joe → joe-core)
 │   ├── config/         # Configuration loading
 │   ├── core/           # Core services container
 │   ├── coreagent/      # Core Agent (background refresh, onboarding)
@@ -506,6 +520,7 @@ joe/
 │   ├── rbac/           # RBAC zones, policy engine, middleware
 │   ├── repl/           # Interactive REPL + model selector
 │   ├── safety/         # Action tiers, panic mode, safe mode, policy loader
+│   ├── slack/          # Slack bot (Socket Mode)
 │   ├── store/          # SQL store (SQLite) + migrations (001–006)
 │   ├── tools/          # Tool registry, executor, tier enforcement
 │   │   ├── core/       # Core tools (graph, K8s, cloud via HTTP)
@@ -522,19 +537,21 @@ joe/
 
 ## Development Status
 
-| Phase | Description                                                                                    | Status        |
-| ----- | ---------------------------------------------------------------------------------------------- | ------------- |
-| 1     | Foundation — two-binary architecture, LLM interface                                           | ✅ Complete   |
-| 2     | User Agent loop — REPL, tools, session management                                             | ✅ Complete   |
-| 3     | Core Services + API — SQL/graph store, API handlers                                           | ✅ Complete   |
-| 4     | Infrastructure Adapters — K8s, Git                                                            | ✅ Complete   |
-| 5     | Core Agent — background refresh, clarifications, onboarding                                   | ✅ Complete   |
-| 5.5   | Action Safety Framework — tiers, policy, self-protection                                      | ✅ Complete   |
-| 6     | Infrastructure Adapters — cloud, observability, alerting, data stores, GitOps, networking     | ✅ Complete   |
-| 7     | Knowledge Store — curated, synced, derived; semantic search                                   | ✅ Complete   |
-| 8     | Documentation Co-Pilot — draft generation, drift detection, proposal flow                     | ✅ Complete   |
-| 9     | Emergency Controls + MCP Server + RBAC                                                        | ✅ Complete   |
-| 10    | Code Review Integration — GitHub/GitLab PR adapters, review agent                            | 📋 Planned    |
+| Phase | Description                                                                                    | Status      |
+| ----- | ---------------------------------------------------------------------------------------------- | ----------- |
+| 1     | Foundation — two-binary architecture, LLM interface                                           | ✅ Complete |
+| 2     | User Agent loop — REPL, tools, session management                                             | ✅ Complete |
+| 3     | Core Services + API — SQL/graph store, API handlers                                           | ✅ Complete |
+| 4     | Infrastructure Adapters — K8s, Git                                                            | ✅ Complete |
+| 5     | Core Agent — background refresh, clarifications, onboarding                                   | ✅ Complete |
+| 5.5   | Action Safety Framework — tiers, policy, self-protection                                      | ✅ Complete |
+| 6     | Infrastructure Adapters — cloud, observability, alerting, data stores, GitOps, networking     | ✅ Complete |
+| 7     | Knowledge Store — curated, synced, derived; semantic search                                   | ✅ Complete |
+| 8     | Documentation Co-Pilot — draft generation, drift detection, proposal flow                     | ✅ Complete |
+| 9     | Emergency Controls + MCP Server + RBAC                                                        | ✅ Complete |
+| 10    | Code Review Integration — GitHub/GitLab PR adapters, review agent                            | ✅ Complete |
+| 11    | Slack Bot                                                                                      | ✅ Complete |
+| 12    | Web UI — React + graph explorer, dashboard, admin, chat                                       | ✅ Complete |
 
 ---
 

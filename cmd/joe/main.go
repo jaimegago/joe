@@ -7,19 +7,27 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
+
+	mcpserver "github.com/mark3labs/mcp-go/server"
+	gslack "github.com/slack-go/slack"
+	"github.com/slack-go/slack/socketmode"
 
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
+	"github.com/jaimegago/joe/internal/mcp"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/safety"
+	jslack "github.com/jaimegago/joe/internal/slack"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
 )
@@ -62,7 +70,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return runWithDeps(ctx, args, stdout, stderr, defaultRunDeps())
 }
 
-// runPanicCommand sends an emergency shutdown request to joecored.
+// runPanicCommand sends an emergency shutdown request to joe-core.
 func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe panic", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -94,12 +102,12 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 		return 1
 	}
 
-	fmt.Fprintln(stdout, "Emergency shutdown triggered. joecored will restart in safe mode.")
+	fmt.Fprintln(stdout, "Emergency shutdown triggered. joe-core will restart in safe mode.")
 	fmt.Fprintln(stdout, "Use 'joe unlock --reason \"...\"' to resume normal operation.")
 	return 0
 }
 
-// runUnlockCommand exits joecored's safe mode.
+// runUnlockCommand exits joe-core's safe mode.
 func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -251,6 +259,84 @@ func runReviewCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 }
 
+// runMCPCommand starts Joe as an MCP stdio server.
+// Connection details are read from environment variables:
+//
+//	JOE_SERVER  — joe-core base URL (default: http://localhost:7777)
+//	JOE_API_KEY — Bearer token for joe-core API auth (optional)
+func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps) int {
+	serverURL := os.Getenv("JOE_SERVER")
+	if serverURL == "" {
+		serverURL = "http://localhost:7777"
+	}
+	apiKey := os.Getenv("JOE_API_KEY")
+
+	var opts []client.ClientOption
+	if apiKey != "" {
+		opts = append(opts, client.WithAPIKey(apiKey))
+	}
+
+	coreClient := deps.newClient(serverURL, opts...)
+	s := mcp.NewServer(coreClient)
+
+	fmt.Fprintf(stderr, "joe mcp: connecting to joe-core at %s\n", serverURL)
+
+	if err := mcpserver.ServeStdio(s); err != nil {
+		fmt.Fprintf(stderr, "joe mcp: server error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// runSlackCommand starts Joe as a Slack bot via Socket Mode.
+// Environment variables:
+//
+//	SLACK_BOT_TOKEN  — Bot User OAuth token (xoxb-...)
+//	SLACK_APP_TOKEN  — App-Level token with connections:write scope (xapp-...)
+//	JOE_SERVER       — joe-core base URL (default: http://localhost:7777)
+//	JOE_API_KEY      — Bearer token for joe-core API auth (optional)
+func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps runDeps) int {
+	botToken := os.Getenv("SLACK_BOT_TOKEN")
+	if botToken == "" {
+		fmt.Fprintln(stderr, "joe slack: SLACK_BOT_TOKEN is required")
+		return 1
+	}
+	appToken := os.Getenv("SLACK_APP_TOKEN")
+	if appToken == "" {
+		fmt.Fprintln(stderr, "joe slack: SLACK_APP_TOKEN is required (xapp-...)")
+		return 1
+	}
+
+	serverURL := os.Getenv("JOE_SERVER")
+	if serverURL == "" {
+		serverURL = "http://localhost:7777"
+	}
+	apiKey := os.Getenv("JOE_API_KEY")
+
+	var clientOpts []client.ClientOption
+	if apiKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(apiKey))
+	}
+	coreClient := deps.newClient(serverURL, clientOpts...)
+
+	api := gslack.New(botToken, gslack.OptionAppLevelToken(appToken))
+	sm := socketmode.New(api)
+	agent := jslack.NewAgent(coreClient)
+	srv := jslack.NewServer(api, sm, agent)
+
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	slog.Info("joe slack: starting", "server", serverURL)
+	fmt.Fprintf(stderr, "joe slack: connecting to joe-core at %s\n", serverURL)
+
+	if err := srv.Start(ctx); err != nil {
+		fmt.Fprintf(stderr, "joe slack: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	// Dispatch subcommands before parsing REPL flags.
 	if len(args) > 0 {
@@ -261,6 +347,10 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runUnlockCommand(ctx, args[1:], stdout, stderr, deps)
 		case "review":
 			return runReviewCommand(ctx, args[1:], stdout, stderr, deps)
+		case "mcp":
+			return runMCPCommand(ctx, args[1:], stderr, deps)
+		case "slack":
+			return runSlackCommand(ctx, args[1:], stderr, deps)
 		}
 	}
 
@@ -312,7 +402,7 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		return 1
 	}
 
-	// Connect to joecored
+	// Connect to joe-core
 	scheme := "http"
 	if cfg.Server.TLSEnabled {
 		scheme = "https"
@@ -331,8 +421,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	defer pingCancel()
 
 	if err := coreClient.Ping(pingCtx); err != nil {
-		fmt.Fprintf(stderr, "Error: Cannot connect to joecored at %s\n", joecoreURL)
-		fmt.Fprintf(stderr, "Make sure joecored is running: joecored\n\n")
+		fmt.Fprintf(stderr, "Error: Cannot connect to joe-core at %s\n", joecoreURL)
+		fmt.Fprintf(stderr, "Make sure joe-core is running: joe-core\n\n")
 		return 1
 	}
 

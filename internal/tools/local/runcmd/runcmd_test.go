@@ -67,10 +67,10 @@ func TestExecute(t *testing.T) {
 			errContains: "self-protection",
 		},
 		{
-			name:        "blocks joecored command",
-			allowedCmds: []string{"joecored"},
+			name:        "blocks joe-core command",
+			allowedCmds: []string{"joe-core"},
 			runner:      &mockRunner{stdout: "ok"},
-			args:        map[string]any{"command": "joecored"},
+			args:        map[string]any{"command": "joe-core"},
 			wantErr:     true,
 			errContains: "self-protection",
 		},

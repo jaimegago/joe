@@ -191,7 +191,7 @@ func TestRun_PingFailure(t *testing.T) {
 	if exitCode != 1 {
 		t.Fatalf("expected exit code 1, got %d", exitCode)
 	}
-	if !strings.Contains(stderr.String(), "Cannot connect to joecored") {
+	if !strings.Contains(stderr.String(), "Cannot connect to joe-core") {
 		t.Fatalf("expected ping failure message, got %q", stderr.String())
 	}
 }

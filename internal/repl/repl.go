@@ -186,8 +186,8 @@ func (r *REPL) handlePanicCommand(ctx context.Context) error {
 	fmt.Println()
 	fmt.Println("This will immediately:")
 	fmt.Println("  • Stop all in-flight operations")
-	fmt.Println("  • Shut down joecored")
-	fmt.Println("  • Restart joecored in safe mode (T1/read-only)")
+	fmt.Println("  • Shut down joe-core")
+	fmt.Println("  • Restart joe-core in safe mode (T1/read-only)")
 	fmt.Println()
 	fmt.Print("Type 'yes' to confirm: ")
 
@@ -218,12 +218,12 @@ func (r *REPL) handlePanicCommand(ctx context.Context) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to reach joecored: %w", err)
+		return fmt.Errorf("failed to reach joe-core: %w", err)
 	}
 	defer resp.Body.Close()
 
 	fmt.Println()
-	fmt.Println("🛑 Panic triggered. joecored shutting down...")
+	fmt.Println("🛑 Panic triggered. joe-core shutting down...")
 	fmt.Printf("   State saved to ~/.joe/panic.state\n")
 	fmt.Println()
 	fmt.Println("Reconnect after restart. Joe will be in safe mode (read-only).")
@@ -235,7 +235,7 @@ func (r *REPL) handlePanicCommand(ctx context.Context) error {
 func (r *REPL) handleHelpCommand() error {
 	help := `Available commands:
   /model    - Switch LLM model
-  /panic    - Emergency shutdown (kills joecored, restarts in safe mode)
+  /panic    - Emergency shutdown (kills joe-core, restarts in safe mode)
   /help     - Show this help
   /exit     - Exit Joe (or use Ctrl+D)
 `

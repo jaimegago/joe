@@ -155,8 +155,8 @@ func TestIsCommandAllowed(t *testing.T) {
 			errType: "command_protection",
 		},
 		{
-			name:    "blocked: joecored binary",
-			command: "joecored",
+			name:    "blocked: joe-core binary",
+			command: "joe-core",
 			wantErr: true,
 			errType: "command_protection",
 		},

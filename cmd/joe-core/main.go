@@ -310,7 +310,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 				"trigger_reason", panicState.TriggerReason,
 			)
 		}
-		slog.Warn("use 'joe unlock --reason \"...\"' to resume normal operation")
+		slog.Warn("use 'joe unlock --reason \"...\"' to exit safe mode and resume normal operation")
 	}
 
 	// Load or create encryption key for source configs.
@@ -493,7 +493,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if cfg.Server.TLSConfigured() {
 		slog.Info("TLS enabled", "cert", cfg.Server.TLSCertFile, "key", cfg.Server.TLSKeyFile)
 	} else {
-		slog.Warn("TLS disabled — connections to joecored are unencrypted")
+		slog.Warn("TLS disabled — connections to joe-core are unencrypted")
 	}
 
 	errCh := deps.startServer(server, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
@@ -515,7 +515,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if err := deps.shutdownServer(shutdownCtx, server); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
-	slog.Info("joecored stopped")
+	slog.Info("joe-core stopped")
 
 	return 0
 }
@@ -760,8 +760,8 @@ func defaultStartMetricsServer(server *http.Server) error {
 func defaultStartServer(server *http.Server, certFile, keyFile string) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("joecored starting", "addr", server.Addr, "tls", certFile != "")
-		fmt.Printf("joecored listening on %s\n", server.Addr)
+		slog.Info("joe-core starting", "addr", server.Addr, "tls", certFile != "")
+		fmt.Printf("joe-core listening on %s\n", server.Addr)
 		var err error
 		if certFile != "" && keyFile != "" {
 			err = server.ListenAndServeTLS(certFile, keyFile)
