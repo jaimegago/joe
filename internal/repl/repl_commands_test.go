@@ -469,7 +469,7 @@ func TestHandlePanicCommand_UnreachableServer(t *testing.T) {
 	r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
 	_ = panicStdinHelper(t, "yes\n", func() {
 		err := r.handlePanicCommand(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "failed to reach joecored") {
+		if err == nil || !strings.Contains(err.Error(), "failed to reach joe-core") {
 			t.Fatalf("expected reach error, got %v", err)
 		}
 	})

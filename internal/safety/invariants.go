@@ -80,7 +80,7 @@ func IsPathAllowed(absPath string) error {
 // Returns an error if the command violates self-protection invariants.
 //
 // Blocked commands (hardcoded):
-// - joe, joecored (cannot restart/modify self)
+// - joe, joe-core (cannot restart/modify self)
 // - kill, pkill, killall (cannot kill self or other processes)
 //
 // Note: This only blocks the base command. The policy's run_command allowlist
@@ -91,11 +91,11 @@ func IsCommandAllowed(command string) error {
 	baseCmd := filepath.Base(command)
 
 	// Block Joe binaries
-	if baseCmd == "joe" || baseCmd == "joecored" {
+	if baseCmd == "joe" || baseCmd == "joe-core" {
 		return &InvariantViolationError{
 			Type:   "command_protection",
 			Target: command,
-			Reason: "Joe cannot execute joe or joecored commands (self-protection)",
+			Reason: "Joe cannot execute joe or joe-core commands (self-protection)",
 		}
 	}
 

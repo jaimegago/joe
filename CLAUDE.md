@@ -8,9 +8,9 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot. It helps 
 
 **Key characteristics:**
 - AI-agnostic (Claude, OpenAI, Ollama)
-- Two binaries: `joe` (Local) and `joecored` (Core daemon)
-- Two agents: User Agent (in joe) + Core Agent (in joecored)
-- HTTP API contract between joe and joecored
+- Two binaries: `joe` (Local) and `joe-core` (Core daemon)
+- Two agents: User Agent (in joe) + Core Agent (in joe-core)
+- HTTP API contract between joe and joe-core
 - Builds a graph of infrastructure relationships
 
 ## Two-Binary Architecture
@@ -20,7 +20,7 @@ Joe is built as two binaries from day one:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│  joe (Joe Local)                    joecored (Joe Core)                │
+│  joe (Joe Local)                    joe-core (Joe Core)               │
 │  ────────────────                   ──────────────────                 │
 │                                                                         │
 │  User Agent                         HTTP API (:7777)                   │
@@ -46,11 +46,11 @@ Joe is built as two binaries from day one:
 **Development workflow:**
 ```
 Terminal 1:                    Terminal 2:
-$ joecored                     $ joe
-API listening on :7777         Connecting to joecored... Connected.
-Core Agent started             
+$ joe-core                     $ joe
+API listening on :7777         Connecting to joe-core... Connected.
+Core Agent started
                                > why is payment slow?
-[logs: API request]            [queries joecored, responds]
+[logs: API request]            [queries joe-core, responds]
 ```
 
 **Core Agent Autonomy:**
@@ -63,25 +63,25 @@ Core Agent started
 ```
 joe/
 ├── cmd/
-│   ├── joe/                      # Joe Local (User Agent CLI)
+│   ├── joe/                      # Joe Local (User Agent CLI + mcp/slack subcommands)
 │   │   └── main.go
-│   └── joecored/                 # Joe Core (daemon)
+│   └── joe-core/                 # Joe Core (daemon)
 │       └── main.go
 │
 ├── internal/
-│   ├── api/                      # HTTP API handlers (joecored)
-│   ├── client/                   # HTTP client (joe → joecored)
+│   ├── api/                      # HTTP API handlers (joe-core)
+│   ├── client/                   # HTTP client (joe → joe-core)
 │   ├── core/                     # Core Services
 │   ├── coreagent/                # Core Agent
 │   ├── useragent/                # User Agent
 │   ├── llm/                      # LLM adapters (both agents)
 │   ├── tools/
 │   │   ├── local/                # Local tools (joe only): readfile, writefile, gitstatus, gitdiff, runcmd, echo, askuser
-│   │   ├── core/                 # Core tools (joe → joecored via HTTP): graphquery, k8sget, awsec2, etc.
-│   │   └── shared/               # Go-native tools (both joe and joecored): netcheck, dnsquery, httpreq, sysinfo, traceroute
-│   ├── graph/                    # Graph store (joecored)
-│   ├── store/                    # SQL store (joecored)
-│   ├── adapters/                 # K8s, Git, ArgoCD... (joecored)
+│   │   ├── core/                 # Core tools (joe → joe-core via HTTP): graphquery, k8sget, awsec2, etc.
+│   │   └── shared/               # Go-native tools (both joe and joe-core): netcheck, dnsquery, httpreq, sysinfo, traceroute
+│   ├── graph/                    # Graph store (joe-core)
+│   ├── store/                    # SQL store (joe-core)
+│   ├── adapters/                 # K8s, Git, ArgoCD... (joe-core)
 │   ├── repl/                     # REPL (joe)
 │   └── config/
 └── docs/
@@ -105,7 +105,7 @@ type Tool interface {
     Execute(ctx context.Context, args map[string]any) (any, error)
 }
 
-// CoreClient - how joe calls joecored (HTTP client in internal/client/)
+// CoreClient - how joe calls joe-core (HTTP client in internal/client/)
 type CoreClient interface {
     GraphQuery(ctx context.Context, query string) ([]Node, error)
     GraphRelated(ctx context.Context, nodeID string, depth int) (*Subgraph, error)
@@ -160,14 +160,12 @@ Use ↑/↓ to navigate, Enter to select, Esc to cancel
 
 ## Capabilities
 
-All features are implemented and working. Joe ships four binaries:
+All features are implemented and working. Joe ships two binaries:
 
 | Binary | Purpose |
 |--------|---------|
-| `cmd/joe` | User Agent CLI + REPL |
-| `cmd/joecored` | Core daemon, HTTP API on :7777 |
-| `cmd/joe-mcp` | MCP stdio server (Claude Code, Cursor, Codex) |
-| `cmd/joe-slack` | Slack Bot (Socket Mode, no public URL needed) |
+| `cmd/joe` | User Agent CLI + REPL; subcommands: `joe mcp` (MCP server), `joe slack` (Slack bot), `joe panic`, `joe unlock`, `joe review` |
+| `cmd/joe-core` | Core daemon, HTTP API on :7777 |
 
 **Feature summary:**
 
@@ -204,7 +202,7 @@ Key principles:
 - Cloud: AWS (EC2, EKS, RDS, ALB, VPC, SecurityGroups), Azure (VMs, AKS, SQL, VNets, NSGs)
 - Observability: Prometheus/Mimir (PromQL), Loki (LogQL), Tempo/Jaeger (traces), Datadog, Splunk (SPL), Dynatrace (DQL), New Relic (NRQL), CloudWatch, Azure Monitor (KQL)
 - Alerting: Alertmanager, PagerDuty, Grafana (alerts, dashboards, annotations)
-- Network & system diagnostics: Go-native tools in `internal/tools/shared/` (tcp_connect, dns_lookup, http_request, system_info, trace_route) — used by both joe and joecored
+- Network & system diagnostics: Go-native tools in `internal/tools/shared/` (tcp_connect, dns_lookup, http_request, system_info, trace_route) — used by both joe and joe-core
 - Data stores: PostgreSQL (pg_stat_*), MySQL (processlist, replication), Redis (INFO, SLOWLOG), MongoDB (serverStatus, rs.status), Kafka (topics, consumer lag, brokers), Elasticsearch (cluster health, indices)
 - GitOps/CD/IaC: Argo CD (full REST API), Flux (K8s CRDs), Terraform (state read), Helm (release status)
 - Networking/Ingress: NGINX Ingress (rules, status, config), Envoy (admin API), Istio (K8s CRDs), Cilium (CRDs + Hubble)
