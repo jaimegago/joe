@@ -32,34 +32,45 @@ func mockJoecored(t *testing.T) *httptest.Server {
 				"nodes": []map[string]any{{"id": "db:payments-db", "type": "database"}},
 				"edges": []map[string]any{},
 			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/k8s/") && strings.HasSuffix(r.URL.Path, "/resources"):
+		case r.URL.Path == "/api/v1/observe/k8s":
 			json.NewEncoder(w).Encode(map[string]any{
-				"resources": []map[string]any{{"metadata": map[string]any{"name": "pod-1"}}},
-				"count":     1,
+				"source":       "kubernetes",
+				"source_id":    "k8s-prod",
+				"native_query": "service=payment-svc",
+				"data":         map[string]any{"pods": []any{}, "count": 0},
 			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/k8s/") && strings.Contains(r.URL.Path, "/logs/"):
+		case r.URL.Path == "/api/v1/observe/metrics":
 			json.NewEncoder(w).Encode(map[string]any{
-				"logs": "2026-01-01 log line 1\n2026-01-01 log line 2",
+				"source":       "prometheus",
+				"source_id":    "prom-prod",
+				"native_query": `rate(http_requests_total{job="payment-svc"}[5m])`,
+				"data":         []any{},
 			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/prometheus/") && strings.HasSuffix(r.URL.Path, "/query"):
+		case r.URL.Path == "/api/v1/observe/logs":
 			json.NewEncoder(w).Encode(map[string]any{
-				"result":    map[string]any{"type": "vector", "result": []any{}},
-				"source_id": "prom-1",
+				"source":       "loki",
+				"source_id":    "loki-prod",
+				"native_query": `{app="payment-svc"} |= "error"`,
+				"data":         []any{},
 			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/loki/") && strings.HasSuffix(r.URL.Path, "/query"):
+		case r.URL.Path == "/api/v1/observe/traces":
 			json.NewEncoder(w).Encode(map[string]any{
-				"result":    map[string]any{"streams": []any{}},
-				"source_id": "loki-1",
+				"source":       "tempo",
+				"source_id":    "tempo-prod",
+				"native_query": "service=payment-svc",
+				"data":         []any{},
+			})
+		case r.URL.Path == "/api/v1/observe/alerts":
+			json.NewEncoder(w).Encode(map[string]any{
+				"source":    "alertmanager",
+				"source_id": "am-prod",
+				"alerts":    []any{},
+				"count":     0,
 			})
 		case r.URL.Path == "/api/v1/knowledge/search":
 			json.NewEncoder(w).Encode(map[string]any{
 				"results": []map[string]any{{"id": "entry-1", "content": "payment runbook"}},
 				"count":   1,
-			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/alertmanager/") && strings.HasSuffix(r.URL.Path, "/alerts"):
-			json.NewEncoder(w).Encode(map[string]any{
-				"alerts": []map[string]any{{"fingerprint": "abc123", "status": map[string]any{"state": "firing"}}},
-				"count":  1,
 			})
 		default:
 			http.NotFound(w, r)
@@ -125,15 +136,14 @@ func TestDispatcher_GraphRelated(t *testing.T) {
 	}
 }
 
-func TestDispatcher_K8sGet_List(t *testing.T) {
+func TestDispatcher_K8s(t *testing.T) {
 	srv := mockJoecored(t)
 	c := client.New(srv.URL)
 	d := mcp.NewDispatcher(c)
 
-	result, err := d.HandleK8sGet(context.Background(), makeRequest("joe_k8s_get", map[string]any{
-		"source_id": "k8s-prod",
-		"resource":  "pods",
-		"namespace": "default",
+	result, err := d.HandleK8s(context.Background(), makeRequest("joe_k8s", map[string]any{
+		"service":  "payment-svc",
+		"question": "show me the running pods",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -143,16 +153,40 @@ func TestDispatcher_K8sGet_List(t *testing.T) {
 	}
 }
 
-func TestDispatcher_K8sLogs(t *testing.T) {
+func TestDispatcher_K8s_MissingService(t *testing.T) {
 	srv := mockJoecored(t)
 	c := client.New(srv.URL)
 	d := mcp.NewDispatcher(c)
 
-	result, err := d.HandleK8sLogs(context.Background(), makeRequest("joe_k8s_logs", map[string]any{
-		"source_id": "k8s-prod",
-		"namespace": "default",
-		"pod":       "payment-svc-abc123",
-		"tail":      float64(50),
+	_, err := d.HandleK8s(context.Background(), makeRequest("joe_k8s", map[string]any{
+		"question": "show pods",
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing service")
+	}
+}
+
+func TestDispatcher_K8s_MissingQuestion(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	_, err := d.HandleK8s(context.Background(), makeRequest("joe_k8s", map[string]any{
+		"service": "payment-svc",
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing question")
+	}
+}
+
+func TestDispatcher_Metrics(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	result, err := d.HandleMetrics(context.Background(), makeRequest("joe_metrics", map[string]any{
+		"service":  "payment-svc",
+		"question": "p99 latency over the last 10 minutes",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -162,14 +196,45 @@ func TestDispatcher_K8sLogs(t *testing.T) {
 	}
 }
 
-func TestDispatcher_MetricsQuery(t *testing.T) {
+func TestDispatcher_Metrics_MissingService(t *testing.T) {
 	srv := mockJoecored(t)
 	c := client.New(srv.URL)
 	d := mcp.NewDispatcher(c)
 
-	result, err := d.HandleMetricsQuery(context.Background(), makeRequest("joe_metrics_query", map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
+	_, err := d.HandleMetrics(context.Background(), makeRequest("joe_metrics", map[string]any{
+		"question": "p99 latency",
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing service")
+	}
+}
+
+func TestDispatcher_Metrics_ErrorResult(t *testing.T) {
+	c := client.New("http://127.0.0.1:1")
+	d := mcp.NewDispatcher(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	result, err := d.HandleMetrics(ctx, makeRequest("joe_metrics", map[string]any{
+		"service":  "payment-svc",
+		"question": "p99 latency",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected hard error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true when backend unreachable")
+	}
+}
+
+func TestDispatcher_Logs(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	result, err := d.HandleLogs(context.Background(), makeRequest("joe_logs", map[string]any{
+		"service":  "payment-svc",
+		"question": "errors in the last hour",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -179,22 +244,125 @@ func TestDispatcher_MetricsQuery(t *testing.T) {
 	}
 }
 
-func TestDispatcher_LogsSearch(t *testing.T) {
+func TestDispatcher_Logs_MissingService(t *testing.T) {
 	srv := mockJoecored(t)
 	c := client.New(srv.URL)
 	d := mcp.NewDispatcher(c)
 
-	result, err := d.HandleLogsSearch(context.Background(), makeRequest("joe_logs_search", map[string]any{
-		"source_id":     "loki-1",
-		"query":         `{app="payment-svc"}`,
-		"limit":         float64(50),
-		"since_seconds": float64(1800),
+	_, err := d.HandleLogs(context.Background(), makeRequest("joe_logs", map[string]any{
+		"question": "errors",
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing service")
+	}
+}
+
+func TestDispatcher_Logs_ErrorResult(t *testing.T) {
+	c := client.New("http://127.0.0.1:1")
+	d := mcp.NewDispatcher(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	result, err := d.HandleLogs(ctx, makeRequest("joe_logs", map[string]any{
+		"service":  "payment-svc",
+		"question": "errors",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected hard error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true when backend unreachable")
+	}
+}
+
+func TestDispatcher_Traces(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	result, err := d.HandleTraces(context.Background(), makeRequest("joe_traces", map[string]any{
+		"service":  "payment-svc",
+		"question": "slow requests in the last 30 minutes",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.IsError {
 		t.Fatalf("got error result: %v", result.Content)
+	}
+}
+
+func TestDispatcher_Traces_MissingService(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	_, err := d.HandleTraces(context.Background(), makeRequest("joe_traces", map[string]any{
+		"question": "slow requests",
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing service")
+	}
+}
+
+func TestDispatcher_Alerts(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	result, err := d.HandleAlerts(context.Background(), makeRequest("joe_alerts", map[string]any{
+		"service": "payment-svc",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("got error result: %v", result.Content)
+	}
+}
+
+func TestDispatcher_Alerts_WithQuestion(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	result, err := d.HandleAlerts(context.Background(), makeRequest("joe_alerts", map[string]any{
+		"service":  "payment-svc",
+		"question": "severity=critical",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("got error result: %v", result.Content)
+	}
+}
+
+func TestDispatcher_Alerts_MissingService(t *testing.T) {
+	srv := mockJoecored(t)
+	c := client.New(srv.URL)
+	d := mcp.NewDispatcher(c)
+
+	_, err := d.HandleAlerts(context.Background(), makeRequest("joe_alerts", map[string]any{}))
+	if err == nil {
+		t.Fatal("expected error for missing service")
+	}
+}
+
+func TestDispatcher_Alerts_ErrorResult(t *testing.T) {
+	c := client.New("http://127.0.0.1:1")
+	d := mcp.NewDispatcher(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	result, err := d.HandleAlerts(ctx, makeRequest("joe_alerts", map[string]any{
+		"service": "payment-svc",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected hard error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true when backend unreachable")
 	}
 }
 
@@ -215,42 +383,36 @@ func TestDispatcher_KnowledgeSearch(t *testing.T) {
 	}
 }
 
-func TestDispatcher_Incidents(t *testing.T) {
+func TestDispatcher_KnowledgeSearch_MissingQuery(t *testing.T) {
 	srv := mockJoecored(t)
 	c := client.New(srv.URL)
 	d := mcp.NewDispatcher(c)
 
-	result, err := d.HandleIncidents(context.Background(), makeRequest("joe_incidents", map[string]any{
-		"source_id": "alertmanager-prod",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("got error result: %v", result.Content)
+	_, err := d.HandleKnowledgeSearch(context.Background(), makeRequest("joe_knowledge_search", map[string]any{}))
+	if err == nil {
+		t.Fatal("expected error for missing query")
 	}
 }
 
-func TestDispatcher_Incidents_WithFilter(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
+func TestDispatcher_KnowledgeSearch_ErrorResult(t *testing.T) {
+	c := client.New("http://127.0.0.1:1")
 	d := mcp.NewDispatcher(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
 
-	result, err := d.HandleIncidents(context.Background(), makeRequest("joe_incidents", map[string]any{
-		"source_id": "alertmanager-prod",
-		"filter":    "severity=critical",
+	result, err := d.HandleKnowledgeSearch(ctx, makeRequest("joe_knowledge_search", map[string]any{
+		"query": "payment errors",
 	}))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected hard error: %v", err)
 	}
-	if result.IsError {
-		t.Fatalf("got error result: %v", result.Content)
+	if !result.IsError {
+		t.Fatal("expected IsError=true when backend unreachable")
 	}
 }
 
 func TestDispatcher_ErrorResult_OnBackendFailure(t *testing.T) {
-	// Use an invalid server to force a connection error.
-	c := client.New("http://127.0.0.1:1") // nothing listening here
+	c := client.New("http://127.0.0.1:1")
 	d := mcp.NewDispatcher(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -291,68 +453,14 @@ func TestDispatcher_GraphRelated_ErrorResult(t *testing.T) {
 	}
 }
 
-func TestDispatcher_K8sGet_MissingSourceID(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleK8sGet(context.Background(), makeRequest("joe_k8s_get", map[string]any{"resource": "pods"}))
-	if err == nil {
-		t.Fatal("expected error for missing source_id")
-	}
-}
-
-func TestDispatcher_K8sGet_MissingResource(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleK8sGet(context.Background(), makeRequest("joe_k8s_get", map[string]any{"source_id": "k8s-prod"}))
-	if err == nil {
-		t.Fatal("expected error for missing resource")
-	}
-}
-
-func TestDispatcher_K8sGet_SingleResource(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": "my-pod"}})
-	}))
-	defer srv.Close()
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	result, err := d.HandleK8sGet(context.Background(), makeRequest("joe_k8s_get", map[string]any{
-		"source_id": "k8s-prod",
-		"resource":  "pods",
-		"namespace": "default",
-		"name":      "my-pod",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	_ = result
-}
-
-func TestDispatcher_K8sLogs_MissingPod(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleK8sLogs(context.Background(), makeRequest("joe_k8s_logs", map[string]any{
-		"source_id": "k8s-prod",
-		"namespace": "default",
-	}))
-	if err == nil {
-		t.Fatal("expected error for missing pod")
-	}
-}
-
-func TestDispatcher_K8sLogs_ErrorResult(t *testing.T) {
+func TestDispatcher_K8s_ErrorResult(t *testing.T) {
 	c := client.New("http://127.0.0.1:1")
 	d := mcp.NewDispatcher(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	result, err := d.HandleK8sLogs(ctx, makeRequest("joe_k8s_logs", map[string]any{
-		"source_id": "k8s-prod",
-		"namespace": "default",
-		"pod":       "mypod",
+	result, err := d.HandleK8s(ctx, makeRequest("joe_k8s", map[string]any{
+		"service":  "payment-svc",
+		"question": "show pods",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected hard error: %v", err)
@@ -362,24 +470,14 @@ func TestDispatcher_K8sLogs_ErrorResult(t *testing.T) {
 	}
 }
 
-func TestDispatcher_MetricsQuery_MissingSourceID(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleMetricsQuery(context.Background(), makeRequest("joe_metrics_query", map[string]any{"query": "up"}))
-	if err == nil {
-		t.Fatal("expected error for missing source_id")
-	}
-}
-
-func TestDispatcher_MetricsQuery_ErrorResult(t *testing.T) {
+func TestDispatcher_Traces_ErrorResult(t *testing.T) {
 	c := client.New("http://127.0.0.1:1")
 	d := mcp.NewDispatcher(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	result, err := d.HandleMetricsQuery(ctx, makeRequest("joe_metrics_query", map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
+	result, err := d.HandleTraces(ctx, makeRequest("joe_traces", map[string]any{
+		"service":  "payment-svc",
+		"question": "slow requests",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected hard error: %v", err)
@@ -389,81 +487,25 @@ func TestDispatcher_MetricsQuery_ErrorResult(t *testing.T) {
 	}
 }
 
-func TestDispatcher_LogsSearch_MissingSourceID(t *testing.T) {
+// Verify the mock server routes contain the expected paths.
+func TestMockServer_ObservePaths(t *testing.T) {
 	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleLogsSearch(context.Background(), makeRequest("joe_logs_search", map[string]any{"query": `{app="x"}`}))
-	if err == nil {
-		t.Fatal("expected error for missing source_id")
+	paths := []string{
+		"/api/v1/observe/metrics",
+		"/api/v1/observe/logs",
+		"/api/v1/observe/traces",
+		"/api/v1/observe/alerts",
+		"/api/v1/observe/k8s",
 	}
-}
-
-func TestDispatcher_LogsSearch_ErrorResult(t *testing.T) {
-	c := client.New("http://127.0.0.1:1")
-	d := mcp.NewDispatcher(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	result, err := d.HandleLogsSearch(ctx, makeRequest("joe_logs_search", map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="x"}`,
-	}))
-	if err != nil {
-		t.Fatalf("unexpected hard error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatal("expected IsError=true when backend unreachable")
-	}
-}
-
-func TestDispatcher_KnowledgeSearch_MissingQuery(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleKnowledgeSearch(context.Background(), makeRequest("joe_knowledge_search", map[string]any{}))
-	if err == nil {
-		t.Fatal("expected error for missing query")
-	}
-}
-
-func TestDispatcher_KnowledgeSearch_ErrorResult(t *testing.T) {
-	c := client.New("http://127.0.0.1:1")
-	d := mcp.NewDispatcher(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	result, err := d.HandleKnowledgeSearch(ctx, makeRequest("joe_knowledge_search", map[string]any{
-		"query": "payment errors",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected hard error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatal("expected IsError=true when backend unreachable")
-	}
-}
-
-func TestDispatcher_Incidents_MissingSourceID(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-	_, err := d.HandleIncidents(context.Background(), makeRequest("joe_incidents", map[string]any{}))
-	if err == nil {
-		t.Fatal("expected error for missing source_id")
-	}
-}
-
-func TestDispatcher_Incidents_ErrorResult(t *testing.T) {
-	c := client.New("http://127.0.0.1:1")
-	d := mcp.NewDispatcher(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	result, err := d.HandleIncidents(ctx, makeRequest("joe_incidents", map[string]any{
-		"source_id": "alertmanager-prod",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected hard error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatal("expected IsError=true when backend unreachable")
+	for _, path := range paths {
+		resp, err := http.Post(srv.URL+path, "application/json",
+			strings.NewReader(`{"service":"payment-svc","question":"test"}`))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("POST %s: expected 200, got %d", path, resp.StatusCode)
+		}
 	}
 }

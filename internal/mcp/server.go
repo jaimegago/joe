@@ -31,18 +31,18 @@ func NewServer(c *client.Client) *mcpserver.MCPServer {
 			s.AddTool(tool, d.HandleGraphQuery)
 		case "joe_graph_related":
 			s.AddTool(tool, d.HandleGraphRelated)
-		case "joe_k8s_get":
-			s.AddTool(tool, d.HandleK8sGet)
-		case "joe_k8s_logs":
-			s.AddTool(tool, d.HandleK8sLogs)
-		case "joe_metrics_query":
-			s.AddTool(tool, d.HandleMetricsQuery)
-		case "joe_logs_search":
-			s.AddTool(tool, d.HandleLogsSearch)
+		case "joe_k8s":
+			s.AddTool(tool, d.HandleK8s)
+		case "joe_metrics":
+			s.AddTool(tool, d.HandleMetrics)
+		case "joe_logs":
+			s.AddTool(tool, d.HandleLogs)
+		case "joe_traces":
+			s.AddTool(tool, d.HandleTraces)
+		case "joe_alerts":
+			s.AddTool(tool, d.HandleAlerts)
 		case "joe_knowledge_search":
 			s.AddTool(tool, d.HandleKnowledgeSearch)
-		case "joe_incidents":
-			s.AddTool(tool, d.HandleIncidents)
 		}
 	}
 
