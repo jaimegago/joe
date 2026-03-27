@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
@@ -62,74 +61,37 @@ func (d *Dispatcher) HandleGraphRelated(ctx context.Context, req mcpgo.CallToolR
 	return jsonResult(subgraph)
 }
 
-// HandleK8sGet handles the joe_k8s_get MCP tool.
-func (d *Dispatcher) HandleK8sGet(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	sourceID, err := req.RequireString("source_id")
+// HandleK8s handles the joe_k8s MCP tool.
+func (d *Dispatcher) HandleK8s(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	service, err := req.RequireString("service")
 	if err != nil {
 		return nil, err
 	}
-	resource, err := req.RequireString("resource")
+	question, err := req.RequireString("question")
 	if err != nil {
 		return nil, err
 	}
-	namespace := req.GetString("namespace", "")
-	name := req.GetString("name", "")
 
-	if name != "" {
-		result, err := d.c.K8sGetResource(ctx, sourceID, resource, namespace, name)
-		if err != nil {
-			return errorResult(fmt.Errorf("k8s get resource failed: %w", err)), nil
-		}
-		return jsonResult(map[string]any{"resource": result})
-	}
-
-	results, err := d.c.K8sListResources(ctx, sourceID, resource, namespace)
+	result, err := d.c.QueryK8s(ctx, service, question)
 	if err != nil {
-		return errorResult(fmt.Errorf("k8s list resources failed: %w", err)), nil
+		return errorResult(fmt.Errorf("k8s query failed: %w", err)), nil
 	}
-	return jsonResult(map[string]any{
-		"resources": results,
-		"count":     len(results),
-	})
+
+	return jsonResult(result)
 }
 
-// HandleK8sLogs handles the joe_k8s_logs MCP tool.
-func (d *Dispatcher) HandleK8sLogs(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	sourceID, err := req.RequireString("source_id")
+// HandleMetrics handles the joe_metrics MCP tool.
+func (d *Dispatcher) HandleMetrics(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	service, err := req.RequireString("service")
 	if err != nil {
 		return nil, err
 	}
-	namespace, err := req.RequireString("namespace")
-	if err != nil {
-		return nil, err
-	}
-	pod, err := req.RequireString("pod")
-	if err != nil {
-		return nil, err
-	}
-	container := req.GetString("container", "")
-	tail := int(req.GetFloat("tail", 100))
-
-	logs, err := d.c.K8sGetLogs(ctx, sourceID, namespace, pod, container, tail)
-	if err != nil {
-		return errorResult(fmt.Errorf("k8s logs failed: %w", err)), nil
-	}
-
-	return textResult(logs), nil
-}
-
-// HandleMetricsQuery handles the joe_metrics_query MCP tool.
-func (d *Dispatcher) HandleMetricsQuery(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	sourceID, err := req.RequireString("source_id")
-	if err != nil {
-		return nil, err
-	}
-	query, err := req.RequireString("query")
+	question, err := req.RequireString("question")
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := d.c.PrometheusQuery(ctx, sourceID, query, time.Time{})
+	result, err := d.c.QueryMetrics(ctx, service, question)
 	if err != nil {
 		return errorResult(fmt.Errorf("metrics query failed: %w", err)), nil
 	}
@@ -137,22 +99,55 @@ func (d *Dispatcher) HandleMetricsQuery(ctx context.Context, req mcpgo.CallToolR
 	return jsonResult(result)
 }
 
-// HandleLogsSearch handles the joe_logs_search MCP tool.
-func (d *Dispatcher) HandleLogsSearch(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	sourceID, err := req.RequireString("source_id")
+// HandleLogs handles the joe_logs MCP tool.
+func (d *Dispatcher) HandleLogs(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	service, err := req.RequireString("service")
 	if err != nil {
 		return nil, err
 	}
-	query, err := req.RequireString("query")
+	question, err := req.RequireString("question")
 	if err != nil {
 		return nil, err
 	}
-	limit := int(req.GetFloat("limit", 100))
-	sinceSeconds := time.Duration(req.GetFloat("since_seconds", 3600)) * time.Second
 
-	result, err := d.c.LokiQuery(ctx, sourceID, query, limit, sinceSeconds)
+	result, err := d.c.QueryLogs(ctx, service, question)
 	if err != nil {
-		return errorResult(fmt.Errorf("logs search failed: %w", err)), nil
+		return errorResult(fmt.Errorf("logs query failed: %w", err)), nil
+	}
+
+	return jsonResult(result)
+}
+
+// HandleTraces handles the joe_traces MCP tool.
+func (d *Dispatcher) HandleTraces(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	service, err := req.RequireString("service")
+	if err != nil {
+		return nil, err
+	}
+	question, err := req.RequireString("question")
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := d.c.QueryTraces(ctx, service, question)
+	if err != nil {
+		return errorResult(fmt.Errorf("traces query failed: %w", err)), nil
+	}
+
+	return jsonResult(result)
+}
+
+// HandleAlerts handles the joe_alerts MCP tool.
+func (d *Dispatcher) HandleAlerts(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	service, err := req.RequireString("service")
+	if err != nil {
+		return nil, err
+	}
+	question := req.GetString("question", "")
+
+	result, err := d.c.QueryAlerts(ctx, service, question)
+	if err != nil {
+		return errorResult(fmt.Errorf("alerts query failed: %w", err)), nil
 	}
 
 	return jsonResult(result)
@@ -177,25 +172,6 @@ func (d *Dispatcher) HandleKnowledgeSearch(ctx context.Context, req mcpgo.CallTo
 	return jsonResult(map[string]any{
 		"results": results,
 		"count":   len(results),
-	})
-}
-
-// HandleIncidents handles the joe_incidents MCP tool.
-func (d *Dispatcher) HandleIncidents(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	sourceID, err := req.RequireString("source_id")
-	if err != nil {
-		return nil, err
-	}
-	filter := req.GetString("filter", "")
-
-	alerts, err := d.c.AlertmanagerAlerts(ctx, sourceID, filter)
-	if err != nil {
-		return errorResult(fmt.Errorf("incidents query failed: %w", err)), nil
-	}
-
-	return jsonResult(map[string]any{
-		"alerts": alerts,
-		"count":  len(alerts),
 	})
 }
 

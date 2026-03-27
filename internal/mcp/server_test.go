@@ -16,12 +16,12 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 	expected := []string{
 		"joe_graph_query",
 		"joe_graph_related",
-		"joe_k8s_get",
-		"joe_k8s_logs",
-		"joe_metrics_query",
-		"joe_logs_search",
+		"joe_k8s",
+		"joe_metrics",
+		"joe_logs",
+		"joe_traces",
+		"joe_alerts",
 		"joe_knowledge_search",
-		"joe_incidents",
 	}
 
 	for _, name := range expected {
@@ -60,12 +60,12 @@ func TestToolDefs_RequiredParams(t *testing.T) {
 	}{
 		{"joe_graph_query", []string{"query"}},
 		{"joe_graph_related", []string{"node_id"}},
-		{"joe_k8s_get", []string{"source_id", "resource"}},
-		{"joe_k8s_logs", []string{"source_id", "namespace", "pod"}},
-		{"joe_metrics_query", []string{"source_id", "query"}},
-		{"joe_logs_search", []string{"source_id", "query"}},
+		{"joe_k8s", []string{"service", "question"}},
+		{"joe_metrics", []string{"service", "question"}},
+		{"joe_logs", []string{"service", "question"}},
+		{"joe_traces", []string{"service", "question"}},
+		{"joe_alerts", []string{"service"}},
 		{"joe_knowledge_search", []string{"query"}},
-		{"joe_incidents", []string{"source_id"}},
 	}
 
 	s := mcp.NewServer(nil)

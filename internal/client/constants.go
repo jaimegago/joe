@@ -62,4 +62,7 @@ const (
 	apiGitHubBasePath = "/api/v1/github"
 	apiGitLabBasePath = "/api/v1/gitlab"
 	apiReviewsPath    = "/api/v1/reviews"
+
+	// Category-based observe endpoints (MCP plan).
+	apiObserveBasePath = "/api/v1/observe"
 )

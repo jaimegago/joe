@@ -669,15 +669,15 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │    - Provides infrastructure intelligence during coding             │
 │    - Replaces need for dedicated VS Code extension                  │
 │                                                                      │
-│  MCP Tools exposed:                                                 │
+│  MCP Tools exposed (category-based — no source_id required):       │
 │    joe_graph_query      Query infrastructure relationships          │
 │    joe_graph_related    Traverse from a node                        │
-│    joe_k8s_get          Get K8s resources                           │
-│    joe_k8s_logs         Get pod logs                                │
-│    joe_metrics_query    Query Prometheus/Datadog/etc                │
-│    joe_logs_search      Search Loki/Splunk/etc                      │
+│    joe_k8s              K8s pods/logs for a service (NL question)  │
+│    joe_metrics          Metrics for a service (NL question)        │
+│    joe_logs             Logs for a service (NL question)           │
+│    joe_traces           Traces for a service (NL question)         │
+│    joe_alerts           Active alerts for a service               │
 │    joe_knowledge_search Search runbooks/tribal knowledge            │
-│    joe_incidents        List PagerDuty incidents                    │
 │                                                                      │
 │  Architecture:                                                      │
 │    Claude Code ──► MCP Server ──► joecored HTTP API                │
