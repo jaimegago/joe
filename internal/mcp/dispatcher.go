@@ -192,17 +192,6 @@ func jsonResult(v any) (*mcpgo.CallToolResult, error) {
 	}, nil
 }
 
-func textResult(text string) *mcpgo.CallToolResult {
-	return &mcpgo.CallToolResult{
-		Content: []mcpgo.Content{
-			mcpgo.TextContent{
-				Type: "text",
-				Text: text,
-			},
-		},
-	}
-}
-
 func errorResult(err error) *mcpgo.CallToolResult {
 	return &mcpgo.CallToolResult{
 		IsError: true,
