@@ -1,0 +1,421 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/core"
+	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/store"
+	_ "modernc.org/sqlite"
+)
+
+// taskStubLLM returns a canned response with no tool calls (single iteration).
+type taskStubLLM struct {
+	response string
+}
+
+func (s *taskStubLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return &llm.ChatResponse{
+		Content: s.response,
+		Usage:   llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+	}, nil
+}
+
+func (s *taskStubLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	ch := make(chan llm.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+func (s *taskStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// taskToolLLM returns a tool call on the first call, then a final answer.
+type taskToolLLM struct {
+	callCount int
+}
+
+func (t *taskToolLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	t.callCount++
+	if t.callCount == 1 {
+		return &llm.ChatResponse{
+			ToolCalls: []llm.ToolCall{
+				{ID: "tc-1", Name: "graph_query", Args: map[string]any{"query": "services"}},
+			},
+			Usage: llm.TokenUsage{InputTokens: 20, OutputTokens: 10, TotalTokens: 30},
+		}, nil
+	}
+	return &llm.ChatResponse{
+		Content: "Found 3 services in the graph.",
+		Usage:   llm.TokenUsage{InputTokens: 50, OutputTokens: 20, TotalTokens: 70},
+	}, nil
+}
+
+func (t *taskToolLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	ch := make(chan llm.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+func (t *taskToolLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// maxIterLLM always returns tool calls, never a final answer.
+type maxIterLLM struct{}
+
+func (m *maxIterLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return &llm.ChatResponse{
+		ToolCalls: []llm.ToolCall{
+			{ID: "tc-loop", Name: "graph_query", Args: map[string]any{"query": "loop"}},
+		},
+		Usage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+	}, nil
+}
+
+func (m *maxIterLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	ch := make(chan llm.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+func (m *maxIterLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+func setupTaskServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.ServeMux) {
+	t.Helper()
+
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	services := &core.Services{
+		Config: &config.Config{
+			Server: config.ServerConfig{
+				Address: "localhost:7777",
+			},
+		},
+		Graph:    graph.NewSQLiteStore(sqlStore.DB(), nil),
+		Store:    sqlStore,
+		Adapters: adapters.NewRegistry(),
+		LLM:      llmAdapter,
+	}
+
+	srv := New(services)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	return srv, mux
+}
+
+// TestTaskEndpoint_RouteRegistered ensures the route doesn't 404.
+func TestTaskEndpoint_RouteRegistered(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hello"})
+	if w.Code == http.StatusNotFound {
+		t.Error("POST /api/v1/tasks returned 404 — route not registered")
+	}
+}
+
+// TestTaskEndpoint_CompletedStatus verifies a simple prompt returns completed status.
+func TestTaskEndpoint_CompletedStatus(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "Hello from Joe!"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hello"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Status != "completed" {
+		t.Errorf("status = %q, want %q", resp.Status, "completed")
+	}
+	if resp.FinalAnswer != "Hello from Joe!" {
+		t.Errorf("final_answer = %q, want %q", resp.FinalAnswer, "Hello from Joe!")
+	}
+	if resp.TaskID == "" {
+		t.Error("task_id should not be empty")
+	}
+	if resp.SessionID == "" {
+		t.Error("session_id should not be empty")
+	}
+	if len(resp.Steps) < 1 {
+		t.Error("steps array should have at least one entry")
+	}
+	if resp.DurationMs < 0 {
+		t.Error("duration_ms should be non-negative")
+	}
+}
+
+// TestTaskEndpoint_StepsHaveContent checks step structure.
+func TestTaskEndpoint_StepsHaveContent(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "result"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "test"})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if len(resp.Steps) == 0 {
+		t.Fatal("no steps returned")
+	}
+	step := resp.Steps[0]
+	if step.StepNumber != 1 {
+		t.Errorf("step_number = %d, want 1", step.StepNumber)
+	}
+	if step.LLMRequest.MessageCount == 0 {
+		t.Error("llm_request.message_count should be > 0")
+	}
+	if step.LLMResponse.Content != "result" {
+		t.Errorf("llm_response.content = %q, want %q", step.LLMResponse.Content, "result")
+	}
+}
+
+// TestTaskEndpoint_TokenUsage verifies aggregated token usage is returned.
+func TestTaskEndpoint_TokenUsage(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.TotalTokens.InputTokens == 0 {
+		t.Error("total_tokens.input_tokens should be > 0")
+	}
+	if resp.TotalTokens.OutputTokens == 0 {
+		t.Error("total_tokens.output_tokens should be > 0")
+	}
+}
+
+// TestTaskEndpoint_SessionPersisted verifies the session is persisted and messages are retrievable.
+func TestTaskEndpoint_SessionPersisted(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "persisted answer"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "query"})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	// Fetch messages via sessions endpoint
+	wMsgs := doRequest(mux, "GET", "/api/v1/sessions/"+resp.SessionID+"/messages", nil)
+	if wMsgs.Code != http.StatusOK {
+		t.Fatalf("get messages: expected 200, got %d", wMsgs.Code)
+	}
+
+	var msgsResp map[string]any
+	json.NewDecoder(wMsgs.Body).Decode(&msgsResp)
+	count := int(msgsResp["count"].(float64))
+	if count < 2 {
+		t.Errorf("expected at least 2 messages (user + assistant), got %d", count)
+	}
+}
+
+// TestTaskEndpoint_CustomSessionID verifies providing a session_id works.
+func TestTaskEndpoint_CustomSessionID(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message":    "hello",
+		"session_id": "my-custom-session",
+	})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.SessionID != "my-custom-session" {
+		t.Errorf("session_id = %q, want %q", resp.SessionID, "my-custom-session")
+	}
+}
+
+// TestTaskEndpoint_MaxIterationsLimit verifies the loop stops at the configured limit.
+func TestTaskEndpoint_MaxIterationsLimit(t *testing.T) {
+	_, mux := setupTaskServer(t, &maxIterLLM{})
+	maxIter := 2
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "loop forever",
+		"config": map[string]any{
+			"max_iterations": maxIter,
+		},
+	})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.Status != "max_iterations_reached" {
+		t.Errorf("status = %q, want %q", resp.Status, "max_iterations_reached")
+	}
+	if resp.Iterations != maxIter {
+		t.Errorf("iterations = %d, want %d", resp.Iterations, maxIter)
+	}
+}
+
+// TestTaskEndpoint_TimeoutBehavior verifies timeout produces correct status.
+func TestTaskEndpoint_TimeoutBehavior(t *testing.T) {
+	_, mux := setupTaskServer(t, &maxIterLLM{})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "slow task",
+		"config": map[string]any{
+			"timeout":        "1ms",
+			"max_iterations": 1000,
+		},
+	})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	// Should be either timeout or max_iterations_reached depending on timing
+	if resp.Status != "timeout" && resp.Status != "max_iterations_reached" && resp.Status != "error" {
+		t.Errorf("status = %q, want timeout or max_iterations_reached or error", resp.Status)
+	}
+}
+
+// TestTaskEndpoint_SafetyTierOverride verifies safety_tier parameter is accepted.
+func TestTaskEndpoint_SafetyTierOverride(t *testing.T) {
+	tiers := []string{"observe", "record", "act"}
+	for _, tier := range tiers {
+		t.Run(tier, func(t *testing.T) {
+			_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+			w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+				"message": "hello",
+				"config": map[string]any{
+					"safety_tier": tier,
+				},
+			})
+			if w.Code != http.StatusOK {
+				t.Errorf("expected 200 with safety_tier=%s, got %d: %s", tier, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestTaskEndpoint_MissingMessage returns 400.
+func TestTaskEndpoint_MissingMessage(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty message, got %d", w.Code)
+	}
+}
+
+// TestTaskEndpoint_InvalidJSON returns 400.
+func TestTaskEndpoint_InvalidJSON(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	req := httptest.NewRequest("POST", "/api/v1/tasks", strings.NewReader("{bad"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+// TestTaskEndpoint_InvalidTimeout returns 400.
+func TestTaskEndpoint_InvalidTimeout(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "hello",
+		"config": map[string]any{
+			"timeout": "not-a-duration",
+		},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid timeout, got %d", w.Code)
+	}
+}
+
+// TestTaskEndpoint_InvalidMaxIterations returns 400.
+func TestTaskEndpoint_InvalidMaxIterations(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	zero := 0
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "hello",
+		"config": map[string]any{
+			"max_iterations": zero,
+		},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for max_iterations=0, got %d", w.Code)
+	}
+}
+
+// TestTaskEndpoint_NoLLM returns 503.
+func TestTaskEndpoint_NoLLM(t *testing.T) {
+	_, mux := setupTaskServer(t, nil)
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hello"})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 without LLM, got %d", w.Code)
+	}
+}
+
+// TestTaskEndpoint_ToolCallsInSteps verifies tool calls appear in step data.
+func TestTaskEndpoint_ToolCallsInSteps(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskToolLLM{})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "list services"})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.Status != "completed" {
+		t.Fatalf("status = %q, want completed", resp.Status)
+	}
+
+	// Should have 2 steps: one with tool calls, one with final answer
+	if len(resp.Steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(resp.Steps))
+	}
+
+	// First step should have tool calls
+	if len(resp.Steps[0].LLMResponse.ToolCalls) == 0 {
+		t.Error("first step should have tool calls")
+	}
+	if resp.Steps[0].LLMResponse.ToolCalls[0].Name != "graph_query" {
+		t.Errorf("tool call name = %q, want %q", resp.Steps[0].LLMResponse.ToolCalls[0].Name, "graph_query")
+	}
+
+	// Tool results should be present (will show error since graph_query tool isn't
+	// actually registered, but the structure should be there)
+	if len(resp.Steps[0].ToolResults) == 0 {
+		t.Error("first step should have tool results")
+	}
+
+	// Final answer
+	if resp.FinalAnswer != "Found 3 services in the graph." {
+		t.Errorf("final_answer = %q, want %q", resp.FinalAnswer, "Found 3 services in the graph.")
+	}
+}
+
+// TestTaskEndpoint_ToolsUsedList verifies deduplicated tools_used list.
+func TestTaskEndpoint_ToolsUsedList(t *testing.T) {
+	_, mux := setupTaskServer(t, &taskToolLLM{})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "list services"})
+
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if len(resp.ToolsUsed) == 0 {
+		t.Error("tools_used should not be empty when tools were called")
+	}
+	found := false
+	for _, name := range resp.ToolsUsed {
+		if name == "graph_query" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("tools_used = %v, expected to contain 'graph_query'", resp.ToolsUsed)
+	}
+}

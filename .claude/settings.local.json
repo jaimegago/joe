@@ -100,7 +100,8 @@
       "Read(//Users/jaimegago/joe/{gsub\\(/%/**)",
       "Bash(python3 /dev/stdin:*)",
       "Bash(echo \"EXIT: $?\")",
-      "Read(//Users/jaimegago/joe/{pct=$NF; gsub\\(/%/**)"
+      "Read(//Users/jaimegago/joe/{pct=$NF; gsub\\(/%/**)",
+      "Bash(git submodule:*)"
     ],
     "additionalDirectories": [
       "/Users/jaimegago/joe/docs",
