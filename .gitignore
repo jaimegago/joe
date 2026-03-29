@@ -36,3 +36,6 @@ vendor/
 
 # Joe runtime data (local dev)
 ~/.joe/
+
+# Claude
+.claude/
