@@ -38,6 +38,7 @@ type Agent struct {
 	maxIterations  int
 	adapterFactory AdapterFactory // optional, for hot-swap
 	currentModel   string         // display name of active model
+	observer       RunObserver    // optional, for step-by-step observation
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
@@ -70,6 +71,11 @@ func (a *Agent) SwitchModel(ctx context.Context, provider, model, displayName st
 	a.currentModel = displayName
 	a.mu.Unlock()
 	return nil
+}
+
+// SetMaxIterations overrides the default max iterations for the agentic loop.
+func (a *Agent) SetMaxIterations(n int) {
+	a.maxIterations = n
 }
 
 // CurrentModelName returns the display name of the active model.
@@ -117,6 +123,15 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			Tools:        toolDefs,
 		}
 
+		// Capture tool names for observer
+		var toolNames []string
+		if a.observer != nil {
+			toolNames = make([]string, len(toolDefs))
+			for j, td := range toolDefs {
+				toolNames[j] = td.Name
+			}
+		}
+
 		// Call LLM (under read lock so SwitchModel can't swap mid-call)
 		a.mu.RLock()
 		resp, err := a.llm.Chat(ctx, req)
@@ -135,6 +150,21 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				session.AddMessage(ctx, llm.Message{
 					Role:    "assistant",
 					Content: resp.Content,
+				})
+			}
+
+			// Notify observer of final step (no tool execution)
+			if a.observer != nil {
+				a.observer.OnStep(StepRecord{
+					StepNumber: i + 1,
+					LLMRequest: LLMRequestSummary{
+						MessageCount:   len(session.Messages),
+						ToolsAvailable: toolNames,
+					},
+					LLMResponse: LLMResponseSummary{
+						Content: resp.Content,
+						Usage:   resp.Usage,
+					},
 				})
 			}
 
@@ -159,11 +189,43 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			}
 		}
 
+		toolStart := time.Now()
 		results, err := a.executor.ExecuteBatch(ctx, toolCallRequests)
 		if err != nil && !errors.Is(err, tools.ErrAllToolsFailed) {
 			// Only return fatal errors, not tool execution failures
 			// Tool failures are added to conversation for LLM to handle
 			return "", fmt.Errorf("tool execution failed: %w", err)
+		}
+		toolDuration := time.Since(toolStart)
+
+		// Notify observer of step with tool results
+		if a.observer != nil {
+			toolResultRecords := make([]ToolResultRecord, len(results))
+			for j, r := range results {
+				rec := ToolResultRecord{
+					ID:         r.ID,
+					Name:       r.Name,
+					Result:     r.Result,
+					DurationMs: int(toolDuration.Milliseconds()) / max(len(results), 1),
+				}
+				if r.Error != nil {
+					rec.Error = r.Error.Error()
+				}
+				toolResultRecords[j] = rec
+			}
+			a.observer.OnStep(StepRecord{
+				StepNumber: i + 1,
+				LLMRequest: LLMRequestSummary{
+					MessageCount:   len(session.Messages),
+					ToolsAvailable: toolNames,
+				},
+				LLMResponse: LLMResponseSummary{
+					Content:   resp.Content,
+					ToolCalls: resp.ToolCalls,
+					Usage:     resp.Usage,
+				},
+				ToolResults: toolResultRecords,
+			})
 		}
 
 		// Convert tool results to messages and add to history

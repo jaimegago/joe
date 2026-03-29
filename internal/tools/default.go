@@ -61,12 +61,30 @@ func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
 	return registry
 }
 
-// NewDefaultRegistryWithClient creates a registry with all default tools plus
-// core tools that communicate with joecored via the HTTP client.
-func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.SafetyPolicy) *Registry {
-	registry := NewDefaultRegistry(policy)
+// NewCoreRegistry creates a registry with shared diagnostic tools and core
+// tools that communicate with joecored via the HTTP client. Unlike
+// NewDefaultRegistryWithClient, it omits local tools (read_file, write_file,
+// run_command, git tools, askuser) since those only make sense on the user's
+// local machine. This is used by the task execution endpoint on joe-core.
+func NewCoreRegistry(coreClient *client.Client, policy *safety.SafetyPolicy) *Registry {
+	registry := NewRegistry()
 
-	// Register core tools (call joecored API)
+	// Shared diagnostic tools (T1, Go-native, no CLI deps).
+	registry.Register(netcheck.NewTCPConnectTool())
+	registry.Register(netcheck.NewPortScanTool())
+	registry.Register(dnsquery.NewDNSLookupTool())
+	registry.Register(httpreq.NewHTTPRequestTool())
+	registry.Register(sysinfo.NewSystemInfoTool())
+	registry.Register(traceroute.NewTraceRouteTool())
+
+	// Core tools (same set as NewDefaultRegistryWithClient).
+	registerCoreTools(registry, coreClient)
+
+	return registry
+}
+
+// registerCoreTools registers all core tools that communicate with joecored via HTTP.
+func registerCoreTools(registry *Registry, coreClient *client.Client) {
 	registry.Register(coretools.NewListSourcesTool(coreClient))
 	registry.Register(coretools.NewGraphQueryTool(coreClient))
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
@@ -91,7 +109,7 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewPagerDutyIncidentsTool(coreClient))
 	registry.Register(coretools.NewGrafanaDashboardsTool(coreClient))
 
-	// Data store tools (Phase 6.7)
+	// Data store tools
 	registry.Register(coretools.NewPostgresStatTool(coreClient))
 	registry.Register(coretools.NewPostgresQueryTool(coreClient))
 	registry.Register(coretools.NewMySQLStatTool(coreClient))
@@ -105,7 +123,7 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewElasticsearchHealthTool(coreClient))
 	registry.Register(coretools.NewElasticsearchIndicesTool(coreClient))
 
-	// GitOps, CD & IaC tools (Phase 6.8)
+	// GitOps, CD & IaC tools
 	registry.Register(coretools.NewArgoCDAppsTool(coreClient))
 	registry.Register(coretools.NewArgoCDGetAppTool(coreClient))
 	registry.Register(coretools.NewArgoCDDiffTool(coreClient))
@@ -119,7 +137,7 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewHelmGetReleaseTool(coreClient))
 	registry.Register(coretools.NewHelmHistoryTool(coreClient))
 
-	// Networking & Ingress tools (Phase 6.9)
+	// Networking & Ingress tools
 	registry.Register(coretools.NewNginxIngressesTool(coreClient))
 	registry.Register(coretools.NewNginxStatusTool(coreClient))
 	registry.Register(coretools.NewNginxConfigTool(coreClient))
@@ -131,7 +149,7 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewCiliumPoliciesTool(coreClient))
 	registry.Register(coretools.NewCiliumEndpointsTool(coreClient))
 
-	// K8s CRD-based tools (Phase 6.10)
+	// K8s CRD-based tools
 	registry.Register(coretools.NewCertManagerCertsTool(coreClient))
 	registry.Register(coretools.NewCertManagerIssuersTool(coreClient))
 	registry.Register(coretools.NewKEDAScaledObjectsTool(coreClient))
@@ -140,24 +158,24 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewCrossplaneProvidersTool(coreClient))
 	registry.Register(coretools.NewCrossplaneResourcesTool(coreClient))
 
-	// Security & runtime tools (Phase 6.11)
+	// Security & runtime tools
 	registry.Register(coretools.NewFalcoAlertsTool(coreClient))
 	registry.Register(coretools.NewFalcoRulesTool(coreClient))
 
-	// Knowledge store tools (Phase 7)
+	// Knowledge store tools
 	registry.Register(coretools.NewSearchKnowledgeTool(coreClient))
 
-	// Artifact registry tools (Phase 6.13)
+	// Artifact registry tools
 	registry.Register(coretools.NewRegistryQueryTool(coreClient))
 	registry.Register(coretools.NewArtifactoryQueryTool(coreClient))
 	registry.Register(coretools.NewECRQueryTool(coreClient))
 
-	// Documentation co-pilot tools (Phase 8)
+	// Documentation co-pilot tools
 	registry.Register(coretools.NewDetectDocDriftTool(coreClient))
 	registry.Register(coretools.NewGenerateDocDraftTool(coreClient))
 	registry.Register(coretools.NewPublishDocUpdateTool(coreClient))
 
-	// Code review tools (Phase 10)
+	// Code review tools
 	registry.Register(coretools.NewGitHubPRGetTool(coreClient))
 	registry.Register(coretools.NewGitHubPRDiffTool(coreClient))
 	registry.Register(coretools.NewGitHubCommentTool(coreClient))
@@ -165,6 +183,12 @@ func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.Safe
 	registry.Register(coretools.NewGitLabMRGetTool(coreClient))
 	registry.Register(coretools.NewGitLabMRDiffTool(coreClient))
 	registry.Register(coretools.NewGitLabCommentTool(coreClient))
+}
 
+// NewDefaultRegistryWithClient creates a registry with all default tools plus
+// core tools that communicate with joecored via the HTTP client.
+func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.SafetyPolicy) *Registry {
+	registry := NewDefaultRegistry(policy)
+	registerCoreTools(registry, coreClient)
 	return registry
 }

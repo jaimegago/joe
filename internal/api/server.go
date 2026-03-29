@@ -56,6 +56,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerAdminRoutes(mux, apiPrefix)
 	s.registerReviewRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
+	s.registerTaskRoutes(mux, apiPrefix)
 	s.registerWebUIRoutes(mux, apiPrefix)
 }
 
