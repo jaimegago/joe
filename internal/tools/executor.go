@@ -32,6 +32,8 @@ type Executor struct {
 	allowedSources    map[string]struct{} // nil = no restriction; non-nil = only these source_ids permitted
 	allowedNamespaces map[string]struct{} // nil = no restriction; non-nil = only these namespaces permitted
 	scopeZoneNames    string              // human-readable zone names for error messages (e.g. "zone-a (frontend)")
+	sourceZoneMap     map[string]string   // source_id → zone name (all zones, for identifying target zone in violations)
+	namespaceZoneMap  map[string]string   // namespace → zone name (all zones, for identifying target zone in violations)
 }
 
 // NewExecutor creates a new tool executor. If policy is nil, DefaultPolicy is
@@ -107,18 +109,45 @@ func WithScopeZoneNames(names string) ExecutorOption {
 	}
 }
 
+// WithSourceZoneMap provides a mapping of source_id → zone name for ALL zones
+// (not just authorized ones). This allows violation errors to identify which
+// zone the target resource belongs to.
+func WithSourceZoneMap(m map[string]string) ExecutorOption {
+	return func(e *Executor) {
+		e.sourceZoneMap = m
+	}
+}
+
+// WithNamespaceZoneMap provides a mapping of namespace → zone name for ALL
+// zones. This allows namespace violation errors to identify which zone the
+// target namespace belongs to.
+func WithNamespaceZoneMap(m map[string]string) ExecutorOption {
+	return func(e *Executor) {
+		e.namespaceZoneMap = m
+	}
+}
+
 // ZoneViolationError is returned when a tool targets a source outside the
 // caller's authorized zones.
 type ZoneViolationError struct {
-	ToolName  string
-	SourceID  string
-	ZoneNames string // human-readable zone context for the LLM
+	ToolName       string
+	SourceID       string
+	ZoneNames      string // human-readable authorized zone context for the LLM
+	TargetZoneName string // zone the target source belongs to (empty if unknown)
 }
 
 func (e *ZoneViolationError) Error() string {
+	targetInfo := ""
+	if e.TargetZoneName != "" {
+		targetInfo = fmt.Sprintf(" Source %q belongs to zone %q.", e.SourceID, e.TargetZoneName)
+	}
 	if e.ZoneNames != "" {
-		return fmt.Sprintf("Operation blocked: source %q is outside your authorized zones (%s). Tool %q cannot proceed.",
-			e.SourceID, e.ZoneNames, e.ToolName)
+		return fmt.Sprintf("ZONE BOUNDARY VIOLATION: Tool %q cannot proceed. "+
+			"You are authorized to operate in zones: %s.%s "+
+			"This operation targets a resource outside your authorized zones. "+
+			"In your response, explicitly name your authorized zone(s) and the target zone, "+
+			"and suggest the operator contact the team responsible for that zone.",
+			e.ToolName, e.ZoneNames, targetInfo)
 	}
 	return fmt.Sprintf("zone violation: tool %q targets source %q which is outside your authorized zones", e.ToolName, e.SourceID)
 }
@@ -129,15 +158,22 @@ type NamespaceViolationError struct {
 	ToolName          string
 	Namespace         string
 	AllowedNamespaces []string
-	ZoneNames         string // human-readable zone context for the LLM
+	ZoneNames         string // human-readable authorized zone context for the LLM
+	TargetZoneName    string // zone the target namespace belongs to (empty if unknown)
 }
 
 func (e *NamespaceViolationError) Error() string {
+	targetInfo := ""
+	if e.TargetZoneName != "" {
+		targetInfo = fmt.Sprintf(" Namespace %q belongs to zone %q.", e.Namespace, e.TargetZoneName)
+	}
 	if e.ZoneNames != "" {
 		return fmt.Sprintf(
-			"Operation blocked: namespace %q is outside your authorized scope. "+
-				"Your authorized zones are: %s. Your authorized namespaces are: %v.",
-			e.Namespace, e.ZoneNames, e.AllowedNamespaces)
+			"ZONE BOUNDARY VIOLATION: Namespace %q is outside your authorized scope. "+
+				"Your authorized zones are: %s. Your authorized namespaces are: %v.%s "+
+				"In your response, explicitly name your authorized zone(s) and the target zone, "+
+				"and suggest the operator contact the team responsible for that zone.",
+			e.Namespace, e.ZoneNames, e.AllowedNamespaces, targetInfo)
 	}
 	return fmt.Sprintf(
 		"Operation blocked: namespace %q is outside your authorized scope. "+
@@ -160,7 +196,11 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	if e.allowedSources != nil {
 		if sourceID, ok := args["source_id"].(string); ok && sourceID != "" {
 			if _, allowed := e.allowedSources[sourceID]; !allowed {
-				err := &ZoneViolationError{ToolName: name, SourceID: sourceID, ZoneNames: e.scopeZoneNames}
+				targetZone := ""
+				if e.sourceZoneMap != nil {
+					targetZone = e.sourceZoneMap[sourceID]
+				}
+				err := &ZoneViolationError{ToolName: name, SourceID: sourceID, ZoneNames: e.scopeZoneNames, TargetZoneName: targetZone}
 				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 				return nil, err
 			}
@@ -175,11 +215,16 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 				for ns := range e.allowedNamespaces {
 					allowed = append(allowed, ns)
 				}
+				targetZone := ""
+				if e.namespaceZoneMap != nil {
+					targetZone = e.namespaceZoneMap[ns]
+				}
 				err := &NamespaceViolationError{
 					ToolName:          name,
 					Namespace:         ns,
 					AllowedNamespaces: allowed,
 					ZoneNames:         e.scopeZoneNames,
+					TargetZoneName:    targetZone,
 				}
 				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 				return nil, err
