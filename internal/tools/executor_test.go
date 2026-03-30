@@ -654,6 +654,133 @@ func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
 	}
 }
 
+// --- Zone scope tests ---
+
+func TestExecutor_ZoneScope_AllowedSource(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "pods", nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a", "cluster-b"}))
+
+	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-a",
+		"resource":  "pods",
+	})
+	if err != nil {
+		t.Fatalf("tool targeting allowed source should succeed, got: %v", err)
+	}
+	if result != "pods" {
+		t.Errorf("result = %v, want pods", result)
+	}
+}
+
+func TestExecutor_ZoneScope_DeniedSource(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			t.Fatal("tool should not execute for unauthorized source")
+			return nil, nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a"}))
+
+	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-b",
+		"resource":  "pods",
+	})
+	if err == nil {
+		t.Fatal("expected zone violation error for unauthorized source")
+	}
+
+	var zoneErr *ZoneViolationError
+	if !errors.As(err, &zoneErr) {
+		t.Fatalf("expected ZoneViolationError, got %T: %v", err, err)
+	}
+	if zoneErr.SourceID != "cluster-b" {
+		t.Errorf("ZoneViolationError.SourceID = %q, want %q", zoneErr.SourceID, "cluster-b")
+	}
+}
+
+func TestExecutor_ZoneScope_NoSourceID_Allowed(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "graph_query",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "nodes", nil
+		},
+	})
+
+	// Even with zone restrictions, tools without source_id should work
+	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a"}))
+
+	result, err := executor.Execute(context.Background(), "graph_query", map[string]any{
+		"query": "services",
+	})
+	if err != nil {
+		t.Fatalf("tool without source_id should not be blocked by zone scope: %v", err)
+	}
+	if result != "nodes" {
+		t.Errorf("result = %v, want nodes", result)
+	}
+}
+
+func TestExecutor_ZoneScope_NilAllowedSources_NoRestriction(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return "ok", nil
+		},
+	})
+
+	// Default (nil allowedSources) should not restrict anything
+	executor := NewExecutor(registry, nil)
+
+	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "any-cluster",
+		"resource":  "pods",
+	})
+	if err != nil {
+		t.Fatalf("nil allowedSources should not restrict: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("result = %v, want ok", result)
+	}
+}
+
+func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			t.Fatal("should not execute")
+			return nil, nil
+		},
+	})
+
+	// Empty slice = caller has no zone access, all source-scoped calls denied
+	executor := NewExecutor(registry, nil, WithAllowedSources([]string{}))
+
+	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "any-cluster",
+		"resource":  "pods",
+	})
+	if err == nil {
+		t.Fatal("empty allowedSources should deny all source-scoped calls")
+	}
+	var zoneErr *ZoneViolationError
+	if !errors.As(err, &zoneErr) {
+		t.Fatalf("expected ZoneViolationError, got %T: %v", err, err)
+	}
+}
+
 // trackingNotifier records calls for test assertions.
 type trackingNotifier struct {
 	beforeCalled bool

@@ -17,16 +17,18 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 
 // Executor executes tool calls from the LLM with safety policy enforcement.
 // Before every tool.Execute():
-//  1. Classify the tool's tier (T1/T2/T3)
-//  2. Check safety policy (T2/T3 require authorization)
-//  3. Notify before execution (T3 only — blocking, cancellable)
-//  4. Execute the tool
-//  5. Notify after execution (T2 and T3)
+//  1. Check zone scope (source_id must be in allowed set, if configured)
+//  2. Classify the tool's tier (T1/T2/T3)
+//  3. Check safety policy (T2/T3 require authorization)
+//  4. Notify before execution (T3 only — blocking, cancellable)
+//  5. Execute the tool
+//  6. Notify after execution (T2 and T3)
 type Executor struct {
-	registry *Registry
-	metrics  *observability.Metrics
-	policy   *safety.SafetyPolicy
-	notifier safety.ActionNotifier
+	registry       *Registry
+	metrics        *observability.Metrics
+	policy         *safety.SafetyPolicy
+	notifier       safety.ActionNotifier
+	allowedSources map[string]struct{} // nil = no restriction; non-nil = only these source_ids permitted
 }
 
 // NewExecutor creates a new tool executor. If policy is nil, DefaultPolicy is
@@ -65,6 +67,32 @@ func WithNotifier(n safety.ActionNotifier) ExecutorOption {
 	}
 }
 
+// WithAllowedSources restricts the executor to only permit tool calls that
+// target one of the given source IDs. Tools that don't use source_id are
+// unaffected. When the set is empty, ALL source-scoped tool calls are denied
+// (the caller has no zone access). When nil (the default), no restriction
+// is applied.
+func WithAllowedSources(sourceIDs []string) ExecutorOption {
+	return func(e *Executor) {
+		m := make(map[string]struct{}, len(sourceIDs))
+		for _, id := range sourceIDs {
+			m[id] = struct{}{}
+		}
+		e.allowedSources = m
+	}
+}
+
+// ZoneViolationError is returned when a tool targets a source outside the
+// caller's authorized zones.
+type ZoneViolationError struct {
+	ToolName string
+	SourceID string
+}
+
+func (e *ZoneViolationError) Error() string {
+	return fmt.Sprintf("zone violation: tool %q targets source %q which is outside your authorized zones", e.ToolName, e.SourceID)
+}
+
 // Execute executes a single tool call with safety enforcement.
 func (e *Executor) Execute(ctx context.Context, name string, args map[string]any) (any, error) {
 	start := time.Now()
@@ -76,10 +104,21 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		return nil, fmt.Errorf("failed to get tool %s: %w", name, err)
 	}
 
-	// Step 2: Classify and check safety policy
+	// Step 2: Zone scope check — block calls targeting sources outside authorized zones
+	if e.allowedSources != nil {
+		if sourceID, ok := args["source_id"].(string); ok && sourceID != "" {
+			if _, allowed := e.allowedSources[sourceID]; !allowed {
+				err := &ZoneViolationError{ToolName: name, SourceID: sourceID}
+				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
+				return nil, err
+			}
+		}
+	}
+
+	// Step 3: Classify and check safety policy
 	classification := safety.ClassifyTool(name)
 
-	// Safe mode: only T1 (Observe) tools are permitted while joecored is in
+	// Safe mode: only T1 (Observe) tools are permitted while joe-core is in
 	// emergency shutdown recovery mode.
 	if safety.IsSafeModeActive() && classification.Tier > safety.TierObserve {
 		err := fmt.Errorf("safe mode active: only read-only (T1) tools are allowed — run 'joe unlock --reason \"...\"' to resume")
@@ -92,7 +131,7 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		return nil, err
 	}
 
-	// Step 3: Pre-execution notification (T3 only — blocking, cancellable)
+	// Step 4: Pre-execution notification (T3 only — blocking, cancellable)
 	if classification.Tier == safety.TierAct {
 		info := safety.ActionInfo{
 			ToolName:    name,
@@ -106,10 +145,10 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		}
 	}
 
-	// Step 4: Execute the tool
+	// Step 5: Execute the tool
 	result, err := tool.Execute(ctx, args)
 
-	// Step 5: Post-execution notification (T2 and T3)
+	// Step 6: Post-execution notification (T2 and T3)
 	if classification.Tier >= safety.TierRecord {
 		info := safety.ActionInfo{
 			ToolName:    name,

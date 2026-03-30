@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jaimegago/joe/internal/client"
@@ -31,9 +32,10 @@ type taskRequest struct {
 }
 
 type taskConfig struct {
-	MaxIterations *int   `json:"max_iterations,omitempty"`
-	SafetyTier    string `json:"safety_tier,omitempty"`
-	Timeout       string `json:"timeout,omitempty"`
+	MaxIterations *int     `json:"max_iterations,omitempty"`
+	SafetyTier    string   `json:"safety_tier,omitempty"`
+	Timeout       string   `json:"timeout,omitempty"`
+	AllowedZones  []string `json:"allowed_zones,omitempty"` // restricts agent to sources in these zones
 }
 
 type taskResponse struct {
@@ -128,6 +130,9 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	// Resolve safety policy
 	safetyPolicy := h.resolveSafetyPolicy(req.Config)
 
+	// Resolve zone scope — maps allowed_zones to the set of source IDs in those zones
+	allowedSourceIDs, zoneScopeDesc := h.resolveZoneScope(r.Context(), req.Config)
+
 	// Session setup
 	sessionID := req.SessionID
 	if sessionID == "" {
@@ -161,12 +166,17 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	loopbackClient := client.New(loopbackURL, clientOpts...)
 
 	registry := tools.NewCoreRegistry(loopbackClient, safetyPolicy)
-	executor := tools.NewExecutor(registry, h.server.services.Metrics,
-		tools.WithPolicy(safetyPolicy),
-	)
+	execOpts := []tools.ExecutorOption{tools.WithPolicy(safetyPolicy)}
+	if allowedSourceIDs != nil {
+		execOpts = append(execOpts, tools.WithAllowedSources(allowedSourceIDs))
+	}
+	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
 	// Build graph context for system prompt
 	systemPrompt := taskSystemPrompt
+	if zoneScopeDesc != "" {
+		systemPrompt += "\n\n" + zoneScopeDesc
+	}
 	if h.server.services.Graph != nil {
 		if summary, err := h.server.services.Graph.Summary(r.Context()); err == nil {
 			systemPrompt += fmt.Sprintf(
@@ -337,6 +347,66 @@ func (h *taskHandler) resolveSafetyPolicy(cfg *taskConfig) *safety.SafetyPolicy 
 		// Permissive — keep defaults (T2 enabled, T3 per default policy)
 	}
 	return policy
+}
+
+// resolveZoneScope maps allowed_zones from the task config to a concrete list
+// of source IDs that the agent may target, plus a human-readable description
+// for the system prompt. Returns (nil, "") when no zone restriction is configured.
+func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (sourceIDs []string, scopeDesc string) {
+	if cfg == nil || len(cfg.AllowedZones) == 0 {
+		return nil, ""
+	}
+
+	rbacRepo := h.server.services.RBAC
+	if rbacRepo == nil {
+		slog.Warn("task: allowed_zones specified but RBAC is not configured — ignoring")
+		return nil, ""
+	}
+
+	// Build set of allowed zone IDs for fast lookup
+	allowedZoneSet := make(map[string]struct{}, len(cfg.AllowedZones))
+	for _, z := range cfg.AllowedZones {
+		allowedZoneSet[z] = struct{}{}
+	}
+
+	// Resolve zone names for the prompt
+	var zoneNames []string
+	zones, err := rbacRepo.ListZones(ctx)
+	if err != nil {
+		slog.Warn("task: failed to list zones for scope resolution", "error", err)
+	}
+	for _, z := range zones {
+		if _, ok := allowedZoneSet[z.ID]; ok {
+			zoneNames = append(zoneNames, z.Name+" ("+z.ID+")")
+		}
+	}
+
+	// Map zones → source IDs
+	assignments, err := rbacRepo.ListAssignments(ctx)
+	if err != nil {
+		slog.Warn("task: failed to list zone assignments for scope resolution", "error", err)
+		return nil, ""
+	}
+
+	var allowed []string
+	for _, a := range assignments {
+		if _, ok := allowedZoneSet[a.ZoneID]; ok {
+			allowed = append(allowed, a.SourceID)
+		}
+	}
+
+	// Build scope description for the system prompt
+	scopeDesc = "SECURITY SCOPE — MANDATORY BOUNDARY:\n"
+	scopeDesc += fmt.Sprintf("You are authorized to operate ONLY within these zones: %s\n", strings.Join(zoneNames, ", "))
+	if len(allowed) > 0 {
+		scopeDesc += fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(allowed, ", "))
+	} else {
+		scopeDesc += "No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n"
+	}
+	scopeDesc += "You MUST refuse any request that targets resources, namespaces, or sources outside your authorized zones. " +
+		"Explain to the user that the requested resource is outside your authorized scope."
+
+	return allowed, scopeDesc
 }
 
 func isMaxIterationsError(err error) bool {
