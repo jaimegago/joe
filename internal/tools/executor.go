@@ -18,17 +18,20 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 // Executor executes tool calls from the LLM with safety policy enforcement.
 // Before every tool.Execute():
 //  1. Check zone scope (source_id must be in allowed set, if configured)
-//  2. Classify the tool's tier (T1/T2/T3)
-//  3. Check safety policy (T2/T3 require authorization)
-//  4. Notify before execution (T3 only — blocking, cancellable)
-//  5. Execute the tool
-//  6. Notify after execution (T2 and T3)
+//  2. Check namespace scope (namespace must be in allowed set, if configured)
+//  3. Classify the tool's tier (T1/T2/T3)
+//  4. Check safety policy (T2/T3 require authorization)
+//  5. Notify before execution (T3 only — blocking, cancellable)
+//  6. Execute the tool
+//  7. Notify after execution (T2 and T3)
 type Executor struct {
-	registry       *Registry
-	metrics        *observability.Metrics
-	policy         *safety.SafetyPolicy
-	notifier       safety.ActionNotifier
-	allowedSources map[string]struct{} // nil = no restriction; non-nil = only these source_ids permitted
+	registry          *Registry
+	metrics           *observability.Metrics
+	policy            *safety.SafetyPolicy
+	notifier          safety.ActionNotifier
+	allowedSources    map[string]struct{} // nil = no restriction; non-nil = only these source_ids permitted
+	allowedNamespaces map[string]struct{} // nil = no restriction; non-nil = only these namespaces permitted
+	scopeZoneNames    string              // human-readable zone names for error messages (e.g. "zone-a (frontend)")
 }
 
 // NewExecutor creates a new tool executor. If policy is nil, DefaultPolicy is
@@ -82,15 +85,64 @@ func WithAllowedSources(sourceIDs []string) ExecutorOption {
 	}
 }
 
+// WithAllowedNamespaces restricts the executor to only permit Kubernetes tool
+// calls that target one of the given namespaces. Tools that don't use a
+// namespace arg are unaffected. When the set is empty, ALL namespace-scoped
+// K8s tool calls are denied. When nil (the default), no restriction is applied.
+func WithAllowedNamespaces(namespaces []string) ExecutorOption {
+	return func(e *Executor) {
+		m := make(map[string]struct{}, len(namespaces))
+		for _, ns := range namespaces {
+			m[ns] = struct{}{}
+		}
+		e.allowedNamespaces = m
+	}
+}
+
+// WithScopeZoneNames sets the human-readable zone names included in scope
+// violation error messages so the LLM can articulate zone boundaries.
+func WithScopeZoneNames(names string) ExecutorOption {
+	return func(e *Executor) {
+		e.scopeZoneNames = names
+	}
+}
+
 // ZoneViolationError is returned when a tool targets a source outside the
 // caller's authorized zones.
 type ZoneViolationError struct {
-	ToolName string
-	SourceID string
+	ToolName  string
+	SourceID  string
+	ZoneNames string // human-readable zone context for the LLM
 }
 
 func (e *ZoneViolationError) Error() string {
+	if e.ZoneNames != "" {
+		return fmt.Sprintf("Operation blocked: source %q is outside your authorized zones (%s). Tool %q cannot proceed.",
+			e.SourceID, e.ZoneNames, e.ToolName)
+	}
 	return fmt.Sprintf("zone violation: tool %q targets source %q which is outside your authorized zones", e.ToolName, e.SourceID)
+}
+
+// NamespaceViolationError is returned when a tool targets a Kubernetes
+// namespace outside the caller's authorized scope.
+type NamespaceViolationError struct {
+	ToolName          string
+	Namespace         string
+	AllowedNamespaces []string
+	ZoneNames         string // human-readable zone context for the LLM
+}
+
+func (e *NamespaceViolationError) Error() string {
+	if e.ZoneNames != "" {
+		return fmt.Sprintf(
+			"Operation blocked: namespace %q is outside your authorized scope. "+
+				"Your authorized zones are: %s. Your authorized namespaces are: %v.",
+			e.Namespace, e.ZoneNames, e.AllowedNamespaces)
+	}
+	return fmt.Sprintf(
+		"Operation blocked: namespace %q is outside your authorized scope. "+
+			"Your authorized namespaces are: %v.",
+		e.Namespace, e.AllowedNamespaces)
 }
 
 // Execute executes a single tool call with safety enforcement.
@@ -108,7 +160,27 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	if e.allowedSources != nil {
 		if sourceID, ok := args["source_id"].(string); ok && sourceID != "" {
 			if _, allowed := e.allowedSources[sourceID]; !allowed {
-				err := &ZoneViolationError{ToolName: name, SourceID: sourceID}
+				err := &ZoneViolationError{ToolName: name, SourceID: sourceID, ZoneNames: e.scopeZoneNames}
+				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
+				return nil, err
+			}
+		}
+	}
+
+	// Step 2b: Namespace scope check — block K8s tool calls targeting namespaces outside authorized scope
+	if e.allowedNamespaces != nil {
+		if ns, ok := args["namespace"].(string); ok && ns != "" {
+			if _, allowed := e.allowedNamespaces[ns]; !allowed {
+				allowed := make([]string, 0, len(e.allowedNamespaces))
+				for ns := range e.allowedNamespaces {
+					allowed = append(allowed, ns)
+				}
+				err := &NamespaceViolationError{
+					ToolName:          name,
+					Namespace:         ns,
+					AllowedNamespaces: allowed,
+					ZoneNames:         e.scopeZoneNames,
+				}
 				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 				return nil, err
 			}

@@ -545,7 +545,7 @@ func TestTaskEndpoint_ZoneViolationBlocked(t *testing.T) {
 	if tr.Error == "" {
 		t.Error("tool result should contain a zone violation error")
 	}
-	if !strings.Contains(tr.Error, "zone violation") {
+	if !strings.Contains(tr.Error, "outside your authorized zones") {
 		t.Errorf("tool error = %q, want zone violation message", tr.Error)
 	}
 }

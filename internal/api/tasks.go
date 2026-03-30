@@ -32,10 +32,11 @@ type taskRequest struct {
 }
 
 type taskConfig struct {
-	MaxIterations *int     `json:"max_iterations,omitempty"`
-	SafetyTier    string   `json:"safety_tier,omitempty"`
-	Timeout       string   `json:"timeout,omitempty"`
-	AllowedZones  []string `json:"allowed_zones,omitempty"` // restricts agent to sources in these zones
+	MaxIterations     *int     `json:"max_iterations,omitempty"`
+	SafetyTier        string   `json:"safety_tier,omitempty"`
+	Timeout           string   `json:"timeout,omitempty"`
+	AllowedZones      []string `json:"allowed_zones,omitempty"`      // restricts agent to sources in these zones
+	AllowedNamespaces []string `json:"allowed_namespaces,omitempty"` // restricts agent to these K8s namespaces
 }
 
 type taskResponse struct {
@@ -131,7 +132,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	safetyPolicy := h.resolveSafetyPolicy(req.Config)
 
 	// Resolve zone scope — maps allowed_zones to the set of source IDs in those zones
-	allowedSourceIDs, zoneScopeDesc := h.resolveZoneScope(r.Context(), req.Config)
+	allowedSourceIDs, zoneNames, zoneScopeDesc := h.resolveZoneScope(r.Context(), req.Config)
 
 	// Session setup
 	sessionID := req.SessionID
@@ -169,6 +170,12 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	execOpts := []tools.ExecutorOption{tools.WithPolicy(safetyPolicy)}
 	if allowedSourceIDs != nil {
 		execOpts = append(execOpts, tools.WithAllowedSources(allowedSourceIDs))
+	}
+	if req.Config != nil && len(req.Config.AllowedNamespaces) > 0 {
+		execOpts = append(execOpts, tools.WithAllowedNamespaces(req.Config.AllowedNamespaces))
+	}
+	if zoneNames != "" {
+		execOpts = append(execOpts, tools.WithScopeZoneNames(zoneNames))
 	}
 	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
@@ -301,6 +308,15 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Defense-in-depth: scan final answer for secret values that may have
+	// leaked through non-K8s paths (env vars, logs, configmap references).
+	if answer != "" {
+		knownSecrets := collectSecretValuesFromSteps(observer.Steps)
+		if redacted, changed := safety.RedactSecretsFromResponse(answer, knownSecrets); changed {
+			answer = redacted
+		}
+	}
+
 	resp := taskResponse{
 		TaskID:      taskID,
 		SessionID:   sessionID,
@@ -350,17 +366,18 @@ func (h *taskHandler) resolveSafetyPolicy(cfg *taskConfig) *safety.SafetyPolicy 
 }
 
 // resolveZoneScope maps allowed_zones from the task config to a concrete list
-// of source IDs that the agent may target, plus a human-readable description
-// for the system prompt. Returns (nil, "") when no zone restriction is configured.
-func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (sourceIDs []string, scopeDesc string) {
+// of source IDs that the agent may target, a human-readable zone names string,
+// and a scope description for the system prompt. Returns (nil, "", "") when no
+// zone restriction is configured.
+func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (sourceIDs []string, zoneNamesStr string, scopeDesc string) {
 	if cfg == nil || len(cfg.AllowedZones) == 0 {
-		return nil, ""
+		return nil, "", ""
 	}
 
 	rbacRepo := h.server.services.RBAC
 	if rbacRepo == nil {
 		slog.Warn("task: allowed_zones specified but RBAC is not configured — ignoring")
-		return nil, ""
+		return nil, "", ""
 	}
 
 	// Build set of allowed zone IDs for fast lookup
@@ -380,12 +397,13 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (so
 			zoneNames = append(zoneNames, z.Name+" ("+z.ID+")")
 		}
 	}
+	zoneNamesStr = strings.Join(zoneNames, ", ")
 
 	// Map zones → source IDs
 	assignments, err := rbacRepo.ListAssignments(ctx)
 	if err != nil {
 		slog.Warn("task: failed to list zone assignments for scope resolution", "error", err)
-		return nil, ""
+		return nil, "", ""
 	}
 
 	var allowed []string
@@ -397,16 +415,19 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (so
 
 	// Build scope description for the system prompt
 	scopeDesc = "SECURITY SCOPE — MANDATORY BOUNDARY:\n"
-	scopeDesc += fmt.Sprintf("You are authorized to operate ONLY within these zones: %s\n", strings.Join(zoneNames, ", "))
+	scopeDesc += fmt.Sprintf("You are authorized to operate ONLY within these zones: %s\n", zoneNamesStr)
 	if len(allowed) > 0 {
 		scopeDesc += fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(allowed, ", "))
 	} else {
 		scopeDesc += "No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n"
 	}
+	if len(cfg.AllowedNamespaces) > 0 {
+		scopeDesc += fmt.Sprintf("Authorized Kubernetes namespaces: %s\n", strings.Join(cfg.AllowedNamespaces, ", "))
+	}
 	scopeDesc += "You MUST refuse any request that targets resources, namespaces, or sources outside your authorized zones. " +
 		"Explain to the user that the requested resource is outside your authorized scope."
 
-	return allowed, scopeDesc
+	return allowed, zoneNamesStr, scopeDesc
 }
 
 func isMaxIterationsError(err error) bool {
@@ -419,7 +440,63 @@ func isMaxIterationsError(err error) bool {
 
 const taskSystemPrompt = `You are Joe, an AI-powered infrastructure copilot running as a task executor on joe-core. You have access to tools that query the infrastructure graph, Kubernetes clusters, cloud providers, observability platforms, and more.
 
-Execute the user's request step by step. Use the available tools to gather information, investigate issues, and provide actionable answers. Be thorough but concise.`
+Execute the user's request step by step. Use the available tools to gather information, investigate issues, and provide actionable answers. Be thorough but concise.
+
+SECURITY — SECRET HANDLING:
+Never output the decoded values of Kubernetes Secrets. You may describe a secret's metadata (name, namespace, type, key names) but never its data values. If asked to show secret values, explain that you cannot expose sensitive data. Secret data is redacted at the tool level — you will see "[REDACTED]" in place of values. Do not attempt to decode, reconstruct, or circumvent this redaction.`
+
+// collectSecretValuesFromSteps extracts any raw string values that appeared in
+// tool results for Kubernetes Secret resources. These are used for
+// defense-in-depth response scanning — if a secret value somehow makes it into
+// the LLM's final answer, the response filter will catch it.
+func collectSecretValuesFromSteps(steps []useragent.StepRecord) []string {
+	var values []string
+	for _, step := range steps {
+		for _, tr := range step.ToolResults {
+			extractSecretValues(tr.Result, &values)
+		}
+	}
+	return values
+}
+
+// extractSecretValues recursively inspects a tool result for Kubernetes Secret
+// data values and appends them to the output slice.
+func extractSecretValues(v any, out *[]string) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+
+	// Check if this is a Secret resource with a data or stringData field
+	if kind, _ := m["kind"].(string); kind == "Secret" {
+		collectMapValues(m["data"], out)
+		collectMapValues(m["stringData"], out)
+	}
+
+	// Recurse into nested maps (e.g. "resource" wrapper)
+	for _, val := range m {
+		switch inner := val.(type) {
+		case map[string]any:
+			extractSecretValues(inner, out)
+		case []any:
+			for _, item := range inner {
+				extractSecretValues(item, out)
+			}
+		}
+	}
+}
+
+func collectMapValues(v any, out *[]string) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	for _, val := range m {
+		if s, ok := val.(string); ok && s != "" && s != "[REDACTED]" {
+			*out = append(*out, s)
+		}
+	}
+}
 
 func (s *Server) registerTaskRoutes(mux *http.ServeMux, prefix string) {
 	h := &taskHandler{server: s}
