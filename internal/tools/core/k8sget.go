@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jaimegago/joe/internal/llm"
 )
@@ -74,6 +75,7 @@ func (t *K8sGetTool) Execute(ctx context.Context, args map[string]any) (any, err
 		if err != nil {
 			return nil, fmt.Errorf("k8s get resource failed: %w", err)
 		}
+		redactSecretData(obj)
 		return map[string]any{
 			"resource":  obj,
 			"source_id": sourceID,
@@ -86,9 +88,48 @@ func (t *K8sGetTool) Execute(ctx context.Context, args map[string]any) (any, err
 		return nil, fmt.Errorf("k8s list resources failed: %w", err)
 	}
 
+	for _, item := range items {
+		redactSecretData(item)
+	}
+
 	return map[string]any{
 		"resources": items,
 		"count":     len(items),
 		"source_id": sourceID,
 	}, nil
+}
+
+// redactSecretData replaces the values in a Kubernetes Secret's data and
+// stringData fields with "[REDACTED]". This prevents secret values from
+// entering the LLM context. The check uses the "kind" field so it works
+// regardless of whether the resource type was requested as "secrets" or
+// fetched indirectly.
+func redactSecretData(obj map[string]any) {
+	kind, _ := obj["kind"].(string)
+	if kind != "Secret" {
+		return
+	}
+
+	redacted := false
+
+	if data, ok := obj["data"].(map[string]any); ok {
+		for k := range data {
+			data[k] = "[REDACTED]"
+		}
+		redacted = true
+	}
+
+	if stringData, ok := obj["stringData"].(map[string]any); ok {
+		for k := range stringData {
+			stringData[k] = "[REDACTED]"
+		}
+		redacted = true
+	}
+
+	if redacted {
+		slog.Info("k8s_get: redacted secret data values",
+			"name", obj["metadata"],
+			"kind", kind,
+		)
+	}
 }
