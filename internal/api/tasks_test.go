@@ -13,6 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -395,6 +396,171 @@ func TestTaskEndpoint_ToolCallsInSteps(t *testing.T) {
 	// Final answer
 	if resp.FinalAnswer != "Found 3 services in the graph." {
 		t.Errorf("final_answer = %q, want %q", resp.FinalAnswer, "Found 3 services in the graph.")
+	}
+}
+
+// setupTaskServerWithRBAC creates a task test server with RBAC configured.
+// It creates zone-a with source "k8s-frontend" and zone-b with source "k8s-payments".
+func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.ServeMux) {
+	t.Helper()
+
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// Seed sources (FK target for zone assignments)
+	_, err = sqlStore.DB().Exec(`
+		INSERT INTO sources (id, type, name, config) VALUES ('k8s-frontend', 'kubernetes', 'Frontend K8s', '{}');
+		INSERT INTO sources (id, type, name, config) VALUES ('k8s-payments', 'kubernetes', 'Payments K8s', '{}');
+	`)
+	if err != nil {
+		t.Fatalf("seed sources: %v", err)
+	}
+
+	rbacRepo := rbac.NewRepository(sqlStore.DB(), "sqlite")
+	ctx := context.Background()
+
+	// Create zones
+	_, err = rbacRepo.CreateZone(ctx, rbac.Zone{
+		ID: "zone-a", Name: "Frontend Zone",
+		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionQuery},
+	})
+	if err != nil {
+		t.Fatalf("create zone-a: %v", err)
+	}
+	_, err = rbacRepo.CreateZone(ctx, rbac.Zone{
+		ID: "zone-b", Name: "Payments Zone",
+		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionQuery},
+	})
+	if err != nil {
+		t.Fatalf("create zone-b: %v", err)
+	}
+
+	// Assign sources to zones
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-frontend", ZoneID: "zone-a", AssignedBy: "test",
+	}); err != nil {
+		t.Fatalf("assign k8s-frontend: %v", err)
+	}
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-payments", ZoneID: "zone-b", AssignedBy: "test",
+	}); err != nil {
+		t.Fatalf("assign k8s-payments: %v", err)
+	}
+
+	services := &core.Services{
+		Config: &config.Config{
+			Server: config.ServerConfig{Address: "localhost:7777"},
+		},
+		Graph:    graph.NewSQLiteStore(sqlStore.DB(), nil),
+		Store:    sqlStore,
+		Adapters: adapters.NewRegistry(),
+		LLM:      llmAdapter,
+		RBAC:     rbacRepo,
+	}
+
+	srv := New(services)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	return srv, mux
+}
+
+// zoneViolationLLM returns a tool call targeting k8s-payments (zone-b) source.
+type zoneViolationLLM struct {
+	callCount int
+}
+
+func (z *zoneViolationLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	z.callCount++
+	if z.callCount == 1 {
+		// Agent tries to access k8s-payments (zone-b)
+		return &llm.ChatResponse{
+			ToolCalls: []llm.ToolCall{
+				{ID: "tc-zone", Name: "k8s_get", Args: map[string]any{
+					"source_id": "k8s-payments",
+					"resource":  "pods",
+					"namespace": "payments",
+				}},
+			},
+			Usage: llm.TokenUsage{InputTokens: 20, OutputTokens: 10},
+		}, nil
+	}
+	return &llm.ChatResponse{
+		Content: "I cannot access that resource.",
+		Usage:   llm.TokenUsage{InputTokens: 50, OutputTokens: 20},
+	}, nil
+}
+
+func (z *zoneViolationLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	ch := make(chan llm.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+func (z *zoneViolationLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// TestTaskEndpoint_ZoneViolationBlocked verifies that when allowed_zones is set,
+// tool calls targeting sources outside those zones are blocked at the executor level.
+func TestTaskEndpoint_ZoneViolationBlocked(t *testing.T) {
+	_, mux := setupTaskServerWithRBAC(t, &zoneViolationLLM{})
+
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "check pods in payments namespace",
+		"config": map[string]any{
+			"allowed_zones": []string{"zone-a"}, // only zone-a (k8s-frontend)
+		},
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Status != "completed" {
+		t.Fatalf("status = %q, want completed", resp.Status)
+	}
+
+	// The first step should show the tool call was attempted but resulted in an error
+	if len(resp.Steps) < 1 {
+		t.Fatal("expected at least 1 step")
+	}
+
+	// Check that the tool result contains a zone violation error
+	step := resp.Steps[0]
+	if len(step.ToolResults) == 0 {
+		t.Fatal("first step should have tool results")
+	}
+	tr := step.ToolResults[0]
+	if tr.Error == "" {
+		t.Error("tool result should contain a zone violation error")
+	}
+	if !strings.Contains(tr.Error, "zone violation") {
+		t.Errorf("tool error = %q, want zone violation message", tr.Error)
+	}
+}
+
+// TestTaskEndpoint_AllowedZonesAccepted verifies the allowed_zones parameter is accepted.
+func TestTaskEndpoint_AllowedZonesAccepted(t *testing.T) {
+	_, mux := setupTaskServerWithRBAC(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "hello",
+		"config": map[string]any{
+			"allowed_zones": []string{"zone-a"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 with allowed_zones, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
