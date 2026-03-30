@@ -132,7 +132,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	safetyPolicy := h.resolveSafetyPolicy(req.Config)
 
 	// Resolve zone scope — maps allowed_zones to the set of source IDs in those zones
-	allowedSourceIDs, zoneNames, zoneScopeDesc := h.resolveZoneScope(r.Context(), req.Config)
+	zoneScope := h.resolveZoneScope(r.Context(), req.Config)
 
 	// Session setup
 	sessionID := req.SessionID
@@ -168,21 +168,27 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 
 	registry := tools.NewCoreRegistry(loopbackClient, safetyPolicy)
 	execOpts := []tools.ExecutorOption{tools.WithPolicy(safetyPolicy)}
-	if allowedSourceIDs != nil {
-		execOpts = append(execOpts, tools.WithAllowedSources(allowedSourceIDs))
+	if zoneScope.allowedSourceIDs != nil {
+		execOpts = append(execOpts, tools.WithAllowedSources(zoneScope.allowedSourceIDs))
 	}
 	if req.Config != nil && len(req.Config.AllowedNamespaces) > 0 {
 		execOpts = append(execOpts, tools.WithAllowedNamespaces(req.Config.AllowedNamespaces))
 	}
-	if zoneNames != "" {
-		execOpts = append(execOpts, tools.WithScopeZoneNames(zoneNames))
+	if zoneScope.zoneNamesStr != "" {
+		execOpts = append(execOpts, tools.WithScopeZoneNames(zoneScope.zoneNamesStr))
+	}
+	if zoneScope.sourceZoneMap != nil {
+		execOpts = append(execOpts, tools.WithSourceZoneMap(zoneScope.sourceZoneMap))
+	}
+	if zoneScope.namespaceZoneMap != nil {
+		execOpts = append(execOpts, tools.WithNamespaceZoneMap(zoneScope.namespaceZoneMap))
 	}
 	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
 	// Build graph context for system prompt
 	systemPrompt := taskSystemPrompt
-	if zoneScopeDesc != "" {
-		systemPrompt += "\n\n" + zoneScopeDesc
+	if zoneScope.scopeDesc != "" {
+		systemPrompt += "\n\n" + zoneScope.scopeDesc
 	}
 	if h.server.services.Graph != nil {
 		if summary, err := h.server.services.Graph.Summary(r.Context()); err == nil {
@@ -365,19 +371,30 @@ func (h *taskHandler) resolveSafetyPolicy(cfg *taskConfig) *safety.SafetyPolicy 
 	return policy
 }
 
+// zoneScopeResult holds the resolved zone scope data for configuring both the
+// executor and the system prompt.
+type zoneScopeResult struct {
+	allowedSourceIDs []string          // sources in authorized zones
+	zoneNamesStr     string            // human-readable authorized zone names
+	scopeDesc        string            // system prompt zone scope section
+	sourceZoneMap    map[string]string // all source_id → zone name (for executor violation messages)
+	namespaceZoneMap map[string]string // all namespace → zone name (for executor violation messages)
+}
+
 // resolveZoneScope maps allowed_zones from the task config to a concrete list
 // of source IDs that the agent may target, a human-readable zone names string,
-// and a scope description for the system prompt. Returns (nil, "", "") when no
-// zone restriction is configured.
-func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (sourceIDs []string, zoneNamesStr string, scopeDesc string) {
+// a scope description for the system prompt, and full zone maps for enriching
+// violation error messages. Returns a zero zoneScopeResult when no zone
+// restriction is configured.
+func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zoneScopeResult {
 	if cfg == nil || len(cfg.AllowedZones) == 0 {
-		return nil, "", ""
+		return zoneScopeResult{}
 	}
 
 	rbacRepo := h.server.services.RBAC
 	if rbacRepo == nil {
 		slog.Warn("task: allowed_zones specified but RBAC is not configured — ignoring")
-		return nil, "", ""
+		return zoneScopeResult{}
 	}
 
 	// Build set of allowed zone IDs for fast lookup
@@ -386,48 +403,98 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) (so
 		allowedZoneSet[z] = struct{}{}
 	}
 
-	// Resolve zone names for the prompt
-	var zoneNames []string
+	// Resolve ALL zone names (authorized + others) for the prompt and error context
+	var authorizedZoneNames []string
+	zoneIDToName := make(map[string]string)
 	zones, err := rbacRepo.ListZones(ctx)
 	if err != nil {
 		slog.Warn("task: failed to list zones for scope resolution", "error", err)
 	}
 	for _, z := range zones {
+		label := z.Name + " (" + z.ID + ")"
+		zoneIDToName[z.ID] = label
 		if _, ok := allowedZoneSet[z.ID]; ok {
-			zoneNames = append(zoneNames, z.Name+" ("+z.ID+")")
+			authorizedZoneNames = append(authorizedZoneNames, label)
 		}
 	}
-	zoneNamesStr = strings.Join(zoneNames, ", ")
+	zoneNamesStr := strings.Join(authorizedZoneNames, ", ")
 
-	// Map zones → source IDs
+	// Map zones → source IDs (both authorized and full map)
 	assignments, err := rbacRepo.ListAssignments(ctx)
 	if err != nil {
 		slog.Warn("task: failed to list zone assignments for scope resolution", "error", err)
-		return nil, "", ""
+		return zoneScopeResult{}
 	}
 
 	var allowed []string
+	sourceZoneMap := make(map[string]string, len(assignments))
+	// Build per-zone source lists for the "other zones" section of the prompt
+	otherZoneSources := make(map[string][]string) // zone label → source IDs
 	for _, a := range assignments {
+		zoneName := zoneIDToName[a.ZoneID]
+		sourceZoneMap[a.SourceID] = zoneName
 		if _, ok := allowedZoneSet[a.ZoneID]; ok {
 			allowed = append(allowed, a.SourceID)
+		} else {
+			otherZoneSources[zoneName] = append(otherZoneSources[zoneName], a.SourceID)
+		}
+	}
+
+	// Build namespace zone map from AllowedNamespaces config and other zones
+	// For now, namespaces in AllowedNamespaces belong to the authorized zones;
+	// other namespaces encountered at runtime are resolved by the executor.
+	namespaceZoneMap := make(map[string]string)
+	if len(cfg.AllowedNamespaces) > 0 {
+		for _, ns := range cfg.AllowedNamespaces {
+			namespaceZoneMap[ns] = zoneNamesStr
 		}
 	}
 
 	// Build scope description for the system prompt
-	scopeDesc = "SECURITY SCOPE — MANDATORY BOUNDARY:\n"
-	scopeDesc += fmt.Sprintf("You are authorized to operate ONLY within these zones: %s\n", zoneNamesStr)
+	var sb strings.Builder
+	sb.WriteString("SECURITY SCOPE — MANDATORY ZONE BOUNDARIES:\n\n")
+	sb.WriteString(fmt.Sprintf("Your authorized zones: %s\n", zoneNamesStr))
 	if len(allowed) > 0 {
-		scopeDesc += fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(allowed, ", "))
+		sb.WriteString(fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(allowed, ", ")))
 	} else {
-		scopeDesc += "No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n"
+		sb.WriteString("No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n")
 	}
 	if len(cfg.AllowedNamespaces) > 0 {
-		scopeDesc += fmt.Sprintf("Authorized Kubernetes namespaces: %s\n", strings.Join(cfg.AllowedNamespaces, ", "))
+		sb.WriteString(fmt.Sprintf("Authorized Kubernetes namespaces: %s\n", strings.Join(cfg.AllowedNamespaces, ", ")))
 	}
-	scopeDesc += "You MUST refuse any request that targets resources, namespaces, or sources outside your authorized zones. " +
-		"Explain to the user that the requested resource is outside your authorized scope."
 
-	return allowed, zoneNamesStr, scopeDesc
+	// Include other zones so the LLM can identify target zones by name
+	if len(otherZoneSources) > 0 {
+		sb.WriteString("\nOther zones (NOT authorized — for reference only):\n")
+		for zoneName, sources := range otherZoneSources {
+			sb.WriteString(fmt.Sprintf("  - %s: sources %s\n", zoneName, strings.Join(sources, ", ")))
+		}
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString("ZONE BOUNDARY RULES — you MUST follow these exactly:\n\n")
+	sb.WriteString("1. DIRECT REFUSAL: When a request targets a resource, namespace, or source outside your authorized zones, " +
+		"you MUST refuse and your response MUST explicitly state:\n")
+	sb.WriteString("   a) Which zone(s) you ARE authorized to operate in (by name)\n")
+	sb.WriteString("   b) Which zone the requested resource belongs to (by name, using the zone map above)\n")
+	sb.WriteString("   c) That these are different zones and the operation is therefore outside your scope\n")
+	sb.WriteString("   d) Suggest the operator engage the team responsible for that zone or escalate appropriately\n\n")
+	sb.WriteString("2. IMPLICIT ZONE CROSSING: When you are performing a multi-step investigation and a next step would " +
+		"require accessing resources in a namespace, source, or zone outside your authorized scope:\n")
+	sb.WriteString("   a) STOP the investigation at that point — do NOT attempt the cross-zone tool call\n")
+	sb.WriteString("   b) Explain what you found so far within your authorized zone\n")
+	sb.WriteString("   c) Explain that continuing the investigation would require access to [name the target zone]\n")
+	sb.WriteString("   d) State that [target zone] is outside your authorized zone(s) [name them]\n")
+	sb.WriteString("   e) Suggest the operator engage the team responsible for that zone to continue the investigation\n\n")
+	sb.WriteString("3. Keep your tone helpful and operational — explain zone boundaries as a collaboration point, not a blocker.")
+
+	return zoneScopeResult{
+		allowedSourceIDs: allowed,
+		zoneNamesStr:     zoneNamesStr,
+		scopeDesc:        sb.String(),
+		sourceZoneMap:    sourceZoneMap,
+		namespaceZoneMap: namespaceZoneMap,
+	}
 }
 
 func isMaxIterationsError(err error) bool {
