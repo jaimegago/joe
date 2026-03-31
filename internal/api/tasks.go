@@ -32,11 +32,12 @@ type taskRequest struct {
 }
 
 type taskConfig struct {
-	MaxIterations     *int     `json:"max_iterations,omitempty"`
-	SafetyTier        string   `json:"safety_tier,omitempty"`
-	Timeout           string   `json:"timeout,omitempty"`
-	AllowedZones      []string `json:"allowed_zones,omitempty"`      // restricts agent to sources in these zones
-	AllowedNamespaces []string `json:"allowed_namespaces,omitempty"` // restricts agent to these K8s namespaces
+	MaxIterations     *int              `json:"max_iterations,omitempty"`
+	SafetyTier        string            `json:"safety_tier,omitempty"`
+	Timeout           string            `json:"timeout,omitempty"`
+	AllowedZones      []string          `json:"allowed_zones,omitempty"`      // restricts agent to sources in these zones
+	AllowedNamespaces []string          `json:"allowed_namespaces,omitempty"` // restricts agent to these K8s namespaces
+	NamespaceZones    map[string]string `json:"namespace_zones,omitempty"`    // full namespace → zone name map (all zones, for boundary reasoning)
 }
 
 type taskResponse struct {
@@ -440,11 +441,21 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 		}
 	}
 
-	// Build namespace zone map from AllowedNamespaces config and other zones
-	// For now, namespaces in AllowedNamespaces belong to the authorized zones;
-	// other namespaces encountered at runtime are resolved by the executor.
+	// Build namespace zone map. The caller can provide a full namespace→zone
+	// mapping via NamespaceZones (all zones, not just authorized). If not
+	// provided, fall back to deriving from AllowedNamespaces only.
 	namespaceZoneMap := make(map[string]string)
-	if len(cfg.AllowedNamespaces) > 0 {
+	if len(cfg.NamespaceZones) > 0 {
+		// Use the caller-provided full mapping — resolves zone names to the
+		// human-readable labels from our zone list.
+		for ns, zoneID := range cfg.NamespaceZones {
+			if label, ok := zoneIDToName[zoneID]; ok {
+				namespaceZoneMap[ns] = label
+			} else {
+				namespaceZoneMap[ns] = zoneID // fall back to raw ID
+			}
+		}
+	} else if len(cfg.AllowedNamespaces) > 0 {
 		for _, ns := range cfg.AllowedNamespaces {
 			namespaceZoneMap[ns] = zoneNamesStr
 		}
@@ -468,6 +479,21 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 		sb.WriteString("\nOther zones (NOT authorized — for reference only):\n")
 		for zoneName, sources := range otherZoneSources {
 			sb.WriteString(fmt.Sprintf("  - %s: sources %s\n", zoneName, strings.Join(sources, ", ")))
+		}
+	}
+
+	// Include full namespace-to-zone mapping so the LLM can reason about
+	// zone boundaries BEFORE attempting tool calls (critical for implicit
+	// zone crossing detection).
+	if len(namespaceZoneMap) > 0 {
+		// Group namespaces by zone for readability
+		zoneToNamespaces := make(map[string][]string)
+		for ns, zone := range namespaceZoneMap {
+			zoneToNamespaces[zone] = append(zoneToNamespaces[zone], ns)
+		}
+		sb.WriteString("\nNamespace-to-zone mapping (use this to identify zone boundaries):\n")
+		for zone, namespaces := range zoneToNamespaces {
+			sb.WriteString(fmt.Sprintf("  - %s: namespaces %s\n", zone, strings.Join(namespaces, ", ")))
 		}
 	}
 
