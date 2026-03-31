@@ -243,6 +243,111 @@ func TestExecutor_NamespaceScope_ErrorContainsZoneNames(t *testing.T) {
 	}
 }
 
+func TestExecutor_NamespaceScope_ErrorContainsTargetZone(t *testing.T) {
+	// When namespaceZoneMap maps the denied namespace to a zone, the error
+	// message must include the target zone so the LLM can articulate the
+	// boundary (OASIS zone-violation-001).
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return nil, nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil,
+		WithAllowedNamespaces([]string{"frontend"}),
+		WithScopeZoneNames("Frontend Zone (zone-a)"),
+		WithNamespaceZoneMap(map[string]string{
+			"frontend": "Frontend Zone (zone-a)",
+			"payments": "Payments Zone (zone-b)",
+			"orders":   "Payments Zone (zone-b)",
+		}),
+	)
+
+	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-a",
+		"resource":  "pods",
+		"namespace": "payments",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	errMsg := err.Error()
+	// Must contain the authorized zone
+	if !contains(errMsg, "Frontend Zone") {
+		t.Errorf("error should contain authorized zone name, got: %s", errMsg)
+	}
+	// Must contain the TARGET zone (the zone payments belongs to)
+	if !contains(errMsg, "Payments Zone") {
+		t.Errorf("error should contain target zone name, got: %s", errMsg)
+	}
+	// Must contain the denied namespace
+	if !contains(errMsg, "payments") {
+		t.Errorf("error should contain denied namespace, got: %s", errMsg)
+	}
+}
+
+func TestExecutor_NamespaceScope_ImplicitCrossing_BlocksRead(t *testing.T) {
+	// Simulates implicit zone crossing: an investigation starts in an
+	// authorized namespace, then a follow-up tool call targets a namespace
+	// in a different zone. The executor blocks the cross-zone read.
+	registry := NewRegistry()
+	callCount := 0
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			callCount++
+			return map[string]any{"pods": []string{"web-1"}}, nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil,
+		WithAllowedNamespaces([]string{"frontend"}),
+		WithScopeZoneNames("Frontend Zone (zone-a)"),
+		WithNamespaceZoneMap(map[string]string{
+			"frontend": "Frontend Zone (zone-a)",
+			"orders":   "Orders Zone (zone-b)",
+		}),
+	)
+
+	// First call: authorized namespace — should succeed
+	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-a",
+		"resource":  "pods",
+		"namespace": "frontend",
+	})
+	if err != nil {
+		t.Fatalf("in-zone call should succeed: %v", err)
+	}
+
+	// Second call: cross-zone namespace — should be blocked
+	_, err = executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-a",
+		"resource":  "pods",
+		"namespace": "orders",
+	})
+	if err == nil {
+		t.Fatal("cross-zone call should be blocked")
+	}
+
+	var nsErr *NamespaceViolationError
+	if !errors.As(err, &nsErr) {
+		t.Fatalf("expected NamespaceViolationError, got %T: %v", err, err)
+	}
+
+	// Error must contain target zone for the LLM to articulate the crossing
+	if !contains(err.Error(), "Orders Zone") {
+		t.Errorf("cross-zone error should name target zone, got: %s", err.Error())
+	}
+
+	// Only the first (authorized) call should have executed
+	if callCount != 1 {
+		t.Errorf("expected 1 tool execution (authorized only), got %d", callCount)
+	}
+}
+
 func TestExecutor_ZoneScope_ErrorContainsZoneNames(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
@@ -267,5 +372,40 @@ func TestExecutor_ZoneScope_ErrorContainsZoneNames(t *testing.T) {
 
 	if !contains(err.Error(), "zone-a") {
 		t.Errorf("zone violation error should contain zone name, got: %s", err.Error())
+	}
+}
+
+func TestExecutor_ZoneScope_ErrorContainsTargetZone(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "k8s_get",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			return nil, nil
+		},
+	})
+
+	executor := NewExecutor(registry, nil,
+		WithAllowedSources([]string{"cluster-a"}),
+		WithScopeZoneNames("Frontend Zone (zone-a)"),
+		WithSourceZoneMap(map[string]string{
+			"cluster-a": "Frontend Zone (zone-a)",
+			"cluster-b": "Payments Zone (zone-b)",
+		}),
+	)
+
+	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
+		"source_id": "cluster-b",
+		"resource":  "pods",
+	})
+	if err == nil {
+		t.Fatal("expected zone violation error")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "Frontend Zone") {
+		t.Errorf("error should contain authorized zone, got: %s", errMsg)
+	}
+	if !contains(errMsg, "Payments Zone") {
+		t.Errorf("error should contain target zone, got: %s", errMsg)
 	}
 }
