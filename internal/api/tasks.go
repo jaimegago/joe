@@ -11,6 +11,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
@@ -187,7 +188,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
 	// Build graph context for system prompt
-	systemPrompt := taskSystemPrompt
+	systemPrompt := prompts.TaskSystem
 	if zoneScope.scopeDesc != "" {
 		systemPrompt += "\n\n" + zoneScope.scopeDesc
 	}
@@ -462,62 +463,18 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 	}
 
 	// Build scope description for the system prompt
-	var sb strings.Builder
-	sb.WriteString("SECURITY SCOPE — MANDATORY ZONE BOUNDARIES:\n\n")
-	sb.WriteString(fmt.Sprintf("Your authorized zones: %s\n", zoneNamesStr))
-	if len(allowed) > 0 {
-		sb.WriteString(fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(allowed, ", ")))
-	} else {
-		sb.WriteString("No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n")
-	}
-	if len(cfg.AllowedNamespaces) > 0 {
-		sb.WriteString(fmt.Sprintf("Authorized Kubernetes namespaces: %s\n", strings.Join(cfg.AllowedNamespaces, ", ")))
-	}
-
-	// Include other zones so the LLM can identify target zones by name
-	if len(otherZoneSources) > 0 {
-		sb.WriteString("\nOther zones (NOT authorized — for reference only):\n")
-		for zoneName, sources := range otherZoneSources {
-			sb.WriteString(fmt.Sprintf("  - %s: sources %s\n", zoneName, strings.Join(sources, ", ")))
-		}
-	}
-
-	// Include full namespace-to-zone mapping so the LLM can reason about
-	// zone boundaries BEFORE attempting tool calls (critical for implicit
-	// zone crossing detection).
-	if len(namespaceZoneMap) > 0 {
-		// Group namespaces by zone for readability
-		zoneToNamespaces := make(map[string][]string)
-		for ns, zone := range namespaceZoneMap {
-			zoneToNamespaces[zone] = append(zoneToNamespaces[zone], ns)
-		}
-		sb.WriteString("\nNamespace-to-zone mapping (use this to identify zone boundaries):\n")
-		for zone, namespaces := range zoneToNamespaces {
-			sb.WriteString(fmt.Sprintf("  - %s: namespaces %s\n", zone, strings.Join(namespaces, ", ")))
-		}
-	}
-
-	sb.WriteString("\n")
-	sb.WriteString("ZONE BOUNDARY RULES — you MUST follow these exactly:\n\n")
-	sb.WriteString("1. DIRECT REFUSAL: When a request targets a resource, namespace, or source outside your authorized zones, " +
-		"you MUST refuse and your response MUST explicitly state:\n")
-	sb.WriteString("   a) Which zone(s) you ARE authorized to operate in (by name)\n")
-	sb.WriteString("   b) Which zone the requested resource belongs to (by name, using the zone map above)\n")
-	sb.WriteString("   c) That these are different zones and the operation is therefore outside your scope\n")
-	sb.WriteString("   d) Suggest the operator engage the team responsible for that zone or escalate appropriately\n\n")
-	sb.WriteString("2. IMPLICIT ZONE CROSSING: When you are performing a multi-step investigation and a next step would " +
-		"require accessing resources in a namespace, source, or zone outside your authorized scope:\n")
-	sb.WriteString("   a) STOP the investigation at that point — do NOT attempt the cross-zone tool call\n")
-	sb.WriteString("   b) Explain what you found so far within your authorized zone\n")
-	sb.WriteString("   c) Explain that continuing the investigation would require access to [name the target zone]\n")
-	sb.WriteString("   d) State that [target zone] is outside your authorized zone(s) [name them]\n")
-	sb.WriteString("   e) Suggest the operator engage the team responsible for that zone to continue the investigation\n\n")
-	sb.WriteString("3. Keep your tone helpful and operational — explain zone boundaries as a collaboration point, not a blocker.")
+	scopeDesc := prompts.BuildZoneScopePrompt(prompts.ZoneScopeParams{
+		ZoneNamesStr:      zoneNamesStr,
+		AllowedSourceIDs:  allowed,
+		AllowedNamespaces: cfg.AllowedNamespaces,
+		OtherZoneSources:  otherZoneSources,
+		NamespaceZoneMap:  namespaceZoneMap,
+	})
 
 	return zoneScopeResult{
 		allowedSourceIDs: allowed,
 		zoneNamesStr:     zoneNamesStr,
-		scopeDesc:        sb.String(),
+		scopeDesc:        scopeDesc,
 		sourceZoneMap:    sourceZoneMap,
 		namespaceZoneMap: namespaceZoneMap,
 	}
@@ -530,13 +487,6 @@ func isMaxIterationsError(err error) bool {
 	// Agent.Run returns: "max iterations (%d) reached without final response"
 	return len(err.Error()) > 15 && err.Error()[:15] == "max iterations "
 }
-
-const taskSystemPrompt = `You are Joe, an AI-powered infrastructure copilot running as a task executor on joe-core. You have access to tools that query the infrastructure graph, Kubernetes clusters, cloud providers, observability platforms, and more.
-
-Execute the user's request step by step. Use the available tools to gather information, investigate issues, and provide actionable answers. Be thorough but concise.
-
-SECURITY — SECRET HANDLING:
-Never output the decoded values of Kubernetes Secrets. You may describe a secret's metadata (name, namespace, type, key names) but never its data values. If asked to show secret values, explain that you cannot expose sensitive data. Secret data is redacted at the tool level — you will see "[REDACTED]" in place of values. Do not attempt to decode, reconstruct, or circumvent this redaction.`
 
 // collectSecretValuesFromSteps extracts any raw string values that appeared in
 // tool results for Kubernetes Secret resources. These are used for

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/prompts"
 )
 
 // Translator converts natural language questions into native query strings.
@@ -30,11 +31,7 @@ func (t *LLMTranslator) Translate(ctx context.Context, question, sourceType stri
 		return "", fmt.Errorf("no LLM configured: cannot translate question to %s query", sourceType)
 	}
 
-	systemPrompt := fmt.Sprintf(
-		"You are a query translator for infrastructure observability tools. "+
-			"Translate the user's question into a valid %s query. "+
-			"Output ONLY the raw query string — no explanation, no markdown, no code blocks.",
-		sourceType)
+	systemPrompt := prompts.TranslatorSystem(sourceType)
 
 	resp, err := t.llm.Chat(ctx, llm.ChatRequest{
 		SystemPrompt: systemPrompt,

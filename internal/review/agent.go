@@ -12,6 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/prompts"
 )
 
 const (
@@ -127,7 +128,7 @@ func (a *ReviewAgent) runReview(ctx context.Context, job *ReviewJob) (string, er
 
 	a.logger.Debug("calling LLM for review", "job_id", job.ID, "diff_len", len(diff))
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
-		SystemPrompt: reviewSystemPrompt,
+		SystemPrompt: prompts.ReviewSystem,
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
 		},
@@ -277,19 +278,3 @@ func prMRLabel(p Platform) string {
 	}
 	return "pull request"
 }
-
-const reviewSystemPrompt = `You are Joe, an AI infrastructure copilot performing a code review.
-
-Focus on:
-1. Security issues (secrets, injection vulnerabilities, insecure configurations)
-2. Infrastructure impact (changes to Kubernetes manifests, Terraform, CI/CD pipelines)
-3. Breaking changes (API changes, schema migrations, dependency updates)
-4. Code quality issues that may affect reliability or maintainability
-
-Keep the review concise and actionable. Use Markdown formatting.
-- Start with a brief summary (1–2 sentences).
-- Use headings for each concern area only if there are findings.
-- Flag critical issues clearly with **🚨 Critical:** prefix.
-- End with an overall assessment: LGTM, LGTM with minor comments, or Changes requested.
-
-Do not repeat the diff back to the user. Only comment on what matters.`
