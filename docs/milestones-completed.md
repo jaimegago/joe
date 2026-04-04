@@ -1,10 +1,8 @@
-# Milestones 1-11: Completed Phases (Historical Reference)
+# Milestones 1-12: Completed Phases (Historical Reference)
 
-This document records the completed phases of Joe's development (Phases 1–11). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
+This document records the completed phases of Joe's development (Phases 1–12). It serves as a historical reference for implementation decisions and architectural patterns established during the build.
 
-**Current Status:** ✅ Phases 1–11 complete
-
-**Current Phase:** Phase 12 - Web UI (see `CLAUDE.md` for planning)
+**Current Status:** ✅ Phases 1–12 complete
 
 ---
 
@@ -20,10 +18,11 @@ This document records the completed phases of Joe's development (Phases 1–11).
 - ✅ **Phase 7: Knowledge Store** - Complete (three-tier knowledge model, Confluence/Notion sync, LLM-derived insights, semantic search with embeddings)
 - ✅ **Phase 8: Documentation Co-Pilot** - Complete (write adapters for Confluence/Notion/Git, draft generation via LLM + knowledge search, human approval flow, drift detection, proposals API)
 - ✅ **Phase 9.1: Emergency Shutdown / Panic Mode** - Complete (REPL `/panic`, CLI `joe panic`, API endpoints, SIGUSR1 signal handler, safe mode persistence, `joe unlock`)
-- ✅ **Phase 9.2: MCP Server** - Complete (`cmd/joe-mcp/` binary, stdio transport, 8 Joe tools, Claude Code / Cursor integration)
+- ✅ **Phase 9.2: MCP Server** - Complete (`joe mcp` subcommand, stdio transport, 8 Joe tools, Claude Code / Cursor integration)
 - ✅ **Phase 9.3: RBAC** - Complete (`internal/rbac/`, migration 006, 4 default zones, Admin API, API key identity provider, RBAC enforcement middleware)
 - ✅ **Phase 10: Code Review Integration** - Complete (GitHub/GitLab adapters, webhook receiver, review job queue, Review Agent, 7 core tools, `joe review` CLI)
-- ✅ **Phase 11: Slack Bot** - Complete (`cmd/joe-slack/` binary, Socket Mode, `/joe ask|status|help`, DM + mention handling, Block Kit formatting)
+- ✅ **Phase 11: Slack Bot** - Complete (`joe slack` subcommand, Socket Mode, `/joe ask|status|help`, DM + mention handling, Block Kit formatting)
+- ✅ **Phase 12: Web UI** - Complete (`ui/`, React 18 + Vite + Tailwind + shadcn/ui, 5 pages, React Flow graph visualization, chat interface)
 
 ## 1) Core Agent Refresh Loop (Operational MVP)
 
@@ -236,7 +235,7 @@ This document records the completed phases of Joe's development (Phases 1–11).
 
 - 30 source type constants in `internal/store/constants.go`
 - Generic adapter registry in `internal/adapters/registry.go`
-- 17 graph relation types in `internal/graph/relations.go`: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `provisions`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`
+- 19 graph relation types in `internal/graph/relations.go`: `metrics_in`, `logs_in`, `traces_in`, `alerts_in`, `paged_via`, `dashboard_in`, `is_k8s_node`, `stores_in`, `queues_in`, `managed_by`, `provisions`, `ingress_for`, `proxies`, `mesh_for`, `policy_enforces`, `scaled_by`, `secures`, `image_stored_in`, `publishes_to`
 
 6.2 ✅ DONE: Cloud adapters
 
@@ -419,9 +418,9 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 
 ### 9.2 MCP Server
 
-9.2.1 ✅ DONE: MCP binary
+9.2.1 ✅ DONE: MCP subcommand
 
-- `cmd/joe-mcp/main.go`: reads `JOE_SERVER` + `JOE_API_KEY` env vars
+- `joe mcp` subcommand in `cmd/joe/main.go`: reads `JOE_SERVER` + `JOE_API_KEY` env vars
 - Stdio transport (JSON-RPC over stdin/stdout) using `github.com/mark3labs/mcp-go v0.44.1`
 
 9.2.2 ✅ DONE: 8 tool definitions
@@ -438,7 +437,7 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 - `internal/mcp/dispatcher.go` routes tool calls to `*client.Client`
 - `internal/mcp/server.go` creates MCP server with tool registrations
 
-**Status: ✅ Complete** — `cmd/joe-mcp/`, `internal/mcp/`
+**Status: ✅ Complete** — `joe mcp` subcommand, `internal/mcp/`
 
 ---
 
@@ -552,7 +551,7 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 
 ### 11.1 Bot Binary
 
-11.1.1 ✅ DONE: `cmd/joe-slack/` binary
+11.1.1 ✅ DONE: `joe slack` subcommand
 
 - Reads `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `JOE_SERVER`, `JOE_API_KEY` env vars
 - Uses Socket Mode (WebSocket) via `github.com/slack-go/slack v0.18.0` — no public URL required
@@ -595,7 +594,69 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 - `formatter_test.go`: 5 tests (all block builders)
 - All 15 tests passing
 
-**Status: ✅ Complete** — `cmd/joe-slack/`, `internal/slack/{agent,server,handler,formatter}.go`
+**Status: ✅ Complete** — `joe slack` subcommand, `internal/slack/{agent,server,handler,formatter}.go`
+
+---
+
+## 11) Phase 12: Web UI
+
+### 12.1 Tech Stack
+
+- React 18 + TypeScript 5 + Vite 5
+- Tailwind CSS 3 + shadcn/ui component library
+- React Flow 11 for graph visualization
+- TanStack Query 5 for data fetching
+- React Router 6 for navigation
+- Zod v4 for schema validation
+- Vitest + Testing Library for tests
+
+### 12.2 Pages
+
+12.2.1 ✅ DONE: 5 main pages
+
+- `DashboardPage` — metrics cards, sources health, alerts list, recent sessions
+- `GraphPage` — interactive infrastructure graph (React Flow), node details panel, graph controls
+- `SourcesPage` — source listing and management
+- `AdminPage` — security zones, source-zone assignments, RBAC policies
+- `ChatPage` — conversational interface with message history, tool call display, session management
+
+### 12.3 API Layer
+
+12.3.1 ✅ DONE: Typed API client
+
+- `ui/src/api/client.ts` — fetch wrapper with auth and error handling
+- `ui/src/api/schemas.ts` — Zod v4 schemas for API responses
+- `ui/src/api/types.ts` — TypeScript types derived via `z.infer<>`
+- Domain modules: `graph.ts`, `sources.ts`, `security.ts`, `chat.ts`, `alerts.ts`
+
+### 12.4 Backend Endpoints
+
+12.4.1 ✅ DONE: 9 web UI endpoints in `internal/api/webui.go`
+
+- `GET /api/v1/graph` — full graph for visualization
+- `GET /api/v1/graph/node/{id}` — node details
+- `GET /api/v1/graph/node/{id}/related` — node relationships
+- `GET/POST /api/v1/sessions` — list/create sessions
+- `GET /api/v1/sessions/{id}/messages` — session message history
+- `POST /api/v1/chat` — send message to core agent
+- `GET /api/v1/alerts` — alerts list
+- `POST /api/v1/sources/{id}/test` — test source connectivity
+
+### 12.5 Component Architecture
+
+- `ui/src/components/layout/` — AppShell, Sidebar, Header, PageContainer
+- `ui/src/components/graph/` — InfraGraph (React Flow), NodeDetails, GraphControls
+- `ui/src/components/dashboard/` — MetricsCard, SourcesHealth, AlertsList, RecentSessions
+- `ui/src/components/admin/` — ZonesTable, ZoneForm, SourceZoneAssign, PoliciesTable, PolicyForm
+- `ui/src/components/chat/` — ChatWindow, MessageList, MessageBubble, ChatInput, ToolCallDisplay
+
+### 12.6 Tests
+
+- ESLint with `recommendedTypeChecked` + Prettier
+- Vitest + Testing Library (27 tests across 4 files)
+- `ui/vitest.config.ts` — jsdom environment
+
+**Status: ✅ Complete** — `ui/`, `internal/api/webui.go`, `internal/graph/store.go` (`ListAll` added)
 
 ---
 
