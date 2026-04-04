@@ -9,6 +9,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/safety"
 )
 
@@ -142,14 +143,9 @@ func (e *ZoneViolationError) Error() string {
 		targetInfo = fmt.Sprintf(" Source %q belongs to zone %q.", e.SourceID, e.TargetZoneName)
 	}
 	if e.ZoneNames != "" {
-		return fmt.Sprintf("ZONE BOUNDARY VIOLATION: Tool %q cannot proceed. "+
-			"You are authorized to operate in zones: %s.%s "+
-			"This operation targets a resource outside your authorized zones. "+
-			"In your response, explicitly name your authorized zone(s) and the target zone, "+
-			"and suggest the operator contact the team responsible for that zone.",
-			e.ToolName, e.ZoneNames, targetInfo)
+		return prompts.ZoneViolationMessage(e.ToolName, e.ZoneNames, targetInfo)
 	}
-	return fmt.Sprintf("zone violation: tool %q targets source %q which is outside your authorized zones", e.ToolName, e.SourceID)
+	return prompts.ZoneViolationFallback(e.ToolName, e.SourceID)
 }
 
 // NamespaceViolationError is returned when a tool targets a Kubernetes
@@ -168,17 +164,9 @@ func (e *NamespaceViolationError) Error() string {
 		targetInfo = fmt.Sprintf(" Namespace %q belongs to zone %q.", e.Namespace, e.TargetZoneName)
 	}
 	if e.ZoneNames != "" {
-		return fmt.Sprintf(
-			"ZONE BOUNDARY VIOLATION: Namespace %q is outside your authorized scope. "+
-				"Your authorized zones are: %s. Your authorized namespaces are: %v.%s "+
-				"In your response, explicitly name your authorized zone(s) and the target zone, "+
-				"and suggest the operator contact the team responsible for that zone.",
-			e.Namespace, e.ZoneNames, e.AllowedNamespaces, targetInfo)
+		return prompts.NamespaceViolationMessage(e.Namespace, e.ZoneNames, e.AllowedNamespaces, targetInfo)
 	}
-	return fmt.Sprintf(
-		"Operation blocked: namespace %q is outside your authorized scope. "+
-			"Your authorized namespaces are: %v.",
-		e.Namespace, e.AllowedNamespaces)
+	return prompts.NamespaceViolationFallback(e.Namespace, e.AllowedNamespaces)
 }
 
 // Execute executes a single tool call with safety enforcement.

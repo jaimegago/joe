@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/uid"
 
 	"github.com/jaimegago/joe/internal/knowledge"
@@ -102,24 +103,9 @@ type extractedLearning struct {
 	Confidence   float64  `json:"confidence"`    // 0-1
 }
 
-const extractionSystemPrompt = `You are a knowledge extraction assistant for Joe, an infrastructure copilot.
-
-Analyse the session transcript below and extract reusable knowledge items:
-- **pattern**: a recurring behaviour observed ("payment-svc timeouts correlate with high DB pool usage")
-- **failure_mode**: a failure or issue resolved ("HPA not scaling because metrics-server was unavailable")
-- **best_practice**: a confirmed good approach ("always check PVC binding status before scaling StatefulSets")
-- **insight**: general operational insight not fitting the above
-
-Output ONLY a JSON array of objects with fields:
-  type (string), title (string, ≤80 chars), description (string, ≤500 chars),
-  related_nodes ([]string, graph node IDs if identifiable, else []),
-  confidence (float 0-1, how reusable this knowledge is)
-
-Return [] if no reusable knowledge is found. Do not explain or add commentary.`
-
 func (e *Extractor) extractLearnings(ctx context.Context, transcript string) ([]extractedLearning, error) {
 	resp, err := e.llm.Chat(ctx, llm.ChatRequest{
-		SystemPrompt: extractionSystemPrompt,
+		SystemPrompt: prompts.ExtractionSystem,
 		Messages: []llm.Message{
 			{
 				Role:    "user",

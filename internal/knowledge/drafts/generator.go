@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/uid"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
@@ -123,25 +124,6 @@ type draftResponse struct {
 	Content string `json:"content"`
 }
 
-const draftSystemPrompt = `You are a technical documentation assistant for Joe, an infrastructure copilot.
-You are given:
-1. A topic to document
-2. Relevant knowledge entries from Joe's knowledge store
-3. The current content of the document (may be empty if new)
-4. Optional extra context from the user
-
-Generate an updated documentation page that:
-- Incorporates the relevant knowledge accurately
-- Preserves any correct existing content
-- Is written in clear, concise technical markdown
-- Stays focused on the topic
-
-Output ONLY a JSON object with fields:
-  title (string, the document title, ≤120 chars)
-  content (string, the full proposed documentation in markdown)
-
-Do not include any other text or explanation.`
-
 func (g *Generator) callLLM(ctx context.Context, req GenerateRequest, current, knowledgeCtx string) (content, title string, err error) {
 	userMsg := fmt.Sprintf("Topic: %s\n\nCurrent content:\n%s\n\nRelevant knowledge:\n%s\n\nAdditional context: %s",
 		req.Topic,
@@ -151,7 +133,7 @@ func (g *Generator) callLLM(ctx context.Context, req GenerateRequest, current, k
 	)
 
 	resp, err := g.llm.Chat(ctx, llm.ChatRequest{
-		SystemPrompt: draftSystemPrompt,
+		SystemPrompt: prompts.DraftSystem,
 		Messages:     []llm.Message{{Role: "user", Content: userMsg}},
 		MaxTokens:    4096,
 	})

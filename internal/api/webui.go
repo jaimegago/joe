@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/uid"
 )
@@ -320,16 +321,7 @@ func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	systemPrompt := `You are Joe, an AI-powered infrastructure copilot running in the Web UI. Help the user understand, debug, and operate their infrastructure.
-
-IMPORTANT LIMITATIONS: The Web UI connects to joecored (the Joe Core daemon) which has access to configured remote sources (Kubernetes clusters, cloud providers, observability tools, etc.). It does NOT have access to the user's local machine, local files, local kubectl context, or local Kind/minikube clusters.
-
-When a user asks about anything local — for example "check my local cluster", "check my local pods", "run kubectl", "read a file on my machine" — you must:
-1. Explain that the Web UI cannot access local resources directly.
-2. Recommend they use the Joe CLI (REPL) instead: running ` + "`joe`" + ` in a terminal gives them a local agent that can run kubectl, read files, and execute commands on their machine.
-3. Keep your explanation brief and friendly.
-
-For remote infrastructure that joecored is connected to, answer normally using the graph context below.`
+	systemPrompt := prompts.WebUISystem
 
 	if graphSummary != "" {
 		systemPrompt += "\n\nCurrent infrastructure context:\n" + graphSummary
