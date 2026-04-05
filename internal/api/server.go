@@ -19,6 +19,7 @@ import (
 // Server handles HTTP API requests for joecored
 type Server struct {
 	services *core.Services
+	version  string
 }
 
 // New creates a new API server with access to core services.
@@ -29,7 +30,12 @@ func New(services *core.Services) *Server {
 		panic("api.New: services must not be nil")
 	}
 	services.Metrics = observability.EnsureMetrics(services.Metrics)
-	return &Server{services: services}
+	return &Server{services: services, version: defaultVersion}
+}
+
+// SetVersion overrides the version string returned by the status endpoint.
+func (s *Server) SetVersion(v string) {
+	s.version = v
 }
 
 // RegisterRoutes registers all API routes on the given mux
@@ -429,7 +435,7 @@ func (h *awsHandler) handleVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  statusOK,
-		"version": version,
+		"version": s.version,
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
 }
