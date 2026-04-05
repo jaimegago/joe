@@ -349,6 +349,11 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		"duration_ms", resp.DurationMs,
 	)
 
+	slog.Info("task response",
+		"task_id", taskID,
+		"response", answer,
+	)
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
