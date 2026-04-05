@@ -508,6 +508,17 @@ func TestLoad_EnvOverrides_APIKey(t *testing.T) {
 	}
 }
 
+func TestLoad_EnvOverrides_DatabaseDSN(t *testing.T) {
+	t.Setenv("JOE_DATABASE_DSN", "/tmp/custom-joe.db")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.Database.DSN != "/tmp/custom-joe.db" {
+		t.Errorf("Database.DSN = %s, want /tmp/custom-joe.db", cfg.Database.DSN)
+	}
+}
+
 func TestLoad_EnvOverrides_ModelOnly(t *testing.T) {
 	// Override only model, not provider — exercises the partial-override branch
 	t.Setenv("JOE_LLM_PROVIDER", "")

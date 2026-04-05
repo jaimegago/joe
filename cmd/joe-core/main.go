@@ -285,7 +285,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Error("failed to run migrations", "error", err)
 		return 1
 	}
-	slog.Info("database ready", "path", dbPath)
+	slog.Info("database ready", "path", dbCfg.DSN)
 
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
