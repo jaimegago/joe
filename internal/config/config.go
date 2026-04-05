@@ -269,6 +269,7 @@ func loadFromFile(cfg *Config, path string) error {
 //   - JOE_LLM_MODEL: override LLM model
 //   - JOE_LOG_LEVEL: override logging level (debug, info, warn, error)
 //   - JOE_SERVER_ADDRESS: override server address
+//   - JOE_DATABASE_DSN: override database path/DSN
 //
 // Returns a slice of environment variable names that were applied.
 func applyEnvOverrides(cfg *Config) []string {
@@ -317,6 +318,12 @@ func applyEnvOverrides(cfg *Config) []string {
 	if apiKey := os.Getenv("JOE_API_KEY"); apiKey != "" {
 		cfg.Server.APIKey = apiKey
 		overrides = append(overrides, "JOE_API_KEY")
+	}
+
+	// Database DSN override
+	if dsn := os.Getenv("JOE_DATABASE_DSN"); dsn != "" {
+		cfg.Database.DSN = dsn
+		overrides = append(overrides, "JOE_DATABASE_DSN")
 	}
 
 	return overrides
