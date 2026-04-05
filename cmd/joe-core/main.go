@@ -45,6 +45,11 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// version is set at build time via ldflags:
+//
+//	go build -ldflags "-X main.version=1.2.3" ./cmd/joe-core
+var version string
+
 type coreAgentRunner interface {
 	core.CoreAgent
 	Start(ctx context.Context) error
@@ -423,6 +428,9 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 
 	// Register API routes
 	apiServer := deps.newAPIServer(services)
+	if version != "" {
+		apiServer.SetVersion(version)
+	}
 	apiServer.RegisterRoutes(mux)
 
 	// Build RBAC identity provider and policy engine.
