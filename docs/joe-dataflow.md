@@ -57,7 +57,7 @@ Joe is built as two binaries that communicate via HTTP:
 │                                           │  ┌──────────┐ ┌──────────┐ ┌──────────┐   ││
 │                                           │  │  Graph   │ │   SQL    │ │ Adapters │   ││
 │                                           │  │  Store   │ │  Store   │ │ K8s, Git │   ││
-│                                           │  │ (Cayley) │ │ (SQLite) │ │ ArgoCD.. │   ││
+│                                           │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │   ││
 │                                           │  └──────────┘ └──────────┘ └──────────┘   ││
 │                                           │                                            ││
 │                                           │  ┌──────────┐                              ││
@@ -1215,7 +1215,7 @@ Joe isn't just a CLI you invoke. It's a daemon that runs continuously.
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │  │
 │  │  │  Inventory  │  │   Graph     │  │   Watch     │           │  │
 │  │  │  Refresh    │  │   Store     │  │   Loop      │           │  │
-│  │  │  (periodic) │  │  (Cayley)   │  │  (k8s,argo) │           │  │
+│  │  │  (periodic) │  │  (SQLite)   │  │  (k8s,argo) │           │  │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘           │  │
 │  │                                                               │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │  │
@@ -1590,7 +1590,7 @@ Does this capture what you're thinking?
 │            ▼                       ▼                       ▼            │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐       │
 │  │   LLM Adapter    │  │   Graph Store    │  │  Memory Store    │       │
-│  │   (Interface)    │  │   (Cayley)       │  │   (SQLite)       │       │
+│  │   (Interface)    │  │   (SQLite)       │  │   (SQLite)       │       │
 │  │                  │  │                  │  │                  │       │
 │  │  ┌────────────┐  │  │  - Infra nodes   │  │  - Past sessions │       │
 │  │  │  Claude    │  │  │  - Relationships │  │  - Embeddings    │       │
