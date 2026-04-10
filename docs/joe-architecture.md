@@ -662,7 +662,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  MCP Server                                                          │
 │  ──────────                                                          │
 │  Exposes Joe as an MCP server for AI coding assistants              │
-│  Location: cmd/joe-mcp/ (planned)                                   │
+│  Location: internal/mcp/ (joe mcp subcommand)                       │
 │                                                                      │
 │  Purpose:                                                           │
 │    - Claude Code, Cursor, Codex, any MCP-compatible AI can use Joe │
@@ -2368,97 +2368,39 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [x] SQL migration 005, proposals repository + service, tier registry entries
 - [x] **Milestone: Joe can propose and publish doc updates with safety enforcement**
 
-### Phase 9: Security Architecture + Additional Clients ← CURRENT
+### Phase 9: Security Architecture + Additional Clients ✅ COMPLETE
 
-**Security Service (pluggable architecture):**
-- [ ] `cmd/joe-security/` binary (optional, for hardened deployments)
-- [ ] `internal/security/interface.go` — SecurityPolicy interface
-- [ ] `internal/security/embedded.go` — EmbeddedSecurityPolicy (same DB, protected tables)
-- [ ] `internal/security/remote.go` — RemoteSecurityPolicy (gRPC client to joe-security)
-- [ ] `internal/securitysvc/` — joe-security server implementation
-- [ ] Config: `security.mode: embedded | remote`
+**9.1 Emergency Shutdown (Panic Mode):**
+- [x] `/panic` REPL command, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1
+- [x] Safe mode on restart (T1 only until explicit unlock)
+- [x] `joe unlock --reason "..."` to resume
+- [x] Panic state persistence (~/.joe/panic.state)
 
-**Security Zones:**
-- [ ] Zone definitions: prod-readonly, prod-write, dev-full, unassigned (default)
-- [ ] Source → Zone assignments (admin-controlled, LLM cannot modify)
-- [ ] Zone-based permission evaluation in tool executor
-- [ ] Notification for unassigned sources
+**9.2 MCP Server (`joe mcp` subcommand):**
+- [x] MCP stdio server for Claude Code / Cursor / Codex
+- [x] 8 category-based tools in `internal/mcp/`
+- [x] Reads `JOE_SERVER` + `JOE_API_KEY` env vars
 
-**Protected Tables (hardcoded invariants):**
-- [ ] `internal/safety/invariants.go` — writeProtectedTables, appendOnlyTables
-- [ ] Tables protected: security_zones, source_zone_assignments, rbac_policies
-- [ ] Audit log: append-only (INSERT allowed, UPDATE/DELETE blocked)
-- [ ] Enforcement in tool executor before any SQL operation
-
-**RBAC Implementation:**
-- [ ] Principal → Zones policy model
-- [ ] Authentication adapters (Entra ID, LDAP, OIDC, API keys)
-- [ ] Token validation and caching
-- [ ] Policy evaluation middleware
-
-**Admin API (separate from LLM-accessible API):**
-- [ ] `POST /api/v1/admin/zones` — create/update zones
-- [ ] `POST /api/v1/admin/source-zones` — assign sources to zones
-- [ ] `POST /api/v1/admin/policies` — manage RBAC policies
-- [ ] `GET /api/v1/admin/source-zones/unassigned` — list unassigned sources
-- [ ] Requires admin authentication (separate from user auth)
-
-**Emergency Shutdown (Panic Mode):**
-- [ ] `/panic` REPL command, `joe panic` CLI, `POST /api/v1/panic`, SIGUSR1
-- [ ] Safe mode on restart (T1 only until explicit unlock)
-- [ ] `joe unlock --reason "..."` to resume
-- [ ] Panic state persistence (~/.joe/panic.state)
+**9.3 RBAC:**
+- [x] Zone definitions: prod-readonly, prod-write, dev-full, unassigned (default)
+- [x] Source → Zone assignments (admin-controlled)
+- [x] Principal → Zones policy model with API key provider
+- [x] Policy evaluation middleware (`internal/rbac/`)
+- [x] Admin API: zones, source-zones, policies, unassigned
+- [x] Migration 006: RBAC tables
 
 **Additional Clients:**
-- [ ] Web UI — see `docs/web-ui.md` for full specification
-  - React + TypeScript + Vite + Tailwind + shadcn/ui
-  - React Flow for infrastructure graph visualization
-  - TanStack Query for server state
-  - Location: `ui/` directory (monorepo)
-  - Pages: Graph, Dashboard, Sources, Admin (zones/policies), Chat
-- [ ] MCP Server (Claude Code, Cursor, Codex — replaces VS Code extension)
-- [ ] Slack Bot (ChatOps for on-call, optional)
-- [ ] In-cluster deployment for joecored
+- [x] Web UI (`ui/`) — React 18 + Vite + Tailwind + shadcn/ui + React Flow
+- [x] Slack Bot (`joe slack`) — Socket Mode, no public URL required
 
-**Database Migrations:**
-- [ ] Migration 006: security_zones table
-- [ ] Migration 007: source_zone_assignments table
-- [ ] Migration 008: rbac_policies table (replaces environment-based model)
+**Milestone: Multi-user Joe with zone-based security, MCP integration, and emergency controls**
 
-**Milestone: Multi-user Joe with zone-based security, pluggable security service, and emergency controls**
+### Phase 10: Code Review Integration ✅ COMPLETE
 
-### Phase 10: Code Review Integration
+- [x] GitHub adapter (`internal/adapters/github/`)
+- [x] GitLab adapter (`internal/adapters/gitlab/`)
+- [x] Webhook receiver endpoints (`POST /api/v1/webhooks/github`, `/gitlab`)
+- [x] Review Agent (`internal/review/`) — infrastructure-aware code reviews
+- [x] CLI: `joe review PR#123`
 
-- [ ] GitHub adapter (`internal/adapters/github/`)
-  - PR read operations (T1): GetPullRequest, GetPullRequestDiff, ListPullRequestComments
-  - Review write operations: PostReviewComment (T2), SubmitReview (T3)
-  - Webhook parsing and HMAC signature validation
-- [ ] GitLab adapter (`internal/adapters/gitlab/`)
-  - MR read operations (T1): GetMergeRequest, GetMergeRequestDiff, ListMergeRequestComments
-  - Review write operations: PostNote (T2), ApproveMergeRequest (T3)
-  - Webhook parsing and token validation
-- [ ] Webhook receiver endpoints
-  - `POST /api/v1/webhooks/github` — receives PR events
-  - `POST /api/v1/webhooks/gitlab` — receives MR events
-  - Idempotency via delivery_id/event_id tracking in `webhook_events` table
-- [ ] Review job queue (`internal/reviewagent/queue.go`)
-  - SQLite-backed queue with single worker (avoids concurrency complexity)
-  - Job states: queued → in_progress → completed/failed
-  - Deduplication: one active job per (repo, pr_number, commit_sha)
-- [ ] Review Agent (`internal/reviewagent/agent.go`)
-  - Triggered by webhook or manual `joe review PR#123`
-  - Flow: fetch diff → identify affected resources → query graph → query knowledge → LLM analysis → post review
-  - Infrastructure-aware reviews (blast radius, dependencies, incident history)
-- [ ] Safety policy for reviews:
-  ```yaml
-  act:
-    github_comment:
-      enabled: true              # T2: can post comments
-    github_approve:
-      enabled: false             # T3: cannot auto-approve (default)
-    github_request_changes:
-      enabled: true              # T3: can request changes
-    github_merge:
-      enabled: false             # T3: never auto-merge
-  ```
-- [ ] **Milestone: Joe as infrastructure-aware code reviewer**
+**Milestone: Joe as infrastructure-aware code reviewer**

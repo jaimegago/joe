@@ -39,7 +39,7 @@ joe slack  — Slack bot via Socket Mode (no public URL required)
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go 1.25 or later
 - An LLM API key (Anthropic or Google)
 
 ### Build
@@ -161,13 +161,16 @@ knowledge:
 
 ### Environment Variables
 
-| Variable              | Config equivalent  | Notes               |
-| --------------------- | ------------------ | ------------------- |
-| `ANTHROPIC_API_KEY`   | —                  | Required for Claude |
-| `GEMINI_API_KEY`      | —                  | Required for Gemini |
-| `JOE_SERVER_ADDRESS`  | `server.address`   |                     |
-| `JOE_API_KEY`         | `server.api_key`   | Bearer token        |
-| `JOE_LOG_LEVEL`       | `logging.level`    |                     |
+| Variable              | Config equivalent  | Notes                              |
+| --------------------- | ------------------ | ---------------------------------- |
+| `ANTHROPIC_API_KEY`   | —                  | Required for Claude                |
+| `GEMINI_API_KEY`      | —                  | Required for Gemini                |
+| `JOE_SERVER_ADDRESS`  | `server.address`   |                                    |
+| `JOE_API_KEY`         | `server.api_key`   | Bearer token                       |
+| `JOE_LOG_LEVEL`       | `logging.level`    |                                    |
+| `JOE_DATABASE_DSN`    | —                  | Override database path/DSN         |
+| `JOE_LLM_PROVIDER`   | `llm.current` key  | Override LLM provider at runtime   |
+| `JOE_LLM_MODEL`      | model ID           | Override LLM model at runtime      |
 
 ---
 
@@ -386,16 +389,18 @@ Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
 
 ### Available MCP Tools
 
-| Tool                   | Description                                   |
-| ---------------------- | --------------------------------------------- |
-| `joe_graph_query`      | Search infrastructure graph nodes            |
-| `joe_graph_related`    | Find nodes related to a given node            |
-| `joe_k8s_get`          | List or get Kubernetes resources              |
-| `joe_k8s_logs`         | Fetch pod logs                                |
-| `joe_metrics_query`    | Run a PromQL query                            |
-| `joe_logs_search`      | Search logs with LogQL                        |
-| `joe_knowledge_search` | Semantic search over runbooks and docs        |
-| `joe_incidents`        | List active alerts from Alertmanager          |
+All observability tools accept natural language questions — Joe resolves the backend from the graph automatically.
+
+| Tool                   | Description                                                        |
+| ---------------------- | ------------------------------------------------------------------ |
+| `joe_graph_query`      | Search infrastructure graph nodes                                  |
+| `joe_graph_related`    | Find nodes related to a given node                                 |
+| `joe_k8s`              | Answer Kubernetes questions (pods, deployments, logs) for a service |
+| `joe_metrics`          | Query metrics — Joe resolves Prometheus/Datadog/etc. from the graph |
+| `joe_logs`             | Search logs — Joe resolves Loki/Splunk/etc. from the graph          |
+| `joe_traces`           | Find traces — Joe resolves Tempo/Jaeger from the graph              |
+| `joe_alerts`           | List active alerts from Alertmanager/PagerDuty                     |
+| `joe_knowledge_search` | Semantic search over runbooks and docs                             |
 
 ---
 
@@ -403,7 +408,7 @@ Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
 
 `joe slack` connects Joe to Slack via Socket Mode — no public URL required.
 
-### Setup
+### Slack Setup
 
 ```bash
 export SLACK_BOT_TOKEN="xoxb-..."    # Bot User OAuth token
@@ -416,12 +421,43 @@ joe slack
 
 ### Available Slash Commands
 
-| Command             | Description                                          |
-| ------------------- | ---------------------------------------------------- |
-| `/joe ask <query>`  | Query the infrastructure graph and knowledge store   |
-| `/joe status`       | Show graph summary                                   |
-| `/joe incidents`    | List active incidents (requires Alertmanager source) |
-| `/joe help`         | Show available commands                              |
+| Command             | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| `/joe ask <query>`  | Query the infrastructure graph and knowledge store              |
+| `/joe status`       | Show graph summary                                              |
+| `/joe help`         | Show available commands                                         |
+
+Unrecognized subcommands are treated as queries (same as `/joe ask <text>`).
+
+---
+
+## Web UI
+
+Joe includes a browser-based dashboard for graph exploration, admin tasks, and chat.
+
+### Run the Web UI
+
+```bash
+# Install dependencies (first time only)
+cd ui && npm install && cd ..
+
+# Start joe-core + Web UI together
+make run-stack
+
+# Or start the UI dev server separately (requires joe-core running)
+make run-ui
+```
+
+Open `http://localhost:5173`. The UI connects to joe-core at `localhost:7777`.
+
+### Features
+
+- **Dashboard** — source health, active alerts, recent sessions
+- **Graph explorer** — interactive React Flow visualization of infrastructure relationships
+- **Admin panel** — manage RBAC zones, policies, and source-zone assignments
+- **Chat** — conversational interface to Joe with tool call display
+
+See [docs/web-ui.md](docs/web-ui.md) for the full specification.
 
 ---
 
@@ -505,28 +541,40 @@ joe/
 │   └── joe-core/       # Background daemon
 ├── internal/
 │   ├── adapters/       # Infrastructure adapters (K8s, AWS, Prometheus, ...)
-│   ├── api/            # HTTP API handlers (joe-core)
+│   ├── api/            # HTTP API handlers (joe-core) + Web UI endpoints
 │   ├── client/         # HTTP client (joe → joe-core)
 │   ├── config/         # Configuration loading
+│   ├── constants/      # Shared constants
 │   ├── core/           # Core services container
 │   ├── coreagent/      # Core Agent (background refresh, onboarding)
+│   ├── crypto/         # Cryptography utilities
+│   ├── env/            # Environment variable handling
 │   ├── graph/          # Graph store (SQLite)
 │   ├── knowledge/      # Knowledge store, embeddings, sync, proposals
 │   ├── llm/            # LLM adapter interface + Claude/Gemini implementations
 │   ├── llmfactory/     # LLM adapter factory
+│   ├── logging/        # Logging configuration
 │   ├── mcp/            # MCP server implementation
+│   ├── notify/         # Notification system
 │   ├── observability/  # OpenTelemetry metrics + tracing
+│   ├── observe/        # Normalized observability result types + LLM translator
 │   ├── paths/          # ~/.joe/ path helpers
+│   ├── prompts/        # All LLM prompt strings (centralized)
 │   ├── rbac/           # RBAC zones, policy engine, middleware
 │   ├── repl/           # Interactive REPL + model selector
+│   ├── review/         # Code review integration (GitHub/GitLab)
 │   ├── safety/         # Action tiers, panic mode, safe mode, policy loader
+│   ├── session/        # Session management
 │   ├── slack/          # Slack bot (Socket Mode)
+│   ├── sqlutil/        # SQL utilities
 │   ├── store/          # SQL store (SQLite) + migrations (001–006)
 │   ├── tools/          # Tool registry, executor, tier enforcement
 │   │   ├── core/       # Core tools (graph, K8s, cloud via HTTP)
 │   │   ├── local/      # Local tools (file I/O, git, run_command)
 │   │   └── shared/     # Shared tools (dns, http, netcheck, traceroute)
+│   ├── uid/            # UID generation
 │   └── useragent/      # User Agent orchestration + session
+├── ui/                 # Web UI (React 18 + Vite + Tailwind + shadcn/ui)
 ├── docs/               # Architecture and design docs
 ├── test/               # Integration + E2E test harness
 ├── config.example.yaml
@@ -562,7 +610,9 @@ joe/
 - [docs/security-in-layers.md](docs/security-in-layers.md) — Action Safety Framework and Panic Mode spec
 - [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview
 - [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
-- [docs/go-standards.md](docs/go-standards.md) — Go coding conventions
+- [docs/web-ui.md](docs/web-ui.md) — Web UI specification
+- [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
+- [docs/testing-strategy.md](docs/testing-strategy.md) — Testing strategy (unit, integration, E2E)
 
 ---
 
