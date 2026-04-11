@@ -15,6 +15,14 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 - Core Agent autonomy levels: Autonomous (deterministic) -> LLM+Auto (high-confidence) -> Needs Human (queued as clarifications)
 - All LLM prompt strings live in `internal/prompts/` — not scattered across packages
 
+## Applicable Skills
+
+- **dev-standards** (`~/.claude/skills/dev-standards/`): universal — verification-before-claiming, read-before-editing, minimal-changes discipline
+- **go-backend** (`~/.claude/skills/go-backend/`): authoritative for Go conventions, error handling, testing patterns
+- **frontend-dev** (`~/.claude/skills/frontend-dev/`): authoritative for React/TypeScript component structure, styling, and frontend testing
+
+> **Precedence.** When this CLAUDE.md and a referenced skill give conflicting guidance, the skill wins for topics within its scope. This CLAUDE.md only overrides a skill when it explicitly says "repo-specific override:" followed by the rule.
+
 ## Build / Test / Lint
 
 ```
@@ -33,11 +41,6 @@ npm run test
 ```
 
 ## Repo-Specific Conventions
-
-For Go code, follow the **go-backend** skill (`~/.claude/skills/go-backend/`).
-For frontend (`ui/`) code, follow the **frontend-dev** skill (`~/.claude/skills/frontend-dev/`).
-
-Joe-specific conventions not covered by those skills:
 
 - `joe` subcommands: `joe mcp`, `joe slack`, `joe panic`, `joe unlock`, `joe review`
 - Core tools (in `internal/tools/core/`) call joe-core over HTTP via `internal/client/`; local tools (in `internal/tools/local/`) run directly in the joe process; shared tools (in `internal/tools/shared/`) are Go-native and used by both
