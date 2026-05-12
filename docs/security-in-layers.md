@@ -8,13 +8,23 @@ This is a living document — update it as fixes land.
 
 ## Core Safety Principles
 
-These are non-negotiable and must be hardcoded (not bypassable by LLM or configuration that Joe itself can reach):
+These principles fall into two categories: **invariants** that hold at every stage of Joe's trust progression and are hardcoded into the binary, and **policy structure** that defines how humans express trust through configuration. Both are non-negotiable in their respective scopes — invariants cannot be overridden by configuration, and policy structure cannot be bypassed by LLM reasoning or prompt injection.
 
-1. **Humans own all mutation decisions.** Joe must never change infrastructure, files, or configuration without explicit human authorization.
-2. **Joe must always announce changes.** Even when authorized, Joe must notify the human before and after any mutation. Silent mutations are a bug.
-3. **Safety config is outside Joe's reach.** Joe must not be able to read, write, or influence its own safety configuration. The policy files live outside Joe's tool sandbox.
-4. **Default is deny.** Every mutation capability starts disabled. Humans opt in per-action-class, not opt out.
-5. **Allowlists, not blocklists.** We enumerate what's permitted, never what's forbidden.
+### Invariants (hardcoded, true at every trust stage)
+
+1. **Joe must always announce changes.** Even when authorized — including in autonomous healing — Joe must notify the human before and after any mutation. Announcement is non-negotiable across all stages of trust progression. Autonomous healing does not mean silent healing.
+
+2. **Safety config is outside Joe's reach.** Joe must not be able to read, write, or influence its own safety configuration. The policy files and protected tables live outside Joe's tool sandbox.
+
+3. **Autonomy is bounded by deterministic guardrails.** Even within authorized mutation classes, hardcoded limits — blast radius caps, rate limits, environment scope restrictions, credential boundaries — apply unconditionally. These guardrails are not LLM-instructed; they are compiled-in floors that no configuration can lower.
+
+### Policy structure (how humans express trust)
+
+4. **Humans authorize every class of mutation.** Joe never executes a mutation outside the classes humans have explicitly opted into via safety policy. Within an authorized class, Joe may decide *which specific action* fits the situation, but the class itself is always human-authored.
+
+5. **Default is deny.** Every mutation capability starts disabled. Humans opt in per-action-class, not opt out. This is what makes incremental trust progression possible.
+
+6. **Allowlists, not blocklists.** We enumerate what's permitted, never what's forbidden.
 
 ---
 
@@ -529,6 +539,8 @@ All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, t
 
 The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control.
 
+This is how the Core Safety Principles work together: invariants 1–3 hold at every stage of the progression below, while policy structure 4–6 is what humans use to move Joe along it. Autonomous healing is not a violation of the principles — it is the principles working as designed.
+
 ### 6.1 Trust Progression
 
 Joe's relationship with infrastructure follows a natural progression:
@@ -549,6 +561,8 @@ k8s_scale). Joe announces      prompting, still announces before
 before acting, human can       and after. Audit log captures
 Ctrl+C to cancel.              everything.
 ```
+
+At every stage, Joe is deciding *which specific action* to take within the classes humans have authorized. The class boundary is always human-authored; the situational judgment within it is Joe's. This is what principle 4 codifies.
 
 ### 6.2 Healing Actions by Adapter
 
