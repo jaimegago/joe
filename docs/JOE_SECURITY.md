@@ -17,7 +17,7 @@ User Request
     │
     ▼
 ┌─────────────────────────────────────────┐
-│ LAYER 1: RBAC (Human Authorization)    │
+│ LAYER 1: RBAC (Human Authorization)     │
 │ - Who are you?                          │
 │ - What zones can you access?            │
 │ - What actions in each zone?            │
@@ -34,7 +34,7 @@ User Request
             │
             ▼
 ┌─────────────────────────────────────────┐
-│ LAYER 2: Safety (LLM Controls)         │
+│ LAYER 2: Safety (LLM Controls)          │
 │ - T1/T2/T3 classification               │
 │ - Dry-run + human approval              │
 │ - Circuit breaker                       │
@@ -101,17 +101,17 @@ security_zones:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  1. Joe registers new source (via LLM tool)                         │
-│                                                                      │
+│                                                                     │
 │  INSERT INTO sources (id, type, config) VALUES (...)                │
 │  → Allowed ✅ (sources table is NOT protected)                      │
-│                                                                      │
-│  Zone lookup → No row found → defaults to 'unassigned' (Read only) │
+│                                                                     │
+│  Zone lookup → No row found → defaults to 'unassigned' (Read only)  │
 └─────────────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  2. Joe notifies admin                                              │
-│                                                                      │
+│                                                                     │
 │  "New source registered: grafana/xyz-experiment                     │
 │   Status: unassigned (read-only by default)                         │
 │   Assign a security zone via joe-security admin API."               │
@@ -120,18 +120,18 @@ security_zones:
          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  3. Admin assigns zone (via joe-security, NOT via LLM)              │
-│                                                                      │
+│                                                                     │
 │  joe-security assign-zone grafana/xyz-experiment dev-full           │
 │    --reason "approved for dev experimentation"                      │
-│                                                                      │
-│  → Writes to protected table (joe-security only)                   │
+│                                                                     │
+│  → Writes to protected table (joe-security only)                    │
 │  → Logged to audit_log                                              │
 └─────────────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  4. Joe now respects new zone                                       │
-│                                                                      │
+│                                                                     │
 │  Zone lookup → Returns 'dev-full'                                   │
 │  Actions allowed: [Read, Query, Mutate, Delete]                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -190,20 +190,20 @@ User: "create a dashboard in grafana for payment-svc"
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  joecored (single binary, single DB)                                │
-│                                                                      │
-│  LLM Tools can write to:                                           │
-│    ✅ sources, sessions, graph, knowledge                          │
-│                                                                      │
-│  LLM Tools CANNOT write to (hardcoded):                            │
+│                                                                     │
+│  LLM Tools can write to:                                            │
+│    ✅ sources, sessions, graph, knowledge                           │
+│                                                                     │
+│  LLM Tools CANNOT write to (hardcoded):                             │
 │    ❌ security_zones                                                │
 │    ❌ source_zone_assignments                                       │
 │    ❌ rbac_policies                                                 │
 │    ❌ audit_log (append-only)                                       │
-│                                                                      │
-│  Admin API (separate auth, not LLM-accessible):                    │
-│    POST /api/v1/admin/zones                                        │
-│    POST /api/v1/admin/source-zones                                 │
-│    POST /api/v1/admin/policies                                     │
+│                                                                     │
+│  Admin API (separate auth, not LLM-accessible):                     │
+│    POST /api/v1/admin/zones                                         │
+│    POST /api/v1/admin/source-zones                                  │
+│    POST /api/v1/admin/policies                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
