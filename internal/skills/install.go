@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -29,6 +30,24 @@ const LockfileName = "skills.lock.yaml"
 // activates a half-formed skill.
 const stagingDirName = ".staging"
 
+// quarantineDirName is the dotfile subdirectory that holds installs awaiting
+// human approval. Because it starts with `.`, LoadDir skips it just like
+// staging — a quarantined skill is *physically present* but invisible to
+// the active registry until an operator runs `joe skills approve`.
+//
+// Phase 4 routes every install through Policy.EvaluateInstall and lands
+// non-auto-approved ones here instead of in the active tree.
+const quarantineDirName = ".quarantine"
+
+// InstallStatusActive marks an install whose skills are loaded into the
+// in-memory registry.
+const InstallStatusActive = "active"
+
+// InstallStatusQuarantined marks an install whose directory is on disk under
+// .quarantine/ and whose skills are intentionally hidden from the registry
+// until a human approves them.
+const InstallStatusQuarantined = "quarantined"
+
 // Lockfile is the persisted record of every installed skills source. One
 // install ≈ one git clone; an install can produce multiple skills if the
 // upstream repo bundles them.
@@ -39,13 +58,26 @@ type Lockfile struct {
 
 // Install is one cloned skills source. Dir is relative to the skills root so
 // the lockfile is portable across machines.
+//
+// Status is "active" when the install lives directly under the skills root
+// and contributes to the registry, or "quarantined" when it lives under
+// .quarantine/ and is waiting for human approval. Empty (legacy lockfiles)
+// is treated as "active" for backward compatibility.
 type Install struct {
-	Dir    string        `yaml:"dir"`
-	Repo   string        `yaml:"repo"`
-	Ref    string        `yaml:"ref,omitempty"`
-	Commit string        `yaml:"commit,omitempty"`
-	Subdir string        `yaml:"subdir,omitempty"`
-	Skills []SkillRecord `yaml:"skills"`
+	Dir              string        `yaml:"dir"`
+	Repo             string        `yaml:"repo"`
+	Ref              string        `yaml:"ref,omitempty"`
+	Commit           string        `yaml:"commit,omitempty"`
+	Subdir           string        `yaml:"subdir,omitempty"`
+	Skills           []SkillRecord `yaml:"skills"`
+	Status           string        `yaml:"status,omitempty"`
+	QuarantineReason string        `yaml:"quarantine_reason,omitempty"`
+}
+
+// IsQuarantined reports whether the install is currently waiting for
+// approval. Legacy lockfiles with no Status field are treated as active.
+func (i Install) IsQuarantined() bool {
+	return i.Status == InstallStatusQuarantined
 }
 
 // SkillRecord is a single SKILL.md the installer found inside an install.
@@ -76,6 +108,13 @@ type Manager struct {
 	// Trusted-source-only mode is Phase 3's safety layer; the full
 	// quarantine + approval workflow arrives in Phase 4.
 	TrustedSources []string
+	// Policy is the loaded ~/.joe/skills-policy.yaml. When set, the Manager
+	// runs every install/update through Policy.EvaluateInstall /
+	// EvaluateUpdate and lands non-auto-approved ones in .quarantine/. When
+	// nil, the Manager behaves as in Phase 3 — installs go straight to
+	// active. The CLI passes nil for fresh systems with no policy file so
+	// existing single-user setups continue to work unchanged.
+	Policy *Policy
 }
 
 // NewManager returns a Manager rooted at `root` (typically ~/.joe/skills).
@@ -92,6 +131,14 @@ func NewManager(root string, g Git) *Manager {
 // helper so wiring code can construct a manager in one expression.
 func (m *Manager) WithTrustedSources(sources []string) *Manager {
 	m.TrustedSources = append([]string(nil), sources...)
+	return m
+}
+
+// WithPolicy returns m with its Policy set. Passing nil disables the
+// quarantine flow entirely; installs route straight to active. Mirrors
+// WithTrustedSources for fluent wiring.
+func (m *Manager) WithPolicy(p *Policy) *Manager {
+	m.Policy = p
 	return m
 }
 
@@ -216,19 +263,34 @@ func (m *Manager) Install(ctx context.Context, repo, ref, subdir string) (*Insta
 		return nil, fmt.Errorf("skill name collision: %q is already installed", conflict)
 	}
 
-	final := filepath.Join(m.Root, dir)
-	if err := os.Rename(stage, final); err != nil {
-		return nil, fmt.Errorf("activate install: %w", err)
+	// Policy gate: decide whether this install becomes active immediately
+	// or lands in .quarantine/ awaiting approval. When no policy is wired
+	// (legacy / Phase 3 mode), every install is active.
+	status := InstallStatusActive
+	quarantineReason := ""
+	if m.Policy != nil {
+		decision := m.Policy.EvaluateInstall(repo)
+		if !decision.AutoApprove {
+			status = InstallStatusQuarantined
+			quarantineReason = decision.Reason
+		}
+	}
+
+	final, err := m.activateOrQuarantine(stage, dir, status)
+	if err != nil {
+		return nil, err
 	}
 	cleanupStage = false
 
 	install := Install{
-		Dir:    dir,
-		Repo:   repo,
-		Ref:    ref,
-		Commit: commit,
-		Subdir: subdir,
-		Skills: skills,
+		Dir:              dir,
+		Repo:             repo,
+		Ref:              ref,
+		Commit:           commit,
+		Subdir:           subdir,
+		Skills:           skills,
+		Status:           status,
+		QuarantineReason: quarantineReason,
 	}
 	lf.Installs = append(lf.Installs, install)
 	if err := m.SaveLockfile(lf); err != nil {
@@ -236,7 +298,30 @@ func (m *Manager) Install(ctx context.Context, repo, ref, subdir string) (*Insta
 		// the operator can hand-edit the lockfile rather than lose the data.
 		return nil, fmt.Errorf("save lockfile (clone left at %s): %w", final, err)
 	}
+	auditSkillEvent("install", install, quarantineReason, skillNames(install.Skills))
 	return &install, nil
+}
+
+// activateOrQuarantine renames the staging dir into either the active root
+// or the quarantine subtree based on `status`. Returns the final absolute
+// path so the caller can surface it in error messages.
+func (m *Manager) activateOrQuarantine(stage, dir, status string) (string, error) {
+	if status == InstallStatusQuarantined {
+		qRoot := filepath.Join(m.Root, quarantineDirName)
+		if err := os.MkdirAll(qRoot, 0o755); err != nil {
+			return "", fmt.Errorf("create quarantine dir: %w", err)
+		}
+		final := filepath.Join(qRoot, dir)
+		if err := os.Rename(stage, final); err != nil {
+			return "", fmt.Errorf("quarantine install: %w", err)
+		}
+		return final, nil
+	}
+	final := filepath.Join(m.Root, dir)
+	if err := os.Rename(stage, final); err != nil {
+		return "", fmt.Errorf("activate install: %w", err)
+	}
+	return final, nil
 }
 
 // Remove deletes the install that owns the named skill. Because one install
@@ -287,15 +372,26 @@ func (m *Manager) Remove(_ context.Context, skillName string, force bool) ([]str
 	}
 	sort.Strings(removed)
 
-	full := filepath.Join(m.Root, target.Dir)
-	if err := os.RemoveAll(full); err != nil {
+	if err := os.RemoveAll(m.installPath(target)); err != nil {
 		return nil, fmt.Errorf("remove install dir: %w", err)
 	}
 	lf.Installs = append(lf.Installs[:idx], lf.Installs[idx+1:]...)
 	if err := m.SaveLockfile(lf); err != nil {
 		return removed, fmt.Errorf("save lockfile: %w", err)
 	}
+	auditSkillEvent("remove", target, "", removed)
 	return removed, nil
+}
+
+// installPath returns the absolute on-disk location of an install,
+// accounting for whether it currently lives in the active tree or under
+// .quarantine/. Centralising this avoids "is it quarantined?" branches
+// sprinkled across remove/update/approve/reject.
+func (m *Manager) installPath(in Install) string {
+	if in.IsQuarantined() {
+		return filepath.Join(m.Root, quarantineDirName, in.Dir)
+	}
+	return filepath.Join(m.Root, in.Dir)
 }
 
 // Update pulls the latest commit for one install (when `skillName` is given)
@@ -340,7 +436,8 @@ func (m *Manager) Update(ctx context.Context, skillName string) ([]*Install, err
 	updated := make([]*Install, 0, len(targets))
 	for _, idx := range targets {
 		in := &lf.Installs[idx]
-		full := filepath.Join(m.Root, in.Dir)
+		previousNames := skillNameSet(in.Skills)
+		full := m.installPath(*in)
 		commit, err := m.Git.Update(ctx, full, in.Ref)
 		if err != nil {
 			return updated, fmt.Errorf("update %s: %w", in.Dir, err)
@@ -355,15 +452,89 @@ func (m *Manager) Update(ctx context.Context, skillName string) ([]*Install, err
 		if conflict := firstNameConflict(lf, in.Dir, skills); conflict != "" {
 			return updated, fmt.Errorf("update %s: skill name %q now collides with another install", in.Dir, conflict)
 		}
+
+		// Detect any genuinely new skill names introduced by the pull —
+		// these are the ones policy guards via
+		// auto_approve.new_skills_in_existing_repos. Renames or hash
+		// changes for existing skills are *not* "new"; only previously
+		// unseen names count.
+		var newNames []string
+		for _, s := range skills {
+			if _, had := previousNames[s.Name]; !had {
+				newNames = append(newNames, s.Name)
+			}
+		}
+
+		// Decide whether the update stays active or moves to quarantine.
+		// An update of an already-quarantined install stays quarantined —
+		// approval is the only path out of quarantine.
+		newStatus := in.Status
+		newReason := in.QuarantineReason
+		if m.Policy != nil && !in.IsQuarantined() {
+			decision := m.Policy.EvaluateUpdate(in.Repo, newNames)
+			if !decision.AutoApprove {
+				newStatus = InstallStatusQuarantined
+				newReason = decision.Reason
+			} else {
+				newStatus = InstallStatusActive
+				newReason = ""
+			}
+		}
+
+		// If the status changed, the install directory needs to move
+		// between the active root and .quarantine/. Either direction is a
+		// rename within the skills root, so the watcher picks it up via
+		// fsnotify just like an install/remove.
+		if newStatus != "" && newStatus != in.Status && in.Status != "" {
+			if err := m.moveInstall(in, newStatus); err != nil {
+				return updated, fmt.Errorf("update %s: relocate: %w", in.Dir, err)
+			}
+		}
+
 		in.Commit = commit
 		in.Skills = skills
-		copy := *in
-		updated = append(updated, &copy)
+		if newStatus != "" {
+			in.Status = newStatus
+		}
+		in.QuarantineReason = newReason
+		clone := *in
+		updated = append(updated, &clone)
+		auditSkillEvent("update", clone, newReason, skillNames(clone.Skills))
 	}
 	if err := m.SaveLockfile(lf); err != nil {
 		return updated, fmt.Errorf("save lockfile: %w", err)
 	}
 	return updated, nil
+}
+
+// moveInstall renames an install between the active root and the quarantine
+// subtree. Used by Update when policy flips an install's status and by
+// Approve/Reject when a human resolves a quarantined install.
+func (m *Manager) moveInstall(in *Install, newStatus string) error {
+	oldPath := m.installPath(*in)
+	tmp := *in
+	tmp.Status = newStatus
+	newPath := m.installPath(tmp)
+	if oldPath == newPath {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir target: %w", err)
+	}
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return fmt.Errorf("rename %s → %s: %w", oldPath, newPath, err)
+	}
+	return nil
+}
+
+// skillNameSet collects skill names into a set for fast "did this name exist
+// before?" lookup during Update's new-skill detection.
+func skillNameSet(records []SkillRecord) map[string]struct{} {
+	out := make(map[string]struct{}, len(records))
+	for _, r := range records {
+		out[r.Name] = struct{}{}
+	}
+	return out
 }
 
 // List returns a copy of the installs recorded in the lockfile. Disk state
@@ -378,6 +549,133 @@ func (m *Manager) List() ([]Install, error) {
 	out := make([]Install, len(lf.Installs))
 	copy(out, lf.Installs)
 	return out, nil
+}
+
+// Approve lifts a quarantined install into the active tree. The directory
+// moves from .quarantine/<dir>/ to <dir>/, the lockfile status flips to
+// "active", and the watcher (when wired) picks up the resulting fsnotify
+// events and republishes the registry.
+//
+// Returns ErrSkillNotFound if the name does not exist, and a descriptive
+// error if the install is already active.
+func (m *Manager) Approve(_ context.Context, skillName string) (*Install, error) {
+	if skillName == "" {
+		return nil, errors.New("skill name is required")
+	}
+	lf, err := m.LoadLockfile()
+	if err != nil {
+		return nil, err
+	}
+	idx := findInstallBySkill(lf, skillName)
+	if idx < 0 {
+		return nil, fmt.Errorf("skill %q is not installed", skillName)
+	}
+	in := &lf.Installs[idx]
+	if !in.IsQuarantined() {
+		return nil, fmt.Errorf("skill %q is already active (status=%q)", skillName, in.Status)
+	}
+	// Guard against a collision that crept in while the install was in
+	// quarantine: another install with the same skill name may have been
+	// added in the meantime.
+	if conflict := firstNameConflict(lf, in.Dir, in.Skills); conflict != "" {
+		return nil, fmt.Errorf("approve %s: skill name %q now collides with an active install — remove the conflict first", in.Dir, conflict)
+	}
+	if err := m.moveInstall(in, InstallStatusActive); err != nil {
+		return nil, fmt.Errorf("approve %s: %w", in.Dir, err)
+	}
+	in.Status = InstallStatusActive
+	in.QuarantineReason = ""
+	if err := m.SaveLockfile(lf); err != nil {
+		return nil, fmt.Errorf("save lockfile after approve: %w", err)
+	}
+	clone := *in
+	auditSkillEvent("approve", clone, "", skillNames(clone.Skills))
+	return &clone, nil
+}
+
+// Reject removes a quarantined install entirely: directory is wiped, lockfile
+// entry is dropped. Returns the names of every skill that was removed (one
+// quarantine entry can contribute multiple skills).
+//
+// Refuses to operate on an active install — use Remove for those, so an
+// operator cannot accidentally delete a live skill via the "reject" verb.
+func (m *Manager) Reject(_ context.Context, skillName string) ([]string, error) {
+	if skillName == "" {
+		return nil, errors.New("skill name is required")
+	}
+	lf, err := m.LoadLockfile()
+	if err != nil {
+		return nil, err
+	}
+	idx := findInstallBySkill(lf, skillName)
+	if idx < 0 {
+		return nil, fmt.Errorf("skill %q is not installed", skillName)
+	}
+	in := lf.Installs[idx]
+	if !in.IsQuarantined() {
+		return nil, fmt.Errorf("skill %q is active, not quarantined — use `joe skills remove` instead", skillName)
+	}
+	removed := make([]string, 0, len(in.Skills))
+	for _, s := range in.Skills {
+		removed = append(removed, s.Name)
+	}
+	sort.Strings(removed)
+
+	if err := os.RemoveAll(m.installPath(in)); err != nil {
+		return nil, fmt.Errorf("remove quarantined install: %w", err)
+	}
+	lf.Installs = append(lf.Installs[:idx], lf.Installs[idx+1:]...)
+	if err := m.SaveLockfile(lf); err != nil {
+		return removed, fmt.Errorf("save lockfile after reject: %w", err)
+	}
+	auditSkillEvent("reject", in, in.QuarantineReason, removed)
+	return removed, nil
+}
+
+// auditSkillEvent emits a structured slog record for one skill-lifecycle
+// event so the operator has a single grep target ("skill_audit") for every
+// install/update/approve/reject/remove. The watcher's own reload audit is
+// emitted from watcher.go alongside; both share the same event field so
+// operators can collect them with one query.
+func auditSkillEvent(event string, in Install, reason string, skills []string) {
+	attrs := []any{
+		"event", event,
+		"dir", in.Dir,
+		"repo", in.Repo,
+		"ref", in.Ref,
+		"commit", in.Commit,
+		"status", in.Status,
+		"skills", skills,
+	}
+	if reason != "" {
+		attrs = append(attrs, "reason", reason)
+	}
+	slog.Info("skill_audit", attrs...)
+}
+
+// skillNames extracts just the names from a SkillRecord slice. Used by the
+// audit helper so the log payload stays compact (no hashes / paths).
+func skillNames(records []SkillRecord) []string {
+	out := make([]string, len(records))
+	for i, r := range records {
+		out[i] = r.Name
+	}
+	sort.Strings(out)
+	return out
+}
+
+// findInstallBySkill returns the lockfile index of the install containing
+// `skillName`, or -1 if none does. Both active and quarantined entries are
+// searched.
+func findInstallBySkill(lf *Lockfile, skillName string) int {
+	for i, in := range lf.Installs {
+		for _, s := range in.Skills {
+			if s.Name == skillName {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // allocateInstallDir derives a directory name from the repo URL and ensures

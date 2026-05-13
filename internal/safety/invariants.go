@@ -73,8 +73,29 @@ func IsPathAllowed(absPath string) error {
 		}
 	}
 
+	// Defense in depth for the skills policy file: the broader ~/.joe block
+	// already covers it, but spelling it out keeps the failure message
+	// explicit if either rule is ever loosened. The filename is hard-coded
+	// here (mirroring skills.PolicyFileName) to avoid a circular import.
+	skillsPolicyPath := resolvePathSymlinks(filepath.Clean(filepath.Join(joeDir, skillsPolicyFileName)))
+	if caseInsensitiveFS {
+		skillsPolicyPath = strings.ToLower(skillsPolicyPath)
+	}
+	if cleanPath == skillsPolicyPath {
+		return &InvariantViolationError{
+			Type:   "path_protection",
+			Target: absPath,
+			Reason: "Joe cannot access its skills policy file (self-protection)",
+		}
+	}
+
 	return nil
 }
+
+// skillsPolicyFileName mirrors skills.PolicyFileName. Duplicated here so the
+// safety package — which is imported by skills — does not need to import
+// skills back.
+const skillsPolicyFileName = "skills-policy.yaml"
 
 // IsCommandAllowed checks if a command is allowed to run.
 // Returns an error if the command violates self-protection invariants.

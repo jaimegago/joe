@@ -1,12 +1,15 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +118,171 @@ func TestSkillsReload_UnavailableWhenWatcherNil(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// newSkillsServerWithManager spins up a server backed by a real install
+// Manager so the GET /skills, POST /skills/approve, and POST /skills/reject
+// handlers can exercise the full path: lockfile -> JSON response.
+func newSkillsServerWithManager(t *testing.T, root string) (*httptest.Server, *skills.Manager) {
+	t.Helper()
+	router := skills.NewAtomicRouter(skills.NewRouter(skills.NewRegistry()))
+	// Default policy = deny-by-default, so installs land in quarantine —
+	// exactly what we want to exercise the new endpoints against.
+	mgr := skills.NewManager(root, &fakeManagerGit{}).WithPolicy(skills.DefaultPolicy())
+
+	svc := &core.Services{
+		Skills:        router,
+		SkillsManager: mgr,
+	}
+	srv := api.New(svc)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts, mgr
+}
+
+// fakeManagerGit is a minimal Git stub for the API-level tests: it writes a
+// single SKILL.md into the staging dir so Install succeeds without touching
+// the network.
+type fakeManagerGit struct{}
+
+func (fakeManagerGit) Clone(_ context.Context, repo, _, _, dest string) (string, error) {
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return "", err
+	}
+	skill := "---\nname: pending\ndescription: pending\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		return "", err
+	}
+	return "abc", nil
+}
+
+func (fakeManagerGit) Update(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}
+
+func TestSkillsList_SplitsActiveAndQuarantined(t *testing.T) {
+	root := t.TempDir()
+	ts, mgr := newSkillsServerWithManager(t, root)
+
+	// Default policy denies → install lands in quarantine.
+	if _, err := mgr.Install(context.Background(), "https://example.com/x.git", "", ""); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	resp, err := http.Get(ts.URL + "/api/v1/skills")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var got struct {
+		Active      []map[string]any `json:"active"`
+		Quarantined []map[string]any `json:"quarantined"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Active) != 0 {
+		t.Errorf("active should be empty, got %+v", got.Active)
+	}
+	if len(got.Quarantined) != 1 || got.Quarantined[0]["name"] != "pending" {
+		t.Errorf("quarantined = %+v", got.Quarantined)
+	}
+	if reason, _ := got.Quarantined[0]["quarantine_reason"].(string); reason == "" {
+		t.Error("quarantined entry must include quarantine_reason for the UI")
+	}
+}
+
+func TestSkillsApprove_MovesQuarantinedToActive(t *testing.T) {
+	root := t.TempDir()
+	ts, mgr := newSkillsServerWithManager(t, root)
+	if _, err := mgr.Install(context.Background(), "https://example.com/x.git", "", ""); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	body := strings.NewReader(`{"name":"pending"}`)
+	resp, err := http.Post(ts.URL+"/api/v1/skills/approve", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, raw)
+	}
+	var got map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["status"] != "ok" {
+		t.Errorf("status = %v", got["status"])
+	}
+
+	// Disk: install should now be active.
+	installs, _ := mgr.List()
+	if len(installs) != 1 || installs[0].IsQuarantined() {
+		t.Errorf("after approve, install should be active: %+v", installs)
+	}
+}
+
+func TestSkillsApprove_MissingNameIs400(t *testing.T) {
+	root := t.TempDir()
+	ts, _ := newSkillsServerWithManager(t, root)
+
+	resp, err := http.Post(ts.URL+"/api/v1/skills/approve", "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestSkillsApprove_UnavailableWhenManagerNil(t *testing.T) {
+	svc := &core.Services{
+		Skills: skills.NewAtomicRouter(skills.NewRouter(skills.NewRegistry())),
+	}
+	srv := api.New(svc)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/v1/skills/approve", "application/json", strings.NewReader(`{"name":"x"}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestSkillsReject_RemovesQuarantined(t *testing.T) {
+	root := t.TempDir()
+	ts, mgr := newSkillsServerWithManager(t, root)
+	if _, err := mgr.Install(context.Background(), "https://example.com/x.git", "", ""); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	resp, err := http.Post(ts.URL+"/api/v1/skills/reject", "application/json", strings.NewReader(`{"name":"pending"}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, raw)
+	}
+	installs, _ := mgr.List()
+	if len(installs) != 0 {
+		t.Errorf("after reject, lockfile should be empty: %+v", installs)
 	}
 }
 
