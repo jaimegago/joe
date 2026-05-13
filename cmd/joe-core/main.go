@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -42,6 +43,7 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -346,6 +348,18 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.RBAC = rbacRepo
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
+
+	// Load skills from ~/.joe/skills/ (Agent Skills format). Missing directory
+	// is fine — it just means no skills are installed. Parse failures are
+	// logged but never fatal: a bad skill must not block startup.
+	skillsDir := filepath.Join(joeDir, "skills")
+	skillRegistry, err := skills.LoadDir(skillsDir)
+	if err != nil {
+		slog.Warn("failed to load skills", "dir", skillsDir, "error", err)
+		skillRegistry = skills.NewRegistry()
+	}
+	services.Skills = skills.NewRouter(skillRegistry)
+	slog.Info("skills loaded", "dir", skillsDir, "count", skillRegistry.Len())
 
 	// Register business metrics gauges
 	if err := deps.registerBusinessMetric(services); err != nil {

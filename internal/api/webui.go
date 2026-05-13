@@ -326,6 +326,9 @@ func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
 	if graphSummary != "" {
 		systemPrompt += "\n\nCurrent infrastructure context:\n" + graphSummary
 	}
+	if section := renderSkillsForQuery(h.server.services.Skills, req.Message); section != "" {
+		systemPrompt += "\n\n" + section
+	}
 
 	// Append user message
 	history = append(history, llm.Message{

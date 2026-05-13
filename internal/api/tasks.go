@@ -13,6 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/uid"
@@ -199,6 +200,9 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 				summary.NodeCount, summary.EdgeCount, summary.NodesByType,
 			)
 		}
+	}
+	if section := renderSkillsForQuery(h.server.services.Skills, req.Message); section != "" {
+		systemPrompt += "\n\n" + section
 	}
 
 	// Create agent with observer
@@ -549,4 +553,24 @@ func collectMapValues(v any, out *[]string) {
 func (s *Server) registerTaskRoutes(mux *http.ServeMux, prefix string) {
 	h := &taskHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("POST %s/tasks", prefix), h.handleTask)
+}
+
+// renderSkillsForQuery routes the user query through the skill registry and
+// renders matched skills as a system-prompt addition. Returns "" when the
+// router is unconfigured or nothing matched, so callers can append
+// unconditionally. Selected skill names are logged for auditability.
+func renderSkillsForQuery(router *skills.Router, query string) string {
+	if router == nil {
+		return ""
+	}
+	matched := router.Match(query)
+	if len(matched) == 0 {
+		return ""
+	}
+	names := make([]string, len(matched))
+	for i, s := range matched {
+		names[i] = s.Name
+	}
+	slog.Info("skills activated", "skills", names)
+	return skills.RenderPromptSection(matched)
 }

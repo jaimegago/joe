@@ -15,6 +15,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
+	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -43,6 +44,7 @@ type Services struct {
 	RBAC           rbac.Repository     // nil when RBAC is not configured
 	Review         *review.Service     // nil when code review is not configured
 	ReviewAgent    *review.ReviewAgent // nil when review agent is not configured
+	Skills         *skills.Router      // nil when skills loading failed; safe to call .Match on nil
 }
 
 // New creates a new Services instance with the given SQL store database.
