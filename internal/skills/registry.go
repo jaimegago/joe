@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // skillFileName is the canonical file every skill folder must contain.
@@ -79,7 +80,16 @@ func LoadDir(root string) (*Registry, error) {
 			slog.Warn("skills: walk error", "path", path, "error", err)
 			return nil
 		}
-		if d.IsDir() || d.Name() != skillFileName {
+		// Skip dotfile directories so the installer's `.staging/` (and any
+		// other tooling-owned hidden dirs) cannot activate a half-cloned
+		// skill mid-install.
+		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != skillFileName {
 			return nil
 		}
 

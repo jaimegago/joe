@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/useragent"
@@ -37,16 +40,17 @@ type replRunner interface {
 }
 
 type runDeps struct {
-	loadConfig  func(path string) (*config.Config, error)
-	setupOTel   func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
-	newMetrics  func() *observability.Metrics
-	newAdapter  func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
-	joeDirPath  func() (string, error)
-	loadPolicy  func(configDir string) (*safety.SafetyPolicy, error)
-	newClient   func(baseURL string, opts ...client.ClientOption) *client.Client
-	newRegistry func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
-	newExecutor func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
-	newRepl     func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
+	loadConfig      func(path string) (*config.Config, error)
+	setupOTel       func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
+	newMetrics      func() *observability.Metrics
+	newAdapter      func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
+	joeDirPath      func() (string, error)
+	loadPolicy      func(configDir string) (*safety.SafetyPolicy, error)
+	newClient       func(baseURL string, opts ...client.ClientOption) *client.Client
+	newRegistry     func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
+	newExecutor     func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
+	newRepl         func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
+	newSkillManager func(root string) skillManager
 }
 
 func defaultRunDeps() runDeps {
@@ -63,7 +67,19 @@ func defaultRunDeps() runDeps {
 		newRepl: func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
 			return repl.NewWithSession(agent, cfg, session)
 		},
+		newSkillManager: func(root string) skillManager {
+			return skills.NewManager(root, nil)
+		},
 	}
+}
+
+// skillManager is the narrow surface the `joe skills` CLI needs from the
+// install manager. It exists so tests can inject a fake without spawning git.
+type skillManager interface {
+	Install(ctx context.Context, repo, ref, subdir string) (*skills.Install, error)
+	Remove(ctx context.Context, name string, force bool) ([]string, error)
+	Update(ctx context.Context, name string) ([]*skills.Install, error)
+	List() ([]skills.Install, error)
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -337,6 +353,175 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 	return 0
 }
 
+// runSkillsCommand implements `joe skills <subcommand>` — install, list,
+// remove, and update Agent Skills sources cloned into ~/.joe/skills/.
+// Phase 2 is restart-required: changes only take effect after joe-core is
+// restarted. Hot reload arrives in Phase 3.
+func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	usage := func() {
+		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update> [flags]")
+		fmt.Fprintln(stderr, "  install <repo-url> [--ref <branch|tag>] [--subdir <path>]")
+		fmt.Fprintln(stderr, "                              Clone a skills repo into ~/.joe/skills/.")
+		fmt.Fprintln(stderr, "  list                        Show installed skills, their source repos, and git refs.")
+		fmt.Fprintln(stderr, "  remove <skill-name> [--force]")
+		fmt.Fprintln(stderr, "                              Uninstall the skill. --force is required if its install")
+		fmt.Fprintln(stderr, "                              contains other skills.")
+		fmt.Fprintln(stderr, "  update [<skill-name>]       Fetch and reset every install, or just the one")
+		fmt.Fprintln(stderr, "                              containing the named skill.")
+	}
+	if len(args) == 0 {
+		usage()
+		return 2
+	}
+
+	joeDir, err := deps.joeDirPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: cannot determine Joe config directory: %v\n", err)
+		return 1
+	}
+	mgr := deps.newSkillManager(filepath.Join(joeDir, "skills"))
+
+	switch args[0] {
+	case "install":
+		fs := flag.NewFlagSet("joe skills install", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		ref := fs.String("ref", "", "branch, tag, or commit to pin (default: repo's default branch)")
+		subdir := fs.String("subdir", "", "install a single skill subdirectory via sparse checkout")
+		if err := fs.Parse(reorderFlagsFirst(args[1:], map[string]bool{"ref": true, "subdir": true})); err != nil {
+			return 2
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(stderr, "Error: install requires exactly one <repo-url> positional argument")
+			return 1
+		}
+		repo := fs.Arg(0)
+		install, err := mgr.Install(ctx, repo, *ref, *subdir)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Installed %s @ %s (%d skill(s)):\n", install.Repo, shortCommit(install.Commit), len(install.Skills))
+		for _, s := range install.Skills {
+			fmt.Fprintf(stdout, "  - %s\n", s.Name)
+		}
+		fmt.Fprintln(stdout, "Restart joe-core to load the new skills.")
+		return 0
+
+	case "list":
+		installs, err := mgr.List()
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(installs) == 0 {
+			fmt.Fprintln(stdout, "No skills installed. Run `joe skills install <repo-url>` to add one.")
+			return 0
+		}
+		fmt.Fprintf(stdout, "%-32s  %-12s  %s\n", "SKILL", "REF", "REPO")
+		for _, in := range installs {
+			ref := in.Ref
+			if ref == "" {
+				ref = "(default)"
+			}
+			for _, s := range in.Skills {
+				fmt.Fprintf(stdout, "%-32s  %-12s  %s\n", s.Name, ref, in.Repo)
+			}
+		}
+		return 0
+
+	case "remove":
+		fs := flag.NewFlagSet("joe skills remove", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		force := fs.Bool("force", false, "remove the install even if it provides other skills")
+		if err := fs.Parse(reorderFlagsFirst(args[1:], map[string]bool{})); err != nil {
+			return 2
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(stderr, "Error: remove requires exactly one <skill-name>")
+			return 1
+		}
+		removed, err := mgr.Remove(ctx, fs.Arg(0), *force)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(removed) == 1 {
+			fmt.Fprintf(stdout, "Removed skill %q.\n", removed[0])
+		} else {
+			fmt.Fprintf(stdout, "Removed %d skill(s): %s\n", len(removed), strings.Join(removed, ", "))
+		}
+		fmt.Fprintln(stdout, "Restart joe-core to clear the unloaded skills.")
+		return 0
+
+	case "update":
+		fs := flag.NewFlagSet("joe skills update", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		target := ""
+		if fs.NArg() == 1 {
+			target = fs.Arg(0)
+		} else if fs.NArg() > 1 {
+			fmt.Fprintln(stderr, "Error: update takes at most one <skill-name>")
+			return 1
+		}
+		updated, err := mgr.Update(ctx, target)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(updated) == 0 {
+			fmt.Fprintln(stdout, "Nothing to update.")
+			return 0
+		}
+		for _, in := range updated {
+			fmt.Fprintf(stdout, "Updated %s @ %s (%d skill(s))\n", in.Repo, shortCommit(in.Commit), len(in.Skills))
+		}
+		fmt.Fprintln(stdout, "Restart joe-core to pick up the new skill content.")
+		return 0
+
+	default:
+		fmt.Fprintf(stderr, "Unknown skills subcommand: %s\n\n", args[0])
+		usage()
+		return 2
+	}
+}
+
+func shortCommit(sha string) string {
+	if len(sha) <= 12 {
+		return sha
+	}
+	return sha[:12]
+}
+
+// reorderFlagsFirst moves --flag tokens (and their values for the named
+// `valueFlags`) to the front of args so callers can write either
+// `cmd <pos> --flag v` or `cmd --flag v <pos>`. The stdlib flag package only
+// supports the latter natively.
+func reorderFlagsFirst(args []string, valueFlags map[string]bool) []string {
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			positional = append(positional, a)
+			continue
+		}
+		flags = append(flags, a)
+		// `--flag=value` carries the value inline; otherwise we need to
+		// pull the next token as the value when the flag expects one.
+		if strings.Contains(a, "=") {
+			continue
+		}
+		name := strings.TrimLeft(a, "-")
+		if valueFlags[name] && i+1 < len(args) {
+			flags = append(flags, args[i+1])
+			i++
+		}
+	}
+	return append(flags, positional...)
+}
+
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	// Dispatch subcommands before parsing REPL flags.
 	if len(args) > 0 {
@@ -351,6 +536,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runMCPCommand(ctx, args[1:], stderr, deps)
 		case "slack":
 			return runSlackCommand(ctx, args[1:], stderr, deps)
+		case "skills":
+			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
 		}
 	}
 
