@@ -201,7 +201,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
-	if section := renderSkillsForQuery(h.server.services.Skills, req.Message); section != "" {
+	if section := renderSkillsForQuery(h.server.services.Skills.Snapshot(), req.Message); section != "" {
 		systemPrompt += "\n\n" + section
 	}
 

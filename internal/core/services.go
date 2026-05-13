@@ -41,10 +41,11 @@ type Services struct {
 	Proposals      *proposals.Service
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
-	RBAC           rbac.Repository     // nil when RBAC is not configured
-	Review         *review.Service     // nil when code review is not configured
-	ReviewAgent    *review.ReviewAgent // nil when review agent is not configured
-	Skills         *skills.Router      // nil when skills loading failed; safe to call .Match on nil
+	RBAC           rbac.Repository      // nil when RBAC is not configured
+	Review         *review.Service      // nil when code review is not configured
+	ReviewAgent    *review.ReviewAgent  // nil when review agent is not configured
+	Skills         *skills.AtomicRouter // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher  *skills.Watcher      // nil when hot reload is disabled or failed to start
 }
 
 // New creates a new Services instance with the given SQL store database.

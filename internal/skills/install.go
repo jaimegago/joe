@@ -69,6 +69,13 @@ type Git interface {
 type Manager struct {
 	Root string
 	Git  Git
+	// TrustedSources, when non-empty, restricts Install to repo URLs that
+	// match one of the listed prefixes (host or host+owner/repo). Empty
+	// means no allowlist — every URL is accepted, which is the right
+	// default for personal/single-user installs and the Phase 2 behavior.
+	// Trusted-source-only mode is Phase 3's safety layer; the full
+	// quarantine + approval workflow arrives in Phase 4.
+	TrustedSources []string
 }
 
 // NewManager returns a Manager rooted at `root` (typically ~/.joe/skills).
@@ -79,6 +86,13 @@ func NewManager(root string, g Git) *Manager {
 		g = ExecGit{}
 	}
 	return &Manager{Root: root, Git: g}
+}
+
+// WithTrustedSources returns m with its TrustedSources list set. Fluent
+// helper so wiring code can construct a manager in one expression.
+func (m *Manager) WithTrustedSources(sources []string) *Manager {
+	m.TrustedSources = append([]string(nil), sources...)
+	return m
 }
 
 // LoadLockfile reads the lockfile, returning an empty Lockfile if it is
@@ -150,6 +164,9 @@ func (m *Manager) Install(ctx context.Context, repo, ref, subdir string) (*Insta
 		return nil, errors.New("repo URL is required")
 	}
 	if err := validateRepoURL(repo); err != nil {
+		return nil, err
+	}
+	if err := m.checkTrusted(repo); err != nil {
 		return nil, err
 	}
 	subdir = cleanSubdir(subdir)
@@ -480,6 +497,70 @@ func validateRepoURL(repo string) error {
 		return nil
 	}
 	return fmt.Errorf("repo URL %q is not recognized (use https://, ssh://, or git@host:owner/repo)", repo)
+}
+
+// checkTrusted reports nil when `repo` matches one of m.TrustedSources, or
+// when no allowlist is configured. The match is a normalised prefix check
+// against the URL's host+path so a single entry can authorise either an
+// entire host ("github.com") or one organisation ("github.com/jaimegago").
+//
+// Phase 3 stops short of the full quarantine workflow: a non-matching repo
+// is rejected outright with an error; it does not land in a quarantine
+// state. Phase 4 introduces quarantine.
+func (m *Manager) checkTrusted(repo string) error {
+	if len(m.TrustedSources) == 0 {
+		return nil
+	}
+	repoKey := normalizeRepoForTrust(repo)
+	if repoKey == "" {
+		return fmt.Errorf("trusted-source check: cannot parse %q", repo)
+	}
+	for _, src := range m.TrustedSources {
+		srcKey := normalizeRepoForTrust(src)
+		if srcKey == "" {
+			continue
+		}
+		if repoKey == srcKey || strings.HasPrefix(repoKey, srcKey+"/") {
+			return nil
+		}
+	}
+	return fmt.Errorf("repo %q is not in trusted_sources (configured entries: %s)",
+		repo, strings.Join(m.TrustedSources, ", "))
+}
+
+// normalizeRepoForTrust reduces a repo URL or a trusted-source entry to a
+// "host/owner/repo" string with the scheme, ".git" suffix, and trailing
+// slashes stripped. Returns "" for inputs it cannot parse — callers treat
+// that as a non-match.
+func normalizeRepoForTrust(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.TrimSuffix(s, "/")
+	if s == "" {
+		return ""
+	}
+
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		path := strings.Trim(u.Path, "/")
+		if path == "" {
+			return strings.ToLower(u.Host)
+		}
+		return strings.ToLower(u.Host + "/" + path)
+	}
+
+	// scp-like form (git@github.com:owner/repo) and bare "host/owner/repo".
+	if at := strings.Index(s, "@"); at >= 0 && strings.Contains(s[at:], ":") {
+		rest := s[at+1:]
+		if colon := strings.Index(rest, ":"); colon >= 0 {
+			host := rest[:colon]
+			path := strings.Trim(rest[colon+1:], "/")
+			if path == "" {
+				return strings.ToLower(host)
+			}
+			return strings.ToLower(host + "/" + path)
+		}
+	}
+	return strings.ToLower(s)
 }
 
 // cleanSubdir normalises an optional subdirectory selector to a forward-slash

@@ -3,10 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/skills"
 )
 
@@ -54,7 +59,7 @@ func (f *fakeSkillManager) List() ([]skills.Install, error) {
 
 func skillsDeps(t *testing.T, joeDir string, mgr *fakeSkillManager) runDeps {
 	deps := testDeps(&fakeRepl{}, joeDir)
-	deps.newSkillManager = func(root string) skillManager {
+	deps.newSkillManager = func(root string, trusted []string) skillManager {
 		return mgr
 	}
 	return deps
@@ -98,8 +103,8 @@ func TestRunSkillsCommand_Install_Success(t *testing.T) {
 	if !strings.Contains(out, "Installed https://example.com/foo.git") || !strings.Contains(out, "abcdef012345") {
 		t.Errorf("stdout missing install summary: %q", out)
 	}
-	if !strings.Contains(out, "Restart joe-core") {
-		t.Error("install should remind user to restart joe-core")
+	if !strings.Contains(out, "joe-core will pick up the new skills") {
+		t.Errorf("install should mention hot reload behaviour, got %q", out)
 	}
 }
 
@@ -308,5 +313,125 @@ func TestRunSkillsCommand_JoeDirError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Joe config directory") {
 		t.Errorf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunSkillsCommand_Reload_Success(t *testing.T) {
+	// Spin up a fake joe-core that returns a reload summary, then call
+	// `joe skills reload` against it. Verifies the client+CLI wire shape.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/skills/reload" || r.Method != "POST" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  "ok",
+			"trigger": "manual",
+			"before":  1,
+			"after":   2,
+			"added":   []string{"new-skill"},
+		})
+	}))
+	t.Cleanup(ts.Close)
+	addr := strings.TrimPrefix(ts.URL, "http://")
+
+	mgr := &fakeSkillManager{}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	deps.loadConfig = func(string) (*config.Config, error) {
+		return &config.Config{
+			Server: config.ServerConfig{Address: addr},
+		}, nil
+	}
+	// newClient is the real one via defaultRunDeps so it talks to ts.
+	deps.newClient = client.New
+
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "reload"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%q", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Reload ok") || !strings.Contains(out, "1 skill(s) before, 2 after") {
+		t.Errorf("stdout missing summary: %q", out)
+	}
+	if !strings.Contains(out, "new-skill") {
+		t.Errorf("stdout missing Added list: %q", out)
+	}
+}
+
+func TestRunSkillsCommand_Reload_FailureExitCode(t *testing.T) {
+	// joe-core returns 500 with a failure payload. The CLI must propagate
+	// a non-zero exit code so CI/CD pipelines fail loudly.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal","message":"reload failed: walk error"}`))
+	}))
+	t.Cleanup(ts.Close)
+	addr := strings.TrimPrefix(ts.URL, "http://")
+
+	mgr := &fakeSkillManager{}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	deps.loadConfig = func(string) (*config.Config, error) {
+		return &config.Config{Server: config.ServerConfig{Address: addr}}, nil
+	}
+	deps.newClient = client.New
+
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "reload"}, &stdout, &stderr, deps)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit, got 0 (stdout=%q)", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "reload failed") {
+		t.Errorf("stderr missing failure detail: %q", stderr.String())
+	}
+}
+
+func TestRunSkillsCommand_Reload_RejectsPositionalArgs(t *testing.T) {
+	mgr := &fakeSkillManager{}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	deps.loadConfig = func(string) (*config.Config, error) {
+		return &config.Config{}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(),
+		[]string{"skills", "reload", "extra"}, &stdout, &stderr, deps,
+	)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "no positional") {
+		t.Errorf("stderr should explain the misuse: %q", stderr.String())
+	}
+}
+
+func TestRunSkillsCommand_Install_PassesTrustedSourcesFromConfig(t *testing.T) {
+	// Verifies the wiring between config.Skills.TrustedSources and the
+	// manager factory. Without this, the trust check happens with an
+	// empty allowlist and silently accepts everything.
+	mgr := &fakeSkillManager{installResp: &skills.Install{Skills: []skills.SkillRecord{{Name: "x"}}}}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	deps.loadConfig = func(string) (*config.Config, error) {
+		return &config.Config{
+			Skills: config.SkillsConfig{TrustedSources: []string{"github.com/myorg"}},
+		}, nil
+	}
+	var observed []string
+	deps.newSkillManager = func(root string, trusted []string) skillManager {
+		observed = trusted
+		return mgr
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(),
+		[]string{"skills", "install", "https://github.com/myorg/skills.git"},
+		&stdout, &stderr, deps,
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%q", code, stderr.String())
+	}
+	if len(observed) != 1 || observed[0] != "github.com/myorg" {
+		t.Errorf("trusted sources not threaded through; got %v", observed)
 	}
 }

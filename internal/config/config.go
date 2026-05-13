@@ -21,6 +21,22 @@ type Config struct {
 	Logging       LoggingConfig      `yaml:"logging"`
 	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
 	Database      DatabaseConfig     `yaml:"database"`
+	Skills        SkillsConfig       `yaml:"skills"`
+}
+
+// SkillsConfig governs the Agent Skills consumer (~/.joe/skills/). Phase 3
+// adds hot reload and a trusted-source allowlist; the full policy file with
+// quarantine + signing arrives in Phase 4.
+type SkillsConfig struct {
+	// TrustedSources, when non-empty, restricts `joe skills install` to git
+	// URLs whose host (or host + owner prefix) matches one of the listed
+	// entries. Empty disables the allowlist entirely.
+	TrustedSources []string `yaml:"trusted_sources"`
+	// HotReloadDisabled turns off the filesystem watcher. Default (zero
+	// value) keeps hot reload on, since eliminating restart friction is the
+	// whole point of Phase 3. Set to true to require explicit reloads via
+	// `joe skills reload` / POST /api/v1/skills/reload.
+	HotReloadDisabled bool `yaml:"hot_reload_disabled"`
 }
 
 // DatabaseConfig selects the backing database driver and connection string.

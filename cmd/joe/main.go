@@ -50,7 +50,7 @@ type runDeps struct {
 	newRegistry     func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
 	newExecutor     func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
 	newRepl         func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
-	newSkillManager func(root string) skillManager
+	newSkillManager func(root string, trusted []string) skillManager
 }
 
 func defaultRunDeps() runDeps {
@@ -67,8 +67,8 @@ func defaultRunDeps() runDeps {
 		newRepl: func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
 			return repl.NewWithSession(agent, cfg, session)
 		},
-		newSkillManager: func(root string) skillManager {
-			return skills.NewManager(root, nil)
+		newSkillManager: func(root string, trusted []string) skillManager {
+			return skills.NewManager(root, nil).WithTrustedSources(trusted)
 		},
 	}
 }
@@ -354,12 +354,13 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 }
 
 // runSkillsCommand implements `joe skills <subcommand>` — install, list,
-// remove, and update Agent Skills sources cloned into ~/.joe/skills/.
-// Phase 2 is restart-required: changes only take effect after joe-core is
-// restarted. Hot reload arrives in Phase 3.
+// remove, update, and (Phase 3) reload Agent Skills sources installed at
+// ~/.joe/skills/. install/list/remove/update operate on the local filesystem
+// only; reload calls into joe-core to refresh its in-memory registry without
+// a restart.
 func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update> [flags]")
+		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update|reload> [flags]")
 		fmt.Fprintln(stderr, "  install <repo-url> [--ref <branch|tag>] [--subdir <path>]")
 		fmt.Fprintln(stderr, "                              Clone a skills repo into ~/.joe/skills/.")
 		fmt.Fprintln(stderr, "  list                        Show installed skills, their source repos, and git refs.")
@@ -368,6 +369,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "                              contains other skills.")
 		fmt.Fprintln(stderr, "  update [<skill-name>]       Fetch and reset every install, or just the one")
 		fmt.Fprintln(stderr, "                              containing the named skill.")
+		fmt.Fprintln(stderr, "  reload                      Trigger joe-core to rescan ~/.joe/skills/ without a restart.")
 	}
 	if len(args) == 0 {
 		usage()
@@ -379,7 +381,17 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintf(stderr, "Error: cannot determine Joe config directory: %v\n", err)
 		return 1
 	}
-	mgr := deps.newSkillManager(filepath.Join(joeDir, "skills"))
+
+	// Load config so install can enforce trusted_sources and reload can
+	// find joe-core's address. A missing config file falls back to
+	// defaults — both fields are simply empty in that case, which is
+	// the correct behaviour for a fresh install.
+	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+	mgr := deps.newSkillManager(filepath.Join(joeDir, "skills"), cfg.Skills.TrustedSources)
 
 	switch args[0] {
 	case "install":
@@ -404,7 +416,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		for _, s := range install.Skills {
 			fmt.Fprintf(stdout, "  - %s\n", s.Name)
 		}
-		fmt.Fprintln(stdout, "Restart joe-core to load the new skills.")
+		fmt.Fprintln(stdout, "joe-core will pick up the new skills automatically; run `joe skills reload` if hot reload is disabled.")
 		return 0
 
 	case "list":
@@ -450,7 +462,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		} else {
 			fmt.Fprintf(stdout, "Removed %d skill(s): %s\n", len(removed), strings.Join(removed, ", "))
 		}
-		fmt.Fprintln(stdout, "Restart joe-core to clear the unloaded skills.")
+		fmt.Fprintln(stdout, "joe-core will drop the removed skills automatically; run `joe skills reload` if hot reload is disabled.")
 		return 0
 
 	case "update":
@@ -478,7 +490,49 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		for _, in := range updated {
 			fmt.Fprintf(stdout, "Updated %s @ %s (%d skill(s))\n", in.Repo, shortCommit(in.Commit), len(in.Skills))
 		}
-		fmt.Fprintln(stdout, "Restart joe-core to pick up the new skill content.")
+		fmt.Fprintln(stdout, "Run `joe skills reload` to refresh joe-core without a restart.")
+		return 0
+
+	case "reload":
+		fs := flag.NewFlagSet("joe skills reload", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if fs.NArg() != 0 {
+			fmt.Fprintln(stderr, "Error: reload takes no positional arguments")
+			return 1
+		}
+
+		scheme := "http"
+		if cfg.Server.TLSEnabled {
+			scheme = "https"
+		}
+		joecoreURL := scheme + "://" + cfg.Server.Address
+		var clientOpts []client.ClientOption
+		if cfg.Server.APIKey != "" {
+			clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+		}
+		c := deps.newClient(joecoreURL, clientOpts...)
+
+		result, err := c.ReloadSkills(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Reload %s: %d skill(s) before, %d after.\n", result.Status, result.Before, result.After)
+		if len(result.Added) > 0 {
+			fmt.Fprintf(stdout, "  + Added:   %s\n", strings.Join(result.Added, ", "))
+		}
+		if len(result.Removed) > 0 {
+			fmt.Fprintf(stdout, "  - Removed: %s\n", strings.Join(result.Removed, ", "))
+		}
+		if len(result.Updated) > 0 {
+			fmt.Fprintf(stdout, "  ~ Updated: %s\n", strings.Join(result.Updated, ", "))
+		}
+		if result.Status != "ok" {
+			return 1
+		}
 		return 0
 
 	default:
