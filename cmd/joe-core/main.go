@@ -358,8 +358,30 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Warn("failed to load skills", "dir", skillsDir, "error", err)
 		skillRegistry = skills.NewRegistry()
 	}
-	services.Skills = skills.NewRouter(skillRegistry)
+	services.Skills = skills.NewAtomicRouter(skills.NewRouter(skillRegistry))
 	slog.Info("skills loaded", "dir", skillsDir, "count", skillRegistry.Len())
+
+	// Start the filesystem watcher unless the operator explicitly disabled
+	// hot reload. A failed watcher init is logged but never fatal — the
+	// registry we just loaded stays usable, just frozen until restart.
+	if !cfg.Skills.HotReloadDisabled {
+		watcher, werr := skills.NewWatcher(skillsDir, services.Skills)
+		if werr != nil {
+			slog.Warn("skills hot reload disabled (watcher init failed)", "error", werr)
+		} else {
+			services.SkillsWatcher = watcher
+			watcherCtx, cancelWatcher := context.WithCancel(ctx)
+			defer cancelWatcher()
+			go func() {
+				if err := watcher.Run(watcherCtx); err != nil {
+					slog.Warn("skills watcher exited with error", "error", err)
+				}
+			}()
+			slog.Info("skills hot reload enabled", "dir", skillsDir, "debounce_ms", skills.DefaultDebounce.Milliseconds())
+		}
+	} else {
+		slog.Info("skills hot reload disabled by config", "dir", skillsDir)
+	}
 
 	// Register business metrics gauges
 	if err := deps.registerBusinessMetric(services); err != nil {
