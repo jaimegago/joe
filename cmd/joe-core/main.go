@@ -361,6 +361,21 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.Skills = skills.NewAtomicRouter(skills.NewRouter(skillRegistry))
 	slog.Info("skills loaded", "dir", skillsDir, "count", skillRegistry.Len())
 
+	// Load skills policy (~/.joe/skills-policy.yaml) and wire the install
+	// manager so the API can serve list/approve. A missing file falls back
+	// to DefaultPolicy (deny-by-default). A malformed file is fatal here —
+	// silently dropping policy would let a corrupted file invert the
+	// trust model.
+	skillsPolicy, err := skills.LoadPolicy(joeDir)
+	if err != nil {
+		slog.Error("failed to load skills policy", "error", err)
+		return 1
+	}
+	services.SkillsManager = skills.NewManager(skillsDir, nil).
+		WithTrustedSources(cfg.Skills.TrustedSources).
+		WithPolicy(skillsPolicy)
+	slog.Info("skills policy loaded", "trusted_sources", len(skillsPolicy.TrustedSources), "auto_approve_trusted", skillsPolicy.AutoApprove.TrustedSources)
+
 	// Start the filesystem watcher unless the operator explicitly disabled
 	// hot reload. A failed watcher init is logged but never fatal — the
 	// registry we just loaded stays usable, just frozen until restart.

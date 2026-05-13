@@ -56,6 +56,12 @@ func TestIsPathAllowed(t *testing.T) {
 			errType: "path_protection",
 		},
 		{
+			name:    "blocked: skills policy file",
+			path:    filepath.Join(joeDir, "skills-policy.yaml"),
+			wantErr: true,
+			errType: "path_protection",
+		},
+		{
 			name:    "blocked: subdirectory in .joe",
 			path:    filepath.Join(joeDir, "subdir", "file.txt"),
 			wantErr: true,

@@ -24,6 +24,10 @@ type fakeSkillManager struct {
 	updateErr   error
 	listResp    []skills.Install
 	listErr     error
+	approveResp *skills.Install
+	approveErr  error
+	rejectResp  []string
+	rejectErr   error
 
 	installArgs struct {
 		repo, ref, subdir string
@@ -32,7 +36,9 @@ type fakeSkillManager struct {
 		name  string
 		force bool
 	}
-	updateArg string
+	updateArg  string
+	approveArg string
+	rejectArg  string
 }
 
 func (f *fakeSkillManager) Install(_ context.Context, repo, ref, subdir string) (*skills.Install, error) {
@@ -57,10 +63,23 @@ func (f *fakeSkillManager) List() ([]skills.Install, error) {
 	return f.listResp, f.listErr
 }
 
+func (f *fakeSkillManager) Approve(_ context.Context, name string) (*skills.Install, error) {
+	f.approveArg = name
+	return f.approveResp, f.approveErr
+}
+
+func (f *fakeSkillManager) Reject(_ context.Context, name string) ([]string, error) {
+	f.rejectArg = name
+	return f.rejectResp, f.rejectErr
+}
+
 func skillsDeps(t *testing.T, joeDir string, mgr *fakeSkillManager) runDeps {
 	deps := testDeps(&fakeRepl{}, joeDir)
-	deps.newSkillManager = func(root string, trusted []string) skillManager {
+	deps.newSkillManager = func(root string, trusted []string, policy *skills.Policy) skillManager {
 		return mgr
+	}
+	deps.loadSkillsPolicy = func(string) (*skills.Policy, error) {
+		return skills.DefaultPolicy(), nil
 	}
 	return deps
 }
@@ -300,6 +319,128 @@ func TestRunSkillsCommand_Unknown(t *testing.T) {
 	}
 }
 
+func TestRunSkillsCommand_Approve_Success(t *testing.T) {
+	mgr := &fakeSkillManager{
+		approveResp: &skills.Install{
+			Repo:   "https://github.com/myorg/skills.git",
+			Commit: "abc12345678",
+			Skills: []skills.SkillRecord{{Name: "alpha"}},
+			Status: skills.InstallStatusActive,
+		},
+	}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "approve", "alpha"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	if mgr.approveArg != "alpha" {
+		t.Errorf("approve arg = %q", mgr.approveArg)
+	}
+	if !strings.Contains(stdout.String(), "Approved https://github.com/myorg/skills.git") {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunSkillsCommand_Approve_MissingName(t *testing.T) {
+	mgr := &fakeSkillManager{}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "approve"}, &stdout, &stderr, deps)
+	if code != 1 {
+		t.Fatalf("exit = %d", code)
+	}
+}
+
+func TestRunSkillsCommand_Approve_ManagerError(t *testing.T) {
+	mgr := &fakeSkillManager{approveErr: errors.New("already active")}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "approve", "alpha"}, &stdout, &stderr, deps)
+	if code != 1 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(stderr.String(), "already active") {
+		t.Errorf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunSkillsCommand_Reject_Success(t *testing.T) {
+	mgr := &fakeSkillManager{rejectResp: []string{"alpha", "beta"}}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "reject", "alpha"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	if mgr.rejectArg != "alpha" {
+		t.Errorf("reject arg = %q", mgr.rejectArg)
+	}
+	if !strings.Contains(stdout.String(), "Rejected 2 skill(s)") {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunSkillsCommand_Install_QuarantineMessage(t *testing.T) {
+	// When the install lands in quarantine, the CLI must surface that — a
+	// silent success would let operators believe the skill is live.
+	mgr := &fakeSkillManager{
+		installResp: &skills.Install{
+			Repo:             "https://example.com/foo.git",
+			Commit:           "abcdef0123456789",
+			Skills:           []skills.SkillRecord{{Name: "a"}},
+			Status:           skills.InstallStatusQuarantined,
+			QuarantineReason: "auto_approve.trusted_sources is disabled",
+		},
+	}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(),
+		[]string{"skills", "install", "https://example.com/foo.git"},
+		&stdout, &stderr, deps,
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Quarantined https://example.com/foo.git") {
+		t.Errorf("install output should announce quarantine: %q", out)
+	}
+	if !strings.Contains(out, "Reason: auto_approve.trusted_sources is disabled") {
+		t.Errorf("install output should show reason: %q", out)
+	}
+	if !strings.Contains(out, "joe skills approve") {
+		t.Errorf("install output should point at approve/reject: %q", out)
+	}
+}
+
+func TestRunSkillsCommand_List_ShowsQuarantineStatus(t *testing.T) {
+	mgr := &fakeSkillManager{
+		listResp: []skills.Install{
+			{
+				Repo:   "https://example.com/active.git",
+				Skills: []skills.SkillRecord{{Name: "alive"}},
+				Status: skills.InstallStatusActive,
+			},
+			{
+				Repo:   "https://example.com/pending.git",
+				Skills: []skills.SkillRecord{{Name: "pending"}},
+				Status: skills.InstallStatusQuarantined,
+			},
+		},
+	}
+	deps := skillsDeps(t, t.TempDir(), mgr)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"skills", "list"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "active") || !strings.Contains(out, "quarantined") {
+		t.Errorf("list should surface STATUS column: %q", out)
+	}
+}
+
 func TestRunSkillsCommand_JoeDirError(t *testing.T) {
 	mgr := &fakeSkillManager{}
 	deps := skillsDeps(t, t.TempDir(), mgr)
@@ -418,7 +559,7 @@ func TestRunSkillsCommand_Install_PassesTrustedSourcesFromConfig(t *testing.T) {
 		}, nil
 	}
 	var observed []string
-	deps.newSkillManager = func(root string, trusted []string) skillManager {
+	deps.newSkillManager = func(root string, trusted []string, policy *skills.Policy) skillManager {
 		observed = trusted
 		return mgr
 	}

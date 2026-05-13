@@ -46,6 +46,11 @@ type Services struct {
 	ReviewAgent    *review.ReviewAgent  // nil when review agent is not configured
 	Skills         *skills.AtomicRouter // never nil after wiring; Snapshot() may return nil
 	SkillsWatcher  *skills.Watcher      // nil when hot reload is disabled or failed to start
+	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
+	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
+	// nil only when joecored started without ever resolving its joe-dir,
+	// which is an error case the API handlers report as 503.
+	SkillsManager *skills.Manager
 }
 
 // New creates a new Services instance with the given SQL store database.

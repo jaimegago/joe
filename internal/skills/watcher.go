@@ -214,7 +214,8 @@ func (w *Watcher) Reload(_ context.Context, trigger string) ReloadResult {
 	w.router.Set(router)
 
 	if result.Before != result.After || len(result.Added)+len(result.Removed)+len(result.Updated) > 0 {
-		slog.Info("skills reloaded",
+		slog.Info("skill_audit",
+			"event", "reload",
 			"trigger", trigger,
 			"before", result.Before,
 			"after", result.After,

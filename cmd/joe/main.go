@@ -40,17 +40,18 @@ type replRunner interface {
 }
 
 type runDeps struct {
-	loadConfig      func(path string) (*config.Config, error)
-	setupOTel       func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
-	newMetrics      func() *observability.Metrics
-	newAdapter      func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
-	joeDirPath      func() (string, error)
-	loadPolicy      func(configDir string) (*safety.SafetyPolicy, error)
-	newClient       func(baseURL string, opts ...client.ClientOption) *client.Client
-	newRegistry     func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
-	newExecutor     func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
-	newRepl         func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
-	newSkillManager func(root string, trusted []string) skillManager
+	loadConfig       func(path string) (*config.Config, error)
+	setupOTel        func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
+	newMetrics       func() *observability.Metrics
+	newAdapter       func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
+	joeDirPath       func() (string, error)
+	loadPolicy       func(configDir string) (*safety.SafetyPolicy, error)
+	newClient        func(baseURL string, opts ...client.ClientOption) *client.Client
+	newRegistry      func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
+	newExecutor      func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
+	newRepl          func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
+	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
+	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -67,8 +68,13 @@ func defaultRunDeps() runDeps {
 		newRepl: func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
 			return repl.NewWithSession(agent, cfg, session)
 		},
-		newSkillManager: func(root string, trusted []string) skillManager {
-			return skills.NewManager(root, nil).WithTrustedSources(trusted)
+		newSkillManager: func(root string, trusted []string, policy *skills.Policy) skillManager {
+			return skills.NewManager(root, nil).
+				WithTrustedSources(trusted).
+				WithPolicy(policy)
+		},
+		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
+			return skills.LoadPolicy(joeDir)
 		},
 	}
 }
@@ -80,6 +86,8 @@ type skillManager interface {
 	Remove(ctx context.Context, name string, force bool) ([]string, error)
 	Update(ctx context.Context, name string) ([]*skills.Install, error)
 	List() ([]skills.Install, error)
+	Approve(ctx context.Context, name string) (*skills.Install, error)
+	Reject(ctx context.Context, name string) ([]string, error)
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -360,15 +368,18 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 // a restart.
 func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update|reload> [flags]")
+		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update|approve|reject|reload> [flags]")
 		fmt.Fprintln(stderr, "  install <repo-url> [--ref <branch|tag>] [--subdir <path>]")
-		fmt.Fprintln(stderr, "                              Clone a skills repo into ~/.joe/skills/.")
-		fmt.Fprintln(stderr, "  list                        Show installed skills, their source repos, and git refs.")
+		fmt.Fprintln(stderr, "                              Clone a skills repo into ~/.joe/skills/. Lands in")
+		fmt.Fprintln(stderr, "                              quarantine unless skills-policy.yaml auto-approves it.")
+		fmt.Fprintln(stderr, "  list                        Show installed skills with status (active or quarantined).")
 		fmt.Fprintln(stderr, "  remove <skill-name> [--force]")
 		fmt.Fprintln(stderr, "                              Uninstall the skill. --force is required if its install")
 		fmt.Fprintln(stderr, "                              contains other skills.")
 		fmt.Fprintln(stderr, "  update [<skill-name>]       Fetch and reset every install, or just the one")
 		fmt.Fprintln(stderr, "                              containing the named skill.")
+		fmt.Fprintln(stderr, "  approve <skill-name>        Move a quarantined skill into the active registry.")
+		fmt.Fprintln(stderr, "  reject  <skill-name>        Delete a quarantined skill from disk.")
 		fmt.Fprintln(stderr, "  reload                      Trigger joe-core to rescan ~/.joe/skills/ without a restart.")
 	}
 	if len(args) == 0 {
@@ -391,7 +402,18 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
 		return 1
 	}
-	mgr := deps.newSkillManager(filepath.Join(joeDir, "skills"), cfg.Skills.TrustedSources)
+
+	// Load skills policy from ~/.joe/skills-policy.yaml. A missing file is
+	// fine — it falls back to DefaultPolicy() (deny-by-default), which is
+	// the safe behavior. A malformed file is fatal: continuing with a
+	// silently-dropped policy would flip the system into "trust everything"
+	// mode, which is the exact opposite of safe.
+	skillsPolicy, err := deps.loadSkillsPolicy(joeDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load skills policy: %v\n", err)
+		return 1
+	}
+	mgr := deps.newSkillManager(filepath.Join(joeDir, "skills"), cfg.Skills.TrustedSources, skillsPolicy)
 
 	switch args[0] {
 	case "install":
@@ -412,11 +434,20 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			fmt.Fprintf(stderr, "Error: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "Installed %s @ %s (%d skill(s)):\n", install.Repo, shortCommit(install.Commit), len(install.Skills))
+		statusWord := "Installed"
+		if install.IsQuarantined() {
+			statusWord = "Quarantined"
+		}
+		fmt.Fprintf(stdout, "%s %s @ %s (%d skill(s)):\n", statusWord, install.Repo, shortCommit(install.Commit), len(install.Skills))
 		for _, s := range install.Skills {
 			fmt.Fprintf(stdout, "  - %s\n", s.Name)
 		}
-		fmt.Fprintln(stdout, "joe-core will pick up the new skills automatically; run `joe skills reload` if hot reload is disabled.")
+		if install.IsQuarantined() {
+			fmt.Fprintf(stdout, "Reason: %s\n", install.QuarantineReason)
+			fmt.Fprintln(stdout, "Run `joe skills approve <name>` to activate, or `joe skills reject <name>` to discard.")
+		} else {
+			fmt.Fprintln(stdout, "joe-core will pick up the new skills automatically; run `joe skills reload` if hot reload is disabled.")
+		}
 		return 0
 
 	case "list":
@@ -429,14 +460,18 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			fmt.Fprintln(stdout, "No skills installed. Run `joe skills install <repo-url>` to add one.")
 			return 0
 		}
-		fmt.Fprintf(stdout, "%-32s  %-12s  %s\n", "SKILL", "REF", "REPO")
+		fmt.Fprintf(stdout, "%-32s  %-12s  %-12s  %s\n", "SKILL", "STATUS", "REF", "REPO")
 		for _, in := range installs {
 			ref := in.Ref
 			if ref == "" {
 				ref = "(default)"
 			}
+			status := in.Status
+			if status == "" {
+				status = skills.InstallStatusActive
+			}
 			for _, s := range in.Skills {
-				fmt.Fprintf(stdout, "%-32s  %-12s  %s\n", s.Name, ref, in.Repo)
+				fmt.Fprintf(stdout, "%-32s  %-12s  %-12s  %s\n", s.Name, status, ref, in.Repo)
 			}
 		}
 		return 0
@@ -488,9 +523,57 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			return 0
 		}
 		for _, in := range updated {
-			fmt.Fprintf(stdout, "Updated %s @ %s (%d skill(s))\n", in.Repo, shortCommit(in.Commit), len(in.Skills))
+			suffix := ""
+			if in.IsQuarantined() {
+				suffix = " [quarantined: " + in.QuarantineReason + "]"
+			}
+			fmt.Fprintf(stdout, "Updated %s @ %s (%d skill(s))%s\n", in.Repo, shortCommit(in.Commit), len(in.Skills), suffix)
 		}
 		fmt.Fprintln(stdout, "Run `joe skills reload` to refresh joe-core without a restart.")
+		return 0
+
+	case "approve":
+		fs := flag.NewFlagSet("joe skills approve", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(stderr, "Error: approve requires exactly one <skill-name>")
+			return 1
+		}
+		install, err := mgr.Approve(ctx, fs.Arg(0))
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Approved %s (%d skill(s) now active):\n", install.Repo, len(install.Skills))
+		for _, s := range install.Skills {
+			fmt.Fprintf(stdout, "  - %s\n", s.Name)
+		}
+		fmt.Fprintln(stdout, "joe-core will pick up the approved skills automatically; run `joe skills reload` if hot reload is disabled.")
+		return 0
+
+	case "reject":
+		fs := flag.NewFlagSet("joe skills reject", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(stderr, "Error: reject requires exactly one <skill-name>")
+			return 1
+		}
+		removed, err := mgr.Reject(ctx, fs.Arg(0))
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(removed) == 1 {
+			fmt.Fprintf(stdout, "Rejected skill %q.\n", removed[0])
+		} else {
+			fmt.Fprintf(stdout, "Rejected %d skill(s): %s\n", len(removed), strings.Join(removed, ", "))
+		}
 		return 0
 
 	case "reload":
