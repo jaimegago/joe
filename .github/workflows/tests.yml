@@ -140,12 +140,11 @@ jobs:
             exit 1
           fi
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
-
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1.6
+          args: --timeout=5m
 
   test-summary:
     name: Test Summary
