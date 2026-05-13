@@ -461,6 +461,59 @@ See [docs/web-ui.md](docs/web-ui.md) for the full specification.
 
 ---
 
+## Skills
+
+Joe loads [Agent Skills](https://agentskills.io) — small, portable folders containing a `SKILL.md` with YAML frontmatter and a markdown body — and surfaces relevant ones into the LLM's context at decision time. Skills encode *how a senior SRE thinks about a class of situation* (judgment frames), not `if-this-then-that` rules. The LLM still does all situational reasoning; skills just ensure it reasons with the right frame loaded.
+
+Skills do **not** bypass safety enforcement. A skill that says "scale aggressively" still goes through the same T3 policy check, blast radius cap, and notification contract before any scaling happens.
+
+### Install from a git repo
+
+```bash
+# Install all skills from a repo
+joe skills install github.com/jaimegago/joe-sre-skills
+
+# Install a single skill (sparse checkout)
+joe skills install github.com/jaimegago/joe-sre-skills/restart-loop-diagnosis
+
+# Inspect what's installed
+joe skills list
+joe skills status
+
+# Update / remove
+joe skills update
+joe skills remove restart-loop-diagnosis
+```
+
+Installed skills live under `~/.joe/skills/`, tracked by `~/.joe/skills/skills.lock.yaml` for reproducibility. joe-core watches the directory and hot-reloads on change via atomic registry swap.
+
+### Trust and quarantine
+
+`~/.joe/skills-policy.yaml` defines trusted sources and auto-approve rules — a protected config that Joe cannot read or modify itself, parallel to `safety-policy.yaml`. New skills (or changes from non-allowlisted sources) land in quarantine and require explicit human approval:
+
+```bash
+joe skills approve <name>
+joe skills reject <name>
+```
+
+Without this layer, anyone who can write to `~/.joe/skills/` could drop a prompt-injection vector that activates the next time Joe reasons. Quarantine catches it.
+
+### API
+
+```
+POST /api/v1/skills/reload      Trigger immediate rescan (CI/CD webhook)
+GET  /api/v1/skills             List installed skills with status
+POST /api/v1/skills/approve     Approve a quarantined skill
+```
+
+### Starter skill library
+
+A starter library of 6 senior-SRE judgment skills lives at [github.com/jaimegago/joe-sre-skills](https://github.com/jaimegago/joe-sre-skills) (MIT licensed): diagnosing-slow-service, restart-loop-diagnosis, rate-of-change, downstream-dependency-check, recent-change-correlation, rollback-vs-forward-fix.
+
+See [docs/joe-skills-design.md](docs/joe-skills-design.md) for the full architecture.
+
+---
+
 ## Infrastructure Adapters
 
 Joe connects to your infrastructure through registered sources. Add sources via the API:
@@ -600,6 +653,7 @@ joe/
 | 10    | Code Review Integration — GitHub/GitLab PR adapters, review agent                            | ✅ Complete |
 | 11    | Slack Bot                                                                                      | ✅ Complete |
 | 12    | Web UI — React + graph explorer, dashboard, admin, chat                                       | ✅ Complete |
+| 13    | Skills — Agent Skills consumer, `joe skills` CLI, hot reload, quarantine/approval, starter library | ✅ Complete |
 
 ---
 
@@ -611,6 +665,7 @@ joe/
 - [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview
 - [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
 - [docs/web-ui.md](docs/web-ui.md) — Web UI specification
+- [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design (Agent Skills consumer, registry, hot reload, quarantine)
 - [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
 - [docs/testing-strategy.md](docs/testing-strategy.md) — Testing strategy (unit, integration, E2E)
 
