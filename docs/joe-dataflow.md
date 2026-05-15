@@ -20,10 +20,10 @@ Joe is built as two binaries that communicate via HTTP:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                          │
+│                                                                                         │
 │  joe (Joe Local)                           joecored (Joe Core)                          │
 │  ────────────────                          ──────────────────                           │
-│                                                                                          │
+│                                                                                         │
 │  ┌────────────────────────────┐           ┌────────────────────────────────────────────┐│
 │  │  User Agent                │           │  HTTP API (:7777)                          ││
 │  │                            │           │                                            ││
@@ -54,19 +54,19 @@ Joe is built as two binaries that communicate via HTTP:
 │                                           ┌──────────────┴─────────────────────────────┐│
 │                                           │  Core Services                             ││
 │                                           │                                            ││
-│                                           │  ┌──────────┐ ┌──────────┐ ┌──────────┐   ││
-│                                           │  │  Graph   │ │   SQL    │ │ Adapters │   ││
-│                                           │  │  Store   │ │  Store   │ │ K8s, Git │   ││
-│                                           │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │   ││
-│                                           │  └──────────┘ └──────────┘ └──────────┘   ││
+│                                           │  ┌──────────┐ ┌──────────┐ ┌──────────┐    ││
+│                                           │  │  Graph   │ │   SQL    │ │ Adapters │    ││
+│                                           │  │  Store   │ │  Store   │ │ K8s, Git │    ││
+│                                           │  │ (SQLite) │ │ (SQLite) │ │ ArgoCD.. │    ││
+│                                           │  └──────────┘ └──────────┘ └──────────┘    ││
 │                                           │                                            ││
 │                                           │  ┌──────────┐                              ││
-│                                           │  │   LLM    │ (for Core Agent reasoning)  ││
+│                                           │  │   LLM    │ (for Core Agent reasoning)   ││
 │                                           │  │ Adapter  │                              ││
 │                                           │  └──────────┘                              ││
 │                                           │                                            ││
 │                                           └────────────────────────────────────────────┘│
-│                                                                                          │
+│                                                                                         │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -82,7 +82,7 @@ Joe is built as two binaries that communicate via HTTP:
 
 ```
 ┌─────────────────────────────────────────────┐
-│            LLM Adapter Interface             │
+│            LLM Adapter Interface            │
 │   (Orchestration, Memory, Tools, Safety)    │
 └─────────────────────┬───────────────────────┘
                       │
@@ -139,39 +139,39 @@ This runs periodically (or on-demand). Here's what Joe discovered about your sys
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Joe's Infrastructure Graph                        │
+│                        Joe's Infrastructure Graph                       │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
+│                                                                         │
 │  ┌──────────────┐    sourced_from    ┌─────────────────┐                │
-│  │ ArgoCD App   │◄──────────────────│ Git Repo        │                │
+│  │ ArgoCD App   │◄──────────────────│ Git Repo        │                 │
 │  │ payments-app │                    │ infra/payments  │                │
 │  └──────┬───────┘                    │ (helm chart)    │                │
 │         │                            └─────────────────┘                │
-│         │ deploys                                                        │
-│         ▼                                                                │
-│  ┌──────────────┐    references     ┌─────────────────┐                │
-│  │ Deployment   │─────────────────►│ Secret          │                │
-│  │ payment-svc  │                   │ stripe-api-key  │                │
-│  │ ns: payments │                   └─────────────────┘                │
+│         │ deploys                                                       │
+│         ▼                                                               │
+│  ┌──────────────┐    references     ┌─────────────────┐                 │
+│  │ Deployment   │─────────────────►│ Secret          │                  │
+│  │ payment-svc  │                   │ stripe-api-key  │                 │
+│  │ ns: payments │                   └─────────────────┘                 │
 │  └──────┬───────┘                                                       │
-│         │                                                                │
+│         │                                                               │
 │         │ exposes            ┌─────────────────┐                        │
 │         ▼                    │ ConfigMap       │                        │
-│  ┌──────────────┐           │ payment-config  │                        │
-│  │ Service      │           │ timeout: 30s    │◄─── configures         │
-│  │ payment-svc  │           │ stripe_url: ... │                        │
-│  └──────┬───────┘           └─────────────────┘                        │
-│         │                                                                │
-│         │ routes_to                                                      │
-│         ▼                                                                │
-│  ┌──────────────┐    calls_external    ┌──────────────────┐            │
-│  │ Pods (3)     │─────────────────────►│ External Service │            │
-│  │ payment-svc  │                      │ api.stripe.com   │            │
-│  │ -7f8b9c-x2k4 │                      └──────────────────┘            │
+│  ┌──────────────┐           │ payment-config  │                         │
+│  │ Service      │           │ timeout: 30s    │◄─── configures          │
+│  │ payment-svc  │           │ stripe_url: ... │                         │
+│  └──────┬───────┘           └─────────────────┘                         │
+│         │                                                               │
+│         │ routes_to                                                     │
+│         ▼                                                               │
+│  ┌──────────────┐    calls_external    ┌──────────────────┐             │
+│  │ Pods (3)     │─────────────────────►│ External Service │             │
+│  │ payment-svc  │                      │ api.stripe.com   │             │
+│  │ -7f8b9c-x2k4 │                      └──────────────────┘             │
 │  │ -7f8b9c-m3n5 │                                                       │
 │  │ -7f8b9c-p8q2 │                                                       │
 │  └──────────────┘                                                       │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,27 +208,27 @@ Joe remembers patterns from previous investigations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     Joe's Conversation Memory                            │
+│                     Joe's Conversation Memory                           │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Session: 2025-01-15                                                     │
-│  ─────────────────                                                       │
-│  Issue: payment-service timeouts to Stripe                               │
-│  Root cause: Stripe API degradation (status.stripe.com showed incident)  │
-│  Resolution: Waited for Stripe to recover                                │
-│  Tags: [payment-service, stripe, external-dependency, timeout]           │
-│                                                                          │
-│  Session: 2025-01-22                                                     │
-│  ─────────────────                                                       │
-│  Issue: checkout flow slow                                               │
-│  Root cause: payment-service HPA maxed out, needed limit increase        │
-│  Resolution: Increased HPA max from 5 to 10                              │
-│  Tags: [payment-service, scaling, hpa]                                   │
-│                                                                          │
-│  Learned patterns:                                                       │
-│  - payment-service timeout → check Stripe status first                   │
-│  - payment-service depends on external API with 30s timeout              │
-│                                                                          │
+│                                                                         │
+│  Session: 2025-01-15                                                    │
+│  ─────────────────                                                      │
+│  Issue: payment-service timeouts to Stripe                              │
+│  Root cause: Stripe API degradation (status.stripe.com showed incident) │
+│  Resolution: Waited for Stripe to recover                               │
+│  Tags: [payment-service, stripe, external-dependency, timeout]          │
+│                                                                         │
+│  Session: 2025-01-22                                                    │
+│  ─────────────────                                                      │
+│  Issue: checkout flow slow                                              │
+│  Root cause: payment-service HPA maxed out, needed limit increase       │
+│  Resolution: Increased HPA max from 5 to 10                             │
+│  Tags: [payment-service, scaling, hpa]                                  │
+│                                                                         │
+│  Learned patterns:                                                      │
+│  - payment-service timeout → check Stripe status first                  │
+│  - payment-service depends on external API with 30s timeout             │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -262,37 +262,37 @@ You type your message
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│                                                                        │
+│                                                                       │
 │  System prompt: "You are Joe, an infrastructure copilot. You have     │
-│  access to tools to investigate infrastructure issues. Use them."      │
-│                                                                        │
-│  Available tools:                                                      │
-│                                                                        │
+│  access to tools to investigate infrastructure issues. Use them."     │
+│                                                                       │
+│  Available tools:                                                     │
+│                                                                       │
 │  LOCAL TOOLS (run directly in joe):                                   │
 │    • read_file(path)           - read user's local file               │
 │    • write_file(path, content) - write to user's local file           │
 │    • local_git_diff()          - user's uncommitted changes           │
 │    • local_git_status()        - user's working tree status           │
 │    • run_command(cmd)          - run shell command locally            │
-│                                                                        │
+│                                                                       │
 │  CORE TOOLS (call joecored API via HTTP):                             │
-│    • graph_query(query)         - search infrastructure graph          │
-│    • graph_related(node, depth) - get connected nodes                  │
+│    • graph_query(query)         - search infrastructure graph         │
+│    • graph_related(node, depth) - get connected nodes                 │
 │    • k8s_get(cluster, resource, ns, name) - get k8s resource          │
 │    • k8s_logs(cluster, pod, ns, lines)    - get pod logs              │
 │    • argocd_get(instance, app)  - get ArgoCD app status               │
 │    • git_read(repo, path)       - read file from cloned repo          │
 │    • prom_query(promql)         - query Prometheus metrics            │
-│    • memory_search(query)       - find similar past incidents          │
-│    • http_get(url)              - fetch URL (status pages, APIs)       │
-│                                                                        │
-│  User message: "I have this issue reported by a user..."               │
-│                                                                        │
+│    • memory_search(query)       - find similar past incidents         │
+│    • http_get(url)              - fetch URL (status pages, APIs)      │
+│                                                                       │
+│  User message: "I have this issue reported by a user..."              │
+│                                                                       │
 └───────────────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ PHASE 2: LLM REASONS AND CALLS TOOLS (agentic loop)                    │
+│ PHASE 2: LLM REASONS AND CALLS TOOLS (agentic loop)                   │
 └───────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────┐
@@ -301,19 +301,19 @@ You type your message
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│  LLM thinks and acts:                                                  │
-│                                                                        │
-│  "User mentions payment-service and Stripe timeout. Let me check."     │
-│                                                                        │
+│  LLM thinks and acts:                                                 │
+│                                                                       │
+│  "User mentions payment-service and Stripe timeout. Let me check."    │
+│                                                                       │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ Tool call: graph_query("payment-service")                       │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
+│         │                                                             │
 │         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ joe ──► GET http://localhost:7777/api/v1/graph/query            │  │
 │  │            ?q=payment-service                                   │  │
-│  │                                                                  │  │
+│  │                                                                 │  │
 │  │ joecored ──► queries Graph Store ──► returns nodes:             │  │
 │  │   - deployment/payments/payment-service                         │  │
 │  │   - configmap/payments/payment-config (timeout: 30s)            │  │
@@ -321,85 +321,85 @@ You type your message
 │  │   - argocd-app/payments-app → git repo infra/payments           │  │
 │  │   - external/api.stripe.com                                     │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
-│         ▼                                                              │
+│         │                                                             │
+│         ▼                                                             │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ Tool call: memory_search("payment stripe timeout")              │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
+│         │                                                             │
 │         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ joe ──► POST http://localhost:7777/api/v1/memory/search         │  │
-│  │                                                                  │  │
+│  │                                                                 │  │
 │  │ joecored ──► queries SQL Store ──► returns:                     │  │
 │  │   Session 2025-01-15: Similar issue, root cause was Stripe      │  │
 │  │   degradation. Resolved by waiting.                             │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
-│         ▼                                                              │
-│  LLM thinks: "Past incident suggests checking Stripe status"           │
-│                                                                        │
+│         │                                                             │
+│         ▼                                                             │
+│  LLM thinks: "Past incident suggests checking Stripe status"          │
+│                                                                       │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ Tool call: http_get("https://status.stripe.com/api/v2/status")  │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
+│         │                                                             │
 │         ▼ CORE TOOL → HTTP to joecored (proxy)                        │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ joe ──► POST http://localhost:7777/api/v1/http/fetch            │  │
-│  │                                                                  │  │
+│  │                                                                 │  │
 │  │ joecored ──► fetches external URL ──► returns:                  │  │
 │  │   { "status": "degraded", "message": "Investigating increased   │  │
 │  │     API latency", "started": "2025-01-30T14:15:00Z" }           │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
-│         ▼                                                              │
-│  LLM thinks: "Stripe is degraded, started 14:15, user error at 14:23"  │
-│                                                                        │
+│         │                                                             │
+│         ▼                                                             │
+│  LLM thinks: "Stripe is degraded, started 14:15, user error at 14:23" │
+│                                                                       │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ Tool call: k8s_logs("prod", "payment-service", "payments", 50)  │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
+│         │                                                             │
 │         ▼ CORE TOOL → HTTP to joecored                                │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ joe ──► GET http://localhost:7777/api/v1/k8s/prod/logs          │  │
 │  │            /payments/payment-service?lines=50                   │  │
-│  │                                                                  │  │
+│  │                                                                 │  │
 │  │ joecored ──► K8s Adapter ──► returns: 47 timeout errors         │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-│         │                                                              │
-│         ▼                                                              │
-│  LLM synthesizes final response                                        │
-│                                                                        │
+│         │                                                             │
+│         ▼                                                             │
+│  LLM synthesizes final response                                       │
+│                                                                       │
 └───────────────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ PHASE 3: RESPONSE TO USER                                              │
+│ PHASE 3: RESPONSE TO USER                                             │
 └───────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────────────────────────────────────────────────────────┐
-│                                                                        │
-│  Root cause: Stripe API degradation (external)                         │
-│                                                                        │
-│  Evidence:                                                             │
-│    • status.stripe.com shows "Investigating increased API latency"     │
-│      started at 14:15 UTC                                              │
-│    • Your error occurred at 14:23 UTC (8 min after incident)           │
-│    • 47 timeout errors in payment-service logs since 14:15             │
-│    • Matches previous incident on Jan 15 (also Stripe)                 │
-│                                                                        │
-│  Your payment-service is healthy—the issue is upstream.                │
-│                                                                        │
-│  Options:                                                              │
-│    [1] Wait for Stripe to resolve                                      │
-│    [2] Increase timeout from 30s → 60s (temporary)                     │
-│    [3] Enable fallback payment processor                               │
-│                                                                        │
+│                                                                       │
+│  Root cause: Stripe API degradation (external)                        │
+│                                                                       │
+│  Evidence:                                                            │
+│    • status.stripe.com shows "Investigating increased API latency"    │
+│      started at 14:15 UTC                                             │
+│    • Your error occurred at 14:23 UTC (8 min after incident)          │
+│    • 47 timeout errors in payment-service logs since 14:15            │
+│    • Matches previous incident on Jan 15 (also Stripe)                │
+│                                                                       │
+│  Your payment-service is healthy—the issue is upstream.               │
+│                                                                       │
+│  Options:                                                             │
+│    [1] Wait for Stripe to resolve                                     │
+│    [2] Increase timeout from 30s → 60s (temporary)                    │
+│    [3] Enable fallback payment processor                              │
+│                                                                       │
 └───────────────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ PHASE 4: LEARNING (at session end)                                     │
+│ PHASE 4: LEARNING (at session end)                                    │
 └───────────────────────────────────────────────────────────────────────┘
 
 When you exit or after idle timeout:
@@ -451,7 +451,7 @@ Joe can pull raw inventory from APIs (what exists), but understanding relationsh
 ### Two Layers
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  LAYER 1: Inventory (Deterministic)                                  │
 │                                                                      │
 │  What Joe CAN reliably extract from APIs:                            │
@@ -462,10 +462,10 @@ Joe can pull raw inventory from APIs (what exists), but understanding relationsh
 │  - "This service selects these pods"                                 │
 │                                                                      │
 │  Raw facts. No interpretation needed.                                │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  LAYER 2: Semantics (LLM + Conversation)                             │
 │                                                                      │
 │  What needs interpretation:                                          │
@@ -477,7 +477,7 @@ Joe can pull raw inventory from APIs (what exists), but understanding relationsh
 │  - "fraud-detector runs before payment-service in the flow"          │
 │                                                                      │
 │  Built through onboarding + ongoing conversation.                    │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Hybrid?
@@ -498,31 +498,31 @@ Trying to deterministically parse all of that is a losing battle. The LLM + you 
 Onboarding is optimized to minimize LLM usage while maximizing discovery quality.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  PHASE 1: Collect (User provides data, no LLM)                       │
 │                                                                      │
 │  Goal: Get as much structured input as possible from the user        │
 │  LLM cost: Zero                                                      │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  PHASE 2: Parse & Validate (Deterministic + minimal LLM)             │
 │                                                                      │
 │  Goal: Validate URLs, check auth, extract obvious sources            │
 │  LLM cost: Low (only for ambiguous cases)                            │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  PHASE 3: Explore (Timeboxed LLM discovery)                          │
 │                                                                      │
 │  Goal: Fill gaps, discover relationships                             │
 │  LLM cost: Bounded by time/token budget                              │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Phase 1: Collect
@@ -699,7 +699,7 @@ Convention for pre-digested infrastructure metadata. Like `.github/`, `.vscode/`
 `.joe/` files are **not a format Joe parses with code**. They're a cache of understanding that one LLM (Claude Code, Cursor) creates for another LLM (Joe's reasoning engine) to consume.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │                                                                      │
 │  .joe/ files = "LLM-to-LLM cache"                                    │
 │                                                                      │
@@ -709,7 +709,7 @@ Convention for pre-digested infrastructure metadata. Like `.github/`, `.vscode/`
 │  Purpose: Skip the expensive "understand codebase" step              │
 │           Joe's LLM still interprets and executes tool calls         │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **Why LLM parsing instead of code parsing?**
@@ -727,11 +727,11 @@ The `.joe/` format can evolve freely. Old Joe reads new format, new Joe reads ol
 ### Cost Comparison
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  WITHOUT .joe/ files                                                 │
 │                                                                      │
 │  LLM work:                                                           │
-│    1. Read source code files (10-50 files)         ~5000 tokens     │
+│    1. Read source code files (10-50 files)         ~5000 tokens      │
 │    2. Understand code patterns                      ~2000 tokens     │
 │    3. Identify infrastructure references            ~1000 tokens     │
 │    4. Infer relationships                           ~1000 tokens     │
@@ -739,20 +739,20 @@ The `.joe/` format can evolve freely. Old Joe reads new format, new Joe reads ol
 │                                                     ─────────────    │
 │    Total: ~10,000 tokens, 30-60 seconds                              │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  WITH .joe/ files                                                    │
 │                                                                      │
 │  LLM work:                                                           │
-│    1. Read .joe/ files (3-5 small files)           ~500 tokens      │
-│    2. Interpret and execute tool calls             ~500 tokens      │
+│    1. Read .joe/ files (3-5 small files)           ~500 tokens       │
+│    2. Interpret and execute tool calls             ~500 tokens       │
 │                                                     ─────────────    │
 │    Total: ~1,000 tokens, 2-3 seconds                                 │
 │                                                                      │
 │  90% reduction in cost and latency                                   │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Hybrid Approach: Hash-Based Caching
@@ -760,24 +760,24 @@ The `.joe/` format can evolve freely. Old Joe reads new format, new Joe reads ol
 To eliminate redundant LLM calls, Joe caches interpretations:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  Joe encounters a repo with .joe/ files:                             │
 │                                                                      │
 │  1. Compute hash of .joe/ directory contents                         │
 │                                                                      │
 │  2. Check cache: Have we interpreted this exact version before?      │
 │     │                                                                │
-│     ├─ YES: Replay cached tool calls                                │
-│     │       • No LLM call                                           │
-│     │       • Instant (~50ms)                                       │
+│     ├─ YES: Replay cached tool calls                                 │
+│     │       • No LLM call                                            │
+│     │       • Instant (~50ms)                                        │
 │     │       • Works offline                                          │
 │     │                                                                │
-│     └─ NO: Send to LLM for interpretation                           │
-│            • LLM reads .joe/ files                                  │
-│            • LLM executes register_source(), graph_add_edge(), etc. │
-│            • Joe caches the tool calls for next time                │
+│     └─ NO: Send to LLM for interpretation                            │
+│            • LLM reads .joe/ files                                   │
+│            • LLM executes register_source(), graph_add_edge(), etc.  │
+│            • Joe caches the tool calls for next time                 │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **Cache schema:**
@@ -803,17 +803,17 @@ CREATE TABLE joe_file_cache (
 With LLM parsing, Joe has one unified flow:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │                                                                      │
 │  Repo with .joe/ files:                                              │
-│    .joe/ files ──► LLM interprets ──► Tool calls ──► Update state   │
+│    .joe/ files ──► LLM interprets ──► Tool calls ──► Update state    │
 │                                                                      │
 │  Repo without .joe/ files:                                           │
-│    Source code ──► LLM analyzes ──► Tool calls ──► Update state     │
+│    Source code ──► LLM analyzes ──► Tool calls ──► Update state      │
 │                                                                      │
 │  Same downstream path, different input to LLM                        │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 No special parsing code. No schema versioning. No format migration.
@@ -962,51 +962,51 @@ terms:
 ### How Joe Processes .joe/ Files
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  Joe accesses repo with .joe/ files:                                 │
 │                                                                      │
 │  1. Compute hash of .joe/ directory                                  │
-│     hash = SHA256(.joe/manifest.yaml + .joe/sources.yaml + ...)     │
+│     hash = SHA256(.joe/manifest.yaml + .joe/sources.yaml + ...)      │
 │                                                                      │
 │  2. Check cache                                                      │
-│     SELECT tool_calls FROM joe_file_cache                           │
-│     WHERE repo_id = ? AND joe_dir_hash = ?                          │
+│     SELECT tool_calls FROM joe_file_cache                            │
+│     WHERE repo_id = ? AND joe_dir_hash = ?                           │
 │                                                                      │
 │  3a. Cache HIT:                                                      │
 │      Execute cached tool calls directly                              │
-│      → register_source(...), graph_add_edge(...), etc.              │
+│      → register_source(...), graph_add_edge(...), etc.               │
 │      No LLM needed. Instant.                                         │
 │                                                                      │
 │  3b. Cache MISS:                                                     │
 │      Send .joe/ files to LLM:                                        │
 │                                                                      │
-│      "Here are the .joe/ files for payment-service repo.            │
+│      "Here are the .joe/ files for payment-service repo.             │
 │       Interpret them and call the appropriate tools to register      │
 │       sources and update the graph."                                 │
 │                                                                      │
 │      LLM responds with tool calls:                                   │
 │      [register_source(type="postgresql", ...)]                       │
 │      [register_source(type="kafka", ...)]                            │
-│      [graph_add_edge(from="payment-service", to="fraud-detector")]  │
+│      [graph_add_edge(from="payment-service", to="fraud-detector")]   │
 │      ...                                                             │
 │                                                                      │
-│      Joe executes tool calls AND caches them for next time          │
+│      Joe executes tool calls AND caches them for next time           │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Workflow Summary
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │                                                                      │
 │  Developer in repo                                                   │
 │       │                                                              │
-│       │ Runs Claude Code / Cursor with joe-prompt.md                │
+│       │ Runs Claude Code / Cursor with joe-prompt.md                 │
 │       ▼                                                              │
 │  Coding LLM analyzes source code                                     │
 │       │                                                              │
-│       │ Generates .joe/ files (expensive work, done once)           │
+│       │ Generates .joe/ files (expensive work, done once)            │
 │       ▼                                                              │
 │  Developer commits .joe/ files                                       │
 │       │                                                              │
@@ -1014,16 +1014,16 @@ terms:
 │       ▼                                                              │
 │  Joe encounters repo                                                 │
 │       │                                                              │
-│       ├─► .joe/ exists?                                             │
+│       ├─► .joe/ exists?                                              │
 │       │   │                                                          │
-│       │   ├─► YES + cache hit: Replay tool calls (instant)          │
-│       │   ├─► YES + cache miss: LLM interprets .joe/ (fast, cheap)  │
-│       │   └─► NO: LLM analyzes source code (slow, expensive)        │
+│       │   ├─► YES + cache hit: Replay tool calls (instant)           │
+│       │   ├─► YES + cache miss: LLM interprets .joe/ (fast, cheap)   │
+│       │   └─► NO: LLM analyzes source code (slow, expensive)         │
 │       │                                                              │
 │       ▼                                                              │
 │  Sources registered, graph updated                                   │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Benefits Recap
@@ -1045,7 +1045,7 @@ Infrastructure sources are stored separately from the graph for rebuild capabili
 ### The Distinction
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  SOURCES (persistent, survives rebuild)                              │
 │                                                                      │
 │  "Where Joe connects to get information"                             │
@@ -1058,11 +1058,11 @@ Infrastructure sources are stored separately from the graph for rebuild capabili
 │  Stored in: SQL table                                                │
 │  Lifecycle: Persist until explicitly removed                         │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               │ Joe queries sources
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  GRAPH (discovered, rebuildable)                                     │
 │                                                                      │
 │  "What Joe found by querying sources"                                │
@@ -1075,7 +1075,7 @@ Infrastructure sources are stored separately from the graph for rebuild capabili
 │  Stored in: Graph DB                                                 │
 │  Lifecycle: Can be rebuilt from sources + onboarding facts           │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Sources Schema
@@ -1119,7 +1119,7 @@ When user provides a starting point, LLM discovers sources using tools:
 User: "https://gitlab.prod.company.com/infra/some_repo_ops"
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  LLM explores repo, finds infrastructure references                  │
 │                                                                      │
 │  [tool_call: register_source(                                        │
@@ -1129,15 +1129,15 @@ User: "https://gitlab.prod.company.com/infra/some_repo_ops"
 │    environment: "prod",                                              │
 │    categories: ["telemetry", "metrics"],                             │
 │    discovered_from: "git_repo/some_repo_ops",                        │
-│    discovery_context: "Found in helm/values-prod.yaml at path       │
+│    discovery_context: "Found in helm/values-prod.yaml at path        │
 │                        prometheus.url"                               │
 │  )]                                                                  │
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Joe validates URL (HTTP check) then stores in sources table         │
+│  Joe validates URL (HTTP check) then stores in sources table        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1204,29 +1204,29 @@ Joe isn't just a CLI you invoke. It's a daemon that runs continuously.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                       Joe Runtime Architecture                       │
+│                       Joe Runtime Architecture                      │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                                                                      │
+│                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                      Joe Daemon (always running)              │  │
 │  │                                                               │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │  │
-│  │  │  Inventory  │  │   Graph     │  │   Watch     │           │  │
-│  │  │  Refresh    │  │   Store     │  │   Loop      │           │  │
-│  │  │  (periodic) │  │  (SQLite)   │  │  (k8s,argo) │           │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘           │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │  │
+│  │  │  Inventory  │  │   Graph     │  │   Watch     │            │  │
+│  │  │  Refresh    │  │   Store     │  │   Loop      │            │  │
+│  │  │  (periodic) │  │  (SQLite)   │  │  (k8s,argo) │            │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘            │  │
 │  │                                                               │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │  │
-│  │  │  Anomaly    │  │ Notification│  │   Memory    │           │  │
-│  │  │  Detector   │  │   Queue     │  │   Store     │           │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘           │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │  │
+│  │  │  Anomaly    │  │ Notification│  │   Memory    │            │  │
+│  │  │  Detector   │  │   Queue     │  │   Store     │            │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘            │  │
 │  │                                                               │  │
 │  └───────────────────────────────────────────────────────────────┘  │
-│                         │              │                             │
-│            ┌────────────┘              └────────────┐                │
-│            ▼                                        ▼                │
+│                         │              │                            │
+│            ┌────────────┘              └────────────┐               │
+│            ▼                                        ▼               │
 │  ┌───────────────────┐                    ┌───────────────────┐     │
 │  │   CLI (joe)       │                    │   Push Channels   │     │
 │  │   Interactive     │                    │                   │     │
@@ -1237,7 +1237,7 @@ Joe isn't just a CLI you invoke. It's a daemon that runs continuously.
 │  │   Web UI          │                    └───────────────────┘     │
 │  │   (future)        │                                              │
 │  └───────────────────┘                                              │
-│                                                                      │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1260,8 +1260,8 @@ Joe pushes to you in two cases:
 Joe found something it can't interpret without your help.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  🔔 Joe needs input                                                  │
+┌──────────────────────────────────────────────────────────────────────┐
+│  🔔 Joe needs input                                                  │ 
 │                                                                      │
 │  I discovered a new deployment in the payments namespace:            │
 │  "payment-fraud-detector" (3 replicas)                               │
@@ -1271,8 +1271,8 @@ Joe found something it can't interpret without your help.
 │  • Does it depend on payment-service or the other way around?        │
 │  • What external services does it call (if any)?                     │
 │                                                                      │
-│  [Answer now]  [Remind me later]  [Ignore]                          │
-└─────────────────────────────────────────────────────────────────────┘
+│  [Answer now]  [Remind me later]  [Ignore]                           │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2. Attention Required
@@ -1280,19 +1280,19 @@ Joe found something it can't interpret without your help.
 Joe detected something you should know about.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  ⚠️  Joe detected an issue                                           │
 │                                                                      │
 │  payment-service error rate jumped from 0.1% to 4.2%                 │
 │  Started: 3 minutes ago                                              │
 │                                                                      │
 │  Preliminary analysis:                                               │
-│  • Correlates with ArgoCD sync of payments-app (3 min ago)          │
+│  • Correlates with ArgoCD sync of payments-app (3 min ago)           │
 │  • Recent commit: "Update Stripe SDK to v4.0" by alice@company.com   │
 │  • No Stripe status page incidents                                   │
 │                                                                      │
-│  [Investigate]  [Acknowledge]  [Mute for 1h]                        │
-└─────────────────────────────────────────────────────────────────────┘
+│  [Investigate]  [Acknowledge]  [Mute for 1h]                         │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -1301,7 +1301,7 @@ Joe detected something you should know about.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Notification Flow                                │
+│                     Notification Flow                               │
 └─────────────────────────────────────────────────────────────────────┘
 
   Event Sources                     Processing                 Delivery
@@ -1312,26 +1312,26 @@ Joe detected something you should know about.
 │ (new deploy,│                 │                 │
 │  pod crash) │                 │                 │
 └─────────────┘                 │                 │
-                                │   Notification  │      ┌─────────────┐
-┌─────────────┐                 │   Processor     │─────▶│ Desktop     │
-│ ArgoCD      │────────────────▶│                 │      │ (notify-send│
-│ (sync,      │                 │   • Dedupe      │      │  or osascript)
-│  health)    │                 │   • Throttle    │      └─────────────┘
+                                │   Notification  │      ┌───────────────┐
+┌─────────────┐                 │   Processor     │─────▶│ Desktop       │
+│ ArgoCD      │────────────────▶│                 │      │ (notify-send  │
+│ (sync,      │                 │   • Dedupe      │      │  or osascript)│
+│  health)    │                 │   • Throttle    │      └───────────────┘
 └─────────────┘                 │   • Prioritize  │
-                                │   • Route       │      ┌─────────────┐
-┌─────────────┐                 │                 │─────▶│ Slack       │
-│ Metrics     │────────────────▶│                 │      │ (webhook)   │
-│ (threshold  │                 │                 │      └─────────────┘
+                                │   • Route       │      ┌──────────────┐
+┌─────────────┐                 │                 │─────▶│ Slack        │
+│ Metrics     │────────────────▶│                 │      │ (webhook)    │
+│ (threshold  │                 │                 │      └──────────────┘
 │  breach)    │                 │                 │
-└─────────────┘                 │                 │      ┌─────────────┐
-                                │                 │─────▶│ Web UI      │
-┌─────────────┐                 │                 │      │ (websocket) │
-│ Graph       │────────────────▶│                 │      └─────────────┘
+└─────────────┘                 │                 │      ┌──────────────┐
+                                │                 │─────▶│ Web UI       │
+┌─────────────┐                 │                 │      │ (websocket)  │
+│ Graph       │────────────────▶│                 │      └──────────────┘
 │ (new node,  │                 │                 │
-│  uncertain  │                 │                 │      ┌─────────────┐
-│  edge)      │                 └─────────────────┘─────▶│ CLI         │
-└─────────────┘                                          │ (if active) │
-                                                         └─────────────┘
+│  uncertain  │                 │                 │      ┌──────────────┐
+│  edge)      │                 └─────────────────┘─────▶│ CLI          │
+└─────────────┘                                          │ (if active)  │
+                                                         └──────────────┘
 ```
 
 ### Notification Types
@@ -1414,7 +1414,7 @@ The daemon continuously watches and updates:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   Background Update Loop                             │
+│                   Background Update Loop                            │
 └─────────────────────────────────────────────────────────────────────┘
 
 Every 5 minutes (configurable):
@@ -1524,36 +1524,36 @@ The CLI is a **client** that connects to the daemon. The daemon holds the graph,
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           Joe Architecture                           │
+│                           Joe Architecture                          │
 ├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
+│                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                     Joe Daemon (joedaemon)                    │  │
 │  │                                                               │  │
-│  │  ┌─────────────────────────────────────────────────────────┐ │  │
-│  │  │                    Core Services                        │ │  │
-│  │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │  │
-│  │  │  │  Graph   │ │  Memory  │ │ Inventory│ │ Notifier │   │ │  │
-│  │  │  │  Store   │ │  Store   │ │ Watcher  │ │          │   │ │  │
-│  │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │ │  │
-│  │  └─────────────────────────────────────────────────────────┘ │  │
+│  │  ┌─────────────────────────────────────────────────────────┐  │  │
+│  │  │                    Core Services                        │  │  │
+│  │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │  │  │
+│  │  │  │  Graph   │ │  Memory  │ │ Inventory│ │ Notifier │    │  │  │
+│  │  │  │  Store   │ │  Store   │ │ Watcher  │ │          │    │  │  │
+│  │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │  │  │
+│  │  └─────────────────────────────────────────────────────────┘  │  │
 │  │                                                               │  │
-│  │  ┌─────────────────────────────────────────────────────────┐ │  │
-│  │  │                    gRPC/HTTP API                        │ │  │
-│  │  │  • Chat (streaming)                                     │ │  │
-│  │  │  • Graph queries                                        │ │  │
-│  │  │  • Tool execution                                       │ │  │
-│  │  │  • Notification management                              │ │  │
-│  │  └─────────────────────────────────────────────────────────┘ │  │
+│  │  ┌─────────────────────────────────────────────────────────┐  │  │
+│  │  │                    gRPC/HTTP API                        │  │  │
+│  │  │  • Chat (streaming)                                     │  │  │
+│  │  │  • Graph queries                                        │  │  │
+│  │  │  • Tool execution                                       │  │  │
+│  │  │  • Notification management                              │  │  │
+│  │  └─────────────────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
-│                              │                                       │
+│                              │                                      │
 │         ┌────────────────────┼────────────────────┐                 │
 │         ▼                    ▼                    ▼                 │
-│  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐         │
-│  │   CLI       │      │   Web UI    │      │   Slack     │         │
-│  │   (joe)     │      │   (future)  │      │   Bot       │         │
-│  └─────────────┘      └─────────────┘      └─────────────┘         │
-│                                                                      │
+│  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐          │
+│  │   CLI       │      │   Web UI    │      │   Slack     │          │
+│  │   (joe)     │      │   (future)  │      │   Bot       │          │
+│  └─────────────┘      └─────────────┘      └─────────────┘          │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1561,31 +1561,31 @@ Does this capture what you're thinking?
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           Joe Architecture                               │
+│                           Joe Architecture                              │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
+│                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                         User Interface                           │    │
+│  │                         User Interface                          │    │
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                          │    │
 │  │  │   CLI   │  │   TUI   │  │   Web   │  (future)                │    │
 │  │  └─────────┘  └─────────┘  └─────────┘                          │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
-│                                    │                                     │
-│                                    ▼                                     │
+│                                    │                                    │
+│                                    ▼                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                      Agentic Loop                                │    │
-│  │                                                                  │    │
+│  │                      Agentic Loop                               │    │
+│  │                                                                 │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │    │
 │  │  │   Prompt     │  │    Tool      │  │   Response   │           │    │
 │  │  │   Builder    │  │   Executor   │  │   Handler    │           │    │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘           │    │
-│  │                                                                  │    │
+│  │                                                                 │    │
 │  │  ┌──────────────┐                                               │    │
 │  │  │   Session    │  User msg → LLM → tool calls → LLM → ...      │    │
 │  │  │   Manager    │                                               │    │
 │  │  └──────────────┘                                               │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
-│                                    │                                     │
+│                                    │                                    │
 │            ┌───────────────────────┼───────────────────────┐            │
 │            ▼                       ▼                       ▼            │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐       │
@@ -1602,38 +1602,38 @@ Does this capture what you're thinking?
 │  │  │  Ollama    │  │  │                  │  │                  │       │
 │  │  └────────────┘  │  │                  │  │                  │       │
 │  └──────────────────┘  └──────────────────┘  └──────────────────┘       │
-│                                    │                                     │
-│                                    ▼                                     │
+│                                    │                                    │
+│                                    ▼                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                      Discovery Layer                             │    │
-│  │                                                                  │    │
-│  │  Runs periodically (or on-demand), builds infrastructure graph   │    │
-│  │  NO LLM involved — deterministic parsing of APIs and configs     │    │
-│  │                                                                  │    │
+│  │                      Discovery Layer                            │    │
+│  │                                                                 │    │
+│  │  Runs periodically (or on-demand), builds infrastructure graph  │    │
+│  │  NO LLM involved — deterministic parsing of APIs and configs    │    │
+│  │                                                                 │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
-│                                    │                                     │
+│                                    │                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                      Executor Layer                              │    │
-│  │                                                                  │    │
+│  │                      Executor Layer                             │    │
+│  │                                                                 │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │    │
 │  │  │   Safety     │  │   Approval   │  │   Audit      │           │    │
 │  │  │   Policy     │  │   Handler    │  │   Logger     │           │    │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘           │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
-│                                    │                                     │
+│                                    │                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                      Adapter Layer (Tools)                       │    │
-│  │                                                                  │    │
-│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐        │    │
-│  │  │  K8s   │ │ ArgoCD │ │  Git   │ │  Helm  │ │ Prom   │        │    │
-│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘        │    │
-│  │                                                                  │    │
-│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                   │    │
-│  │  │ Loki   │ │  HTTP  │ │  MCP   │ │ Custom │                   │    │
-│  │  │        │ │        │ │ Bridge │ │        │                   │    │
-│  │  └────────┘ └────────┘ └────────┘ └────────┘                   │    │
+│  │                      Adapter Layer (Tools)                      │    │
+│  │                                                                 │    │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐         │    │
+│  │  │  K8s   │ │ ArgoCD │ │  Git   │ │  Helm  │ │ Prom   │         │    │
+│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘         │    │
+│  │                                                                 │    │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                    │    │
+│  │  │ Loki   │ │  HTTP  │ │  MCP   │ │ Custom │                    │    │
+│  │  │        │ │        │ │ Bridge │ │        │                    │    │
+│  │  └────────┘ └────────┘ └────────┘ └────────┘                    │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1664,9 +1664,9 @@ The LLM is the reasoning engine, but Joe is the system that makes it useful for 
 ### Types of Memory
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
 │                         Joe's Memory System                              │
-├─────────────────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  1. INFRASTRUCTURE GRAPH (ephemeral, rebuilt)                            │
 │     ─────────────────────────────────────────                            │
@@ -1704,7 +1704,7 @@ The LLM is the reasoning engine, but Joe is the system that makes it useful for 
 │       - "Preferred LLM: Claude"                                          │
 │     Storage: Config + user commands                                      │
 │                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### How Memory Is Created
@@ -1869,9 +1869,9 @@ $
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Development Workflow                              │
+│                        Development Workflow                             │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
+│                                                                         │
 │  Terminal 1:                          Terminal 2:                       │
 │  $ joecored                           $ joe                             │
 │  API listening on :7777               Connecting to joecored...         │
@@ -1882,7 +1882,7 @@ $
 │  [logs: API request]                                                    │
 │                                       > look at my local changes        │
 │                                       [reads local files directly]      │
-│                                                                          │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
