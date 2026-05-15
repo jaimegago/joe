@@ -10,12 +10,12 @@ This prompt is designed for AI coding assistants (Claude Code, Cursor, GitHub Co
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                                                                      │
+│                                                                     │
 │  You (Coding LLM)              .joe/ files              Joe's LLM   │
-│                                                                      │
+│                                                                     │
 │  Analyze source code ────► Write understanding ────► Read & act     │
 │  (expensive, slow)           (cached)               (cheap, fast)   │
-│                                                                      │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
