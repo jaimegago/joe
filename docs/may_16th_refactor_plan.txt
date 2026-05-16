@@ -1,0 +1,243 @@
+# Joe Architecture Refactor — Plan of Record
+
+## Why this exists
+
+This document is the durable record of a refactor decided across a long design
+conversation. It exists so that the original goal is not lost while the
+foundational work (sessions) is being designed and built. Read this first
+before starting any of the phases below.
+
+## The origin point (do not lose this)
+
+The starting question was: **why does `joe` (the CLI) talk to an LLM directly
+instead of going through `joe-core` the way Claude Code's CLI talks to a
+server?** The current architecture has two LLM contact points and the
+deep-dive architecture doc no longer matches the code.
+
+A codebase audit confirmed:
+
+- There is exactly one agentic-loop implementation (`useragent.Agent.Run`).
+- It is wired up in two places: the CLI REPL (in-process, local LLM adapter)
+  and `joe-core`'s `POST /api/v1/tasks` (server-side, with a wasteful
+  HTTP loopback to itself for core-tool calls).
+- `joe-core` already instantiates its own LLM adapter and uses it for `/chat`,
+  `/observe/*`, the joefile service, embeddings, the doc drafter, and the
+  review agent — i.e. server-side reasoning is already pervasive, not just
+  "Core Agent background work" as the doc claims.
+- The architecture doc is stale in multiple specific ways (missing endpoints,
+  wrong claims about where loops run, wrong captioning of the server-side LLM).
+
+## The decision
+
+The endpoint architecture is:
+
+- **`joe-core` is the agentic runtime.** It owns the LLM adapter, the session
+  lifecycle, and runs the agentic loop for every surface (autonomous, web,
+  CLI, MCP-agentic). This is required because Joe must do intelligent work
+  autonomously (3am pages, scheduled reviews) with no human attached.
+- **The CLI loses its REPL and its LLM adapter.** Interactive chat has zero
+  unique value over the web UI. The CLI becomes a non-interactive client:
+  `joe "question"` for one-shot queries, plus session-management subcommands
+  (`joe sessions list/show/attach/approve`). The interactive feel for the
+  jumphost/no-browser case comes from `joe sessions attach` streaming a
+  server-side session, not from a client-side REPL.
+- **`joe mcp serve` exposes both atomic and agentic tools** with
+  coding-agent-oriented descriptions. The MCP host (Claude Code etc.) runs its
+  own loop and owns local-filesystem tools; Joe provides infrastructure
+  intelligence only. No back-channel needed.
+- **The web UI is the same session model over HTTP/WS** instead of
+  stdin/stdout. It owns interactive chat.
+- **No client has its own LLM adapter. One agentic runtime. One session model.**
+
+### Use cases this serves
+
+1. SRE coding in Claude Code with Joe available via MCP — CC's loop drives,
+   calls Joe atomic tools for data and Joe agentic tools ("assess impact of
+   this change") for synthesized reasoning.
+2. SRE investigating a user-reported problem — opens a session via web UI
+   (rich) or CLI (`joe "..."` or `joe sessions attach`, for jumphost/SSH).
+3. 3am page — PagerDuty webhook creates an autonomous session, Joe
+   investigates and prepares a report/action plan, SRE attaches to the
+   already-running session and continues / approves.
+
+## Why this order (read before resequencing)
+
+Sessions must come first. The loopback-HTTP cleanup looks like the smallest,
+safest first step, but doing it first means adding an in-process tool
+invocation mode while the HTTP mode still has a caller (the CLI's agent).
+Once the REPL is migrated to a session client, the CLI's agent disappears,
+the HTTP tool-invocation mode has no callers, and collapsing the loopback
+becomes trivial deletion rather than dual-mode support. So: sessions →
+migrate REPL → collapse loopback. Less total work, cleaner end state.
+
+## Phases
+
+Phases marked **[design]** are human/thinking work (Jaime + chat), not Claude
+Code tasks. Phases marked **[CC]** are Claude Code implementation tasks, each
+intended to be an independently reviewable PR.
+
+### Phase 0 — [design] Session model design  ← CURRENTLY HERE
+
+Decide the session data model and lifecycle before any code. Key decisions
+already reached in conversation:
+
+- v1 uses a **single session per engagement** model (one session, many humans
+  can attach, only the captain drives). The richer Engagement/Session/Run
+  three-level model was considered and deferred to v2 — it solved a
+  concurrent-responders problem that well-run ops shouldn't have at a
+  30-person-team scale, and the migration path to it is clean if needed.
+- Two objects: **Session** (top-level: type, state, captain, labels,
+  conversation history, attached clients, scope) and **Run** (one durable,
+  resumable agentic execution episode within a session).
+- Session **type** is a typed field (incident | change_management |
+  investigation | question | scheduled_review | ...) that drives lifecycle,
+  retention, and whether a captain role applies. **Labels** are separate,
+  free-form, mutable, for search/grouping. Type can change mid-flight; a
+  session can be relabeled and rebound.
+- **Captain** = the single driver (ICS Incident Commander analogue). Null
+  when autonomous and unattached. Only meaningful for some session types.
+- Multi-human attach = many observers, one captain. Captain transfer is the
+  only authority change. Humans coordinate as humans (outside Joe); Joe does
+  not mediate parallel reasoning threads in v1.
+- Sessions resume where left off across client disconnects → **durable
+  execution** required: every LLM call / tool call / state transition is
+  persisted; the loop can be killed and resumed from any step. (Temporal-like
+  property, but not necessarily Temporal itself.)
+- Autonomous sessions are owned by **nobody** at creation
+  (`pending_captain`); resolution of who becomes captain on first human
+  attach is an OPEN QUESTION (auto-claim vs ask vs type-dependent).
+- **No Joe-side approval timeouts.** External tools (PagerDuty) own
+  escalation. But Joe must emit a notification webhook on entering a waiting
+  state so external systems can re-page. Captain-transfer-on-unreachable is
+  the one place a timeout is acceptable.
+- **Rich structured input** for human-in-the-loop (yes/no, pick-one,
+  fill-parameters, free-text), not just yes/no.
+- Scale target v1: ~30-person platform team, tens of concurrent autonomous
+  sessions max. Hundreds → different design, out of scope.
+- No multi-tenant in v1. Session scope is company/platform-wide.
+
+OPEN QUESTIONS to resolve before Phase 1:
+
+1. Captain assignment on first attach to an autonomous `pending_captain`
+   session: auto-claim / ask / type-dependent?
+2. Captain transfer state machine: request → approve → (timeout?) →
+   transfer. Exact states and who can initiate.
+3. Run state machine and the durable-execution boundary: what is persisted
+   at a pause, how does resume reconstruct context.
+4. The `requires_action` / structured-input shape: concrete set of input
+   types and how each renders in CLI vs web.
+5. Session state machines per type (e.g. incident: pending → active →
+   mitigated → resolved → reviewed): who/what triggers transitions, what
+   Joe does at each.
+6. Authority policy depth for v1: flat action-tier table with hardcoded
+   approval requirements (simple) vs context-aware policy (type + state +
+   captain + history). Recommend simple for v1.
+
+Output of Phase 0: a written session design doc that Phase 1 implements.
+
+### Phase 1 — [CC] Implement first-class sessions in joe-core
+
+Build the Session and Run objects, persistence, state machines, and the
+session lifecycle API in joe-core. Sessions are creatable by humans, by
+webhooks, and by schedules. Runs are durable and resumable. This is the
+foundation; everything downstream depends on it.
+
+Acceptance: a session can be created via API, a run executes the agentic
+loop server-side, the run persists every step, the run can be killed and
+resumed from its last persisted step, the session survives with no client
+attached.
+
+### Phase 2 — [CC] Migrate the REPL to a session client
+
+Replace the in-process REPL agentic loop with a thin client that
+creates/attaches to a server-side session and streams it. Delete the CLI's
+LLM adapter and its `useragent.Agent` wiring. The CLI binary shrinks
+substantially.
+
+Acceptance: `joe` no longer instantiates an LLM adapter; interactive use
+goes through a server-side session; no behavior regression for a basic
+investigation flow.
+
+### Phase 3 — [CC] Collapse the /tasks loopback
+
+With the CLI agent gone, the HTTP tool-invocation mode has no remaining
+callers. Make the server-side agent loop call core tools as in-process
+function calls and delete the localhost loopback client in
+`/api/v1/tasks`. Tool registry ends with a single invocation mode.
+
+Acceptance: no localhost HTTP round-trip for core-tool calls inside the
+server-side loop; `/api/v1/tasks` behavior unchanged externally.
+
+### Phase 4 — [CC] Non-interactive CLI surfaces
+
+Add `joe "question"` one-shot mode and the session-management subcommands:
+`joe sessions list/show/attach/approve`. `joe sessions attach` streams a
+server-side session and accepts stdin only when the session solicits input
+(this covers the jumphost/no-browser case without a free-form REPL).
+
+Acceptance: jumphost flow works end to end — list autonomous sessions,
+attach to one, see the streamed investigation, approve a proposed action.
+
+### Phase 5 — [design] MCP catalog design
+
+Design the MCP tool catalog: which tools exist, atomic vs agentic split,
+naming convention (consider `infra_*` vs `joe_*`), descriptions written for
+the coding situation (not the API), output shapes sized for a coding
+agent's context budget, and how a session ID threads back through
+follow-up calls to agentic tools. ~8–15 tools total.
+
+### Phase 6 — [CC] Implement the MCP catalog
+
+Rename tools, rewrite descriptions, add agentic tools, restructure output
+shapes, thread session IDs through agentic tools.
+
+### Phase 7 — [design] MCP evaluation methodology
+
+Design an OASIS-flavored scenario suite that measures whether coding agents
+pick the right Joe tools at the right moments for realistic SRE-adjacent
+coding tasks. This is a public-artifact opportunity (evaluating
+integration between two agentic systems is under-explored).
+
+### Phase 8 — [CC] Build the MCP eval harness
+
+Implement the harness from Phase 7.
+
+### Phase 9 — [CC] Rewrite the architecture deep-dive doc
+
+Rewrite the stale deep-dive doc to match the post-refactor reality. Remove
+the two-LLM-contact-point framing, the "Core Agent has its own loop" claim,
+the wrong server-side-LLM captioning; document the real endpoints, the
+session model, the single agentic runtime.
+
+### Phase 10 — [CC] Update CLAUDE.md and other context docs
+
+Bring CLAUDE.md, README, and any ADRs in line with the new architecture so
+future Claude Code sessions have correct context.
+
+## Sequencing summary
+
+```
+Phase 0  [design]  session model            ← here
+Phase 1  [CC]      first-class sessions
+Phase 2  [CC]      REPL → session client
+Phase 3  [CC]      collapse /tasks loopback
+Phase 4  [CC]      non-interactive CLI surfaces
+Phase 5  [design]  MCP catalog
+Phase 6  [CC]      implement MCP catalog
+Phase 7  [design]  MCP eval methodology
+Phase 8  [CC]      MCP eval harness
+Phase 9  [CC]      rewrite architecture doc
+Phase 10 [CC]      update CLAUDE.md / README / ADRs
+```
+
+## Invariants that must hold throughout
+
+- Every infrastructure mutation flows through hardcoded deterministic safety
+  gates compiled into the binary, not instructed by the LLM. This holds
+  *more* strongly for autonomous sessions (no human in the loop until a
+  human attaches).
+- One agentic-loop implementation. If a second appears, that is the
+  regression to catch in review.
+- No client (CLI, web, MCP) instantiates its own LLM adapter after Phase 2.
+- The deep-dive doc is allowed to be stale only until Phase 9; CLAUDE.md
+  only until Phase 10. Do not document aspirational state as current.
