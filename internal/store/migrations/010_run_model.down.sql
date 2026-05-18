@@ -1,0 +1,13 @@
+DROP INDEX IF EXISTS idx_action_ledger_run_id;
+DROP TABLE IF EXISTS action_ledger;
+DROP INDEX IF EXISTS idx_tool_idempotency_keys_run_id;
+DROP TABLE IF EXISTS tool_idempotency_keys;
+DROP INDEX IF EXISTS idx_run_world_handles_run_id;
+DROP TABLE IF EXISTS run_world_handles;
+DROP INDEX IF EXISTS idx_run_solicitations_run_id;
+DROP TABLE IF EXISTS run_solicitations;
+DROP INDEX IF EXISTS idx_run_steps_run_id;
+DROP TABLE IF EXISTS run_steps;
+DROP INDEX IF EXISTS idx_agent_runs_one_running_per_session;
+DROP INDEX IF EXISTS idx_agent_runs_session_id;
+DROP TABLE IF EXISTS agent_runs;

@@ -9,9 +9,11 @@ import (
 
 type principalKey struct{}
 
-// principalFromContext retrieves the principal stored in the context.
-// Returns Unknown if not set.
-func principalFromContext(ctx context.Context) Principal {
+// PrincipalFromContext retrieves the principal stored in the context.
+// Returns Unknown if not set. Exported for handlers that operate outside
+// the source-keyed EnforcementMiddleware path (e.g. regime declare/resolve,
+// which need the principal but have no sourceID).
+func PrincipalFromContext(ctx context.Context) Principal {
 	if p, ok := ctx.Value(principalKey{}).(Principal); ok {
 		return p
 	}
@@ -82,7 +84,7 @@ func EnforcementMiddleware(engine *PolicyEngine) func(http.Handler) http.Handler
 				return
 			}
 
-			principal := principalFromContext(r.Context())
+			principal := PrincipalFromContext(r.Context())
 			action := actionFromRequest(r)
 
 			if !engine.IsAllowed(r.Context(), principal, sourceID, action) {
