@@ -65,6 +65,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerTaskRoutes(mux, apiPrefix)
 	s.registerSkillsRoutes(mux, apiPrefix)
 	s.registerWebUIRoutes(mux, apiPrefix)
+	// Phase 1 Change 4: session-model HTTP CRUD.
+	s.registerSessionModelRoutes(mux, apiPrefix)
+	s.registerFindingsRoutes(mux, apiPrefix)
+	s.registerWarningsRoutes(mux, apiPrefix)
+	s.registerRegimeRoutes(mux, apiPrefix)
 }
 
 // registerStatusRoutes registers status and health check routes

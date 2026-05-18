@@ -6,6 +6,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/knowledge/drafts"
@@ -15,8 +16,11 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
+	"github.com/jaimegago/joe/internal/runmodel"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/warnings"
 )
 
 // CoreAgent interface for control operations
@@ -41,11 +45,15 @@ type Services struct {
 	Proposals      *proposals.Service
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
-	RBAC           rbac.Repository      // nil when RBAC is not configured
-	Review         *review.Service      // nil when code review is not configured
-	ReviewAgent    *review.ReviewAgent  // nil when review agent is not configured
-	Skills         *skills.AtomicRouter // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher  *skills.Watcher      // nil when hot reload is disabled or failed to start
+	RBAC           rbac.Repository         // nil when RBAC is not configured
+	SessionModel   sessionmodel.Repository // nil until wired in cmd/joe-core/main.go
+	RunModel       runmodel.Repository     // nil until wired in cmd/joe-core/main.go
+	Findings       findings.Repository     // nil until wired in cmd/joe-core/main.go
+	Warnings       warnings.Repository     // nil until wired in cmd/joe-core/main.go
+	Review         *review.Service         // nil when code review is not configured
+	ReviewAgent    *review.ReviewAgent     // nil when review agent is not configured
+	Skills         *skills.AtomicRouter    // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher  *skills.Watcher         // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,

@@ -19,6 +19,17 @@ const (
 
 	// ActionDelete covers destructive operations (T3 tier tools).
 	ActionDelete Action = "delete"
+
+	// ActionDeclareIncident is the sourceless capability to declare an
+	// incident regime (§R2/§R6). Phase 1 Change 5. Granted via a policy
+	// entry binding a principal to the seeded 'regime-control' zone;
+	// evaluated by PolicyEngine.HasZoneAccess, NOT IsAllowed. See §6-B
+	// finding in migrations/012_regime_rbac.up.sql.
+	ActionDeclareIncident Action = "declare_incident"
+
+	// ActionResolveIncident is the sourceless capability to resolve the
+	// incident regime (§R4/§R6). Same encoding as ActionDeclareIncident.
+	ActionResolveIncident Action = "resolve_incident"
 )
 
 // Zone represents a security zone that groups sources by risk level and

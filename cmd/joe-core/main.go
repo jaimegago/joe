@@ -29,6 +29,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
 	"github.com/jaimegago/joe/internal/crypto"
+	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/knowledge/drafts"
 	"github.com/jaimegago/joe/internal/knowledge/embeddings"
@@ -42,9 +43,12 @@ import (
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
+	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/warnings"
 )
 
 // version is set at build time via ldflags:
@@ -292,6 +296,19 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Wire session-model repository (tables created by migration 009).
+	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
+	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
+	// Wire run-model repository (tables created by migration 010).
+	// Phase 1 Change 2 — see docs/PHASE-1-DECOMPOSITION.md.
+	runModelRepo := runmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
+	// Wire findings + warnings repositories (tables created by migration 011).
+	// Phase 1 Change 3 — see docs/PHASE-1-DECOMPOSITION.md.
+	findingsRepo := findings.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	warningsRepo := warnings.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
 	// Register the DB-backed cluster panic store so that safety.Trigger /
 	// safety.Unlock propagate across all joecored instances sharing this DB.
 	clusterPanicStore := sqlStore.PanicStore()
@@ -346,6 +363,10 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Initialize core services (graph store uses same SQLite DB)
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
 	services.RBAC = rbacRepo
+	services.SessionModel = sessionModelRepo
+	services.RunModel = runModelRepo
+	services.Findings = findingsRepo
+	services.Warnings = warningsRepo
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 
