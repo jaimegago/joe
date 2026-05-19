@@ -160,9 +160,14 @@ func (h *sessionsHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, nil, "delete session", "missing session id")
 		return
 	}
-	// Phase 1 Change 4: per-row delete. Schema-level ON DELETE CASCADE
-	// carries §5b-5 expunge to child rows; Change 11 layers the explicit
-	// incident-cascade contract.
+	// Phase 1 Change 4 shipped this handler; Change 11 added the
+	// integration tests that prove the §5b-5 expunge cascade end-to-end.
+	// The handler runs ONE SQL DELETE. The schema's ON DELETE CASCADE
+	// FKs (linked investigations via the self-FK; runs/findings/etc.
+	// via their own FKs to agent_sessions and agent_runs) do the rest.
+	// If this ever grows a gather/fan-out step, §6-C has failed and the
+	// schema is the place to fix it — see internal/sessionmodel/
+	// cascade_schema_test.go and internal/runmodel/cascade_schema_test.go.
 	if err := h.repo.DeleteSession(r.Context(), id); err != nil {
 		writeInternalError(w, err, "delete session")
 		return
