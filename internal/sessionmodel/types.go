@@ -98,6 +98,11 @@ const (
 // Captain is one row of the session_captains table. The "current captain" of
 // a session is the row with DetachedAt == nil. Captain exists only in
 // incident regime (§B4).
+//
+// LastSeenAt is the §6-D NET-NEW reachability signal added in Change 6.
+// It is seeded on AttachCaptain (a fresh attach counts as reachable) and
+// updated by the heartbeat endpoint. Compared against a threshold by
+// IsCaptainReachable to drive the §B3 incoming-initiated-transfer branch.
 type Captain struct {
 	ID                string
 	SessionID         string
@@ -108,4 +113,5 @@ type Captain struct {
 	TransferState     *TransferState
 	IncomingPrincipal *string
 	TransferInitiator *TransferInitiator
+	LastSeenAt        *time.Time
 }

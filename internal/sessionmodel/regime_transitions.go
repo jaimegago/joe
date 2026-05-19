@@ -89,15 +89,17 @@ func (r *SQLRepository) DeclareIncidentRegimeWithHook(
 	}
 
 	// 3. Attach declaring principal as captain (R-CAP1).
+	// Seed last_seen_at = attached_at (§6-D: a fresh attach counts as
+	// reachable).
 	captainID = uuid.NewString()
 	activeState := string(TransferStateActive)
 	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO session_captains
 			(id, session_id, captain_type, principal, attached_at, detached_at,
-			 transfer_state, incoming_principal, transfer_initiator)
-		VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, NULL)`),
+			 transfer_state, incoming_principal, transfer_initiator, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?)`),
 		captainID, sessionID, string(CaptainTypeHuman), principal,
-		now.Format(time.RFC3339), activeState); err != nil {
+		now.Format(time.RFC3339), activeState, now.Format(time.RFC3339)); err != nil {
 		return "", "", fmt.Errorf("declare incident regime: attach captain: %w", err)
 	}
 
