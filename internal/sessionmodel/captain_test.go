@@ -183,18 +183,6 @@ func TestCaptain_B4_NonIncidentAttachIsInformational(t *testing.T) {
 	}
 }
 
-// --- Joe-attach: Change 12 inert seam ---
-
-func TestCaptain_JoeAttachRefusedInPhase1(t *testing.T) {
-	e := newCaptainEnv(t, 60)
-	sessionID := e.declareWithCaptain(t, "alice")
-
-	_, err := e.svc.Attach(e.ctx, sessionID, "joe-agent", sessionmodel.CaptainTypeJoe)
-	if err == nil {
-		t.Fatal("attach with captain_type=joe should be refused in Phase 1 (Change 12 seam is inert)")
-	}
-}
-
 // --- §B BeginTransfer / Outgoing-initiated → solicitation + transfer_requested (B3) ---
 
 func TestCaptain_B3_OutgoingInitiatedOpensDecisionSolicitation(t *testing.T) {

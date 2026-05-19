@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaimegago/joe/internal/runmodel"
+	"github.com/jaimegago/joe/internal/seams"
 )
 
 // CaptainService implements the §B captain attach + transfer state machine
@@ -94,9 +95,21 @@ func (s *CaptainService) Attach(ctx context.Context, sessionID, principal string
 	if captainType == "" {
 		captainType = CaptainTypeHuman
 	}
-	if captainType != CaptainTypeHuman {
-		// Joe-attach is a Change 12 inert seam. Refusing here keeps the
-		// type system honest while leaving the seam visible.
+	switch captainType {
+	case CaptainTypeHuman:
+		// proceed
+	case CaptainTypeJoe:
+		// Joe-attach is the Change 12 inert seam gated on
+		// seams.JoeCaptainTypeEnabled. Phase 1: the constant is false —
+		// refuse. The seam-enabled paired test exercises the
+		// fall-through.
+		//
+		// See seams.JoeCaptainTypeEnabled's doc comment for the §B R-OVR
+		// global-blunt-unlock limitation that bounds future enablement.
+		if !seams.JoeCaptainTypeEnabled {
+			return nil, ErrOnlyHumansInPhase1
+		}
+	default:
 		return nil, ErrOnlyHumansInPhase1
 	}
 	if principal == "" {
@@ -210,14 +223,31 @@ func (s *CaptainService) BeginTransfer(
 		return nil, ErrTransferAlreadyInFlight
 	}
 
-	// TODO(Change 12 / R-OVR): when current.CaptainType == CaptainTypeJoe
-	// and the incoming request is from an RBAC-authorized human, route
-	// to immediate transfer_confirmed regardless of reachability. The
-	// B-OVR test in internal/sessionmodel/captain_bovr_test.go (added in
-	// Change 12) covers the override branch. Phase 1 has no joe-type
-	// captain in production code (CaptainTypeJoe is rejected by Attach),
-	// so the branch is unreachable here today.
-	_ = current.CaptainType
+	// R-OVR (B-OVR force-yield): when the current captain is type joe
+	// and the incoming request is incoming-initiated from an
+	// RBAC-authorized human, the §B state machine is STRUCTURALLY
+	// force-overridden to immediate transfer_confirmed. Joe-captain
+	// cannot decline or delay human takeover. Compiled in — not behind
+	// a seam flag, not configurable, not subject to Joe's judgment.
+	//
+	// The branch routes ONLY to completeTransfer; there is no joe-
+	// declines code path. The B-OVR named structural guard in
+	// internal/sessionmodel/captain_bovr_test.go enforces this property
+	// via go/ast: any switch case or if-branch in BeginTransfer that
+	// inspects CaptainTypeJoe must route to completeTransfer.
+	//
+	// Phase 1 has no joe-type captain in production code (Attach refuses
+	// captain_type=joe via the seams.JoeCaptainTypeEnabled gate), so
+	// this branch is unreachable through normal flows. The B-OVR test
+	// exercises it by directly inserting a session_captains row with
+	// captain_type='joe' through the repository, bypassing Attach.
+	if current.CaptainType == CaptainTypeJoe && initiator == TransferInitiatorIncoming {
+		newCaptainID, err := s.completeTransfer(ctx, current, incomingPrincipal)
+		if err != nil {
+			return nil, err
+		}
+		return &TransferBeginResult{State: TransferStateTransferConfirmed, NewCaptainID: newCaptainID}, nil
+	}
 
 	switch initiator {
 	case TransferInitiatorOutgoing:

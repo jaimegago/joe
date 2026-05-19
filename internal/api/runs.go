@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaimegago/joe/internal/runmodel"
+	"github.com/jaimegago/joe/internal/seams"
 )
 
 // runsHandler exposes the §D run lifecycle HTTP control plane —
@@ -458,6 +459,13 @@ func validateSolicitationPayload(kind runmodel.SolicitationKind, raw json.RawMes
 
 type resolveSolicitationRequest struct {
 	ResolutionPayload json.RawMessage `json:"resolution_payload"`
+
+	// DisposedBy selects the §D taxonomy resolver tier — "human"
+	// (default) or "joe". Joe self-disposition of a confirm_close
+	// solicitation is the Change 12 inert seam gated on
+	// seams.JoeConfirmCloseDispositionEnabled. Other solicitation
+	// kinds ignore this field in Phase 1.
+	DisposedBy string `json:"disposed_by,omitempty"`
 }
 
 func (h *runsHandler) resolveSolicitation(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +492,19 @@ func (h *runsHandler) resolveSolicitation(w http.ResponseWriter, r *http.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeBadRequest(w, err, "resolve solicitation", "invalid request body")
 		return
+	}
+
+	// confirm_close self-disposition is the §D-taxonomy seam (Change 12).
+	// When the resolver tier signals disposed_by=joe and the seam is
+	// disabled, refuse BEFORE writing a resolution. Human disposition
+	// (default disposed_by) is unaffected. The gate is structurally tied
+	// to the seam so future enablement is a one-line constant change.
+	if sol.Kind == runmodel.SolicitationKindConfirmClose && req.DisposedBy == "joe" {
+		if !seams.JoeConfirmCloseDispositionEnabled {
+			writeError(w, http.StatusForbidden, "forbidden",
+				"joe-autonomous confirm_close self-disposition is not enabled in Phase 1 (incremental-autonomy seam)")
+			return
+		}
 	}
 	now := time.Now().UTC()
 	if err := h.repo.ResolveSolicitation(r.Context(), solicitationID, string(req.ResolutionPayload), now); err != nil {

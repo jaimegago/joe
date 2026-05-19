@@ -202,18 +202,6 @@ func TestRegimeDeclare_AlreadyIncident(t *testing.T) {
 	resp2.Body.Close()
 }
 
-func TestRegimeDeclare_JoeKindRefused(t *testing.T) {
-	ts, _, rbacRepo := newRegimeServer(t)
-	grantRegimeControl(t, rbacRepo, "alice")
-
-	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
-		map[string]any{"declared_kind": "joe"})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403 (joe-autonomous seam is inert in Phase 1)", resp.StatusCode)
-	}
-	resp.Body.Close()
-}
-
 func TestRegimeResolve_HappyPath(t *testing.T) {
 	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
