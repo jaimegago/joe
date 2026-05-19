@@ -309,6 +309,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	findingsRepo := findings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	warningsRepo := warnings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Wire captain state-machine service (Phase 1 Change 6).
+	// Reachability threshold of 90s matches the CaptainService default;
+	// future config-driven override goes here.
+	captainSvc := sessionmodel.NewCaptainService(sessionModelRepo, runModelRepo, 90)
+
 	// Register the DB-backed cluster panic store so that safety.Trigger /
 	// safety.Unlock propagate across all joecored instances sharing this DB.
 	clusterPanicStore := sqlStore.PanicStore()
@@ -367,6 +372,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
 	services.Warnings = warningsRepo
+	services.CaptainSvc = captainSvc
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 

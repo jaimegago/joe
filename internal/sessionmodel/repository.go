@@ -43,6 +43,44 @@ type Repository interface {
 	GetActiveCaptain(ctx context.Context, sessionID string) (*Captain, error)
 	ListCaptainsForSession(ctx context.Context, sessionID string) ([]Captain, error)
 
+	// CurrentCaptainPrincipal returns the active captain's principal for
+	// sessionID, plus an ok flag. ok=false means there is no active
+	// captain — either the session never had one (incident regime
+	// pending_captain state, §B2 null authority) or the captain was
+	// detached without a successor.
+	//
+	// Required by the §B1 principal-threading rule: Change 10's executor
+	// wrapper looks up the current captain principal here to substitute
+	// it into the RBAC call. Stable getter for downstream consumers.
+	CurrentCaptainPrincipal(ctx context.Context, sessionID string) (string, bool, error)
+
+	// Captain reachability (§6-D NET-NEW)
+
+	// RecordCaptainHeartbeat updates the active captain row's
+	// last_seen_at if it matches the given principal. Returns
+	// ErrCaptainPrincipalMismatch if the active captain's principal is
+	// not the one calling — heartbeat is captain-bound, not session-bound.
+	RecordCaptainHeartbeat(ctx context.Context, sessionID, principal string, when time.Time) error
+
+	// IsCaptainReachable returns true iff the active captain's
+	// last_seen_at is within thresholdSeconds of now. A session with
+	// no active captain returns (false, ErrNoActiveCaptain).
+	//
+	// Used by CaptainService.BeginTransfer (§B3) to decide between the
+	// incoming-initiated branches: reachable -> ask outgoing (decision
+	// solicitation), unreachable -> direct transfer_confirmed.
+	IsCaptainReachable(ctx context.Context, sessionID string, thresholdSeconds int) (bool, error)
+
+	// MarkCaptainDetached sets detached_at on the captain row and
+	// clears transfer_state. Used by CaptainService.ConfirmTransfer to
+	// step the state machine forward.
+	MarkCaptainDetached(ctx context.Context, captainID string, when time.Time) error
+
+	// UpdateCaptainTransferState updates the transfer state and
+	// incoming-side metadata on the active captain row. Used by
+	// CaptainService.BeginTransfer / CancelTransfer.
+	UpdateCaptainTransferState(ctx context.Context, captainID string, state *TransferState, incomingPrincipal *string, initiator *TransferInitiator) error
+
 	// UpdateIncidentState transitions an incident session to a new
 	// incident_state. Used by tests in Change 5 to advance a session to
 	// 'believed_mitigated' so that resolve can be exercised, and by the
@@ -96,6 +134,12 @@ var (
 	ErrRegimeNotIncident     = errors.New("sessionmodel: regime is not incident")
 	ErrIncidentNotMitigated  = errors.New("sessionmodel: active incident is not in 'believed_mitigated'")
 	ErrNoActiveIncident      = errors.New("sessionmodel: no active incident session found")
+)
+
+// Errors returned by captain operations.
+var (
+	ErrNoActiveCaptain          = errors.New("sessionmodel: no active captain for session")
+	ErrCaptainPrincipalMismatch = errors.New("sessionmodel: principal does not match active captain")
 )
 
 // ErrNotFound is returned when a lookup finds no matching row.
@@ -328,6 +372,13 @@ func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain,
 	if c.AttachedAt.IsZero() {
 		c.AttachedAt = time.Now().UTC()
 	}
+	// §6-D: seed last_seen_at on attach so a fresh attach counts as
+	// reachable. If the caller already provided one (e.g. tests
+	// constructing a stale captain) we honor it.
+	if c.LastSeenAt == nil {
+		t := c.AttachedAt
+		c.LastSeenAt = &t
+	}
 
 	var detachedAt any
 	if c.DetachedAt != nil {
@@ -349,11 +400,12 @@ func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain,
 	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO session_captains
 			(id, session_id, captain_type, principal, attached_at, detached_at,
-			 transfer_state, incoming_principal, transfer_initiator)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			 transfer_state, incoming_principal, transfer_initiator, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		c.ID, c.SessionID, string(c.CaptainType), c.Principal,
 		c.AttachedAt.Format(time.RFC3339), detachedAt,
-		transferState, incomingPrincipal, transferInitiator)
+		transferState, incomingPrincipal, transferInitiator,
+		c.LastSeenAt.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("attach captain: %w", err)
 	}
@@ -363,7 +415,7 @@ func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain,
 func (r *SQLRepository) GetActiveCaptain(ctx context.Context, sessionID string) (*Captain, error) {
 	row := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		SELECT id, session_id, captain_type, principal, attached_at, detached_at,
-		       transfer_state, incoming_principal, transfer_initiator
+		       transfer_state, incoming_principal, transfer_initiator, last_seen_at
 		FROM session_captains
 		WHERE session_id = ? AND detached_at IS NULL
 		ORDER BY attached_at DESC
@@ -374,7 +426,7 @@ func (r *SQLRepository) GetActiveCaptain(ctx context.Context, sessionID string) 
 func (r *SQLRepository) ListCaptainsForSession(ctx context.Context, sessionID string) ([]Captain, error) {
 	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
 		SELECT id, session_id, captain_type, principal, attached_at, detached_at,
-		       transfer_state, incoming_principal, transfer_initiator
+		       transfer_state, incoming_principal, transfer_initiator, last_seen_at
 		FROM session_captains WHERE session_id = ? ORDER BY attached_at`), sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("list captains: %w", err)
@@ -403,9 +455,10 @@ func scanCaptain(scan func(...any) error) (*Captain, error) {
 		transferState     sql.NullString
 		incomingPrincipal sql.NullString
 		transferInitiator sql.NullString
+		lastSeenAt        sql.NullString
 	)
 	err := scan(&c.ID, &c.SessionID, &captainType, &c.Principal, &attachedAtStr,
-		&detachedAt, &transferState, &incomingPrincipal, &transferInitiator)
+		&detachedAt, &transferState, &incomingPrincipal, &transferInitiator, &lastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -429,5 +482,103 @@ func scanCaptain(scan func(...any) error) (*Captain, error) {
 		ti := TransferInitiator(transferInitiator.String)
 		c.TransferInitiator = &ti
 	}
+	if lastSeenAt.Valid {
+		t, _ := time.Parse(time.RFC3339, lastSeenAt.String)
+		c.LastSeenAt = &t
+	}
 	return &c, nil
+}
+
+// --- §B1 captain principal getter + §6-D reachability ---
+
+func (r *SQLRepository) CurrentCaptainPrincipal(ctx context.Context, sessionID string) (string, bool, error) {
+	cap, err := r.GetActiveCaptain(ctx, sessionID)
+	if err != nil {
+		return "", false, err
+	}
+	if cap == nil {
+		return "", false, nil
+	}
+	return cap.Principal, true, nil
+}
+
+func (r *SQLRepository) RecordCaptainHeartbeat(ctx context.Context, sessionID, principal string, when time.Time) error {
+	if when.IsZero() {
+		when = time.Now().UTC()
+	}
+	cap, err := r.GetActiveCaptain(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("record captain heartbeat: %w", err)
+	}
+	if cap == nil {
+		return ErrNoActiveCaptain
+	}
+	if cap.Principal != principal {
+		return ErrCaptainPrincipalMismatch
+	}
+	_, err = r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE session_captains SET last_seen_at = ? WHERE id = ?`),
+		when.Format(time.RFC3339), cap.ID)
+	if err != nil {
+		return fmt.Errorf("record captain heartbeat: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLRepository) IsCaptainReachable(ctx context.Context, sessionID string, thresholdSeconds int) (bool, error) {
+	cap, err := r.GetActiveCaptain(ctx, sessionID)
+	if err != nil {
+		return false, fmt.Errorf("is captain reachable: %w", err)
+	}
+	if cap == nil {
+		return false, ErrNoActiveCaptain
+	}
+	// A captain row with no last_seen_at (defensive: AttachCaptain seeds
+	// it, but legacy rows or external inserts may not) is treated as
+	// unreachable — fail closed.
+	if cap.LastSeenAt == nil {
+		return false, nil
+	}
+	age := time.Since(*cap.LastSeenAt)
+	return age <= time.Duration(thresholdSeconds)*time.Second, nil
+}
+
+func (r *SQLRepository) MarkCaptainDetached(ctx context.Context, captainID string, when time.Time) error {
+	if when.IsZero() {
+		when = time.Now().UTC()
+	}
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE session_captains
+		SET detached_at = ?, transfer_state = NULL,
+		    incoming_principal = NULL, transfer_initiator = NULL
+		WHERE id = ?`),
+		when.Format(time.RFC3339), captainID)
+	if err != nil {
+		return fmt.Errorf("mark captain detached: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLRepository) UpdateCaptainTransferState(ctx context.Context, captainID string, state *TransferState, incomingPrincipal *string, initiator *TransferInitiator) error {
+	var stateVal any
+	if state != nil {
+		stateVal = string(*state)
+	}
+	var incomingVal any
+	if incomingPrincipal != nil {
+		incomingVal = *incomingPrincipal
+	}
+	var initiatorVal any
+	if initiator != nil {
+		initiatorVal = string(*initiator)
+	}
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE session_captains
+		SET transfer_state = ?, incoming_principal = ?, transfer_initiator = ?
+		WHERE id = ?`),
+		stateVal, incomingVal, initiatorVal, captainID)
+	if err != nil {
+		return fmt.Errorf("update captain transfer state: %w", err)
+	}
+	return nil
 }

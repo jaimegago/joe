@@ -1,0 +1,31 @@
+-- Phase 1 Change 6: captain reachability signal (§6-D NET-NEW).
+-- See docs/PHASE-1-DECOMPOSITION.md (Change 6, §6-D) and
+-- docs/PHASE-0-SESSION-MODEL.md §B3.
+--
+-- §6-D FINDING: captain reachability signal source verified.
+-- [NET-NEW] built in this change as session_captains.last_seen_at
+-- (this migration) + heartbeat HTTP endpoint
+-- (internal/api/captain.go: POST /api/v1/sessions/{id}/captain/heartbeat)
+-- + repository check (internal/sessionmodel/repository.go:
+-- IsCaptainReachable). Binds to captain because the column lives on
+-- the captain row itself; AttachCaptain seeds it on attach so a fresh
+-- attach counts as reachable; the heartbeat endpoint updates it for
+-- the current captain's principal; it cascades away when the session
+-- is deleted. Reuses no existing signal because:
+--   - graph_nodes.last_seen tracks infrastructure discovery, not
+--     human captains.
+--   - sources.last_health_check tracks infrastructure source health
+--     probes, not human captains.
+--   - agent_sessions.last_activity_at is per-session (touched by
+--     CreateSession and UpdateIncidentState; observers can update a
+--     session without being the captain — see §A3 multi-human
+--     observer attach).
+--   - runmodel.LivenessFlag (run_solicitations.liveness_flag) is a
+--     static per-solicitation declaration set at solicitation
+--     creation, not a live time-decaying signal.
+-- No existing signal binds to a captain principal over time.
+--
+-- The "is the captain reachable?" query in CaptainService.BeginTransfer
+-- compares now() - last_seen_at to a configurable threshold.
+
+ALTER TABLE session_captains ADD COLUMN last_seen_at TEXT;
