@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/seams"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 )
 
@@ -89,12 +90,19 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 		case "human":
 			declaredKind = sessionmodel.RegimeKindHuman
 		case "joe":
-			// Joe-autonomous declare is a Change 12 inert seam. Refuse
-			// until the seam is enabled (which Phase 1 explicitly does
-			// not do; the seam is compile-time const false).
-			writeError(w, http.StatusForbidden, "forbidden",
-				"joe-autonomous declare is not enabled in Phase 1 (incremental-autonomy seam)")
-			return
+			// Joe-autonomous declare is a Change 12 inert seam, gated on
+			// the compile-time constant seams.JoeAutonomousDeclareEnabled.
+			// Phase 1: the constant is false — refuse with 403 BEFORE any
+			// call to sessionmodel.Repository.DeclareIncidentRegime. The
+			// placeholder is structurally tied to the seam so future
+			// enablement is a one-line constant change, not a wiring
+			// exercise (verified by the paired build-tag-isolated test).
+			if !seams.JoeAutonomousDeclareEnabled {
+				writeError(w, http.StatusForbidden, "forbidden",
+					"joe-autonomous declare is not enabled in Phase 1 (incremental-autonomy seam)")
+				return
+			}
+			declaredKind = sessionmodel.RegimeKindJoe
 		default:
 			writeBadRequest(w, nil, "declare regime",
 				"declared_kind must be 'human' or 'joe'")
@@ -131,6 +139,12 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 // This is the SOLE production-code caller of
 // sessionmodel.Repository.ResolveIncidentRegime; the AST invariant guard
 // in regime_invariant_test.go enforces that.
+//
+// Joe-autonomous resolve is a Change 12 inert seam gated on
+// seams.JoeAutonomousResolveEnabled. A request that signals as_joe=true
+// is refused with 403 BEFORE any call to ResolveIncidentRegime — this
+// preserves Change 5's single-call-site AST guard (Invariant 4 /
+// no-auto-resolve-via-confirm_close).
 func (h *regimeHandler) resolve(w http.ResponseWriter, r *http.Request) {
 	if h.policy == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
@@ -140,6 +154,27 @@ func (h *regimeHandler) resolve(w http.ResponseWriter, r *http.Request) {
 	principal := rbac.PrincipalFromContext(r.Context())
 	if principal == rbac.Unknown {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
+
+	// Optional body: { "as_joe": true } selects the Joe-autonomous
+	// resolve seam (Change 12). Absent or false → normal human path.
+	var req struct {
+		AsJoe bool `json:"as_joe,omitempty"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeBadRequest(w, err, "resolve regime", "invalid request body")
+			return
+		}
+	}
+	if req.AsJoe && !seams.JoeAutonomousResolveEnabled {
+		// Joe-autonomous resolve is the inert seam. Refuse BEFORE the
+		// ResolveIncidentRegime call so Change 5's AST guard
+		// (regime_invariant_test.go) keeps its invariant: exactly one
+		// production-code caller, the human-resolve fall-through below.
+		writeError(w, http.StatusForbidden, "forbidden",
+			"joe-autonomous resolve is not enabled in Phase 1 (incremental-autonomy seam)")
 		return
 	}
 
