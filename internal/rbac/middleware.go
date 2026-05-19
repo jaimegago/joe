@@ -20,6 +20,21 @@ func PrincipalFromContext(ctx context.Context) Principal {
 	return Unknown
 }
 
+// WithPrincipal returns a new context carrying the given principal,
+// overriding whatever IdentityMiddleware put there. Phase 1 Change 10
+// uses this for the §B1 principal substitution: in incident regime the
+// captain-session gate, on Allow, replaces the request-time principal
+// with the current captain's principal so downstream IsAllowed calls
+// (or any other PrincipalFromContext reader) see the captain's
+// authority, not the original caller's. In normal regime no
+// substitution happens; the request-time principal is used unchanged.
+//
+// Exported so coreagent.DurableExecutor (outside the rbac package) can
+// perform the substitution without growing a private helper in rbac.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return contextWithPrincipal(ctx, p)
+}
+
 // contextWithPrincipal returns a new context with the given principal attached.
 func contextWithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
