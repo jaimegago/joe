@@ -177,6 +177,7 @@ type fixtureEnv struct {
 	ctx       context.Context
 	store     *store.Store
 	repo      *spyRepo
+	sessRepo  sessionmodel.Repository
 	order     *[]string
 	sessionID string
 	runID     string
@@ -199,25 +200,39 @@ func newFixture(t *testing.T) *fixtureEnv {
 	orderPtr := &order
 	spied := &spyRepo{inner: innerRepo, invokeOrder: orderPtr}
 
-	// Declare an incident → session with captain attached.
-	sessionID, _, err := sessRepo.DeclareIncidentRegime(context.Background(), "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
+	// Plain investigation session under normal regime. The §D5 tests
+	// don't care about the §C gate (Change 10 covers gate behavior in
+	// executor_gate_test.go); they just need a valid session_id FK
+	// target for the run. Normal regime → gate always allows.
+	sess := sessionmodel.AgentSession{
+		ID:               uuid.NewString(),
+		Type:             sessionmodel.SessionTypeInvestigation,
+		CreatorPrincipal: "alice",
+	}
+	if _, err := sessRepo.CreateSession(context.Background(), sess); err != nil {
+		t.Fatalf("create session: %v", err)
 	}
 	// Create a run on that session.
 	run, err := innerRepo.CreateRun(context.Background(), runmodel.Run{
-		ID: uuid.NewString(), SessionID: sessionID, State: runmodel.RunStateRunning,
+		ID: uuid.NewString(), SessionID: sess.ID, State: runmodel.RunStateRunning,
 	})
 	if err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
+	// Wire sessRepo into the wrapper too so the gate code path runs in
+	// these tests (it'll always allow in normal regime). The §C gate
+	// is structurally inseparable from the wrapper now (Change 10);
+	// passing nil would let the §D5 tests artificially short-circuit it.
+	_ = sessRepo
+
 	return &fixtureEnv{
 		ctx:       context.Background(),
 		store:     s,
 		repo:      spied,
+		sessRepo:  sessRepo,
 		order:     orderPtr,
-		sessionID: sessionID,
+		sessionID: sess.ID,
 		runID:     run.ID,
 	}
 }
@@ -237,7 +252,7 @@ func (f *fixtureEnv) withRunCtx(key string) context.Context {
 func TestDurableExecutor_D5Ordering(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
 
 	// graph_add_node is a T2 (TierRecord) tool in the registry.
 	_, err := dur.Execute(f.withRunCtx(""), "graph_add_node", map[string]any{"id": "x"})
@@ -261,7 +276,7 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"v": 1}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
 
 	key := "fixed-key"
 	ctx := f.withRunCtx(key)
@@ -296,7 +311,7 @@ func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
 
 	// Inject a failure that fires before MarkToolCompleted writes —
 	// simulates the process crashing after inner.Execute but before the
@@ -343,7 +358,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 func TestDurableExecutor_T1Bypass(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: "ok", invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
 
 	// read_file is registered as T1 (TierObserve) in the safety tool registry.
 	_, err := dur.Execute(f.withRunCtx(""), "read_file", map[string]any{"path": "/etc/hosts"})
@@ -369,7 +384,7 @@ func TestDurableExecutor_T1Bypass(t *testing.T) {
 func TestDurableExecutor_NoGoroutineFanOut(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: "ok"}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
 
 	callerGoID := currentGoroutineID()
 	if callerGoID < 0 {

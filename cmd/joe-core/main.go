@@ -496,10 +496,10 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// only; the CLI's useragent.Agent executor is untouched (Phase 2
 	// removes the CLI loop). Type-assert is safe — newCoreAgent in
 	// defaultRunDeps returns *coreagent.Agent.
-	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil {
-		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
+	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
+		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel, services.SessionModel)
 		concrete.SetToolExecutor(durable)
-		slog.Info("core agent: §D5 durable executor wrapper installed")
+		slog.Info("core agent: §D5 durable executor wrapper + §C captain-session gate installed")
 	}
 
 	if err := coreAgent.Start(ctx); err != nil {
