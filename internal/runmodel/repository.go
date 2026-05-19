@@ -49,6 +49,7 @@ type Repository interface {
 
 	RecordWorldHandle(ctx context.Context, h WorldHandle) (*WorldHandle, error)
 	GetWorldHandle(ctx context.Context, id string) (*WorldHandle, error)
+	ListWorldHandlesForRun(ctx context.Context, runID string) ([]WorldHandle, error)
 	ObserveWorldHandle(ctx context.Context, id string, observedState string, polledAt time.Time) error
 
 	// Idempotency keys (§D5)
@@ -394,6 +395,40 @@ func (r *SQLRepository) GetWorldHandle(ctx context.Context, id string) (*WorldHa
 		h.LastObservedState = &lastObservedState.String
 	}
 	return &h, nil
+}
+
+func (r *SQLRepository) ListWorldHandlesForRun(ctx context.Context, runID string) ([]WorldHandle, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT id, run_id, locator, query_meta, recorded_at, last_poll_at, last_observed_state
+		FROM run_world_handles WHERE run_id = ? ORDER BY recorded_at`), runID)
+	if err != nil {
+		return nil, fmt.Errorf("list world handles: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WorldHandle
+	for rows.Next() {
+		var (
+			h                 WorldHandle
+			recordedAtStr     string
+			lastPollAt        sql.NullString
+			lastObservedState sql.NullString
+		)
+		if err := rows.Scan(&h.ID, &h.RunID, &h.Locator, &h.QueryMeta,
+			&recordedAtStr, &lastPollAt, &lastObservedState); err != nil {
+			return nil, fmt.Errorf("scan world handle: %w", err)
+		}
+		h.RecordedAt, _ = time.Parse(time.RFC3339, recordedAtStr)
+		if lastPollAt.Valid {
+			t, _ := time.Parse(time.RFC3339, lastPollAt.String)
+			h.LastPollAt = &t
+		}
+		if lastObservedState.Valid {
+			h.LastObservedState = &lastObservedState.String
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }
 
 func (r *SQLRepository) ObserveWorldHandle(ctx context.Context, id string, observedState string, polledAt time.Time) error {

@@ -72,6 +72,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerRegimeRoutes(mux, apiPrefix)
 	// Phase 1 Change 6: captain attach + transfer state machine.
 	s.registerCaptainRoutes(mux, apiPrefix)
+	// Phase 1 Change 7: run lifecycle HTTP API.
+	s.registerRunRoutes(mux, apiPrefix)
 }
 
 // registerStatusRoutes registers status and health check routes
