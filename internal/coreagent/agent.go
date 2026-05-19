@@ -17,17 +17,44 @@ import (
 	"github.com/jaimegago/joe/internal/tools"
 )
 
+// ToolExecutor is the minimal interface the Core Agent uses to run tool
+// calls. Both *tools.Executor and *DurableExecutor satisfy it. Phase 1
+// Change 9 introduced the interface so cmd/joe-core/main.go can swap
+// in the §D5 durable wrapper without touching this file's construction
+// path.
+type ToolExecutor interface {
+	Execute(ctx context.Context, name string, args map[string]any) (any, error)
+}
+
 // Agent is the Core Agent that maintains infrastructure knowledge
 type Agent struct {
 	services  *core.Services
 	llm       llm.LLMAdapter
 	tools     *tools.Registry
-	executor  *tools.Executor
+	executor  ToolExecutor
 	refresher *Refresher
 	discovery *Engine
 	logger    *slog.Logger
 	metrics   *observability.Metrics
 	stopCh    chan struct{}
+}
+
+// SetToolExecutor swaps the underlying tool executor. cmd/joe-core/main.go
+// uses this after wiring the §D5 durable wrapper around the base executor.
+// Calling with nil is a no-op (defensive — never deliberately disable the
+// executor at runtime).
+func (a *Agent) SetToolExecutor(e ToolExecutor) {
+	if e == nil {
+		return
+	}
+	a.executor = e
+}
+
+// ToolExecutor returns the current executor. Used by cmd/joe-core/main.go
+// to compose the §D5 durable wrapper around whatever was wired at New
+// time.
+func (a *Agent) ToolExecutor() ToolExecutor {
+	return a.executor
 }
 
 // New creates a new Core Agent

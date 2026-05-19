@@ -489,6 +489,19 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	coreAgent := deps.newCoreAgent(services, llmAdapter, metrics)
 	services.Agent = coreAgent // Wire Core Agent to services for API handlers
 
+	// Phase 1 Change 9: wrap the Core Agent's tool executor with the
+	// §D5 durable wrapper so every T2/T3 tool call persists an
+	// idempotency-key intent BEFORE issuing and a terminal status
+	// AFTER. The wrapper is wired into joe-core's executor instance
+	// only; the CLI's useragent.Agent executor is untouched (Phase 2
+	// removes the CLI loop). Type-assert is safe — newCoreAgent in
+	// defaultRunDeps returns *coreagent.Agent.
+	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil {
+		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
+		concrete.SetToolExecutor(durable)
+		slog.Info("core agent: §D5 durable executor wrapper installed")
+	}
+
 	if err := coreAgent.Start(ctx); err != nil {
 		slog.Error("failed to start core agent", "error", err)
 		return 1
@@ -533,6 +546,10 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		},
 		api.BearerAuth(cfg.Server.APIKey),
 		rbac.IdentityMiddleware(identityProvider),
+		// Phase 1 Change 9: thread session/run/idempotency-key
+		// request headers into context AFTER identity is resolved
+		// and BEFORE source-keyed RBAC enforcement runs.
+		api.SessionMiddleware,
 		rbac.EnforcementMiddleware(policyEngine),
 		api.MaxRequestBody(api.DefaultMaxRequestBytes),
 	)
