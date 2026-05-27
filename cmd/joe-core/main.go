@@ -445,7 +445,13 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
 		return 1
 	}
-	services.LLM = llmAdapter // expose to web UI chat handler
+	// Phase 2: services.LLM is the single LLM contact point for the agentic
+	// loop and the Web UI chat handler. Wrap it in a SwappableAdapter so the
+	// /model HTTP API can hot-swap the active model at runtime without a
+	// restart. The raw adapter is retained below for the knowledge embedder
+	// and background services — embeddings must stay on a stable model and
+	// must not follow interactive chat-model swaps.
+	services.LLM = llm.NewSwappableAdapter(llmAdapter, cfg.LLM.Current)
 
 	// Wire the LLM embedder into the Knowledge Service now that the adapter is ready.
 	embModelName := cfg.Knowledge.EmbeddingModel
