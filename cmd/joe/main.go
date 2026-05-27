@@ -20,8 +20,6 @@ import (
 
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/llm"
-	"github.com/jaimegago/joe/internal/llmfactory"
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/mcp"
 	"github.com/jaimegago/joe/internal/observability"
@@ -32,7 +30,6 @@ import (
 	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
 type replRunner interface {
@@ -43,13 +40,12 @@ type runDeps struct {
 	loadConfig       func(path string) (*config.Config, error)
 	setupOTel        func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
 	newMetrics       func() *observability.Metrics
-	newAdapter       func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
 	joeDirPath       func() (string, error)
 	loadPolicy       func(configDir string) (*safety.SafetyPolicy, error)
 	newClient        func(baseURL string, opts ...client.ClientOption) *client.Client
-	newRegistry      func(coreClient *client.Client, policy *safety.SafetyPolicy) *tools.Registry
+	newRegistry      func(policy *safety.SafetyPolicy) *tools.Registry
 	newExecutor      func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
-	newRepl          func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner
+	newRepl          func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner
 	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
 	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
 }
@@ -59,14 +55,13 @@ func defaultRunDeps() runDeps {
 		loadConfig:  config.Load,
 		setupOTel:   observability.Setup,
 		newMetrics:  observability.NewMetrics,
-		newAdapter:  llmfactory.NewAdapter,
 		joeDirPath:  paths.JoeDirPath,
 		loadPolicy:  safety.LoadPolicy,
 		newClient:   client.New,
-		newRegistry: tools.NewDefaultRegistryWithClient,
+		newRegistry: tools.NewLocalRegistry,
 		newExecutor: tools.NewExecutor,
-		newRepl: func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
-			return repl.NewWithSession(agent, cfg, session)
+		newRepl: func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner {
+			return repl.New(c, cfg, executor, registry)
 		},
 		newSkillManager: func(root string, trusted []string, policy *skills.Policy) skillManager {
 			return skills.NewManager(root, nil).
@@ -714,17 +709,10 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	// Create metrics instance
 	metrics := deps.newMetrics()
 
-	// Validate LLM configuration and check API keys
-	currentModel, err := cfg.LLM.CurrentModel()
-	if err != nil {
-		fmt.Fprintf(stderr, "You need to connect Joe to an LLM.\n\n%v\n\nCheck your config file's llm.current and llm.available sections.\n", err)
-		return 1
-	}
-	if err := config.ValidateAPIKeysWithUserMessage(currentModel); err != nil {
-		fmt.Fprintln(stderr, err.Error())
-		fmt.Fprintln(stderr)
-		return 1
-	}
+	// Note: after the Phase 2 runtime collapse the CLI makes no LLM calls and
+	// holds no LLM adapter — the single LLM contact point lives in joe-core.
+	// The CLI therefore does not validate llm.* config or require provider API
+	// keys; that is joe-core's concern.
 
 	// Connect to joe-core
 	scheme := "http"
@@ -761,28 +749,6 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		fmt.Fprintln(stdout, "Debug mode enabled")
 	}
 
-	// Initialize LLM adapter using factory
-	baseAdapter, err := deps.newAdapter(ctx, currentModel)
-	if err != nil {
-		slog.Error("failed to create LLM adapter", "error", err)
-		return 1
-	}
-
-	// Clean up adapter resources (important for Gemini client)
-	if closer, ok := baseAdapter.(io.Closer); ok {
-		defer closer.Close()
-	}
-
-	// Wrap with instrumentation
-	llmAdapter := llm.NewInstrumentedAdapter(baseAdapter, logger, currentModel.Provider, currentModel.Model)
-
-	// Log which model we're using
-	slog.Info("LLM initialized",
-		"provider", currentModel.Provider,
-		"model", currentModel.Model,
-	)
-	fmt.Fprintf(stdout, "Using %s/%s\n", currentModel.Provider, currentModel.Model)
-
 	// Load safety policy from ~/.joe/safety-policy.yaml
 	// If the file doesn't exist, DefaultPolicy is used (most restrictive for T3).
 	// If the file is malformed, we refuse to start.
@@ -798,77 +764,26 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	}
 	slog.Info("safety policy loaded", "config_dir", joeDir)
 
-	// Create tool registry with local tools + core tools (graph_query, graph_related)
-	// Pass safety policy so tool-specific settings (e.g., allowed_directories) are enforced.
-	registry := deps.newRegistry(coreClient, safetyPolicy)
+	// Create the local tool registry (read_file, write_file, run_command, git,
+	// ask_user). These execute on the operator's machine when joe-core's loop
+	// delegates a tool call back over the stream. Core/shared tools run inside
+	// joe-core's loop, not here. Pass safety policy so tool-specific settings
+	// (e.g., allowed_directories) are enforced locally.
+	registry := deps.newRegistry(safetyPolicy)
 
 	// Create REPL notifier for T3 pre-execution countdown and T2/T3 post-execution log
 	replNotifier := repl.NewNotifier()
 
-	// Create tool executor with safety policy enforcement and notifications
+	// Create the local tool executor with safety policy enforcement and
+	// notifications. Used to service delegated tool callbacks.
 	executor := deps.newExecutor(registry, metrics,
 		tools.WithPolicy(safetyPolicy),
 		tools.WithNotifier(replNotifier),
 	)
 
-	// Create adapter factory for hot-swapping models
-	adapterFactory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
-		// Find the model config
-		var modelCfg config.ModelConfig
-		found := false
-		for _, mc := range cfg.LLM.Available {
-			if mc.Provider == provider && mc.Model == model {
-				modelCfg = mc
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("model config not found for provider=%s model=%s", provider, model)
-		}
-
-		// Validate API keys before creating adapter
-		if err := config.ValidateAPIKeys(modelCfg); err != nil {
-			return nil, fmt.Errorf("cannot switch to %s: %w", provider, err)
-		}
-
-		// Create the base adapter
-		baseAdptr, err := llmfactory.NewAdapter(ctx, modelCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		// Wrap with instrumentation
-		return llm.NewInstrumentedAdapter(baseAdptr, logger, provider, model), nil
-	}
-
-	// Create agent with system prompt and adapter factory
-	systemPrompt := `You are Joe, an infrastructure assistant. You can use tools to help answer questions. Be concise.
-
-When you need to access infrastructure resources (Kubernetes, Git, etc.), you'll need source IDs:
-- If you don't know the available sources, call list_sources first to discover them
-- Then use the source_id from list_sources in subsequent tool calls like k8s_get or k8s_logs
-- If there's only one source of the needed type, use that one automatically
-
-You have access to a knowledge store via the search_knowledge tool. Use it proactively when:
-- Asked about how something works, known issues, or operational patterns
-- Troubleshooting — relevant runbooks or failure modes may already be documented
-- Before answering from general knowledge, check if curated or synced docs are available`
-	agentInstance := useragent.NewAgent(
-		llmAdapter,
-		executor,
-		registry,
-		systemPrompt,
-		useragent.WithAdapterFactory(adapterFactory),
-		useragent.WithCurrentModelName(cfg.LLM.Current),
-	)
-
-	// Create session with message history limit to prevent unbounded growth
-	session := useragent.NewSession(metrics)
-	session.MaxMessages = useragent.DefaultMaxMessages
-
-	// Create and run REPL (pass config for model management and the session)
-	replInstance := deps.newRepl(agentInstance, cfg, session)
+	// Create and run the thin REPL: it drives joe-core's single agentic loop
+	// over HTTP and renders the streamed output.
+	replInstance := deps.newRepl(coreClient, cfg, executor, registry)
 	if err := replInstance.Run(ctx); err != nil {
 		slog.Error("repl failed", "error", err)
 		return 1

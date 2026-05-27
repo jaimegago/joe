@@ -11,70 +11,82 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/useragent"
+	"github.com/jaimegago/joe/internal/tools"
+	"github.com/jaimegago/joe/internal/uid"
 )
 
 var ErrExit = errors.New("exit requested")
 
 var runModelSelector = RunModelSelector
 
-// REPL implements the Read-Eval-Print-Loop for interactive mode
+// REPL implements the Read-Eval-Print-Loop for interactive mode. After the
+// Phase 2 runtime collapse it is a thin client: it sends user input to
+// joe-core, streams the single agentic loop's output back, renders it, and
+// services local-tool callbacks against the operator's own machine. It runs no
+// LLM and no agentic loop of its own.
 type REPL struct {
-	agent   *useragent.Agent
-	config  *config.Config
-	session *useragent.Session
+	client      *client.Client
+	config      *config.Config
+	executor    *tools.Executor // local executor for delegated tool callbacks
+	registry    *tools.Registry // local tools, advertised to joe-core
+	clientTools []client.ClientToolDef
+	sessionID   string
 }
 
-// New creates a new REPL with the given agent and config
-// The session is created with default settings (no message limit)
-func New(a *useragent.Agent, cfg *config.Config) *REPL {
+// New creates a thin REPL bound to a joe-core client. The executor/registry
+// hold the local-machine tools the CLI executes when joe-core delegates a
+// tool call back over the stream.
+func New(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) *REPL {
 	return &REPL{
-		agent:   a,
-		config:  cfg,
-		session: useragent.NewSession(nil),
+		client:      c,
+		config:      cfg,
+		executor:    executor,
+		registry:    registry,
+		clientTools: toClientTools(registry),
+		sessionID:   uid.New(),
 	}
 }
 
-// NewWithSession creates a new REPL with the given agent, config, and session
-// This allows callers to configure session settings (like MaxMessages) before starting the REPL
-func NewWithSession(a *useragent.Agent, cfg *config.Config, session *useragent.Session) *REPL {
-	return &REPL{
-		agent:   a,
-		config:  cfg,
-		session: session,
+// toClientTools converts a local tool registry into the client-tool
+// advertisements joe-core registers as delegating stubs.
+func toClientTools(registry *tools.Registry) []client.ClientToolDef {
+	if registry == nil {
+		return nil
 	}
+	defs := registry.ToDefinitions()
+	out := make([]client.ClientToolDef, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, client.ClientToolDef{
+			Name:        d.Name,
+			Description: d.Description,
+			Parameters:  d.Parameters,
+		})
+	}
+	return out
 }
 
-// Run starts the REPL loop
-// Prints welcome message, then loops reading input and calling the agent
-// Exits on "exit", "quit", or Ctrl+D (EOF)
+// Run starts the REPL loop. It reads input, sends each turn to joe-core, and
+// renders the streamed response. Exits on "exit", "quit", or Ctrl+D (EOF).
 func (r *REPL) Run(ctx context.Context) error {
-	defer r.session.Close()
-
 	fmt.Println("Joe is ready.")
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		// Print prompt
 		fmt.Print("> ")
 
-		// Read input
 		if !scanner.Scan() {
-			// EOF (Ctrl+D) or error
-			break
+			break // EOF (Ctrl+D) or error
 		}
 
 		input := strings.TrimSpace(scanner.Text())
-
-		// Skip empty input
 		if input == "" {
 			continue
 		}
 
-		// Handle commands (start with /)
 		if strings.HasPrefix(input, "/") {
 			if err := r.handleCommand(ctx, input); err != nil {
 				if errors.Is(err, ErrExit) {
@@ -87,25 +99,77 @@ func (r *REPL) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Run the agent
-		response, err := r.agent.Run(ctx, r.session, input)
-		if err != nil {
+		if err := r.streamTurn(ctx, input); err != nil {
 			fmt.Printf("Error: %v\n", err)
-			fmt.Println()
-			continue
 		}
-
-		// Print response
-		fmt.Println(response)
 		fmt.Println()
 	}
 
-	// Check for scanner errors
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading input: %w", err)
 	}
-
 	return nil
+}
+
+// streamTurn sends one user message to joe-core's single agentic loop and
+// renders the streamed events.
+func (r *REPL) streamTurn(ctx context.Context, message string) error {
+	return r.client.StreamTask(ctx, client.TaskStreamRequest{
+		Message:     message,
+		SessionID:   r.sessionID,
+		ClientTools: r.clientTools,
+	}, func(e client.TaskEvent) error {
+		return r.onEvent(ctx, e)
+	})
+}
+
+// onEvent dispatches a single streamed event: execute delegated local tools,
+// render the final answer, and otherwise ignore (step events are progress only).
+func (r *REPL) onEvent(ctx context.Context, e client.TaskEvent) error {
+	switch e.Type {
+	case client.TaskEventLocalToolCall:
+		var call client.LocalToolCall
+		if err := json.Unmarshal(e.Data, &call); err != nil {
+			return fmt.Errorf("decode local tool call: %w", err)
+		}
+		return r.runLocalTool(ctx, call)
+	case client.TaskEventFinal:
+		var res client.TaskResult
+		if err := json.Unmarshal(e.Data, &res); err != nil {
+			return fmt.Errorf("decode final response: %w", err)
+		}
+		r.renderFinal(res)
+	}
+	return nil
+}
+
+// runLocalTool executes a delegated tool on the operator's machine (through the
+// local executor, so the local safety policy applies) and posts the result
+// back. A tool failure is reported to joe-core as an error result so the loop
+// can continue, not surfaced as a stream-aborting error here.
+func (r *REPL) runLocalTool(ctx context.Context, call client.LocalToolCall) error {
+	fmt.Printf("  · %s\n", call.Name)
+
+	result, execErr := r.executor.Execute(ctx, call.Name, call.Args)
+	errMsg := ""
+	if execErr != nil {
+		errMsg = execErr.Error()
+	}
+	if err := r.client.SubmitToolResult(ctx, call.TaskID, call.CallID, result, errMsg); err != nil {
+		return fmt.Errorf("submit tool result: %w", err)
+	}
+	return nil
+}
+
+// renderFinal prints the final answer, or the error for a non-completed turn.
+func (r *REPL) renderFinal(res client.TaskResult) {
+	if res.Status != "" && res.Status != "completed" && res.Error != "" {
+		fmt.Printf("Error: %s\n", res.Error)
+		return
+	}
+	if res.FinalAnswer != "" {
+		fmt.Println(res.FinalAnswer)
+	}
 }
 
 // handleCommand processes REPL commands starting with /
@@ -130,52 +194,45 @@ func (r *REPL) handleCommand(ctx context.Context, input string) error {
 	}
 }
 
-// handleModelCommand shows an interactive model selector and switches models
+// handleModelCommand shows an interactive model selector and switches the
+// model on joe-core (the single runtime), not a CLI-local adapter.
 func (r *REPL) handleModelCommand(ctx context.Context) error {
-	models := r.config.LLM.ModelNames()
-	current := r.config.LLM.Current
+	models, err := r.client.ListModels(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list models: %w", err)
+	}
 
-	if len(models) == 0 {
-		fmt.Println("No models configured in config.yaml")
+	if len(models.Available) == 0 {
+		fmt.Println("No models configured on joe-core")
+		return nil
+	}
+	if len(models.Available) == 1 {
+		fmt.Printf("Only one model configured: %s\n", models.Current)
 		return nil
 	}
 
-	if len(models) == 1 {
-		fmt.Printf("Only one model configured: %s\n", current)
-		return nil
-	}
-
-	selected, err := runModelSelector(models, current)
+	selected, err := runModelSelector(models.Available, models.Current)
 	if err != nil {
 		return fmt.Errorf("failed to run selector: %w", err)
 	}
-
 	if selected == "" {
-		// User cancelled
 		fmt.Println("Cancelled")
 		return nil
 	}
-
-	if selected == current {
-		fmt.Printf("Already using %s\n", current)
+	if selected == models.Current {
+		fmt.Printf("Already using %s\n", models.Current)
 		return nil
 	}
 
-	// Get the model config
-	modelCfg, ok := r.config.LLM.Available[selected]
-	if !ok {
-		return fmt.Errorf("model %s not found in config", selected)
-	}
-
-	// Switch the model
-	if err := r.agent.SwitchModel(ctx, modelCfg.Provider, modelCfg.Model, selected); err != nil {
+	result, err := r.client.SetModel(ctx, selected)
+	if err != nil {
 		return fmt.Errorf("failed to switch model: %w", err)
 	}
 
-	// Update config current
-	r.config.LLM.Current = selected
+	// Keep local config in sync for any display purposes.
+	r.config.LLM.Current = result.Current
 
-	fmt.Printf("\nSwitched to %s (%s/%s)\n", selected, modelCfg.Provider, modelCfg.Model)
+	fmt.Printf("\nSwitched to %s (%s/%s)\n", result.Current, result.Provider, result.Model)
 	return nil
 }
 
