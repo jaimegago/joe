@@ -39,12 +39,28 @@ type LocalToolCall struct {
 	Args   map[string]any `json:"args"`
 }
 
+// SSE event names emitted by joe-core's streaming task endpoint. These mirror
+// the server-side names; the end-to-end test asserts they stay in sync.
+const (
+	TaskEventStep          = "step"
+	TaskEventFinal         = "final"
+	TaskEventLocalToolCall = "local_tool_call"
+)
+
 // TaskEvent is one decoded Server-Sent Event from the streaming task endpoint.
 // Type is the SSE event name ("step", "final", ...); Data is its raw JSON
 // payload, decoded by the caller according to Type.
 type TaskEvent struct {
 	Type string
 	Data json.RawMessage
+}
+
+// TaskResult is the payload of the terminal "final" event.
+type TaskResult struct {
+	FinalAnswer string `json:"final_answer"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+	SessionID   string `json:"session_id"`
 }
 
 // StreamTask opens a streamed agentic turn against joe-core and invokes onEvent
