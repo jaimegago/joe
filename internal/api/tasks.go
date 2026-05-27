@@ -23,7 +23,8 @@ import (
 
 // taskHandler handles POST /api/v1/tasks — full agentic loop over HTTP.
 type taskHandler struct {
-	server *Server
+	server   *Server
+	inflight *inflightTasks // tracks streamed turns awaiting delegated tool results
 }
 
 // --- Request / Response types ---
@@ -32,6 +33,17 @@ type taskRequest struct {
 	Message   string      `json:"message"`
 	SessionID string      `json:"session_id,omitempty"`
 	Config    *taskConfig `json:"config,omitempty"`
+	// ClientTools are local tools the caller (the thin CLI) can execute on its
+	// own machine. They are registered as delegating stubs so the LLM can call
+	// them; execution is sent back over the stream. Ignored by /tasks.
+	ClientTools []clientToolDef `json:"client_tools,omitempty"`
+}
+
+// clientToolDef advertises a local tool the streaming client can service.
+type clientToolDef struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Parameters  llm.ParameterSchema `json:"parameters"`
 }
 
 type taskConfig struct {
@@ -175,6 +187,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 type preparedTask struct {
 	agent     *useragent.Agent
 	session   *useragent.Session
+	registry  *tools.Registry
 	sessionID string
 }
 
@@ -265,7 +278,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	session := useragent.NewSession(metrics)
 	session.MaxMessages = useragent.DefaultMaxMessages
 
-	return &preparedTask{agent: agent, session: session, sessionID: sessionID}
+	return &preparedTask{agent: agent, session: session, registry: registry, sessionID: sessionID}
 }
 
 // taskStatus maps an agent run error to the wire status + error message.
@@ -601,11 +614,13 @@ func collectMapValues(v any, out *[]string) {
 }
 
 func (s *Server) registerTaskRoutes(mux *http.ServeMux, prefix string) {
-	h := &taskHandler{server: s}
+	h := &taskHandler{server: s, inflight: newInflightTasks()}
 	mux.HandleFunc(fmt.Sprintf("POST %s/tasks", prefix), h.handleTask)
 	// Phase 2: streamed agentic turn for the thin CLI (SSE). The non-streaming
 	// /tasks endpoint above is unchanged so oasisctl keeps working.
 	mux.HandleFunc(fmt.Sprintf("POST %s/tasks/stream", prefix), h.handleTaskStream)
+	// Phase 2: callback for delegated local-tool results (CLI → joe-core).
+	mux.HandleFunc(fmt.Sprintf("POST %s/tasks/stream/{taskID}/tool-results", prefix), h.handleToolResult)
 }
 
 // renderSkillsForQuery routes the user query through the skill registry and
