@@ -1,74 +1,45 @@
 package repl
 
 import (
-	"context"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
-// mockLLM is a simple mock for testing
-type mockLLM struct {
-	response string
-}
-
-func (m *mockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	return &llm.ChatResponse{
-		Content:   m.response,
-		ToolCalls: []llm.ToolCall{},
-	}, nil
-}
-
-func (m *mockLLM) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
-func (m *mockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, nil
+// newTestREPL builds a thin REPL bound to the given joe-core client, with a
+// real local tool registry/executor.
+func newTestREPL(t *testing.T, c *client.Client, cfg *config.Config) *REPL {
+	t.Helper()
+	registry := tools.NewLocalRegistry(safety.DefaultPolicy())
+	executor := tools.NewExecutor(registry, nil)
+	return New(c, cfg, executor, registry)
 }
 
 func TestNew(t *testing.T) {
-	mockLLM := &mockLLM{response: "test"}
-	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry, nil)
-	agentInstance := useragent.NewAgent(mockLLM, executor, registry, "test prompt")
+	c := client.New("http://localhost:9999")
+	r := newTestREPL(t, c, testREPLConfig())
 
-	cfg := &config.Config{
-		LLM: config.LLMConfig{
-			Current: "test-model",
-			Available: map[string]config.ModelConfig{
-				"test-model": {
-					Provider: "test",
-					Model:    "test-1",
-				},
-			},
-		},
-	}
-
-	repl := New(agentInstance, cfg)
-
-	if repl == nil {
+	if r == nil {
 		t.Fatal("New() returned nil")
 	}
-
-	if repl.agent == nil {
-		t.Error("New() did not set agent")
+	if r.client == nil {
+		t.Error("New() did not set client")
 	}
-
-	if repl.config == nil {
+	if r.config == nil {
 		t.Error("New() did not set config")
 	}
-
-	if repl.session == nil {
-		t.Error("New() did not initialize session")
+	if r.executor == nil {
+		t.Error("New() did not set executor")
+	}
+	if r.sessionID == "" {
+		t.Error("New() did not assign a session ID")
+	}
+	// The local registry advertises read_file / write_file / run_command /
+	// git / ask_user, so client tools must be non-empty.
+	if len(r.clientTools) == 0 {
+		t.Error("New() advertised no client tools")
 	}
 }
-
-// Note: Testing Run() requires mocking stdin/stdout which is complex
-// For now, we test that the REPL can be created successfully
-// Manual testing is the primary verification method for REPL functionality

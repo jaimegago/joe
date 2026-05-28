@@ -63,6 +63,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerReviewRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
 	s.registerTaskRoutes(mux, apiPrefix)
+	// Phase 2: model control plane — list/swap the single LLM contact point.
+	s.registerModelRoutes(mux, apiPrefix)
 	s.registerSkillsRoutes(mux, apiPrefix)
 	s.registerWebUIRoutes(mux, apiPrefix)
 	// Phase 1 Change 4: session-model HTTP CRUD.

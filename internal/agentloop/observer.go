@@ -1,4 +1,4 @@
-package useragent
+package agentloop
 
 import "github.com/jaimegago/joe/internal/llm"
 

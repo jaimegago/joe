@@ -10,6 +10,53 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0003 — Phase 2 streaming protocol and tool-execution boundary
+
+- Date: 2026-05-28
+- Decision: Phase 2 (single agentic runtime, Plan-of-Record §3 / D-0001) is
+  implemented with two binding protocol/architecture choices:
+  1. **Streaming protocol: Server-Sent Events (SSE).** joe-core → CLI streaming
+     of the single agentic loop uses `text/event-stream` with named events
+     (`step`, `local_tool_call`, `final`) on `POST /api/v1/tasks/stream`. The
+     control direction (CLI → joe-core, delivering delegated tool results) is an
+     ordinary `POST /api/v1/tasks/stream/{taskID}/tool-results`, so SSE's
+     unidirectionality is not a constraint. Chosen over chunked newline-JSON
+     because SSE is self-describing and the existing React Web UI can later
+     consume the same endpoint via the browser `EventSource` API — one protocol
+     for CLI and Web UI.
+  2. **Tool-execution boundary: local tools execute in the CLI (callback path).**
+     Local tools (`read_file`, `write_file`, `run_command`, `local_git_*`,
+     `ask_user`) keep executing in the `joe` CLI process. The CLI advertises them
+     as `client_tools`; joe-core registers delegating stubs so the LLM can call
+     them, emits a `local_tool_call` event, and suspends the loop until the CLI
+     posts the result. Rationale: preserve the security property that the CLI's
+     filesystem/shell access is bounded by the operator's own shell, not by
+     joe-core's process (which may run as a daemon/container/remote host).
+     Shared (Go-native diagnostic) and core tools run inside joe-core's loop.
+- Consequential choices recorded here:
+  - **`/model` is now a global operation on the single runtime.** Switching the
+    model hot-swaps joe-core's `services.LLM` (a `SwappableAdapter`) for all
+    consumers; there is no per-CLI-session model. This is the direct consequence
+    of "one LLM contact point"; a per-session override is out of scope because
+    it conflicts with "exactly one adapter instantiated process-wide".
+  - **The CLI requires no provider API keys.** It makes no LLM calls; keys live
+    only in joe-core.
+  - **Token accounting simplifies (not implemented here).** With one loop,
+    joe-core's loop is the single authoritative tally (`taskResponse.total_tokens`);
+    there is no second CLI-side count to reconcile. Token *visibility* is
+    deferred polish, explicitly not built in Phase 2.
+  - **The agentic loop was relocated** from `internal/useragent` to
+    `internal/agentloop` (joe-core-owned). `internal/useragent` no longer exists;
+    the CLI's build closure links no adapter-factory, provider, or loop package
+    (asserted by a guard test in `cmd/joe`).
+- Basis: PLAN-OF-RECORD-RECONCILED.md §3 (Phase 2 + completion gate);
+  PHASE-0-SESSION-MODEL.md Invariants 1 and 6; docs/PHASE-2-IMPLEMENTATION-NOTES.md.
+- Supersedes: nothing — first streaming/tool-boundary decision. The pre-Phase-2
+  CLI-local agentic loop + CLI LLM adapter are removed.
+- Status: active. Phase 2 complete.
+
+---
+
 ## D-0002 — Phase 0 session model is the normative session-model design
 
 - Date: 2026-02-16
