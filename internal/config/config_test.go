@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jaimegago/joe/internal/env"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -560,5 +562,169 @@ func TestSave_TildeExpansion(t *testing.T) {
 	expected := filepath.Join(home, subdir, "config.yaml")
 	if _, err := os.Stat(expected); os.IsNotExist(err) {
 		t.Errorf("Save() with tilde did not create file at %s", expected)
+	}
+}
+
+// ---- AutoSelectProvider ----
+
+// loadNoExplicit loads a defaults-only config with no explicit provider
+// preference (JOE_LLM_PROVIDER / JOE_LLM_MODEL cleared), so AutoSelectProvider
+// is free to choose from whichever key is present.
+func loadNoExplicit(t *testing.T) *Config {
+	t.Helper()
+	t.Setenv("JOE_LLM_PROVIDER", "")
+	t.Setenv("JOE_LLM_MODEL", "")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	return cfg
+}
+
+func TestAutoSelectProvider(t *testing.T) {
+	tests := []struct {
+		name         string
+		anthropicKey string
+		geminiKey    string
+		googleKey    string
+		wantErr      bool
+		wantProvider string
+		wantModel    string
+	}{
+		{
+			name:         "claude only",
+			anthropicKey: "sk-ant-test",
+			wantProvider: providerClaude,
+			wantModel:    defaultLLMModel,
+		},
+		{
+			name:         "gemini only",
+			geminiKey:    "gemini-test",
+			wantProvider: providerGemini,
+			wantModel:    defaultGeminiModel,
+		},
+		{
+			name:         "both keys keep claude",
+			anthropicKey: "sk-ant-test",
+			geminiKey:    "gemini-test",
+			wantProvider: providerClaude,
+			wantModel:    defaultLLMModel,
+		},
+		{
+			name:    "neither key errors",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ANTHROPIC_API_KEY", tt.anthropicKey)
+			t.Setenv("GEMINI_API_KEY", tt.geminiKey)
+			t.Setenv("GOOGLE_API_KEY", tt.googleKey)
+
+			cfg := loadNoExplicit(t)
+			err := cfg.AutoSelectProvider()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("AutoSelectProvider() = nil error, want actionable error")
+				}
+				// The message must name both providers, both env vars, and the
+				// override path so a stranger knows exactly what to do.
+				for _, want := range []string{
+					env.AnthropicAPIKey, env.GeminiAPIKey, env.GoogleAPIKey,
+					"JOE_LLM_PROVIDER", "JOE_LLM_MODEL",
+				} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error message missing %q:\n%s", want, err.Error())
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("AutoSelectProvider() returned error: %v", err)
+			}
+
+			mc, err := cfg.LLM.CurrentModel()
+			if err != nil {
+				t.Fatalf("CurrentModel() error: %v", err)
+			}
+			if mc.Provider != tt.wantProvider {
+				t.Errorf("provider = %s, want %s", mc.Provider, tt.wantProvider)
+			}
+			if mc.Model != tt.wantModel {
+				t.Errorf("model = %s, want %s", mc.Model, tt.wantModel)
+			}
+			if mc.Model == "" {
+				t.Error("auto-selected model is empty; want a real default model")
+			}
+		})
+	}
+}
+
+func TestAutoSelectProvider_ExplicitEnvWins(t *testing.T) {
+	// User explicitly asks for Gemini via env, but only the Claude key is
+	// present. Auto-select must NOT override the explicit choice (it would
+	// otherwise pick Claude from the only available key).
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	t.Setenv("JOE_LLM_PROVIDER", "gemini")
+	t.Setenv("JOE_LLM_MODEL", "")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if err := cfg.AutoSelectProvider(); err != nil {
+		t.Fatalf("AutoSelectProvider() returned error: %v", err)
+	}
+
+	mc, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		t.Fatalf("CurrentModel() error: %v", err)
+	}
+	if mc.Provider != providerGemini {
+		t.Errorf("provider = %s, want %s (explicit JOE_LLM_PROVIDER must win)", mc.Provider, providerGemini)
+	}
+}
+
+func TestAutoSelectProvider_ConfigCurrentWins(t *testing.T) {
+	// An explicit llm.current in the config file is a provider preference too:
+	// auto-select must leave it alone even when only the other key is present.
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GOOGLE_API_KEY", "")
+	t.Setenv("JOE_LLM_PROVIDER", "")
+	t.Setenv("JOE_LLM_MODEL", "")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `llm:
+  current: gemini-flash
+  available:
+    gemini-flash:
+      provider: gemini
+      model: gemini-2.0-flash-exp
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to create test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if err := cfg.AutoSelectProvider(); err != nil {
+		t.Fatalf("AutoSelectProvider() returned error: %v", err)
+	}
+
+	mc, err := cfg.LLM.CurrentModel()
+	if err != nil {
+		t.Fatalf("CurrentModel() error: %v", err)
+	}
+	if mc.Provider != providerGemini || mc.Model != "gemini-2.0-flash-exp" {
+		t.Errorf("model = %+v, want gemini/gemini-2.0-flash-exp (explicit llm.current must win)", mc)
 	}
 }

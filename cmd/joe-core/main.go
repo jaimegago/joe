@@ -225,6 +225,14 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Debug("running in debug mode")
 	}
 
+	// Auto-select the LLM provider from whichever key is present when the user
+	// expressed no explicit preference, so a stranger with exactly one provider
+	// key can start with zero config. An explicit choice always wins.
+	if err := cfg.AutoSelectProvider(); err != nil {
+		slog.Error("no usable LLM provider", "error", err)
+		return 1
+	}
+
 	// Log configuration
 	currentModel, modelErr := cfg.LLM.CurrentModel()
 	modelInfo := "none"
