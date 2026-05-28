@@ -51,6 +51,24 @@ func (l *delegatingLLM) ChatStream(context.Context, llm.ChatRequest) (<-chan llm
 
 func (l *delegatingLLM) Embed(context.Context, string) ([]float32, error) { return []float32{0.1}, nil }
 
+// TestProtocolConstantsInSync guards against drift between the SSE event names
+// the server emits and the names the client matches on (the two live in
+// separate packages and cannot share a constant without an import cycle).
+func TestProtocolConstantsInSync(t *testing.T) {
+	pairs := []struct {
+		server, clientName string
+	}{
+		{sseEventStep, client.TaskEventStep},
+		{sseEventFinal, client.TaskEventFinal},
+		{sseEventLocalToolCall, client.TaskEventLocalToolCall},
+	}
+	for _, p := range pairs {
+		if p.server != p.clientName {
+			t.Errorf("SSE event-name drift: server %q != client %q", p.server, p.clientName)
+		}
+	}
+}
+
 // TestTaskStream_DelegatedToolRoundTrip drives the full streaming protocol
 // through the real client: the LLM calls a local (delegated) tool, the client
 // services it and POSTs the result, and the loop resumes to a final answer.
