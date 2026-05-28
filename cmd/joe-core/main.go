@@ -498,10 +498,9 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Phase 1 Change 9: wrap the Core Agent's tool executor with the
 	// §D5 durable wrapper so every T2/T3 tool call persists an
 	// idempotency-key intent BEFORE issuing and a terminal status
-	// AFTER. The wrapper is wired into joe-core's executor instance
-	// only; the CLI's useragent.Agent executor is untouched (Phase 2
-	// removes the CLI loop). Type-assert is safe — newCoreAgent in
-	// defaultRunDeps returns *coreagent.Agent.
+	// AFTER. Since Phase 2 the CLI runs no loop of its own, so this
+	// wraps joe-core's only agentic loop. Type-assert is safe —
+	// newCoreAgent in defaultRunDeps returns *coreagent.Agent.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
 		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel, services.SessionModel)
 		concrete.SetToolExecutor(durable)

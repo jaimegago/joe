@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/uid"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // SSE event names emitted by the streaming task endpoint.
@@ -49,11 +49,11 @@ func (s *sseWriter) event(event string, data any) error {
 // stop emitting once the client has disconnected.
 type streamObserver struct {
 	sse   *sseWriter
-	steps []useragent.StepRecord
+	steps []agentloop.StepRecord
 	err   error
 }
 
-func (o *streamObserver) OnStep(step useragent.StepRecord) {
+func (o *streamObserver) OnStep(step agentloop.StepRecord) {
 	o.steps = append(o.steps, step)
 	if o.err == nil {
 		o.err = o.sse.event(sseEventStep, taskStepFromRecord(step))
@@ -95,7 +95,7 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 		timeout = parsed
 	}
 
-	maxIterations := useragent.DefaultMaxIterations
+	maxIterations := agentloop.DefaultMaxIterations
 	if req.Config != nil && req.Config.MaxIterations != nil {
 		if *req.Config.MaxIterations < 1 {
 			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "max_iterations must be >= 1")

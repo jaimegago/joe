@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
@@ -18,7 +19,6 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/uid"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // taskHandler handles POST /api/v1/tasks — full agentic loop over HTTP.
@@ -135,7 +135,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve max iterations
-	maxIterations := useragent.DefaultMaxIterations
+	maxIterations := agentloop.DefaultMaxIterations
 	if req.Config != nil && req.Config.MaxIterations != nil {
 		if *req.Config.MaxIterations < 1 {
 			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "max_iterations must be >= 1")
@@ -145,7 +145,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the agent + session (shared with the streaming task endpoint).
-	observer := &useragent.SliceObserver{}
+	observer := &agentloop.SliceObserver{}
 	prepared := h.buildTaskRun(r.Context(), req, maxIterations, observer)
 	defer prepared.session.Close()
 
@@ -185,8 +185,8 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 // is shared by the non-streaming /tasks handler and the streaming
 // /tasks/stream handler so both build the runtime identically.
 type preparedTask struct {
-	agent     *useragent.Agent
-	session   *useragent.Session
+	agent     *agentloop.Agent
+	session   *agentloop.Session
 	registry  *tools.Registry
 	sessionID string
 }
@@ -195,7 +195,7 @@ type preparedTask struct {
 // The observer receives per-iteration step notifications. Construction is
 // infallible: all request-level validation (message, timeout, max_iterations)
 // is the caller's responsibility before invoking this.
-func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIterations int, observer useragent.RunObserver) *preparedTask {
+func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIterations int, observer agentloop.RunObserver) *preparedTask {
 	safetyPolicy := h.resolveSafetyPolicy(req.Config)
 	zoneScope := h.resolveZoneScope(ctx, req.Config)
 
@@ -265,18 +265,18 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		systemPrompt += "\n\n" + section
 	}
 
-	agent := useragent.NewAgent(
+	agent := agentloop.NewAgent(
 		h.server.services.LLM,
 		executor,
 		registry,
 		systemPrompt,
-		useragent.WithObserver(observer),
+		agentloop.WithObserver(observer),
 	)
 	agent.SetMaxIterations(maxIterations)
 
 	metrics := observability.EnsureMetrics(h.server.services.Metrics)
-	session := useragent.NewSession(metrics)
-	session.MaxMessages = useragent.DefaultMaxMessages
+	session := agentloop.NewSession(metrics)
+	session.MaxMessages = agentloop.DefaultMaxMessages
 
 	return &preparedTask{agent: agent, session: session, registry: registry, sessionID: sessionID}
 }
@@ -324,7 +324,7 @@ func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMs
 }
 
 // taskStepFromRecord maps an agent loop StepRecord to the wire taskStep shape.
-func taskStepFromRecord(s useragent.StepRecord) taskStep {
+func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 	step := taskStep{
 		StepNumber: s.StepNumber,
 		LLMRequest: taskLLMRequest{
@@ -363,7 +363,7 @@ func taskStepFromRecord(s useragent.StepRecord) taskStep {
 // finalizeTaskResponse builds the wire response from the collected steps,
 // deriving tools-used and applying defense-in-depth secret redaction to the
 // final answer (the redaction operates on the response copy only).
-func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []useragent.StepRecord, session *useragent.Session, duration time.Duration) taskResponse {
+func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, duration time.Duration) taskResponse {
 	outSteps := make([]taskStep, len(steps))
 	toolsUsedSet := map[string]struct{}{}
 	for i, s := range steps {
@@ -407,7 +407,7 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 // into the in-memory session, giving the streaming endpoint multi-turn
 // continuity (the non-streaming /tasks endpoint does not seed, preserving its
 // single-turn contract).
-func (h *taskHandler) seedHistory(ctx context.Context, session *useragent.Session, sessionID string) {
+func (h *taskHandler) seedHistory(ctx context.Context, session *agentloop.Session, sessionID string) {
 	if h.server.services.Store == nil {
 		return
 	}
@@ -564,7 +564,7 @@ func isMaxIterationsError(err error) bool {
 // tool results for Kubernetes Secret resources. These are used for
 // defense-in-depth response scanning — if a secret value somehow makes it into
 // the LLM's final answer, the response filter will catch it.
-func collectSecretValuesFromSteps(steps []useragent.StepRecord) []string {
+func collectSecretValuesFromSteps(steps []agentloop.StepRecord) []string {
 	var values []string
 	for _, step := range steps {
 		for _, tr := range step.ToolResults {

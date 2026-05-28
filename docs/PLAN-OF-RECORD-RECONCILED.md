@@ -1,6 +1,8 @@
 # Joe Agentic-Runtime Refactor — Plan of Record (Reconciled)
 
-Status: RECONCILED against code-truth. This supersedes the prior
+Status: RECONCILED against code-truth. **Phase 2 is COMPLETE (2026-05-28)** —
+the single agentic runtime exists; see the Phase 2 completion record below and
+docs/DECISIONS.md D-0003. This supersedes the prior
 "sessions → migrate REPL → collapse loopback" three-phase sequencing.
 Supersession reason and the deleted phase are recorded in §5 Reconciliation
 Record below; the change is auditable, not silent. Indexed in
@@ -96,6 +98,11 @@ model, both of which are loop-count-independent.
 
 ### Phase 2 — Collapse to a single agentic runtime
 
+**Status: COMPLETE (2026-05-28).** Implemented per
+docs/PHASE-2-IMPLEMENTATION-NOTES.md; protocol/boundary decisions recorded in
+docs/DECISIONS.md D-0003. Completion evidence is summarized after the gate
+below.
+
 The substantive refactor. Remove the CLI's own agentic loop and its own
 LLM adapter so that exactly one agentic loop and one LLM contact point
 exist.
@@ -134,6 +141,31 @@ the real acceptance test of the refactor and now correctly sit here):
   with respect to loop count; the substrate it assumes now exists.
 
 There is no Phase 3. The refactor is complete when Phase 2's gate passes.
+
+#### Phase 2 completion record (how the gate was met)
+
+- **One LLM adapter process-wide.** The CLI no longer instantiates an adapter
+  (`cmd/joe/main.go` removed `deps.newAdapter`, the instrumented adapter, and
+  the hot-swap factory). joe-core's `services.LLM` (a `SwappableAdapter`) is the
+  only LLM contact point. A guard test (`cmd/joe/guard_test.go`) asserts the
+  CLI build closure links no adapter-factory or provider package.
+- **One agentic loop reachable at runtime.** The loop implementation moved from
+  `internal/useragent` to `internal/agentloop` (joe-core-owned) and is reached
+  only via joe-core's task handlers. `internal/useragent` no longer exists; the
+  CLI links no loop package.
+- **The CLI is a thin client.** `internal/repl` streams joe-core's loop over SSE
+  (`POST /api/v1/tasks/stream`), renders it, and services local-tool callbacks
+  on the operator's machine (`/tasks/stream/{id}/tool-results`). It performs no
+  LLM calls and needs no provider API keys.
+- **`/model` works** end-to-end as an operation on the single runtime
+  (`GET/POST /api/v1/models[/current]`, hot-swapping `services.LLM`).
+- **Existing surface preserved.** `POST /api/v1/tasks` is unchanged (oasisctl),
+  and `joe mcp serve` is unaffected (it uses category endpoints, not the loop).
+- **Tested.** An end-to-end test (`internal/repl/repl_e2e_test.go`) drives the
+  real thin REPL against a real joe-core server through a delegated local tool;
+  the full suite passes.
+- **§D precondition satisfied.** PHASE-0-SESSION-MODEL.md §D's "one agentic
+  runtime, one loop" precondition now holds in code.
 
 ---
 

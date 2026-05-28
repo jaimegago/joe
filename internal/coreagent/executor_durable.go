@@ -71,9 +71,8 @@ func (e *GateRefusalError) Error() string {
 // wrapper passes through to the inner executor without persisting.
 // Change 10 will tighten this when the captain-session gate is wired.
 //
-// Phase 1 boundary: this wrapper is wired into joe-core's executor only.
-// The CLI's useragent.Agent executor is untouched (Phase 2 removes the
-// CLI loop entirely).
+// This wrapper is wired into joe-core's executor. Since Phase 2 the CLI
+// runs no loop of its own, so joe-core's is the only agentic loop.
 type DurableExecutor struct {
 	inner    ToolExecutor
 	repo     runmodel.Repository
