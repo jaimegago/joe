@@ -13,18 +13,31 @@ Joe (Joe Operates Everything) helps platform engineers understand, debug, and op
 
 ## Architecture
 
-Joe runs as two binaries with a clean HTTP boundary:
+Joe runs as two binaries with a clean HTTP boundary. The LLM, the agentic loop,
+and every provider API key live entirely in `joe-core`; `joe` is a thin client
+that streams from it over SSE and never talks to an LLM directly:
 
 ```text
-joe (User Agent)                    joe-core (Core Daemon)
-─────────────────                   ──────────────────────
-Interactive REPL           HTTP     API (:7777)
-Agentic loop → LLM  ──────────────► Graph store (SQLite)
-Local tools (direct)                SQL store (sources, sessions)
-Core tools (via API)                Infrastructure adapters
-                                    Core Agent (background refresh)
-                                    Knowledge store (embeddings)
+joe (User Agent)                          joe-core (Core Daemon)
+thin SSE-streaming client                 the single runtime
+─────────────────────────                 ───────────────────────────────────
+Interactive REPL              prompt       API (:7777)
+Consumes the SSE event    ──────────────► Agentic loop (internal/agentloop)
+  stream                  ◄────────────── Single LLM adapter (holds API keys)
+Runs local tools via        SSE events    Tool-execution gating (safety tiers)
+  streamed callback                       Graph store (SQLite)
+                                          SQL store (sources, sessions)
+No LLM · no agentic loop                  Infrastructure adapters
+No provider API keys                      Core Agent (background refresh)
+                                          Knowledge store (embeddings)
 ```
+
+`joe` sends a prompt and then just renders the event stream. When the loop in
+`joe-core` needs a tool that must run on the user's machine (a *local* tool), it
+emits a `local_tool_call` event; `joe` executes it via callback and streams the
+result back, and the loop continues. `joe-core` classifies and gates every tool
+against the safety tiers *before* it is dispatched, so the same policy applies
+whether a tool runs in the daemon or back in the CLI.
 
 `joe` also ships two integrated modes via subcommands:
 
@@ -40,7 +53,8 @@ joe slack  — Slack bot via Socket Mode (no public URL required)
 ### Prerequisites
 
 - Go 1.25 or later
-- An LLM API key (Anthropic or Google)
+- One LLM API key — Anthropic **or** Google — set in the environment that runs
+  `joe-core`. The `joe` CLI needs no key of its own.
 
 ### Build
 
@@ -57,9 +71,12 @@ Produces two binaries:
 | `joe`      | Interactive CLI + mode launcher  |
 | `joe-core` | Background daemon                |
 
-### Configure
+### Configure (optional)
 
-Create `~/.joe/config.yaml`:
+Config is optional. If you set exactly one provider key (see below), `joe-core`
+auto-selects that provider and its default model with **zero config** — a config
+file only becomes useful when you want to pin a model, run both providers, or
+tune the server. To customize, create `~/.joe/config.yaml`:
 
 ```yaml
 llm:
@@ -73,7 +90,7 @@ llm:
       provider: gemini
       model: gemini-2.5-flash
 
-  # API keys are NEVER stored in config — set via env vars:
+  # API keys are NEVER stored in config — set them in joe-core's environment:
   #   ANTHROPIC_API_KEY   (Claude)
   #   GEMINI_API_KEY      (Gemini)
 
@@ -97,23 +114,34 @@ cp config.example.yaml ~/.joe/config.yaml
 
 ### Set API Keys
 
+Provider keys live **only** in `joe-core`'s environment — set them in the
+terminal that runs `./joe-core` (Terminal 1 below). The `joe` CLI never reads a
+provider key. Set just **one**; `joe-core` auto-selects the matching provider:
+
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."   # for Claude
+# — or —
 export GEMINI_API_KEY="AIza..."         # for Gemini
 ```
+
+If both keys are present, `joe-core` defaults to Claude; override with
+`JOE_LLM_PROVIDER=gemini` (optionally `JOE_LLM_MODEL=<model>`). If neither is
+set, `joe-core` exits at startup with instructions.
 
 ### Run
 
 ```bash
-# Terminal 1 — start the daemon
+# Terminal 1 — start the daemon (this is where the provider key lives)
 joe-core
 
-# Terminal 2 — start the interactive client
+# Terminal 2 — start the interactive client (no key needed)
 joe
 ```
 
+`joe-core` logs the model it selected at startup (e.g.
+`llm.model=claude/claude-sonnet-4-20250514`). The CLI just connects and streams:
+
 ```text
-Using claude/claude-sonnet-4-20250514
 > why is the payment service slow?
 [Joe queries K8s, metrics, graph, and responds]
 ```
