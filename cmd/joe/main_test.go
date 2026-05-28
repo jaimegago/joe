@@ -13,27 +13,10 @@ import (
 
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/env"
-	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/useragent"
 )
-
-type fakeAdapter struct{}
-
-func (f *fakeAdapter) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	return &llm.ChatResponse{}, nil
-}
-
-func (f *fakeAdapter) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, fmt.Errorf("not implemented")
-}
 
 type fakeRepl struct {
 	called bool
@@ -50,16 +33,13 @@ func testDeps(repl *fakeRepl, joeDir string) runDeps {
 	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
 		return func(context.Context) error { return nil }, nil
 	}
-	deps.newAdapter = func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
-		return &fakeAdapter{}, nil
-	}
 	deps.joeDirPath = func() (string, error) {
 		return joeDir, nil
 	}
 	deps.loadPolicy = func(configDir string) (*safety.SafetyPolicy, error) {
 		return safety.DefaultPolicy(), nil
 	}
-	deps.newRepl = func(agent *useragent.Agent, cfg *config.Config, session *useragent.Session) replRunner {
+	deps.newRepl = func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner {
 		return repl
 	}
 	return deps
@@ -93,13 +73,13 @@ func statusServer(t *testing.T, statusCode int) *httptest.Server {
 	return server
 }
 
+// TestRun_Success also asserts the CLI starts with NO provider API key set —
+// after the Phase 2 collapse the CLI makes no LLM calls and needs no keys.
 func TestRun_Success(t *testing.T) {
 	server := statusServer(t, http.StatusOK)
 
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
@@ -162,28 +142,10 @@ func TestRun_ConfigLoadError(t *testing.T) {
 	}
 }
 
-func TestRun_MissingAPIKey(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, defaultRunDeps())
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-	if !strings.Contains(stderr.String(), env.AnthropicAPIKey) {
-		t.Fatalf("expected missing API key message, got %q", stderr.String())
-	}
-}
-
 func TestRun_PingFailure(t *testing.T) {
 	server := statusServer(t, http.StatusInternalServerError)
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -200,8 +162,6 @@ func TestRun_JoeDirError(t *testing.T) {
 	server := statusServer(t, http.StatusOK)
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
@@ -222,8 +182,6 @@ func TestRun_LoadPolicyError(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
 
-	t.Setenv(env.AnthropicAPIKey, "test-key")
-
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
 	deps.loadPolicy = func(configDir string) (*safety.SafetyPolicy, error) {
@@ -238,33 +196,10 @@ func TestRun_LoadPolicyError(t *testing.T) {
 	}
 }
 
-func TestRun_NewAdapterError(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.newAdapter = func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
-		return nil, fmt.Errorf("adapter failed")
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-}
-
 func TestRun_ReplError(t *testing.T) {
 	server := statusServer(t, http.StatusOK)
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{err: fmt.Errorf("repl failed")}
 	deps := testDeps(fake, t.TempDir())
@@ -282,8 +217,6 @@ func TestRun_DebugOutputAndOTelFailure(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "debug")
 
-	t.Setenv(env.AnthropicAPIKey, "test-key")
-
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
 	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
@@ -298,26 +231,6 @@ func TestRun_DebugOutputAndOTelFailure(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Debug mode enabled") {
 		t.Fatalf("expected debug output, got %q", stdout.String())
-	}
-}
-
-func TestRun_CurrentModelMissing(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	cfg := fmt.Sprintf("llm:\n  current: missing\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\nlogging:\n  level: info\n  file: \"\"\n", addr)
-	if err := os.WriteFile(configPath, []byte(cfg), 0600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", configPath}, &stdout, &stderr, defaultRunDeps())
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-	if !strings.Contains(stderr.String(), "current model") {
-		t.Fatalf("expected current model error, got %q", stderr.String())
 	}
 }
 
@@ -342,8 +255,6 @@ func TestRun_APIKeyConfigApplied(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	t.Setenv(env.AnthropicAPIKey, "test-key")
-
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
 
@@ -353,42 +264,6 @@ func TestRun_APIKeyConfigApplied(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
 	}
-}
-
-func TestRun_AdapterWithCloser(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
-
-	closingAdapterInstance := &closingFakeAdapter{}
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.newAdapter = func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error) {
-		return closingAdapterInstance, nil
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
-	}
-	if !fake.called {
-		t.Fatalf("expected repl to run")
-	}
-}
-
-type closingFakeAdapter struct {
-	fakeAdapter
-	closed bool
-}
-
-func (c *closingFakeAdapter) Close() error {
-	c.closed = true
-	return nil
 }
 
 // TestRun_DirectCall covers the run() wrapper so its body is counted as executed.
@@ -413,8 +288,6 @@ func TestRun_WithTLSEnabled(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(cfgContent), 0600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-
-	t.Setenv(env.AnthropicAPIKey, "test-key")
 
 	fake := &fakeRepl{}
 	deps := testDeps(fake, t.TempDir())
@@ -442,14 +315,11 @@ func TestDefaultRunDeps_NewReplClosure(t *testing.T) {
 
 	policy := safety.DefaultPolicy()
 	coreClient := client.New("http://localhost:9999")
-	registry := tools.NewDefaultRegistryWithClient(coreClient, policy)
-	metrics := observability.NewMetrics()
-	executor := tools.NewExecutor(registry, metrics)
-	agent := useragent.NewAgent(&fakeAdapter{}, executor, registry, "system prompt")
+	registry := tools.NewLocalRegistry(policy)
+	executor := tools.NewExecutor(registry, observability.NewMetrics())
 	cfg := &config.Config{}
-	session := useragent.NewSession(nil)
 
-	r := deps.newRepl(agent, cfg, session)
+	r := deps.newRepl(coreClient, cfg, executor, registry)
 	if r == nil {
 		t.Error("newRepl closure returned nil")
 	}

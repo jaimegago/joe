@@ -1,4 +1,4 @@
-package useragent
+package agentloop
 
 const (
 	// DefaultMaxIterations prevents infinite agentic loops.

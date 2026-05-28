@@ -79,6 +79,16 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush passes through to the underlying ResponseWriter when it supports
+// flushing. Without this, Server-Sent Events (e.g. the streaming task
+// endpoint) would buffer behind the metrics middleware because the embedded
+// http.ResponseWriter interface does not promote a Flush method.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func HTTPMetricsMiddleware(next http.Handler, metrics *Metrics) http.Handler {
 	if next == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

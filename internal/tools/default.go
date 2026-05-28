@@ -17,16 +17,15 @@ import (
 	"github.com/jaimegago/joe/internal/tools/shared/traceroute"
 )
 
-// NewDefaultRegistry creates a registry with all default tools registered.
-// If policy is non-nil, tool-specific settings (e.g., allowed_directories for
-// write_file) are extracted from it. If nil, tools use permissive defaults.
-func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
-	registry := NewRegistry()
-
-	// Register basic tools
+// registerLocalTools registers the tools that only make sense on the user's
+// local machine (filesystem, shell, local git, interactive prompt). If policy
+// is non-nil, tool-specific settings (e.g., allowed_directories for write_file)
+// are extracted from it.
+func registerLocalTools(registry *Registry, policy *safety.SafetyPolicy) {
+	// Basic / interactive tools
 	registry.Register(askuser.NewTool())
 
-	// Register file tools
+	// File tools
 	registry.Register(readfile.New())
 
 	var writeAllowedDirs []string
@@ -35,29 +34,49 @@ func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
 	}
 	registry.Register(writefile.New(writeAllowedDirs...))
 
-	// Register git tools
+	// Git tools
 	registry.Register(gitstatus.New())
 	registry.Register(gitdiff.New())
 
-	// Register command runner with safe defaults.
-	// Only read-only commands are included. Mutation-capable commands (kubectl,
-	// helm, argocd) are excluded — they must be explicitly enabled in
-	// ~/.joe/safety-policy.yaml and are subject to subcommand allowlists even
-	// when enabled.
+	// Command runner with safe defaults. Only read-only commands are included.
+	// Mutation-capable commands (kubectl, helm, argocd) are excluded — they
+	// must be explicitly enabled in ~/.joe/safety-policy.yaml and are subject
+	// to subcommand allowlists even when enabled.
 	registry.Register(runcmd.New([]string{
 		"ls", "cat", "head", "tail", "grep", "find", "wc",
 	}))
+}
 
-	// Register shared diagnostic tools (T1, Go-native, no CLI deps).
-	// These run in-process and work from both joe (user's machine perspective)
-	// and joecored (cluster/server perspective).
+// registerSharedTools registers shared diagnostic tools (T1, Go-native, no CLI
+// deps). These run in-process and work from both joe (user's machine
+// perspective) and joecored (cluster/server perspective).
+func registerSharedTools(registry *Registry) {
 	registry.Register(netcheck.NewTCPConnectTool())
 	registry.Register(netcheck.NewPortScanTool())
 	registry.Register(dnsquery.NewDNSLookupTool())
 	registry.Register(httpreq.NewHTTPRequestTool())
 	registry.Register(sysinfo.NewSystemInfoTool())
 	registry.Register(traceroute.NewTraceRouteTool())
+}
 
+// NewDefaultRegistry creates a registry with all default tools registered
+// (local + shared). If policy is non-nil, tool-specific settings are extracted
+// from it. If nil, tools use permissive defaults.
+func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
+	registry := NewRegistry()
+	registerLocalTools(registry, policy)
+	registerSharedTools(registry)
+	return registry
+}
+
+// NewLocalRegistry creates a registry with only the local-machine tools
+// (read_file, write_file, run_command, local git, ask_user). After the Phase 2
+// runtime collapse the CLI uses this set both to advertise its local tools to
+// joe-core and to execute the delegated callbacks against the operator's own
+// machine — shared and core tools run inside joe-core's loop instead.
+func NewLocalRegistry(policy *safety.SafetyPolicy) *Registry {
+	registry := NewRegistry()
+	registerLocalTools(registry, policy)
 	return registry
 }
 
@@ -70,12 +89,7 @@ func NewCoreRegistry(coreClient *client.Client, policy *safety.SafetyPolicy) *Re
 	registry := NewRegistry()
 
 	// Shared diagnostic tools (T1, Go-native, no CLI deps).
-	registry.Register(netcheck.NewTCPConnectTool())
-	registry.Register(netcheck.NewPortScanTool())
-	registry.Register(dnsquery.NewDNSLookupTool())
-	registry.Register(httpreq.NewHTTPRequestTool())
-	registry.Register(sysinfo.NewSystemInfoTool())
-	registry.Register(traceroute.NewTraceRouteTool())
+	registerSharedTools(registry)
 
 	// Core tools (same set as NewDefaultRegistryWithClient).
 	registerCoreTools(registry, coreClient)

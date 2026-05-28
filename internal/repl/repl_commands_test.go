@@ -3,43 +3,84 @@ package repl
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/safety"
-	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
-type errLLM struct{ err error }
+// --- fake joe-core helpers ---
 
-func (m *errLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	return nil, m.err
+func writeSSE(w http.ResponseWriter, event string, data any) {
+	b, _ := json.Marshal(data)
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
 }
-func (m *errLLM) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-func (m *errLLM) Embed(ctx context.Context, text string) ([]float32, error) { return nil, nil }
 
-func TestNewWithSession(t *testing.T) {
-	session := useragent.NewSession(nil)
-	r := NewWithSession(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig(), session)
-	if r.session != session {
-		t.Fatal("expected provided session to be used")
-	}
+// streamServer emits a step then a final event with the given answer.
+func streamServer(t *testing.T, answer string) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/tasks/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		writeSSE(w, "step", map[string]any{"step_number": 1})
+		writeSSE(w, "final", map[string]any{"final_answer": answer, "status": "completed"})
+	}))
+	t.Cleanup(ts.Close)
+	return ts
 }
+
+// modelServer serves GET /models and POST /models/current.
+func modelServer(t *testing.T, available []string, current string, setOK bool) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": available, "current": current})
+	})
+	mux.HandleFunc("POST /api/v1/models/current", func(w http.ResponseWriter, r *http.Request) {
+		if !setOK {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":"invalid_request","message":"cannot switch"}`)
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]string{"current": body.Name, "provider": "p", "model": "m"})
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func testREPLConfig() *config.Config {
+	return &config.Config{LLM: config.LLMConfig{
+		Current: "current",
+		Available: map[string]config.ModelConfig{
+			"current": {Provider: "test", Model: "m1"},
+			"other":   {Provider: "test", Model: "m2"},
+		},
+	}}
+}
+
+// --- command routing ---
 
 func TestHandleCommand_Basic(t *testing.T) {
-	r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
+	r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
 
 	if err := r.handleCommand(context.Background(), "/exit"); !errors.Is(err, ErrExit) {
 		t.Fatalf("expected ErrExit, got %v", err)
@@ -61,14 +102,23 @@ func TestHandleCommand_Basic(t *testing.T) {
 	}
 }
 
+func TestHandleCommand_EmptyCommand(t *testing.T) {
+	r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+	if err := r.handleCommand(context.Background(), "/  "); err != nil {
+		t.Fatalf("handleCommand('/  ') = %v, want nil", err)
+	}
+}
+
+// --- /model ---
+
 func TestHandleModelCommand_Branches(t *testing.T) {
 	ctx := context.Background()
 	original := runModelSelector
 	defer func() { runModelSelector = original }()
 
 	t.Run("no models", func(t *testing.T) {
-		cfg := &config.Config{LLM: config.LLMConfig{Current: "x", Available: map[string]config.ModelConfig{}}}
-		r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
+		ts := modelServer(t, nil, "", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		out := captureStdout(t, func() {
 			if err := r.handleModelCommand(ctx); err != nil {
 				t.Fatalf("error: %v", err)
@@ -80,8 +130,8 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 	})
 
 	t.Run("single model", func(t *testing.T) {
-		cfg := &config.Config{LLM: config.LLMConfig{Current: "only", Available: map[string]config.ModelConfig{"only": {Provider: "p", Model: "m"}}}}
-		r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
+		ts := modelServer(t, []string{"only"}, "only", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		out := captureStdout(t, func() {
 			if err := r.handleModelCommand(ctx); err != nil {
 				t.Fatalf("error: %v", err)
@@ -92,18 +142,32 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 		}
 	})
 
+	t.Run("list error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer ts.Close()
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
+		err := r.handleModelCommand(ctx)
+		if err == nil || !strings.Contains(err.Error(), "failed to list models") {
+			t.Fatalf("expected list error, got %v", err)
+		}
+	})
+
 	t.Run("selector error", func(t *testing.T) {
 		runModelSelector = func(models []string, current string) (string, error) { return "", errors.New("selector failed") }
-		r := New(newSwitchableAgent(t, false), testREPLConfig())
+		ts := modelServer(t, []string{"current", "other"}, "current", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		err := r.handleModelCommand(ctx)
 		if err == nil || !strings.Contains(err.Error(), "failed to run selector") {
 			t.Fatalf("expected wrapped selector error, got %v", err)
 		}
 	})
 
-	t.Run("selector cancelled", func(t *testing.T) {
+	t.Run("cancelled", func(t *testing.T) {
 		runModelSelector = func(models []string, current string) (string, error) { return "", nil }
-		r := New(newSwitchableAgent(t, false), testREPLConfig())
+		ts := modelServer(t, []string{"current", "other"}, "current", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		out := captureStdout(t, func() {
 			if err := r.handleModelCommand(ctx); err != nil {
 				t.Fatalf("error: %v", err)
@@ -116,7 +180,8 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 
 	t.Run("already current", func(t *testing.T) {
 		runModelSelector = func(models []string, current string) (string, error) { return current, nil }
-		r := New(newSwitchableAgent(t, false), testREPLConfig())
+		ts := modelServer(t, []string{"current", "other"}, "current", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		out := captureStdout(t, func() {
 			if err := r.handleModelCommand(ctx); err != nil {
 				t.Fatalf("error: %v", err)
@@ -127,18 +192,10 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 		}
 	})
 
-	t.Run("selected model missing", func(t *testing.T) {
-		runModelSelector = func(models []string, current string) (string, error) { return "missing", nil }
-		r := New(newSwitchableAgent(t, false), testREPLConfig())
-		err := r.handleModelCommand(ctx)
-		if err == nil || !strings.Contains(err.Error(), "model missing not found") {
-			t.Fatalf("expected missing model error, got %v", err)
-		}
-	})
-
 	t.Run("switch fails", func(t *testing.T) {
 		runModelSelector = func(models []string, current string) (string, error) { return "other", nil }
-		r := New(newSwitchableAgent(t, true), testREPLConfig())
+		ts := modelServer(t, []string{"current", "other"}, "current", false)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 		err := r.handleModelCommand(ctx)
 		if err == nil || !strings.Contains(err.Error(), "failed to switch model") {
 			t.Fatalf("expected switch failure, got %v", err)
@@ -147,8 +204,9 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 
 	t.Run("switch success", func(t *testing.T) {
 		runModelSelector = func(models []string, current string) (string, error) { return "other", nil }
+		ts := modelServer(t, []string{"current", "other"}, "current", true)
 		cfg := testREPLConfig()
-		r := New(newSwitchableAgent(t, false), cfg)
+		r := newTestREPL(t, client.New(ts.URL), cfg)
 		out := captureStdout(t, func() {
 			if err := r.handleModelCommand(ctx); err != nil {
 				t.Fatalf("error: %v", err)
@@ -163,69 +221,285 @@ func TestHandleModelCommand_Branches(t *testing.T) {
 	})
 }
 
-func TestRun_CommandAndAgentPaths(t *testing.T) {
-	t.Run("help and exit", func(t *testing.T) {
-		r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-		out, err := runREPLWithInput(t, r, "/help\n/exit\n")
-		if err != nil {
-			t.Fatalf("Run error: %v", err)
-		}
-		if !strings.Contains(out, "Joe is ready.") || !strings.Contains(out, "Available commands") || !strings.Contains(out, "Goodbye.") {
-			t.Fatalf("unexpected run output: %q", out)
+func TestHandleCommand_ModelAndPanicRouting(t *testing.T) {
+	t.Run("routes /model", func(t *testing.T) {
+		original := runModelSelector
+		defer func() { runModelSelector = original }()
+		runModelSelector = func(models []string, current string) (string, error) { return "", nil }
+
+		ts := modelServer(t, []string{"current", "other"}, "current", true)
+		r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
+		out := captureStdout(t, func() {
+			if err := r.handleCommand(context.Background(), "/model"); err != nil {
+				t.Fatalf("handleCommand(/model) = %v", err)
+			}
+		})
+		if !strings.Contains(out, "Cancelled") {
+			t.Fatalf("expected Cancelled from model selector, got %q", out)
 		}
 	})
 
-	t.Run("agent success", func(t *testing.T) {
-		r := New(newTestAgent(&mockLLM{response: "hello-back"}), testREPLConfig())
-		out, err := runREPLWithInput(t, r, "hello\n/quit\n")
-		if err != nil {
-			t.Fatalf("Run error: %v", err)
-		}
-		if !strings.Contains(out, "hello-back") {
-			t.Fatalf("expected agent response in output, got %q", out)
-		}
-	})
-
-	t.Run("unknown command and agent error", func(t *testing.T) {
-		r := New(newTestAgent(&errLLM{err: errors.New("llm-down")}), testREPLConfig())
-		out, err := runREPLWithInput(t, r, "/bad\nhello\n/quit\n")
-		if err != nil {
-			t.Fatalf("Run error: %v", err)
-		}
-		if !strings.Contains(out, "unknown command") || !strings.Contains(out, "llm chat failed") {
-			t.Fatalf("unexpected output: %q", out)
-		}
+	t.Run("routes /panic to cancelled (non-yes input)", func(t *testing.T) {
+		r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+		panicStdinHelper(t, "no\n", func() {
+			if err := r.handleCommand(context.Background(), "/panic"); err != nil {
+				t.Fatalf("handleCommand(/panic) = %v", err)
+			}
+		})
 	})
 }
 
-func testREPLConfig() *config.Config {
-	return &config.Config{LLM: config.LLMConfig{
-		Current: "current",
-		Available: map[string]config.ModelConfig{
-			"current": {Provider: "test", Model: "m1"},
-			"other":   {Provider: "test", Model: "m2"},
-		},
-	}}
-}
+// --- streaming turns ---
 
-func newTestAgent(adapter llm.LLMAdapter) *useragent.Agent {
-	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry, nil)
-	return useragent.NewAgent(adapter, executor, registry, "test")
-}
+func TestRun_StreamsFinalAnswer(t *testing.T) {
+	ts := streamServer(t, "hello-back")
+	r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
 
-func newSwitchableAgent(t *testing.T, shouldFail bool) *useragent.Agent {
-	t.Helper()
-	registry := tools.NewRegistry()
-	executor := tools.NewExecutor(registry, nil)
-	factory := func(ctx context.Context, provider, model string) (llm.LLMAdapter, error) {
-		if shouldFail {
-			return nil, errors.New("factory failed")
-		}
-		return &mockLLM{response: "ok"}, nil
+	out, err := runREPLWithInput(t, r, "hello\n/quit\n")
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
 	}
-	return useragent.NewAgent(&mockLLM{response: "ok"}, executor, registry, "test", useragent.WithAdapterFactory(factory), useragent.WithCurrentModelName("current"))
+	if !strings.Contains(out, "hello-back") {
+		t.Fatalf("expected streamed answer in output, got %q", out)
+	}
+	if !strings.Contains(out, "Goodbye.") {
+		t.Fatalf("expected Goodbye, got %q", out)
+	}
 }
+
+func TestRun_StreamErrorReported(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":"service_unavailable","message":"LLM not available"}`)
+	}))
+	defer ts.Close()
+
+	r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
+	out, err := runREPLWithInput(t, r, "hello\n/quit\n")
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if !strings.Contains(out, "Error:") {
+		t.Fatalf("expected stream error reported, got %q", out)
+	}
+}
+
+// --- local tool callback servicing ---
+
+func TestREPL_ServicesLocalToolCall(t *testing.T) {
+	var got struct {
+		CallID string `json:"call_id"`
+		Result any    `json:"result"`
+		Error  string `json:"error"`
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/tool-results") {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer ts.Close()
+
+	r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
+
+	fp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(fp, []byte("FILEDATA"), 0600); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	call := client.LocalToolCall{TaskID: "task1", CallID: "c1", Name: "read_file", Args: map[string]any{"path": fp}}
+	data, _ := json.Marshal(call)
+
+	captureStdout(t, func() {
+		if err := r.onEvent(context.Background(), client.TaskEvent{Type: client.TaskEventLocalToolCall, Data: data}); err != nil {
+			t.Fatalf("onEvent: %v", err)
+		}
+	})
+
+	if got.CallID != "c1" {
+		t.Errorf("submitted call_id = %q, want c1", got.CallID)
+	}
+	if got.Error != "" {
+		t.Errorf("expected successful local tool, got error %q", got.Error)
+	}
+	if got.Result == nil {
+		t.Error("expected a tool result to be submitted")
+	}
+}
+
+func TestREPL_LocalToolFailureReportedNotAborted(t *testing.T) {
+	var got struct {
+		CallID string `json:"call_id"`
+		Error  string `json:"error"`
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer ts.Close()
+
+	r := newTestREPL(t, client.New(ts.URL), testREPLConfig())
+
+	call := client.LocalToolCall{TaskID: "task1", CallID: "c2", Name: "read_file", Args: map[string]any{"path": "/no/such/file/here"}}
+	data, _ := json.Marshal(call)
+
+	var err error
+	captureStdout(t, func() {
+		err = r.onEvent(context.Background(), client.TaskEvent{Type: client.TaskEventLocalToolCall, Data: data})
+	})
+	if err != nil {
+		t.Fatalf("onEvent must not abort the stream on tool failure, got %v", err)
+	}
+	if got.Error == "" {
+		t.Error("expected the tool failure to be reported to joe-core as an error result")
+	}
+}
+
+// --- Run loop edges ---
+
+func TestRun_EmptyInputAndEOF(t *testing.T) {
+	t.Run("empty lines are skipped", func(t *testing.T) {
+		r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+		out, err := runREPLWithInput(t, r, "\n\n\n/quit\n")
+		if err != nil {
+			t.Fatalf("Run error: %v", err)
+		}
+		if !strings.Contains(out, "Goodbye.") {
+			t.Fatalf("expected Goodbye, got %q", out)
+		}
+	})
+
+	t.Run("EOF exits cleanly", func(t *testing.T) {
+		r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+		out, err := runREPLWithInput(t, r, "")
+		if err != nil {
+			t.Fatalf("Run error: %v", err)
+		}
+		if !strings.Contains(out, "Joe is ready.") {
+			t.Fatalf("expected ready message, got %q", out)
+		}
+	})
+}
+
+// --- /panic ---
+
+func TestHandlePanicCommand_Cancelled(t *testing.T) {
+	r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+	out := panicStdinHelper(t, "no\n", func() {
+		if err := r.handlePanicCommand(context.Background()); err != nil {
+			t.Fatalf("handlePanicCommand error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Cancelled.") {
+		t.Fatalf("expected Cancelled in output, got %q", out)
+	}
+}
+
+func TestHandlePanicCommand_Confirmed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	cfg := testREPLConfig()
+	cfg.Server.Address = strings.TrimPrefix(ts.URL, "http://")
+
+	r := newTestREPL(t, client.New("http://unused"), cfg)
+	out := panicStdinHelper(t, "yes\n", func() {
+		if err := r.handlePanicCommand(context.Background()); err != nil {
+			t.Fatalf("handlePanicCommand error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Panic triggered") {
+		t.Fatalf("expected panic triggered in output, got %q", out)
+	}
+}
+
+func TestHandlePanicCommand_EmptyInputCancels(t *testing.T) {
+	r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+	out := panicStdinHelper(t, "\n", func() {
+		if err := r.handlePanicCommand(context.Background()); err != nil {
+			t.Fatalf("handlePanicCommand error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Cancelled.") {
+		t.Fatalf("expected Cancelled in output, got %q", out)
+	}
+}
+
+func TestHandlePanicCommand_EOFCancels(t *testing.T) {
+	r := newTestREPL(t, client.New("http://unused"), testREPLConfig())
+	_ = panicStdinHelper(t, "", func() {
+		err := r.handlePanicCommand(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "cancelled") {
+			t.Fatalf("expected cancelled error on EOF, got %v", err)
+		}
+	})
+}
+
+func TestHandlePanicCommand_WithAPIKey(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			t.Error("expected Authorization header")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	cfg := testREPLConfig()
+	cfg.Server.Address = strings.TrimPrefix(ts.URL, "http://")
+	cfg.Server.APIKey = "test-secret-key"
+
+	r := newTestREPL(t, client.New("http://unused"), cfg)
+	out := panicStdinHelper(t, "yes\n", func() {
+		if err := r.handlePanicCommand(context.Background()); err != nil {
+			t.Fatalf("handlePanicCommand error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Panic triggered") {
+		t.Fatalf("expected panic triggered, got %q", out)
+	}
+}
+
+func TestHandlePanicCommand_UnreachableServer(t *testing.T) {
+	cfg := testREPLConfig()
+	cfg.Server.Address = "127.0.0.1:1" // nothing listening
+
+	r := newTestREPL(t, client.New("http://unused"), cfg)
+	_ = panicStdinHelper(t, "yes\n", func() {
+		err := r.handlePanicCommand(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "failed to reach joe-core") {
+			t.Fatalf("expected reach error, got %v", err)
+		}
+	})
+}
+
+func TestNotifier_NilOut_ZeroDelay(t *testing.T) {
+	n := &Notifier{Out: nil, Delay: 0}
+	info := safety.ActionInfo{
+		ToolName:    "echo",
+		Tier:        safety.TierAct,
+		Description: "echo test",
+	}
+	out := captureStdout(t, func() {
+		n.NotifyAfter(context.Background(), info, nil, nil)
+	})
+	_ = out
+
+	n2 := &Notifier{Out: nil, Delay: 0}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	captureStdout(t, func() {
+		_ = n2.NotifyBefore(ctx, info)
+	})
+}
+
+// --- shared stdin/stdout helpers ---
 
 func runREPLWithInput(t *testing.T, r *REPL, input string) (string, error) {
 	t.Helper()
@@ -266,7 +540,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	origOut := os.Stdout
 	defer func() { os.Stdout = origOut }()
 
-	r, w, err := os.Pipe()
+	rp, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
@@ -276,12 +550,10 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	_ = w.Close()
 	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, rp)
 	return buf.String()
 }
 
-// panicStdinHelper replaces os.Stdin with a pipe containing the given input,
-// calls fn, then restores os.Stdin. It returns captured stdout output.
 func panicStdinHelper(t *testing.T, stdinInput string, fn func()) string {
 	t.Helper()
 	origIn := os.Stdin
@@ -313,189 +585,4 @@ func panicStdinHelper(t *testing.T, stdinInput string, fn func()) string {
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, outR)
 	return buf.String()
-}
-
-func TestHandlePanicCommand_Cancelled(t *testing.T) {
-	r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-	out := panicStdinHelper(t, "no\n", func() {
-		if err := r.handlePanicCommand(context.Background()); err != nil {
-			// no error expected for cancellation
-			t.Fatalf("handlePanicCommand error: %v", err)
-		}
-	})
-	if !strings.Contains(out, "Cancelled.") {
-		t.Fatalf("expected Cancelled in output, got %q", out)
-	}
-}
-
-func TestHandlePanicCommand_Confirmed(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
-	cfg := testREPLConfig()
-	// Strip "http://" to get just host:port for cfg.Server.Address
-	cfg.Server.Address = strings.TrimPrefix(ts.URL, "http://")
-
-	r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
-	out := panicStdinHelper(t, "yes\n", func() {
-		if err := r.handlePanicCommand(context.Background()); err != nil {
-			t.Fatalf("handlePanicCommand error: %v", err)
-		}
-	})
-	if !strings.Contains(out, "Panic triggered") {
-		t.Fatalf("expected panic triggered in output, got %q", out)
-	}
-}
-
-func TestHandlePanicCommand_EmptyInputCancels(t *testing.T) {
-	r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-	out := panicStdinHelper(t, "\n", func() {
-		if err := r.handlePanicCommand(context.Background()); err != nil {
-			t.Fatalf("handlePanicCommand error: %v", err)
-		}
-	})
-	// Empty string != "yes", so Cancelled. should appear
-	if !strings.Contains(out, "Cancelled.") {
-		t.Fatalf("expected Cancelled in output, got %q", out)
-	}
-}
-
-func TestHandlePanicCommand_EOFCancels(t *testing.T) {
-	r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-	// Send EOF immediately (empty stdin) — scanner.Scan() returns false
-	_ = panicStdinHelper(t, "", func() {
-		err := r.handlePanicCommand(context.Background())
-		// EOF causes scanner.Scan() == false → returns fmt.Errorf("cancelled")
-		if err == nil || !strings.Contains(err.Error(), "cancelled") {
-			t.Fatalf("expected cancelled error on EOF, got %v", err)
-		}
-	})
-}
-
-func TestHandleCommand_EmptyCommand(t *testing.T) {
-	r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-	// "/  " → after TrimPrefix and Fields → empty parts → returns nil
-	err := r.handleCommand(context.Background(), "/  ")
-	if err != nil {
-		t.Fatalf("handleCommand('/  ') = %v, want nil", err)
-	}
-}
-
-func TestRun_EmptyInputAndEOF(t *testing.T) {
-	t.Run("empty lines are skipped", func(t *testing.T) {
-		r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-		// Send blank lines then quit — the empty input `continue` branch is exercised
-		out, err := runREPLWithInput(t, r, "\n\n\n/quit\n")
-		if err != nil {
-			t.Fatalf("Run error: %v", err)
-		}
-		if !strings.Contains(out, "Goodbye.") {
-			t.Fatalf("expected Goodbye, got %q", out)
-		}
-	})
-
-	t.Run("EOF exits cleanly", func(t *testing.T) {
-		r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-		// No /quit — just EOF (pipe closed with no input)
-		out, err := runREPLWithInput(t, r, "")
-		if err != nil {
-			t.Fatalf("Run error: %v", err)
-		}
-		if !strings.Contains(out, "Joe is ready.") {
-			t.Fatalf("expected ready message, got %q", out)
-		}
-	})
-}
-
-func TestHandleCommand_ModelAndPanicRouting(t *testing.T) {
-	t.Run("routes /model", func(t *testing.T) {
-		original := runModelSelector
-		defer func() { runModelSelector = original }()
-		runModelSelector = func(models []string, current string) (string, error) { return "", nil }
-
-		r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-		out := captureStdout(t, func() {
-			err := r.handleCommand(context.Background(), "/model")
-			if err != nil {
-				t.Fatalf("handleCommand(/model) = %v", err)
-			}
-		})
-		if !strings.Contains(out, "Cancelled") {
-			t.Fatalf("expected Cancelled from model selector, got %q", out)
-		}
-	})
-
-	t.Run("routes /panic to cancelled (non-yes input)", func(t *testing.T) {
-		r := New(newTestAgent(&mockLLM{response: "ok"}), testREPLConfig())
-		panicStdinHelper(t, "no\n", func() {
-			err := r.handleCommand(context.Background(), "/panic")
-			if err != nil {
-				t.Fatalf("handleCommand(/panic) = %v", err)
-			}
-		})
-	})
-}
-
-func TestHandlePanicCommand_WithAPIKey(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") == "" {
-			t.Error("expected Authorization header")
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
-	cfg := testREPLConfig()
-	cfg.Server.Address = strings.TrimPrefix(ts.URL, "http://")
-	cfg.Server.APIKey = "test-secret-key"
-
-	r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
-	out := panicStdinHelper(t, "yes\n", func() {
-		if err := r.handlePanicCommand(context.Background()); err != nil {
-			t.Fatalf("handlePanicCommand error: %v", err)
-		}
-	})
-	if !strings.Contains(out, "Panic triggered") {
-		t.Fatalf("expected panic triggered, got %q", out)
-	}
-}
-
-func TestHandlePanicCommand_UnreachableServer(t *testing.T) {
-	cfg := testREPLConfig()
-	cfg.Server.Address = "127.0.0.1:1" // nothing listening
-
-	r := New(newTestAgent(&mockLLM{response: "ok"}), cfg)
-	_ = panicStdinHelper(t, "yes\n", func() {
-		err := r.handlePanicCommand(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "failed to reach joe-core") {
-			t.Fatalf("expected reach error, got %v", err)
-		}
-	})
-}
-
-func TestNotifier_NilOut_ZeroDelay(t *testing.T) {
-	// Notifier with nil Out and zero Delay falls back to os.Stdout and DefaultT3Delay.
-	// We test via NotifyAfter (which calls out()) to avoid blocking.
-	n := &Notifier{Out: nil, Delay: 0}
-	info := safety.ActionInfo{
-		ToolName:    "echo",
-		Tier:        safety.TierAct,
-		Description: "echo test",
-	}
-	// Redirect stdout to avoid polluting test output
-	out := captureStdout(t, func() {
-		n.NotifyAfter(context.Background(), info, nil, nil)
-	})
-	_ = out // just verify it doesn't panic
-
-	// Test that delay() returns DefaultT3Delay. We verify indirectly via
-	// a very short-lived NotifyBefore that we cancel immediately.
-	n2 := &Notifier{Out: nil, Delay: 0}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled
-	captureStdout(t, func() {
-		_ = n2.NotifyBefore(ctx, info)
-	})
 }

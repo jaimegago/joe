@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/client"
+	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/safety"
@@ -17,12 +19,12 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/uid"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // taskHandler handles POST /api/v1/tasks — full agentic loop over HTTP.
 type taskHandler struct {
-	server *Server
+	server   *Server
+	inflight *inflightTasks // tracks streamed turns awaiting delegated tool results
 }
 
 // --- Request / Response types ---
@@ -31,6 +33,17 @@ type taskRequest struct {
 	Message   string      `json:"message"`
 	SessionID string      `json:"session_id,omitempty"`
 	Config    *taskConfig `json:"config,omitempty"`
+	// ClientTools are local tools the caller (the thin CLI) can execute on its
+	// own machine. They are registered as delegating stubs so the LLM can call
+	// them; execution is sent back over the stream. Ignored by /tasks.
+	ClientTools []clientToolDef `json:"client_tools,omitempty"`
+}
+
+// clientToolDef advertises a local tool the streaming client can service.
+type clientToolDef struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Parameters  llm.ParameterSchema `json:"parameters"`
 }
 
 type taskConfig struct {
@@ -122,7 +135,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve max iterations
-	maxIterations := useragent.DefaultMaxIterations
+	maxIterations := agentloop.DefaultMaxIterations
 	if req.Config != nil && req.Config.MaxIterations != nil {
 		if *req.Config.MaxIterations < 1 {
 			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "max_iterations must be >= 1")
@@ -131,35 +144,82 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		maxIterations = *req.Config.MaxIterations
 	}
 
-	// Resolve safety policy
+	// Build the agent + session (shared with the streaming task endpoint).
+	observer := &agentloop.SliceObserver{}
+	prepared := h.buildTaskRun(r.Context(), req, maxIterations, observer)
+	defer prepared.session.Close()
+
+	// Run with timeout
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	taskID := uid.New()
+	start := time.Now()
+	answer, runErr := prepared.agent.Run(ctx, prepared.session, req.Message)
+	duration := time.Since(start)
+
+	status, errMsg := taskStatus(ctx, runErr)
+
+	// Persist the raw (un-redacted) conversation, then build the redacted
+	// response — matching prior behavior where the store keeps the raw answer.
+	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, start)
+	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, duration)
+
+	slog.Info("task completed",
+		"task_id", taskID,
+		"session_id", prepared.sessionID,
+		"status", status,
+		"iterations", resp.Iterations,
+		"duration_ms", resp.DurationMs,
+	)
+
+	slog.Info("task response",
+		"task_id", taskID,
+		"response", resp.FinalAnswer,
+	)
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// preparedTask bundles the constructed agent and session for one task run. It
+// is shared by the non-streaming /tasks handler and the streaming
+// /tasks/stream handler so both build the runtime identically.
+type preparedTask struct {
+	agent     *agentloop.Agent
+	session   *agentloop.Session
+	registry  *tools.Registry
+	sessionID string
+}
+
+// buildTaskRun constructs the core-tool agent + session for a task request.
+// The observer receives per-iteration step notifications. Construction is
+// infallible: all request-level validation (message, timeout, max_iterations)
+// is the caller's responsibility before invoking this.
+func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIterations int, observer agentloop.RunObserver) *preparedTask {
 	safetyPolicy := h.resolveSafetyPolicy(req.Config)
+	zoneScope := h.resolveZoneScope(ctx, req.Config)
 
-	// Resolve zone scope — maps allowed_zones to the set of source IDs in those zones
-	zoneScope := h.resolveZoneScope(r.Context(), req.Config)
-
-	// Session setup
 	sessionID := req.SessionID
 	if sessionID == "" {
 		sessionID = uid.New()
 	}
 	if h.server.services.Store != nil {
-		sess, _ := h.server.services.Store.Sessions.Get(r.Context(), sessionID)
+		sess, _ := h.server.services.Store.Sessions.Get(ctx, sessionID)
 		if sess == nil {
-			_ = h.server.services.Store.Sessions.Create(r.Context(), &store.Session{
+			_ = h.server.services.Store.Sessions.Create(ctx, &store.Session{
 				ID:        sessionID,
 				StartedAt: time.Now().UTC(),
 			})
 		}
 	}
 
-	// Build the agent with a loopback client
+	// Loopback client so core tools reach joe-core's own HTTP API.
 	addr := h.server.services.Config.Server.Address
 	scheme := "http"
 	if h.server.services.Config.Server.TLSConfigured() {
 		scheme = "https"
 	}
 	loopbackURL := fmt.Sprintf("%s://%s", scheme, addr)
-
 	var clientOpts []client.ClientOption
 	if h.server.services.Config.Server.APIKey != "" {
 		clientOpts = append(clientOpts, client.WithAPIKey(h.server.services.Config.Server.APIKey))
@@ -194,7 +254,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		systemPrompt += "\n\n" + zoneScope.scopeDesc
 	}
 	if h.server.services.Graph != nil {
-		if summary, err := h.server.services.Graph.Summary(r.Context()); err == nil {
+		if summary, err := h.server.services.Graph.Summary(ctx); err == nil {
 			systemPrompt += fmt.Sprintf(
 				"\n\nCurrent infrastructure context:\nInfrastructure graph: %d nodes, %d edges. Node types: %v",
 				summary.NodeCount, summary.EdgeCount, summary.NodesByType,
@@ -205,35 +265,25 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		systemPrompt += "\n\n" + section
 	}
 
-	// Create agent with observer
-	observer := &useragent.SliceObserver{}
-	agent := useragent.NewAgent(
+	agent := agentloop.NewAgent(
 		h.server.services.LLM,
 		executor,
 		registry,
 		systemPrompt,
-		useragent.WithObserver(observer),
+		agentloop.WithObserver(observer),
 	)
 	agent.SetMaxIterations(maxIterations)
 
-	// Create session
 	metrics := observability.EnsureMetrics(h.server.services.Metrics)
-	session := useragent.NewSession(metrics)
-	session.MaxMessages = useragent.DefaultMaxMessages
-	defer session.Close()
+	session := agentloop.NewSession(metrics)
+	session.MaxMessages = agentloop.DefaultMaxMessages
 
-	// Run with timeout
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
-	defer cancel()
+	return &preparedTask{agent: agent, session: session, registry: registry, sessionID: sessionID}
+}
 
-	taskID := uid.New()
-	start := time.Now()
-	answer, runErr := agent.Run(ctx, session, req.Message)
-	duration := time.Since(start)
-
-	// Determine status
-	status := "completed"
-	var errMsg string
+// taskStatus maps an agent run error to the wire status + error message.
+func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
+	status = "completed"
 	if runErr != nil {
 		switch {
 		case ctx.Err() == context.DeadlineExceeded:
@@ -247,94 +297,101 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 			errMsg = runErr.Error()
 		}
 	}
+	return status, errMsg
+}
 
-	// Build steps from observer
-	steps := make([]taskStep, len(observer.Steps))
-	toolsUsedSet := map[string]struct{}{}
-	for i, s := range observer.Steps {
-		step := taskStep{
-			StepNumber: s.StepNumber,
-			LLMRequest: taskLLMRequest{
-				MessageCount:   s.LLMRequest.MessageCount,
-				ToolsAvailable: s.LLMRequest.ToolsAvailable,
-			},
-			LLMResponse: taskLLMResponse{
-				Content: s.LLMResponse.Content,
-				Usage: taskTokenUsage{
-					InputTokens:  s.LLMResponse.Usage.InputTokens,
-					OutputTokens: s.LLMResponse.Usage.OutputTokens,
-				},
-			},
-		}
-
-		// Map tool calls
-		if len(s.LLMResponse.ToolCalls) > 0 {
-			step.LLMResponse.ToolCalls = make([]taskToolCall, len(s.LLMResponse.ToolCalls))
-			for j, tc := range s.LLMResponse.ToolCalls {
-				step.LLMResponse.ToolCalls[j] = taskToolCall{
-					ID:   tc.ID,
-					Name: tc.Name,
-					Args: tc.Args,
-				}
-			}
-		}
-
-		// Map tool results
-		if len(s.ToolResults) > 0 {
-			step.ToolResults = make([]taskToolResult, len(s.ToolResults))
-			for j, tr := range s.ToolResults {
-				step.ToolResults[j] = taskToolResult{
-					ID:         tr.ID,
-					Name:       tr.Name,
-					Result:     tr.Result,
-					Error:      tr.Error,
-					DurationMs: tr.DurationMs,
-				}
-				toolsUsedSet[tr.Name] = struct{}{}
-			}
-		}
-
-		steps[i] = step
+// persistTaskMessages writes the user message and (if non-empty) the raw
+// assistant answer to the session store. The answer is persisted un-redacted;
+// response redaction happens separately in finalizeTaskResponse.
+func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer string, start time.Time) {
+	if h.server.services.Store == nil {
+		return
 	}
+	_ = h.server.services.Store.Sessions.AddMessage(ctx, &store.SessionMessage{
+		SessionID: sessionID,
+		Role:      "user",
+		Content:   userMsg,
+		CreatedAt: start,
+	})
+	if answer != "" {
+		_ = h.server.services.Store.Sessions.AddMessage(ctx, &store.SessionMessage{
+			SessionID: sessionID,
+			Role:      "assistant",
+			Content:   answer,
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+}
 
+// taskStepFromRecord maps an agent loop StepRecord to the wire taskStep shape.
+func taskStepFromRecord(s agentloop.StepRecord) taskStep {
+	step := taskStep{
+		StepNumber: s.StepNumber,
+		LLMRequest: taskLLMRequest{
+			MessageCount:   s.LLMRequest.MessageCount,
+			ToolsAvailable: s.LLMRequest.ToolsAvailable,
+		},
+		LLMResponse: taskLLMResponse{
+			Content: s.LLMResponse.Content,
+			Usage: taskTokenUsage{
+				InputTokens:  s.LLMResponse.Usage.InputTokens,
+				OutputTokens: s.LLMResponse.Usage.OutputTokens,
+			},
+		},
+	}
+	if len(s.LLMResponse.ToolCalls) > 0 {
+		step.LLMResponse.ToolCalls = make([]taskToolCall, len(s.LLMResponse.ToolCalls))
+		for j, tc := range s.LLMResponse.ToolCalls {
+			step.LLMResponse.ToolCalls[j] = taskToolCall{ID: tc.ID, Name: tc.Name, Args: tc.Args}
+		}
+	}
+	if len(s.ToolResults) > 0 {
+		step.ToolResults = make([]taskToolResult, len(s.ToolResults))
+		for j, tr := range s.ToolResults {
+			step.ToolResults[j] = taskToolResult{
+				ID:         tr.ID,
+				Name:       tr.Name,
+				Result:     tr.Result,
+				Error:      tr.Error,
+				DurationMs: tr.DurationMs,
+			}
+		}
+	}
+	return step
+}
+
+// finalizeTaskResponse builds the wire response from the collected steps,
+// deriving tools-used and applying defense-in-depth secret redaction to the
+// final answer (the redaction operates on the response copy only).
+func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, duration time.Duration) taskResponse {
+	outSteps := make([]taskStep, len(steps))
+	toolsUsedSet := map[string]struct{}{}
+	for i, s := range steps {
+		outSteps[i] = taskStepFromRecord(s)
+		for _, tr := range outSteps[i].ToolResults {
+			toolsUsedSet[tr.Name] = struct{}{}
+		}
+	}
 	toolsUsed := make([]string, 0, len(toolsUsedSet))
 	for name := range toolsUsedSet {
 		toolsUsed = append(toolsUsed, name)
 	}
 
-	// Persist messages to store
-	if h.server.services.Store != nil {
-		_ = h.server.services.Store.Sessions.AddMessage(r.Context(), &store.SessionMessage{
-			SessionID: sessionID,
-			Role:      "user",
-			Content:   req.Message,
-			CreatedAt: start,
-		})
-		if answer != "" {
-			_ = h.server.services.Store.Sessions.AddMessage(r.Context(), &store.SessionMessage{
-				SessionID: sessionID,
-				Role:      "assistant",
-				Content:   answer,
-				CreatedAt: time.Now().UTC(),
-			})
-		}
-	}
-
 	// Defense-in-depth: scan final answer for secret values that may have
 	// leaked through non-K8s paths (env vars, logs, configmap references).
 	if answer != "" {
-		knownSecrets := collectSecretValuesFromSteps(observer.Steps)
+		knownSecrets := collectSecretValuesFromSteps(steps)
 		if redacted, changed := safety.RedactSecretsFromResponse(answer, knownSecrets); changed {
 			answer = redacted
 		}
 	}
 
-	resp := taskResponse{
+	return taskResponse{
 		TaskID:      taskID,
 		SessionID:   sessionID,
 		Status:      status,
-		Iterations:  len(observer.Steps),
-		Steps:       steps,
+		Iterations:  len(steps),
+		Steps:       outSteps,
 		FinalAnswer: answer,
 		ToolsUsed:   toolsUsed,
 		TotalTokens: taskTokenUsage{
@@ -344,21 +401,27 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		DurationMs: int(duration.Milliseconds()),
 		Error:      errMsg,
 	}
+}
 
-	slog.Info("task completed",
-		"task_id", taskID,
-		"session_id", sessionID,
-		"status", status,
-		"iterations", len(observer.Steps),
-		"duration_ms", resp.DurationMs,
-	)
-
-	slog.Info("task response",
-		"task_id", taskID,
-		"response", answer,
-	)
-
-	writeJSON(w, http.StatusOK, resp)
+// seedHistory loads prior user/assistant turns for sessionID from the store
+// into the in-memory session, giving the streaming endpoint multi-turn
+// continuity (the non-streaming /tasks endpoint does not seed, preserving its
+// single-turn contract).
+func (h *taskHandler) seedHistory(ctx context.Context, session *agentloop.Session, sessionID string) {
+	if h.server.services.Store == nil {
+		return
+	}
+	msgs, err := h.server.services.Store.Sessions.GetMessages(ctx, sessionID)
+	if err != nil || len(msgs) == 0 {
+		return
+	}
+	seeded := make([]llm.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "user" || m.Role == "assistant" {
+			seeded = append(seeded, llm.Message{Role: m.Role, Content: m.Content})
+		}
+	}
+	session.AddMessages(ctx, seeded)
 }
 
 // resolveSafetyPolicy builds a SafetyPolicy based on the request's safety_tier override.
@@ -501,7 +564,7 @@ func isMaxIterationsError(err error) bool {
 // tool results for Kubernetes Secret resources. These are used for
 // defense-in-depth response scanning — if a secret value somehow makes it into
 // the LLM's final answer, the response filter will catch it.
-func collectSecretValuesFromSteps(steps []useragent.StepRecord) []string {
+func collectSecretValuesFromSteps(steps []agentloop.StepRecord) []string {
 	var values []string
 	for _, step := range steps {
 		for _, tr := range step.ToolResults {
@@ -551,8 +614,13 @@ func collectMapValues(v any, out *[]string) {
 }
 
 func (s *Server) registerTaskRoutes(mux *http.ServeMux, prefix string) {
-	h := &taskHandler{server: s}
+	h := &taskHandler{server: s, inflight: newInflightTasks()}
 	mux.HandleFunc(fmt.Sprintf("POST %s/tasks", prefix), h.handleTask)
+	// Phase 2: streamed agentic turn for the thin CLI (SSE). The non-streaming
+	// /tasks endpoint above is unchanged so oasisctl keeps working.
+	mux.HandleFunc(fmt.Sprintf("POST %s/tasks/stream", prefix), h.handleTaskStream)
+	// Phase 2: callback for delegated local-tool results (CLI → joe-core).
+	mux.HandleFunc(fmt.Sprintf("POST %s/tasks/stream/{taskID}/tool-results", prefix), h.handleToolResult)
 }
 
 // renderSkillsForQuery routes the user query through the skill registry and

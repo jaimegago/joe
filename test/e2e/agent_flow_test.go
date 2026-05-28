@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/useragent"
 )
 
 // sequentialMockLLM returns ChatResponses in order. When all responses are
@@ -75,8 +75,8 @@ func TestAgentFlow_ToolCallRoundtrip(t *testing.T) {
 		},
 	}
 
-	agent := useragent.NewAgent(mockLLM, executor, registry, "You are a test agent.")
-	session := useragent.NewSession(nil)
+	agent := agentloop.NewAgent(mockLLM, executor, registry, "You are a test agent.")
+	session := agentloop.NewSession(nil)
 
 	response, err := agent.Run(context.Background(), session, "what services are in the graph?")
 	if err != nil {
@@ -130,8 +130,8 @@ func TestAgentFlow_LocalToolExecution(t *testing.T) {
 		},
 	}
 
-	agent := useragent.NewAgent(mockLLM, executor, registry, "You are a test agent.")
-	session := useragent.NewSession(nil)
+	agent := agentloop.NewAgent(mockLLM, executor, registry, "You are a test agent.")
+	session := agentloop.NewSession(nil)
 
 	response, err := agent.Run(context.Background(), session, "echo hello from e2e")
 	if err != nil {
@@ -167,8 +167,8 @@ func TestAgentFlow_MaxIterationsRespected(t *testing.T) {
 	// Leave responses empty so fallback always returns "Done." immediately.
 	// We test that the agent exits without hanging.
 
-	agent := useragent.NewAgent(infiniteMockLLM, executor, registry, "You are a test agent.")
-	session := useragent.NewSession(nil)
+	agent := agentloop.NewAgent(infiniteMockLLM, executor, registry, "You are a test agent.")
+	session := agentloop.NewSession(nil)
 
 	// The agent should finish (either with result or error) within the iteration limit.
 	_, err := agent.Run(context.Background(), session, "do something")

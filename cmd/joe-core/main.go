@@ -445,7 +445,13 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
 		return 1
 	}
-	services.LLM = llmAdapter // expose to web UI chat handler
+	// Phase 2: services.LLM is the single LLM contact point for the agentic
+	// loop and the Web UI chat handler. Wrap it in a SwappableAdapter so the
+	// /model HTTP API can hot-swap the active model at runtime without a
+	// restart. The raw adapter is retained below for the knowledge embedder
+	// and background services — embeddings must stay on a stable model and
+	// must not follow interactive chat-model swaps.
+	services.LLM = llm.NewSwappableAdapter(llmAdapter, cfg.LLM.Current)
 
 	// Wire the LLM embedder into the Knowledge Service now that the adapter is ready.
 	embModelName := cfg.Knowledge.EmbeddingModel
@@ -492,10 +498,9 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Phase 1 Change 9: wrap the Core Agent's tool executor with the
 	// §D5 durable wrapper so every T2/T3 tool call persists an
 	// idempotency-key intent BEFORE issuing and a terminal status
-	// AFTER. The wrapper is wired into joe-core's executor instance
-	// only; the CLI's useragent.Agent executor is untouched (Phase 2
-	// removes the CLI loop). Type-assert is safe — newCoreAgent in
-	// defaultRunDeps returns *coreagent.Agent.
+	// AFTER. Since Phase 2 the CLI runs no loop of its own, so this
+	// wraps joe-core's only agentic loop. Type-assert is safe —
+	// newCoreAgent in defaultRunDeps returns *coreagent.Agent.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
 		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel, services.SessionModel)
 		concrete.SetToolExecutor(durable)

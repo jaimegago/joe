@@ -65,4 +65,11 @@ const (
 
 	// Category-based observe endpoints (MCP plan).
 	apiObserveBasePath = "/api/v1/observe"
+
+	// Model control plane (Phase 2): list/swap the single LLM contact point.
+	apiModelsPath        = "/api/v1/models"
+	apiModelsCurrentPath = "/api/v1/models/current"
+
+	// Streamed agentic turn for the thin CLI (Phase 2, SSE).
+	apiTasksStreamPath = "/api/v1/tasks/stream"
 )
