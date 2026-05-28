@@ -22,6 +22,13 @@ type Config struct {
 	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
 	Database      DatabaseConfig     `yaml:"database"`
 	Skills        SkillsConfig       `yaml:"skills"`
+
+	// explicitProvider records whether the user expressed an explicit LLM
+	// provider preference during Load — either JOE_LLM_PROVIDER or an
+	// llm.current set in the config file. AutoSelectProvider leaves the
+	// configuration untouched when this is true. Unexported so it is never
+	// serialized by Save.
+	explicitProvider bool
 }
 
 // SkillsConfig governs the Agent Skills consumer (~/.joe/skills/). Phase 3
@@ -175,9 +182,13 @@ func Load(configPath string) (*Config, error) {
 	// Track config source
 	configSource := "defaults"
 
+	// Track whether the user expressed an explicit provider preference.
+	explicit := false
+
 	// Try to load from file
 	if configPath != "" {
-		if err := loadFromFile(cfg, configPath); err != nil {
+		currentSet, err := loadFromFile(cfg, configPath)
+		if err != nil {
 			// If file doesn't exist, that's okay - use defaults
 			if !os.IsNotExist(err) {
 				return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
@@ -185,6 +196,7 @@ func Load(configPath string) (*Config, error) {
 			slog.Info("no config file detected, using defaults", "path", configPath)
 			slog.Debug("config: file not found, using defaults", "path", configPath)
 		} else {
+			explicit = currentSet
 			configSource = configPath
 			slog.Info("loaded config from file", "path", configPath)
 			slog.Debug("config: loaded from file", "path", configPath)
@@ -199,6 +211,15 @@ func Load(configPath string) (*Config, error) {
 	if len(envOverrides) > 0 {
 		slog.Debug("config: applied environment overrides", "vars", envOverrides)
 	}
+
+	// An explicit JOE_LLM_PROVIDER is a provider preference too. Both this and
+	// an llm.current in the config file disable auto-selection.
+	for _, name := range envOverrides {
+		if name == "JOE_LLM_PROVIDER" {
+			explicit = true
+		}
+	}
+	cfg.explicitProvider = explicit
 
 	// Compute derived fields
 	cfg.Refresh.Interval = time.Duration(cfg.Refresh.IntervalMinutes) * time.Minute
@@ -265,18 +286,31 @@ func defaultConfig() *Config {
 	}
 }
 
-// loadFromFile loads config from a YAML file
-func loadFromFile(cfg *Config, path string) error {
+// loadFromFile loads config from a YAML file. currentSet reports whether the
+// file explicitly set llm.current, which signals an explicit provider
+// preference that auto-selection must not override.
+func loadFromFile(cfg *Config, path string) (currentSet bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
+		return false, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	return nil
+	// Detect whether the file explicitly selected a current model. A pointer
+	// field distinguishes "absent" from "present but empty".
+	var probe struct {
+		LLM struct {
+			Current *string `yaml:"current"`
+		} `yaml:"llm"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err != nil {
+		return false, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	return probe.LLM.Current != nil, nil
 }
 
 // applyEnvOverrides applies environment variable overrides

@@ -8,6 +8,12 @@ const (
 	defaultLLMCurrent = "claude-sonnet"
 	defaultLLMModel   = "claude-sonnet-4-20250514"
 
+	// Default Gemini configuration. Used when auto-selecting Gemini for a user
+	// who has a Gemini key but no Anthropic key and expressed no explicit
+	// provider preference. Kept consistent with internal/llm/gemini.DefaultModel.
+	defaultGeminiCurrent = "gemini-flash"
+	defaultGeminiModel   = "gemini-2.5-flash"
+
 	// Default refresh intervals.
 	defaultRefreshIntervalMinutes = 5
 	defaultMaxCallsPerHour        = 100

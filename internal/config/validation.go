@@ -2,10 +2,92 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/jaimegago/joe/internal/env"
 )
+
+// noProviderKeyMessage is the actionable error shown when auto-selection runs
+// but no supported provider key is present. Format args (in order):
+// AnthropicAPIKey, GeminiAPIKey, GoogleAPIKey.
+const noProviderKeyMessage = `You need to connect Joe to an LLM.
+
+No supported provider API key was found in joe-core's environment.
+Set exactly one of:
+  - Claude (Anthropic): export %s=...
+  - Gemini (Google):    export %s=...   (or %s)
+
+Then restart joe-core. To force a specific provider/model regardless of which
+keys are present, set:
+  export JOE_LLM_PROVIDER=claude|gemini
+  export JOE_LLM_MODEL=<model-name>`
+
+// AutoSelectProvider fills the provider gap for a user who expressed no explicit
+// LLM provider preference (no JOE_LLM_PROVIDER and no llm.current in the config
+// file), choosing a provider from whichever supported API key is present in the
+// environment. joe-core calls this once at startup so a stranger with exactly
+// one provider key can run with zero configuration.
+//
+// Rules:
+//   - explicit preference set      -> no-op (the explicit choice always wins)
+//   - selected provider's key set  -> keep it (preserves any JOE_LLM_MODEL)
+//   - only the other key set        -> switch to that provider with its default model
+//   - both keys set                 -> keep Claude (deterministic tie-break, logged)
+//   - neither key set               -> actionable error naming both providers
+func (c *Config) AutoSelectProvider() error {
+	if c.explicitProvider {
+		return nil
+	}
+
+	hasAnthropic := os.Getenv(env.AnthropicAPIKey) != ""
+	hasGemini := os.Getenv(env.GeminiAPIKey) != "" || os.Getenv(env.GoogleAPIKey) != ""
+
+	if !hasAnthropic && !hasGemini {
+		return fmt.Errorf(noProviderKeyMessage, env.AnthropicAPIKey, env.GeminiAPIKey, env.GoogleAPIKey)
+	}
+
+	current, _ := c.LLM.CurrentModel()
+
+	// If the currently-selected provider already has its key, keep it. This
+	// preserves any model the user set via JOE_LLM_MODEL or the config file.
+	if (current.Provider == providerClaude && hasAnthropic) || (current.Provider == providerGemini && hasGemini) {
+		if current.Provider == providerClaude && hasAnthropic && hasGemini {
+			slog.Info("both ANTHROPIC_API_KEY and a Gemini key are set; defaulting to Claude. Set JOE_LLM_PROVIDER=gemini (optionally JOE_LLM_MODEL) or llm.current in config to use Gemini")
+		}
+		return nil
+	}
+
+	// Otherwise switch to whichever key is present, preferring Claude on a tie.
+	if hasAnthropic {
+		c.selectClaude()
+		slog.Info("no Gemini key found; auto-selected Claude from ANTHROPIC_API_KEY", "model", defaultLLMModel)
+	} else {
+		c.selectGemini()
+		slog.Info("no ANTHROPIC_API_KEY found; auto-selected Gemini from the available key", "model", defaultGeminiModel)
+	}
+	return nil
+}
+
+// selectClaude points the active model at the Claude default.
+func (c *Config) selectClaude() {
+	c.setCurrentModel(defaultLLMCurrent, ModelConfig{Provider: providerClaude, Model: defaultLLMModel})
+}
+
+// selectGemini points the active model at the Gemini default.
+func (c *Config) selectGemini() {
+	c.setCurrentModel(defaultGeminiCurrent, ModelConfig{Provider: providerGemini, Model: defaultGeminiModel})
+}
+
+// setCurrentModel sets the active model key and its config, creating the
+// Available map if needed.
+func (c *Config) setCurrentModel(key string, mc ModelConfig) {
+	if c.LLM.Available == nil {
+		c.LLM.Available = make(map[string]ModelConfig)
+	}
+	c.LLM.Current = key
+	c.LLM.Available[key] = mc
+}
 
 // ValidateAPIKeys validates that required API keys are set for the given model configuration.
 // Returns an error with helpful messaging if validation fails.
