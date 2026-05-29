@@ -45,13 +45,18 @@ func New(services *core.Services) *Server {
 }
 
 // newPolicyEngine builds the RBAC policy engine the accessor enforces with.
-// It mirrors cmd/joe-core/main.go exactly: enforcement is enabled only when
-// API key auth is configured; otherwise the engine is nil and the accessor
-// permits every decision — identical to rbac.EnforcementMiddleware(nil) on
-// the transport. Keeping the same enable-condition guarantees the accessor's
-// allow/deny decision matches the middleware's for the configured principal.
+// It mirrors cmd/joe-core/main.go exactly: enforcement is enabled when a real
+// caller principal can be established — i.e. a service account (Identity
+// Phase D) OR OIDC login (Phase C) is configured. Otherwise the engine is nil
+// and the accessor permits every decision — identical to
+// rbac.EnforcementMiddleware(nil) on the transport. Keeping the same
+// enable-condition guarantees the accessor's allow/deny decision matches the
+// middleware's for the same principal.
 func newPolicyEngine(services *core.Services) *rbac.PolicyEngine {
-	if services.Config == nil || services.Config.Server.APIKey == "" || services.RBAC == nil {
+	if services.Config == nil || services.RBAC == nil {
+		return nil
+	}
+	if !services.Config.Server.ServiceAccountsConfigured() && !services.Config.Auth.OIDC.Configured() {
 		return nil
 	}
 	return rbac.NewPolicyEngine(services.RBAC)

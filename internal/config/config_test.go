@@ -499,14 +499,30 @@ func TestLoad_EnvOverrides_ServerAddress(t *testing.T) {
 	}
 }
 
+// TestLoad_EnvOverrides_APIKey verifies JOE_API_KEY folds into the reserved
+// "server" service account (Identity Phase D): the env key becomes the key of
+// the svc:server account, which is what co-located clients present via
+// LoopbackKey. This is the env equivalent of the old single server.api_key.
 func TestLoad_EnvOverrides_APIKey(t *testing.T) {
 	t.Setenv("JOE_API_KEY", "super-secret")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
-	if cfg.Server.APIKey != "super-secret" {
-		t.Errorf("Server.APIKey = %s, want super-secret", cfg.Server.APIKey)
+	if got := cfg.Server.LoopbackKey(); got != "super-secret" {
+		t.Errorf("LoopbackKey() = %q, want super-secret", got)
+	}
+	var found bool
+	for _, sa := range cfg.Server.ServiceAccounts {
+		if sa.Name == "server" {
+			found = true
+			if sa.Key != "super-secret" {
+				t.Errorf("server service account key = %q, want super-secret", sa.Key)
+			}
+		}
+	}
+	if !found {
+		t.Error("JOE_API_KEY did not create a \"server\" service account")
 	}
 }
 

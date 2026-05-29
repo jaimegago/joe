@@ -75,7 +75,10 @@ func (f *fakeRepo) UpsertAssignment(context.Context, rbac.SourceZoneAssignment) 
 func (f *fakeRepo) ListPolicies(context.Context) ([]rbac.Policy, error)               { return nil, nil }
 func (f *fakeRepo) CreatePolicy(context.Context, rbac.Policy) (*rbac.Policy, error)   { return nil, nil }
 func (f *fakeRepo) DeletePolicy(context.Context, int64) error                         { return nil }
-func (f *fakeRepo) ListUnassignedSourceIDs(context.Context) ([]string, error)         { return nil, nil }
+func (f *fakeRepo) DeletePolicyForPrincipalZone(context.Context, string, string) (int64, error) {
+	return 0, nil
+}
+func (f *fakeRepo) ListUnassignedSourceIDs(context.Context) ([]string, error) { return nil, nil }
 
 // --- fake adapters (one per acceptance kind), each records a call ---
 

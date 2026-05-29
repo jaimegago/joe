@@ -25,6 +25,7 @@ import (
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
@@ -537,19 +538,58 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	}
 	apiServer.RegisterRoutes(mux)
 
-	// Build RBAC identity provider and policy engine.
-	// The policy engine is only enabled when API key auth is configured.
-	// When auth is disabled (empty api_key), enforcement is skipped so that
-	// single-user / local setups are not blocked by empty policy tables.
-	rbacPrincipal := rbac.Principal(cfg.Server.Principal)
-	identityProvider := rbac.NewAPIKeyProvider(cfg.Server.APIKey, rbacPrincipal)
+	// Build the service-account resolver — the single machine-authentication
+	// input (Identity Phase D). It maps each configured key to its svc:<name>
+	// principal. An invalid configuration (duplicate/empty keys or names) is a
+	// fatal startup error, not a silently-dropped identity.
+	saResolver, saErr := auth.NewServiceAccountResolver(cfg.Server.ServiceAccounts)
+	if saErr != nil {
+		slog.Error("invalid service-account configuration", "error", saErr)
+		return 1
+	}
+
+	// Build RBAC policy engine. It is enabled when EITHER a service account OR
+	// OIDC is configured — both establish a real caller principal the engine
+	// must evaluate. When neither is set (local/dev), enforcement is skipped so
+	// single-user setups are not blocked by empty policy tables.
+	oidcConfigured := cfg.Auth.OIDC.Configured()
 	var policyEngine *rbac.PolicyEngine
-	if cfg.Server.APIKey != "" {
+	if saResolver.Configured() || oidcConfigured {
 		policyEngine = rbac.NewPolicyEngine(rbacRepo)
 	}
 
-	// Build middleware chain: CORS → rate limit → metrics → auth → identity → RBAC → request size limit → mux
+	// Identity Phase C: server-side sessions + the OIDC login flow.
+	// authRepo persists sessions and in-flight login flows (migration 014).
+	// The session manager mints/resolves/revokes sessions and owns the cookie.
+	authRepo := auth.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	sessionMgr := auth.NewSessionManager(authRepo, cfg.Auth.SessionTTL)
+
+	// Register the OIDC login/callback/logout endpoints when an issuer is
+	// configured. Discovery is lazy, so a missing/unreachable IdP at startup is
+	// not fatal — only new logins fail (design §4).
+	if oidcConfigured {
+		authHandlers := auth.NewHandlers(auth.HandlerConfig{
+			Provider:          auth.NewOIDCProvider(cfg.Auth.OIDC),
+			Sessions:          sessionMgr,
+			Repo:              authRepo,
+			RBAC:              rbacRepo,
+			AdminEmail:        cfg.Auth.AdminEmail,
+			PostLoginRedirect: cfg.Auth.PostLoginRedirect,
+		})
+		authHandlers.RegisterRoutes(mux, "/api/v1")
+		slog.Info("OIDC login enabled", "issuer", cfg.Auth.OIDC.Issuer, "admin_email", cfg.Auth.AdminEmail != "")
+	}
+
+	// Build middleware chain: CORS → rate limit → metrics → edge auth → session headers → RBAC → request size limit → mux
 	// CORS must be outermost so OPTIONS preflight requests are answered before auth runs.
+	//
+	// Identity Phase C/D: the edge-auth middleware replaces the prior
+	// BearerAuth + IdentityMiddleware pair. It resolves the caller principal
+	// from a session cookie (humans) or a service-account bearer key (machines),
+	// sets it in context via rbac.WithPrincipal (the Phase B mechanism), and
+	// rejects unauthenticated requests on protected paths with 401 — exactly as
+	// before. The source-keyed EnforcementMiddleware below it stays
+	// authoritative on the HTTP path (its demotion is Phase E).
 	handler := api.Chain(
 		mux,
 		api.CORS(),
@@ -557,8 +597,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		func(h http.Handler) http.Handler {
 			return observability.HTTPMetricsMiddleware(h, metrics)
 		},
-		api.BearerAuth(cfg.Server.APIKey),
-		rbac.IdentityMiddleware(identityProvider),
+		auth.EdgeAuth(auth.EdgeConfig{
+			Sessions:        sessionMgr,
+			ServiceAccounts: saResolver,
+			OIDCConfigured:  oidcConfigured,
+		}),
 		// Phase 1 Change 9: thread session/run/idempotency-key
 		// request headers into context AFTER identity is resolved
 		// and BEFORE source-keyed RBAC enforcement runs.
@@ -567,10 +610,15 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		api.MaxRequestBody(api.DefaultMaxRequestBytes),
 	)
 
-	if cfg.Server.APIKey != "" {
-		slog.Info("API authentication enabled")
-	} else {
-		slog.Warn("API authentication disabled — set server.api_key in config or JOE_API_KEY env var")
+	switch {
+	case oidcConfigured && saResolver.Configured():
+		slog.Info("API authentication enabled (OIDC login + service-account keys)")
+	case oidcConfigured:
+		slog.Info("API authentication enabled (OIDC login)")
+	case saResolver.Configured():
+		slog.Info("API authentication enabled (service-account keys)")
+	default:
+		slog.Warn("API authentication disabled — set auth.oidc.issuer for human login or server.service_accounts for machine access")
 	}
 	if cfg.Server.RateLimitRPS > 0 {
 		slog.Info("API rate limiting enabled", "rps", cfg.Server.RateLimitRPS, "burst", cfg.Server.RateLimitBurst)

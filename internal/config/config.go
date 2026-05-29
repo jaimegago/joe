@@ -22,6 +22,7 @@ type Config struct {
 	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
 	Database      DatabaseConfig     `yaml:"database"`
 	Skills        SkillsConfig       `yaml:"skills"`
+	Auth          AuthConfig         `yaml:"auth"`
 
 	// explicitProvider records whether the user expressed an explicit LLM
 	// provider preference during Load — either JOE_LLM_PROVIDER or an
@@ -44,6 +45,59 @@ type SkillsConfig struct {
 	// whole point of Phase 3. Set to true to require explicit reloads via
 	// `joe skills reload` / POST /api/v1/skills/reload.
 	HotReloadDisabled bool `yaml:"hot_reload_disabled"`
+}
+
+// defaultAuthSessionTTL bounds a login session's lifetime when the operator
+// sets no auth.session_ttl. Twelve hours covers a working day without forcing
+// a mid-day re-login, while still expiring well within a day (design §2.3).
+const defaultAuthSessionTTL = 12 * time.Hour
+
+// AuthConfig configures human authentication (Identity Phase C, design §2.1–§2.9).
+// Humans log in through a single configurable OIDC issuer; their verified email
+// becomes a user:<email> principal carried by a server-side session cookie.
+type AuthConfig struct {
+	// OIDC holds the single configurable OpenID Connect issuer. When Issuer is
+	// empty, OIDC login is disabled and the auth endpoints report 503; the only
+	// remaining authentication mechanism is the server API key (service-account
+	// keys arrive in Phase D).
+	OIDC OIDCConfig `yaml:"oidc"`
+
+	// AdminEmail is the bootstrap admin. The first principal whose verified
+	// email matches this value is granted admin authority on first login
+	// (design §2.9). This is the only bootstrap path. Empty disables the
+	// bootstrap; no login ever auto-grants authority.
+	AdminEmail string `yaml:"admin_email"`
+
+	// SessionTTL bounds how long a minted session is accepted before re-login
+	// is required (design §2.3 — sessions must not outlive the identity
+	// assertion indefinitely). Defaults to defaultAuthSessionTTL when zero.
+	SessionTTL time.Duration `yaml:"session_ttl"`
+
+	// PostLoginRedirect is where the callback sends the browser after a
+	// successful login. Defaults to "/" (the Web UI root) when empty.
+	PostLoginRedirect string `yaml:"post_login_redirect"`
+}
+
+// OIDCConfig configures the single OpenID Connect issuer used for human login
+// (design §2.1). Discovery, JWKS, and ID-token verification are handled by a
+// maintained library (github.com/coreos/go-oidc/v3); the authorization-code
+// flow with PKCE is handled by golang.org/x/oauth2.
+type OIDCConfig struct {
+	// Issuer is the OIDC issuer URL (e.g. https://accounts.google.com). Used
+	// for OIDC discovery (.well-known/openid-configuration) and JWKS.
+	Issuer string `yaml:"issuer"`
+	// ClientID is the OAuth2 client identifier registered with the issuer.
+	ClientID string `yaml:"client_id"`
+	// ClientSecret is the OAuth2 client secret registered with the issuer.
+	ClientSecret string `yaml:"client_secret"`
+	// RedirectURL is the absolute callback URL registered with the issuer; it
+	// must point at this server's /api/v1/auth/callback endpoint.
+	RedirectURL string `yaml:"redirect_url"`
+}
+
+// Configured reports whether an OIDC issuer has been set.
+func (o OIDCConfig) Configured() bool {
+	return o.Issuer != "" && o.ClientID != "" && o.RedirectURL != ""
 }
 
 // DatabaseConfig selects the backing database driver and connection string.
@@ -72,21 +126,74 @@ type KnowledgeConfig struct {
 	SyncEnabled bool `yaml:"sync_enabled"`
 }
 
+// serverServiceAccountName is the reserved name of the service account that
+// represents joe-core itself (principal svc:server). Co-located client
+// processes that share this config — the in-process loopback, the joe CLI, the
+// REPL — present this account's key. It is the direct descendant of the old
+// single server.api_key, folded into the service-account map (D-0007).
+const serverServiceAccountName = "server"
+
+// ServiceAccount is one named machine identity (Identity Phase D, design §2.4).
+// A request bearing Key authenticates as principal svc:<Name>. Keys are
+// plaintext-at-rest in config — the same posture as the single key they
+// replace; a future upgrade to DB-minted, hashed, runtime-revocable keys
+// replaces only the storage and the auth.ServiceAccountResolver lookup, not the
+// principal-in-context flow downstream (D-0007 seam note).
+type ServiceAccount struct {
+	// Name is the service-account name; the minted principal is svc:<Name>.
+	// Must be non-empty and must not itself carry a reserved principal prefix.
+	Name string `yaml:"name"`
+	// Key is the plaintext bearer token the account presents.
+	Key string `yaml:"key"`
+}
+
 // ServerConfig holds joecored server settings
 type ServerConfig struct {
-	Address        string  `yaml:"address"`          // e.g., ":7777" or "localhost:7777"
-	APIKey         string  `yaml:"api_key"`          // Bearer token for API authentication (optional)
-	Principal      string  `yaml:"principal"`        // RBAC principal name for the API key (default: "default-operator")
-	TLSCertFile    string  `yaml:"tls_cert_file"`    // Path to TLS certificate (enables HTTPS on server)
-	TLSKeyFile     string  `yaml:"tls_key_file"`     // Path to TLS private key (enables HTTPS on server)
-	TLSEnabled     bool    `yaml:"tls_enabled"`      // joe client: connect over HTTPS (must match server TLS setting)
-	RateLimitRPS   float64 `yaml:"rate_limit_rps"`   // Requests per second per IP (0 = disabled)
-	RateLimitBurst int     `yaml:"rate_limit_burst"` // Burst size for rate limiter (default 10)
+	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
+	// ServiceAccounts is the set of named machine identities joe-core accepts
+	// (Identity Phase D). It is the ONLY machine-authentication input; there is
+	// no separate single api_key. Each entry maps its Key to principal
+	// svc:<Name>. Empty means no machine authentication is configured.
+	ServiceAccounts []ServiceAccount `yaml:"service_accounts"`
+	TLSCertFile     string           `yaml:"tls_cert_file"`    // Path to TLS certificate (enables HTTPS on server)
+	TLSKeyFile      string           `yaml:"tls_key_file"`     // Path to TLS private key (enables HTTPS on server)
+	TLSEnabled      bool             `yaml:"tls_enabled"`      // joe client: connect over HTTPS (must match server TLS setting)
+	RateLimitRPS    float64          `yaml:"rate_limit_rps"`   // Requests per second per IP (0 = disabled)
+	RateLimitBurst  int              `yaml:"rate_limit_burst"` // Burst size for rate limiter (default 10)
 }
 
 // TLSConfigured reports whether TLS has been configured for the server side.
 func (s *ServerConfig) TLSConfigured() bool {
 	return s.TLSCertFile != "" && s.TLSKeyFile != ""
+}
+
+// ServiceAccountsConfigured reports whether any machine identity is configured.
+// It gates the RBAC policy engine exactly as the old non-empty api_key did: the
+// engine is built when a real caller principal can be established (this OR a
+// configured OIDC issuer).
+func (s *ServerConfig) ServiceAccountsConfigured() bool {
+	return len(s.ServiceAccounts) > 0
+}
+
+// LoopbackKey returns the bearer key a co-located client process presents to
+// joe-core: the in-process loopback (until Phase E removes it), the joe CLI,
+// and the REPL. It is the key of the service account that represents the server
+// itself — the one named "server" (svc:server), the fold of the old single
+// server.api_key. When no "server" account exists it falls back to the first
+// configured account (deterministic, config order) so the loopback keeps
+// working with whatever machine identity is configured. Empty when no service
+// accounts are configured (auth-disabled mode), in which case clients present
+// no bearer and the nil policy engine permits all — the pre-Phase-D posture.
+func (s *ServerConfig) LoopbackKey() string {
+	for _, sa := range s.ServiceAccounts {
+		if sa.Name == serverServiceAccountName {
+			return sa.Key
+		}
+	}
+	if len(s.ServiceAccounts) > 0 {
+		return s.ServiceAccounts[0].Key
+	}
+	return ""
 }
 
 // LLMConfig configures LLM providers with support for multiple models
@@ -283,6 +390,10 @@ func defaultConfig() *Config {
 			DerivedMinConfidence: defaultKnowledgeMinConfidence,
 			SyncEnabled:          false,
 		},
+		Auth: AuthConfig{
+			SessionTTL:        defaultAuthSessionTTL,
+			PostLoginRedirect: "/",
+		},
 	}
 }
 
@@ -364,9 +475,13 @@ func applyEnvOverrides(cfg *Config) []string {
 		overrides = append(overrides, "JOE_SERVER_ADDRESS")
 	}
 
-	// API key override
+	// API key override. Phase D folds the old single key into the
+	// service-account map: JOE_API_KEY sets the key of the reserved "server"
+	// service account (principal svc:server), creating it if absent. This is
+	// the env equivalent of the old single server.api_key and is what
+	// co-located client processes present via ServerConfig.LoopbackKey.
 	if apiKey := os.Getenv("JOE_API_KEY"); apiKey != "" {
-		cfg.Server.APIKey = apiKey
+		setServerServiceAccountKey(&cfg.Server, apiKey)
 		overrides = append(overrides, "JOE_API_KEY")
 	}
 
@@ -377,6 +492,20 @@ func applyEnvOverrides(cfg *Config) []string {
 	}
 
 	return overrides
+}
+
+// setServerServiceAccountKey sets the key of the reserved "server" service
+// account, replacing it in place if it already exists or appending it
+// otherwise. Used by the JOE_API_KEY env override to fold the old single key
+// into the service-account map.
+func setServerServiceAccountKey(s *ServerConfig, key string) {
+	for i := range s.ServiceAccounts {
+		if s.ServiceAccounts[i].Name == serverServiceAccountName {
+			s.ServiceAccounts[i].Key = key
+			return
+		}
+	}
+	s.ServiceAccounts = append(s.ServiceAccounts, ServiceAccount{Name: serverServiceAccountName, Key: key})
 }
 
 // Save saves the config to a YAML file

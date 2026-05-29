@@ -15,41 +15,12 @@ const (
 	// DefaultMaxRequestBytes is the default maximum request body size (1 MB).
 	DefaultMaxRequestBytes int64 = 1 << 20
 
-	// errorCodeUnauthorized is returned when the Bearer token is missing or invalid.
-	errorCodeUnauthorized = "unauthorized"
-
 	// errorCodeRateLimited is returned when the per-IP rate limit is exceeded.
 	errorCodeRateLimited = "rate_limited"
 
 	// rateLimiterTTL is how long an idle IP entry is kept before cleanup.
 	rateLimiterTTL = 5 * time.Minute
 )
-
-// BearerAuth returns middleware that validates Authorization: Bearer <token>
-// on all requests under the given prefix. If apiKey is empty, the middleware
-// is a no-op (auth disabled).
-func BearerAuth(apiKey string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		if apiKey == "" {
-			return next // auth disabled
-		}
-		expected := "Bearer " + apiKey
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			auth := r.Header.Get("Authorization")
-			if auth == "" {
-				slog.Warn("api auth: missing Authorization header", "path", r.URL.Path, "remote", r.RemoteAddr)
-				writeError(w, http.StatusUnauthorized, errorCodeUnauthorized, "missing Authorization header")
-				return
-			}
-			if !strings.EqualFold(auth, expected) {
-				slog.Warn("api auth: invalid token", "path", r.URL.Path, "remote", r.RemoteAddr)
-				writeError(w, http.StatusUnauthorized, errorCodeUnauthorized, "invalid or expired token")
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
 
 // MaxRequestBody returns middleware that limits the size of incoming request
 // bodies. If maxBytes <= 0, DefaultMaxRequestBytes is used.

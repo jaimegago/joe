@@ -51,6 +51,9 @@ func (r *errRepository) CreatePolicy(_ context.Context, p rbac.Policy) (*rbac.Po
 func (r *errRepository) DeletePolicy(_ context.Context, _ int64) error {
 	return nil
 }
+func (r *errRepository) DeletePolicyForPrincipalZone(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
+}
 func (r *errRepository) ListUnassignedSourceIDs(_ context.Context) ([]string, error) {
 	return nil, nil
 }

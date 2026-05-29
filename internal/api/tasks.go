@@ -222,8 +222,12 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	}
 	loopbackURL := fmt.Sprintf("%s://%s", scheme, addr)
 	var clientOpts []client.ClientOption
-	if h.server.services.Config.Server.APIKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(h.server.services.Config.Server.APIKey))
+	// The loopback authenticates as the server's own service account (svc:server,
+	// the fold of the old single key) via ServerConfig.LoopbackKey. Unchanged in
+	// behaviour: it still presents a valid server-representing key so the loop's
+	// tools reach infra (the loopback itself is removed in Phase E).
+	if loopbackKey := h.server.services.Config.Server.LoopbackKey(); loopbackKey != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(loopbackKey))
 	}
 	if scheme == "https" {
 		clientOpts = append(clientOpts, client.WithTLS())

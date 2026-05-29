@@ -250,7 +250,7 @@ func TestRun_APIKeyConfigApplied(t *testing.T) {
 
 	addr := strings.TrimPrefix(server.URL, "http://")
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	cfg := fmt.Sprintf("llm:\n  current: test\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\n  api_key: test-token\nlogging:\n  level: info\n  file: \"\"\n", addr)
+	cfg := fmt.Sprintf("llm:\n  current: test\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\n  service_accounts:\n    - name: server\n      key: test-token\nlogging:\n  level: info\n  file: \"\"\n", addr)
 	if err := os.WriteFile(configPath, []byte(cfg), 0600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
