@@ -10,15 +10,22 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
 
 // Server handles HTTP API requests for joecored
 type Server struct {
 	services *core.Services
+	// accessor is the single guarded seam to infrastructure adapters and
+	// the graph store (docs/joe-identity-design.md §2.5, Phase A). HTTP
+	// handlers reach adapters/graph ONLY through this; they never resolve
+	// services.Adapters or call services.Graph directly.
+	accessor *access.Accessor
 	version  string
 }
 
@@ -30,7 +37,24 @@ func New(services *core.Services) *Server {
 		panic("api.New: services must not be nil")
 	}
 	services.Metrics = observability.EnsureMetrics(services.Metrics)
-	return &Server{services: services, version: defaultVersion}
+	return &Server{
+		services: services,
+		accessor: access.New(services.Adapters, services.Graph, newPolicyEngine(services)),
+		version:  defaultVersion,
+	}
+}
+
+// newPolicyEngine builds the RBAC policy engine the accessor enforces with.
+// It mirrors cmd/joe-core/main.go exactly: enforcement is enabled only when
+// API key auth is configured; otherwise the engine is nil and the accessor
+// permits every decision — identical to rbac.EnforcementMiddleware(nil) on
+// the transport. Keeping the same enable-condition guarantees the accessor's
+// allow/deny decision matches the middleware's for the configured principal.
+func newPolicyEngine(services *core.Services) *rbac.PolicyEngine {
+	if services.Config == nil || services.Config.Server.APIKey == "" || services.RBAC == nil {
+		return nil
+	}
+	return rbac.NewPolicyEngine(services.RBAC)
 }
 
 // SetVersion overrides the version string returned by the status endpoint.
@@ -41,7 +65,7 @@ func (s *Server) SetVersion(v string) {
 // RegisterRoutes registers all API routes on the given mux
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerStatusRoutes(mux, apiPrefix)
-	s.registerGraphRoutes(mux, apiPrefix, s.services.Graph)
+	s.registerGraphRoutes(mux, apiPrefix)
 	s.registerSourceRoutes(mux, apiPrefix)
 	s.registerK8sRoutes(mux, apiPrefix)
 	s.registerGitRoutes(mux, apiPrefix)
@@ -83,10 +107,11 @@ func (s *Server) registerStatusRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/status", prefix), s.handleStatus)
 }
 
-// registerGraphRoutes registers graph query routes
-// Requires: graph.GraphStore for querying the knowledge graph
-func (s *Server) registerGraphRoutes(mux *http.ServeMux, prefix string, graphStore graph.GraphStore) {
-	handler := &graphHandler{graph: graphStore}
+// registerGraphRoutes registers graph query routes.
+// Graph access is gated by the guarded accessor (s.accessor), not by a
+// direct graph.GraphStore handle.
+func (s *Server) registerGraphRoutes(mux *http.ServeMux, prefix string) {
+	handler := &graphHandler{server: s}
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/query", prefix), handler.handleQuery)
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/related", prefix), handler.handleRelated)
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/summary", prefix), handler.handleSummary)
@@ -273,7 +298,7 @@ func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) {
 
 // graphHandler handles graph-related requests
 type graphHandler struct {
-	graph graph.GraphStore
+	server *Server
 }
 
 func (h *graphHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
@@ -285,8 +310,12 @@ func (h *graphHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := h.graph.Query(r.Context(), q)
+	principal := rbac.PrincipalFromContext(r.Context())
+	nodes, err := h.server.accessor.GraphQuery(r.Context(), principal, q)
 	if err != nil {
+		if writeAccessError(w, err) {
+			return
+		}
 		writeInternalError(w, err, "graph query")
 		return
 	}
@@ -323,12 +352,16 @@ func (h *graphHandler) handleRelated(w http.ResponseWriter, r *http.Request) {
 		depth = parsed
 	}
 
-	subgraph, err := h.graph.Related(r.Context(), nodeID, depth)
+	principal := rbac.PrincipalFromContext(r.Context())
+	subgraph, err := h.server.accessor.GraphRelated(r.Context(), principal, nodeID, depth)
 	if err != nil {
 		if errors.Is(err, graph.ErrNodeNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, "node not found", map[string]any{
 				"node_id": nodeID,
 			})
+			return
+		}
+		if writeAccessError(w, err) {
 			return
 		}
 		writeInternalError(w, err, "graph related")
@@ -339,8 +372,12 @@ func (h *graphHandler) handleRelated(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *graphHandler) handleSummary(w http.ResponseWriter, r *http.Request) {
-	summary, err := h.graph.Summary(r.Context())
+	principal := rbac.PrincipalFromContext(r.Context())
+	summary, err := h.server.accessor.GraphSummary(r.Context(), principal)
 	if err != nil {
+		if writeAccessError(w, err) {
+			return
+		}
 		writeInternalError(w, err, "graph summary")
 		return
 	}

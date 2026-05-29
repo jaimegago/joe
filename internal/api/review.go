@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 
 	githubadapter "github.com/jaimegago/joe/internal/adapters/github"
 	gitlabadapter "github.com/jaimegago/joe/internal/adapters/gitlab"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
 )
 
@@ -69,8 +69,7 @@ func (h *reviewHandler) handleGitHubWebhook(w http.ResponseWriter, r *http.Reque
 
 	// Validate HMAC signature if the adapter has a secret configured.
 	if sourceID != "" {
-		if adapter, err := h.server.getGitHubAdapter(sourceID); err == nil {
-			secret := adapter.WebhookSecret()
+		if secret, err := h.server.accessor.GitHubWebhookSecret(sourceID); err == nil {
 			if secret != "" && !verifyGitHubSignature(body, secret, r.Header.Get("X-Hub-Signature-256")) {
 				writeError(w, http.StatusUnauthorized, "unauthorized", "invalid webhook signature")
 				return
@@ -175,8 +174,7 @@ func (h *reviewHandler) handleGitLabWebhook(w http.ResponseWriter, r *http.Reque
 
 	// Validate X-Gitlab-Token if secret is configured.
 	if sourceID != "" {
-		if adapter, err := h.server.getGitLabAdapter(sourceID); err == nil {
-			secret := adapter.WebhookSecret()
+		if secret, err := h.server.accessor.GitLabWebhookSecret(sourceID); err == nil {
 			if secret != "" && r.Header.Get("X-Gitlab-Token") != secret {
 				writeError(w, http.StatusUnauthorized, "unauthorized", "invalid webhook token")
 				return
@@ -364,13 +362,12 @@ func (h *reviewHandler) handleGitHubGetPR(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	adapter, err := h.server.getGitHubAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "github") {
-		return
-	}
-
-	pr, err := adapter.GetPR(r.Context(), owner, repo, number)
+	principal := rbac.PrincipalFromContext(r.Context())
+	pr, err := h.server.accessor.GitHubGetPR(r.Context(), principal, sourceID, owner, repo, number)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "github") {
+			return
+		}
 		writeInternalError(w, err, "get github pr")
 		return
 	}
@@ -391,13 +388,12 @@ func (h *reviewHandler) handleGitHubGetPRDiff(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	adapter, err := h.server.getGitHubAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "github") {
-		return
-	}
-
-	diff, err := adapter.GetPRDiff(r.Context(), owner, repo, number)
+	principal := rbac.PrincipalFromContext(r.Context())
+	diff, err := h.server.accessor.GitHubGetPRDiff(r.Context(), principal, sourceID, owner, repo, number)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "github") {
+			return
+		}
 		writeInternalError(w, err, "get github pr diff")
 		return
 	}
@@ -414,13 +410,12 @@ func (h *reviewHandler) handleGitHubListPRs(w http.ResponseWriter, r *http.Reque
 	}
 	state := r.URL.Query().Get("state")
 
-	adapter, err := h.server.getGitHubAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "github") {
-		return
-	}
-
-	prs, err := adapter.ListPRs(r.Context(), owner, repo, state)
+	principal := rbac.PrincipalFromContext(r.Context())
+	prs, err := h.server.accessor.GitHubListPRs(r.Context(), principal, sourceID, owner, repo, state)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "github") {
+			return
+		}
 		writeInternalError(w, err, "list github prs")
 		return
 	}
@@ -452,12 +447,11 @@ func (h *reviewHandler) handleGitHubPostComment(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	adapter, err := h.server.getGitHubAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "github") {
-		return
-	}
-
-	if err := adapter.PostComment(r.Context(), payload.Owner, payload.Repo, number, payload.Body); err != nil {
+	principal := rbac.PrincipalFromContext(r.Context())
+	if err := h.server.accessor.GitHubPostComment(r.Context(), principal, sourceID, payload.Owner, payload.Repo, number, payload.Body); err != nil {
+		if handleAccessError(w, err, sourceID, "github") {
+			return
+		}
 		writeInternalError(w, err, "post github comment")
 		return
 	}
@@ -486,12 +480,11 @@ func (h *reviewHandler) handleGitHubRequestChanges(w http.ResponseWriter, r *htt
 		return
 	}
 
-	adapter, err := h.server.getGitHubAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "github") {
-		return
-	}
-
-	if err := adapter.RequestChanges(r.Context(), payload.Owner, payload.Repo, number, payload.Body); err != nil {
+	principal := rbac.PrincipalFromContext(r.Context())
+	if err := h.server.accessor.GitHubRequestChanges(r.Context(), principal, sourceID, payload.Owner, payload.Repo, number, payload.Body); err != nil {
+		if handleAccessError(w, err, sourceID, "github") {
+			return
+		}
 		writeInternalError(w, err, "request github changes")
 		return
 	}
@@ -509,13 +502,12 @@ func (h *reviewHandler) handleGitLabGetMR(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	adapter, err := h.server.getGitLabAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "gitlab") {
-		return
-	}
-
-	mr, err := adapter.GetMR(r.Context(), projectID, iid)
+	principal := rbac.PrincipalFromContext(r.Context())
+	mr, err := h.server.accessor.GitLabGetMR(r.Context(), principal, sourceID, projectID, iid)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "gitlab") {
+			return
+		}
 		writeInternalError(w, err, "get gitlab mr")
 		return
 	}
@@ -531,13 +523,12 @@ func (h *reviewHandler) handleGitLabGetMRDiff(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	adapter, err := h.server.getGitLabAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "gitlab") {
-		return
-	}
-
-	diff, err := adapter.GetMRDiff(r.Context(), projectID, iid)
+	principal := rbac.PrincipalFromContext(r.Context())
+	diff, err := h.server.accessor.GitLabGetMRDiff(r.Context(), principal, sourceID, projectID, iid)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "gitlab") {
+			return
+		}
 		writeInternalError(w, err, "get gitlab mr diff")
 		return
 	}
@@ -549,13 +540,12 @@ func (h *reviewHandler) handleGitLabListMRs(w http.ResponseWriter, r *http.Reque
 	projectID := r.PathValue("projectID")
 	state := r.URL.Query().Get("state")
 
-	adapter, err := h.server.getGitLabAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "gitlab") {
-		return
-	}
-
-	mrs, err := adapter.ListMRs(r.Context(), projectID, state)
+	principal := rbac.PrincipalFromContext(r.Context())
+	mrs, err := h.server.accessor.GitLabListMRs(r.Context(), principal, sourceID, projectID, state)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "gitlab") {
+			return
+		}
 		writeInternalError(w, err, "list gitlab mrs")
 		return
 	}
@@ -586,12 +576,11 @@ func (h *reviewHandler) handleGitLabPostNote(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	adapter, err := h.server.getGitLabAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "gitlab") {
-		return
-	}
-
-	if err := adapter.PostNote(r.Context(), projectID, iid, payload.Body); err != nil {
+	principal := rbac.PrincipalFromContext(r.Context())
+	if err := h.server.accessor.GitLabPostNote(r.Context(), principal, sourceID, projectID, iid, payload.Body); err != nil {
+		if handleAccessError(w, err, sourceID, "gitlab") {
+			return
+		}
 		writeInternalError(w, err, "post gitlab note")
 		return
 	}
@@ -609,30 +598,4 @@ func verifyGitHubSignature(body []byte, secret, sigHeader string) bool {
 	mac.Write(body)
 	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(sigHeader), []byte(expected))
-}
-
-// getGitHubAdapter retrieves a GitHub adapter from the registry.
-func (s *Server) getGitHubAdapter(sourceID string) (githubadapter.GitHubAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ghAdapter, ok := adapter.(githubadapter.GitHubAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: github", errInvalidSourceType)
-	}
-	return ghAdapter, nil
-}
-
-// getGitLabAdapter retrieves a GitLab adapter from the registry.
-func (s *Server) getGitLabAdapter(sourceID string) (gitlabadapter.GitLabAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	glAdapter, ok := adapter.(gitlabadapter.GitLabAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: gitlab", errInvalidSourceType)
-	}
-	return glAdapter, nil
 }

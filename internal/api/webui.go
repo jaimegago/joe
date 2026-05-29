@@ -11,6 +11,7 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/prompts"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/uid"
 )
@@ -90,13 +91,17 @@ func edgeToWebUI(e graph.Edge) webUIEdge {
 
 // handleGetFullGraph returns all nodes and edges in web UI format.
 func (h *webUIHandler) handleGetFullGraph(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.Graph == nil {
+	if !h.server.accessor.GraphAvailable() {
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": []any{}, "edges": []any{}})
 		return
 	}
 
-	subgraph, err := h.server.services.Graph.ListAll(r.Context())
+	principal := rbac.PrincipalFromContext(r.Context())
+	subgraph, err := h.server.accessor.GraphListAll(r.Context(), principal)
 	if err != nil {
+		if writeAccessError(w, err) {
+			return
+		}
 		writeInternalError(w, err, "list all graph nodes")
 		return
 	}
@@ -125,8 +130,12 @@ func (h *webUIHandler) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := h.server.services.Graph.GetNode(r.Context(), nodeID)
+	principal := rbac.PrincipalFromContext(r.Context())
+	n, err := h.server.accessor.GraphGetNode(r.Context(), principal, nodeID)
 	if err != nil {
+		if writeAccessError(w, err) {
+			return
+		}
 		writeInternalError(w, err, "get graph node")
 		return
 	}
@@ -154,8 +163,12 @@ func (h *webUIHandler) handleGetRelatedNodes(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	subgraph, err := h.server.services.Graph.Related(r.Context(), nodeID, depth)
+	principal := rbac.PrincipalFromContext(r.Context())
+	subgraph, err := h.server.accessor.GraphRelated(r.Context(), principal, nodeID, depth)
 	if err != nil {
+		if writeAccessError(w, err) {
+			return
+		}
 		writeInternalError(w, err, "graph related")
 		return
 	}
@@ -312,8 +325,9 @@ func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Get graph summary for context
 	graphSummary := ""
-	if h.server.services.Graph != nil {
-		if summary, err := h.server.services.Graph.Summary(r.Context()); err == nil {
+	if h.server.accessor.GraphAvailable() {
+		chatPrincipal := rbac.PrincipalFromContext(r.Context())
+		if summary, err := h.server.accessor.GraphSummary(r.Context(), chatPrincipal); err == nil {
 			graphSummary = fmt.Sprintf(
 				"Infrastructure graph: %d nodes, %d edges. Node types: %v",
 				summary.NodeCount, summary.EdgeCount, summary.NodesByType,

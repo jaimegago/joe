@@ -7,21 +7,8 @@ import (
 	"time"
 
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getFalcoAdapter(sourceID string) (falcoadapter.FalcoAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	fa, ok := adapter.(falcoadapter.FalcoAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: falco", errInvalidSourceType)
-	}
-	return fa, nil
-}
 
 // registerSecurityRoutes registers security and runtime adapter routes (Falco).
 func (s *Server) registerSecurityRoutes(mux *http.ServeMux, prefix string) {
@@ -59,15 +46,14 @@ func (s *Server) handleFalcoEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fa, err := s.getFalcoAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Falco") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	events, err := fa.ListEvents(r.Context(), priority, source, rule, limit)
+	events, err := s.accessor.FalcoListEvents(r.Context(), principal, sourceID, priority, source, rule, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "falco", "list_events", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Falco") {
+			return
+		}
 		writeInternalError(w, err, "falco list events")
 		return
 	}
@@ -88,15 +74,14 @@ func (s *Server) handleFalcoEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFalcoRules(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	fa, err := s.getFalcoAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Falco") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	rules, err := fa.ListRules(r.Context())
+	rules, err := s.accessor.FalcoListRules(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "falco", "list_rules", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Falco") {
+			return
+		}
 		writeInternalError(w, err, "falco list rules")
 		return
 	}

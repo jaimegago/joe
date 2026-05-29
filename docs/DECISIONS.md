@@ -10,6 +10,99 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0004 — Identity Phase A: guarded accessor below the transport
+
+- Date: 2026-05-29
+- Decision: Phase A of the identity refactor (joe-identity-design.md §2.5/§2.8,
+  joe-identity-phase-plan.md Phase A) introduces a single guarded accessor as
+  the only path to infrastructure adapters and the graph store, with
+  `IsAllowed` evaluated inside it. Behaviour-preserving and still
+  single-principal. Specifics:
+  - **Accessor location & signature.** New package `internal/access`, type
+    `*access.Accessor`. Constructor:
+    `access.New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.PolicyEngine) *Accessor`.
+    Enforcement chokepoint: `permit(ctx, principal rbac.Principal, sourceID string, action rbac.Action) error`
+    (nil engine ⇒ permit-all, mirroring `EnforcementMiddleware(nil)`). Generic
+    resolve+enforce: `guard[T any](a, ctx, principal, sourceID, action, typeName) (T, error)` —
+    the ONLY caller of `registry.Get`. Public dispatch methods are
+    `<Family><Operation>(ctx, principal rbac.Principal, sourceID string, …args) (…, error)`
+    (e.g. `K8sListResources`, `PrometheusQuery`, `GitReadFile`, `ArgoCDApps`,
+    `GraphQuery`); each enforces, then delegates to the resolved adapter/graph
+    store and returns its result. On deny it returns `access.ErrPermissionDenied`
+    and performs no infra call. Errors: `ErrPermissionDenied`, `ErrSourceNotFound`
+    (wraps `store.ErrSourceNotFound` ⇒ 404 preserved), `ErrWrongAdapterType`,
+    `ErrGraphUnavailable`. Wired in `api.New` via `newPolicyEngine(services)`,
+    which reproduces `cmd/joe-core/main.go`'s enable-condition exactly (engine
+    non-nil only when `Server.APIKey != ""`).
+  - **Action declared on the method.** Each dispatch method passes its
+    `rbac.Action` literal to `guard`/`permit` adjacent to the delegated adapter
+    call — not inferred from the HTTP verb. Classification mirrors the prior
+    verb mapping for behaviour parity: all current (GET) reads ⇒ `ActionRead`;
+    the three GitHub/GitLab POST mutations ⇒ `ActionMutate`. `ActionQuery` is
+    supported by the mechanism but assigned to no current method (see deviation
+    2). Static guard `internal/access/guard_test.go` asserts every exported
+    `*Accessor` method that takes an `rbac.Principal` references an
+    `rbac.Action*` constant.
+  - **Rerouted call sites (transport only).** All `internal/api` handlers that
+    reached adapters/graph directly now go through `s.accessor`/
+    `h.server.accessor`: `k8s.go`, `git.go`, `aws.go`, `observability.go`,
+    `alerting.go`, `datastore.go`, `networking.go`, `registry.go`, `security.go`,
+    `gitops.go`, `review.go`, `observe.go` (graph + category dispatch),
+    `webui.go` (graph), `tasks.go` (graph summary), and `server.go` (graph
+    routes). The typed `getXxxAdapter` helpers and `handleAdapterLookupError`
+    were removed; `helpers.go` now exposes `writeAccessError`/`handleAccessError`.
+    The HTTP `EnforcementMiddleware` remains as a coarse OUTER gate; the accessor
+    is the authoritative point.
+- Deviations from the Phase A prompt, with reasons:
+  1. **Static guard scope.** The "no package other than the accessor" invariant
+     is enforced repo-wide by `internal/api/access_guard_test.go` (forbids
+     `*.Adapters.Get(...)` and `*.Graph.<method>(...)`) with an explicit
+     allowlist: `internal/access` (the accessor), `internal/coreagent` (in-process
+     Core Agent refresh — its convergence is Phase E; rerouting it now would add
+     RBAC to the refresh path and change behaviour), and `cmd/joe-core` (a
+     process-level OTel business-metrics gauge reading `graph.Summary`, with no
+     caller principal). Registry lifecycle (`Register`/`Unregister`/`List`) and
+     `services.Graph == nil` checks are not access and are allowed.
+  2. **`ActionQuery` not yet assigned.** Reclassifying graph/PromQL/LogQL reads
+     to `query` would deny them on the `unassigned` zone (which allows only
+     `read`), changing 200→403 for a principal scoped to that zone. To honour
+     "observable behaviour unchanged", reads keep `ActionRead`; semantic `query`
+     classification is deferred.
+  3. **Graph gating uniformity.** The accessor gates all graph access via the
+     reserved `GraphSourceID = "graph"` (→ `unassigned`, `ActionRead`). This
+     closes a pre-existing transport quirk where some graph sub-paths were
+     ungated (their parsed path segment was empty) while others were gated under
+     nonsense sourceIDs; all such sourceIDs resolved to `unassigned`, so the
+     decision is identical for the gated ones. Invisible under RBAC-off
+     (default) and for any normally-granted principal; only `GET /api/v1/graph`
+     (full list) gains a gate it previously lacked.
+  4. **Webhook secret reads are unenforced.** `GitHubWebhookSecret`/
+     `GitLabWebhookSecret` resolve through the accessor but take no principal
+     and run no RBAC: webhook receivers execute pre-auth and authenticate the
+     sender via HMAC, so no caller principal exists. The action-declaration
+     guard exempts principal-less methods by design.
+  5. **Error-precedence micro-change.** Because the accessor bundles
+     resolve+execute, handlers validate params before calling it; on a
+     doubly-malformed request (bad source AND bad param) a 400 may now precede a
+     404 where 404 previously won. Never affects a 200/403 outcome.
+  6. **Accessor deny path unreachable via HTTP in Phase A.** Since the unchanged
+     middleware uses the same engine and a verb-matched action, it makes the
+     identical decision and blocks denied requests first; the accessor's
+     enforcement becomes load-bearing in Phase E. Its deny path is proven by
+     direct unit tests (`internal/access/access_test.go`), and the HTTP
+     regression (`internal/api/access_regression_test.go`) proves
+     middleware+accessor == middleware-alone for the configured principal.
+- Basis: joe-identity-design.md §2.5/§2.8/§5; joe-identity-phase-plan.md Phase A;
+  code verified against migration 006 zone seeds and `cmd/joe-core/main.go`'s
+  RBAC wiring. Tests: per-kind allow/deny + no-infra-call-on-deny + nil-engine
+  (access pkg), action-declaration + ungoverned-access AST guards, HTTP RBAC
+  regression + RBAC-disabled.
+- Supersedes: nothing — first identity-refactor decision. Phases B–G remain
+  pending (B: set-shaped `IsAllowed`; E: remove loopback — gated on A+B).
+- Status: active. Phase A complete; do not proceed to Phase B without a new prompt.
+
+---
+
 ## D-0003 — Phase 2 streaming protocol and tool-execution boundary
 
 - Date: 2026-05-28

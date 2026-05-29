@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,45 +8,8 @@ import (
 	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
 	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
 	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getAlertmanagerAdapter(sourceID string) (alertmanageradapter.AlertmanagerAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	aa, ok := adapter.(alertmanageradapter.AlertmanagerAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: alertmanager", errInvalidSourceType)
-	}
-	return aa, nil
-}
-
-func (s *Server) getPagerDutyAdapter(sourceID string) (pagerdutyadapter.PagerDutyAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	pa, ok := adapter.(pagerdutyadapter.PagerDutyAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: pagerduty", errInvalidSourceType)
-	}
-	return pa, nil
-}
-
-func (s *Server) getGrafanaAdapter(sourceID string) (grafanaadapter.GrafanaAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ga, ok := adapter.(grafanaadapter.GrafanaAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: grafana", errInvalidSourceType)
-	}
-	return ga, nil
-}
 
 // --- Alertmanager handlers ---
 
@@ -57,15 +19,14 @@ func (s *Server) handleAlertmanagerAlerts(w http.ResponseWriter, r *http.Request
 	sourceID := r.PathValue("sourceID")
 	filter := r.URL.Query().Get("filter")
 
-	aa, err := s.getAlertmanagerAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Alertmanager") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	alerts, err := aa.ListAlerts(r.Context(), filter)
+	alerts, err := s.accessor.AlertmanagerListAlerts(r.Context(), principal, sourceID, filter)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "alertmanager", "list_alerts", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Alertmanager") {
+			return
+		}
 		writeInternalError(w, err, "alertmanager list alerts")
 		return
 	}
@@ -97,15 +58,14 @@ func (s *Server) handlePagerDutyIncidents(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	pa, err := s.getPagerDutyAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "PagerDuty") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	incidents, err := pa.ListIncidents(r.Context(), serviceID, status, limit)
+	incidents, err := s.accessor.PagerDutyListIncidents(r.Context(), principal, sourceID, serviceID, status, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "pagerduty", "list_incidents", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "PagerDuty") {
+			return
+		}
 		writeInternalError(w, err, "pagerduty list incidents")
 		return
 	}
@@ -126,15 +86,14 @@ func (s *Server) handlePagerDutyIncidents(w http.ResponseWriter, r *http.Request
 func (s *Server) handlePagerDutyServices(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	pa, err := s.getPagerDutyAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "PagerDuty") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	services, err := pa.ListServices(r.Context())
+	services, err := s.accessor.PagerDutyListServices(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "pagerduty", "list_services", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "PagerDuty") {
+			return
+		}
 		writeInternalError(w, err, "pagerduty list services")
 		return
 	}
@@ -165,15 +124,14 @@ func (s *Server) handleGrafanaDashboards(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	ga, err := s.getGrafanaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Grafana") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	dashboards, err := ga.ListDashboards(r.Context(), query, limit)
+	dashboards, err := s.accessor.GrafanaListDashboards(r.Context(), principal, sourceID, query, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "grafana", "list_dashboards", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Grafana") {
+			return
+		}
 		writeInternalError(w, err, "grafana list dashboards")
 		return
 	}
@@ -200,15 +158,14 @@ func (s *Server) handleGrafanaGetDashboard(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ga, err := s.getGrafanaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Grafana") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	dashboard, err := ga.GetDashboard(r.Context(), uid)
+	dashboard, err := s.accessor.GrafanaGetDashboard(r.Context(), principal, sourceID, uid)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "grafana", "get_dashboard", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Grafana") {
+			return
+		}
 		writeInternalError(w, err, "grafana get dashboard")
 		return
 	}
@@ -224,15 +181,14 @@ func (s *Server) handleGrafanaGetDashboard(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleGrafanaAlerts(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ga, err := s.getGrafanaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Grafana") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	alerts, err := ga.ListAlerts(r.Context())
+	alerts, err := s.accessor.GrafanaListAlerts(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "grafana", "list_alerts", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Grafana") {
+			return
+		}
 		writeInternalError(w, err, "grafana list alerts")
 		return
 	}

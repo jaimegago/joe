@@ -16,6 +16,7 @@ const (
 	errorCodeNotFound           = "not_found"
 	errorCodeInvalidSource      = "invalid_source"
 	errorCodeServiceUnavailable = "service_unavailable"
+	errorCodeForbidden          = "forbidden"
 
 	internalErrorMessage = "internal server error"
 )

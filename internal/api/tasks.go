@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
@@ -253,8 +254,8 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	if zoneScope.scopeDesc != "" {
 		systemPrompt += "\n\n" + zoneScope.scopeDesc
 	}
-	if h.server.services.Graph != nil {
-		if summary, err := h.server.services.Graph.Summary(ctx); err == nil {
+	if h.server.accessor.GraphAvailable() {
+		if summary, err := h.server.accessor.GraphSummary(ctx, rbac.PrincipalFromContext(ctx)); err == nil {
 			systemPrompt += fmt.Sprintf(
 				"\n\nCurrent infrastructure context:\nInfrastructure graph: %d nodes, %d edges. Node types: %v",
 				summary.NodeCount, summary.EdgeCount, summary.NodesByType,

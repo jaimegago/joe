@@ -6,10 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jaimegago/joe/internal/adapters"
-	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
-	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
-	"github.com/jaimegago/joe/internal/adapters/k8s"
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -18,8 +15,6 @@ type apiError struct {
 	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
 }
-
-var errInvalidSourceType = errors.New("source is not expected adapter type")
 
 func writeError(w http.ResponseWriter, status int, code, message string, details ...map[string]any) {
 	var payloadDetails map[string]any
@@ -43,9 +38,42 @@ func writeBadRequest(w http.ResponseWriter, err error, context, message string) 
 	writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, message)
 }
 
-func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expected string) bool {
+// writeAccessError maps transport-agnostic errors returned by the guarded
+// accessor (internal/access) to HTTP responses, returning true when it has
+// written one. It handles the permission-denied decision (the authoritative
+// RBAC check now living in the accessor) and the graph-unavailable case.
+// Returns false for any other error so the caller can apply its own mapping
+// (e.g. writeInternalError for a genuine adapter/method failure).
+func writeAccessError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, access.ErrPermissionDenied):
+		// Mirror rbac.EnforcementMiddleware's 403 body exactly.
+		writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied by RBAC policy")
+		return true
+	case errors.Is(err, access.ErrGraphUnavailable):
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "graph store not available")
+		return true
+	default:
+		return false
+	}
+}
+
+// handleAccessError maps every error the guarded accessor can return when
+// resolving a typed adapter: the permission decision (403), an unknown
+// source (404), or a source whose adapter is the wrong type (400). It
+// returns true when it has written a response. A method-level error from the
+// underlying adapter (which is none of these sentinels) yields false, so the
+// caller writes it via writeInternalError, preserving the previous behaviour
+// where adapter call failures returned 500.
+//
+// expected is the human-readable adapter kind used in the wrong-type message
+// (e.g. "k8s", "git", "aws"), matching the pre-Phase-A error text.
+func handleAccessError(w http.ResponseWriter, err error, sourceID, expected string) bool {
 	if err == nil {
 		return false
+	}
+	if writeAccessError(w, err) {
+		return true
 	}
 	if errors.Is(err, store.ErrSourceNotFound) {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source not found: %s", sourceID), map[string]any{
@@ -53,8 +81,7 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 		})
 		return true
 	}
-	if errors.Is(err, errInvalidSourceType) {
-		// Capitalize adapter type for proper display
+	if errors.Is(err, access.ErrWrongAdapterType) {
 		displayType := expected
 		switch displayType {
 		case "aws":
@@ -74,53 +101,5 @@ func handleAdapterLookupError(w http.ResponseWriter, err error, sourceID, expect
 		})
 		return true
 	}
-	writeInternalError(w, err, "adapter lookup")
-	return true
-}
-
-func (s *Server) getAdapter(sourceID string) (adapters.Adapter, error) {
-	adapter, err := s.services.Adapters.Get(sourceID)
-	if err != nil {
-		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return nil, fmt.Errorf("%w: %s", store.ErrSourceNotFound, sourceID)
-		}
-		return nil, err
-	}
-	return adapter, nil
-}
-
-func (s *Server) getAWSAdapter(sourceID string) (awsadapter.AWSAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	awsAdapter, ok := adapter.(awsadapter.AWSAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: aws", errInvalidSourceType)
-	}
-	return awsAdapter, nil
-}
-
-func (s *Server) getK8sAdapter(sourceID string) (k8s.KubernetesAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: kubernetes", errInvalidSourceType)
-	}
-	return k8sAdapter, nil
-}
-
-func (s *Server) getGitAdapter(sourceID string) (gitadapter.GitAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ga, ok := adapter.(gitadapter.GitAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: git", errInvalidSourceType)
-	}
-	return ga, nil
+	return false
 }

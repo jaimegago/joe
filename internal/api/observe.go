@@ -7,18 +7,9 @@ import (
 	"strings"
 	"time"
 
-	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
-	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
-	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
-	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
-	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
-	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
-	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
-	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
-	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
-	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observe"
+	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // registerObserveCategoryRoutes registers the category-based observe endpoints.
@@ -40,8 +31,9 @@ type observeCategoryRequest struct {
 // Returns (sourceID, sourceType, error).
 func (s *Server) resolveSourceForService(r *http.Request, service, relation string) (string, string, error) {
 	ctx := r.Context()
+	principal := rbac.PrincipalFromContext(ctx)
 
-	nodes, err := s.services.Graph.Query(ctx, service)
+	nodes, err := s.accessor.GraphQuery(ctx, principal, service)
 	if err != nil {
 		return "", "", fmt.Errorf("graph query failed: %w", err)
 	}
@@ -58,7 +50,7 @@ func (s *Server) resolveSourceForService(r *http.Request, service, relation stri
 		}
 	}
 
-	subgraph, err := s.services.Graph.Related(ctx, serviceNodeID, 1)
+	subgraph, err := s.accessor.GraphRelated(ctx, principal, serviceNodeID, 1)
 	if err != nil {
 		return "", "", fmt.Errorf("graph related failed: %w", err)
 	}
@@ -118,50 +110,25 @@ func (s *Server) handleObserveMetrics(w http.ResponseWriter, r *http.Request) {
 		Data:        []observe.DataPoint{},
 	}
 
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("adapter not found: %s", sourceID))
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	now := time.Now()
 	from := now.Add(-time.Hour).Unix()
 	to := now.Unix()
 
-	switch a := adapter.(type) {
-	case prometheusadapter.PrometheusAdapter:
-		raw, qErr := a.Query(r.Context(), nativeQuery, time.Time{})
-		if qErr != nil {
-			writeInternalError(w, qErr, "prometheus query")
+	raw, supported, qErr := s.accessor.ObserveMetrics(r.Context(), principal, sourceID, nativeQuery, from, to)
+	if qErr != nil {
+		if handleAccessError(w, qErr, sourceID, sourceType) {
 			return
 		}
-		result.RawResult = raw
-	case datadogadapter.DatadogAdapter:
-		raw, qErr := a.MetricsQuery(r.Context(), nativeQuery, from, to)
-		if qErr != nil {
-			writeInternalError(w, qErr, "datadog metrics query")
-			return
-		}
-		result.RawResult = raw
-	case dynatraceadapter.DynatraceAdapter:
-		raw, qErr := a.MetricsQuery(r.Context(), nativeQuery, from*1000, to*1000) // Dynatrace uses ms
-		if qErr != nil {
-			writeInternalError(w, qErr, "dynatrace metrics query")
-			return
-		}
-		result.RawResult = raw
-	case newrelicadapter.NewRelicAdapter:
-		raw, qErr := a.NRQLQuery(r.Context(), 0, nativeQuery)
-		if qErr != nil {
-			writeInternalError(w, qErr, "newrelic metrics query")
-			return
-		}
-		result.RawResult = raw
-	default:
+		writeInternalError(w, qErr, "observe metrics query")
+		return
+	}
+	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
 			fmt.Sprintf("source %q (type %q) does not support metrics queries via the observe API", sourceID, sourceType))
 		return
 	}
+	result.RawResult = raw
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -197,43 +164,25 @@ func (s *Server) handleObserveLogs(w http.ResponseWriter, r *http.Request) {
 		Data:        []observe.DataPoint{},
 	}
 
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("adapter not found: %s", sourceID))
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	now := time.Now()
 	from := now.Add(-time.Hour).Unix()
 	to := now.Unix()
 
-	switch a := adapter.(type) {
-	case lokiadapter.LokiAdapter:
-		raw, qErr := a.Query(r.Context(), nativeQuery, 100, time.Hour)
-		if qErr != nil {
-			writeInternalError(w, qErr, "loki logs query")
+	raw, supported, qErr := s.accessor.ObserveLogs(r.Context(), principal, sourceID, nativeQuery, from, to)
+	if qErr != nil {
+		if handleAccessError(w, qErr, sourceID, sourceType) {
 			return
 		}
-		result.RawResult = raw
-	case datadogadapter.DatadogAdapter:
-		raw, qErr := a.LogsSearch(r.Context(), nativeQuery, from, to, 100)
-		if qErr != nil {
-			writeInternalError(w, qErr, "datadog logs search")
-			return
-		}
-		result.RawResult = raw
-	case splunkadapter.SplunkAdapter:
-		raw, qErr := a.Search(r.Context(), nativeQuery, "-1h", "now", 100)
-		if qErr != nil {
-			writeInternalError(w, qErr, "splunk logs search")
-			return
-		}
-		result.RawResult = raw
-	default:
+		writeInternalError(w, qErr, "observe logs query")
+		return
+	}
+	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
 			fmt.Sprintf("source %q (type %q) does not support logs queries via the observe API", sourceID, sourceType))
 		return
 	}
+	result.RawResult = raw
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -263,32 +212,21 @@ func (s *Server) handleObserveTraces(w http.ResponseWriter, r *http.Request) {
 		Data:        []observe.DataPoint{},
 	}
 
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("adapter not found: %s", sourceID))
+	principal := rbac.PrincipalFromContext(r.Context())
+	raw, supported, qErr := s.accessor.ObserveTraces(r.Context(), principal, sourceID, req.Service)
+	if qErr != nil {
+		if handleAccessError(w, qErr, sourceID, sourceType) {
+			return
+		}
+		writeInternalError(w, qErr, "observe traces query")
 		return
 	}
-
-	switch a := adapter.(type) {
-	case tempoadapter.TempoAdapter:
-		raw, qErr := a.Search(r.Context(), req.Service, "", 0, 0, 20)
-		if qErr != nil {
-			writeInternalError(w, qErr, "tempo traces search")
-			return
-		}
-		result.RawResult = raw
-	case jaegeradapter.JaegerAdapter:
-		raw, qErr := a.SearchTraces(r.Context(), req.Service, "", 20)
-		if qErr != nil {
-			writeInternalError(w, qErr, "jaeger traces search")
-			return
-		}
-		result.RawResult = raw
-	default:
+	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
 			fmt.Sprintf("source %q (type %q) does not support traces queries via the observe API", sourceID, sourceType))
 		return
 	}
+	result.RawResult = raw
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -329,45 +267,21 @@ func (s *Server) handleObserveAlerts(w http.ResponseWriter, r *http.Request) {
 	result.Source = sourceType
 	result.SourceID = sourceID
 
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("adapter not found: %s", sourceID))
+	principal := rbac.PrincipalFromContext(r.Context())
+	alerts, supported, qErr := s.accessor.ObserveAlerts(r.Context(), principal, sourceID, req.Question)
+	if qErr != nil {
+		if handleAccessError(w, qErr, sourceID, sourceType) {
+			return
+		}
+		writeInternalError(w, qErr, "observe alerts query")
 		return
 	}
-
-	switch a := adapter.(type) {
-	case alertmanageradapter.AlertmanagerAdapter:
-		alerts, qErr := a.ListAlerts(r.Context(), req.Question)
-		if qErr != nil {
-			writeInternalError(w, qErr, "alertmanager list alerts")
-			return
-		}
-		for _, alert := range alerts {
-			result.Alerts = append(result.Alerts, observe.Alert{
-				Name:    alert.Labels["alertname"],
-				State:   alert.Status.State,
-				Labels:  alert.Labels,
-				Summary: alert.Annotations["summary"],
-			})
-		}
-	case pagerdutyadapter.PagerDutyAdapter:
-		incidents, qErr := a.ListIncidents(r.Context(), "", "triggered,acknowledged", 50)
-		if qErr != nil {
-			writeInternalError(w, qErr, "pagerduty list incidents")
-			return
-		}
-		for _, inc := range incidents {
-			result.Alerts = append(result.Alerts, observe.Alert{
-				Name:    inc.Title,
-				State:   inc.Status,
-				Summary: inc.Description,
-			})
-		}
-	default:
+	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
 			fmt.Sprintf("source %q (type %q) does not support alerts queries via the observe API", sourceID, sourceType))
 		return
 	}
+	result.Alerts = append(result.Alerts, alerts...)
 
 	result.Count = len(result.Alerts)
 	writeJSON(w, http.StatusOK, result)
@@ -392,10 +306,7 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	k8sAdapter, err := s.getK8sAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
-		return
-	}
+	principal := rbac.PrincipalFromContext(r.Context())
 
 	result := &observe.K8sResult{
 		Source:      "kubernetes",
@@ -406,8 +317,11 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 	wantLogs := strings.Contains(strings.ToLower(req.Question), "log")
 
 	if wantLogs {
-		pods, lErr := k8sAdapter.ListResources(r.Context(), "pods", "")
+		pods, lErr := s.accessor.K8sListResources(r.Context(), principal, sourceID, "pods", "")
 		if lErr != nil {
+			if handleAccessError(w, lErr, sourceID, "kubernetes") {
+				return
+			}
 			writeInternalError(w, lErr, "observe k8s list pods for logs")
 			return
 		}
@@ -434,16 +348,22 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		logs, lErr := k8sAdapter.GetPodLogs(r.Context(), ns, podName, "", 100)
+		logs, lErr := s.accessor.K8sGetPodLogs(r.Context(), principal, sourceID, ns, podName, "", 100)
 		if lErr != nil {
+			if handleAccessError(w, lErr, sourceID, "kubernetes") {
+				return
+			}
 			writeInternalError(w, lErr, "observe k8s get pod logs")
 			return
 		}
 		result.NativeQuery = fmt.Sprintf("logs pod=%s namespace=%s", podName, ns)
 		result.Data = map[string]any{"pod": podName, "namespace": ns, "logs": logs}
 	} else {
-		pods, lErr := k8sAdapter.ListResources(r.Context(), "pods", "")
+		pods, lErr := s.accessor.K8sListResources(r.Context(), principal, sourceID, "pods", "")
 		if lErr != nil {
+			if handleAccessError(w, lErr, sourceID, "kubernetes") {
+				return
+			}
 			writeInternalError(w, lErr, "observe k8s list pods")
 			return
 		}
@@ -471,8 +391,9 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 // in the graph that are related to the service.
 func (s *Server) resolveK8sSourceForService(r *http.Request, service string) (string, error) {
 	ctx := r.Context()
+	principal := rbac.PrincipalFromContext(ctx)
 
-	nodes, err := s.services.Graph.Query(ctx, service)
+	nodes, err := s.accessor.GraphQuery(ctx, principal, service)
 	if err != nil || len(nodes) == 0 {
 		return "", fmt.Errorf("no graph node found for service %q", service)
 	}
@@ -486,7 +407,7 @@ func (s *Server) resolveK8sSourceForService(r *http.Request, service string) (st
 	}
 
 	// Depth 2 to catch k8s nodes linked via intermediate nodes.
-	subgraph, err := s.services.Graph.Related(ctx, serviceNodeID, 2)
+	subgraph, err := s.accessor.GraphRelated(ctx, principal, serviceNodeID, 2)
 	if err != nil {
 		return "", fmt.Errorf("graph related failed: %w", err)
 	}
