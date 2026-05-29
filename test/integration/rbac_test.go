@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -17,13 +18,18 @@ import (
 )
 
 // rbacTestEnv holds the components needed to build varied middleware stacks.
+// After Phase D (D-0007) BearerAuth + APIKeyProvider were deleted; after Phase
+// E (D-0008) EnforcementMiddleware was demoted to a pass-through. The
+// production-shaped chain here mirrors cmd/joe-core/main.go: auth.EdgeAuth
+// resolves the caller principal from a service-account bearer key, and the
+// guarded accessor (inside the handlers) is the sole authoritative RBAC gate.
 type rbacTestEnv struct {
 	store *store.Store
 	repo  rbac.Repository
 	mux   *http.ServeMux
 }
 
-func newRBACEnv(t *testing.T) *rbacTestEnv {
+func newRBACEnv(t *testing.T, accounts ...config.ServiceAccount) *rbacTestEnv {
 	t.Helper()
 
 	testStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
@@ -37,7 +43,8 @@ func newRBACEnv(t *testing.T) *rbacTestEnv {
 
 	repo := rbac.NewRepository(testStore.DB(), testStore.Driver())
 
-	services := core.New(&config.Config{}, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
+	cfg := &config.Config{Server: config.ServerConfig{ServiceAccounts: accounts}}
+	services := core.New(cfg, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
 	services.RBAC = repo
 
 	mux := http.NewServeMux()
@@ -46,23 +53,26 @@ func newRBACEnv(t *testing.T) *rbacTestEnv {
 	return &rbacTestEnv{store: testStore, repo: repo, mux: mux}
 }
 
-// buildHandler wraps env.mux with BearerAuth → IdentityMiddleware →
-// EnforcementMiddleware, mirroring cmd/joecored/main.go.
-// A nil policyEngine disables enforcement (auth-off case).
-func (e *rbacTestEnv) buildHandler(apiKey string, principal rbac.Principal, engine *rbac.PolicyEngine) http.Handler {
+// buildHandler wraps env.mux with auth.EdgeAuth (the production edge gate),
+// matching cmd/joe-core/main.go. The accessor inside the handlers is now the
+// sole RBAC gate (Phase E demotion).
+func (e *rbacTestEnv) buildHandler(accounts ...config.ServiceAccount) http.Handler {
+	resolver, err := auth.NewServiceAccountResolver(accounts)
+	if err != nil {
+		panic(err)
+	}
 	return api.Chain(
 		e.mux,
-		api.BearerAuth(apiKey),
-		rbac.IdentityMiddleware(rbac.NewAPIKeyProvider(apiKey, principal)),
-		rbac.EnforcementMiddleware(engine),
+		auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: resolver}),
 	)
 }
 
-// TestIntegration_RBAC_NoAuth_SourceReadPassthrough checks that when api_key is
-// empty the policy engine is nil and GET requests to source-scoped paths are
-// never blocked by RBAC (they may still return 404/501 for missing adapters).
+// TestIntegration_RBAC_NoAuth_SourceReadPassthrough checks that when no
+// service account is configured the policy engine is nil and GET requests to
+// source-scoped paths are never blocked by RBAC (they may still return
+// 404/501 for missing adapters).
 func TestIntegration_RBAC_NoAuth_SourceReadPassthrough(t *testing.T) {
-	env := newRBACEnv(t)
+	env := newRBACEnv(t) // no service accounts ⇒ engine nil ⇒ accessor permits
 
 	ctx := context.Background()
 	if err := env.store.Sources.Create(ctx, &store.Source{
@@ -72,10 +82,9 @@ func TestIntegration_RBAC_NoAuth_SourceReadPassthrough(t *testing.T) {
 		t.Fatalf("create source: %v", err)
 	}
 
-	// nil engine mirrors the fix: policyEngine is only created when api_key != "".
-	handler := env.buildHandler("", "default-operator", nil)
+	handler := env.buildHandler() // no accounts ⇒ auth disabled
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources?resource=pods", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -88,12 +97,12 @@ func TestIntegration_RBAC_NoAuth_SourceReadPassthrough(t *testing.T) {
 // has a policy granting access to the source's zone can perform a GET.
 func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 	const apiKey = "test-secret"
-	const principal rbac.Principal = "ops-team"
+	account := config.ServiceAccount{Name: "ops", Key: apiKey}
+	const principal rbac.Principal = "svc:ops"
 
-	env := newRBACEnv(t)
+	env := newRBACEnv(t, account)
 	ctx := context.Background()
 
-	// Source must exist before the FK-constrained zone assignment.
 	if err := env.store.Sources.Create(ctx, &store.Source{
 		ID: "local-k8s", Type: store.SourceTypeKubernetes, Name: "Local Kind",
 		Config: []byte(`{}`),
@@ -101,7 +110,7 @@ func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 		t.Fatalf("create source: %v", err)
 	}
 
-	// Seed: local-k8s → prod-readonly; ops-team → prod-readonly.
+	// Seed: local-k8s → prod-readonly; svc:ops → prod-readonly.
 	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
 	}); err != nil {
@@ -113,9 +122,9 @@ func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
 
-	handler := env.buildHandler(apiKey, principal, rbac.NewPolicyEngine(env.repo))
+	handler := env.buildHandler(account)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources?resource=pods", nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -129,12 +138,11 @@ func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 // with no policy for the source's zone receives 403 when auth is enabled.
 func TestIntegration_RBAC_Auth_DeniesReadWithoutPolicy(t *testing.T) {
 	const apiKey = "test-secret"
-	const principal rbac.Principal = "no-policy-user"
+	account := config.ServiceAccount{Name: "nobody", Key: apiKey}
 
-	env := newRBACEnv(t)
+	env := newRBACEnv(t, account)
 	ctx := context.Background()
 
-	// Source must exist before the FK-constrained zone assignment.
 	if err := env.store.Sources.Create(ctx, &store.Source{
 		ID: "local-k8s", Type: store.SourceTypeKubernetes, Name: "Local Kind",
 		Config: []byte(`{}`),
@@ -142,16 +150,16 @@ func TestIntegration_RBAC_Auth_DeniesReadWithoutPolicy(t *testing.T) {
 		t.Fatalf("create source: %v", err)
 	}
 
-	// Assign source to a zone but grant no policy to the principal.
+	// Assign source to a zone but grant no policy to svc:nobody.
 	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
 	}); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
-	handler := env.buildHandler(apiKey, principal, rbac.NewPolicyEngine(env.repo))
+	handler := env.buildHandler(account)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/local-k8s/resources?resource=pods", nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

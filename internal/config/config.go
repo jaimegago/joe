@@ -127,10 +127,13 @@ type KnowledgeConfig struct {
 }
 
 // serverServiceAccountName is the reserved name of the service account that
-// represents joe-core itself (principal svc:server). Co-located client
-// processes that share this config — the in-process loopback, the joe CLI, the
-// REPL — present this account's key. It is the direct descendant of the old
-// single server.api_key, folded into the service-account map (D-0007).
+// represents joe-core itself (principal svc:server). The joe CLI and REPL —
+// separate external processes that share this config — present this account's
+// key when authenticating against joe-core's HTTP API. It is the direct
+// descendant of the old single server.api_key, folded into the service-account
+// map (D-0007). Identity Phase E (D-0008) removed the in-process loopback,
+// so the in-process agent-loop no longer uses this key; the surviving
+// consumers are the external co-located CLI processes only.
 const serverServiceAccountName = "server"
 
 // ServiceAccount is one named machine identity (Identity Phase D, design §2.4).
@@ -175,15 +178,21 @@ func (s *ServerConfig) ServiceAccountsConfigured() bool {
 	return len(s.ServiceAccounts) > 0
 }
 
-// LoopbackKey returns the bearer key a co-located client process presents to
-// joe-core: the in-process loopback (until Phase E removes it), the joe CLI,
-// and the REPL. It is the key of the service account that represents the server
-// itself — the one named "server" (svc:server), the fold of the old single
-// server.api_key. When no "server" account exists it falls back to the first
-// configured account (deterministic, config order) so the loopback keeps
-// working with whatever machine identity is configured. Empty when no service
-// accounts are configured (auth-disabled mode), in which case clients present
-// no bearer and the nil policy engine permits all — the pre-Phase-D posture.
+// LoopbackKey returns the bearer key a co-located external client process
+// presents to joe-core: the joe CLI and the REPL. It is the key of the
+// service account that represents the server itself — the one named "server"
+// (svc:server), the fold of the old single server.api_key. When no "server"
+// account exists it falls back to the first configured account (deterministic,
+// config order) so the CLI keeps working with whatever machine identity is
+// configured. Empty when no service accounts are configured (auth-disabled
+// mode), in which case clients present no bearer and the nil policy engine
+// permits all — the pre-Phase-D posture.
+//
+// Note: the historical name "LoopbackKey" refers to the now-removed in-process
+// loopback (Identity Phase E, D-0008). The loopback itself is gone — the
+// agent-loop reaches infra directly through the in-process accessor with the
+// real caller principal — but the joe CLI and REPL are still external HTTP
+// clients to joe-core and still present this key.
 func (s *ServerConfig) LoopbackKey() string {
 	for _, sa := range s.ServiceAccounts {
 		if sa.Name == serverServiceAccountName {

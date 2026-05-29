@@ -226,16 +226,17 @@ func TestPhaseD_OIDCAndServiceKeyCoexist(t *testing.T) {
 	}
 }
 
-// TestPhaseD_LoopbackKeyReachesInfra proves the loopback still functions
-// end-to-end with its service-account key. The loop's tools reach infrastructure
-// by calling joe-core's own HTTP API with the key from
-// ServerConfig.LoopbackKey; this test presents that exact key through the
-// PRODUCTION-shaped chain (EdgeAuth + the authoritative EnforcementMiddleware,
-// as in cmd/joe-core/main.go) and confirms it resolves to svc:server and, once
-// granted, reaches infra — denied (403) before the grant, allowed (200) after.
-// (The loopback's HTTP transport to infra IS this path; the LLM loop itself is
-// not driven here.)
-func TestPhaseD_LoopbackKeyReachesInfra(t *testing.T) {
+// TestPhaseD_ColocatedServerKeyReachesInfra proves the co-located server
+// service-account key still authenticates and resolves to svc:server through
+// the production-shaped auth chain. After Phase E removed the in-process
+// loopback, the joe CLI and REPL — separate external processes that ship with
+// the binary — remain co-located HTTP clients that present this key (via
+// ServerConfig.LoopbackKey, retained for that consumer). This test still
+// exercises the auth/RBAC chain end-to-end: denied (403) before the zone
+// grant, allowed (200) after. The earlier name referenced "loopback" because
+// the in-process loop used to traverse this same path; with Phase E that
+// usage is gone but the external CLI client path remains.
+func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
@@ -249,9 +250,9 @@ func TestPhaseD_LoopbackKeyReachesInfra(t *testing.T) {
 	registry.Register("s-infra", apiFakeK8s{})
 
 	// The reserved "server" service account is what LoopbackKey returns.
-	srvCfg := config.ServerConfig{ServiceAccounts: []config.ServiceAccount{{Name: "server", Key: "loopback-key"}}}
-	if got := srvCfg.LoopbackKey(); got != "loopback-key" {
-		t.Fatalf("LoopbackKey() = %q, want loopback-key", got)
+	srvCfg := config.ServerConfig{ServiceAccounts: []config.ServiceAccount{{Name: "server", Key: "colocated-key"}}}
+	if got := srvCfg.LoopbackKey(); got != "colocated-key" {
+		t.Fatalf("LoopbackKey() = %q, want colocated-key", got)
 	}
 
 	services := &core.Services{
@@ -280,13 +281,14 @@ func TestPhaseD_LoopbackKeyReachesInfra(t *testing.T) {
 
 	// Before any grant, svc:server cannot reach infra.
 	if code := call(); code != http.StatusForbidden {
-		t.Errorf("ungranted loopback (svc:server): got %d, want 403", code)
+		t.Errorf("ungranted co-located key (svc:server): got %d, want 403", code)
 	}
-	// Grant svc:server the zone — the loopback now reaches infra end-to-end.
+	// Grant svc:server the zone — the CLI's path through joe-core reaches infra
+	// end-to-end via the accessor (the only RBAC gate after Phase E).
 	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:server", ZoneID: "prod-readonly"}); err != nil {
 		t.Fatalf("grant svc:server: %v", err)
 	}
 	if code := call(); code != http.StatusOK {
-		t.Errorf("granted loopback (svc:server) reaching infra: got %d, want 200", code)
+		t.Errorf("granted co-located key (svc:server) reaching infra: got %d, want 200", code)
 	}
 }

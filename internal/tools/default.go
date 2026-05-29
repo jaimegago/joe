@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/safety"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
 	"github.com/jaimegago/joe/internal/tools/local/askuser"
@@ -81,11 +80,18 @@ func NewLocalRegistry(policy *safety.SafetyPolicy) *Registry {
 }
 
 // NewCoreRegistry creates a registry with shared diagnostic tools and core
-// tools that communicate with joecored via the HTTP client. Unlike
-// NewDefaultRegistryWithClient, it omits local tools (read_file, write_file,
-// run_command, git tools, askuser) since those only make sense on the user's
-// local machine. This is used by the task execution endpoint on joe-core.
-func NewCoreRegistry(coreClient *client.Client, policy *safety.SafetyPolicy) *Registry {
+// tools. Unlike NewDefaultRegistryWithClient, it omits local tools (read_file,
+// write_file, run_command, git tools, askuser) since those only make sense on
+// the user's local machine. This is used by the task execution endpoint on
+// joe-core.
+//
+// After Identity Phase E (docs/joe-identity-design.md §3), the value passed in
+// is an in-process accessor-backed client constructed by joe-core (see
+// internal/api/inproc_client.go) — there is no loopback HTTP self-call. The
+// argument type is coretools.CoreToolsClient (the aggregate of each tool's
+// small *Client interface), so the HTTP *client.Client also satisfies it for
+// external test harnesses (e.g. test/e2e).
+func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.SafetyPolicy) *Registry {
 	registry := NewRegistry()
 
 	// Shared diagnostic tools (T1, Go-native, no CLI deps).
@@ -97,8 +103,8 @@ func NewCoreRegistry(coreClient *client.Client, policy *safety.SafetyPolicy) *Re
 	return registry
 }
 
-// registerCoreTools registers all core tools that communicate with joecored via HTTP.
-func registerCoreTools(registry *Registry, coreClient *client.Client) {
+// registerCoreTools registers all core tools that communicate with joecored.
+func registerCoreTools(registry *Registry, coreClient coretools.CoreToolsClient) {
 	registry.Register(coretools.NewListSourcesTool(coreClient))
 	registry.Register(coretools.NewGraphQueryTool(coreClient))
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
@@ -200,8 +206,11 @@ func registerCoreTools(registry *Registry, coreClient *client.Client) {
 }
 
 // NewDefaultRegistryWithClient creates a registry with all default tools plus
-// core tools that communicate with joecored via the HTTP client.
-func NewDefaultRegistryWithClient(coreClient *client.Client, policy *safety.SafetyPolicy) *Registry {
+// core tools. The argument is the same aggregate CoreToolsClient interface
+// NewCoreRegistry takes; the HTTP *client.Client satisfies it for the e2e
+// harness, schema-validity test, and integration tests that drive joe-core
+// over a real socket.
+func NewDefaultRegistryWithClient(coreClient coretools.CoreToolsClient, policy *safety.SafetyPolicy) *Registry {
 	registry := NewDefaultRegistry(policy)
 	registerCoreTools(registry, coreClient)
 	return registry

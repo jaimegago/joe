@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/agentloop"
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
@@ -214,27 +213,13 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		}
 	}
 
-	// Loopback client so core tools reach joe-core's own HTTP API.
-	addr := h.server.services.Config.Server.Address
-	scheme := "http"
-	if h.server.services.Config.Server.TLSConfigured() {
-		scheme = "https"
-	}
-	loopbackURL := fmt.Sprintf("%s://%s", scheme, addr)
-	var clientOpts []client.ClientOption
-	// The loopback authenticates as the server's own service account (svc:server,
-	// the fold of the old single key) via ServerConfig.LoopbackKey. Unchanged in
-	// behaviour: it still presents a valid server-representing key so the loop's
-	// tools reach infra (the loopback itself is removed in Phase E).
-	if loopbackKey := h.server.services.Config.Server.LoopbackKey(); loopbackKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(loopbackKey))
-	}
-	if scheme == "https" {
-		clientOpts = append(clientOpts, client.WithTLS())
-	}
-	loopbackClient := client.New(loopbackURL, clientOpts...)
-
-	registry := tools.NewCoreRegistry(loopbackClient, safetyPolicy)
+	// Identity Phase E (docs/joe-identity-design.md §3): the loop's tool
+	// registry is wired to the in-process accessor-backed client. There is
+	// no loopback HTTP self-call and no re-authentication as svc:server;
+	// every tool's adapter/graph access reaches the accessor with the real
+	// caller principal already carried in the Go context (the one
+	// auth.EdgeAuth set via rbac.WithPrincipal at the edge).
+	registry := tools.NewCoreRegistry(h.server.inproc, safetyPolicy)
 	execOpts := []tools.ExecutorOption{tools.WithPolicy(safetyPolicy)}
 	if zoneScope.allowedSourceIDs != nil {
 		execOpts = append(execOpts, tools.WithAllowedSources(zoneScope.allowedSourceIDs))

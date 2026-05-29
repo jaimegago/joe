@@ -24,13 +24,20 @@ import (
 // allowed; passing services.Adapters / services.Graph as constructor
 // arguments (e.g. access.New(...)) is likewise fine.
 //
-// Allowlisted packages:
+// Phase E (docs/joe-identity-design.md §3) tightened this invariant. The
+// agent-loop execution path (internal/api/tasks.go → in-process accessor
+// client → accessor) is NOT in the allowlist and is covered by the guard —
+// proving that the loop now reaches infra through the accessor with the real
+// caller principal, not through a loopback HTTP self-call. This is the key
+// signal Phase E achieved its purpose.
+//
+// Remaining allowlisted packages:
 //   - internal/access  — the guarded accessor itself (its whole purpose).
-//   - internal/coreagent — the in-process Core Agent refresh path. Moving it
-//     behind the accessor is Phase E (loopback removal); Phase A is
-//     transport-only and behaviour-preserving, so coreagent's direct
-//     services.Graph use is a documented, time-boxed exception. When Phase E
-//     lands, remove coreagent from this allowlist.
+//   - internal/coreagent — the Core Agent's background refresh path, which is
+//     timer-driven and runs WITHOUT a caller principal (no user request,
+//     no edge auth). The accessor requires a principal, so the refresh path
+//     stays structurally outside it. This is NOT the loop path that Phase E
+//     refactored — that is internal/api, which is covered by this guard.
 //   - cmd/joe-core — the composition root. Its only access is a process-level
 //     OpenTelemetry business-metrics gauge that reads graph.Summary; this is
 //     server-internal telemetry with no caller principal, so it is not a
