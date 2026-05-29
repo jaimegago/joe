@@ -7,46 +7,8 @@ import (
 
 	artifactoryadapter "github.com/jaimegago/joe/internal/adapters/registry/artifactory"
 	ecradapter "github.com/jaimegago/joe/internal/adapters/registry/ecr"
-	ociadapter "github.com/jaimegago/joe/internal/adapters/registry/oci"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getOCIAdapter(sourceID string) (ociadapter.OCIAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(ociadapter.OCIAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: oci_registry", errInvalidSourceType)
-	}
-	return a, nil
-}
-
-func (s *Server) getArtifactoryAdapter(sourceID string) (artifactoryadapter.ArtifactoryAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(artifactoryadapter.ArtifactoryAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: artifactory", errInvalidSourceType)
-	}
-	return a, nil
-}
-
-func (s *Server) getECRAdapter(sourceID string) (ecradapter.ECRAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(ecradapter.ECRAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: ecr", errInvalidSourceType)
-	}
-	return a, nil
-}
 
 // registerRegistryRoutes registers artifact registry API routes.
 func (s *Server) registerRegistryRoutes(mux *http.ServeMux, prefix string) {
@@ -73,15 +35,14 @@ func (s *Server) registerRegistryRoutes(mux *http.ServeMux, prefix string) {
 func (s *Server) handleOCIListRepos(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getOCIAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "OCI Registry") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	repos, err := a.ListRepositories(r.Context())
+	repos, err := s.accessor.OCIListRepositories(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "oci_registry", "list_repos", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "OCI Registry") {
+			return
+		}
 		writeInternalError(w, err, "oci list repos")
 		return
 	}
@@ -102,15 +63,14 @@ func (s *Server) handleOCIListTags(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	repo := r.PathValue("repo")
 
-	a, err := s.getOCIAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "OCI Registry") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	tags, err := a.ListTags(r.Context(), repo)
+	tags, err := s.accessor.OCIListTags(r.Context(), principal, sourceID, repo)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "oci_registry", "list_tags", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "OCI Registry") {
+			return
+		}
 		writeInternalError(w, err, "oci list tags")
 		return
 	}
@@ -140,15 +100,14 @@ func (s *Server) handleOCIGetManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a, err := s.getOCIAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "OCI Registry") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	manifest, err := a.GetManifest(r.Context(), repo, reference)
+	manifest, err := s.accessor.OCIGetManifest(r.Context(), principal, sourceID, repo, reference)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "oci_registry", "get_manifest", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "OCI Registry") {
+			return
+		}
 		writeInternalError(w, err, "oci get manifest")
 		return
 	}
@@ -168,15 +127,14 @@ func (s *Server) handleOCIGetManifest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleArtifactoryListRepos(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getArtifactoryAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Artifactory") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	repos, err := a.ListRepositories(r.Context())
+	repos, err := s.accessor.ArtifactoryListRepositories(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "artifactory", "list_repos", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Artifactory") {
+			return
+		}
 		writeInternalError(w, err, "artifactory list repos")
 		return
 	}
@@ -205,15 +163,14 @@ func (s *Server) handleArtifactoryListTags(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	a, err := s.getArtifactoryAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Artifactory") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	tags, err := a.ListDockerTags(r.Context(), repo, image)
+	tags, err := s.accessor.ArtifactoryListDockerTags(r.Context(), principal, sourceID, repo, image)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "artifactory", "list_docker_tags", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Artifactory") {
+			return
+		}
 		writeInternalError(w, err, "artifactory list docker tags")
 		return
 	}
@@ -244,15 +201,14 @@ func (s *Server) handleArtifactoryGetArtifact(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	a, err := s.getArtifactoryAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Artifactory") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	info, err := a.GetArtifactInfo(r.Context(), repo, path)
+	info, err := s.accessor.ArtifactoryGetArtifactInfo(r.Context(), principal, sourceID, repo, path)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "artifactory", "get_artifact_info", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Artifactory") {
+			return
+		}
 		writeInternalError(w, err, "artifactory get artifact info")
 		return
 	}
@@ -272,15 +228,14 @@ func (s *Server) handleArtifactoryGetArtifact(w http.ResponseWriter, r *http.Req
 func (s *Server) handleECRListRepos(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getECRAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "ECR") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	repos, err := a.ListRepositories(r.Context())
+	repos, err := s.accessor.ECRListRepositories(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "ecr", "list_repos", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "ECR") {
+			return
+		}
 		writeInternalError(w, err, "ecr list repos")
 		return
 	}
@@ -301,15 +256,14 @@ func (s *Server) handleECRListImages(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	repo := r.PathValue("repo")
 
-	a, err := s.getECRAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "ECR") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	images, err := a.ListImages(r.Context(), repo)
+	images, err := s.accessor.ECRListImages(r.Context(), principal, sourceID, repo)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "ecr", "list_images", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "ECR") {
+			return
+		}
 		writeInternalError(w, err, "ecr list images")
 		return
 	}
@@ -332,15 +286,14 @@ func (s *Server) handleECRGetImage(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
 	tag := r.PathValue("tag")
 
-	a, err := s.getECRAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "ECR") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	image, err := a.GetImageDetails(r.Context(), repo, tag)
+	image, err := s.accessor.ECRGetImageDetails(r.Context(), principal, sourceID, repo, tag)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "ecr", "get_image", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "ECR") {
+			return
+		}
 		writeInternalError(w, err, "ecr get image")
 		return
 	}

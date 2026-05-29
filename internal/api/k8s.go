@@ -6,15 +6,11 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/constants"
+	"github.com/jaimegago/joe/internal/rbac"
 )
 
 func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-
-	k8sAdapter, err := s.getK8sAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
-		return
-	}
 
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
@@ -26,10 +22,14 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 
 	namespace := r.URL.Query().Get("namespace")
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	items, err := k8sAdapter.ListResources(r.Context(), resource, namespace)
+	items, err := s.accessor.K8sListResources(r.Context(), principal, sourceID, resource, namespace)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "list_resources", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "k8s") {
+			return
+		}
 		writeInternalError(w, err, "k8s list resources")
 		return
 	}
@@ -50,19 +50,18 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	k8sAdapter, err := s.getK8sAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
-		return
-	}
-
 	resource := r.PathValue("resource")
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	obj, err := k8sAdapter.GetResource(r.Context(), resource, namespace, name)
+	obj, err := s.accessor.K8sGetResource(r.Context(), principal, sourceID, resource, namespace, name)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "get_resource", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "k8s") {
+			return
+		}
 		writeInternalError(w, err, "k8s get resource")
 		return
 	}
@@ -75,11 +74,6 @@ func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-
-	k8sAdapter, err := s.getK8sAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "kubernetes") {
-		return
-	}
 
 	namespace := r.PathValue("namespace")
 	pod := r.PathValue("pod")
@@ -98,10 +92,14 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 		tailLines = parsed
 	}
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	logs, err := k8sAdapter.GetPodLogs(r.Context(), namespace, pod, container, tailLines)
+	logs, err := s.accessor.K8sGetPodLogs(r.Context(), principal, sourceID, namespace, pod, container, tailLines)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "k8s", "get_pod_logs", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "k8s") {
+			return
+		}
 		writeInternalError(w, err, "k8s get logs")
 		return
 	}

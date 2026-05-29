@@ -145,7 +145,7 @@ func TestDomainRouteRegistration(t *testing.T) {
 	t.Run("graph routes", func(t *testing.T) {
 		mux := http.NewServeMux()
 		server := setupTestServer(t)
-		server.registerGraphRoutes(mux, "/api/v1", server.services.Graph)
+		server.registerGraphRoutes(mux, "/api/v1")
 
 		// Test that routes are registered
 		routes := []string{
@@ -213,10 +213,10 @@ func TestAlternateAPIVersion(t *testing.T) {
 	mux := http.NewServeMux()
 
 	// Register v1 routes
-	server.registerGraphRoutes(mux, "/api/v1", server.services.Graph)
+	server.registerGraphRoutes(mux, "/api/v1")
 
 	// Register v2 routes (same implementation, different prefix)
-	server.registerGraphRoutes(mux, "/api/v2", server.services.Graph)
+	server.registerGraphRoutes(mux, "/api/v2")
 
 	// Test v1 route works
 	req := httptest.NewRequest("GET", "/api/v1/graph/summary", nil)

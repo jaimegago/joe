@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -59,7 +60,8 @@ func TestHandleSummary_GraphError(t *testing.T) {
 	graphStore := graph.NewSQLiteStore(sqlStore.DB(), nil)
 	sqlStore.Close() // close DB → graph queries now fail
 
-	h := &graphHandler{graph: graphStore}
+	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()})
+	h := &graphHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/graph/summary", nil)
 	w := httptest.NewRecorder()
 	h.handleSummary(w, req)
@@ -212,40 +214,68 @@ func TestHandleDeleteSource_EmptyID(t *testing.T) {
 	}
 }
 
-// ---------- handleAdapterLookupError switch branches ----------
+// ---------- handleAccessError switch branches ----------
 
-func TestHandleAdapterLookupError_AWSCase(t *testing.T) {
+func TestHandleAccessError_AWSWrongType(t *testing.T) {
 	w := httptest.NewRecorder()
-	err := fmt.Errorf("%w: aws", errInvalidSourceType)
-	handleAdapterLookupError(w, err, "src-1", "aws")
+	err := fmt.Errorf("%w: aws", access.ErrWrongAdapterType)
+	if !handleAccessError(w, err, "src-1", "aws") {
+		t.Fatal("expected handleAccessError to handle wrong-type error")
+	}
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
-func TestHandleAdapterLookupError_K8sCase(t *testing.T) {
+func TestHandleAccessError_K8sWrongType(t *testing.T) {
 	w := httptest.NewRecorder()
-	err := fmt.Errorf("%w: k8s", errInvalidSourceType)
-	handleAdapterLookupError(w, err, "src-1", "k8s")
+	err := fmt.Errorf("%w: k8s", access.ErrWrongAdapterType)
+	if !handleAccessError(w, err, "src-1", "k8s") {
+		t.Fatal("expected handleAccessError to handle wrong-type error")
+	}
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
-func TestHandleAdapterLookupError_GitCase(t *testing.T) {
+func TestHandleAccessError_GitWrongType(t *testing.T) {
 	w := httptest.NewRecorder()
-	err := fmt.Errorf("%w: git", errInvalidSourceType)
-	handleAdapterLookupError(w, err, "src-1", "git")
+	err := fmt.Errorf("%w: git", access.ErrWrongAdapterType)
+	if !handleAccessError(w, err, "src-1", "git") {
+		t.Fatal("expected handleAccessError to handle wrong-type error")
+	}
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
-func TestHandleAdapterLookupError_UnexpectedError(t *testing.T) {
+func TestHandleAccessError_PermissionDenied(t *testing.T) {
 	w := httptest.NewRecorder()
-	handleAdapterLookupError(w, errors.New("unexpected internal error"), "src-1", "other")
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+	err := fmt.Errorf("%w: principal", access.ErrPermissionDenied)
+	if !handleAccessError(w, err, "src-1", "k8s") {
+		t.Fatal("expected handleAccessError to handle permission-denied error")
+	}
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+}
+
+func TestHandleAccessError_SourceNotFound(t *testing.T) {
+	w := httptest.NewRecorder()
+	err := fmt.Errorf("%w: src-1", access.ErrSourceNotFound)
+	if !handleAccessError(w, err, "src-1", "k8s") {
+		t.Fatal("expected handleAccessError to handle source-not-found error")
+	}
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestHandleAccessError_UnexpectedError(t *testing.T) {
+	w := httptest.NewRecorder()
+	// A non-access error is not handled here; the caller writes it (500).
+	if handleAccessError(w, errors.New("unexpected internal error"), "src-1", "other") {
+		t.Fatal("expected handleAccessError to return false for a non-access error")
 	}
 }
 

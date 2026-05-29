@@ -10,62 +10,11 @@ import (
 	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
 	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
 	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
-	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
-	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getPrometheusAdapter(sourceID string) (prometheusadapter.PrometheusAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	pa, ok := adapter.(prometheusadapter.PrometheusAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: prometheus", errInvalidSourceType)
-	}
-	return pa, nil
-}
-
-func (s *Server) getLokiAdapter(sourceID string) (lokiadapter.LokiAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	la, ok := adapter.(lokiadapter.LokiAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: loki", errInvalidSourceType)
-	}
-	return la, nil
-}
-
-func (s *Server) getTempoAdapter(sourceID string) (tempoadapter.TempoAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ta, ok := adapter.(tempoadapter.TempoAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: tempo", errInvalidSourceType)
-	}
-	return ta, nil
-}
-
-func (s *Server) getJaegerAdapter(sourceID string) (jaegeradapter.JaegerAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ja, ok := adapter.(jaegeradapter.JaegerAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: jaeger", errInvalidSourceType)
-	}
-	return ja, nil
-}
 
 // --- Prometheus handlers ---
 
@@ -92,15 +41,14 @@ func (s *Server) handlePrometheusQuery(w http.ResponseWriter, r *http.Request) {
 		queryTime = time.Unix(unix, 0)
 	}
 
-	pa, err := s.getPrometheusAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Prometheus") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := pa.Query(r.Context(), query, queryTime)
+	result, err := s.accessor.PrometheusQuery(r.Context(), principal, sourceID, query, queryTime)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "prometheus", "query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Prometheus") {
+			return
+		}
 		writeInternalError(w, err, "prometheus query")
 		return
 	}
@@ -145,17 +93,16 @@ func (s *Server) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	pa, err := s.getPrometheusAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Prometheus") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, queryErr := pa.QueryRange(r.Context(), query,
+	result, queryErr := s.accessor.PrometheusQueryRange(r.Context(), principal, sourceID, query,
 		time.Unix(startUnix, 0), time.Unix(endUnix, 0),
 		time.Duration(stepSec)*time.Second)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "prometheus", "query_range", time.Since(start), queryErr)
 	if queryErr != nil {
+		if handleAccessError(w, queryErr, sourceID, "Prometheus") {
+			return
+		}
 		writeInternalError(w, queryErr, "prometheus query_range")
 		return
 	}
@@ -172,15 +119,14 @@ func (s *Server) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Reque
 func (s *Server) handlePrometheusTargets(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	pa, err := s.getPrometheusAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Prometheus") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	targets, err := pa.Targets(r.Context())
+	targets, err := s.accessor.PrometheusTargets(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "prometheus", "targets", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Prometheus") {
+			return
+		}
 		writeInternalError(w, err, "prometheus targets")
 		return
 	}
@@ -225,15 +171,14 @@ func (s *Server) handleLokiQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	la, err := s.getLokiAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Loki") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := la.Query(r.Context(), query, limit, since)
+	result, err := s.accessor.LokiQuery(r.Context(), principal, sourceID, query, limit, since)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "loki", "query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Loki") {
+			return
+		}
 		writeInternalError(w, err, "loki query")
 		return
 	}
@@ -274,16 +219,15 @@ func (s *Server) handleLokiQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	la, err := s.getLokiAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Loki") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, queryErr := la.QueryRange(r.Context(), query,
+	result, queryErr := s.accessor.LokiQueryRange(r.Context(), principal, sourceID, query,
 		time.Unix(startUnix, 0), time.Unix(endUnix, 0), limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "loki", "query_range", time.Since(start), queryErr)
 	if queryErr != nil {
+		if handleAccessError(w, queryErr, sourceID, "Loki") {
+			return
+		}
 		writeInternalError(w, queryErr, "loki query_range")
 		return
 	}
@@ -325,15 +269,14 @@ func (s *Server) handleTempoSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ta, err := s.getTempoAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Tempo") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	results, err := ta.Search(r.Context(), service, tags, minDuration, maxDuration, limit)
+	results, err := s.accessor.TempoSearch(r.Context(), principal, sourceID, service, tags, minDuration, maxDuration, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "tempo", "search", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Tempo") {
+			return
+		}
 		writeInternalError(w, err, "tempo search")
 		return
 	}
@@ -360,15 +303,14 @@ func (s *Server) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ta, err := s.getTempoAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Tempo") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	trace, err := ta.GetTrace(r.Context(), traceID)
+	trace, err := s.accessor.TempoGetTrace(r.Context(), principal, sourceID, traceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "tempo", "get_trace", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Tempo") {
+			return
+		}
 		if errors.Is(err, tempoadapter.ErrTraceNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("trace not found: %s", traceID), map[string]any{
 				"trace_id": traceID,
@@ -392,15 +334,14 @@ func (s *Server) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleJaegerServices(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ja, err := s.getJaegerAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Jaeger") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	services, err := ja.ListServices(r.Context())
+	services, err := s.accessor.JaegerServices(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "jaeger", "list_services", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Jaeger") {
+			return
+		}
 		writeInternalError(w, err, "jaeger list services")
 		return
 	}
@@ -438,15 +379,14 @@ func (s *Server) handleJaegerTraces(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ja, err := s.getJaegerAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Jaeger") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	traces, err := ja.SearchTraces(r.Context(), service, operation, limit)
+	traces, err := s.accessor.JaegerSearchTraces(r.Context(), principal, sourceID, service, operation, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "jaeger", "search_traces", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Jaeger") {
+			return
+		}
 		writeInternalError(w, err, "jaeger search traces")
 		return
 	}
@@ -473,15 +413,14 @@ func (s *Server) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ja, err := s.getJaegerAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Jaeger") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	trace, err := ja.GetTrace(r.Context(), traceID)
+	trace, err := s.accessor.JaegerGetTrace(r.Context(), principal, sourceID, traceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "jaeger", "get_trace", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Jaeger") {
+			return
+		}
 		if errors.Is(err, jaegeradapter.ErrTraceNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("trace not found: %s", traceID), map[string]any{
 				"trace_id": traceID,
@@ -498,19 +437,7 @@ func (s *Server) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- Datadog adapter lookup & handlers ---
-
-func (s *Server) getDatadogAdapter(sourceID string) (datadogadapter.DatadogAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	da, ok := adapter.(datadogadapter.DatadogAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: datadog", errInvalidSourceType)
-	}
-	return da, nil
-}
+// --- Datadog handlers ---
 
 // handleDatadogMetrics executes a Datadog metrics query.
 // GET /api/v1/datadog/{sourceID}/metrics?query=<q>&from=<unix>&to=<unix>
@@ -538,15 +465,14 @@ func (s *Server) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	da, err := s.getDatadogAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Datadog") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := da.MetricsQuery(r.Context(), query, from, to)
+	result, err := s.accessor.DatadogMetricsQuery(r.Context(), principal, sourceID, query, from, to)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "datadog", "metrics_query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Datadog") {
+			return
+		}
 		writeInternalError(w, err, "datadog metrics query")
 		return
 	}
@@ -591,15 +517,14 @@ func (s *Server) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	da, err := s.getDatadogAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Datadog") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := da.LogsSearch(r.Context(), query, from, to, limit)
+	result, err := s.accessor.DatadogLogsSearch(r.Context(), principal, sourceID, query, from, to, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "datadog", "logs_search", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Datadog") {
+			return
+		}
 		writeInternalError(w, err, "datadog logs search")
 		return
 	}
@@ -615,19 +540,7 @@ func (s *Server) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- Splunk adapter lookup & handlers ---
-
-func (s *Server) getSplunkAdapter(sourceID string) (splunkadapter.SplunkAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	sa, ok := adapter.(splunkadapter.SplunkAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: splunk", errInvalidSourceType)
-	}
-	return sa, nil
-}
+// --- Splunk handlers ---
 
 // handleSplunkSearch executes a Splunk SPL search.
 // GET /api/v1/splunk/{sourceID}/search?query=<spl>&earliest=<t>&latest=<t>&limit=<n>
@@ -656,15 +569,14 @@ func (s *Server) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sa, err := s.getSplunkAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Splunk") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := sa.Search(r.Context(), query, earliest, latest, limit)
+	result, err := s.accessor.SplunkSearch(r.Context(), principal, sourceID, query, earliest, latest, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "splunk", "search", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Splunk") {
+			return
+		}
 		writeInternalError(w, err, "splunk search")
 		return
 	}
@@ -680,19 +592,7 @@ func (s *Server) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- Dynatrace adapter lookup & handlers ---
-
-func (s *Server) getDynatraceAdapter(sourceID string) (dynatraceadapter.DynatraceAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	da, ok := adapter.(dynatraceadapter.DynatraceAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: dynatrace", errInvalidSourceType)
-	}
-	return da, nil
-}
+// --- Dynatrace handlers ---
 
 // handleDynatraceMetrics executes a Dynatrace metrics selector query.
 // GET /api/v1/dynatrace/{sourceID}/metrics?query=<selector>&from=<ms>&to=<ms>
@@ -720,15 +620,14 @@ func (s *Server) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	da, err := s.getDynatraceAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Dynatrace") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := da.MetricsQuery(r.Context(), query, from, to)
+	result, err := s.accessor.DynatraceMetricsQuery(r.Context(), principal, sourceID, query, from, to)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "dynatrace", "metrics_query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Dynatrace") {
+			return
+		}
 		writeInternalError(w, err, "dynatrace metrics query")
 		return
 	}
@@ -767,15 +666,14 @@ func (s *Server) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	da, err := s.getDynatraceAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Dynatrace") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := da.Events(r.Context(), from, to, limit)
+	result, err := s.accessor.DynatraceEvents(r.Context(), principal, sourceID, from, to, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "dynatrace", "events", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Dynatrace") {
+			return
+		}
 		writeInternalError(w, err, "dynatrace events")
 		return
 	}
@@ -790,19 +688,7 @@ func (s *Server) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- New Relic adapter lookup & handlers ---
-
-func (s *Server) getNewRelicAdapter(sourceID string) (newrelicadapter.NewRelicAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	na, ok := adapter.(newrelicadapter.NewRelicAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: newrelic", errInvalidSourceType)
-	}
-	return na, nil
-}
+// --- New Relic handlers ---
 
 // handleNewRelicNRQL executes a New Relic NRQL query.
 // GET /api/v1/newrelic/{sourceID}/nrql?query=<nrql>&account_id=<id>
@@ -822,15 +708,14 @@ func (s *Server) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	na, err := s.getNewRelicAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "New Relic") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	result, err := na.NRQLQuery(r.Context(), accountID, query)
+	result, err := s.accessor.NewRelicNRQL(r.Context(), principal, sourceID, accountID, query)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "newrelic", "nrql_query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "New Relic") {
+			return
+		}
 		writeInternalError(w, err, "newrelic nrql query")
 		return
 	}

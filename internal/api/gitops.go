@@ -9,45 +9,8 @@ import (
 	argocdadapter "github.com/jaimegago/joe/internal/adapters/gitops/argocd"
 	terraformadapter "github.com/jaimegago/joe/internal/adapters/iac/terraform"
 	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getArgoCDAdapter(sourceID string) (argocdadapter.ArgoCDAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(argocdadapter.ArgoCDAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: argocd", errInvalidSourceType)
-	}
-	return a, nil
-}
-
-func (s *Server) getTerraformAdapter(sourceID string) (terraformadapter.TerraformAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(terraformadapter.TerraformAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: terraform", errInvalidSourceType)
-	}
-	return a, nil
-}
-
-func (s *Server) getHelmAdapter(sourceID string) (helmadapter.HelmAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(helmadapter.HelmAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: helm", errInvalidSourceType)
-	}
-	return a, nil
-}
 
 // =========================
 // Argo CD handlers
@@ -59,15 +22,14 @@ func (s *Server) handleArgoCDApps(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	project := r.URL.Query().Get("project")
 
-	a, err := s.getArgoCDAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Argo CD") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	apps, err := a.Apps(r.Context(), project)
+	apps, err := s.accessor.ArgoCDApps(r.Context(), principal, sourceID, project)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "argocd", "apps", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Argo CD") {
+			return
+		}
 		writeInternalError(w, err, "argocd apps")
 		return
 	}
@@ -88,15 +50,14 @@ func (s *Server) handleArgoCDGetApp(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	name := r.PathValue("name")
 
-	a, err := s.getArgoCDAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Argo CD") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	detail, err := a.GetApp(r.Context(), name)
+	detail, err := s.accessor.ArgoCDGetApp(r.Context(), principal, sourceID, name)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "argocd", "get_app", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Argo CD") {
+			return
+		}
 		writeInternalError(w, err, "argocd get app")
 		return
 	}
@@ -113,15 +74,14 @@ func (s *Server) handleArgoCDDiff(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	name := r.PathValue("name")
 
-	a, err := s.getArgoCDAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Argo CD") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	diff, err := a.GetDiff(r.Context(), name)
+	diff, err := s.accessor.ArgoCDGetDiff(r.Context(), principal, sourceID, name)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "argocd", "diff", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Argo CD") {
+			return
+		}
 		writeInternalError(w, err, "argocd diff")
 		return
 	}
@@ -145,15 +105,14 @@ func (s *Server) handleArgoCDHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a, err := s.getArgoCDAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Argo CD") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	history, err := a.GetHistory(r.Context(), name, limit)
+	history, err := s.accessor.ArgoCDGetHistory(r.Context(), principal, sourceID, name, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "argocd", "history", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Argo CD") {
+			return
+		}
 		writeInternalError(w, err, "argocd history")
 		return
 	}
@@ -178,15 +137,14 @@ func (s *Server) handleTerraformResources(w http.ResponseWriter, r *http.Request
 	sourceID := r.PathValue("sourceID")
 	resourceType := r.URL.Query().Get("type")
 
-	a, err := s.getTerraformAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Terraform") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	resources, err := a.Resources(r.Context(), resourceType)
+	resources, err := s.accessor.TerraformResources(r.Context(), principal, sourceID, resourceType)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "terraform", "resources", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Terraform") {
+			return
+		}
 		writeInternalError(w, err, "terraform resources")
 		return
 	}
@@ -213,15 +171,14 @@ func (s *Server) handleTerraformGetResource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	a, err := s.getTerraformAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Terraform") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	resource, err := a.GetResource(r.Context(), address)
+	resource, err := s.accessor.TerraformGetResource(r.Context(), principal, sourceID, address)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "terraform", "get_resource", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Terraform") {
+			return
+		}
 		writeInternalError(w, err, "terraform get resource")
 		return
 	}
@@ -237,15 +194,14 @@ func (s *Server) handleTerraformGetResource(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleTerraformOutputs(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getTerraformAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Terraform") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	outputs, err := a.Outputs(r.Context())
+	outputs, err := s.accessor.TerraformOutputs(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "terraform", "outputs", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Terraform") {
+			return
+		}
 		writeInternalError(w, err, "terraform outputs")
 		return
 	}
@@ -270,15 +226,14 @@ func (s *Server) handleHelmReleases(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	namespace := r.URL.Query().Get("namespace")
 
-	a, err := s.getHelmAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Helm") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	releases, err := a.Releases(r.Context(), namespace)
+	releases, err := s.accessor.HelmReleases(r.Context(), principal, sourceID, namespace)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "helm", "releases", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Helm") {
+			return
+		}
 		writeInternalError(w, err, "helm releases")
 		return
 	}
@@ -300,15 +255,14 @@ func (s *Server) handleHelmGetRelease(w http.ResponseWriter, r *http.Request) {
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
-	a, err := s.getHelmAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Helm") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	detail, err := a.GetRelease(r.Context(), namespace, name)
+	detail, err := s.accessor.HelmGetRelease(r.Context(), principal, sourceID, namespace, name)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "helm", "get_release", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Helm") {
+			return
+		}
 		writeInternalError(w, err, "helm get release")
 		return
 	}
@@ -333,15 +287,14 @@ func (s *Server) handleHelmHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a, err := s.getHelmAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Helm") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	history, err := a.History(r.Context(), namespace, name, limit)
+	history, err := s.accessor.HelmHistory(r.Context(), principal, sourceID, namespace, name, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "helm", "history", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Helm") {
+			return
+		}
 		writeInternalError(w, err, "helm history")
 		return
 	}

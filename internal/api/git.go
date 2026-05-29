@@ -7,14 +7,11 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters/git"
 	"github.com/jaimegago/joe/internal/constants"
+	"github.com/jaimegago/joe/internal/rbac"
 )
 
 func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-	ga, err := s.getGitAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "git") {
-		return
-	}
 
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -24,10 +21,14 @@ func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	content, err := ga.ReadFile(r.Context(), path)
+	content, err := s.accessor.GitReadFile(r.Context(), principal, sourceID, path)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "read_file", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "git") {
+			return
+		}
 		writeInternalError(w, err, "git read file")
 		return
 	}
@@ -41,17 +42,17 @@ func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGitListFiles(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-	ga, err := s.getGitAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "git") {
-		return
-	}
 
 	dir := r.URL.Query().Get("dir")
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	files, err := ga.ListFiles(r.Context(), dir)
+	files, err := s.accessor.GitListFiles(r.Context(), principal, sourceID, dir)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "list_files", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "git") {
+			return
+		}
 		writeInternalError(w, err, "git list files")
 		return
 	}
@@ -70,10 +71,6 @@ func (s *Server) handleGitListFiles(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-	ga, err := s.getGitAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "git") {
-		return
-	}
 
 	limit := constants.DefaultGitLogLimit
 	if l := r.URL.Query().Get("limit"); l != "" {
@@ -88,10 +85,14 @@ func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 		limit = parsed
 	}
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	commits, err := ga.Log(r.Context(), limit)
+	commits, err := s.accessor.GitLog(r.Context(), principal, sourceID, limit)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "log", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "git") {
+			return
+		}
 		writeInternalError(w, err, "git log")
 		return
 	}
@@ -109,10 +110,6 @@ func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
-	ga, err := s.getGitAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "git") {
-		return
-	}
 
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
@@ -123,10 +120,14 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	diff, err := ga.Diff(r.Context(), from, to)
+	diff, err := s.accessor.GitDiff(r.Context(), principal, sourceID, from, to)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "git", "diff", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "git") {
+			return
+		}
 		writeInternalError(w, err, "git diff")
 		return
 	}

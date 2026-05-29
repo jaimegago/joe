@@ -7,33 +7,8 @@ import (
 
 	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
 	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// ---- Adapter lookup helpers ----
-
-func (s *Server) getNginxAdapter(sourceID string) (nginxadapter.NginxAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(nginxadapter.NginxAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: nginx-ingress", errInvalidSourceType)
-	}
-	return a, nil
-}
-
-func (s *Server) getEnvoyAdapter(sourceID string) (envoyadapter.EnvoyAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	a, ok := adapter.(envoyadapter.EnvoyAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: envoy", errInvalidSourceType)
-	}
-	return a, nil
-}
 
 // =========================
 // NGINX handlers
@@ -45,15 +20,14 @@ func (s *Server) handleNginxIngresses(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	namespace := r.URL.Query().Get("namespace")
 
-	a, err := s.getNginxAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "nginx-ingress") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	ingresses, err := a.ListIngresses(r.Context(), namespace)
+	ingresses, err := s.accessor.NginxListIngresses(r.Context(), principal, sourceID, namespace)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "nginx", "ingresses", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "nginx-ingress") {
+			return
+		}
 		writeInternalError(w, err, "nginx ingresses")
 		return
 	}
@@ -74,15 +48,14 @@ func (s *Server) handleNginxIngresses(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNginxStatus(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getNginxAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "nginx-ingress") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	status, err := a.GetNginxStatus(r.Context())
+	status, err := s.accessor.NginxGetStatus(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "nginx", "status", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "nginx-ingress") {
+			return
+		}
 		writeInternalError(w, err, "nginx status")
 		return
 	}
@@ -99,15 +72,14 @@ func (s *Server) handleNginxConfigMaps(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	namespace := r.URL.Query().Get("namespace")
 
-	a, err := s.getNginxAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "nginx-ingress") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	cms, err := a.ListConfigMaps(r.Context(), namespace)
+	cms, err := s.accessor.NginxListConfigMaps(r.Context(), principal, sourceID, namespace)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "nginx", "configmaps", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "nginx-ingress") {
+			return
+		}
 		writeInternalError(w, err, "nginx configmaps")
 		return
 	}
@@ -132,15 +104,14 @@ func (s *Server) handleNginxConfigMaps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEnvoyClusters(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	a, err := s.getEnvoyAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "envoy") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	clusters, err := a.Clusters(r.Context())
+	clusters, err := s.accessor.EnvoyClusters(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "envoy", "clusters", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "envoy") {
+			return
+		}
 		writeInternalError(w, err, "envoy clusters")
 		return
 	}
@@ -161,15 +132,14 @@ func (s *Server) handleEnvoyConfigDump(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	section := r.URL.Query().Get("section")
 
-	a, err := s.getEnvoyAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "envoy") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	dump, err := a.ConfigDump(r.Context(), section)
+	dump, err := s.accessor.EnvoyConfigDump(r.Context(), principal, sourceID, section)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "envoy", "config", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "envoy") {
+			return
+		}
 		writeInternalError(w, err, "envoy config")
 		return
 	}
@@ -187,15 +157,14 @@ func (s *Server) handleEnvoyStats(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	filter := r.URL.Query().Get("filter")
 
-	a, err := s.getEnvoyAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "envoy") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	stats, err := a.Stats(r.Context(), filter)
+	stats, err := s.accessor.EnvoyStats(r.Context(), principal, sourceID, filter)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "envoy", "stats", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "envoy") {
+			return
+		}
 		writeInternalError(w, err, "envoy stats")
 		return
 	}

@@ -8,85 +8,9 @@ import (
 
 	elasticsearchadapter "github.com/jaimegago/joe/internal/adapters/datastore/elasticsearch"
 	kafkaadapter "github.com/jaimegago/joe/internal/adapters/datastore/kafka"
-	mongodbadapter "github.com/jaimegago/joe/internal/adapters/datastore/mongodb"
-	mysqladapter "github.com/jaimegago/joe/internal/adapters/datastore/mysql"
-	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
 	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
+	"github.com/jaimegago/joe/internal/rbac"
 )
-
-// --- Adapter lookup helpers ---
-
-func (s *Server) getPostgresAdapter(sourceID string) (postgresadapter.PostgreSQLAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	pa, ok := adapter.(postgresadapter.PostgreSQLAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: postgresql", errInvalidSourceType)
-	}
-	return pa, nil
-}
-
-func (s *Server) getMySQLAdapter(sourceID string) (mysqladapter.MySQLAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ma, ok := adapter.(mysqladapter.MySQLAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: mysql", errInvalidSourceType)
-	}
-	return ma, nil
-}
-
-func (s *Server) getRedisAdapter(sourceID string) (redisadapter.RedisAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ra, ok := adapter.(redisadapter.RedisAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: redis", errInvalidSourceType)
-	}
-	return ra, nil
-}
-
-func (s *Server) getMongoDBAdapter(sourceID string) (mongodbadapter.MongoDBAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ma, ok := adapter.(mongodbadapter.MongoDBAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: mongodb", errInvalidSourceType)
-	}
-	return ma, nil
-}
-
-func (s *Server) getKafkaAdapter(sourceID string) (kafkaadapter.KafkaAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ka, ok := adapter.(kafkaadapter.KafkaAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: kafka", errInvalidSourceType)
-	}
-	return ka, nil
-}
-
-func (s *Server) getElasticsearchAdapter(sourceID string) (elasticsearchadapter.ElasticsearchAdapter, error) {
-	adapter, err := s.getAdapter(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	ea, ok := adapter.(elasticsearchadapter.ElasticsearchAdapter)
-	if !ok {
-		return nil, fmt.Errorf("%w: elasticsearch", errInvalidSourceType)
-	}
-	return ea, nil
-}
 
 // --- PostgreSQL handlers ---
 
@@ -95,15 +19,14 @@ func (s *Server) getElasticsearchAdapter(sourceID string) (elasticsearchadapter.
 func (s *Server) handlePostgresStat(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	pa, err := s.getPostgresAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "PostgreSQL") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	stat, err := pa.Stat(r.Context())
+	stat, err := s.accessor.PostgresStat(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "postgresql", "stat", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "PostgreSQL") {
+			return
+		}
 		writeInternalError(w, err, "postgres stat")
 		return
 	}
@@ -127,15 +50,14 @@ func (s *Server) handlePostgresQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pa, err := s.getPostgresAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "PostgreSQL") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	rows, err := pa.Query(r.Context(), sqlParam)
+	rows, err := s.accessor.PostgresQuery(r.Context(), principal, sourceID, sqlParam)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "postgresql", "query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "PostgreSQL") {
+			return
+		}
 		writeInternalError(w, err, "postgres query")
 		return
 	}
@@ -158,15 +80,14 @@ func (s *Server) handlePostgresQuery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMySQLStat(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ma, err := s.getMySQLAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "MySQL") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	stat, err := ma.Stat(r.Context())
+	stat, err := s.accessor.MySQLStat(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "mysql", "stat", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "MySQL") {
+			return
+		}
 		writeInternalError(w, err, "mysql stat")
 		return
 	}
@@ -190,15 +111,14 @@ func (s *Server) handleMySQLQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ma, err := s.getMySQLAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "MySQL") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	rows, err := ma.Query(r.Context(), sqlParam)
+	rows, err := s.accessor.MySQLQuery(r.Context(), principal, sourceID, sqlParam)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "mysql", "query", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "MySQL") {
+			return
+		}
 		writeInternalError(w, err, "mysql query")
 		return
 	}
@@ -222,15 +142,14 @@ func (s *Server) handleRedisInfo(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 	section := r.URL.Query().Get("section") // optional, default ""
 
-	ra, err := s.getRedisAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Redis") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	info, err := ra.Info(r.Context(), section)
+	info, err := s.accessor.RedisInfo(r.Context(), principal, sourceID, section)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "redis", "info", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Redis") {
+			return
+		}
 		writeInternalError(w, err, "redis info")
 		return
 	}
@@ -253,15 +172,14 @@ func (s *Server) handleRedisSlowLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ra, err := s.getRedisAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Redis") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	entries, err := ra.SlowLog(r.Context(), count)
+	entries, err := s.accessor.RedisSlowLog(r.Context(), principal, sourceID, count)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "redis", "slowlog", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Redis") {
+			return
+		}
 		writeInternalError(w, err, "redis slowlog")
 		return
 	}
@@ -282,15 +200,14 @@ func (s *Server) handleRedisSlowLog(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRedisDBSize(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ra, err := s.getRedisAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Redis") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	size, err := ra.DBSize(r.Context())
+	size, err := s.accessor.RedisDBSize(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "redis", "dbsize", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Redis") {
+			return
+		}
 		writeInternalError(w, err, "redis dbsize")
 		return
 	}
@@ -308,15 +225,14 @@ func (s *Server) handleRedisDBSize(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMongoDBServerStatus(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ma, err := s.getMongoDBAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "MongoDB") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	status, err := ma.ServerStatus(r.Context())
+	status, err := s.accessor.MongoDBServerStatus(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "mongodb", "server_status", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "MongoDB") {
+			return
+		}
 		writeInternalError(w, err, "mongodb server status")
 		return
 	}
@@ -332,15 +248,14 @@ func (s *Server) handleMongoDBServerStatus(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleMongoDBReplicaStatus(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ma, err := s.getMongoDBAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "MongoDB") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	status, err := ma.ReplicaStatus(r.Context())
+	status, err := s.accessor.MongoDBReplicaStatus(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "mongodb", "replica_status", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "MongoDB") {
+			return
+		}
 		writeInternalError(w, err, "mongodb replica status")
 		return
 	}
@@ -356,15 +271,14 @@ func (s *Server) handleMongoDBReplicaStatus(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleMongoDBCurrentOp(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ma, err := s.getMongoDBAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "MongoDB") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	op, err := ma.CurrentOp(r.Context())
+	op, err := s.accessor.MongoDBCurrentOp(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "mongodb", "current_op", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "MongoDB") {
+			return
+		}
 		writeInternalError(w, err, "mongodb current op")
 		return
 	}
@@ -382,15 +296,14 @@ func (s *Server) handleMongoDBCurrentOp(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleKafkaTopics(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ka, err := s.getKafkaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Kafka") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	topics, err := ka.Topics(r.Context())
+	topics, err := s.accessor.KafkaTopics(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "kafka", "topics", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Kafka") {
+			return
+		}
 		writeInternalError(w, err, "kafka topics")
 		return
 	}
@@ -411,15 +324,14 @@ func (s *Server) handleKafkaTopics(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleKafkaBrokers(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ka, err := s.getKafkaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Kafka") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	brokers, err := ka.Brokers(r.Context())
+	brokers, err := s.accessor.KafkaBrokers(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "kafka", "brokers", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Kafka") {
+			return
+		}
 		writeInternalError(w, err, "kafka brokers")
 		return
 	}
@@ -440,15 +352,14 @@ func (s *Server) handleKafkaBrokers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleKafkaConsumerGroups(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ka, err := s.getKafkaAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Kafka") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	groups, err := ka.ConsumerGroups(r.Context())
+	groups, err := s.accessor.KafkaConsumerGroups(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "kafka", "consumer_groups", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Kafka") {
+			return
+		}
 		writeInternalError(w, err, "kafka consumer groups")
 		return
 	}
@@ -471,15 +382,14 @@ func (s *Server) handleKafkaConsumerGroups(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleElasticsearchHealth(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	ea, err := s.getElasticsearchAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Elasticsearch") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	health, err := ea.ClusterHealth(r.Context())
+	health, err := s.accessor.ElasticsearchClusterHealth(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "elasticsearch", "health", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Elasticsearch") {
+			return
+		}
 		writeInternalError(w, err, "elasticsearch health")
 		return
 	}
@@ -496,15 +406,14 @@ func (s *Server) handleElasticsearchIndices(w http.ResponseWriter, r *http.Reque
 	sourceID := r.PathValue("sourceID")
 	pattern := r.URL.Query().Get("pattern") // optional, default ""
 
-	ea, err := s.getElasticsearchAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "Elasticsearch") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	indices, err := ea.ListIndices(r.Context(), pattern)
+	indices, err := s.accessor.ElasticsearchListIndices(r.Context(), principal, sourceID, pattern)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "elasticsearch", "indices", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "Elasticsearch") {
+			return
+		}
 		writeInternalError(w, err, "elasticsearch indices")
 		return
 	}

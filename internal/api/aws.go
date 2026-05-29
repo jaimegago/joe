@@ -7,6 +7,7 @@ import (
 	"time"
 
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
+	"github.com/jaimegago/joe/internal/rbac"
 )
 
 const (
@@ -25,15 +26,14 @@ const (
 func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	instances, err := awsAdapter.ListEC2Instances(r.Context())
+	instances, err := s.accessor.AWSListEC2Instances(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "ec2.list_instances", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		writeInternalError(w, err, "aws ec2 list instances")
 		return
 	}
@@ -57,15 +57,14 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	instance, err := awsAdapter.GetEC2Instance(r.Context(), instanceID)
+	instance, err := s.accessor.AWSGetEC2Instance(r.Context(), principal, sourceID, instanceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "ec2.get_instance", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		if errors.Is(err, awsadapter.ErrInstanceNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorInstanceNotFound, instanceID), map[string]any{
 				"instance_id": instanceID,
@@ -93,15 +92,14 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAWSEKSListClusters(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	clusters, err := awsAdapter.ListEKSClusters(r.Context())
+	clusters, err := s.accessor.AWSListEKSClusters(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "eks.list_clusters", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		writeInternalError(w, err, "aws eks list clusters")
 		return
 	}
@@ -125,15 +123,14 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	cluster, err := awsAdapter.GetEKSCluster(r.Context(), clusterName)
+	cluster, err := s.accessor.AWSGetEKSCluster(r.Context(), principal, sourceID, clusterName)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "eks.get_cluster", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		if errors.Is(err, awsadapter.ErrClusterNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorClusterNotFound, clusterName), map[string]any{
 				"cluster_name": clusterName,
@@ -161,15 +158,14 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleAWSRDSListInstances(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	instances, err := awsAdapter.ListRDSInstances(r.Context())
+	instances, err := s.accessor.AWSListRDSInstances(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "rds.list_instances", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		writeInternalError(w, err, "aws rds list instances")
 		return
 	}
@@ -193,15 +189,14 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	instance, err := awsAdapter.GetRDSInstance(r.Context(), dbInstanceID)
+	instance, err := s.accessor.AWSGetRDSInstance(r.Context(), principal, sourceID, dbInstanceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "rds.get_instance", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		if errors.Is(err, awsadapter.ErrDBInstanceNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorDBInstanceNotFound, dbInstanceID), map[string]any{
 				"db_instance_id": dbInstanceID,
@@ -229,15 +224,14 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAWSVPCListVPCs(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("sourceID")
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	vpcs, err := awsAdapter.ListVPCs(r.Context())
+	vpcs, err := s.accessor.AWSListVPCs(r.Context(), principal, sourceID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "vpc.list", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		writeInternalError(w, err, "aws vpc list vpcs")
 		return
 	}
@@ -261,15 +255,14 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	awsAdapter, err := s.getAWSAdapter(sourceID)
-	if handleAdapterLookupError(w, err, sourceID, "AWS") {
-		return
-	}
-
+	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
-	vpc, err := awsAdapter.GetVPC(r.Context(), vpcID)
+	vpc, err := s.accessor.AWSGetVPC(r.Context(), principal, sourceID, vpcID)
 	s.services.Metrics.RecordAdapterCall(r.Context(), "aws", "vpc.get", time.Since(start), err)
 	if err != nil {
+		if handleAccessError(w, err, sourceID, "aws") {
+			return
+		}
 		if errors.Is(err, awsadapter.ErrVPCNotFound) {
 			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("%s: %s", errorVPCNotFound, vpcID), map[string]any{
 				"vpc_id": vpcID,
