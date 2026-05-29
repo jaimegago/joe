@@ -27,6 +27,11 @@ type Repository interface {
 	ListPoliciesForPrincipal(ctx context.Context, principal string) ([]Policy, error)
 	CreatePolicy(ctx context.Context, p Policy) (*Policy, error)
 	DeletePolicy(ctx context.Context, id int64) error
+	// DeletePolicyForPrincipalZone revokes a single principal→zone grant by its
+	// natural key. Returns the number of policy rows removed (0 if the grant
+	// did not exist). Used by CLI zone revocation, which keys on
+	// (principal, zone) rather than the synthetic policy id.
+	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error)
 
 	// Unassigned sources (no zone assignment yet)
 	ListUnassignedSourceIDs(ctx context.Context) ([]string, error)
@@ -235,6 +240,19 @@ func (r *SQLRepository) DeletePolicy(ctx context.Context, id int64) error {
 		return fmt.Errorf("delete policy: %w", err)
 	}
 	return nil
+}
+
+func (r *SQLRepository) DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`DELETE FROM rbac_policies WHERE principal = ? AND zone_id = ?`), principal, zoneID)
+	if err != nil {
+		return 0, fmt.Errorf("delete policy for principal/zone: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
 }
 
 func (r *SQLRepository) ListUnassignedSourceIDs(ctx context.Context) ([]string, error) {

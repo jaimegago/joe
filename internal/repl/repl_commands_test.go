@@ -453,7 +453,7 @@ func TestHandlePanicCommand_WithAPIKey(t *testing.T) {
 
 	cfg := testREPLConfig()
 	cfg.Server.Address = strings.TrimPrefix(ts.URL, "http://")
-	cfg.Server.APIKey = "test-secret-key"
+	cfg.Server.ServiceAccounts = []config.ServiceAccount{{Name: "server", Key: "test-secret-key"}}
 
 	r := newTestREPL(t, client.New("http://unused"), cfg)
 	out := panicStdinHelper(t, "yes\n", func() {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -17,6 +18,16 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	_ "modernc.org/sqlite"
 )
+
+// mustResolver builds a service-account resolver for the regression chain.
+func mustResolver(t *testing.T, accounts ...config.ServiceAccount) *auth.ServiceAccountResolver {
+	t.Helper()
+	r, err := auth.NewServiceAccountResolver(accounts)
+	if err != nil {
+		t.Fatalf("NewServiceAccountResolver: %v", err)
+	}
+	return r
+}
 
 // apiFakeK8s is a no-op KubernetesAdapter used so the k8s handlers reach a
 // real adapter and return 200 on the happy path.
@@ -79,8 +90,8 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}); err != nil {
 		t.Fatalf("assign s-deny: %v", err)
 	}
-	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "operator", ZoneID: "prod-readonly"}); err != nil {
-		t.Fatalf("grant operator: %v", err)
+	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:operator", ZoneID: "prod-readonly"}); err != nil {
+		t.Fatalf("grant svc:operator: %v", err)
 	}
 
 	registry := adapters.NewRegistry()
@@ -89,7 +100,7 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 
 	const apiKey = "secret"
 	services := &core.Services{
-		Config:   &config.Config{Server: config.ServerConfig{APIKey: apiKey, Principal: "operator"}},
+		Config:   &config.Config{Server: config.ServerConfig{ServiceAccounts: []config.ServiceAccount{{Name: "operator", Key: apiKey}}}},
 		Store:    sqlStore,
 		RBAC:     repo,
 		Adapters: registry,
@@ -99,9 +110,13 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	engine := rbac.NewPolicyEngine(repo)
+	// Production-shaped chain: EdgeAuth resolves the service-account key to its
+	// svc: principal, EnforcementMiddleware is the outer RBAC gate, and the
+	// accessor inside the handlers is the authoritative gate. The Phase A
+	// regression contract — middleware + accessor agree for the configured
+	// principal — holds identically through the Phase D service-account path.
 	handler := api.Chain(mux,
-		api.BearerAuth(apiKey),
-		rbac.IdentityMiddleware(rbac.NewAPIKeyProvider(apiKey, "operator")),
+		auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, config.ServiceAccount{Name: "operator", Key: apiKey})}),
 		rbac.EnforcementMiddleware(engine),
 	)
 
@@ -142,7 +157,7 @@ func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 	registry.Register("s-1", apiFakeK8s{})
 
 	services := &core.Services{
-		Config:   &config.Config{Server: config.ServerConfig{APIKey: ""}}, // RBAC disabled
+		Config:   &config.Config{Server: config.ServerConfig{}}, // RBAC disabled (no service accounts)
 		Store:    sqlStore,
 		RBAC:     rbac.NewRepository(sqlStore.DB(), sqlStore.Driver()),
 		Adapters: registry,
@@ -151,10 +166,11 @@ func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
-	// Mirror main.go: no policy engine when API key is empty.
+	// Mirror main.go: no policy engine when no service account is configured.
+	// EdgeAuth in disabled mode resolves every caller to the fallback principal
+	// and rejects nothing.
 	handler := api.Chain(mux,
-		api.BearerAuth(""),
-		rbac.IdentityMiddleware(rbac.NewAPIKeyProvider("", "")),
+		auth.EdgeAuth(auth.EdgeConfig{}),
 		rbac.EnforcementMiddleware(nil),
 	)
 

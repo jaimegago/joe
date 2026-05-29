@@ -48,6 +48,10 @@ type runDeps struct {
 	newRepl          func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner
 	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
 	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
+	// openRBACRepo opens the RBAC repository for `joe zone` provisioning
+	// (direct DB access; design §2.9). Injectable so tests use an in-memory
+	// repo instead of opening a real database.
+	openRBACRepo func(cfg *config.Config) (zoneRepo, func() error, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -71,6 +75,7 @@ func defaultRunDeps() runDeps {
 		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
 			return skills.LoadPolicy(joeDir)
 		},
+		openRBACRepo: openRBACRepoDefault,
 	}
 }
 
@@ -111,8 +116,8 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	}
 	joecoreURL := scheme + "://" + cfg.Server.Address
 	var clientOpts []client.ClientOption
-	if cfg.Server.APIKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	if key := cfg.Server.LoopbackKey(); key != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(key))
 	}
 	c := deps.newClient(joecoreURL, clientOpts...)
 
@@ -154,8 +159,8 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 	joecoreURL := scheme + "://" + cfg.Server.Address
 	var clientOpts []client.ClientOption
-	if cfg.Server.APIKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	if key := cfg.Server.LoopbackKey(); key != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(key))
 	}
 	c := deps.newClient(joecoreURL, clientOpts...)
 
@@ -189,8 +194,8 @@ func runReviewCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 	joecoreURL := scheme + "://" + cfg.Server.Address
 	var clientOpts []client.ClientOption
-	if cfg.Server.APIKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	if key := cfg.Server.LoopbackKey(); key != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(key))
 	}
 	c := deps.newClient(joecoreURL, clientOpts...)
 
@@ -588,8 +593,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		joecoreURL := scheme + "://" + cfg.Server.Address
 		var clientOpts []client.ClientOption
-		if cfg.Server.APIKey != "" {
-			clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+		if key := cfg.Server.LoopbackKey(); key != "" {
+			clientOpts = append(clientOpts, client.WithAPIKey(key))
 		}
 		c := deps.newClient(joecoreURL, clientOpts...)
 
@@ -670,6 +675,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runSlackCommand(ctx, args[1:], stderr, deps)
 		case "skills":
 			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
+		case "zone":
+			return runZoneCommand(ctx, args[1:], stdout, stderr, deps)
 		}
 	}
 
@@ -721,8 +728,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	}
 	joecoreURL := scheme + "://" + cfg.Server.Address
 	var clientOpts []client.ClientOption
-	if cfg.Server.APIKey != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(cfg.Server.APIKey))
+	if key := cfg.Server.LoopbackKey(); key != "" {
+		clientOpts = append(clientOpts, client.WithAPIKey(key))
 	}
 	if cfg.Server.TLSEnabled {
 		clientOpts = append(clientOpts, client.WithTLS())

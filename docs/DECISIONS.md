@@ -10,6 +10,297 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0007 — Identity Phase D: named service-account keys → svc: principals
+
+- Date: 2026-05-29
+- Decision: Phase D (joe-identity-design.md §2.4; joe-identity-phase-plan.md
+  Phase D) replaces the single machine-auth key (`Server.APIKey` →
+  `Server.Principal`) with a configurable collection of NAMED service-account
+  keys, each resolving to a distinct `svc:<name>` principal that flows through
+  the SAME context mechanism Phase B/C established (`rbac.WithPrincipal` →
+  `rbac.PrincipalFromContext` → accessor + `EnforcementMiddleware`). Two
+  authentication mechanisms (OIDC for humans, keys for machines), one
+  authorization path. Specifics:
+  - **Service-account config shape.** `config.ServerConfig.ServiceAccounts
+    []ServiceAccount` (yaml `service_accounts`), each entry
+    `{Name string, Key string}` resolving to principal `svc:<Name>`. This
+    generalizes the old single `api_key`+`principal` into a set; the
+    `Server.APIKey` and `Server.Principal` fields are REMOVED (no compat
+    constraints). Keys are plaintext-at-rest — the same posture as the single
+    key they replace, NOT a regression; no hashing/minting was added (deferred —
+    see seam below). The `svc:` prefix is reserved/enforced at mint time by
+    `rbac.ServicePrincipal(name)` (`internal/rbac/identity.go`), which mirrors
+    `UserPrincipal`: it rejects an empty name and a name already carrying a
+    reserved prefix (`user:`/`group:`/`svc:`) so a config typo cannot
+    double-encode or kind-spoof.
+  - **The key → svc: resolution seam (isolated, per the prompt's seam note).**
+    `auth.ServiceAccountResolver` (`internal/auth/serviceaccount.go`) is the
+    SINGLE place that owns "plaintext key, exact-match lookup → svc principal":
+    `NewServiceAccountResolver([]config.ServiceAccount)` builds an immutable
+    `map[key]rbac.Principal` (minting each via `rbac.ServicePrincipal`) and
+    `Resolve(key) (rbac.Principal, bool)` performs the lookup. A future upgrade
+    to DB-minted, hashed, runtime-revocable keys replaces ONLY this type's
+    storage (the map) and lookup (`Resolve`) — the downstream
+    principal-in-context flow (`EdgeAuth` → `rbac.WithPrincipal` → accessor) is
+    untouched because it depends only on `Resolve` returning a principal. The
+    constructor fails LOUDLY (fatal startup error in `cmd/joe-core/main.go`) on
+    a malformed config — empty key, empty name, duplicate name, duplicate key,
+    or reserved-prefix name — so a typo never silently drops an identity's
+    authority or makes resolution ambiguous.
+  - **OIDC-vs-service-key precedence on a shared request path.** `auth.EdgeAuth`
+    resolves the caller principal in deterministic order: (1) a valid session
+    cookie (human) WINS; (2) otherwise a service-account bearer key (machine) is
+    tried via the resolver; (3) otherwise the request is unauthenticated → 401
+    on a protected path. A request carries either a session cookie or a bearer
+    key, never both meaningfully; when both are present the human session takes
+    precedence. The two mechanisms are independent: `Sessions` may be nil
+    (machine-only) and `ServiceAccounts` may be nil/empty (human-only) without
+    breaking the other. An unknown bearer key is unauthenticated, exactly as an
+    invalid token was. Both converge on one principal in context, which
+    `EnforcementMiddleware` and the accessor evaluate identically regardless of
+    which mechanism produced it. `EnforcementMiddleware` stays authoritative on
+    the HTTP path (demotion is Phase E).
+  - **Removal/fold of the old single-key path.** The single
+    `Server.APIKey`→single-`Server.Principal` mechanism is removed, not kept in
+    parallel: (a) the config fields are deleted; (b) `EdgeConfig.APIKey`/
+    `APIKeyPrincipal` are replaced by `EdgeConfig.ServiceAccounts
+    *ServiceAccountResolver` (plus an optional `DisabledPrincipal` defaulting to
+    `default-operator` for auth-disabled mode); (c) `rbac.APIKeyProvider` (the
+    literal single-key→single-principal `IdentityProvider`) and `api.BearerAuth`
+    (the pre-Phase-C single-token gate) are DELETED along with their unit tests;
+    (d) the engine enable-condition in both `cmd/joe-core/main.go` and
+    `api.newPolicyEngine` becomes `ServiceAccountsConfigured() || OIDC`
+    (was `APIKey != "" || OIDC`). The generic `rbac.IdentityMiddleware` +
+    `rbac.IdentityProvider` interface are KEPT — they are not the single-key
+    mechanism; many tests inject principals through them with their own
+    providers. `JOE_API_KEY` env now folds into the reserved `server` service
+    account (creating/overriding its key in `config.applyEnvOverrides`) — the
+    literal "old key becomes one named entry" the prompt suggested; it only
+    affects processes that load config (joe-core, joe CLI, REPL). MCP/Slack are
+    separate external processes that read `JOE_API_KEY` directly from env and
+    were untouched (req 5: no in-process MCP change — it presents a key like any
+    external client and resolves to whatever svc account that key belongs to).
+  - **What the loopback now authenticates with.** The in-process loopback
+    (`internal/api/tasks.go`), the joe CLI (`cmd/joe`), and the REPL
+    (`internal/repl`) are co-located client processes that present
+    `ServerConfig.LoopbackKey()` — the key of the reserved `server` service
+    account (principal `svc:server`), the direct fold of the old single key.
+    `LoopbackKey()` returns the `server` account's key, else the first
+    configured account (deterministic, config order), else "" (auth-disabled,
+    no bearer presented). The loopback's existence and behaviour are UNCHANGED:
+    it still presents a valid server-representing key so the loop's tools reach
+    infra (the loopback is removed in Phase E). For the loop to reach infra
+    under RBAC, `svc:server` must be granted zones via `joe zone grant
+    --principal svc:server` — the same CLI surface Phase C built.
+  - **CLI provisioning for svc: principals (req 4 — unchanged path).** `joe
+    zone grant/revoke/list` already accepts a `svc:` principal (it validates via
+    `rbac.HasReservedPrefix`, which includes `svc:`); confirmed by the existing
+    `cmd/joe/zone_test.go` (`grant --principal svc:ci-bot`). No separate
+    provisioning path was built.
+- Deviations from the Phase D prompt, with reasons:
+  1. **Loopback proven end-to-end via its credential through the real chain,
+     not by driving the LLM loop.** `TestPhaseD_LoopbackKeyReachesInfra`
+     presents `ServerConfig.LoopbackKey()` through the production-shaped chain
+     (`EdgeAuth` + authoritative `EnforcementMiddleware`, as in main.go) and
+     asserts it resolves to `svc:server` and reaches infra — denied (403) before
+     a grant, allowed (200) after. The loopback's HTTP transport to infra IS
+     this path; spinning the full agentloop (LLM + SSE) would test the loop, not
+     the credential, and is heavier without adding auth coverage.
+  2. **Phase A regression chain rewritten onto the production auth path.**
+     Removing `Server.APIKey`/`Server.Principal` forced touching
+     `access_regression_test.go`; rather than keep the dead
+     `BearerAuth`+`APIKeyProvider` scaffold alive, the chain now uses the live
+     `auth.EdgeAuth` + a one-entry resolver. The asserted Phase A outcomes
+     (granted read 200 / ungranted 403 / missing token 401; disabled permits
+     all) are preserved exactly — the regression contract is unchanged; only the
+     mechanism establishing the principal moved to the current production path.
+  3. **`svc:` prefix invariant proven behaviourally, not by an AST guard.** Per
+     the prompt's static criterion, `rbac.ServicePrincipal` always applies the
+     `svc:` prefix by construction (the single mint point); this is asserted in
+     `internal/rbac/identity_test.go` and across every resolver output in
+     `internal/auth/serviceaccount_test.go`. A data-flow AST assertion would be
+     brittle and redundant given the single mint point.
+  4. **`group:` reserved but unminted.** Per scope fence, the PrincipalSet stays
+     size 1; nothing populates `group:` (a v2 seam). Service-account principals
+     are single `svc:` members.
+- Basis: joe-identity-design.md §2.4 (named API keys, MCP-is-a-service-account,
+  rejects pass-through), §2.2 (reserved `svc:` prefix), §2.7 (set stays size 1),
+  §2.5 (EnforcementMiddleware authoritative until E), §6 (deferred
+  hashing/minting + MCP pass-through behind seams); joe-identity-phase-plan.md
+  Phase D. Verified against Phase A's accessor signature (D-0004), Phase B's
+  set-shaped path (D-0005), and Phase C's edge-auth + CLI provisioning (D-0006).
+  Tests: two distinct keys → two distinct svc principals, each allowed only on
+  its own granted zone and denied on the other's through the accessor
+  (`TestPhaseD_TwoServiceAccountsIndependentZones`); unknown key → 401
+  (`TestPhaseD_UnknownKeyUnauthenticated`, `TestEdgeAuth_UnknownServiceAccount…`);
+  zero-zone svc denied then allowed after a CLI-equivalent grant
+  (`TestPhaseD_ZeroZoneDeniedThenGrantAllows`); OIDC session and svc key each
+  produce the correct principal on the same endpoint with session-wins
+  precedence (`TestPhaseD_OIDCAndServiceKeyCoexist`); loopback key reaches infra
+  end-to-end (`TestPhaseD_LoopbackKeyReachesInfra`); resolver
+  reject-invalid-config + svc: prefix assertions; `ServicePrincipal` mint/reject;
+  `JOE_API_KEY` folds into the `server` account
+  (`config.TestLoad_EnvOverrides_APIKey`); Phase A no-ungoverned-access invariant
+  and Phase A/B/C regressions still green and unchanged.
+- Supersedes: nothing — extends D-0006. The single configured API-key principal
+  is now removed/folded into the service-account map. Phases E–G remain pending
+  (E: remove loopback — gated on A+B, both merged; F: audit; G: captain wiring).
+  The loop, the loopback's existence/behaviour, OIDC, and the accessor were NOT
+  changed in this phase.
+- Status: active. Phase D complete; do not proceed to Phase E without a new prompt.
+
+---
+
+## D-0006 — Identity Phase C: OIDC login + sessions + admin bootstrap + CLI provisioning
+
+- Date: 2026-05-29
+- Decision: Phase C (joe-identity-design.md §2.1–§2.3, §2.9;
+  joe-identity-phase-plan.md Phase C) replaces the SOURCE of the human principal
+  with a real OIDC-authenticated identity, without changing the Phase B
+  set machinery (the PrincipalSet stays size 1; no `group:` members are
+  populated). A human logs in via a single configurable OIDC issuer; the
+  verified `email` claim becomes a `user:<email>` principal carried by a
+  server-side session cookie, flowing through the SAME context path Phase B
+  established (`rbac.WithPrincipal` → `rbac.PrincipalFromContext` → accessor).
+  Specifics:
+  - **OIDC library: `github.com/coreos/go-oidc/v3` + `golang.org/x/oauth2`.**
+    go-oidc handles discovery (`.well-known/openid-configuration`), JWKS
+    fetching, and ID-token signature/issuer/audience/expiry verification;
+    x/oauth2 handles the authorization-code flow and PKCE (`GenerateVerifier`,
+    `S256ChallengeOption`, `VerifierOption`). Chosen because the prompt named
+    go-oidc/v3 as the expected choice and because JWKS fetching and signature
+    verification must NOT be hand-rolled (design §2.1). The IdP-facing surface
+    is an interface (`auth.Provider`) so the flow is testable without a live
+    issuer; the production implementation (`auth.NewOIDCProvider`) lazy-inits
+    discovery on first use and caches it, so startup does not hard-depend on IdP
+    reachability (design §4: IdP unreachable ⇒ only new logins fail).
+  - **Single configurable issuer.** `config.AuthConfig.OIDC` carries issuer URL,
+    client id, client secret, redirect URL. One code path; GitHub-direct
+    (OAuth2, not OIDC) stays out, per design §2.1 caveat.
+  - **`user:<email>` derivation + `email_verified` enforcement.** The single
+    point where verified OIDC identity becomes a principal is
+    `auth.PrincipalFromClaims` → `rbac.UserPrincipal(email)`
+    (`internal/auth/claims.go`, `internal/rbac/identity.go`). It rejects with
+    `ErrEmailNotVerified` when `email_verified` is absent or not true — the gate
+    runs BEFORE any principal is minted, so an unverified token never yields a
+    principal or a session. `email_verified` is decoded with a `flexBool` that
+    accepts native-bool or string-encoded ("true"/"false", Azure-style) and
+    fails closed on anything else. `UserPrincipal` also rejects an email that
+    already carries a reserved prefix (`user:`/`group:`/`svc:`) — an
+    impersonation guard that does not trigger in practice.
+  - **Session model + cookie (design §2.3).** On a successful callback a
+    server-side session row is minted in SQLite (`auth_sessions`: id, principal,
+    created_at, expires_at — migration 014) and a cookie is set carrying ONLY
+    the opaque id. Cookie attributes are exactly **HttpOnly + Secure +
+    SameSite=Lax**. Lax (not Strict) is required: Strict would not send the
+    session cookie on the cross-site top-level navigation returning from the IdP
+    to the callback, so the app would treat the returning user as a new visitor.
+    Sessions have a **bounded lifetime** (`auth.session_ttl`, default 12h; a
+    non-positive value falls back to a bounded default — never unbounded) and a
+    **server-side revocation path** (deleting the row = immediate logout). The
+    `SessionManager.Resolve` rejects a session at/after `expires_at` even if the
+    row still exists. Server-side sessions were chosen over JWT because joe-core
+    is a single non-distributed binary with the DB right there, so statelessness
+    buys nothing and costs revocation.
+  - **OIDC flow CSRF/PKCE.** Login generates `state`, `nonce`, and a PKCE
+    verifier; the in-flight flow (verifier + nonce) is persisted server-side in
+    `auth_login_flows` keyed by `state` (migration 014), and a temporary
+    HttpOnly/Secure/SameSite=Lax `joe_oidc_state` cookie binds the browser to
+    that state. The callback validates query-state == cookie-state (login CSRF),
+    loads the single-use flow row (deleted regardless of outcome), completes the
+    PKCE exchange, verifies the ID token, and checks the token nonce against the
+    flow nonce. The API performs no state-changing GET and logout is POST, per
+    the §2.3 CSRF posture.
+  - **Edge authentication middleware.** `auth.EdgeAuth` (`internal/auth/middleware.go`)
+    replaces the prior `api.BearerAuth` + `rbac.IdentityMiddleware` pair in the
+    production chain (`cmd/joe-core/main.go`). It resolves the caller principal
+    from a session cookie (humans) or the bearer API key, sets it via
+    `rbac.WithPrincipal`, and **rejects unauthenticated requests on protected
+    paths with 401 — exactly as today**. The OIDC flow endpoints
+    (`/api/v1/auth/`) are public (you cannot require a session to log in). When
+    NEITHER an API key NOR OIDC is configured, the edge is in auth-disabled mode
+    and behaves exactly as pre-Phase-C (every caller is the configured fallback
+    principal; nothing rejected). `rbac.EnforcementMiddleware` remains the
+    authoritative source-keyed RBAC gate beneath it (demotion is Phase E). The
+    old `BearerAuth`/`IdentityMiddleware`/`APIKeyProvider` remain in the codebase
+    (used by the Phase A/B regression tests and unchanged).
+  - **Endpoints.** `GET /api/v1/auth/login` (initiate), `GET /api/v1/auth/callback`
+    (complete), `POST /api/v1/auth/logout` (revoke + clear cookie), registered by
+    `auth.Handlers.RegisterRoutes` only when an issuer is configured.
+  - **First-login provisioning + admin bootstrap (design §2.9).** There is no
+    user directory: a `user:<email>` principal exists implicitly by being
+    referenced by a session and/or policies, so "first login creates the
+    binding with ZERO zones" is literally a no-op — a freshly-authenticated user
+    has no policy rows and `IsAllowed` denies everything until an operator
+    grants zones. The ONLY bootstrap path is the config-designated
+    `auth.admin_email`: on every login whose verified email matches it,
+    `auth.Provisioner.GrantAdmin` runs. **Admin authority means, concretely, an
+    `rbac_policies` grant on EVERY security zone present at grant time** —
+    prod-readonly, prod-write, dev-full, unassigned, and regime-control — which,
+    because RBAC is zone-scoped and additive/allow-only, yields
+    read/query/mutate/delete on every source assigned to any of those zones plus
+    the sourceless declare/resolve-incident capabilities. It is idempotent
+    (existing grants skipped) and grants only zones existing when it ran (a
+    later login picks up newer zones); a grant failure fails the login loudly
+    rather than masquerading as a working admin.
+  - **CLI provisioning (design §2.9 — CLI only, no admin UI, no NEW admin HTTP
+    endpoint).** New `joe zone` subcommand (`cmd/joe/zone.go`): `grant
+    --principal <user:|svc:…> --zone <id>`, `revoke --principal … --zone …`,
+    `list [--principal …]`. It writes/removes `rbac_policies` rows by opening the
+    SQLite DB **directly** (operator-on-host) — this sidesteps the bootstrap
+    chicken-and-egg (no already-authorized session is needed to grant the first
+    one) and honours "no admin HTTP endpoint" for this phase. Grants are
+    validated (zone must exist; principal must carry a reserved prefix) and
+    idempotent. Source→zone assignment is unchanged (existing admin API).
+- Deviations from the Phase C prompt, with reasons:
+  1. **SameSite=Lax tested by attribute assertion, not a true cross-site
+     redirect.** An `httptest` harness cannot simulate a real cross-site
+     top-level navigation from an IdP origin, so per the prompt's explicit
+     allowance the test asserts the cookie is exactly HttpOnly+Secure+Lax and
+     documents why Lax (not Strict) is what makes the callback return work
+     (`TestSessionManager_CookieAttributes`). The full login→callback flow is
+     exercised end-to-end with an injected verified ID token.
+  2. **`email_verified` enforcement proven behaviourally (static impractical).**
+     Per the prompt's allowance, the prefix/verified invariants are asserted by
+     `internal/auth/claims_test.go` (verified→`user:` prefix; false/absent→
+     `ErrEmailNotVerified` with no principal; reserved-prefix collision
+     rejected) rather than by an AST guard.
+  3. **Engine enable-condition widened to include OIDC.** `api.newPolicyEngine`
+     and `cmd/joe-core/main.go` now build the policy engine when the API key OR
+     OIDC is configured (previously API-key only), so a pure-OIDC deployment is
+     enforced. Behaviour for the existing API-key and RBAC-disabled cases is
+     unchanged (Phase A/B regression tests still green).
+  4. **Edge auth replaces (not augments) BearerAuth+IdentityMiddleware in the
+     production chain.** The prompt allows breaking/rebuilding internal
+     interfaces; consolidating session + bearer resolution into one middleware
+     is cleaner than chaining BearerAuth (which would 401 a cookie-only request
+     before session resolution). The old middlewares are retained for the
+     regression tests, which construct their own chains and are untouched.
+  5. **`group:` reserved but unminted.** Per scope fence 9, the set stays size 1;
+     `rbac.PrefixGroup` is reserved for v2 and nothing populates it.
+- Basis: joe-identity-design.md §2.1 (single OIDC issuer), §2.2 (`user:<email>`
+  + `email_verified` hard rejection + reserved prefixes), §2.3 (server-side
+  session + HttpOnly/Secure/Lax + CSRF/PKCE), §2.9 (zero-zone first login,
+  config admin bootstrap, CLI provisioning), §4 (IdP-unreachable failure mode);
+  joe-identity-phase-plan.md Phase C. Verified against Phase A's accessor
+  signature (D-0004) and Phase B's set-shaped path (D-0005). Tests: OIDC
+  callback success → session + `user:` principal; `email_verified=false`/absent
+  rejected with no session; zero-zone user denied then allowed after a CLI grant
+  and still denied elsewhere (`TestPhaseC_OIDCSessionPrincipalReachesAccessor`);
+  admin email gains all zones, non-admin none; logout deletes the session
+  (immediate); expired session treated as unauthenticated; cookie attribute
+  assertion; state/nonce-mismatch rejection; `joe zone` grant/revoke/list +
+  validation; Phase A no-ungoverned-access invariant and Phase A/B RBAC
+  regressions still green and unchanged.
+- Supersedes: nothing — extends D-0005. The single configured API-key principal
+  remains usable for machine access and is repurposed for service accounts in
+  Phase D. Phases D–G remain pending (D: service-account keys; E: remove
+  loopback — gated on A+B, both merged; F: audit; G: captain wiring). The loop,
+  the loopback, and service-account API keys were NOT touched in this phase.
+- Status: active. Phase C complete; do not proceed to Phase D without a new prompt.
+
+---
+
 ## D-0005 — Identity Phase B: set-shaped IsAllowed + real ctx principal
 
 - Date: 2026-05-29

@@ -269,8 +269,8 @@ func (r *REPL) handlePanicCommand(ctx context.Context) error {
 		return fmt.Errorf("failed to create panic request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if r.config.Server.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+r.config.Server.APIKey)
+	if key := r.config.Server.LoopbackKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

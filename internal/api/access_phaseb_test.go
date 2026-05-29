@@ -58,10 +58,11 @@ func TestPhaseB_ContextPrincipalReachesAccessorDecision(t *testing.T) {
 	registry := adapters.NewRegistry()
 	registry.Register("s-allow", apiFakeK8s{})
 
-	// API key set ⇒ newPolicyEngine builds a non-nil engine ⇒ the accessor
-	// enforces. RBAC repo + adapters wired so the handler can resolve and call.
+	// Service account set ⇒ newPolicyEngine builds a non-nil engine ⇒ the
+	// accessor enforces. RBAC repo + adapters wired so the handler can resolve
+	// and call.
 	services := &core.Services{
-		Config:   &config.Config{Server: config.ServerConfig{APIKey: "secret", Principal: "operator"}},
+		Config:   &config.Config{Server: config.ServerConfig{ServiceAccounts: []config.ServiceAccount{{Name: "operator", Key: "secret"}}}},
 		Store:    sqlStore,
 		RBAC:     repo,
 		Adapters: registry,
