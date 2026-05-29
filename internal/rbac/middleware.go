@@ -102,7 +102,12 @@ func EnforcementMiddleware(engine *PolicyEngine) func(http.Handler) http.Handler
 			principal := PrincipalFromContext(r.Context())
 			action := actionFromRequest(r)
 
-			if !engine.IsAllowed(r.Context(), principal, sourceID, action) {
+			// Lift the context-derived caller principal into a size-1
+			// authorization subject. This middleware remains the authoritative
+			// gate on the HTTP path in Phase B (its demotion is deferred to
+			// Phase E, gated by an equivalence test); it evaluates the same
+			// set-shaped IsAllowed as the accessor below it.
+			if !engine.IsAllowed(r.Context(), NewPrincipalSet(principal), sourceID, action) {
 				slog.Warn("rbac: access denied",
 					"principal", principal,
 					"source_id", sourceID,

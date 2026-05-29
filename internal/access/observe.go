@@ -33,7 +33,7 @@ import (
 // action is passed in by each dispatcher so the declaration stays adjacent to
 // the method (design §2.8).
 func (a *Accessor) observeResolve(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) (adapters.Adapter, error) {
-	if err := a.permit(ctx, principal, sourceID, action); err != nil {
+	if err := a.permitForPrincipal(ctx, principal, sourceID, action); err != nil {
 		return nil, err
 	}
 	adapter, err := a.registry.Get(sourceID)
