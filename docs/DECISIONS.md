@@ -10,6 +10,173 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0008 — Identity Phase E: remove the loopback; loop runs through the accessor as the real caller; middleware demoted
+
+- Date: 2026-05-29
+- Decision: Phase E (joe-identity-design.md §1, §2.5, §3 sequencing;
+  joe-identity-phase-plan.md Phase E) removes the in-process loopback. The
+  agentic loop's tool registry no longer constructs a loopback `*client.Client`
+  that re-authenticates as `svc:server`; instead it is wired to an in-process
+  accessor-backed client that reads the real caller principal from Go context
+  (the SAME principal `auth.EdgeAuth` set via `rbac.WithPrincipal` at the edge)
+  and dispatches to `internal/access` directly. `EnforcementMiddleware` is
+  demoted from the authoritative per-zone gate to a pass-through, gated by an
+  equivalence test. Specifics:
+  - **In-process client for the loop's tools.** `internal/api/inproc_client.go`
+    introduces `inProcessCoreClient`, which implements every per-tool
+    `*Client` interface in `internal/tools/core/`. Each method reads
+    `rbac.PrincipalFromContext(ctx)` at the call site (literally — not via a
+    helper, so the Phase B static guard
+    `TestPhaseB_AccessorCallersDerivePrincipalFromContext` sees the context
+    derivation) and calls the matching `*access.Accessor` dispatch method.
+    There is NO HTTP, NO `client.New`, NO bearer key, and NO re-authentication
+    on this path. Identity is established once at the edge and carried by
+    context, per design §1 ("authenticate at real boundaries; pass identity
+    by context within a process").
+  - **Aggregate `coretools.CoreToolsClient` interface.** Defined in
+    `internal/tools/core/coreclient.go` as the union of every per-tool
+    `*Client` interface used by `registerCoreTools`. `tools.NewCoreRegistry`
+    and `tools.NewDefaultRegistryWithClient` now take this interface instead
+    of `*client.Client`. The HTTP `*client.Client` still satisfies it
+    (preserving the e2e/integration test harness in `test/e2e`,
+    `test/integration`, and the schema-validity test in
+    `internal/tools/default_test.go`); the in-process client is the second
+    implementation, used by the loop.
+  - **Wiring.** `api.Server` now holds an `*inProcessCoreClient` built once
+    by `api.New` alongside the accessor (`internal/api/server.go`).
+    `internal/api/tasks.go`'s `buildTaskRun` passes `h.server.inproc` to
+    `tools.NewCoreRegistry`. The deleted block (≈18 lines that built the
+    scheme/loopbackURL/loopbackClient with `client.New(loopbackURL, ...)` and
+    bearer-keyed it with `ServerConfig.LoopbackKey()`) is the entire loopback
+    construction site for in-process tool execution. The static guard
+    `TestPhaseE_NoLoopbackClientForInProcessToolExecution`
+    (`internal/api/access_phasee_test.go`) parses `tasks.go`, `tasks_stream.go`,
+    and `inproc_client.go` and fails if any of them reintroduces a
+    `client.New(...)` call.
+  - **Non-adapter tool dependencies.** A handful of core tools do not touch
+    an adapter or the graph store: `list_sources` (reads
+    `services.Store.Sources`), `search_knowledge` (calls
+    `services.Knowledge.Search`), `detect_doc_drift`/`generate_doc_draft`
+    (use `services.DriftDet`/`services.DocDrafter`), and
+    `publish_doc_update`. These reach the in-process service directly. None
+    of them is principal-gated today (they predate the Phase A accessor) and
+    NONE is what the no-ungoverned-access invariant covers — that invariant
+    is about adapters and the graph store
+    (`internal/api/access_guard_test.go`). For `publish_doc_update`, the
+    publish dispatch logic was extracted from `s.publishProposal` into the
+    package-level `publishProposalToTarget(ctx, services, proposal)` helper
+    in `internal/api/publish.go` so both the HTTP handler and the in-process
+    client share it without either path going through an HTTP loopback.
+  - **`EnforcementMiddleware` demoted to a pass-through.** With the accessor
+    now authoritative on BOTH paths (HTTP via Phase A, loop via this phase),
+    the middleware's per-zone `IsAllowed` call is redundant. It is now a
+    no-op: `EnforcementMiddleware(engine)` returns a middleware that calls
+    `next` directly, with `engine` retained as an argument only so existing
+    test harnesses that build the middleware do not need to change. The
+    obsolete tests in `internal/rbac/middleware_test.go` that asserted
+    middleware-level IsAllowed behaviour are deleted; the new
+    `TestEnforcementMiddleware_Passthrough` documents the demotion.
+  - **Equivalence test gating the demotion (req 6).**
+    `TestPhaseE_AccessorAloneMatchesPriorOutcomes` constructs two production
+    chains over the same routes + RBAC state:
+    `(EdgeAuth → demoted middleware → accessor)` and
+    `(EdgeAuth → accessor)`. It asserts identical 200/403/401 outcomes
+    across granted-read, ungranted-zone, missing-token, and invalid-token
+    cases. The Phase A regression test
+    `TestPhaseA_HTTPRBACOutcomesPreserved` continues to pass unchanged,
+    proving the same outcomes match the pre-Phase-E expectations.
+  - **`svc:server` and `LoopbackKey()`: what survives and why.** The reserved
+    `svc:server` service account and `ServerConfig.LoopbackKey()` REMAIN.
+    They are still presented by the joe CLI (`cmd/joe/main.go`) and the REPL
+    panic command (`internal/repl/repl.go`) — these are external co-located
+    HTTP clients to joe-core, NOT loopback in the in-process sense. The
+    LoopbackKey docstring is updated to reflect the post-Phase-E reality
+    (historical name, surviving consumer set). The
+    `TestPhaseD_LoopbackKeyReachesInfra` test is renamed
+    `TestPhaseD_ColocatedServerKeyReachesInfra` and its docstring rewritten
+    to describe the CLI auth path, not the in-process loopback. The
+    "JOE_API_KEY → server service account" env override
+    (`internal/config/config.go`) is untouched.
+  - **Phase A invariant: loop path covered, allowlist commentary updated.**
+    The agent-loop execution package (`internal/api`, where `tasks.go` and
+    the in-process client live) was already NOT in the allowlist; this phase
+    makes that meaningful — the loop now reaches infra through the accessor
+    only. The remaining allowlist entries are documented in the test:
+    `internal/access` (the accessor itself), `internal/coreagent` (the
+    timer-driven background refresh that runs without a caller principal —
+    structurally outside the accessor), and `cmd/joe-core` (a process-level
+    business-metric gauge with no caller principal). The
+    `TestInvariant_NoUngovernedAdapterOrGraphAccess` text is updated to
+    state explicitly that the loop path is now covered, not excepted.
+  - **K8s return-shape conversion.** The accessor returns
+    `[]unstructured.Unstructured` for K8s list/get; the tools expect
+    `[]map[string]any`. The in-process client extracts `.Object` from each
+    item before returning — matching the JSON shape the loopback HTTP client
+    used to produce so no tool change is needed. AWS list calls similarly
+    convert the accessor's value slices (e.g. `[]awsadapter.EC2Instance`)
+    to the tool's pointer slices (`[]*awsadapter.EC2Instance`).
+- Deviations from the Phase E prompt, with reasons:
+  1. **`svc:server`/`LoopbackKey()` retained, not deleted.** The prompt
+     allowed deletion only "IF it has no other remaining consumer". The joe
+     CLI and the REPL are surviving external co-located clients (separate
+     processes that share joe-core's config), and the `JOE_API_KEY` env
+     override folds into this same account. The name remains "LoopbackKey"
+     to minimise churn at every call site (cmd/joe x5, internal/repl x1),
+     but every docstring is rewritten to reflect the post-Phase-E reality
+     ("co-located CLI key, not loopback"). A rename to `CoLocatedKey()` is
+     an isolated follow-up not required by Phase E.
+  2. **`coreagent` refresh path NOT routed through the accessor.** The
+     Phase A allowlist commentary said the coreagent exception should be
+     removed in Phase E, but the refresh path is timer-driven background
+     work with no caller principal — the accessor's enforcement model
+     (`permitForPrincipal(ctx, principal, ...)`) does not fit it without
+     either granting svc:server every zone or special-casing the principal
+     in the accessor (both defeat the purpose). Phase E's scope is the
+     LOOP path (per the design doc §3), which is now governed by the
+     accessor. The coreagent allowlist remains, with its rationale updated
+     to spell out the structural difference. If the refresh path is later
+     refactored to take a principal, the allowlist entry should be removed
+     then.
+  3. **In-process equivalence test instead of replaying the legacy chain.**
+     The pre-Phase-E "middleware does IsAllowed" chain no longer exists in
+     the codebase (the demotion is the change being shipped). The
+     equivalence test asserts that the two surviving chains —
+     `(demoted middleware + accessor)` and `(accessor alone)` — agree on
+     200/403/401 across the matrix, AND that the Phase A regression test
+     (the pre-Phase-E behavioural contract) still passes through the
+     demoted chain. Together these prove the demotion preserves outcomes.
+  4. **Aggregate interface defined in `internal/tools/core`, not a new
+     package.** The simplest seam keeping the per-tool small interfaces
+     intact for unit testing is a composition interface alongside them;
+     `coreClient.go` does exactly that. A new `tools/inproc` package would
+     be heavier without producing different behaviour.
+- Basis: joe-identity-design.md §1 (root-cause: loopback IS the identity
+  reset), §2.5 (accessor is the authoritative point), §3 (sequencing — E
+  must follow A+B, which both merged in D-0004/D-0005), §5-Invariants 1–3;
+  joe-identity-phase-plan.md Phase E. Verified against Phase A's accessor
+  signature (D-0004), Phase B's set-shaped path (D-0005), Phase C's
+  edge-auth + CLI provisioning (D-0006), and Phase D's service-account
+  resolver (D-0007). Tests added:
+  `TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal` (alice succeeds,
+  mallory denied, svc:server not granted — impossible on pre-Phase-E code),
+  `TestPhaseE_LoopGraphAccessIsInProcess` (graph access works without an
+  HTTP server),
+  `TestPhaseE_AccessorAloneMatchesPriorOutcomes` (equivalence test),
+  `TestPhaseE_NoLoopbackClientForInProcessToolExecution` (static guard
+  against re-introducing `client.New(...)`),
+  `TestEnforcementMiddleware_Passthrough` (documents the demotion). Phase A
+  no-ungoverned-access invariant and Phase A/B/C/D regressions still green
+  and unchanged.
+- Supersedes: nothing — extends D-0007. Phases F (audit) and G (captain
+  wiring) remain pending. The in-process loopback construction in
+  `tasks.go`/`tasks_stream.go` is deleted; the in-process accessor is the
+  new path. External clients (CLI SSE, Web UI API, MCP) are unchanged —
+  they remain external HTTP clients that authenticate at the edge.
+- Status: active. Phase E complete; do not proceed to Phase F without a new
+  prompt.
+
+---
+
 ## D-0007 — Identity Phase D: named service-account keys → svc: principals
 
 - Date: 2026-05-29

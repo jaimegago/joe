@@ -2,17 +2,16 @@ package rbac
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
-	"strings"
 )
 
 type principalKey struct{}
 
 // PrincipalFromContext retrieves the principal stored in the context.
-// Returns Unknown if not set. Exported for handlers that operate outside
-// the source-keyed EnforcementMiddleware path (e.g. regime declare/resolve,
-// which need the principal but have no sourceID).
+// Returns Unknown if not set. After Phase E (D-0008) every reader uses this:
+// the guarded accessor's permit() call sites, regime declare/resolve, and the
+// in-process tool client. The principal is established once by the edge
+// middleware (auth.EdgeAuth → WithPrincipal) and carried by context.
 func PrincipalFromContext(ctx context.Context) Principal {
 	if p, ok := ctx.Value(principalKey{}).(Principal); ok {
 		return p
@@ -41,9 +40,10 @@ func contextWithPrincipal(ctx context.Context, p Principal) context.Context {
 }
 
 // IdentityMiddleware injects the caller's Principal into the request context.
-// It must run after BearerAuth so that invalid tokens are rejected before
-// identity resolution. When auth is disabled (empty apiKey), all callers
-// resolve to the configured principal.
+// Retained for test harnesses that build their own auth chains. The production
+// chain in cmd/joe-core/main.go uses auth.EdgeAuth (Phase C/D), which resolves
+// the principal from a session cookie or service-account key and sets it via
+// WithPrincipal — exactly the same context value this middleware writes.
 func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,72 +54,30 @@ func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handl
 	}
 }
 
-// sourceIDFromRequest attempts to extract a source_id from the URL path.
-// Joe's API uses the pattern /api/v1/{adapter}/{sourceID}/... for all
-// infrastructure endpoints. Returns empty string if not found.
-func sourceIDFromRequest(r *http.Request) string {
-	// /api/v1/{adapter}/{sourceID}/...
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	// parts[0]="api" parts[1]="v1" parts[2]=adapter parts[3]=sourceID
-	if len(parts) >= 4 {
-		return parts[3]
-	}
-	return ""
-}
-
-// actionFromRequest maps the HTTP method to an RBAC Action.
-// GET/HEAD → ActionRead; POST/PUT/PATCH → ActionMutate; DELETE → ActionDelete.
-func actionFromRequest(r *http.Request) Action {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead:
-		return ActionRead
-	case http.MethodDelete:
-		return ActionDelete
-	default:
-		return ActionMutate
-	}
-}
-
-// EnforcementMiddleware checks the caller's policy before proxying requests to
-// infrastructure adapters. It only evaluates paths that carry a sourceID (i.e.
-// /api/v1/{adapter}/{sourceID}/...). Admin paths (/api/v1/admin/) and non-source
-// paths (graph, knowledge, status) are exempt.
+// EnforcementMiddleware is a coarse outer gate that survives in the chain as a
+// defence-in-depth seam (docs/joe-identity-design.md §3, Phase E demotion). Its
+// former per-zone IsAllowed decision has been moved into the guarded accessor
+// (internal/access), which is now the AUTHORITATIVE RBAC gate on BOTH the HTTP
+// path (Phase A) and the in-process agent-loop path (Phase E). The accessor
+// evaluates the real caller principal carried by Go context — there is no
+// loopback HTTP self-call any more, no svc:server re-authentication on the loop,
+// and no second IsAllowed call to keep in sync.
 //
-// Use WithPolicyEngine(nil) to disable enforcement (RBAC off).
+// This middleware is now a pass-through. It is kept (a) so existing test
+// harnesses that wire it in continue to compile, and (b) as a documented seam
+// for a future coarse "authenticated principal required on source-keyed paths"
+// belt-and-suspenders — EdgeAuth already rejects unauthenticated protected
+// paths, so requiring a principal here would only be redundant defence. The
+// engine argument is retained so the call sites are unchanged.
+//
+// The Phase E equivalence test
+// (internal/api/access_phasee_test.go::TestPhaseE_AccessorAloneMatchesPriorOutcomes)
+// gates this demotion: it proves that the accessor alone produces the same
+// allow/deny/unauth (200/403/401) outcomes the prior middleware+accessor chain
+// produced.
 func EnforcementMiddleware(engine *PolicyEngine) func(http.Handler) http.Handler {
+	_ = engine // intentionally unused after Phase E demotion
 	return func(next http.Handler) http.Handler {
-		if engine == nil {
-			return next
-		}
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sourceID := sourceIDFromRequest(r)
-			if sourceID == "" {
-				// No source in path — not subject to RBAC enforcement.
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			principal := PrincipalFromContext(r.Context())
-			action := actionFromRequest(r)
-
-			// Lift the context-derived caller principal into a size-1
-			// authorization subject. This middleware remains the authoritative
-			// gate on the HTTP path in Phase B (its demotion is deferred to
-			// Phase E, gated by an equivalence test); it evaluates the same
-			// set-shaped IsAllowed as the accessor below it.
-			if !engine.IsAllowed(r.Context(), NewPrincipalSet(principal), sourceID, action) {
-				slog.Warn("rbac: access denied",
-					"principal", principal,
-					"source_id", sourceID,
-					"action", action,
-					"path", r.URL.Path,
-				)
-				http.Error(w, `{"error":"forbidden","message":"access denied by RBAC policy"}`,
-					http.StatusForbidden)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
+		return next
 	}
 }

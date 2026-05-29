@@ -26,7 +26,16 @@ type Server struct {
 	// handlers reach adapters/graph ONLY through this; they never resolve
 	// services.Adapters or call services.Graph directly.
 	accessor *access.Accessor
-	version  string
+	// inproc is the in-process accessor-backed client the loop's tool
+	// registry uses (Identity Phase E, design §3). It implements every
+	// coretools.CoreToolsClient method by reading the caller principal from
+	// ctx and dispatching to the accessor (for adapter/graph operations) or
+	// directly to in-process services (for list_sources, search_knowledge,
+	// doc tools — none of which touch an adapter). It replaces the loopback
+	// *client.Client; no HTTP self-call remains for in-process tool
+	// execution.
+	inproc  *inProcessCoreClient
+	version string
 }
 
 // New creates a new API server with access to core services.
@@ -37,9 +46,11 @@ func New(services *core.Services) *Server {
 		panic("api.New: services must not be nil")
 	}
 	services.Metrics = observability.EnsureMetrics(services.Metrics)
+	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services))
 	return &Server{
 		services: services,
-		accessor: access.New(services.Adapters, services.Graph, newPolicyEngine(services)),
+		accessor: accessor,
+		inproc:   newInProcessCoreClient(accessor, services),
 		version:  defaultVersion,
 	}
 }

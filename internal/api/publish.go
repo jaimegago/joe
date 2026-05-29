@@ -6,27 +6,38 @@ import (
 	"fmt"
 
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	confluencesync "github.com/jaimegago/joe/internal/knowledge/sync/confluence"
 	notionsync "github.com/jaimegago/joe/internal/knowledge/sync/notion"
 )
 
-// publishProposal dispatches a proposal to the appropriate write adapter.
-func (s *Server) publishProposal(ctx context.Context, p *proposals.Proposal) error {
+// publishProposalToTarget dispatches a proposal to the appropriate write
+// adapter. It is a package-level helper so both the HTTP handler
+// (server.publishProposal) and the in-process loop client
+// (inProcessCoreClient.PublishProposal) can share the dispatch — neither path
+// goes through the loopback after Phase E.
+func publishProposalToTarget(ctx context.Context, services *core.Services, p *proposals.Proposal) error {
 	switch p.TargetType {
 	case proposals.TargetConfluence:
-		return s.publishToConfluence(ctx, p)
+		return publishToConfluence(ctx, services, p)
 	case proposals.TargetNotion:
-		return s.publishToNotion(ctx, p)
+		return publishToNotion(ctx, services, p)
 	case proposals.TargetGit:
-		return s.publishToGit(ctx, p)
+		return publishToGit(ctx, services, p)
 	default:
 		return fmt.Errorf("unsupported target type: %s", p.TargetType)
 	}
 }
 
-func (s *Server) publishToConfluence(ctx context.Context, p *proposals.Proposal) error {
-	svc := s.services.Knowledge
+// publishProposal preserves the prior s.publishProposal signature for the HTTP
+// handler. It delegates to the shared package-level helper.
+func (s *Server) publishProposal(ctx context.Context, p *proposals.Proposal) error {
+	return publishProposalToTarget(ctx, s.services, p)
+}
+
+func publishToConfluence(ctx context.Context, services *core.Services, p *proposals.Proposal) error {
+	svc := services.Knowledge
 	if svc == nil {
 		return fmt.Errorf("knowledge service not available")
 	}
@@ -52,8 +63,8 @@ func (s *Server) publishToConfluence(ctx context.Context, p *proposals.Proposal)
 	return fmt.Errorf("no confluence source configured")
 }
 
-func (s *Server) publishToNotion(ctx context.Context, p *proposals.Proposal) error {
-	svc := s.services.Knowledge
+func publishToNotion(ctx context.Context, services *core.Services, p *proposals.Proposal) error {
+	svc := services.Knowledge
 	if svc == nil {
 		return fmt.Errorf("knowledge service not available")
 	}
@@ -74,8 +85,8 @@ func (s *Server) publishToNotion(ctx context.Context, p *proposals.Proposal) err
 	return fmt.Errorf("no notion source configured")
 }
 
-func (s *Server) publishToGit(ctx context.Context, p *proposals.Proposal) error {
-	svc := s.services.Knowledge
+func publishToGit(ctx context.Context, services *core.Services, p *proposals.Proposal) error {
+	svc := services.Knowledge
 	if svc == nil {
 		return fmt.Errorf("knowledge service not available")
 	}

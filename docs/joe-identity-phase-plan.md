@@ -159,8 +159,8 @@ Within that constraint: A → B → C → D → E → F → G is the planned ord
 - [x] A — enforcement below transport (merged 2026-05-29; see DECISIONS.md D-0004)
 - [x] B — set-shaped IsAllowed + real principal (merged 2026-05-29; see DECISIONS.md D-0005)
 - [x] C — OIDC + sessions + bootstrap (merged 2026-05-29; see DECISIONS.md D-0006)
-- [ ] D — service-account keys
-- [ ] E — remove loopback
+- [x] D — service-account keys (merged 2026-05-29; see DECISIONS.md D-0007)
+- [x] E — remove loopback (merged 2026-05-29; see DECISIONS.md D-0008)
 - [ ] F — audit append-only
 - [ ] G — captain gate on user loop
 
