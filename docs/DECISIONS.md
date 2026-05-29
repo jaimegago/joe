@@ -10,6 +10,114 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0005 — Identity Phase B: set-shaped IsAllowed + real ctx principal
+
+- Date: 2026-05-29
+- Decision: Phase B of the identity refactor (joe-identity-design.md §2.7,
+  joe-identity-phase-plan.md Phase B) makes the authorization subject a SET of
+  principals (union of grants) and confirms the accessor enforces the real
+  context-derived caller principal. Behaviour-preserving and still
+  single-principal in practice (the set has exactly one member at launch).
+  Specifics:
+  - **New set type.** `rbac.PrincipalSet` (`= []Principal`) with constructor
+    `rbac.NewPrincipalSet(principals ...Principal) PrincipalSet`
+    (`internal/rbac/principalset.go`). It is the authorization subject:
+    additive / allow-only, no deny rules. At launch every caller constructs it
+    with one member — the caller's own principal.
+  - **Set-shaped decision function.** `PolicyEngine.IsAllowed` is now
+    `IsAllowed(ctx, principals rbac.PrincipalSet, sourceID string, action Action) bool`
+    (`internal/rbac/policy.go`). It resolves the source's zone ONCE (zone
+    resolution is principal-independent) and the zone-allows-action check once,
+    then permits if ANY member holds a policy granting that zone. A
+    per-member `ListPoliciesForPrincipal` error denies only that member
+    (`continue`) rather than the whole decision; for a size-1 set this is byte-
+    identical to the prior single-principal behaviour (immediate deny), which
+    is the regression contract.
+  - **Set-shaped accessor chokepoint.** `Accessor.permit` is now
+    `permit(ctx, principals rbac.PrincipalSet, sourceID, action) error`
+    (`internal/access/access.go`). A new private seam
+    `permitForPrincipal(ctx, principal rbac.Principal, sourceID, action)` lifts
+    the single caller principal into a size-1 set via `rbac.NewPrincipalSet`
+    and delegates to `permit`. `guard[T]` (the adapter resolve path),
+    `observeResolve` (the category-dispatch sibling), and all `graph.go`
+    dispatch methods call `permitForPrincipal`. `permit` remains the single
+    place `IsAllowed` is invoked from the accessor. This one seam is where
+    Phase C adds `group:` members (from the IdP groups claim) with no change to
+    any dispatch method.
+  - **Public dispatch signatures unchanged (single principal).** The exported
+    `<Family><Operation>(ctx, principal rbac.Principal, …)` methods keep taking
+    a single `rbac.Principal` — the context-derived caller principal the
+    handlers already pass. The SET is formed inside the accessor at the
+    decision boundary, not at the public API. Rationale: Phase B req 2 says
+    callers pass "the caller principal" (singular) from context; the Phase A
+    action-declaration guard (`internal/access/guard_test.go`) asserts dispatch
+    methods take an `rbac.Principal` parameter; and the §B static criterion
+    presumes a singular principal crosses the accessor boundary. Keeping the
+    public arity also makes Phase B a minimal, attributable diff (≈140 lines).
+  - **Context principal threading — already in place from Phase A.** The §B
+    goal "thread the real ctx principal into the accessor instead of a
+    configured/hardcoded one" required NO new wiring: Phase A's rerouted
+    handlers already obtain the principal via
+    `rbac.PrincipalFromContext(r.Context())` (the value `IdentityMiddleware`
+    sets) and pass it to the accessor. Phase B verifies and locks this with
+    tests (below) rather than changing handler code. The mechanism is:
+    `IdentityMiddleware` → `PrincipalFromContext` (handler) → public dispatch
+    method `principal` arg → `permitForPrincipal` → size-1 `PrincipalSet` →
+    `permit` → `IsAllowed`.
+  - **Middleware left authoritative (demotion deferred to E).** The HTTP
+    `EnforcementMiddleware` is unchanged except that it now lifts its
+    context principal into a size-1 set for the set-shaped `IsAllowed`
+    (`internal/rbac/middleware.go`). It remains the authoritative gate on the
+    HTTP path; the accessor stays shadowed there. Middleware demotion (and the
+    accessor becoming load-bearing on HTTP) is Phase E, gated by an equivalence
+    test, per design §2.5/§3.
+- Deviations from the Phase B prompt, with reasons:
+  1. **Threading was confirmation, not new code.** The prompt anticipated
+     "replacing any reliance on a single hardcoded or implicitly-configured
+     principal at the accessor's callers." Phase A had already context-derived
+     the principal at every accessor call site, so there was nothing to
+     replace; Phase B's contribution to req 2 is the proof (one behavioural
+     test + one static guard), not a wiring change.
+  2. **Static criterion expressed behaviourally + a light static guard.** Per
+     the prompt's explicit allowance, a precise AST data-flow assertion is
+     brittle against Phase A's explicit-principal signature, so the primary
+     proof is behavioural — `TestPhaseB_ContextPrincipalReachesAccessorDecision`
+     omits `EnforcementMiddleware` (making the accessor the sole gate) and
+     injects a non-default principal into the request context; the 200/403
+     outcome tracks that principal's grants (alice allowed, mallory denied),
+     proving a context-injected principal reaches the accessor's decision. A
+     complementary static guard
+     (`TestPhaseB_AccessorCallersDerivePrincipalFromContext`) asserts every
+     principal-gated accessor call site in `internal/api` reads
+     `rbac.PrincipalFromContext` and passes no hardcoded principal
+     (string literal / `rbac.Unknown` / `rbac.Principal("…")`). Principal-less
+     methods (`GitHubWebhookSecret`, `GitLabWebhookSecret`, `GraphAvailable`)
+     are exempt, mirroring the D-0004 allowlist convention.
+  3. **`HasZoneAccess` deliberately NOT set-shaped.** The sourceless sibling
+     `PolicyEngine.HasZoneAccess` (used by regime declare/resolve in
+     `internal/api/regime.go`) is outside the accessor enforcement chain
+     (`permit`→`IsAllowed`) and belongs to the regime/captain path (Phases
+     F/G). Converting it now would be scope creep into a later phase and touch
+     handlers Phase B should not. It stays single-principal; its set-shaping,
+     if wanted, lands with the captain/audit work.
+- Basis: joe-identity-design.md §2.7 (set-shaped, size-1) / §2.5 (accessor is
+  the authoritative point; middleware demotion deferred to E) / §6 (groups drop
+  in as set members later); joe-identity-phase-plan.md Phase B. Verified against
+  Phase A's accessor signature (D-0004) and the existing context-threading in
+  `internal/api`. Tests: rbac union semantics (size-1 granted/ungranted +
+  multi-member ANY-granted + empty-set deny + zone-bounded), accessor per-kind
+  allow/deny (unchanged, regression through the accessor), HTTP RBAC regression
+  (`TestPhaseA_HTTPRBACOutcomesPreserved`, still green ⇒ HTTP outcomes identical
+  through the set-shaped path), Phase A no-ungoverned-access invariant (still
+  green, unchanged), and the two Phase B principal-threading tests above.
+- Supersedes: nothing — extends D-0004. Phases C–G remain pending (C: OIDC +
+  sessions + bootstrap; E: remove loopback — gated on A+B, now both merged).
+  The loop and loopback were not touched in this phase.
+- Status: active. Phase B complete; do not proceed to Phase C without a new
+  prompt.
+
+---
+
 ## D-0004 — Identity Phase A: guarded accessor below the transport
 
 - Date: 2026-05-29

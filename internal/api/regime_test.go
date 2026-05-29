@@ -468,7 +468,7 @@ func TestRegime_6B_NoIncidentalSourceWidening(t *testing.T) {
 	// Pre-grant matrix.
 	pre := map[rbac.Action]bool{}
 	for _, a := range actions {
-		pre[a] = engine.IsAllowed(ctx, "alice", "sample-src", a)
+		pre[a] = engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "sample-src", a)
 	}
 
 	// Grant regime-control.
@@ -480,7 +480,7 @@ func TestRegime_6B_NoIncidentalSourceWidening(t *testing.T) {
 
 	// Post-grant matrix — must be identical.
 	for _, a := range actions {
-		got := engine.IsAllowed(ctx, "alice", "sample-src", a)
+		got := engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "sample-src", a)
 		if got != pre[a] {
 			t.Errorf("granting regime-control widened source authority: "+
 				"IsAllowed(alice, sample-src, %q) was %v, now %v — §6-B violation",

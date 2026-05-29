@@ -16,15 +16,19 @@ func NewPolicyEngine(repo Repository) *PolicyEngine {
 	return &PolicyEngine{repo: repo}
 }
 
-// IsAllowed returns true if principal may perform action on sourceID.
+// IsAllowed returns true if ANY principal in the set may perform action on
+// sourceID — the union-of-grants decision (additive / allow-only). A size-1
+// set reproduces the previous single-principal decision exactly, which is the
+// Phase B regression contract (docs/joe-identity-design.md §2.7).
 //
 // Decision path:
-//  1. Look up the zone for sourceID (default: "unassigned" if no assignment).
-//  2. Look up all zones the principal has access to via rbac_policies.
-//  3. If principal has access to the source's zone and that zone allows action → permit.
-//  4. Otherwise → deny.
-func (e *PolicyEngine) IsAllowed(ctx context.Context, principal Principal, sourceID string, action Action) bool {
-	// Resolve source zone.
+//  1. Resolve the source's zone (default: "unassigned" if no assignment) —
+//     this is independent of the principal set, so it is computed once.
+//  2. If that zone does not allow the action at all, deny outright.
+//  3. Otherwise permit if any member of the set holds a policy granting the
+//     source's zone; deny if none do.
+func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, sourceID string, action Action) bool {
+	// Resolve source zone (independent of the principal set).
 	zoneID := "unassigned"
 	assignment, err := e.repo.GetAssignment(ctx, sourceID)
 	if err != nil {
@@ -46,17 +50,22 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principal Principal, sourc
 		return false
 	}
 
-	// Check that this principal has a policy granting access to this zone.
-	policies, err := e.repo.ListPoliciesForPrincipal(ctx, string(principal))
-	if err != nil {
-		slog.Warn("rbac: failed to list policies, denying access",
-			"principal", principal, "error", err)
-		return false
-	}
-
-	for _, p := range policies {
-		if p.ZoneID == zoneID {
-			return true
+	// Permit if ANY principal in the set has a policy granting access to the
+	// source's zone (union of grants). A lookup failure for one member denies
+	// only that member — the others may still grant — so we continue rather
+	// than returning. For a size-1 set this is identical to the old behaviour:
+	// the single member's failure yields an overall deny.
+	for _, principal := range principals {
+		policies, err := e.repo.ListPoliciesForPrincipal(ctx, string(principal))
+		if err != nil {
+			slog.Warn("rbac: failed to list policies, denying this principal",
+				"principal", principal, "error", err)
+			continue
+		}
+		for _, p := range policies {
+			if p.ZoneID == zoneID {
+				return true
+			}
 		}
 	}
 

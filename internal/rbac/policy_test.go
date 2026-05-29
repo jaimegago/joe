@@ -123,13 +123,13 @@ func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if !engine.IsAllowed(ctx, "alice", "k8s-prod", rbac.ActionRead) {
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead) {
 		t.Error("alice should be able to read prod-readonly source")
 	}
-	if !engine.IsAllowed(ctx, "alice", "k8s-prod", rbac.ActionQuery) {
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionQuery) {
 		t.Error("alice should be able to query prod-readonly source")
 	}
-	if engine.IsAllowed(ctx, "alice", "k8s-prod", rbac.ActionMutate) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionMutate) {
 		t.Error("alice should NOT be able to mutate prod-readonly source")
 	}
 }
@@ -146,10 +146,10 @@ func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if !engine.IsAllowed(ctx, "bob", "k8s-prod", rbac.ActionMutate) {
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("bob"), "k8s-prod", rbac.ActionMutate) {
 		t.Error("bob should be able to mutate prod-write source")
 	}
-	if engine.IsAllowed(ctx, "bob", "k8s-prod", rbac.ActionDelete) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("bob"), "k8s-prod", rbac.ActionDelete) {
 		t.Error("bob should NOT be able to delete from prod-write source")
 	}
 }
@@ -164,10 +164,10 @@ func TestPolicyEngine_IsAllowed_Unassigned(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if !engine.IsAllowed(ctx, "charlie", "k8s-dev", rbac.ActionRead) {
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("charlie"), "k8s-dev", rbac.ActionRead) {
 		t.Error("charlie should be able to read unassigned source")
 	}
-	if engine.IsAllowed(ctx, "charlie", "k8s-dev", rbac.ActionMutate) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("charlie"), "k8s-dev", rbac.ActionMutate) {
 		t.Error("charlie should NOT be able to mutate unassigned source")
 	}
 }
@@ -184,7 +184,7 @@ func TestPolicyEngine_IsAllowed_NoPolicyDenied(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if engine.IsAllowed(ctx, "dave", "k8s-prod", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("dave"), "k8s-prod", rbac.ActionRead) {
 		t.Error("dave has no policy and should be denied")
 	}
 }
@@ -202,7 +202,7 @@ func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	for _, action := range []rbac.Action{rbac.ActionRead, rbac.ActionQuery, rbac.ActionMutate, rbac.ActionDelete} {
-		if !engine.IsAllowed(ctx, "eve", "k8s-dev", action) {
+		if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("eve"), "k8s-dev", action) {
 			t.Errorf("eve should be allowed action %q in dev-full zone", action)
 		}
 	}
@@ -241,7 +241,7 @@ func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
 
 	// Even though frank has a policy for ghost-zone, the zone doesn't exist so
 	// GetZone returns nil and IsAllowed must deny.
-	if engine.IsAllowed(ctx, "frank", "orphan-src", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("frank"), "orphan-src", rbac.ActionRead) {
 		t.Error("expected denial when source zone does not exist in security_zones")
 	}
 }
@@ -262,7 +262,7 @@ func TestPolicyEngine_IsAllowed_ActionNotInZone(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	// prod-readonly only allows read/query; delete is denied at the zone level.
-	if engine.IsAllowed(ctx, "grace", "k8s-prod", rbac.ActionDelete) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("grace"), "k8s-prod", rbac.ActionDelete) {
 		t.Error("grace should NOT be able to delete in prod-readonly zone")
 	}
 }
@@ -283,7 +283,7 @@ func TestPolicyEngine_IsAllowed_GetAssignmentError(t *testing.T) {
 
 	// GetAssignment errors → engine logs warning + falls back to unassigned zone.
 	// GetZone("unassigned") returns nil → deny.
-	if engine.IsAllowed(ctx, "alice", "some-source", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-source", rbac.ActionRead) {
 		t.Error("expected denial when GetAssignment errors and zone lookup returns nil")
 	}
 }
@@ -308,7 +308,68 @@ func TestPolicyEngine_IsAllowed_ListPoliciesError(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if engine.IsAllowed(ctx, "alice", "some-source", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-source", rbac.ActionRead) {
 		t.Error("expected denial when ListPoliciesForPrincipal errors")
+	}
+}
+
+// TestPolicyEngine_IsAllowed_SetSingleMember is the Phase B behavioural
+// contract for the size-1 case actually used in production: a set whose single
+// member has a matching grant is allowed; a set whose single member lacks the
+// grant is denied (docs/joe-identity-design.md §2.7).
+func TestPolicyEngine_IsAllowed_SetSingleMember(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead) {
+		t.Error("size-1 set whose member is granted should be allowed")
+	}
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("mallory"), "k8s-prod", rbac.ActionRead) {
+		t.Error("size-1 set whose member lacks the grant should be denied")
+	}
+}
+
+// TestPolicyEngine_IsAllowed_SetUnion proves the union-of-grants semantics that
+// production does not yet exercise (size 1 at launch) but the design builds now
+// so group: members drop in later (§2.7, §6): a multi-member set is permitted
+// if ANY member holds the grant, denied if none do, and the empty set is denied.
+func TestPolicyEngine_IsAllowed_SetUnion(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	})
+	// Only alice is granted; bob and mallory are not.
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// ANY granted member ⇒ allow (alice is granted, position in the set is
+	// irrelevant to the union decision).
+	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("mallory", "alice", "bob"), "k8s-prod", rbac.ActionRead) {
+		t.Error("set with any granted member should be allowed (union of grants)")
+	}
+	// No member granted ⇒ deny.
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("mallory", "bob"), "k8s-prod", rbac.ActionRead) {
+		t.Error("set with no granted member should be denied")
+	}
+	// Empty subject ⇒ deny (no member can satisfy a grant).
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet(), "k8s-prod", rbac.ActionRead) {
+		t.Error("empty principal set should be denied")
+	}
+	// Union is still bounded by the zone's allowed actions: prod-readonly
+	// forbids mutate for everyone, granted or not.
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice", "bob"), "k8s-prod", rbac.ActionMutate) {
+		t.Error("union must not exceed the zone's allowed actions")
 	}
 }

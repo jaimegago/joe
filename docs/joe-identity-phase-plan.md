@@ -157,7 +157,7 @@ Within that constraint: A → B → C → D → E → F → G is the planned ord
 ## Progress tracker
 
 - [x] A — enforcement below transport (merged 2026-05-29; see DECISIONS.md D-0004)
-- [ ] B — set-shaped IsAllowed + real principal
+- [x] B — set-shaped IsAllowed + real principal (merged 2026-05-29; see DECISIONS.md D-0005)
 - [ ] C — OIDC + sessions + bootstrap
 - [ ] D — service-account keys
 - [ ] E — remove loopback

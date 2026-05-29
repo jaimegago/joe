@@ -79,21 +79,37 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 	return &Accessor{registry: registry, graph: graphStore, engine: engine}
 }
 
-// permit is the single enforcement chokepoint. It evaluates the policy
-// engine for (principal, sourceID, action) and returns ErrPermissionDenied
-// on a denied decision. A nil engine permits everything (RBAC disabled).
+// permit is the single enforcement chokepoint. It evaluates the policy engine
+// for (principals, sourceID, action) — the authorization subject is a SET of
+// principals, permitted if ANY member holds a matching grant (union of grants;
+// docs/joe-identity-design.md §2.7). It returns ErrPermissionDenied on a denied
+// decision. A nil engine permits everything (RBAC disabled).
+//
+// At launch the set has exactly one member — the caller's own context-derived
+// principal — formed by permitForPrincipal below; the set shape is built now so
+// group: members can be added later with no change here.
 //
 // permit performs NO infrastructure access: callers must invoke it before
 // resolving or calling any adapter or graph method, so that a denial never
 // touches infrastructure.
-func (a *Accessor) permit(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) error {
+func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sourceID string, action rbac.Action) error {
 	if a.engine == nil {
 		return nil
 	}
-	if !a.engine.IsAllowed(ctx, principal, sourceID, action) {
-		return fmt.Errorf("%w: principal=%q source=%q action=%q", ErrPermissionDenied, principal, sourceID, action)
+	if !a.engine.IsAllowed(ctx, principals, sourceID, action) {
+		return fmt.Errorf("%w: principals=%v source=%q action=%q", ErrPermissionDenied, principals, sourceID, action)
 	}
 	return nil
+}
+
+// permitForPrincipal lifts the context-derived caller principal into a size-1
+// authorization subject and delegates to the set-shaped permit. This is the
+// single seam where the accessor forms the subject from the caller principal;
+// it is where group: members (from an IdP groups claim) will be added in a
+// later phase without touching every dispatch method. It performs no
+// infrastructure access (see permit).
+func (a *Accessor) permitForPrincipal(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) error {
+	return a.permit(ctx, rbac.NewPrincipalSet(principal), sourceID, action)
 }
 
 // guard enforces (principal, sourceID, action), then resolves the adapter
@@ -115,7 +131,7 @@ func guard[T any](
 	typeName string,
 ) (T, error) {
 	var zero T
-	if err := a.permit(ctx, principal, sourceID, action); err != nil {
+	if err := a.permitForPrincipal(ctx, principal, sourceID, action); err != nil {
 		return zero, err
 	}
 	adapter, err := a.registry.Get(sourceID)
