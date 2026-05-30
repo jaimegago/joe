@@ -299,7 +299,7 @@ func TestAccessor_PerKind_AllowAndDeny(t *testing.T) {
 			var calledAllow bool
 			reg := adapters.NewRegistry()
 			kc.register(reg, &calledAllow)
-			a := access.New(reg, nil, engine)
+			a := access.New(reg, nil, engine, nil)
 
 			if err := kc.invoke(a, rbac.Principal(allowed)); err != nil {
 				t.Fatalf("%s: granted principal should be allowed, got error: %v", kc.name, err)
@@ -312,7 +312,7 @@ func TestAccessor_PerKind_AllowAndDeny(t *testing.T) {
 			var calledDeny bool
 			reg2 := adapters.NewRegistry()
 			kc.register(reg2, &calledDeny)
-			a2 := access.New(reg2, nil, engine)
+			a2 := access.New(reg2, nil, engine, nil)
 
 			err := kc.invoke(a2, rbac.Principal(denied))
 			if !errors.Is(err, access.ErrPermissionDenied) {
@@ -333,7 +333,7 @@ func TestAccessor_Graph_AllowAndDeny(t *testing.T) {
 
 	// Allowed.
 	var calledAllow bool
-	a := access.New(adapters.NewRegistry(), fakeGraph{called: &calledAllow}, engine)
+	a := access.New(adapters.NewRegistry(), fakeGraph{called: &calledAllow}, engine, nil)
 	if _, err := a.GraphQuery(context.Background(), rbac.Principal(allowed), "svc"); err != nil {
 		t.Fatalf("granted principal should query the graph, got: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestAccessor_Graph_AllowAndDeny(t *testing.T) {
 
 	// Denied — and the store must not be touched.
 	var calledDeny bool
-	a2 := access.New(adapters.NewRegistry(), fakeGraph{called: &calledDeny}, engine)
+	a2 := access.New(adapters.NewRegistry(), fakeGraph{called: &calledDeny}, engine, nil)
 	if _, err := a2.GraphQuery(context.Background(), rbac.Principal(denied), "svc"); !errors.Is(err, access.ErrPermissionDenied) {
 		t.Fatalf("ungranted principal should be denied, got: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestAccessor_NilEngine_PermitsAll(t *testing.T) {
 	var called bool
 	reg := adapters.NewRegistry()
 	reg.Register("s-k8s", fakeK8s{called: &called})
-	a := access.New(reg, nil, nil) // nil engine
+	a := access.New(reg, nil, nil, nil) // nil engine, nil audit
 
 	if _, err := a.K8sListResources(context.Background(), rbac.Principal("anyone"), "s-k8s", "pods", ""); err != nil {
 		t.Fatalf("nil engine should permit, got: %v", err)

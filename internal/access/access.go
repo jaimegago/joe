@@ -28,6 +28,7 @@ import (
 	"fmt"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
@@ -71,19 +72,43 @@ type Accessor struct {
 	// mirroring rbac.EnforcementMiddleware(nil) on the HTTP transport, so
 	// the accessor's decision is identical to the middleware's.
 	engine *rbac.PolicyEngine
+	// auditRepo is the append-only audit trail (Identity Phase F,
+	// docs/joe-identity-design.md §2.6). Every decision the accessor
+	// makes — allow and deny alike — writes ONE row here at the decision
+	// point. A nil auditRepo is treated as "audit disabled" (used by
+	// dev/local runs without a database); cmd/joe-core/main.go always
+	// wires a real one. The failure split (§4) is fail-CLOSED for
+	// mutating actions and fail-OPEN for reads (see audit.FailurePosture).
+	auditRepo audit.Repository
 }
 
-// New builds an Accessor over the given registry, graph store, and policy
-// engine. engine may be nil (RBAC disabled).
-func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.PolicyEngine) *Accessor {
-	return &Accessor{registry: registry, graph: graphStore, engine: engine}
+// New builds an Accessor over the given registry, graph store, policy
+// engine, and audit repository. engine may be nil (RBAC disabled); auditRepo
+// may be nil (audit disabled — for tests and dev runs without a DB).
+// Production wiring in cmd/joe-core/main.go and internal/api/server.go
+// always supplies a real audit.Repository.
+func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.PolicyEngine, auditRepo audit.Repository) *Accessor {
+	return &Accessor{registry: registry, graph: graphStore, engine: engine, auditRepo: auditRepo}
 }
 
 // permit is the single enforcement chokepoint. It evaluates the policy engine
 // for (principals, sourceID, action) — the authorization subject is a SET of
 // principals, permitted if ANY member holds a matching grant (union of grants;
-// docs/joe-identity-design.md §2.7). It returns ErrPermissionDenied on a denied
-// decision. A nil engine permits everything (RBAC disabled).
+// docs/joe-identity-design.md §2.7) — and writes exactly ONE audit row to the
+// append-only audit log capturing the decision (Phase F, design §2.6). On a
+// denied decision it returns ErrPermissionDenied.
+//
+// Audit-write failures honour the §4 failure split:
+//   - Mutating actions (ActionMutate, ActionDelete) fail CLOSED: if the audit
+//     row cannot be written, permit returns the audit error and the caller
+//     does not invoke the adapter or graph method.
+//   - Reads (ActionRead, ActionQuery) fail OPEN: a missing audit row is
+//     logged loudly but does not block the action.
+//
+// A nil engine permits everything (RBAC disabled) — but the audit row is
+// still written, with reason "rbac_disabled", so the trail is complete even
+// in unauthenticated dev mode. A nil auditRepo skips the audit write
+// entirely (test/dev only; cmd/joe-core/main.go always wires a real repo).
 //
 // At launch the set has exactly one member — the caller's own context-derived
 // principal — formed by permitForPrincipal below; the set shape is built now so
@@ -93,11 +118,55 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 // resolving or calling any adapter or graph method, so that a denial never
 // touches infrastructure.
 func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sourceID string, action rbac.Action) error {
+	// Determine the decision (allow/deny) and the structured details
+	// captured in the audit row.
+	var (
+		allowed bool
+		zone    string
+		reason  string
+	)
 	if a.engine == nil {
-		return nil
+		allowed = true
+		zone = ""
+		reason = "rbac_disabled"
+	} else {
+		d := a.engine.Decide(ctx, principals, sourceID, action)
+		allowed = d.Allowed
+		zone = d.Zone
+		reason = d.Reason
 	}
-	if !a.engine.IsAllowed(ctx, principals, sourceID, action) {
-		return fmt.Errorf("%w: principals=%v source=%q action=%q", ErrPermissionDenied, principals, sourceID, action)
+
+	// Write the audit row before returning. Single primary principal for
+	// the row is the first member of the size-1 set; the design keeps the
+	// set size 1 in v1, and the column is just one principal.
+	primaryPrincipal := ""
+	if len(principals) > 0 {
+		primaryPrincipal = string(principals[0])
+	}
+	decision := audit.DecisionDeny
+	if allowed {
+		decision = audit.DecisionAllow
+	}
+	if a.auditRepo != nil {
+		auditErr := a.auditRepo.Insert(ctx, audit.Event{
+			Principal: primaryPrincipal,
+			Action:    string(action),
+			Zone:      zone,
+			Source:    sourceID,
+			Decision:  decision,
+			Reason:    reason,
+			Kind:      audit.KindInfraAccess,
+		})
+		if auditErr != nil {
+			// Fail-closed for mutate/delete; fail-open for reads.
+			if blocking := audit.FailurePosture(ctx, string(action), auditErr, "accessor"); blocking != nil {
+				return fmt.Errorf("audit write failed for mutating action: %w", blocking)
+			}
+		}
+	}
+
+	if !allowed {
+		return fmt.Errorf("%w: principals=%v source=%q action=%q reason=%s", ErrPermissionDenied, principals, sourceID, action, reason)
 	}
 	return nil
 }

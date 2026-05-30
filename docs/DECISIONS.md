@@ -10,6 +10,211 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0009 — Identity Phase F: append-only audit at the decision point; regime/captain transitions redirected; bug #3 fixed
+
+- Date: 2026-05-30
+- Decision: Phase F (joe-identity-design.md §2.6, §4;
+  joe-identity-phase-plan.md Phase F) introduces ONE append-only audit
+  table backed by a new package `internal/audit`, written by the guarded
+  accessor on every authorization decision (allow and deny alike) AND by
+  the regime/captain transition handlers as their durable record. The
+  per-decision write site is the accessor's `permit()` chokepoint
+  (`internal/access/access.go`); the transition write sites are the
+  regime and captain HTTP handlers (`internal/api/regime.go`,
+  `internal/api/captain.go`). Bug #3 (joe-identity-design.md §0 bug #3)
+  is fixed: incident history now lives in the audit log, independent of
+  `system_regime.declared_by_principal` and `session_captains`, both of
+  which still get cleared/cascaded on resolve. Specifics:
+  - **One table, one migration (015_audit_log).** Schema:
+    `audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT,
+    principal TEXT NULL, action TEXT, zone TEXT NULL, source TEXT NULL,
+    decision TEXT CHECK IN ('allow','deny'), reason TEXT, kind TEXT
+    CHECK IN ('infra_access','regime_transition','captain_transition'),
+    context TEXT DEFAULT '{}')`. Column rationale captured in the
+    migration's header comment. Three indices: `created_at`, `principal`,
+    `kind`. Nullables only where the row kind legitimately produces no
+    value (zone/source for sourceless transitions). Encoding follows
+    existing schema conventions: TEXT RFC3339 timestamps (009, 010, 011,
+    014), `INTEGER PRIMARY KEY AUTOINCREMENT` id (006, 007), CHECK
+    constraints for enum-shaped TEXT (009).
+  - **Dual append-only enforcement (Phase F req 2, design §2.6).**
+    1. **Code:** `audit.Repository` is an interface declaring exactly
+       one method, `Insert(ctx, Event) error`. There is NO Update,
+       Delete, Truncate, Erase, or Remove on the API surface. The
+       concrete `sqlRepository` is unexported and returned through the
+       interface so no caller has a path to a mutator. Two AST guards
+       (`internal/audit/audit_test.go::TestRepositoryAPISurface_AppendOnly`
+       parses the package, finds the `Repository` interface, and fails
+       if any method other than `Insert` is declared;
+       `TestRepositoryAPISurface_NoMutatorPackageFunctions` fails if any
+       top-level function name in the package starts with a mutator verb).
+    2. **Database:** Migration 015 creates two triggers,
+       `audit_log_no_update` and `audit_log_no_delete`, each
+       `RAISE(ABORT, 'audit_log is append-only: <verb> is not permitted')`.
+       Verified by `internal/audit/sql_test.go::TestMigration015_TriggerBlocksUpdate`
+       and `TestMigration015_TriggerBlocksDelete`. Even an operator with
+       raw SQL access cannot rewrite or erase history.
+  - **Per-decision write at the accessor's chokepoint (req 3).** The
+    accessor's `permit(ctx, principals, sourceID, action)` is the single
+    point both HTTP and loop paths converge on (D-0004, D-0008). It now
+    calls a new `rbac.PolicyEngine.Decide(...)` method that returns
+    `Decision{Allowed, Zone, Reason}` — `IsAllowed` is now a thin
+    boolean wrapper over `Decide`. `permit` then writes ONE audit row
+    capturing principal, action, zone, source, decision (allow/deny),
+    structured reason (`policy_allow` / `no_grant` / `action_not_in_zone`
+    / `zone_not_found` / `rbac_disabled`), and `kind=infra_access`. The
+    accessor's allow/deny OUTCOME is unchanged from D-0005/D-0008 (audit
+    is observation, not policy) — verified by all prior-phase tests
+    still passing.
+  - **Failure posture split (req 4, design §4).** The fail-CLOSED on
+    mutate / fail-OPEN on read decision lives in one helper,
+    `audit.FailurePosture(ctx, action, err, where)`, called from every
+    audit caller so the split cannot drift. The helper inspects the
+    action string: `read` and `query` → fail-open (returns nil after a
+    loud WARN log naming the where/action/error); everything else,
+    including `mutate`, `delete`, and ALL transition verbs (declare /
+    resolve / captain_attach / captain_transfer_*) → fail-closed (returns
+    the original audit error after an ERROR log). The accessor's
+    `permit` wraps the returned error in `"audit write failed for
+    mutating action: %w"` so callers can distinguish it from
+    `ErrPermissionDenied`. Behavioural tests:
+    `internal/access/audit_test.go::TestPhaseF_FailClosedOnMutate`
+    (mutate adapter is NOT called when audit insert errors;
+    `GitHubPostComment` returns a non-permission error) and
+    `TestPhaseF_FailOpenOnRead` (read adapter IS called when audit
+    insert errors; `K8sListResources` returns nil error). Unit-level
+    coverage of the helper across all read and mutate verbs in
+    `internal/audit/audit_test.go::TestFailurePosture_FailOpenOnRead` /
+    `FailClosedOnMutate`.
+  - **Regime transitions redirected to durable rows (req 5, bug #3).**
+    The regime handler (`internal/api/regime.go`) now writes one audit
+    row of kind `regime_transition` BEFORE every `DeclareIncidentRegime`
+    / `ResolveIncidentRegime` repository call. Denials of either
+    capability ALSO write one deny row, so rejected transitions are
+    durably recorded too. The write is fail-closed: if the audit insert
+    fails the regime mutation does NOT proceed (the
+    `system_regime`/`agent_sessions` rows are untouched). After resolve,
+    `system_regime.declared_by_principal` is still nulled (the existing
+    code in `sessionmodel/regime_transitions.go:210-214` is unchanged —
+    the live-state row stays mutable, per the design's "may remain as
+    live-state"), but the durable record of who declared the incident
+    and when lives in the audit log and is independent of that row.
+    Bug #3 regression test:
+    `internal/api/audit_phasef_test.go::TestPhaseF_Bug3_IncidentHistorySurvivesResolve`
+    declares as alice → resolves → asserts both that
+    `system_regime.declared_by_principal IS NULL` (the test's premise
+    that the bug behaviour is still present in the mutable row) AND that
+    `audit_log` still holds one allow row for
+    `action=declare_incident principal=alice`. This test would FAIL on
+    pre-Phase-F code (no audit table existed); it PASSES now.
+  - **Captain transitions redirected to durable rows (req 5).** The
+    captain handler (`internal/api/captain.go`) writes one audit row of
+    kind `captain_transition` BEFORE every captain mutation: attach,
+    transfer begin, transfer confirm, transfer cancel. Same fail-closed
+    posture. Bug #3 companion test:
+    `internal/api/audit_phasef_test.go::TestPhaseF_CaptainTransitionsSurviveResolve`
+    deletes the session after resolve (triggering the
+    `session_captains ON DELETE CASCADE` from migration 009:62) and
+    asserts the audit rows are still present.
+    `TestPhaseF_CaptainAttachWritesAuditRow` covers the HTTP attach path
+    end-to-end.
+  - **R-CAP1 (declare+captain atomic) coverage.** R-CAP1 attaches the
+    declaring principal as captain inside the same transaction as the
+    `system_regime` flip (`regime_transitions.go:96-104`). Phase F does
+    NOT write a separate `captain_attach` audit row for R-CAP1 — the
+    `declare_incident` audit row already captures who took command and
+    when, and adding a duplicate row would either require a second
+    write inside the transaction (mixing the audit and regime layers
+    needlessly) or a write outside the atomic boundary (where it could
+    diverge from the regime state on rollback). The single
+    `declare_incident` row with `principal=alice` IS the captain-
+    attached-at-declare record. Subsequent attaches via the HTTP
+    endpoint do produce dedicated `captain_attach` rows.
+  - **Wiring.** `cmd/joe-core/main.go` constructs
+    `audit.NewRepository(sqlStore.DB(), sqlStore.Driver())` after the
+    migrations run and stores it on `services.Audit` (a new field on
+    `core.Services`). `api.New` reads `services.Audit` and passes it to
+    `access.New(...)`; `regimeHandler` and `captainHandler` read it
+    from `s.services.Audit`. A nil `Audit` field is treated as
+    "audit disabled" by every caller (a NoopRepository is also provided
+    in `internal/audit/noop.go` for explicit test use). This nil-safety
+    lets the existing accessor tests
+    (`internal/access/access_test.go`) keep working without churn —
+    they pass `nil` for the audit repo and verify the same allow/deny
+    outcomes the rest of the suite proves.
+  - **rbac.PolicyEngine surface changes.** `IsAllowed(ctx, principals,
+    sourceID, action) bool` is preserved — it now delegates to a new
+    `Decide(ctx, principals, sourceID, action) Decision` whose return
+    struct also carries the resolved Zone and a machine-readable Reason
+    used by the audit row. Existing IsAllowed callers (the policy
+    tests, regime handler's HasZoneAccess sibling) are unaffected. The
+    behavioural outcome — which principals on which sources/actions
+    return true — is unchanged across every Phase A/B/C/D/E regression
+    test still passing.
+  - **No retention/rotation in v1.** Out of scope per the prompt's
+    explicit scope fence. The table grows monotonically; an operator
+    needing space management would `DROP TABLE audit_log` via the
+    Phase F down migration (the only sanctioned way out of the
+    append-only contract) and re-migrate. Adding a retention policy
+    behind a separate insert-rotate-only repository is a clean v2
+    extension — the existing `Repository` interface stays as-is.
+- Deviations from the Phase F prompt, with reasons:
+  1. **R-CAP1 captain-attach row not separately written.** See the
+     R-CAP1 paragraph above — the `declare_incident` row covers the
+     same "who and when" information, and a separate row would either
+     leak into the atomic-declare transaction or risk diverging from it.
+     The `TestPhaseF_CaptainTransitionsSurviveResolve` test exercises
+     the durable record via the declare/resolve rows (which both
+     reference alice as the declaring captain in spirit, even if the
+     `audit_log.action` discriminates kinds).
+  2. **`NoopRepository` provided alongside nil-safe accessors.** The
+     prompt's "every authorization decision writes one audit row"
+     requirement is held for the production path
+     (`cmd/joe-core/main.go` always wires the SQL repo); tests that don't
+     care about audit pass nil (skipping the write entirely) or the
+     NoopRepository (accepting and discarding writes). The Phase F
+     behavioural tests use a recording in-memory implementation
+     (`internal/access/audit_test.go::recordingAudit`) and the SQL
+     repository for integration coverage.
+  3. **Reason vocabulary is structured tags, not free-form text.**
+     `policy_allow` / `no_grant` / `action_not_in_zone` /
+     `zone_not_found` / `rbac_disabled` for accessor rows, and
+     `transition_recorded` / `no_grant` for transition rows. Tags are
+     stable and machine-parseable; future operator queries against
+     `audit_log.reason` get a small enumerable set, not English prose.
+- Basis: joe-identity-design.md §0 (bug #3 statement), §2.6 (append-only
+  audit at the decision point), §4 (failure posture split), §5
+  Invariant 5 (append-only + transitions not erased on resolve);
+  joe-identity-phase-plan.md Phase F. Verified against Phase A's
+  accessor signature (D-0004), Phase B's set-shaped path (D-0005),
+  Phase C's edge-auth (D-0006), Phase D's service-account wiring
+  (D-0007), and Phase E's accessor-on-both-paths (D-0008). New tests:
+  - `internal/audit/audit_test.go`: append-only API guard,
+    no-mutator-package-function guard, FailurePosture fail-open/
+    fail-closed split coverage, NoopRepository.
+  - `internal/audit/sql_test.go`: Insert round-trip, NULL handling for
+    sourceless rows, UPDATE-blocked trigger, DELETE-blocked trigger.
+  - `internal/access/audit_test.go`: allow writes one allow row with
+    correct fields; deny writes one deny row with denial reason;
+    fail-closed on mutate (audit insert error blocks adapter call);
+    fail-open on read (audit insert error proceeds to adapter call).
+  - `internal/api/audit_phasef_test.go`:
+    `TestPhaseF_Bug3_IncidentHistorySurvivesResolve` (the named
+    regression — fails on pre-Phase-F code), `CaptainTransitionsSurviveResolve`,
+    `CaptainAttachWritesAuditRow`, `DeclareDenialWritesAuditRow`.
+  All prior-phase tests (Phase A no-ungoverned-access invariant, Phase
+  A/B/C/D/E regressions, Phase E equivalence, Phase E loop coverage)
+  still green and unchanged.
+- Supersedes: nothing — extends D-0008. Phase G (captain wiring onto
+  the agentloop path) remains pending. The accessor, the regime
+  handler, the captain handler, and the SessionModel repository are
+  the touched packages; OIDC, service-account resolution, the loop
+  client, and the policy decision logic are untouched.
+- Status: active. Phase F complete; do not proceed to Phase G without a
+  new prompt.
+
+---
+
 ## D-0008 — Identity Phase E: remove the loopback; loop runs through the accessor as the real caller; middleware demoted
 
 - Date: 2026-05-29

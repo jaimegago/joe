@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 )
@@ -33,13 +35,19 @@ import (
 type captainHandler struct {
 	repo sessionmodel.Repository
 	svc  *sessionmodel.CaptainService
+	// auditRepo writes the durable record of captain attach and transfer
+	// events. Phase F: these histories previously cascade-deleted with the
+	// session row (009:62 ON DELETE CASCADE) and were therefore lost on
+	// resolve. The audit row is independent of the session — the record
+	// survives. May be nil in dev/local runs without a database.
+	auditRepo audit.Repository
 }
 
 func (s *Server) registerCaptainRoutes(mux *http.ServeMux, prefix string) {
 	if s.services == nil || s.services.SessionModel == nil || s.services.CaptainSvc == nil {
 		return
 	}
-	h := &captainHandler{repo: s.services.SessionModel, svc: s.services.CaptainSvc}
+	h := &captainHandler{repo: s.services.SessionModel, svc: s.services.CaptainSvc, auditRepo: s.services.Audit}
 
 	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/attach", prefix), h.attach)
 	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/heartbeat", prefix), h.heartbeat)
@@ -84,6 +92,18 @@ func (h *captainHandler) attach(w http.ResponseWriter, r *http.Request) {
 			writeBadRequest(w, nil, "captain attach", "captain_type must be 'human' or 'joe'")
 			return
 		}
+	}
+
+	// Phase F: write the durable audit row BEFORE the captain mutation
+	// runs. session_captains rows cascade-delete with the session
+	// (migration 009:62), so any history that lives only in the captain
+	// row is lost on a later resolve+expunge. The audit row is independent
+	// of the session and survives.
+	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainAttach,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{"session_id": sessionID, "captain_type": string(captainType)}); err != nil {
+		writeInternalError(w, err, "captain attach audit")
+		return
 	}
 
 	res, err := h.svc.Attach(r.Context(), sessionID, string(principal), captainType)
@@ -186,6 +206,18 @@ func (h *captainHandler) transferBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainTransferBegin,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{
+			"session_id":         sessionID,
+			"initiator":          string(initiator),
+			"incoming_principal": incoming,
+			"run_id":             req.RunID,
+		}); err != nil {
+		writeInternalError(w, err, "captain transfer begin audit")
+		return
+	}
+
 	res, err := h.svc.BeginTransfer(r.Context(), sessionID, initiator,
 		string(principal), incoming, req.RunID)
 	if err != nil {
@@ -214,6 +246,13 @@ func (h *captainHandler) transferConfirm(w http.ResponseWriter, r *http.Request)
 		writeBadRequest(w, nil, "transfer confirm", "missing session id")
 		return
 	}
+	principal := rbac.PrincipalFromContext(r.Context())
+	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainTransferConfirm,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{"session_id": sessionID}); err != nil {
+		writeInternalError(w, err, "captain transfer confirm audit")
+		return
+	}
 	newID, err := h.svc.ConfirmTransfer(r.Context(), sessionID)
 	if err != nil {
 		switch {
@@ -239,6 +278,13 @@ func (h *captainHandler) transferCancel(w http.ResponseWriter, r *http.Request) 
 		writeBadRequest(w, nil, "transfer cancel", "missing session id")
 		return
 	}
+	principal := rbac.PrincipalFromContext(r.Context())
+	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainTransferCancel,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{"session_id": sessionID}); err != nil {
+		writeInternalError(w, err, "captain transfer cancel audit")
+		return
+	}
 	if err := h.svc.CancelTransfer(r.Context(), sessionID); err != nil {
 		switch {
 		case errors.Is(err, sessionmodel.ErrNoActiveCaptain):
@@ -252,4 +298,32 @@ func (h *captainHandler) transferCancel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"session_id": sessionID, "status": "cancelled"})
+}
+
+// writeCaptainAudit records one captain-transition row in the append-only
+// audit log. Same shape as regimeHandler.writeRegimeAudit: nil-safe when
+// the audit repository is not wired (dev/local), fail-closed on a
+// repository error so the captain mutation does not proceed without its
+// durable record. The audit row is independent of session_captains and
+// therefore survives the cascade-delete on session deletion.
+func (h *captainHandler) writeCaptainAudit(ctx context.Context, principal rbac.Principal, action string, decision audit.Decision, reason string, extra map[string]string) error {
+	if h.auditRepo == nil {
+		return nil
+	}
+	ctxJSON := "{}"
+	if len(extra) > 0 {
+		b, err := json.Marshal(extra)
+		if err == nil {
+			ctxJSON = string(b)
+		}
+	}
+	err := h.auditRepo.Insert(ctx, audit.Event{
+		Principal: string(principal),
+		Action:    action,
+		Decision:  decision,
+		Reason:    reason,
+		Kind:      audit.KindCaptainTransition,
+		Context:   ctxJSON,
+	})
+	return audit.FailurePosture(ctx, action, err, "captain:"+action)
 }

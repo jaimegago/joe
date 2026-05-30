@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/access"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observability"
@@ -46,7 +47,16 @@ func New(services *core.Services) *Server {
 		panic("api.New: services must not be nil")
 	}
 	services.Metrics = observability.EnsureMetrics(services.Metrics)
-	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services))
+	// Phase F: the accessor writes one audit row per decision. The audit
+	// repository is wired via core.Services.Audit by cmd/joe-core/main.go;
+	// when nil (auth-disabled local/dev runs without the audit table
+	// migration), the accessor skips the audit write and behaves
+	// identically to pre-Phase-F.
+	var auditRepo audit.Repository
+	if services.Audit != nil {
+		auditRepo = services.Audit
+	}
+	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services), auditRepo)
 	return &Server{
 		services: services,
 		accessor: accessor,
