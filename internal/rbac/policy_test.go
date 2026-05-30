@@ -19,6 +19,11 @@ type errRepository struct {
 	getZoneResult               *rbac.Zone
 	listPoliciesForPrincipalErr error
 	listPoliciesResult          []rbac.Policy
+	// Phase H: admin status. isAdminErr exists so a test can exercise
+	// the warn-and-fallback branch in Decide/HasZoneAccess; isAdminResult
+	// is the value returned when err is nil.
+	isAdminErr    error
+	isAdminResult bool
 }
 
 func (r *errRepository) ListZones(_ context.Context) ([]rbac.Zone, error) {
@@ -57,6 +62,24 @@ func (r *errRepository) DeletePolicyForPrincipalZone(_ context.Context, _, _ str
 func (r *errRepository) ListUnassignedSourceIDs(_ context.Context) ([]string, error) {
 	return nil, nil
 }
+func (r *errRepository) DeletePoliciesForPrincipal(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+
+// --- Admin status (Phase H) ---
+
+func (r *errRepository) IsAdmin(_ context.Context, _ string) (bool, error) {
+	return r.isAdminResult, r.isAdminErr
+}
+func (r *errRepository) ListAdmins(_ context.Context) ([]rbac.Admin, error) {
+	return nil, nil
+}
+func (r *errRepository) AddAdmin(_ context.Context, _ rbac.Admin) error {
+	return nil
+}
+func (r *errRepository) RemoveAdmin(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
 
 // openTestDB opens an in-memory SQLite database with the RBAC schema seeded.
 func openTestDB(t *testing.T) *sql.DB {
@@ -93,6 +116,13 @@ func openTestDB(t *testing.T) *sql.DB {
 			zone_id TEXT NOT NULL REFERENCES security_zones(id),
 			created_at TEXT NOT NULL,
 			UNIQUE (principal, zone_id)
+		);
+		-- Phase H: admin_principals mirrors migration 016.
+		CREATE TABLE admin_principals (
+			principal  TEXT PRIMARY KEY,
+			granted_at TEXT NOT NULL,
+			granted_by TEXT NOT NULL DEFAULT '',
+			reason     TEXT NOT NULL DEFAULT ''
 		);
 
 		-- seed zones
@@ -448,5 +478,268 @@ func TestPolicyEngine_HasZoneAccess_SetUnion(t *testing.T) {
 	// does not allow ActionRead, so even a granted member is denied.
 	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("alice"), "regime-control", rbac.ActionRead) {
 		t.Error("union must not exceed the zone's allowed actions")
+	}
+}
+
+// --- Phase H: dynamic admin capability (docs/DECISIONS.md D-0011) ---
+
+// TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation is the bug-fix
+// demonstration. Pre-Phase-H, admin authority was a snapshot of grants
+// captured at bootstrap; any zone created AFTER bootstrap was silently
+// uncovered (a day-100 correctness gap). Phase H evaluates admin
+// capability dynamically at decision time, so a zone created later is
+// covered automatically without a re-snapshot.
+//
+// Pre-Phase-H this test would FAIL (the admin holds no rbac_policies row
+// for the new zone, so IsAllowed returns false). Post-Phase-H it PASSES
+// because Decide short-circuits to ReasonAdminCapability the moment it
+// sees IsAdmin=true, regardless of when the zone was created.
+func TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// Designate alice as dynamic admin BEFORE the new zone exists. No
+	// rbac_policies row is created — admin status is the sole basis.
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+
+	// NOW create a brand-new zone. This is the day-100 case the bug
+	// described: an operator adds a zone months after admin was
+	// designated.
+	if _, err := repo.CreateZone(ctx, rbac.Zone{
+		ID:             "post-bootstrap-zone",
+		Name:           "Late Zone",
+		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionMutate},
+	}); err != nil {
+		t.Fatalf("create zone: %v", err)
+	}
+	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
+		SourceID: "k8s-prod", ZoneID: "post-bootstrap-zone", AssignedBy: "test",
+	}); err != nil {
+		t.Fatalf("upsert assignment: %v", err)
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// Admin must be allowed on the new zone without any per-zone grant.
+	for _, action := range []rbac.Action{rbac.ActionRead, rbac.ActionMutate} {
+		d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", action)
+		if !d.Allowed {
+			t.Errorf("Phase H bug fix: admin must be allowed action %q on zone %q created after designation; got deny reason=%q",
+				action, d.Zone, d.Reason)
+		}
+		if d.Reason != rbac.ReasonAdminCapability {
+			t.Errorf("Phase H: admin allow on new zone should record reason=%q, got %q",
+				rbac.ReasonAdminCapability, d.Reason)
+		}
+	}
+
+	// Confirm via the repository that admin still holds ZERO per-zone
+	// grants — admin authority has one source of truth.
+	grants, _ := repo.ListPoliciesForPrincipal(ctx, "alice")
+	if len(grants) != 0 {
+		t.Errorf("Phase H: admin authority must come from admin_principals only, but found %d rbac_policies rows", len(grants))
+	}
+}
+
+// TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants asserts the
+// admin capability spans every existing zone+action the zones themselves
+// permit, with NO rbac_policies rows present for the admin. Differs from
+// the bug-fix test in that all four seeded zones exist before
+// designation; the focus here is the breadth (every zone) rather than
+// the temporal gap.
+func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// Pre-seed every source onto a distinct zone (all four are seeded by
+	// openTestDB).
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"})
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"})
+
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	cases := []struct {
+		source string
+		action rbac.Action
+		want   bool // bounded by zone's allowed_actions
+	}{
+		// prod-write allows read/query/mutate but not delete.
+		{"k8s-prod", rbac.ActionRead, true},
+		{"k8s-prod", rbac.ActionQuery, true},
+		{"k8s-prod", rbac.ActionMutate, true},
+		{"k8s-prod", rbac.ActionDelete, false}, // admin does NOT bypass allowed_actions
+		// dev-full allows everything.
+		{"k8s-dev", rbac.ActionRead, true},
+		{"k8s-dev", rbac.ActionMutate, true},
+		{"k8s-dev", rbac.ActionDelete, true},
+	}
+
+	for _, c := range cases {
+		d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), c.source, c.action)
+		if d.Allowed != c.want {
+			t.Errorf("Phase H admin on (%s, %s): got allowed=%v reason=%q, want allowed=%v",
+				c.source, c.action, d.Allowed, d.Reason, c.want)
+		}
+		if c.want && d.Reason != rbac.ReasonAdminCapability {
+			t.Errorf("Phase H admin allow on (%s, %s): reason=%q, want %q",
+				c.source, c.action, d.Reason, rbac.ReasonAdminCapability)
+		}
+		if !c.want && d.Reason != rbac.ReasonActionNotInZone {
+			t.Errorf("Phase H admin deny on (%s, %s): reason=%q, want %q (admin must NOT widen allowed_actions)",
+				c.source, c.action, d.Reason, rbac.ReasonActionNotInZone)
+		}
+	}
+
+	// No rbac_policies grants exist for the admin — single source of
+	// truth.
+	grants, _ := repo.ListPoliciesForPrincipal(ctx, "alice")
+	if len(grants) != 0 {
+		t.Errorf("Phase H: admin must hold zero rbac_policies rows, got %d", len(grants))
+	}
+}
+
+// TestPhaseH_NonAdminOutcomesUnchanged is the post-Phase-G regression
+// guarantee: introducing admin capability must not change ANY non-admin
+// allow/deny outcome. A non-admin still goes through the per-zone grant
+// path with reason policy_allow / no_grant / action_not_in_zone exactly
+// as pre-Phase-H.
+func TestPhaseH_NonAdminOutcomesUnchanged(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+
+	// An admin also exists in the same DB — its existence must not
+	// affect non-admin decisions either way.
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// alice is granted (non-admin); the reason MUST be policy_allow,
+	// not admin_capability.
+	d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead)
+	if !d.Allowed || d.Reason != rbac.ReasonPolicyAllow {
+		t.Errorf("non-admin allow: got allowed=%v reason=%q, want true/%q",
+			d.Allowed, d.Reason, rbac.ReasonPolicyAllow)
+	}
+
+	// mallory is ungranted (non-admin); deny with no_grant.
+	d = engine.Decide(ctx, rbac.NewPrincipalSet("mallory"), "k8s-prod", rbac.ActionRead)
+	if d.Allowed || d.Reason != rbac.ReasonNoGrant {
+		t.Errorf("non-admin ungranted deny: got allowed=%v reason=%q, want false/%q",
+			d.Allowed, d.Reason, rbac.ReasonNoGrant)
+	}
+
+	// alice attempts a denied action in-zone; deny with action_not_in_zone.
+	d = engine.Decide(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionDelete)
+	if d.Allowed || d.Reason != rbac.ReasonActionNotInZone {
+		t.Errorf("non-admin action-not-in-zone deny: got allowed=%v reason=%q, want false/%q",
+			d.Allowed, d.Reason, rbac.ReasonActionNotInZone)
+	}
+}
+
+// TestPhaseH_AdminDecisionReasonIsDistinct asserts the audit-trail
+// distinguishability the prompt requires (Phase H req 5): an admin allow
+// records reason=admin_capability; an ordinary zone-grant allow records
+// reason=policy_allow. The two are distinguishable for any downstream
+// audit query.
+func TestPhaseH_AdminDecisionReasonIsDistinct(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	adminD := engine.Decide(ctx, rbac.NewPrincipalSet("root"), "k8s-prod", rbac.ActionRead)
+	zoneD := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead)
+
+	if !adminD.Allowed || adminD.Reason != rbac.ReasonAdminCapability {
+		t.Errorf("admin allow: got allowed=%v reason=%q, want true/%q",
+			adminD.Allowed, adminD.Reason, rbac.ReasonAdminCapability)
+	}
+	if !zoneD.Allowed || zoneD.Reason != rbac.ReasonPolicyAllow {
+		t.Errorf("zone-grant allow: got allowed=%v reason=%q, want true/%q",
+			zoneD.Allowed, zoneD.Reason, rbac.ReasonPolicyAllow)
+	}
+	if adminD.Reason == zoneD.Reason {
+		t.Error("admin reason must differ from zone-grant reason for audit-trail distinguishability")
+	}
+}
+
+// TestPhaseH_HasZoneAccessAdminCapability covers the sourceless path:
+// the admin short-circuit applies to HasZoneAccess too, so an admin can
+// declare/resolve incidents without a regime-control grant.
+func TestPhaseH_HasZoneAccessAdminCapability(t *testing.T) {
+	db := openTestDB(t)
+	seedRegimeControlZone(t, db)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+	engine := rbac.NewPolicyEngine(repo)
+
+	if !engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("root"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("admin should be allowed regime-control declare without a per-zone grant")
+	}
+	// Still bounded by zone's allowed_actions: regime-control does not
+	// list "read", so even an admin is denied that.
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("root"), "regime-control", rbac.ActionRead) {
+		t.Error("admin must NOT bypass the zone's allowed_actions list")
+	}
+	// Non-admin without a grant is still denied.
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("mallory"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("non-admin without a grant must remain denied")
+	}
+}
+
+// TestPhaseH_AdminIsAdminErrorFallsBackToGrant covers the warn-and-fall-
+// through branch in Decide. If the admin lookup errors for a principal,
+// the engine continues to the per-zone grant path rather than denying
+// outright — preserving availability of normal RBAC when the admin
+// store is degraded.
+func TestPhaseH_AdminIsAdminErrorFallsBackToGrant(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &errRepository{
+		getAssignmentResult: nil, // defaults to unassigned
+		getZoneResult: &rbac.Zone{
+			ID:             "unassigned",
+			AllowedActions: []rbac.Action{rbac.ActionRead},
+		},
+		isAdminErr: errors.New("admin store unhealthy"),
+		listPoliciesResult: []rbac.Policy{
+			{Principal: "alice", ZoneID: "unassigned"},
+		},
+	}
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	// alice would have been allowed via her grant either way, but the
+	// reason must be policy_allow — not admin_capability — because the
+	// admin lookup errored and was skipped.
+	d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead)
+	if !d.Allowed || d.Reason != rbac.ReasonPolicyAllow {
+		t.Errorf("fallback path: got allowed=%v reason=%q, want true/%q",
+			d.Allowed, d.Reason, rbac.ReasonPolicyAllow)
 	}
 }

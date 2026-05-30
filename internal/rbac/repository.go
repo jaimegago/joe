@@ -32,9 +32,26 @@ type Repository interface {
 	// did not exist). Used by CLI zone revocation, which keys on
 	// (principal, zone) rather than the synthetic policy id.
 	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error)
+	// DeletePoliciesForPrincipal removes ALL rbac_policies rows for the given
+	// principal in one statement. Returns the number of rows removed. Phase H
+	// uses this to enforce "admin authority has exactly one source of truth"
+	// (the admin_principals table): on the bootstrap path the configured
+	// admin's leftover snapshot grants are cleaned up so the dynamic admin
+	// capability is the sole basis for the principal's authority.
+	DeletePoliciesForPrincipal(ctx context.Context, principal string) (int64, error)
 
 	// Unassigned sources (no zone assignment yet)
 	ListUnassignedSourceIDs(ctx context.Context) ([]string, error)
+
+	// Admin status (Phase H, see docs/DECISIONS.md D-0011). Admin is a
+	// principal-scoped capability, not a (principal, zone) grant. The
+	// policy engine reads IsAdmin during Decide/HasZoneAccess and
+	// short-circuits to allow if the principal holds the row, subject to
+	// the zone's own allowed_actions still being meaningful (see D-0011).
+	IsAdmin(ctx context.Context, principal string) (bool, error)
+	ListAdmins(ctx context.Context) ([]Admin, error)
+	AddAdmin(ctx context.Context, a Admin) error
+	RemoveAdmin(ctx context.Context, principal string) (int64, error)
 }
 
 // SQLRepository implements Repository on top of a *sql.DB.
@@ -247,6 +264,96 @@ func (r *SQLRepository) DeletePolicyForPrincipalZone(ctx context.Context, princi
 		`DELETE FROM rbac_policies WHERE principal = ? AND zone_id = ?`), principal, zoneID)
 	if err != nil {
 		return 0, fmt.Errorf("delete policy for principal/zone: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
+}
+
+func (r *SQLRepository) DeletePoliciesForPrincipal(ctx context.Context, principal string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`DELETE FROM rbac_policies WHERE principal = ?`), principal)
+	if err != nil {
+		return 0, fmt.Errorf("delete policies for principal: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
+}
+
+// --- Admin status (Phase H) ---
+
+func (r *SQLRepository) IsAdmin(ctx context.Context, principal string) (bool, error) {
+	var one int
+	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver,
+		`SELECT 1 FROM admin_principals WHERE principal = ?`), principal).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("is admin: %w", err)
+	}
+	return true, nil
+}
+
+func (r *SQLRepository) ListAdmins(ctx context.Context) ([]Admin, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT principal, granted_at, granted_by, reason
+		FROM admin_principals ORDER BY principal`)
+	if err != nil {
+		return nil, fmt.Errorf("list admins: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Admin
+	for rows.Next() {
+		var a Admin
+		var grantedAtStr string
+		if err := rows.Scan(&a.Principal, &grantedAtStr, &a.GrantedBy, &a.Reason); err != nil {
+			return nil, fmt.Errorf("scan admin: %w", err)
+		}
+		a.GrantedAt, _ = time.Parse(time.RFC3339, grantedAtStr)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// AddAdmin marks principal as admin. Idempotent: a row that already exists
+// is updated in place (granted_at advanced, granted_by/reason replaced).
+// Phase H bootstrap relies on the idempotency to safely re-run on every
+// matching admin_email login. The choice of UPSERT (vs INSERT-OR-IGNORE)
+// is so an operator re-issuing `joe admin grant --reason "..."` can update
+// the rationale without first revoking.
+func (r *SQLRepository) AddAdmin(ctx context.Context, a Admin) error {
+	if a.Principal == "" {
+		return fmt.Errorf("add admin: principal is required")
+	}
+	if a.GrantedAt.IsZero() {
+		a.GrantedAt = time.Now().UTC()
+	}
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		INSERT INTO admin_principals (principal, granted_at, granted_by, reason)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(principal) DO UPDATE SET
+			granted_at = excluded.granted_at,
+			granted_by = excluded.granted_by,
+			reason     = excluded.reason`),
+		a.Principal, a.GrantedAt.Format(time.RFC3339), a.GrantedBy, a.Reason)
+	if err != nil {
+		return fmt.Errorf("add admin: %w", err)
+	}
+	return nil
+}
+
+func (r *SQLRepository) RemoveAdmin(ctx context.Context, principal string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`DELETE FROM admin_principals WHERE principal = ?`), principal)
+	if err != nil {
+		return 0, fmt.Errorf("remove admin: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

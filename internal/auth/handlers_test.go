@@ -146,12 +146,17 @@ func TestLogout_RevokesSession(t *testing.T) {
 	}
 }
 
-// TestCallback_AdminBootstrap: the configured admin email gains admin authority
-// (a grant on every zone) on first login; a different email gains nothing.
+// TestCallback_AdminBootstrap: Phase H (D-0011). The configured admin
+// email gains DYNAMIC admin status (an admin_principals row) on first
+// login — NOT a snapshot of grants on every zone. A different email
+// gains nothing. The Phase C behaviour (snapshot rbac_policies rows
+// per zone) is removed; the regression test for it is replaced by the
+// Phase H assertions below — the row exists in admin_principals and
+// rbac_policies remains empty for the admin.
 func TestCallback_AdminBootstrap(t *testing.T) {
 	const adminEmail = "admin@example.com"
 
-	t.Run("admin email gains all zones", func(t *testing.T) {
+	t.Run("admin email is marked as dynamic admin", func(t *testing.T) {
 		prov := &fakeProvider{claims: Claims{Email: adminEmail, EmailVerified: true}}
 		h, _, rbacRepo, _ := newTestHandlers(t, prov, adminEmail)
 
@@ -160,16 +165,22 @@ func TestCallback_AdminBootstrap(t *testing.T) {
 			t.Fatalf("admin callback status = %d, want 302", resp.StatusCode)
 		}
 
-		zones, err := rbacRepo.ListZones(context.Background())
+		// Dynamic admin row exists.
+		isAdmin, err := rbacRepo.IsAdmin(context.Background(), "user:"+adminEmail)
 		if err != nil {
-			t.Fatalf("list zones: %v", err)
+			t.Fatalf("IsAdmin: %v", err)
 		}
+		if !isAdmin {
+			t.Fatal("admin email should be marked as dynamic admin after first login")
+		}
+
+		// No snapshot rbac_policies rows — single source of truth.
 		grants, err := rbacRepo.ListPoliciesForPrincipal(context.Background(), "user:"+adminEmail)
 		if err != nil {
 			t.Fatalf("list policies: %v", err)
 		}
-		if len(grants) != len(zones) {
-			t.Fatalf("admin should hold all %d zones, holds %d", len(zones), len(grants))
+		if len(grants) != 0 {
+			t.Fatalf("Phase H: admin must NOT hold rbac_policies snapshot grants, has %d", len(grants))
 		}
 	})
 
@@ -182,6 +193,10 @@ func TestCallback_AdminBootstrap(t *testing.T) {
 			t.Fatalf("non-admin callback status = %d, want 302", resp.StatusCode)
 		}
 
+		isAdmin, _ := rbacRepo.IsAdmin(context.Background(), "user:intern@example.com")
+		if isAdmin {
+			t.Fatal("a non-admin first login must not gain admin status")
+		}
 		grants, err := rbacRepo.ListPoliciesForPrincipal(context.Background(), "user:intern@example.com")
 		if err != nil {
 			t.Fatalf("list policies: %v", err)

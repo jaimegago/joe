@@ -1,8 +1,11 @@
-# Binaries
-joe
-joecored
-joe-mcp
-joe-security
+# Binaries (anchored to the repo root so the rule does not also match
+# `cmd/joe/*.go` and the `cmd/joe-core/` package — an unanchored `joe`
+# pattern matches the directory segment at any depth, which silently
+# untracked every Go source file under cmd/joe/).
+/joe
+/joecored
+/joe-mcp
+/joe-security
 *.exe
 *.exe~
 *.dll

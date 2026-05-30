@@ -24,6 +24,7 @@ type fakeRepo struct {
 	zones       map[string]rbac.Zone
 	assignments map[string]string   // sourceID -> zoneID
 	policies    map[string][]string // principal -> []zoneID
+	admins      map[string]bool     // Phase H: dynamic admin status
 }
 
 func newFakeRepo() *fakeRepo {
@@ -35,6 +36,7 @@ func newFakeRepo() *fakeRepo {
 		},
 		assignments: map[string]string{},
 		policies:    map[string][]string{},
+		admins:      map[string]bool{},
 	}
 }
 
@@ -42,6 +44,10 @@ func (f *fakeRepo) grant(principal, zoneID string) {
 	f.policies[principal] = append(f.policies[principal], zoneID)
 }
 func (f *fakeRepo) assign(sourceID, zoneID string) { f.assignments[sourceID] = zoneID }
+func (f *fakeRepo) markAdmin(principal string)     { f.admins[principal] = true }
+func (f *fakeRepo) addZone(id string, allowed ...rbac.Action) {
+	f.zones[id] = rbac.Zone{ID: id, AllowedActions: allowed}
+}
 
 func (f *fakeRepo) GetAssignment(_ context.Context, sourceID string) (*rbac.SourceZoneAssignment, error) {
 	z, ok := f.assignments[sourceID]
@@ -79,6 +85,35 @@ func (f *fakeRepo) DeletePolicyForPrincipalZone(context.Context, string, string)
 	return 0, nil
 }
 func (f *fakeRepo) ListUnassignedSourceIDs(context.Context) ([]string, error) { return nil, nil }
+func (f *fakeRepo) DeletePoliciesForPrincipal(_ context.Context, principal string) (int64, error) {
+	n := int64(len(f.policies[principal]))
+	delete(f.policies, principal)
+	return n, nil
+}
+
+// --- Admin status (Phase H) ---
+
+func (f *fakeRepo) IsAdmin(_ context.Context, principal string) (bool, error) {
+	return f.admins[principal], nil
+}
+func (f *fakeRepo) ListAdmins(_ context.Context) ([]rbac.Admin, error) {
+	out := make([]rbac.Admin, 0, len(f.admins))
+	for p := range f.admins {
+		out = append(out, rbac.Admin{Principal: p})
+	}
+	return out, nil
+}
+func (f *fakeRepo) AddAdmin(_ context.Context, a rbac.Admin) error {
+	f.admins[a.Principal] = true
+	return nil
+}
+func (f *fakeRepo) RemoveAdmin(_ context.Context, principal string) (int64, error) {
+	if !f.admins[principal] {
+		return 0, nil
+	}
+	delete(f.admins, principal)
+	return 1, nil
+}
 
 // --- fake adapters (one per acceptance kind), each records a call ---
 

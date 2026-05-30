@@ -224,3 +224,99 @@ func (f fakeMutatingGitHub) RequestChanges(_ context.Context, _, _ string, _ int
 func (f fakeMutatingGitHub) ListPRs(_ context.Context, _, _ string, _ string) ([]*githubadapter.PRInfo, error) {
 	return nil, nil
 }
+
+// TestPhaseH_AdminAllowAuditReasonDistinguishedFromZoneGrant is the
+// audit-trail acceptance for Phase H req 5 (D-0011): an action allowed
+// because the principal holds dynamic admin status records
+// reason=admin_capability in audit_log; an ordinary zone-grant allow
+// records reason=policy_allow. The two are distinguishable so an
+// operator querying `audit_log WHERE reason='admin_capability'` sees
+// only decisions the admin would not have reached via a per-zone grant.
+func TestPhaseH_AdminAllowAuditReasonDistinguishedFromZoneGrant(t *testing.T) {
+	repo := newFakeRepo()
+	repo.assign("s-k8s", "z-read")
+	// alice holds a per-zone grant (non-admin path).
+	repo.grant("alice", "z-read")
+	// root holds dynamic admin status, no per-zone grant.
+	repo.markAdmin("root")
+
+	engine := rbac.NewPolicyEngine(repo)
+	called := false
+	reg := adapters.NewRegistry()
+	reg.Register("s-k8s", fakeK8s{called: &called})
+
+	rec := &recordingAudit{}
+	a := access.New(reg, nil, engine, rec)
+
+	// Issue both calls.
+	if _, err := a.K8sListResources(context.Background(), "alice", "s-k8s", "pods", ""); err != nil {
+		t.Fatalf("alice (zone-grant) call returned error: %v", err)
+	}
+	if _, err := a.K8sListResources(context.Background(), "root", "s-k8s", "pods", ""); err != nil {
+		t.Fatalf("root (admin) call returned error: %v", err)
+	}
+
+	rows := rec.snapshot()
+	if len(rows) != 2 {
+		t.Fatalf("got %d audit rows, want exactly 2: %#v", len(rows), rows)
+	}
+
+	// Find the alice and root rows by principal — order is by insertion
+	// but assert by lookup so the test does not depend on it.
+	var aliceRow, rootRow audit.Event
+	for _, r := range rows {
+		switch r.Principal {
+		case "alice":
+			aliceRow = r
+		case "root":
+			rootRow = r
+		}
+	}
+
+	if aliceRow.Decision != audit.DecisionAllow || aliceRow.Reason != rbac.ReasonPolicyAllow {
+		t.Errorf("zone-grant allow row: decision=%q reason=%q, want allow/%q",
+			aliceRow.Decision, aliceRow.Reason, rbac.ReasonPolicyAllow)
+	}
+	if rootRow.Decision != audit.DecisionAllow || rootRow.Reason != rbac.ReasonAdminCapability {
+		t.Errorf("admin allow row: decision=%q reason=%q, want allow/%q",
+			rootRow.Decision, rootRow.Reason, rbac.ReasonAdminCapability)
+	}
+	if aliceRow.Reason == rootRow.Reason {
+		t.Error("Phase H: admin-allow and zone-grant-allow audit reasons must differ for distinguishability")
+	}
+}
+
+// TestPhaseH_AdminAllowedOnPostBootstrapZone is the audit-side mirror of
+// the rbac-package bug-fix test. It proves that when a zone is created
+// AFTER admin was designated, the admin's call goes through with reason
+// admin_capability and the audit row records that basis.
+func TestPhaseH_AdminAllowedOnPostBootstrapZone(t *testing.T) {
+	repo := newFakeRepo()
+	// Designate root BEFORE creating the new zone.
+	repo.markAdmin("root")
+	// Create a NEW zone after the designation, then assign the source to
+	// it. Pre-Phase-H this would have left root uncovered (no snapshot
+	// grant row).
+	repo.addZone("post-bootstrap", rbac.ActionRead, rbac.ActionMutate)
+	repo.assign("s-k8s", "post-bootstrap")
+
+	engine := rbac.NewPolicyEngine(repo)
+	called := false
+	reg := adapters.NewRegistry()
+	reg.Register("s-k8s", fakeK8s{called: &called})
+
+	rec := &recordingAudit{}
+	a := access.New(reg, nil, engine, rec)
+
+	if _, err := a.K8sListResources(context.Background(), "root", "s-k8s", "pods", ""); err != nil {
+		t.Fatalf("Phase H bug fix on audit path: admin call must succeed on post-bootstrap zone, got %v", err)
+	}
+	rows := rec.snapshot()
+	if len(rows) != 1 || rows[0].Reason != rbac.ReasonAdminCapability {
+		t.Errorf("post-bootstrap admin row: got %#v, want one row with reason=%q",
+			rows, rbac.ReasonAdminCapability)
+	}
+	if rows[0].Zone != "post-bootstrap" {
+		t.Errorf("audit row zone = %q, want %q", rows[0].Zone, "post-bootstrap")
+	}
+}

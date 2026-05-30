@@ -29,13 +29,50 @@ type Decision struct {
 	// assignment's zone when set. Never empty for a real decision.
 	Zone string
 	// Reason is a short machine-readable tag explaining the OUTCOME:
-	//   - "policy_allow"        — at least one principal had a matching grant
-	//   - "zone_not_found"      — the resolved zone is missing from the table
-	//   - "action_not_in_zone"  — the zone does not allow this action at all
-	//   - "no_grant"             — the action is in-zone but no principal holds it
-	// The accessor records this in the audit row's reason column.
+	//   - ReasonPolicyAllow      — at least one principal had a matching grant
+	//   - ReasonAdminCapability  — at least one principal holds dynamic admin
+	//                              status; the allow bypasses the per-zone
+	//                              grant requirement but is still bounded by
+	//                              the zone's allowed_actions (Phase H, D-0011)
+	//   - ReasonZoneNotFound     — the resolved zone is missing from the table
+	//   - ReasonActionNotInZone  — the zone does not allow this action at all
+	//   - ReasonNoGrant          — the action is in-zone but no principal holds it
+	// The accessor records this in the audit row's reason column, so an
+	// admin-allowed action is distinguishable from an ordinary zone-grant
+	// allow in the audit trail.
 	Reason string
 }
+
+// Reason tags surfaced via Decision.Reason and the audit_log.reason column.
+// Stable, enumerable, machine-parseable — consistent with the Phase F
+// reason-vocabulary convention (D-0009 deviation 3). The admin-capability
+// tag is the Phase H addition.
+const (
+	// ReasonPolicyAllow: at least one principal in the set held an
+	// rbac_policies grant for the resolved zone. Ordinary path.
+	ReasonPolicyAllow = "policy_allow"
+
+	// ReasonAdminCapability: at least one principal in the set holds
+	// dynamic admin status (admin_principals row). Phase H, D-0011. This
+	// reason exists explicitly to distinguish admin-basis allows from
+	// ordinary zone-grant allows in the audit trail: an operator querying
+	// `WHERE reason = 'admin_capability'` sees only decisions admin would
+	// not have reached through a per-zone grant.
+	ReasonAdminCapability = "admin_capability"
+
+	// ReasonZoneNotFound: the source's resolved zone is missing from
+	// security_zones (a schema gap or a stale row).
+	ReasonZoneNotFound = "zone_not_found"
+
+	// ReasonActionNotInZone: the zone's allowed_actions list does not
+	// include the requested action. Admin does NOT bypass this — see
+	// D-0011 for the stricter-interpretation justification.
+	ReasonActionNotInZone = "action_not_in_zone"
+
+	// ReasonNoGrant: the action is in-zone but no principal in the set
+	// holds the grant and none is admin.
+	ReasonNoGrant = "no_grant"
+)
 
 // IsAllowed returns true if ANY principal in the set may perform action on
 // sourceID — the union-of-grants decision (additive / allow-only). A size-1
@@ -54,8 +91,20 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, s
 // Decision path:
 //  1. Resolve the source's zone (default: "unassigned" if no assignment) —
 //     this is independent of the principal set, so it is computed once.
-//  2. If that zone does not allow the action at all, deny outright.
-//  3. Otherwise permit if any member of the set holds a policy granting the
+//  2. If that zone does not allow the action at all, deny outright. Phase H
+//     keeps this check ahead of the admin short-circuit: admin bypasses the
+//     PER-PRINCIPAL grant requirement, NOT the ZONE'S allowed_actions list
+//     (the stricter interpretation, see docs/DECISIONS.md D-0011). A zone
+//     classified readonly stays readonly even for an admin; the zone
+//     classification is a property of the zone, not of the principal.
+//  3. If any principal in the set holds dynamic admin status
+//     (admin_principals row), permit with ReasonAdminCapability — no
+//     per-zone grant required. Phase H: this closes the
+//     zone-created-after-bootstrap gap left by Phase C's snapshot grants.
+//     A new zone is covered automatically because the check reads the
+//     admin status of the principal, not the historical list of zones the
+//     admin once held grants on.
+//  4. Otherwise permit if any member of the set holds a policy granting the
 //     source's zone; deny if none do.
 func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sourceID string, action Action) Decision {
 	// Resolve source zone (independent of the principal set).
@@ -72,12 +121,28 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 	zone, err := e.repo.GetZone(ctx, zoneID)
 	if err != nil || zone == nil {
 		slog.Warn("rbac: zone not found, denying access", "zone_id", zoneID)
-		return Decision{Allowed: false, Zone: zoneID, Reason: "zone_not_found"}
+		return Decision{Allowed: false, Zone: zoneID, Reason: ReasonZoneNotFound}
 	}
 
-	// Check that this action is even permitted within the zone.
+	// Check that this action is even permitted within the zone. Admin does
+	// NOT widen this — see D-0011.
 	if !zone.Allows(action) {
-		return Decision{Allowed: false, Zone: zoneID, Reason: "action_not_in_zone"}
+		return Decision{Allowed: false, Zone: zoneID, Reason: ReasonActionNotInZone}
+	}
+
+	// Admin short-circuit (Phase H, D-0011). Evaluated before per-zone
+	// grants so the admin reason wins when both bases would allow — the
+	// audit trail is then unambiguous about which capability mattered.
+	for _, principal := range principals {
+		isAdmin, adminErr := e.repo.IsAdmin(ctx, string(principal))
+		if adminErr != nil {
+			slog.Warn("rbac: failed to check admin status, falling back to grant lookup",
+				"principal", principal, "error", adminErr)
+			continue
+		}
+		if isAdmin {
+			return Decision{Allowed: true, Zone: zoneID, Reason: ReasonAdminCapability}
+		}
 	}
 
 	// Permit if ANY principal in the set has a policy granting access to the
@@ -94,12 +159,12 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 		}
 		for _, p := range policies {
 			if p.ZoneID == zoneID {
-				return Decision{Allowed: true, Zone: zoneID, Reason: "policy_allow"}
+				return Decision{Allowed: true, Zone: zoneID, Reason: ReasonPolicyAllow}
 			}
 		}
 	}
 
-	return Decision{Allowed: false, Zone: zoneID, Reason: "no_grant"}
+	return Decision{Allowed: false, Zone: zoneID, Reason: ReasonNoGrant}
 }
 
 // HasZoneAccess answers "does ANY principal in the set hold action on
@@ -132,6 +197,23 @@ func (e *PolicyEngine) HasZoneAccess(ctx context.Context, principals PrincipalSe
 	}
 	if !zone.Allows(action) {
 		return false
+	}
+	// Admin short-circuit (Phase H, D-0011). Same semantics as Decide:
+	// dynamic admin capability allows without a per-zone grant, but does
+	// NOT bypass the zone's allowed_actions list (the check above already
+	// gates that). HasZoneAccess returns only a boolean — it has no Reason
+	// field — but the same call shape is preserved so a future audit
+	// emitter could observe the admin basis on this path too.
+	for _, principal := range principals {
+		isAdmin, adminErr := e.repo.IsAdmin(ctx, string(principal))
+		if adminErr != nil {
+			slog.Warn("rbac: failed to check admin status in HasZoneAccess, falling back to grant lookup",
+				"principal", principal, "error", adminErr)
+			continue
+		}
+		if isAdmin {
+			return true
+		}
 	}
 	// Union of grants: permit if ANY principal in the set holds a
 	// matching policy. A lookup failure for one member denies only that

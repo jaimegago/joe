@@ -48,10 +48,13 @@ type runDeps struct {
 	newRepl          func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner
 	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
 	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
-	// openRBACRepo opens the RBAC repository for `joe zone` provisioning
-	// (direct DB access; design §2.9). Injectable so tests use an in-memory
-	// repo instead of opening a real database.
-	openRBACRepo func(cfg *config.Config) (zoneRepo, func() error, error)
+	// openRBACRepo opens the RBAC repository for `joe zone` and
+	// `joe admin` provisioning (direct DB access; design §2.9, Phase H
+	// D-0011). Injectable so tests use an in-memory repo instead of
+	// opening a real database. Returns the full rbac.Repository surface
+	// because admin status (Phase H) and zone grants (Phase C) read and
+	// write different methods on the same underlying repo.
+	openRBACRepo func(cfg *config.Config) (rbacRepo, func() error, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -677,6 +680,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
 		case "zone":
 			return runZoneCommand(ctx, args[1:], stdout, stderr, deps)
+		case "admin":
+			return runAdminCommand(ctx, args[1:], stdout, stderr, deps)
 		}
 	}
 
