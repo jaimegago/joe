@@ -82,3 +82,14 @@ type TokenUsage struct {
 	OutputTokens int
 	TotalTokens  int
 }
+
+// CostNanoUnitsPerUnit is the integer scale used to store LLM call cost in
+// the llm_usage.estimated_cost_nano column: one stored unit equals 1e-9 of
+// the row's currency (one nano-unit). Multiply a per-token price expressed
+// in currency units (e.g. dollars per token) by this constant to convert
+// it into the integer storage unit; the inverse (1e-9 of the currency
+// unit) is the storage granularity. Storing cost as integers makes
+// cost-window SUM aggregation exact on both SQLite and Postgres and
+// eliminates floating-point drift. Stream G phase G1: definition only —
+// no caller multiplies by this yet.
+const CostNanoUnitsPerUnit = 1_000_000_000

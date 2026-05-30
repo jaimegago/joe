@@ -71,6 +71,21 @@ const (
 	// during incident regime), so the existing kind is its natural
 	// home and no migration is needed.
 	KindCaptainTransition Kind = "captain_transition"
+
+	// KindLLMSettingsMutation is an operator change to an LLM control:
+	// the active model, a cost-window threshold, or the session token
+	// ceiling. Written by the (later) settings service so every
+	// configuration change has a forensic trail. The audit_log.kind
+	// CHECK admits this value as of migration 017.
+	KindLLMSettingsMutation Kind = "llm_settings_mutation"
+
+	// KindLLMLimitTriggered is an enforcement event: the cost-window
+	// gate refused an LLM call, or the runaway gate terminated a
+	// session for exceeding the token ceiling. Written by the (later)
+	// gates so refusals/terminations are forensically observable from
+	// the same table as authorization decisions. The audit_log.kind
+	// CHECK admits this value as of migration 017.
+	KindLLMLimitTriggered Kind = "llm_limit_triggered"
 )
 
 // Action-verb constants for transition rows. Accessor rows use the
@@ -95,6 +110,38 @@ const (
 	// records for refusals; consistent with Phase F's enumerable-tag
 	// vocabulary (see D-0009 deviation 3).
 	ReasonCaptainGateRefused = "captain_gate_refused"
+
+	// Stream G action verbs. The settings-mutation verbs are written
+	// with kind KindLLMSettingsMutation; the limit-triggered verbs are
+	// written with kind KindLLMLimitTriggered. These constants are
+	// declared in G1 so all later phases (settings service, cost-window
+	// gate, runaway gate) reference the same string values — no
+	// scattered string literals.
+
+	// ActionLLMSetActiveModel records an operator change to the live
+	// active-model setting (table llm_settings).
+	ActionLLMSetActiveModel = "llm_set_active_model"
+
+	// ActionLLMSetCostLimit records an operator change to a per-window
+	// cost threshold (table llm_cost_limits). The audit row's context
+	// carries the window name ('hourly' | 'daily' | 'monthly') and the
+	// new threshold value.
+	ActionLLMSetCostLimit = "llm_set_cost_limit"
+
+	// ActionLLMSetRunawayCeiling records an operator change to the
+	// session token ceiling (table llm_runaway_limits).
+	ActionLLMSetRunawayCeiling = "llm_set_runaway_ceiling"
+
+	// ActionLLMRunawayTerminated records a session termination by the
+	// runaway gate when a session exceeded the configured token
+	// ceiling. The decision on this row is "deny" (the action the gate
+	// refused to allow to continue).
+	ActionLLMRunawayTerminated = "llm_runaway_terminated"
+
+	// ActionLLMCostLimitRefused records the cost-window gate refusing
+	// an LLM call because a configured threshold would be exceeded.
+	// The decision on this row is "deny".
+	ActionLLMCostLimitRefused = "llm_cost_limit_refused"
 )
 
 // Event is one audit row. The fields map 1:1 to audit_log columns
