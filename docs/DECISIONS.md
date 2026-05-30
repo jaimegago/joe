@@ -10,6 +10,244 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0011 — Identity Phase H: admin as a dynamic capability evaluated at decision time; snapshot grants removed
+
+- Date: 2026-05-30
+- Decision: Phase H (joe-identity-design.md §2.9, §5 Invariant 2;
+  joe-identity-phase-plan.md Phase H) closes the day-100 correctness gap
+  D-0006 left open: admin authority is no longer the snapshot of grants
+  captured at bootstrap (which silently failed to cover any zone created
+  AFTER the configured admin's first login). It is now a DYNAMIC capability
+  evaluated by the policy engine at decision time. The result: a zone
+  created months after admin designation is covered automatically, with no
+  re-snapshot, no operator action, and no silent gap. Specifics:
+  - **Admin status is a principal-scoped row in a new table.** Migration
+    `016_admin_principals` (one CREATE TABLE + one index) introduces
+    `admin_principals(principal TEXT PK, granted_at TEXT NOT NULL,
+    granted_by TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '')`.
+    The schema matches the conventions of the existing tables (TEXT
+    RFC3339 timestamps; TEXT NOT NULL DEFAULT '' for free-text columns; no
+    sentinel rows). It is the SINGLE source of truth for admin status — the
+    decision function reads it, the bootstrap and CLI write it, and nothing
+    else stores admin information. A principal is admin iff a row exists
+    for them in this table; there is no boolean column on `rbac_policies`,
+    no flag elsewhere, no derivation.
+  - **The decision function treats admin as an allow short-circuit, NOT a
+    bypass of the zone classification.** `rbac.PolicyEngine.Decide`
+    (`internal/rbac/policy.go`) gains exactly one new branch: after the
+    zone-allows-action gate, before the per-principal-grant loop, the
+    engine calls `IsAdmin(ctx, principal)` for each member of the
+    PrincipalSet and returns `Decision{Allowed: true, Reason:
+    ReasonAdminCapability}` on the first hit. The check is bounded by the
+    zone's `allowed_actions` list — Phase H deliberately keeps that check
+    UPSTREAM of the admin short-circuit (req 2). Same rule on the
+    sourceless path: `HasZoneAccess` mirrors the structure with a boolean
+    return.
+  - **Why admin bypasses only the grant requirement and not the zone's
+    allowed_actions (the stricter sensible interpretation, req 2).** The
+    zone's `allowed_actions` is a property of the zone's classification —
+    "this is a read-only zone", "this is a delete-permitted zone" — not a
+    per-principal limit. An admin who could delete in `prod-readonly`
+    would change what the zone is for; the zone classification would
+    cease to communicate "no destructive actions". The principal-grant
+    requirement, by contrast, IS per-principal: it gates who reaches the
+    zone at all. Admin overriding the per-principal gate matches the
+    operator's mental model ("admin can do anything anywhere"); admin
+    overriding the zone classification would require introducing a second
+    notion of "admin in zone X" that breaks the zone's primary purpose.
+    The interpretation also matches what the Phase C snapshot used to do
+    in aggregate: it wrote grant rows on every zone, but the zone's
+    `allowed_actions` still bound what admin could do on each. Phase H
+    preserves that ceiling.
+  - **Reason vocabulary extended with one tag, audit row carries it.** A
+    new constant `rbac.ReasonAdminCapability` ("admin_capability") joins
+    the Phase F reason vocabulary (`policy_allow`, `no_grant`,
+    `action_not_in_zone`, `zone_not_found`). The accessor's `permit`
+    chokepoint records `Decision.Reason` into the audit row's `reason`
+    column unchanged — no new migration, no new column, no new
+    `audit.Kind`. An operator querying
+    `audit_log WHERE reason = 'admin_capability'` sees only the decisions
+    admin would not have reached through a per-zone grant; queries for
+    `policy_allow` continue to surface ordinary zone-grant allows.
+    `TestPhaseH_AdminAllowAuditReasonDistinguishedFromZoneGrant`
+    (internal/access/audit_test.go) issues both an admin allow and a
+    zone-grant allow against the same source and asserts the two audit
+    rows differ in their `reason` field — the audit-trail
+    distinguishability requirement (Phase H req 5).
+  - **Bootstrap path: snapshot logic removed; same trigger, new behaviour.**
+    `auth.Provisioner.GrantAdmin` (`internal/auth/provision.go`) no longer
+    iterates `ListZones` and writes `CreatePolicy` per zone. It calls
+    `repo.AddAdmin(ctx, rbac.Admin{Principal, GrantedBy:
+    "bootstrap_admin_email", Reason: "auth.admin_email match"})` and then
+    `repo.DeletePoliciesForPrincipal(ctx, principal)`. The OIDC callback
+    (`internal/auth/handlers.go:179-185`) still calls `GrantAdmin` for
+    every login matching `auth.admin_email`; the call is still idempotent;
+    the failure-loud policy is preserved (admin bootstrap failure aborts
+    the login with HTTP 500). What changed: the row goes to
+    `admin_principals` instead of N rows going to `rbac_policies`, and any
+    pre-existing `rbac_policies` rows for the admin are cleaned up so
+    "single source of truth" holds structurally. The bootstrap trigger
+    (config-designated admin_email becomes admin on first login) is
+    preserved verbatim — the design's §2.9 contract holds.
+  - **Migration of the existing admin: no SQL data migration, runtime
+    cleanup at first matching login.** The pre-Phase-H snapshot lived in
+    `rbac_policies`. Migration 016 creates `admin_principals` empty; it
+    does not back-port any rows because the migration cannot know which
+    principal is the configured admin (`auth.admin_email` lives in YAML
+    config, not in the database). The cleanup runs at runtime instead: the
+    first matching admin_email login under Phase H code inserts the
+    `admin_principals` row AND deletes any leftover `rbac_policies` rows
+    for that principal in the same call. The prompt allows a clean
+    migration; this is the cleanest one given the configured-in-YAML
+    constraint. The `TestPhaseH_NoLeftoverSnapshotGrants` test seeds
+    snapshot grants explicitly and asserts they are gone after
+    `GrantAdmin`, proving the cleanup path. The unreleased-project
+    assumption holds either way: no production DB has snapshot grants to
+    migrate; the cleanup is a structural defence, not a back-port.
+  - **CLI surface: `joe admin {grant,revoke,list}`, parallel to
+    `joe zone`.** New subcommand at `cmd/joe/admin.go`. `joe admin grant
+    --principal <user:|svc:> [--reason ...]` upserts the row (idempotent;
+    re-issue with a new `--reason` updates the rationale) AND deletes any
+    `rbac_policies` rows for the principal (the same cleanup the
+    bootstrap path performs). `joe admin revoke --principal ...` deletes
+    the row. `joe admin list` prints the rows in a 3-column table
+    (principal, granted_by, granted_at). The command opens the SQLite
+    database directly (operator-on-host), mirroring `joe zone`'s Phase C
+    surface (D-0006). The `runDeps.openRBACRepo` factory's return type
+    widened from `zoneRepo` to a new `rbacRepo` interface that adds
+    `IsAdmin`/`ListAdmins`/`AddAdmin`/`RemoveAdmin`; `*rbac.SQLRepository`
+    satisfies both. The configured `auth.admin_email` path keeps working
+    regardless of the CLI — both routes converge on the same `AddAdmin`
+    repository call. Justification for including grant/revoke (the
+    prompt left this as a scope choice): consistent with `joe zone`'s
+    operator-on-host model and the Phase C precedent; lets an operator
+    delegate additional admins without editing YAML or restarting
+    joe-core. Without it, the only admin path is the configured email,
+    which fails the "day-100 operator experience" lens that motivated
+    Phase H in the first place — adding a second admin must not require
+    a config change + restart cycle.
+  - **Revoke caveat: `auth.admin_email` re-grants on next matching login.**
+    `joe admin revoke` removes the `admin_principals` row, but the
+    bootstrap path is idempotent and will re-insert it the next time a
+    matching email logs in. To make a revocation stick, the operator must
+    also clear `auth.admin_email` from config. This is the right default:
+    the configured admin_email IS the bootstrap path, and silently
+    pre-empting it via a CLI revoke would create a subtle drift between
+    config and behaviour. Documented in the CLI's command surface and in
+    the `runAdminRevoke` doc comment.
+  - **Non-admin authorization outcomes: unchanged from post-Phase-G.** The
+    Phase H short-circuit only fires when at least one principal in the
+    set holds an `admin_principals` row. For every other principal it is
+    a no-op — `Decide`/`HasZoneAccess` flow through the existing
+    per-principal-grant loop, returning the same allow/deny outcomes the
+    Phase G regression tests proved. `TestPhaseH_NonAdminOutcomesUnchanged`
+    asserts this regression — granted allow, ungranted deny, in-zone
+    action denied — each with the same reason vocabulary
+    (`policy_allow`/`no_grant`/`action_not_in_zone`) it had pre-Phase-H.
+  - **Failure posture on `IsAdmin` errors: warn + fall through, not deny.**
+    An `IsAdmin` repository error for one principal logs WARN and
+    continues to the next principal in the set, then falls through to the
+    per-zone grant loop. The principal's grant lookup still runs; the
+    overall decision is whatever the grant path produces. Rationale:
+    `IsAdmin` is a one-table single-row read; a transient failure should
+    not collapse to deny on a principal who legitimately holds an
+    rbac_policies grant. The behaviour mirrors how `ListPoliciesForPrincipal`
+    handles its own failures (`continue`, not return). Verified by
+    `TestPhaseH_AdminIsAdminErrorFallsBackToGrant`.
+- Deviations from the Phase H prompt, with reasons:
+  1. **No SQL data migration; cleanup runs at the first matching admin
+     login (and at every CLI promotion).** The configured admin_email is
+     in YAML config, not in the database, so an SQL migration cannot
+     identify the admin without operator input. The cleanup runs in
+     Go at the existing `GrantAdmin` site instead, which is invoked on
+     every matching login (idempotent). The behaviour the prompt wants
+     ("remove leftover snapshot grants") is realised on first contact
+     with the new code; the `TestPhaseH_NoLeftoverSnapshotGrants` test
+     seeds pre-existing snapshot rows to prove the cleanup.
+  2. **CLI grant/revoke is in scope.** The prompt left this as a scope
+     decision; rejected "inspect only" as inconsistent with the
+     `joe zone` precedent (Phase C's surface includes grant/revoke). The
+     configured admin_email path is preserved verbatim; the CLI is the
+     operator-on-host route for any ADDITIONAL admins. Without it, the
+     deployment can have at most one admin without a config-restart
+     cycle, which fails the "day-100 operator experience" lens that
+     motivated Phase H.
+  3. **`runDeps.openRBACRepo` return type widened from `zoneRepo` to
+     `rbacRepo`.** `rbacRepo` is the union of methods both `joe zone`
+     and `joe admin` need; `*rbac.SQLRepository` satisfies it
+     trivially. Keeping two parallel factories (one per command) would
+     have meant duplicating the DB-open ceremony.
+  4. **No new `audit.Kind` and no new column in `audit_log`.** The Phase F
+     contract is "one reason field captures the basis"; adding a column
+     for admin specifically would balloon the schema for one capability.
+     The `ReasonAdminCapability` tag is in the existing `reason` column;
+     audit queries discriminate on that, not on `kind`. Migration 015's
+     CHECK constraint on `kind` is unchanged.
+  5. **`PrincipalSet` stays size 1.** Per the explicit scope fence; no
+     group-member additions, no multi-tier RBAC. Admin is a single
+     boolean capability — the only role beyond per-zone grants.
+- Basis: joe-identity-design.md §2.9 (principal mapping & bootstrap),
+  §5 Invariant 2 (every path to infra passes through the guarded accessor
+  — admin is part of that decision now), §6 (admin UI deferred behind a
+  CLI seam that exists);  joe-identity-phase-plan.md Phase H. Verified
+  against Phase A's accessor signature (D-0004), Phase B's set-shaped
+  path (D-0005), Phase C's admin bootstrap (D-0006, superseded by this
+  entry's snapshot replacement), Phase D's service-account wiring
+  (D-0007), Phase E's accessor-on-both-paths (D-0008), Phase F's audit
+  chokepoint (D-0009), and Phase G's captain-gate-on-loop + set-shaped
+  HasZoneAccess (D-0010). New tests:
+  - `internal/rbac/policy_test.go`:
+    `TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation` (the bug-fix
+    demonstration — FAILS pre-Phase-H, PASSES now),
+    `TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants` (breadth +
+    allowed_actions ceiling),
+    `TestPhaseH_NonAdminOutcomesUnchanged` (regression: non-admin
+    unchanged from post-Phase-G),
+    `TestPhaseH_AdminDecisionReasonIsDistinct` (audit-trail
+    distinguishability at the Decision struct level),
+    `TestPhaseH_HasZoneAccessAdminCapability` (sourceless path coverage),
+    `TestPhaseH_AdminIsAdminErrorFallsBackToGrant` (failure posture).
+  - `internal/access/audit_test.go`:
+    `TestPhaseH_AdminAllowAuditReasonDistinguishedFromZoneGrant`
+    (audit-trail distinguishability through the accessor +
+    audit.Repository),
+    `TestPhaseH_AdminAllowedOnPostBootstrapZone` (bug fix verified on
+    the audit path too).
+  - `internal/auth/provision_test.go`:
+    `TestPhaseH_GrantAdminMarksDynamicCapability` (bootstrap writes
+    admin_principals, not rbac_policies),
+    `TestPhaseH_NoLeftoverSnapshotGrants` (the no-snapshot
+    structural assertion: seeded snapshot rows are cleaned up),
+    `TestPhaseH_GrantAdminIsIdempotent` (safe re-run on every login).
+  - `internal/auth/handlers_test.go::TestCallback_AdminBootstrap`:
+    rewritten for Phase H semantics (admin_principals row exists; no
+    rbac_policies rows; non-admin login still gains nothing).
+  - `cmd/joe/admin_test.go`:
+    `TestPhaseH_AdminGrantListRevoke` (end-to-end CLI),
+    `TestPhaseH_AdminGrantCleansUpZoneSnapshots` (CLI enforces single
+    source of truth),
+    `TestPhaseH_AdminListEmpty` and
+    `TestPhaseH_AdminGrantUnprefixedPrincipalRejected` (CLI error
+    handling).
+  All prior-phase tests (Phase A no-ungoverned-access invariant, Phase
+  A/B/C/D/E/F/G regressions including the executable authority-
+  invariance, captain-on-loop, and append-only audit guards) still
+  green and unchanged.
+- Supersedes: D-0006's snapshot definition of admin authority. The
+  rest of D-0006 (OIDC + sessions + CLI zone provisioning + the
+  config-designated admin_email TRIGGER) stands. The touched packages
+  are `internal/store/migrations` (new 016), `internal/rbac` (new Admin
+  type, repository methods, policy engine short-circuit, reason
+  constants), `internal/auth` (Provisioner.GrantAdmin replaced),
+  `cmd/joe` (new admin subcommand; zoneRepo → rbacRepo); OIDC,
+  service-account resolution, the accessor's transport wiring, the
+  captain gate, the audit_log schema, and PrincipalSet are untouched.
+  With this phase the planned identity work — Phases A–H — is complete.
+- Status: active. Phase H complete. This closes the tracked identity
+  follow-ups: no further phase in this sequence is planned.
+
+---
+
 ## D-0010 — Identity Phase G: shared §C captain gate on the agentloop path; HasZoneAccess set-shaped; coreagent refresh confirmed read-only
 
 - Date: 2026-05-30

@@ -68,3 +68,26 @@ type Policy struct {
 	ZoneID    string    `json:"zone_id"     db:"zone_id"`
 	CreatedAt time.Time `json:"created_at"  db:"created_at"`
 }
+
+// Admin records that a principal holds dynamic admin status — the
+// authorization-decision capability introduced by Phase H (see
+// docs/joe-identity-design.md §2.9, docs/DECISIONS.md D-0011).
+//
+// Admin is a property of the principal, not of a (principal, zone) pair:
+// holding the row means the policy engine allows the principal on any zone
+// for any action the zone itself permits, with no per-zone rbac_policies
+// grant required. The single source of truth is the admin_principals
+// table; rbac_policies rows for an admin are redundant (the policy engine
+// short-circuits to allow before consulting them) and the bootstrap path
+// removes any leftover ones so the source-of-truth property is structural.
+//
+// Admin does NOT bypass the zone's allowed_actions list. A zone classified
+// readonly stays readonly even for an admin; "I have admin authority" is
+// not the same as "I can change what kind of operation a zone is for".
+// The interpretation choice and its justification are in D-0011.
+type Admin struct {
+	Principal string    `json:"principal"  db:"principal"`
+	GrantedAt time.Time `json:"granted_at" db:"granted_at"`
+	GrantedBy string    `json:"granted_by" db:"granted_by"`
+	Reason    string    `json:"reason"     db:"reason"`
+}
