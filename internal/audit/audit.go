@@ -64,7 +64,12 @@ const (
 
 	// KindCaptainTransition is captain attach / transfer begin /
 	// transfer confirm / transfer cancel — the events whose history
-	// previously cascade-deleted with the session row.
+	// previously cascade-deleted with the session row. Phase G extends
+	// this kind to also cover §C captain-gate refusals (action
+	// captain_gate_refused) emitted by internal/captaingate: a gate
+	// refusal is a captain-mechanism event (which session may mutate
+	// during incident regime), so the existing kind is its natural
+	// home and no migration is needed.
 	KindCaptainTransition Kind = "captain_transition"
 )
 
@@ -77,6 +82,19 @@ const (
 	ActionCaptainTransferBegin   = "captain_transfer_begin"
 	ActionCaptainTransferConfirm = "captain_transfer_confirm"
 	ActionCaptainTransferCancel  = "captain_transfer_cancel"
+	// ActionCaptainGateRefused is the Phase G refusal event written by
+	// captaingate.Wrapper when the §C gate refuses a non-captain
+	// mutation in incident regime. The row's kind is
+	// KindCaptainTransition (the gate is part of the captain mechanism,
+	// not a separate kind) and decision is "deny". A read-class action
+	// is never emitted here because the gate lets T1 reads through
+	// without an audit row.
+	ActionCaptainGateRefused = "captain_gate_refused"
+
+	// ReasonCaptainGateRefused is the structured reason tag captaingate
+	// records for refusals; consistent with Phase F's enumerable-tag
+	// vocabulary (see D-0009 deviation 3).
+	ReasonCaptainGateRefused = "captain_gate_refused"
 )
 
 // Event is one audit row. The fields map 1:1 to audit_log columns

@@ -376,3 +376,77 @@ func TestPolicyEngine_IsAllowed_SetUnion(t *testing.T) {
 		t.Error("union must not exceed the zone's allowed actions")
 	}
 }
+
+// seedRegimeControlZone adds the sourceless regime-control zone (which
+// migration 012 creates in production) to openTestDB's bare schema.
+// The zone allows declare_incident and resolve_incident only — these
+// are sourceless capabilities used by the regime/captain path that
+// HasZoneAccess gates.
+func seedRegimeControlZone(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO security_zones VALUES (
+		'regime-control','Regime Control','sourceless declare/resolve',
+		'["declare_incident","resolve_incident"]','2026-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("seed regime-control: %v", err)
+	}
+}
+
+// TestPolicyEngine_HasZoneAccess_SetSingleMember is the Phase G size-1
+// behavioural contract for the sourceless authorization path: a set
+// whose single member holds the zone grant is allowed; a set whose
+// single member lacks the grant is denied. This is the production case
+// — incident declare/resolve build a one-element set from the caller's
+// ctx principal — and the outcome must be identical to the
+// pre-Phase-G single-principal call (D-0010).
+func TestPolicyEngine_HasZoneAccess_SetSingleMember(t *testing.T) {
+	db := openTestDB(t)
+	seedRegimeControlZone(t, db)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"})
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	if !engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("alice"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("size-1 set whose member is granted should be allowed")
+	}
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("mallory"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("size-1 set whose member lacks the grant should be denied")
+	}
+}
+
+// TestPolicyEngine_HasZoneAccess_SetUnion is the Phase G forward-looking
+// multi-member contract: HasZoneAccess permits if ANY member of the set
+// holds the grant, denies if none do, denies the empty set, and stays
+// bounded by the zone's allowed actions (no action_not_in_zone widening
+// via union). Mirrors the equivalent test for IsAllowed so the
+// sourceless path is on the same multi-principal footing as the
+// source-keyed path (D-0010, §2.7 + §2.10).
+func TestPolicyEngine_HasZoneAccess_SetUnion(t *testing.T) {
+	db := openTestDB(t)
+	seedRegimeControlZone(t, db)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// Only alice is granted.
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"})
+
+	engine := rbac.NewPolicyEngine(repo)
+
+	if !engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("mallory", "alice", "bob"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("set with any granted member should be allowed (union of grants)")
+	}
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("mallory", "bob"), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("set with no granted member should be denied")
+	}
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet(), "regime-control", rbac.ActionDeclareIncident) {
+		t.Error("empty principal set should be denied")
+	}
+	// Union must not exceed the zone's allowed_actions: regime-control
+	// does not allow ActionRead, so even a granted member is denied.
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("alice"), "regime-control", rbac.ActionRead) {
+		t.Error("union must not exceed the zone's allowed actions")
+	}
+}

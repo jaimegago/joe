@@ -32,12 +32,28 @@ import (
 // signal Phase E achieved its purpose.
 //
 // Remaining allowlisted packages:
+//
 //   - internal/access  — the guarded accessor itself (its whole purpose).
+//
 //   - internal/coreagent — the Core Agent's background refresh path, which is
 //     timer-driven and runs WITHOUT a caller principal (no user request,
 //     no edge auth). The accessor requires a principal, so the refresh path
 //     stays structurally outside it. This is NOT the loop path that Phase E
 //     refactored — that is internal/api, which is covered by this guard.
+//
+//     Phase G (D-0010) re-verified this exception against every refresh path
+//     and the Core Agent's own onboarding tools. The audit verdict was
+//     VERDICT-A: the refresh side is READ-ONLY on customer infrastructure
+//     (every *_refresh.go file calls List/Get/Describe/Status only — no
+//     Create/Update/Delete/Apply/Post/Put/Patch on any adapter), and the
+//     onboarding side mutates only the INTERNAL graph store via
+//     graph_add_node / graph_add_edge tools. No code path on the coreagent
+//     side issues an infrastructure mutation. The allowlist therefore stays;
+//     should the refresh path ever gain a mutating call, that fact should
+//     surface here as a new violation, this comment should be updated, and
+//     the refresh should be moved under the accessor (or under captaingate
+//     with a synthetic caller principal).
+//
 //   - cmd/joe-core — the composition root. Its only access is a process-level
 //     OpenTelemetry business-metrics gauge that reads graph.Summary; this is
 //     server-internal telemetry with no caller principal, so it is not a

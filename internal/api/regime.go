@@ -121,7 +121,11 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 
 	// §6-B authorization check. Write a deny audit row before returning
 	// so a denied declare is also captured in the durable trail.
-	if !h.policy.HasZoneAccess(r.Context(), principal, "regime-control", rbac.ActionDeclareIncident) {
+	// Phase G: HasZoneAccess is set-shaped; we build the set from the
+	// caller's context principal (size 1, consistent with the rest of
+	// the system per D-0005). Group/multi-member sets remain a v2
+	// extension behind this same call site.
+	if !h.policy.HasZoneAccess(r.Context(), rbac.NewPrincipalSet(principal), "regime-control", rbac.ActionDeclareIncident) {
 		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
 			audit.DecisionDeny, "no_grant",
 			map[string]string{"declared_kind": string(declaredKind)}); err != nil {
@@ -210,7 +214,7 @@ func (h *regimeHandler) resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.policy.HasZoneAccess(r.Context(), principal, "regime-control", rbac.ActionResolveIncident) {
+	if !h.policy.HasZoneAccess(r.Context(), rbac.NewPrincipalSet(principal), "regime-control", rbac.ActionResolveIncident) {
 		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionResolveIncident,
 			audit.DecisionDeny, "no_grant", nil); err != nil {
 			writeInternalError(w, err, "resolve regime audit (deny)")

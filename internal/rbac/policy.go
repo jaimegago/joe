@@ -102,10 +102,20 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 	return Decision{Allowed: false, Zone: zoneID, Reason: "no_grant"}
 }
 
-// HasZoneAccess answers "does principal hold action on zoneID?" — the
-// sourceless variant of IsAllowed. Used by sourceless capabilities like
+// HasZoneAccess answers "does ANY principal in the set hold action on
+// zoneID?" — the sourceless variant of IsAllowed (additive / allow-only,
+// same union-of-grants semantics). Used by sourceless capabilities like
 // regime declare/resolve where there is no infrastructure source to
 // gate on. Does NOT consult source_zone_assignments.
+//
+// Phase G (D-0010, joe-identity-design.md §2.7 + §2.10): the function
+// became set-shaped — mirroring IsAllowed/Decide — so incident
+// declare/resolve authorization is on the same multi-principal footing
+// as everything else. It was deliberately left single-principal in
+// Phase B as out-of-chain (the regime/captain path); the captain-wiring
+// phase is where it joins. The behaviour for a size-1 set is identical
+// to the previous single-principal call: same allow/deny outcome,
+// same logged-failure semantics.
 //
 // Encoding rationale: see the §6-B finding in
 // internal/store/migrations/012_regime_rbac.up.sql. Grafting sourceless
@@ -114,7 +124,7 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 // 'unassigned' zone (creates incidental over-privilege across every
 // unassigned source). HasZoneAccess reuses the existing zone+policy
 // data unchanged and adds no new tables.
-func (e *PolicyEngine) HasZoneAccess(ctx context.Context, principal Principal, zoneID string, action Action) bool {
+func (e *PolicyEngine) HasZoneAccess(ctx context.Context, principals PrincipalSet, zoneID string, action Action) bool {
 	zone, err := e.repo.GetZone(ctx, zoneID)
 	if err != nil || zone == nil {
 		slog.Warn("rbac: zone not found in HasZoneAccess, denying", "zone_id", zoneID, "error", err)
@@ -123,15 +133,22 @@ func (e *PolicyEngine) HasZoneAccess(ctx context.Context, principal Principal, z
 	if !zone.Allows(action) {
 		return false
 	}
-	policies, err := e.repo.ListPoliciesForPrincipal(ctx, string(principal))
-	if err != nil {
-		slog.Warn("rbac: failed to list policies in HasZoneAccess, denying",
-			"principal", principal, "error", err)
-		return false
-	}
-	for _, p := range policies {
-		if p.ZoneID == zoneID {
-			return true
+	// Union of grants: permit if ANY principal in the set holds a
+	// matching policy. A lookup failure for one member denies only that
+	// member (continue) — the others may still grant. For a size-1 set
+	// this is byte-identical to the prior single-principal behaviour
+	// (immediate deny), which is the §2.7 regression contract.
+	for _, principal := range principals {
+		policies, err := e.repo.ListPoliciesForPrincipal(ctx, string(principal))
+		if err != nil {
+			slog.Warn("rbac: failed to list policies in HasZoneAccess, denying this principal",
+				"principal", principal, "error", err)
+			continue
+		}
+		for _, p := range policies {
+			if p.ZoneID == zoneID {
+				return true
+			}
 		}
 	}
 	return false

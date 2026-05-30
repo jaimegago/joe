@@ -27,6 +27,7 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
+	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
@@ -511,16 +512,23 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	coreAgent := deps.newCoreAgent(services, llmAdapter, metrics)
 	services.Agent = coreAgent // Wire Core Agent to services for API handlers
 
-	// Phase 1 Change 9: wrap the Core Agent's tool executor with the
-	// §D5 durable wrapper so every T2/T3 tool call persists an
-	// idempotency-key intent BEFORE issuing and a terminal status
-	// AFTER. Since Phase 2 the CLI runs no loop of its own, so this
-	// wraps joe-core's only agentic loop. Type-assert is safe —
-	// newCoreAgent in defaultRunDeps returns *coreagent.Agent.
+	// Identity Phase G + Phase 1 Change 9: wrap the Core Agent's tool
+	// executor with the COMPOSED chain
+	//   captaingate.Wrapper → DurableExecutor → inner *tools.Executor
+	// so that on every T2/T3 tool call the §C captain-session gate
+	// runs UPSTREAM of the §D5 idempotency layer (a refused mutation
+	// is never persisted as an issued intent — nothing happened to
+	// record). The exact same wrapper is installed around the user
+	// task loop in api.New / api/tasks.go, so the gate logic lives in
+	// EXACTLY ONE place across both agentic paths (the static guard
+	// TestPhaseG_SingleSharedCaptainGateImplementation asserts there
+	// is no second copy in coreagent or anywhere else). Type-assert is
+	// safe — newCoreAgent in defaultRunDeps returns *coreagent.Agent.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
-		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel, services.SessionModel)
-		concrete.SetToolExecutor(durable)
-		slog.Info("core agent: §D5 durable executor wrapper + §C captain-session gate installed")
+		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
+		gated := captaingate.New(durable, services.SessionModel, services.Audit)
+		concrete.SetToolExecutor(gated)
+		slog.Info("core agent: §C captain-session gate + §D5 durable executor wrapper installed (gate runs upstream)")
 	}
 
 	if err := coreAgent.Start(ctx); err != nil {
