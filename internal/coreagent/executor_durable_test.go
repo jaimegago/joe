@@ -177,7 +177,6 @@ type fixtureEnv struct {
 	ctx       context.Context
 	store     *store.Store
 	repo      *spyRepo
-	sessRepo  sessionmodel.Repository
 	order     *[]string
 	sessionID string
 	runID     string
@@ -201,9 +200,8 @@ func newFixture(t *testing.T) *fixtureEnv {
 	spied := &spyRepo{inner: innerRepo, invokeOrder: orderPtr}
 
 	// Plain investigation session under normal regime. The §D5 tests
-	// don't care about the §C gate (Change 10 covers gate behavior in
-	// executor_gate_test.go); they just need a valid session_id FK
-	// target for the run. Normal regime → gate always allows.
+	// only need a valid session_id FK target for the run — the gate
+	// itself moved out to internal/captaingate in Phase G.
 	sess := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
 		Type:             sessionmodel.SessionTypeInvestigation,
@@ -220,17 +218,10 @@ func newFixture(t *testing.T) *fixtureEnv {
 		t.Fatalf("create run: %v", err)
 	}
 
-	// Wire sessRepo into the wrapper too so the gate code path runs in
-	// these tests (it'll always allow in normal regime). The §C gate
-	// is structurally inseparable from the wrapper now (Change 10);
-	// passing nil would let the §D5 tests artificially short-circuit it.
-	_ = sessRepo
-
 	return &fixtureEnv{
 		ctx:       context.Background(),
 		store:     s,
 		repo:      spied,
-		sessRepo:  sessRepo,
 		order:     orderPtr,
 		sessionID: sess.ID,
 		runID:     run.ID,
@@ -252,7 +243,7 @@ func (f *fixtureEnv) withRunCtx(key string) context.Context {
 func TestDurableExecutor_D5Ordering(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// graph_add_node is a T2 (TierRecord) tool in the registry.
 	_, err := dur.Execute(f.withRunCtx(""), "graph_add_node", map[string]any{"id": "x"})
@@ -276,7 +267,7 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"v": 1}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	key := "fixed-key"
 	ctx := f.withRunCtx(key)
@@ -311,7 +302,7 @@ func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// Inject a failure that fires before MarkToolCompleted writes —
 	// simulates the process crashing after inner.Execute but before the
@@ -358,7 +349,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 func TestDurableExecutor_T1Bypass(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: "ok", invokeOrder: f.order}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// read_file is registered as T1 (TierObserve) in the safety tool registry.
 	_, err := dur.Execute(f.withRunCtx(""), "read_file", map[string]any{"path": "/etc/hosts"})
@@ -384,7 +375,7 @@ func TestDurableExecutor_T1Bypass(t *testing.T) {
 func TestDurableExecutor_NoGoroutineFanOut(t *testing.T) {
 	f := newFixture(t)
 	spyExec := &spyExecutor{returnValue: "ok"}
-	dur := coreagent.NewDurableExecutor(spyExec, f.repo, f.sessRepo)
+	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	callerGoID := currentGoroutineID()
 	if callerGoID < 0 {

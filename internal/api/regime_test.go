@@ -488,16 +488,19 @@ func TestRegime_6B_NoIncidentalSourceWidening(t *testing.T) {
 		}
 	}
 
-	// And alice now DOES have regime-control access.
-	if !engine.HasZoneAccess(ctx, "alice", "regime-control", rbac.ActionDeclareIncident) {
+	// And alice now DOES have regime-control access. Phase G:
+	// HasZoneAccess is set-shaped — every caller builds a size-1 set
+	// from the principal in ctx, exactly matching how IsAllowed is
+	// called everywhere else.
+	if !engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("alice"), "regime-control", rbac.ActionDeclareIncident) {
 		t.Error("alice should hold declare_incident on regime-control after grant")
 	}
-	if !engine.HasZoneAccess(ctx, "alice", "regime-control", rbac.ActionResolveIncident) {
+	if !engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("alice"), "regime-control", rbac.ActionResolveIncident) {
 		t.Error("alice should hold resolve_incident on regime-control after grant")
 	}
 
 	// Sanity: a principal without the grant has no regime-control access.
-	if engine.HasZoneAccess(ctx, "bob", "regime-control", rbac.ActionDeclareIncident) {
+	if engine.HasZoneAccess(ctx, rbac.NewPrincipalSet("bob"), "regime-control", rbac.ActionDeclareIncident) {
 		t.Error("bob should NOT hold declare_incident without a policy grant")
 	}
 }

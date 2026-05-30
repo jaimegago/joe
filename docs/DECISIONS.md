@@ -10,6 +10,217 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0010 — Identity Phase G: shared §C captain gate on the agentloop path; HasZoneAccess set-shaped; coreagent refresh confirmed read-only
+
+- Date: 2026-05-30
+- Decision: Phase G (joe-identity-design.md §0 bug #2, §2.10, §5
+  Invariant 6; joe-identity-phase-plan.md Phase G) fixes the wiring
+  hole the design called out as "the incident-mode design is unenforced
+  on the path that matters." Three things changed; the captain
+  *concept* did not (it remains a session-ownership concurrency control,
+  DENY-ONLY, never widening RBAC authority). Specifics:
+  - **One shared §C gate, extracted into a new package
+    `internal/captaingate`.** Pre-Phase-G the gate logic + §B1 principal
+    substitution lived inside `coreagent.DurableExecutor`, which wraps
+    only the Core Agent's onboarding/refresh executor — NOT the user
+    task loop (`agentloop.Agent.Run` behind
+    `/api/v1/tasks` and `/api/v1/tasks/stream`). Phase G moves the
+    gate into `captaingate.Wrapper` (a tool-executor wrapper that
+    implements both single `Execute` and batch `ExecuteBatch` +
+    `ResultsToMessages` so it is a drop-in for `*tools.Executor` in
+    `agentloop.NewAgent`), and composes it around BOTH paths:
+    1. **Core Agent path** (`cmd/joe-core/main.go:520-531`):
+       `captaingate.New(coreagent.NewDurableExecutor(inner, runRepo),
+       sessRepo, auditRepo)`. The gate now runs UPSTREAM of §D5
+       persistence, so a refused mutation is never persisted as an
+       issued intent — nothing happened to record. `DurableExecutor`
+       lost its `sessRepo` parameter and is now pure §D5 idempotency.
+    2. **User task loop path** (`internal/api/tasks.go:240-258`):
+       `var loopExec agentloop.BatchExecutor = executor; if
+       services.SessionModel != nil { loopExec = captaingate.New(...) }`.
+       This wraps the SAME `*tools.Executor` the loop has always used.
+       `agentloop.Agent.executor` is now an interface
+       (`agentloop.BatchExecutor`) so both `*tools.Executor` and
+       `*captaingate.Wrapper` satisfy it without further plumbing.
+    The static guard
+    `internal/captaingate/single_impl_guard_test.go::TestPhaseG_SingleSharedCaptainGateImplementation`
+    parses the whole repo and FAILS if any production package other
+    than `internal/captaingate` calls `sessiongate.Check`. This is the
+    structural enforcement of the "do not duplicate the logic in two
+    places that can drift" requirement: there is exactly one production
+    `sessiongate.Check` call site, and both agentic paths reach it
+    through the same `captaingate.Wrapper.Execute`.
+  - **Gate-then-accessor ordering on the loop path (req 2).** Inside
+    `Wrapper.Execute`: classify tier → T1 bypass → on T2/T3 call
+    `sessiongate.Check(ctx, sessRepo, sessionID, principal, tier)`. On
+    refusal the wrapper returns `*captaingate.GateRefusalError`
+    immediately — no inner `Execute`, no accessor call, no infra. On
+    allow the wrapper performs the §B1 substitution (in incident regime
+    only) and then calls `inner.Execute`, which is the path that
+    eventually reaches the accessor's RBAC check via the in-process
+    client. The Phase G behavioural test
+    `TestPhaseG_LoopPathNonCaptainMutationRefused` proves this on the
+    LOOP path specifically — pre-Phase-G the user task loop used a
+    naked `*tools.Executor` with no gate, so this test would have
+    SUCCEEDED at the mutation (the bug); it now correctly refuses with
+    a `*GateRefusalError`. The captain-session mutation still succeeds
+    (`TestCaptainGate_EndToEnd`), and non-captain READS still succeed
+    (`TestPhaseG_LoopPathNonCaptainReadsStillSucceed`) — the gate only
+    constrains mutation, never read/investigation.
+  - **Gate stays DENY-ONLY; authority-invariance is now a passing test
+    (req 3 + acceptance criterion).** The Phase G test
+    `TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance` seeds a
+    principal/source/policy combo, computes the `IsAllowed` outcome
+    under normal regime, declares an incident, and asserts the SAME
+    outcome under incident regime for the SAME principal/action/zone.
+    Identical in both directions: a granted principal stays granted; an
+    ungranted principal stays denied. This is the executable form of
+    the §2.10 invariant ("incident mode never increases any principal's
+    authority"). If a future change ever leaks regime state into
+    `IsAllowed`/`Decide`, this test catches it.
+  - **Loop-path gate refusal lands in the audit trail (req 4).** The
+    wrapper writes ONE row per refusal — kind=`captain_transition`,
+    action=`captain_gate_refused`, decision=`deny`, principal=caller
+    ctx principal, context={tool, session_id, captain_session_id} — via
+    the SAME `audit.Repository` Phase F wired into the accessor and
+    the regime/captain handlers. The audit kind reuses the existing
+    `KindCaptainTransition` (a gate refusal IS a captain-mechanism
+    event), so migration 015's CHECK constraint on `kind` is unchanged;
+    no new migration is needed. Failure posture follows the Phase F
+    helper `audit.FailurePosture`: the refusal action is not in the
+    read-class enum, so an audit-insert failure fail-CLOSES (returns
+    the audit error rather than the refusal). The mutation does not
+    proceed either way because the gate already refused it; the only
+    observable difference is which error the LLM-facing layer surfaces.
+    Verified by `TestPhaseG_GateRefusalRecordedInAuditTrail` which
+    asserts: row exists, kind/decision/principal are correct, and the
+    context blob names the captain session id.
+  - **`HasZoneAccess` set-shaped (req 5).** The sourceless authorization
+    function now takes `rbac.PrincipalSet` instead of a single
+    `rbac.Principal`, mirroring `IsAllowed`/`Decide` (D-0005). Same
+    union-of-grants semantics: allowed if ANY member holds a matching
+    grant; denied if none do; per-member lookup failures degrade to
+    deny-that-member only; the zone's allowed-actions cap is unchanged
+    (no widening via union). Production callers — both `declare` and
+    `resolve` in `internal/api/regime.go` — build the set as
+    `rbac.NewPrincipalSet(principal)` from the caller's context
+    principal, size 1, consistent with the rest of the system. Phase B
+    deliberately left this single-principal as "out-of-chain" (D-0005
+    deviation 3); Phase G is where the regime/captain path joins. Test
+    coverage:
+    `internal/rbac/policy_test.go::TestPolicyEngine_HasZoneAccess_SetSingleMember`
+    (the production size-1 outcome — granted allow / ungranted deny;
+    identical to the pre-Phase-G single-principal call) and
+    `TestPolicyEngine_HasZoneAccess_SetUnion` (the forward-looking
+    multi-member contract: any-granted allow, none-granted deny, empty
+    set deny, no zone-action widening). The existing Phase A/B
+    regression `TestRegime_6B_NoIncidentalSourceWidening` was updated
+    to call `HasZoneAccess(ctx, NewPrincipalSet(principal), ...)`; its
+    behavioural assertions are unchanged and still pass, so the
+    single-principal outcome is byte-identical.
+  - **coreagent refresh: VERDICT-A — READ-ONLY on infrastructure,
+    allowlist retained (req 6).** The Phase G investigation enumerated
+    every adapter call on the
+    `internal/coreagent/{alerting,aws,azure,crd,datastore,git,gitops,k8s,networking,observability,registry}_refresh.go`
+    paths and confirmed each one is List/Get/Describe/Status only — no
+    Create/Update/Delete/Apply/Post/Put/Patch on any adapter. The
+    onboarding side (the Core Agent's own agentic loop in
+    `executor_durable.go`, now gated by `captaingate`) mutates only
+    INTERNAL state via `graph_add_node` / `graph_add_edge` /
+    `save_onboarding_fact` — these never touch customer infrastructure.
+    Conclusion: no path on the coreagent side issues an infrastructure
+    mutation, so the no-ungoverned-access allowlist exception for
+    `internal/coreagent/` stays. The exception's rationale is now
+    documented in `internal/api/access_guard_test.go` (the same place
+    the invariant is enforced) with a Phase-G paragraph that states the
+    audit was performed, what was checked, and what future change would
+    make this allowlist line a violation again.
+- Deviations from the Phase G prompt, with reasons:
+  1. **Gate refusal audit re-uses `KindCaptainTransition` instead of
+     adding a new `kind` value.** Migration 015's CHECK constraint
+     allows only `infra_access`, `regime_transition`,
+     `captain_transition`. The gate IS a captain-mechanism event, so
+     re-using the existing kind is the natural home and avoids a
+     migration. The action verb `captain_gate_refused` discriminates
+     the row from attach/transfer rows. Operators querying for
+     captain-mechanism events get gate refusals alongside attaches and
+     transfers without a schema change.
+  2. **Loop-path test does NOT spin the full LLM loop.** The acceptance
+     criterion is "demonstrated on the agentloop path specifically";
+     the wrapper is the same object both paths get, and
+     `agentloop.Agent.Run` calls `executor.ExecuteBatch` each
+     iteration. Driving `Wrapper.ExecuteBatch` directly with crafted
+     `[]tools.ToolCallRequest` exercises EXACTLY the code path
+     `Agent.Run` would, without the cost of a fake LLM. The test
+     comment calls out explicitly that pre-Phase-G this would have
+     succeeded (the bug); the fact that it now refuses is the signal.
+  3. **`agentloop.Agent.executor` field changed from
+     `*tools.Executor` to interface `agentloop.BatchExecutor`.** The
+     prompt allows breaking internal interfaces freely; this is the
+     minimum surface change to make the captaingate wrapper a drop-in.
+     `*tools.Executor` and `*captaingate.Wrapper` both satisfy
+     `BatchExecutor`, so tests that don't care about the gate (e.g.
+     `test/e2e/agent_flow_test.go`) keep passing `*tools.Executor`
+     directly without modification.
+  4. **Gate refusal audit fails CLOSED with the audit error wrapped
+     rather than the refusal.** The mutation is denied either way
+     (gate refused, inner not invoked), so the visible difference is
+     only which error the LLM-facing layer surfaces. The choice keeps
+     consistency with Phase F's failure-posture helper without
+     special-casing.
+  5. **Test ergonomics: gate behavioural tests moved from
+     `coreagent/executor_gate_test.go` to
+     `captaingate/captaingate_test.go`.** Same scenarios, same
+     `principalSpyExecutor`, same end-to-end + ordering + B1 +
+     T1-bypass assertions; what changed is the wrapper under test
+     (`captaingate.Wrapper` instead of `coreagent.DurableExecutor`)
+     because the gate moved.
+- Basis: joe-identity-design.md §0 (bug #2 statement), §2.10 (captain
+  is a session-ownership concurrency control, DENY-only, never widens
+  RBAC), §2.7 (set-shaped authorization), §5 Invariants 4 and 6 (the
+  authority-invariance and captain-on-loop invariants);
+  joe-identity-phase-plan.md Phase G. Verified against Phase A's
+  accessor signature (D-0004), Phase B's set-shaped path (D-0005),
+  Phase C's edge-auth (D-0006), Phase D's service-account wiring
+  (D-0007), Phase E's accessor-on-both-paths (D-0008), and Phase F's
+  audit chokepoint (D-0009). New tests:
+  - `internal/captaingate/captaingate_test.go`:
+    `TestCaptainGate_EndToEnd`, `TestCaptainGate_RefusalNeverCallsInner`,
+    `TestCaptainGate_B1_PrincipalSubstitution`,
+    `TestCaptainGate_AllowsT1ReadsInIncident` (migrated equivalents of
+    the Change-10 executor_gate_test.go cases);
+    `TestPhaseG_LoopPathNonCaptainMutationRefused` (the bug-#2 fix
+    demonstration on the LOOP path),
+    `TestPhaseG_LoopPathNonCaptainReadsStillSucceed`,
+    `TestPhaseG_GateRefusalRecordedInAuditTrail`,
+    `TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance`.
+  - `internal/captaingate/single_impl_guard_test.go::TestPhaseG_SingleSharedCaptainGateImplementation`
+    — repo-wide AST guard, fails if `sessiongate.Check` is called from
+    any production package other than `internal/captaingate`.
+  - `internal/rbac/policy_test.go::TestPolicyEngine_HasZoneAccess_SetSingleMember`
+    and `TestPolicyEngine_HasZoneAccess_SetUnion` — the set-shaped
+    contract.
+  All prior-phase tests (Phase A no-ungoverned-access invariant + loop
+  coverage, Phase A/B/C/D/E/F regressions, sessiongate import-closure
+  guard, executor §D5 idempotency tests now without sessRepo) still
+  green and unchanged.
+- Supersedes: nothing — extends D-0009. Phase H (admin-zones-snapshot)
+  remains the sole tracked follow-up. The touched packages are
+  `internal/captaingate` (new), `internal/coreagent` (gate removed
+  from `DurableExecutor`; `sessRepo` parameter dropped),
+  `internal/agentloop` (executor field is now an interface),
+  `internal/api` (`buildTaskRun` wraps the executor),
+  `internal/rbac` (`HasZoneAccess` set-shaped),
+  `internal/audit` (new action + reason constants;
+  `KindCaptainTransition` doc widened), `cmd/joe-core/main.go`
+  (composition); OIDC, service-account resolution, accessor RBAC
+  logic, and migration 015 are untouched. With this phase the planned
+  identity work is complete except for the tracked Phase H follow-up.
+- Status: active. Phase G complete; do not proceed to Phase H without a
+  new prompt.
+
+---
+
 ## D-0009 — Identity Phase F: append-only audit at the decision point; regime/captain transitions redirected; bug #3 fixed
 
 - Date: 2026-05-30

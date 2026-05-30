@@ -28,11 +28,25 @@ func WithCurrentModelName(name string) AgentOption {
 	return func(a *Agent) { a.currentModel = name }
 }
 
+// BatchExecutor is the minimal surface the loop calls on its executor.
+// Phase G change (docs/joe-identity-design.md §0 bug #2 / §2.10): the
+// loop's executor used to be a concrete *tools.Executor, but the
+// captain-session gate fix requires wrapping it so the §C gate runs
+// upstream of the per-tool call. Both *tools.Executor and the Phase G
+// shared *captaingate.Wrapper satisfy this interface, so the loop is
+// agnostic to whether the gate is installed. api/tasks.go's
+// buildTaskRun composes the gate around the executor; tests that don't
+// care about the gate pass *tools.Executor directly.
+type BatchExecutor interface {
+	ExecuteBatch(ctx context.Context, calls []tools.ToolCallRequest) ([]tools.ToolCallResult, error)
+	ResultsToMessages(results []tools.ToolCallResult) []llm.Message
+}
+
 // Agent runs the agentic loop: LLM → tool calls → LLM → ...
 type Agent struct {
 	mu             sync.RWMutex // protects llm and currentModel
 	llm            llm.LLMAdapter
-	executor       *tools.Executor
+	executor       BatchExecutor
 	registry       *tools.Registry
 	systemPrompt   string
 	maxIterations  int
@@ -42,7 +56,7 @@ type Agent struct {
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
-func NewAgent(llmAdapter llm.LLMAdapter, executor *tools.Executor, registry *tools.Registry, systemPrompt string, opts ...AgentOption) *Agent {
+func NewAgent(llmAdapter llm.LLMAdapter, executor BatchExecutor, registry *tools.Registry, systemPrompt string, opts ...AgentOption) *Agent {
 	a := &Agent{
 		llm:           llmAdapter,
 		executor:      executor,

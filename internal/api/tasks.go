@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/agentloop"
+	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
@@ -238,6 +239,25 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	}
 	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
+	// Identity Phase G (docs/joe-identity-design.md §0 bug #2, §2.10, §5
+	// Invariant 6, D-0010): wrap the loop's tool executor with the
+	// SHARED §C captain-session gate. The gate runs UPSTREAM of every
+	// per-tool invocation in this loop — i.e. before tools.Executor's
+	// safety check AND before the accessor's RBAC check inside the
+	// inproc client. In incident regime, a mutating tool call from a
+	// non-captain session is refused (no infra call, no accessor call);
+	// the gate stays DENY-ONLY, never widens authority. Identical
+	// wrapper is installed around the Core Agent's executor in
+	// cmd/joe-core/main.go, so the §C logic exists in EXACTLY ONE
+	// place. The wrapper is a drop-in for *tools.Executor (it
+	// implements ExecuteBatch + ResultsToMessages); when SessionModel
+	// is nil (auth-disabled local/dev), we install no wrapper and the
+	// loop behaves exactly as pre-Phase-G.
+	var loopExec agentloop.BatchExecutor = executor
+	if h.server.services.SessionModel != nil {
+		loopExec = captaingate.New(executor, h.server.services.SessionModel, h.server.services.Audit)
+	}
+
 	// Build graph context for system prompt
 	systemPrompt := prompts.TaskSystem
 	if zoneScope.scopeDesc != "" {
@@ -257,7 +277,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 
 	agent := agentloop.NewAgent(
 		h.server.services.LLM,
-		executor,
+		loopExec,
 		registry,
 		systemPrompt,
 		agentloop.WithObserver(observer),
