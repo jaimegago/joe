@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/seams"
 	"github.com/jaimegago/joe/internal/sessionmodel"
@@ -25,6 +27,13 @@ import (
 type regimeHandler struct {
 	repo   sessionmodel.Repository
 	policy *rbac.PolicyEngine // nil when RBAC is disabled
+	// auditRepo writes the durable record of who declared/resolved an
+	// incident and when. Phase F redirects this history out of the mutable
+	// system_regime row (which currently gets nulled on resolve — bug #3)
+	// and into the append-only audit table. May be nil in dev/local runs
+	// without a database; production wiring in cmd/joe-core/main.go always
+	// supplies a real repository.
+	auditRepo audit.Repository
 }
 
 func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
@@ -41,7 +50,7 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	if s.services.RBAC != nil {
 		engine = rbac.NewPolicyEngine(s.services.RBAC)
 	}
-	h := &regimeHandler{repo: s.services.SessionModel, policy: engine}
+	h := &regimeHandler{repo: s.services.SessionModel, policy: engine, auditRepo: s.services.Audit}
 	mux.HandleFunc(fmt.Sprintf("GET %s/regime", prefix), h.read)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/declare", prefix), h.declare)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/resolve", prefix), h.resolve)
@@ -110,10 +119,33 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// §6-B authorization check.
+	// §6-B authorization check. Write a deny audit row before returning
+	// so a denied declare is also captured in the durable trail.
 	if !h.policy.HasZoneAccess(r.Context(), principal, "regime-control", rbac.ActionDeclareIncident) {
+		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
+			audit.DecisionDeny, "no_grant",
+			map[string]string{"declared_kind": string(declaredKind)}); err != nil {
+			// Fail-closed on the audit write itself: refuse the deny
+			// path rather than silently swallow an audit-store failure.
+			writeInternalError(w, err, "declare regime audit (deny)")
+			return
+		}
 		writeError(w, http.StatusForbidden, "forbidden",
 			"principal lacks can_declare_incident (regime-control zone)")
+		return
+	}
+
+	// Phase F bug #3 fix: write the durable audit row BEFORE the mutable
+	// system_regime / session_captains rows are touched, so the "who
+	// declared this incident and when" record survives a later resolve
+	// (which nulls system_regime.declared_by_principal and cascade-deletes
+	// session_captains).
+	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{"declared_kind": string(declaredKind)}); err != nil {
+		// Transition is mutating → fail-closed. The mutable rows are
+		// untouched.
+		writeInternalError(w, err, "declare regime audit (allow)")
 		return
 	}
 
@@ -179,8 +211,24 @@ func (h *regimeHandler) resolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.policy.HasZoneAccess(r.Context(), principal, "regime-control", rbac.ActionResolveIncident) {
+		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionResolveIncident,
+			audit.DecisionDeny, "no_grant", nil); err != nil {
+			writeInternalError(w, err, "resolve regime audit (deny)")
+			return
+		}
 		writeError(w, http.StatusForbidden, "forbidden",
 			"principal lacks can_resolve_incident (regime-control zone)")
+		return
+	}
+
+	// Phase F: durable audit row written BEFORE the resolve mutation so
+	// the resolved-by/declared-by history is independent of the
+	// system_regime UPDATE that nulls declared_by_principal. After this
+	// row, even a destructive write to system_regime cannot erase the
+	// trail.
+	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionResolveIncident,
+		audit.DecisionAllow, "transition_recorded", nil); err != nil {
+		writeInternalError(w, err, "resolve regime audit (allow)")
 		return
 	}
 
@@ -206,4 +254,34 @@ func (h *regimeHandler) resolve(w http.ResponseWriter, r *http.Request) {
 		"session_id":  sessionID,
 		"resolved_by": string(principal),
 	})
+}
+
+// writeRegimeAudit records one regime-transition row in the append-only
+// audit log. Always succeeds when auditRepo is nil (dev/local). On a
+// repository error it returns the wrapped audit error after applying the
+// fail-closed posture (regime transitions are mutating; reads stay
+// fail-open elsewhere). The caller must abort the regime mutation on a
+// non-nil return so the durable trail and the mutable state cannot
+// disagree.
+func (h *regimeHandler) writeRegimeAudit(ctx context.Context, principal rbac.Principal, action string, decision audit.Decision, reason string, extra map[string]string) error {
+	if h.auditRepo == nil {
+		return nil
+	}
+	ctxJSON := "{}"
+	if len(extra) > 0 {
+		b, err := json.Marshal(extra)
+		if err == nil {
+			ctxJSON = string(b)
+		}
+	}
+	err := h.auditRepo.Insert(ctx, audit.Event{
+		Principal: string(principal),
+		Action:    action,
+		Zone:      "regime-control",
+		Decision:  decision,
+		Reason:    reason,
+		Kind:      audit.KindRegimeTransition,
+		Context:   ctxJSON,
+	})
+	return audit.FailurePosture(ctx, action, err, "regime:"+action)
 }

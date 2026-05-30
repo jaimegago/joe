@@ -25,6 +25,7 @@ import (
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -305,6 +306,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Wire the append-only audit log (Identity Phase F, migration 015).
+	// Every authorization decision the accessor makes and every
+	// regime/captain transition writes one row here.
+	auditRepo := audit.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
 	// Wire session-model repository (tables created by migration 009).
 	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -377,6 +383,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Initialize core services (graph store uses same SQLite DB)
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
 	services.RBAC = rbacRepo
+	services.Audit = auditRepo
 	services.SessionModel = sessionModelRepo
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo

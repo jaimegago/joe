@@ -1,0 +1,172 @@
+// Package audit is the append-only audit trail.
+//
+// Identity & Authentication design (docs/joe-identity-design.md §2.6),
+// Phase F: every authorization decision the accessor makes — and every
+// regime/captain transition — is recorded as one row in the audit_log
+// table. The repository exposes ONLY an Insert path; there is no Update or
+// Delete method (code-level append-only). Migration 015 adds SQLite
+// triggers that ABORT any UPDATE or DELETE against the same table
+// (database-level append-only). The two enforcements are deliberately
+// redundant.
+//
+// Failure posture (docs/joe-identity-design.md §4):
+//
+//   - Mutating actions (mutate, delete, and every transition row) FAIL
+//     CLOSED — if the audit row cannot be written, the action does not
+//     proceed. The accessor returns the audit-write error to its caller;
+//     a transition site likewise refuses to perform the mutation.
+//
+//   - Reads (read, query) FAIL OPEN — the action proceeds even when the
+//     audit row cannot be written. The failure is logged at WARN with all
+//     fields needed to reconstruct the missing row from the operational
+//     log; availability of read endpoints is preferred over a hard halt
+//     when the audit store is unhealthy. This is a deliberate tradeoff,
+//     stated explicitly in §4.
+//
+// The split is enforced by FailurePosture (below) so every audit caller
+// makes the same decision the same way.
+package audit
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"time"
+
+	"github.com/jaimegago/joe/internal/rbac"
+)
+
+// Decision is the recorded outcome of an authorization decision (and of a
+// transition event — transitions are always recorded as "allow" because
+// the row records that the transition happened, not that it was permitted
+// by a separate gate).
+type Decision string
+
+const (
+	DecisionAllow Decision = "allow"
+	DecisionDeny  Decision = "deny"
+)
+
+// Kind discriminates the three sources of audit rows. The kind is the
+// audit_log.kind column value (see migration 015).
+type Kind string
+
+const (
+	// KindInfraAccess is every authorization decision the guarded
+	// accessor makes against an infrastructure adapter or the graph
+	// store. One row per call site.
+	KindInfraAccess Kind = "infra_access"
+
+	// KindRegimeTransition is incident declare / resolve — the events
+	// whose history previously lived in system_regime and got nulled
+	// on resolve (bug #3).
+	KindRegimeTransition Kind = "regime_transition"
+
+	// KindCaptainTransition is captain attach / transfer begin /
+	// transfer confirm / transfer cancel — the events whose history
+	// previously cascade-deleted with the session row.
+	KindCaptainTransition Kind = "captain_transition"
+)
+
+// Action-verb constants for transition rows. Accessor rows use the
+// rbac.Action string directly (read, query, mutate, delete).
+const (
+	ActionDeclareIncident        = "declare_incident"
+	ActionResolveIncident        = "resolve_incident"
+	ActionCaptainAttach          = "captain_attach"
+	ActionCaptainTransferBegin   = "captain_transfer_begin"
+	ActionCaptainTransferConfirm = "captain_transfer_confirm"
+	ActionCaptainTransferCancel  = "captain_transfer_cancel"
+)
+
+// Event is one audit row. The fields map 1:1 to audit_log columns
+// (migration 015). Timestamp is filled by the repository if zero; callers
+// are not required to stamp.
+type Event struct {
+	Timestamp time.Time
+	Principal string
+	Action    string
+	Zone      string
+	Source    string
+	Decision  Decision
+	Reason    string
+	Kind      Kind
+	// Context is a JSON blob carrying kind-specific specifics
+	// (declared_kind, session_id, captain_id, transfer initiator, etc.).
+	// "" is stored as the default "{}" by the repository.
+	Context string
+}
+
+// Repository is the insert-only audit-log surface. There is NO Update or
+// Delete method by design — the AST guard
+// internal/audit/append_only_guard_test.go asserts this. Production code
+// receives this interface (never the concrete SQL repository) so no caller
+// has a path that could mutate or remove a row.
+type Repository interface {
+	// Insert writes one audit row. If e.Timestamp is the zero value it is
+	// stamped with time.Now().UTC(). On error the row was NOT written;
+	// callers MUST honour the fail-open / fail-closed split for the
+	// kind/action being audited (see FailurePosture).
+	Insert(ctx context.Context, e Event) error
+}
+
+// FailurePosture decides what to do when an audit Insert fails. It
+// implements the §4 split: mutating actions fail CLOSED, reads fail OPEN.
+// One helper, called from every audit caller, so the split cannot drift.
+//
+// Returns nil iff the action should proceed (audit succeeded, or the
+// action is a read and the failure is fail-open). Returns the original
+// audit error iff the action should be aborted (fail-closed).
+//
+// The action argument is the rbac.Action constant or one of the transition
+// action verbs above. Transition action verbs are treated as mutating —
+// declaring / resolving an incident, attaching / transferring captaincy
+// are state changes; if the audit row cannot be written, the durable trail
+// the design demands does not exist, so the mutation must not proceed.
+//
+// `where` is a short label used in the warn log (e.g. "accessor:k8s_read"
+// or "regime:declare"); it stays out of the audit row.
+func FailurePosture(ctx context.Context, action string, auditErr error, where string) error {
+	if auditErr == nil {
+		return nil
+	}
+	if isFailOpen(action) {
+		// Reads and queries proceed despite a missing audit row. The
+		// failure is logged loudly per §4 ("a read proceeds even if its
+		// audit row cannot be written, with a loud operational alert").
+		slog.Warn("AUDIT WRITE FAILED — read proceeded without audit row (fail-open per §4); investigate audit store",
+			"where", where,
+			"action", action,
+			"error", auditErr,
+		)
+		return nil
+	}
+	// Mutating actions and every transition row fail CLOSED. The original
+	// audit error is returned to the caller, which surfaces it as an
+	// internal-error / fails the mutation.
+	slog.Error("AUDIT WRITE FAILED — mutating action ABORTED (fail-closed per §4)",
+		"where", where,
+		"action", action,
+		"error", auditErr,
+	)
+	return auditErr
+}
+
+// isFailOpen reports whether the given action verb is read-class for the
+// purposes of the §4 failure split. Read-class: rbac.ActionRead,
+// rbac.ActionQuery. Mutate-class: everything else, including all
+// transition verbs.
+func isFailOpen(action string) bool {
+	switch action {
+	case string(rbac.ActionRead), string(rbac.ActionQuery):
+		return true
+	default:
+		return false
+	}
+}
+
+// ErrAuditWriteFailed wraps a lower-level error so callers can identify an
+// audit-write failure without depending on the underlying driver error
+// shape. The repository wraps its error in this; consumers test via
+// errors.Is.
+var ErrAuditWriteFailed = errors.New("audit: write failed")

@@ -16,10 +16,40 @@ func NewPolicyEngine(repo Repository) *PolicyEngine {
 	return &PolicyEngine{repo: repo}
 }
 
+// Decision carries the resolved zone and a structured reason alongside the
+// allow/deny outcome. It exists so the guarded accessor (Phase F) can write
+// a single audit row per decision with the zone and reason it actually
+// reached — the OUTCOME is identical to IsAllowed (which is now a thin
+// wrapper). Decision is what the accessor consumes; IsAllowed is the
+// boolean-only surface other callers keep using.
+type Decision struct {
+	// Allowed is the same boolean IsAllowed returns.
+	Allowed bool
+	// Zone is the source's resolved zone — "unassigned" by default, the
+	// assignment's zone when set. Never empty for a real decision.
+	Zone string
+	// Reason is a short machine-readable tag explaining the OUTCOME:
+	//   - "policy_allow"        — at least one principal had a matching grant
+	//   - "zone_not_found"      — the resolved zone is missing from the table
+	//   - "action_not_in_zone"  — the zone does not allow this action at all
+	//   - "no_grant"             — the action is in-zone but no principal holds it
+	// The accessor records this in the audit row's reason column.
+	Reason string
+}
+
 // IsAllowed returns true if ANY principal in the set may perform action on
 // sourceID — the union-of-grants decision (additive / allow-only). A size-1
 // set reproduces the previous single-principal decision exactly, which is the
-// Phase B regression contract (docs/joe-identity-design.md §2.7).
+// Phase B regression contract (docs/joe-identity-design.md §2.7). Thin
+// wrapper over Decide.
+func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, sourceID string, action Action) bool {
+	return e.Decide(ctx, principals, sourceID, action).Allowed
+}
+
+// Decide is the full-fidelity decision call: returns the same outcome as
+// IsAllowed and also the resolved zone and a structured reason. The guarded
+// accessor calls this so the audit row records the zone and reason actually
+// reached (Phase F, docs/joe-identity-design.md §2.6).
 //
 // Decision path:
 //  1. Resolve the source's zone (default: "unassigned" if no assignment) —
@@ -27,7 +57,7 @@ func NewPolicyEngine(repo Repository) *PolicyEngine {
 //  2. If that zone does not allow the action at all, deny outright.
 //  3. Otherwise permit if any member of the set holds a policy granting the
 //     source's zone; deny if none do.
-func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, sourceID string, action Action) bool {
+func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sourceID string, action Action) Decision {
 	// Resolve source zone (independent of the principal set).
 	zoneID := "unassigned"
 	assignment, err := e.repo.GetAssignment(ctx, sourceID)
@@ -42,12 +72,12 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, s
 	zone, err := e.repo.GetZone(ctx, zoneID)
 	if err != nil || zone == nil {
 		slog.Warn("rbac: zone not found, denying access", "zone_id", zoneID)
-		return false
+		return Decision{Allowed: false, Zone: zoneID, Reason: "zone_not_found"}
 	}
 
 	// Check that this action is even permitted within the zone.
 	if !zone.Allows(action) {
-		return false
+		return Decision{Allowed: false, Zone: zoneID, Reason: "action_not_in_zone"}
 	}
 
 	// Permit if ANY principal in the set has a policy granting access to the
@@ -64,12 +94,12 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, s
 		}
 		for _, p := range policies {
 			if p.ZoneID == zoneID {
-				return true
+				return Decision{Allowed: true, Zone: zoneID, Reason: "policy_allow"}
 			}
 		}
 	}
 
-	return false
+	return Decision{Allowed: false, Zone: zoneID, Reason: "no_grant"}
 }
 
 // HasZoneAccess answers "does principal hold action on zoneID?" — the
