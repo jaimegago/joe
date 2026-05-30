@@ -209,6 +209,22 @@ func (s *ServerConfig) LoopbackKey() string {
 type LLMConfig struct {
 	Current   string                 `yaml:"current"`   // Key into Available for the active model
 	Available map[string]ModelConfig `yaml:"available"` // All configured models
+
+	// Currency is the operator-configured currency that LLM cost rows
+	// (llm_usage.currency) are stamped with at record time and that cost
+	// caps (llm_cost_limits) are denominated in. Allowed values:
+	// CurrencyUSD ("USD") or CurrencyEUR ("EUR"). Default CurrencyUSD.
+	// Stream G phase G1: definition + validation only — no reader,
+	// recorder, or cost-gate wired this phase.
+	Currency string `yaml:"currency"`
+
+	// USDToConfiguredRate is the FX rate from USD to Currency, used by
+	// the (later) recorder to convert USD-quoted provider prices into
+	// the configured currency before storing. Required and must be
+	// positive when Currency is not CurrencyUSD; ignored (implicitly
+	// 1.0) when Currency is CurrencyUSD. Stream G phase G1: definition +
+	// validation only — no caller multiplies by this value yet.
+	USDToConfiguredRate float64 `yaml:"usd_to_configured_rate"`
 }
 
 // ModelConfig describes a single LLM model
@@ -362,6 +378,7 @@ func defaultConfig() *Config {
 			Available: map[string]ModelConfig{
 				defaultLLMCurrent: {Provider: providerClaude, Model: defaultLLMModel},
 			},
+			Currency: defaultCurrency,
 		},
 		Server: ServerConfig{
 			Address: defaultServerAddress,

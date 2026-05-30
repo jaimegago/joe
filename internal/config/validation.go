@@ -109,6 +109,44 @@ func ValidateAPIKeys(mc ModelConfig) error {
 	return nil
 }
 
+// ValidateCostCurrency validates the LLM cost-recording currency
+// configuration (Stream G phase G1). Two rules:
+//
+//  1. LLMConfig.Currency must be one of the allowed values (USD, EUR).
+//     An empty string is treated as the default (USD) to keep configs
+//     that omit the field working — defaulting is handled by Load via
+//     defaultConfig, but the validator stays permissive of an empty
+//     value so config produced by older Save() calls is still accepted.
+//  2. When Currency is not USD, USDToConfiguredRate must be present and
+//     positive (> 0). The rate is the (later) recorder's USD→currency
+//     conversion factor; a zero or negative rate would either store all
+//     costs as 0 or invert the sign, both clearly wrong. When Currency
+//     IS USD the rate is ignored (implicitly 1.0) and not validated.
+//
+// G1 wires this validator's definition only. Later phases (the recorder,
+// the cost gate, the settings service) call it; no in-tree caller invokes
+// it this phase.
+func ValidateCostCurrency(lc LLMConfig) error {
+	cur := lc.Currency
+	if cur == "" {
+		cur = defaultCurrency
+	}
+	allowed := false
+	for _, c := range AllowedCurrencies {
+		if cur == c {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return fmt.Errorf("llm.currency = %q is not in the allowed set %v", lc.Currency, AllowedCurrencies)
+	}
+	if cur != CurrencyUSD && lc.USDToConfiguredRate <= 0 {
+		return fmt.Errorf("llm.usd_to_configured_rate must be positive when llm.currency is not %s (got %g for currency %q)", CurrencyUSD, lc.USDToConfiguredRate, cur)
+	}
+	return nil
+}
+
 // ValidateAPIKeysWithUserMessage validates API keys and returns a user-friendly error message.
 // This is suitable for CLI output where we want to show detailed setup instructions.
 func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
