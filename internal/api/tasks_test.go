@@ -68,6 +68,61 @@ func TestTaskStatus_Unrelated_NotMaxIterations(t *testing.T) {
 	}
 }
 
+// TestTaskStatus_SessionTokenCeiling_RunawayTerminated asserts the G3a
+// classifier maps the ErrSessionTokenCeiling sentinel to the
+// "runaway_terminated" status via errors.Is, and that this bucket is
+// distinct from the max_iterations, timeout, and generic-error buckets.
+// The taskStatus switch is the only line that classifies the loop's
+// terminal outcome — if this regresses, the streaming SSE final event
+// will mis-label a runaway termination as a generic error.
+func TestTaskStatus_SessionTokenCeiling_RunawayTerminated(t *testing.T) {
+	wrapped := fmt.Errorf("session token ceiling (10000) exceeded at total 12345: %w",
+		agentloop.ErrSessionTokenCeiling)
+
+	status, errMsg := taskStatus(context.Background(), wrapped)
+	if status != "runaway_terminated" {
+		t.Errorf("status = %q, want %q", status, "runaway_terminated")
+	}
+	if errMsg == "" {
+		t.Error("errMsg empty; want the wrapped error message")
+	}
+	if !errors.Is(wrapped, agentloop.ErrSessionTokenCeiling) {
+		t.Fatal("test wrapping is itself broken — sentinel not reachable via errors.Is")
+	}
+
+	// Pairwise distinctness vs the buckets this case must not collide with.
+	if status == "max_iterations_reached" {
+		t.Error("runaway termination mis-bucketed as max_iterations_reached")
+	}
+	if status == "timeout" {
+		t.Error("runaway termination mis-bucketed as timeout")
+	}
+	if status == "error" {
+		t.Error("runaway termination mis-bucketed as the generic error bucket")
+	}
+
+	// A reworded wrap of the same sentinel must classify identically:
+	// classification is by errors.Is, not by the message prefix.
+	reworded := fmt.Errorf("agentic loop terminated by safety backstop: %w",
+		agentloop.ErrSessionTokenCeiling)
+	rewordedStatus, _ := taskStatus(context.Background(), reworded)
+	if rewordedStatus != "runaway_terminated" {
+		t.Errorf("reworded wrap classified as %q; want %q", rewordedStatus, "runaway_terminated")
+	}
+
+	// Cross-check: a wrap of ErrMaxIterations must NOT classify as
+	// runaway_terminated, and a wrap of ErrSessionTokenCeiling must NOT
+	// classify as max_iterations_reached.
+	maxIter := fmt.Errorf("max iterations (10) reached without final response: %w",
+		agentloop.ErrMaxIterations)
+	if s, _ := taskStatus(context.Background(), maxIter); s == "runaway_terminated" {
+		t.Error("max-iterations wrap mis-bucketed as runaway_terminated")
+	}
+	if s, _ := taskStatus(context.Background(), wrapped); s == "max_iterations_reached" {
+		t.Error("ceiling wrap mis-bucketed as max_iterations_reached")
+	}
+}
+
 // taskStubLLM returns a canned response with no tool calls (single iteration).
 type taskStubLLM struct {
 	response string

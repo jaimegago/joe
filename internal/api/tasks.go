@@ -282,12 +282,22 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		systemPrompt += "\n\n" + section
 	}
 
+	// Stream G phase G3a: the production task loop supplies the static
+	// SessionLimits provider explicitly (the safe default that NewAgent
+	// installs anyway, made visible here as the single wiring site so
+	// the later storage-backed swap is a one-line edit) and threads
+	// services.Audit through so a ceiling termination writes its
+	// KindLLMLimitTriggered row to the same append-only sink the
+	// accessor and captaingate use. services.Audit may be nil in
+	// auth-disabled local/dev runs; the recorder tolerates that.
 	agent := agentloop.NewAgent(
 		h.server.services.LLM,
 		loopExec,
 		registry,
 		systemPrompt,
 		agentloop.WithObserver(observer),
+		agentloop.WithSessionLimits(agentloop.NewStaticSessionLimits()),
+		agentloop.WithAuditRepo(h.server.services.Audit),
 	)
 	agent.SetMaxIterations(maxIterations)
 
@@ -301,10 +311,10 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 // taskStatus maps an agent run error to the wire status + error message.
 // Classification is by typed sentinels via errors.Is — never by string
 // match — so a reworded error message cannot silently mis-bucket a
-// terminal condition. The G3 enforcement phase will extend this switch
-// with cases for agentloop.ErrSessionTokenCeiling and
-// llmusage.ErrCostLimitExceeded; the structure here is deliberately
-// shaped to accept new errors.Is cases without further refactor.
+// terminal condition. The G3 enforcement phase extends this switch with
+// cases for agentloop.ErrSessionTokenCeiling (G3a, here) and
+// llmusage.ErrCostLimitExceeded (G3b, later); the structure is shaped
+// to accept new errors.Is cases without further refactor.
 func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 	status = "completed"
 	if runErr != nil {
@@ -314,6 +324,15 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 			errMsg = "task timed out"
 		case errors.Is(runErr, agentloop.ErrMaxIterations):
 			status = "max_iterations_reached"
+			errMsg = runErr.Error()
+		case errors.Is(runErr, agentloop.ErrSessionTokenCeiling):
+			// Stream G phase G3a: the agentic loop terminated this
+			// session because its lifetime token total crossed the
+			// configured ceiling. Distinct from max_iterations_reached
+			// (loop cap, no token check), distinct from timeout
+			// (wall-clock), distinct from the generic error bucket
+			// (anything not classified above).
+			status = "runaway_terminated"
 			errMsg = runErr.Error()
 		default:
 			status = "error"
