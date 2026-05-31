@@ -2,12 +2,16 @@ package agentloop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentctx"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/tools"
 )
 
@@ -26,6 +30,27 @@ func WithAdapterFactory(f AdapterFactory) AgentOption {
 // WithCurrentModelName sets the display name of the active model.
 func WithCurrentModelName(name string) AgentOption {
 	return func(a *Agent) { a.currentModel = name }
+}
+
+// WithSessionLimits overrides the SessionLimits provider used by the
+// loop's session token ceiling check (Stream G phase G3a). When omitted,
+// NewAgent installs StaticSessionLimits — the safe default — so callers
+// that never supply a provider still get the hardcoded backstop. Passing
+// nil through this option is treated as "use the default" and resets the
+// provider to StaticSessionLimits at the end of construction.
+func WithSessionLimits(p SessionLimits) AgentOption {
+	return func(a *Agent) { a.sessionLimits = p }
+}
+
+// WithAuditRepo wires the append-only audit.Repository used by the loop
+// when a terminal limit fires (Stream G phase G3a: runaway termination
+// writes one KindLLMLimitTriggered row). When omitted (or nil), the
+// audit write is skipped — termination still happens — following the
+// same nil-tolerant posture the captaingate package already uses for
+// its refusal-audit path. Production wiring in api/tasks.go passes
+// services.Audit explicitly.
+func WithAuditRepo(r audit.Repository) AgentOption {
+	return func(a *Agent) { a.auditRepo = r }
 }
 
 // BatchExecutor is the minimal surface the loop calls on its executor.
@@ -53,6 +78,20 @@ type Agent struct {
 	adapterFactory AdapterFactory // optional, for hot-swap
 	currentModel   string         // display name of active model
 	observer       RunObserver    // optional, for step-by-step observation
+
+	// Stream G phase G3a fields.
+	//
+	// sessionLimits is the provider for the session-lifetime token ceiling
+	// enforced after each Chat call. NewAgent installs StaticSessionLimits
+	// when no WithSessionLimits option is supplied, so callers that
+	// haven't been updated still get the safe default.
+	//
+	// auditRepo is the append-only audit sink the loop writes one
+	// KindLLMLimitTriggered row to when a terminal limit fires. nil is
+	// tolerated — termination still occurs — matching captaingate's
+	// best-effort posture for refusal audit when no repo is wired.
+	sessionLimits SessionLimits
+	auditRepo     audit.Repository
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
@@ -63,9 +102,17 @@ func NewAgent(llmAdapter llm.LLMAdapter, executor BatchExecutor, registry *tools
 		registry:      registry,
 		systemPrompt:  systemPrompt,
 		maxIterations: DefaultMaxIterations,
+		sessionLimits: NewStaticSessionLimits(),
 	}
 	for _, opt := range opts {
 		opt(a)
+	}
+	// A caller that passed WithSessionLimits(nil) explicitly should
+	// still get the safe default — the session token ceiling is a
+	// safety backstop and we never want it silently disabled by an
+	// accidentally-nil option argument.
+	if a.sessionLimits == nil {
+		a.sessionLimits = NewStaticSessionLimits()
 	}
 	return a
 }
@@ -156,6 +203,22 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 
 		// Track token usage
 		session.AddTokenUsage(ctx, resp.Usage)
+
+		// Stream G phase G3a — session-lifetime token ceiling backstop.
+		// The just-returned call's tokens are already in the running
+		// total (the AddTokenUsage above), so the check sees the same
+		// number any observer of session state would. When the total is
+		// at or above the ceiling we terminate the loop — wrapping
+		// ErrSessionTokenCeiling with a descriptive message — BEFORE the
+		// branch that decides whether to iterate on tool calls. A
+		// ceiling of zero or below disables the check, which the static
+		// provider never does; the storage-backed provider in a later
+		// phase can return zero when an operator clears the limit.
+		if ceiling := a.sessionLimits.SessionTokenCeiling(); ceiling > 0 && session.TotalTokens >= ceiling {
+			a.writeRunawayAudit(ctx, session.TotalTokens, ceiling)
+			return "", fmt.Errorf("session token ceiling (%d tokens) exceeded at total %d: %w",
+				ceiling, session.TotalTokens, ErrSessionTokenCeiling)
+		}
 
 		// If no tool calls, we have the final response
 		if len(resp.ToolCalls) == 0 {
@@ -251,4 +314,40 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 	// Wrap ErrMaxIterations so downstream code can errors.Is the typed
 	// sentinel while log readers still see the existing descriptive text.
 	return "", fmt.Errorf("max iterations (%d) reached without final response: %w", a.maxIterations, ErrMaxIterations)
+}
+
+// writeRunawayAudit records one KindLLMLimitTriggered audit row for a
+// session-token-ceiling termination. Best-effort: a nil repository
+// (no audit wired in tests / dev) is tolerated and skips the write
+// silently — termination has already been decided by the time we get
+// here, so the audit row is forensic, not gating. On a real repository
+// failure we route through audit.FailurePosture so the
+// mutating-action fail-closed log lands in operational logs, but we
+// still return; the loop is already exiting with the ceiling sentinel
+// and the caller should see that error, not an internal audit error
+// that masks the real reason.
+func (a *Agent) writeRunawayAudit(ctx context.Context, total, ceiling int) {
+	if a.auditRepo == nil {
+		return
+	}
+	blob, _ := json.Marshal(map[string]any{
+		"session_id":            agentctx.SessionID(ctx),
+		"task_id":               agentctx.TaskID(ctx),
+		"session_token_total":   total,
+		"session_token_ceiling": ceiling,
+	})
+	err := a.auditRepo.Insert(ctx, audit.Event{
+		Principal: string(rbac.PrincipalFromContext(ctx)),
+		Action:    audit.ActionLLMRunawayTerminated,
+		Decision:  audit.DecisionDeny,
+		Reason:    "session_token_ceiling_exceeded",
+		Kind:      audit.KindLLMLimitTriggered,
+		Context:   string(blob),
+	})
+	// FailurePosture treats ActionLLMRunawayTerminated as mutating
+	// (fail-closed log path) and returns the original err. We discard
+	// the returned error: the loop is already exiting via the ceiling
+	// sentinel; surfacing an audit error here would replace the typed
+	// terminal error the classifier wants to see.
+	_ = audit.FailurePosture(ctx, audit.ActionLLMRunawayTerminated, err, "agentloop:runaway")
 }
