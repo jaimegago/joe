@@ -486,6 +486,14 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// clients do not expose provider/model identity, so the wiring site
 	// is the single source of truth). Recording is fail-open by design;
 	// see internal/llmusage/recorder.go's package doc.
+	// Stream G phase G3b: the recorder is also the gate. The static
+	// CostLimits provider is installed by NewRecorderAdapter when Limits
+	// is omitted, made visible here as the single wiring site so the
+	// later storage-backed swap is a one-line edit (same pattern as the
+	// SessionLimits wiring in api/tasks.go's buildTaskRun). services.Audit
+	// is threaded through so a gate refusal — or a gate-read failure —
+	// writes its KindLLMLimitTriggered row to the same append-only sink
+	// the accessor, captaingate, and runaway gate use.
 	llmAdapter = llmusage.NewRecorderAdapter(llmusage.Config{
 		Inner:    llmAdapter,
 		Repo:     llmUsageRepo,
@@ -493,6 +501,8 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		Model:    currentModelCfg.Model,
 		Currency: cfg.LLM.Currency,
 		FXRate:   cfg.LLM.USDToConfiguredRate,
+		Limits:   llmusage.NewStaticCostLimits(),
+		Audit:    auditRepo,
 	})
 
 	// Phase 2: services.LLM is the single LLM contact point for the agentic

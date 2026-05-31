@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -333,6 +334,17 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 			// (wall-clock), distinct from the generic error bucket
 			// (anything not classified above).
 			status = "runaway_terminated"
+			errMsg = runErr.Error()
+		case errors.Is(runErr, llmusage.ErrCostLimitExceeded):
+			// Stream G phase G3b: the recorder's pre-call cost-window
+			// gate refused this call because accumulated spend over the
+			// hourly, daily, or monthly window had reached its limit.
+			// No tokens were consumed; no usage row was written. Distinct
+			// from runaway_terminated (session lifetime tokens), distinct
+			// from max_iterations_reached (loop cap), distinct from
+			// timeout (wall-clock), distinct from the generic error
+			// bucket.
+			status = "cost_limit_exceeded"
 			errMsg = runErr.Error()
 		default:
 			status = "error"

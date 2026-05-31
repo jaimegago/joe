@@ -16,6 +16,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
@@ -120,6 +121,54 @@ func TestTaskStatus_SessionTokenCeiling_RunawayTerminated(t *testing.T) {
 	}
 	if s, _ := taskStatus(context.Background(), wrapped); s == "max_iterations_reached" {
 		t.Error("ceiling wrap mis-bucketed as max_iterations_reached")
+	}
+}
+
+// TestTaskStatus_CostLimitExceeded_DistinctBucket asserts the G3b
+// classifier maps the ErrCostLimitExceeded sentinel to the
+// "cost_limit_exceeded" status via errors.Is, and that this bucket is
+// distinct from runaway_terminated, max_iterations_reached, timeout,
+// and the generic error bucket. The taskStatus switch is the only
+// line that classifies the loop's terminal outcome; if this regresses,
+// the streaming SSE final event will mis-label a cost-window refusal
+// as a generic error.
+func TestTaskStatus_CostLimitExceeded_DistinctBucket(t *testing.T) {
+	wrapped := fmt.Errorf("cost-window gate refused: hourly window observed 12345 >= limit 10000 (currency USD): %w",
+		llmusage.ErrCostLimitExceeded)
+
+	status, errMsg := taskStatus(context.Background(), wrapped)
+	if status != "cost_limit_exceeded" {
+		t.Errorf("status = %q, want %q", status, "cost_limit_exceeded")
+	}
+	if errMsg == "" {
+		t.Error("errMsg empty; want the wrapped error message")
+	}
+	if !errors.Is(wrapped, llmusage.ErrCostLimitExceeded) {
+		t.Fatal("test wrapping is itself broken — sentinel not reachable via errors.Is")
+	}
+
+	// Pairwise distinctness vs the four buckets this case must not collide with.
+	for _, bucket := range []string{"max_iterations_reached", "runaway_terminated", "timeout", "error"} {
+		if status == bucket {
+			t.Errorf("cost-limit refusal mis-bucketed as %q", bucket)
+		}
+	}
+
+	// A reworded wrap of the same sentinel must classify identically:
+	// classification is by errors.Is, not by the message prefix.
+	reworded := fmt.Errorf("budget tripwire hit, refusing call: %w", llmusage.ErrCostLimitExceeded)
+	if s, _ := taskStatus(context.Background(), reworded); s != "cost_limit_exceeded" {
+		t.Errorf("reworded wrap classified as %q; want %q", s, "cost_limit_exceeded")
+	}
+
+	// Cross-check: wraps of the OTHER terminal sentinels must NOT
+	// classify as cost_limit_exceeded.
+	otherSentinels := []error{agentloop.ErrMaxIterations, agentloop.ErrSessionTokenCeiling}
+	for _, sentinel := range otherSentinels {
+		w := fmt.Errorf("descriptive prefix: %w", sentinel)
+		if s, _ := taskStatus(context.Background(), w); s == "cost_limit_exceeded" {
+			t.Errorf("wrap of %v mis-bucketed as cost_limit_exceeded", sentinel)
+		}
 	}
 }
 

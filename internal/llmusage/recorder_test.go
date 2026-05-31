@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/llm"
@@ -50,11 +51,18 @@ func (f *fakeInnerAdapter) Embed(_ context.Context, _ string) ([]float32, error)
 // fakeRepo is an in-memory llmusage.Repository for tests. The
 // optional insertErr forces Insert to return that error on every
 // call, which the fail-open test uses to prove the call still
-// succeeds despite the write failure.
+// succeeds despite the write failure. sumErr does the same for the
+// cost-window gate's aggregation query, exercising the gate-read
+// fail-open path.
 type fakeRepo struct {
-	mu        sync.Mutex
-	rows      []llmusage.Row
-	insertErr error
+	mu           sync.Mutex
+	rows         []llmusage.Row
+	insertErr    error
+	sumErr       error
+	sumCalls     int
+	foreignCount int64
+	foreignErr   error
+	foreignCalls int
 }
 
 func (r *fakeRepo) Insert(_ context.Context, row llmusage.Row) error {
@@ -63,8 +71,60 @@ func (r *fakeRepo) Insert(_ context.Context, row llmusage.Row) error {
 	if r.insertErr != nil {
 		return r.insertErr
 	}
+	// Stamp the row with a timestamp when the caller left it zero so
+	// the test fake mirrors the SQL repository's behaviour — the gate's
+	// aggregation logic in turn sees rows that fall in a window.
+	if row.Timestamp.IsZero() {
+		row.Timestamp = time.Now().UTC()
+	}
 	r.rows = append(r.rows, row)
 	return nil
+}
+
+// SumCostNano sums estimated_cost_nano over rows whose Timestamp falls
+// in the half-open range [lower, upper) AND whose Currency matches.
+// Mirrors the SQL repository contract without going through SQL so the
+// recorder tests can drive the gate against in-memory rows. sumErr
+// forces the read to fail, which the fail-open test uses.
+func (r *fakeRepo) SumCostNano(_ context.Context, lower, upper time.Time, currency string) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sumCalls++
+	if r.sumErr != nil {
+		return 0, r.sumErr
+	}
+	var sum int64
+	for _, row := range r.rows {
+		if row.Currency != currency {
+			continue
+		}
+		t := row.Timestamp
+		if !t.Before(lower) && t.Before(upper) {
+			sum += row.EstimatedCostNano
+		}
+	}
+	return sum, nil
+}
+
+// CountForeignCurrency counts rows whose Currency differs from the
+// supplied currency. Mirrors the SQL repository contract.
+func (r *fakeRepo) CountForeignCurrency(_ context.Context, currency string) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.foreignCalls++
+	if r.foreignErr != nil {
+		return 0, r.foreignErr
+	}
+	if r.foreignCount != 0 {
+		return r.foreignCount, nil
+	}
+	var n int64
+	for _, row := range r.rows {
+		if row.Currency != currency {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (r *fakeRepo) snapshot() []llmusage.Row {
@@ -73,6 +133,18 @@ func (r *fakeRepo) snapshot() []llmusage.Row {
 	out := make([]llmusage.Row, len(r.rows))
 	copy(out, r.rows)
 	return out
+}
+
+func (r *fakeRepo) sumCallCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sumCalls
+}
+
+func (r *fakeRepo) foreignCallCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.foreignCalls
 }
 
 // newTestRecorder constructs a RecorderAdapter wired to in-memory

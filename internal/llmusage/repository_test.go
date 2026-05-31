@@ -217,6 +217,133 @@ func TestSQLRepository_HalfOpenRange_SubSecondCluster(t *testing.T) {
 	}
 }
 
+// TestSQLRepository_SumCostNano_SubSecondCluster is the regression
+// guard at the AGGREGATION site for the fixed-width timestamp invariant.
+// The half-open repository SELECT exists in two forms — the raw SELECT
+// the prior test ran (TestSQLRepository_HalfOpenRange_SubSecondCluster)
+// and the SumCostNano method the cost-window gate uses. This test
+// exercises the method itself so a future change that bypasses
+// TimestampLayout in SumCostNano (and uses RFC3339Nano directly) fails
+// here, not silently in production aggregate undercount.
+func TestSQLRepository_SumCostNano_SubSecondCluster(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+
+	boundary := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) // inclusive lower
+	later := boundary.Add(500 * time.Millisecond)            // same window, +500ms
+	end := boundary.Add(time.Hour)                           // exclusive upper
+
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp:         boundary,
+		Model:             "claude-sonnet-4-20250514",
+		EstimatedCostNano: 3,
+		Currency:          "USD",
+	}); err != nil {
+		t.Fatalf("insert boundary: %v", err)
+	}
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp:         later,
+		Model:             "claude-sonnet-4-20250514",
+		EstimatedCostNano: 5,
+		Currency:          "USD",
+	}); err != nil {
+		t.Fatalf("insert later: %v", err)
+	}
+
+	sum, err := repo.SumCostNano(context.Background(), boundary, end, "USD")
+	if err != nil {
+		t.Fatalf("SumCostNano: %v", err)
+	}
+	if sum != 8 {
+		t.Errorf("SumCostNano = %d, want 8 (3 boundary + 5 later) — fixed-width timestamp invariant broken at aggregation site",
+			sum)
+	}
+}
+
+// TestSQLRepository_SumCostNano_SameCurrencyFilter pins the locked
+// Rule 4: nano-units of different currencies cannot be added, so the
+// gate's aggregation MUST exclude rows in any currency other than the
+// supplied filter. Two rows in the same window, one USD and one EUR,
+// must sum to only the USD row's cost when summing in USD.
+func TestSQLRepository_SumCostNano_SameCurrencyFilter(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+
+	boundary := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	end := boundary.Add(time.Hour)
+	mid := boundary.Add(10 * time.Minute)
+
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp: boundary, Model: "claude-sonnet-4-20250514",
+		EstimatedCostNano: 100, Currency: "USD",
+	}); err != nil {
+		t.Fatalf("insert USD: %v", err)
+	}
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp: mid, Model: "claude-sonnet-4-20250514",
+		EstimatedCostNano: 999_999_999, Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("insert EUR: %v", err)
+	}
+
+	sumUSD, err := repo.SumCostNano(context.Background(), boundary, end, "USD")
+	if err != nil {
+		t.Fatalf("sum USD: %v", err)
+	}
+	if sumUSD != 100 {
+		t.Errorf("USD sum = %d, want 100 — EUR row must NOT be added", sumUSD)
+	}
+
+	sumEUR, err := repo.SumCostNano(context.Background(), boundary, end, "EUR")
+	if err != nil {
+		t.Fatalf("sum EUR: %v", err)
+	}
+	if sumEUR != 999_999_999 {
+		t.Errorf("EUR sum = %d, want 999_999_999", sumEUR)
+	}
+}
+
+// TestSQLRepository_SumCostNano_EmptyWindowIsZero asserts COALESCE
+// returns zero for a window containing no rows — the gate's comparison
+// code does not need to handle NULL.
+func TestSQLRepository_SumCostNano_EmptyWindowIsZero(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+
+	lower := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	upper := lower.Add(time.Hour)
+	sum, err := repo.SumCostNano(context.Background(), lower, upper, "USD")
+	if err != nil {
+		t.Fatalf("SumCostNano on empty table: %v", err)
+	}
+	if sum != 0 {
+		t.Errorf("sum = %d, want 0 (COALESCE on empty window)", sum)
+	}
+}
+
+// TestSQLRepository_CountForeignCurrency exercises the once-only
+// detector's read primitive: rows whose currency differs from the
+// supplied filter are counted; same-currency rows are not.
+func TestSQLRepository_CountForeignCurrency(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+
+	for _, cur := range []string{"USD", "USD", "EUR", "GBP"} {
+		if err := repo.Insert(context.Background(), llmusage.Row{
+			Model: "claude-sonnet-4-20250514", Currency: cur,
+		}); err != nil {
+			t.Fatalf("insert %s: %v", cur, err)
+		}
+	}
+	n, err := repo.CountForeignCurrency(context.Background(), "USD")
+	if err != nil {
+		t.Fatalf("CountForeignCurrency: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("count = %d, want 2 (1 EUR + 1 GBP)", n)
+	}
+}
+
 // TestSQLRepository_Insert_EmptyCurrencyRejected — the currency
 // column is NOT NULL with no default, so the recorder must always
 // supply it. An empty Currency at the repository boundary is a wiring
