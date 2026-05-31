@@ -357,6 +357,21 @@ func Load(configPath string) (*Config, error) {
 	cfg.Refresh.Interval = time.Duration(cfg.Refresh.IntervalMinutes) * time.Minute
 	cfg.Refresh.LLMBudget.BatchTimeout = time.Duration(cfg.Refresh.LLMBudget.BatchTimeoutSec) * time.Second
 
+	// Stream G phase G2 boundary check. The cost-currency invariant
+	// (non-USD currency requires a positive USD-to-configured FX rate)
+	// is a property of the configuration itself, so it is enforced
+	// ONCE here at the load boundary — not re-checked by each
+	// downstream consumer (the recorder, the cost gate, the future
+	// settings service). Running it after env-var overrides means
+	// JOE_LLM_PROVIDER and other env-driven mutations can't slip a
+	// stale value past the validator. Returning the error from Load
+	// surfaces it through runWithDeps' existing
+	// "failed to load config" path so a misconfigured Joe FAILS
+	// TO START rather than booting silently mispriced.
+	if err := ValidateCostCurrency(cfg.LLM); err != nil {
+		return nil, fmt.Errorf("invalid LLM cost-currency configuration: %w", err)
+	}
+
 	// Log final configuration
 	slog.Debug("config: loaded",
 		"source", configSource,

@@ -24,6 +24,7 @@ const (
 type sessionIDKey struct{}
 type runIDKey struct{}
 type idempotencyKey struct{}
+type taskIDKey struct{}
 
 // WithSessionID returns a new context carrying the given session ID.
 // Pairs with SessionID.
@@ -73,6 +74,27 @@ func WithIdempotencyKey(ctx context.Context, key string) context.Context {
 // or "" if absent.
 func IdempotencyKey(ctx context.Context) string {
 	if v, ok := ctx.Value(idempotencyKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithTaskID returns a new context carrying the given task ID. Stream G
+// phase G2: the task id is stamped into context by the agentic /tasks
+// handler before agentloop.Agent.Run so the llmusage recorder can read it
+// when persisting the per-call usage row. The non-agentic chat handler
+// does not run inside a task and never sets this value (TaskID returns
+// "" there, which the recorder maps to a NULL task_id column).
+func WithTaskID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, taskIDKey{}, id)
+}
+
+// TaskID extracts the task ID from ctx, or "" if absent.
+func TaskID(ctx context.Context) string {
+	if v, ok := ctx.Value(taskIDKey{}).(string); ok {
 		return v
 	}
 	return ""

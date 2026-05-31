@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/uid"
 )
@@ -142,6 +143,12 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+
+	// Stream G phase G2: thread the prepared session id and the freshly
+	// minted task id into context BEFORE the agentic loop runs so the
+	// usage recorder can read them when persisting each per-call row.
+	ctx = agentctx.WithSessionID(ctx, prepared.sessionID)
+	ctx = agentctx.WithTaskID(ctx, taskID)
 
 	start := time.Now()
 	answer, runErr := prepared.agent.Run(ctx, prepared.session, req.Message)
