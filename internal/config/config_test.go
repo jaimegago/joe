@@ -744,3 +744,148 @@ func TestAutoSelectProvider_ConfigCurrentWins(t *testing.T) {
 		t.Errorf("model = %+v, want gemini/gemini-2.0-flash-exp (explicit llm.current must win)", mc)
 	}
 }
+
+// TestLoad_RejectsNonUSDCurrencyWithZeroFXRate is the Stream-G-G2
+// boundary-validation test: a config with a non-USD currency and a
+// zero/unset USDToConfiguredRate must fail to load, NOT boot silently
+// mispriced as if the rate were 1.0. The error must surface through
+// Load's normal return-error path so runWithDeps' existing
+// "failed to load config" branch fails the boot sequence.
+func TestLoad_RejectsNonUSDCurrencyWithZeroFXRate(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `llm:
+  current: claude-sonnet
+  available:
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+  currency: EUR
+  # usd_to_configured_rate intentionally omitted (zero value)
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err == nil {
+		t.Fatalf("Load returned nil error for non-USD currency + zero FX; want failure (cfg=%+v)", cfg)
+	}
+	if !strings.Contains(err.Error(), "usd_to_configured_rate") {
+		t.Errorf("Load error = %v; want a message mentioning usd_to_configured_rate", err)
+	}
+	if !strings.Contains(err.Error(), "cost-currency") {
+		t.Errorf("Load error = %v; want the wrap phrase 'cost-currency' from Load's wrapper", err)
+	}
+}
+
+// TestLoad_RejectsNonUSDCurrencyWithNegativeFXRate — same invariant
+// from the other side: an explicit negative rate is just as broken as
+// a zero rate (it inverts the sign of every cost). The validator
+// rejects any non-positive rate; the loader surfaces that rejection.
+func TestLoad_RejectsNonUSDCurrencyWithNegativeFXRate(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `llm:
+  current: claude-sonnet
+  available:
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+  currency: EUR
+  usd_to_configured_rate: -0.9
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(configPath); err == nil {
+		t.Fatalf("Load returned nil error for non-USD currency + negative FX; want failure")
+	}
+}
+
+// TestLoad_AcceptsNonUSDCurrencyWithPositiveFXRate — the happy path
+// for the launch EUR configuration. A positive FX rate satisfies the
+// validator and Load returns the config intact.
+func TestLoad_AcceptsNonUSDCurrencyWithPositiveFXRate(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `llm:
+  current: claude-sonnet
+  available:
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+  currency: EUR
+  usd_to_configured_rate: 0.92
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error for non-USD currency + positive FX: %v", err)
+	}
+	if cfg.LLM.Currency != "EUR" {
+		t.Errorf("LLM.Currency = %q, want EUR", cfg.LLM.Currency)
+	}
+	if cfg.LLM.USDToConfiguredRate != 0.92 {
+		t.Errorf("LLM.USDToConfiguredRate = %g, want 0.92", cfg.LLM.USDToConfiguredRate)
+	}
+}
+
+// TestLoad_AcceptsUSDCurrencyWithZeroFXRate — the validator must NOT
+// require an FX rate when the configured currency IS USD (the rate is
+// implicitly 1.0 in that case; see EstimateCostNano's zero-rate
+// branch). This is the most common shape — a vanilla US-billed Joe
+// with no `usd_to_configured_rate` line in the file — and it must
+// load cleanly. Covers both the implicit case (no Currency line; the
+// default applies) and any FX value, including zero.
+func TestLoad_AcceptsUSDCurrencyWithZeroFXRate(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `llm:
+  current: claude-sonnet
+  available:
+    claude-sonnet:
+      provider: claude
+      model: claude-sonnet-4-20250514
+  currency: USD
+  # usd_to_configured_rate intentionally omitted — ignored for USD.
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error for USD currency + zero FX: %v", err)
+	}
+	if cfg.LLM.Currency != "USD" {
+		t.Errorf("LLM.Currency = %q, want USD", cfg.LLM.Currency)
+	}
+	if cfg.LLM.USDToConfiguredRate != 0 {
+		t.Errorf("LLM.USDToConfiguredRate = %g, want 0", cfg.LLM.USDToConfiguredRate)
+	}
+}
+
+// TestLoad_AcceptsDefaultsWhenNoFile — the no-file/defaults path was
+// already exercised by TestLoad_NoFile; this is a regression test
+// targeting the new validator hook specifically: defaultConfig sets
+// Currency=USD, so the validator must NOT reject the defaults. If a
+// future change ever flips defaultCurrency to a non-USD value
+// without populating USDToConfiguredRate, this test will trip.
+func TestLoad_AcceptsDefaultsWhenNoFile(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() with no file returned error: %v", err)
+	}
+	if cfg.LLM.Currency == "" {
+		t.Errorf("defaults left Currency empty; defaultConfig must populate it so the validator's empty-treated-as-USD shim isn't load-bearing here")
+	}
+}

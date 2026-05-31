@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/prompts"
@@ -350,8 +351,13 @@ func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
 		Content: req.Message,
 	})
 
+	// Stream G phase G2: thread the session id into context BEFORE the
+	// Chat call so the usage recorder can stamp it on the per-call row.
+	// This is the non-agentic chat path; there is no task id to thread.
+	chatCtx := agentctx.WithSessionID(r.Context(), sessionID)
+
 	// Call LLM
-	llmResp, err := h.server.services.LLM.Chat(r.Context(), llm.ChatRequest{
+	llmResp, err := h.server.services.LLM.Chat(chatCtx, llm.ChatRequest{
 		SystemPrompt: systemPrompt,
 		Messages:     history,
 		MaxTokens:    2048,

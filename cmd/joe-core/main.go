@@ -41,6 +41,7 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/sync/notion"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
+	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
@@ -312,6 +313,12 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// regime/captain transition writes one row here.
 	auditRepo := audit.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Wire the per-call LLM usage repository (Stream G phase G2,
+	// migration 017). The recorder wrapper installed around the raw
+	// llm adapter below uses this repo to write one row per Chat call.
+	// Insert-only by interface — there is no UPDATE/DELETE path.
+	llmUsageRepo := llmusage.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
 	// Wire session-model repository (tables created by migration 009).
 	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -385,6 +392,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
+	services.LLMUsage = llmUsageRepo
 	services.SessionModel = sessionModelRepo
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
@@ -462,6 +470,31 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Error("failed to initialize LLM adapter for core agent", "error", err)
 		return 1
 	}
+
+	// Stream G phase G2: wrap the raw adapter in the usage recorder
+	// EXACTLY ONCE, at the SINGLE construction site, BEFORE the
+	// SwappableAdapter and the four downstream by-name consumers
+	// (embedder, doc drafter, review agent, core agent) read it. The
+	// wrapped value is assigned back to the same handle so every
+	// downstream consumer below receives the recording wrapper through
+	// the identical llm.LLMAdapter interface — no consumer has a path to
+	// the raw, unrecorded adapter by name. The structural guard
+	// TestPhaseG2_LLMAdapterConstructorWrappedOnce asserts this raw
+	// constructor is called exactly once in this main file. Provider,
+	// model, currency, and the USD-to-configured FX rate are sourced
+	// from the active ModelConfig at this site (the concrete provider
+	// clients do not expose provider/model identity, so the wiring site
+	// is the single source of truth). Recording is fail-open by design;
+	// see internal/llmusage/recorder.go's package doc.
+	llmAdapter = llmusage.NewRecorderAdapter(llmusage.Config{
+		Inner:    llmAdapter,
+		Repo:     llmUsageRepo,
+		Provider: currentModelCfg.Provider,
+		Model:    currentModelCfg.Model,
+		Currency: cfg.LLM.Currency,
+		FXRate:   cfg.LLM.USDToConfiguredRate,
+	})
+
 	// Phase 2: services.LLM is the single LLM contact point for the agentic
 	// loop and the Web UI chat handler. Wrap it in a SwappableAdapter so the
 	// /model HTTP API can hot-swap the active model at runtime without a

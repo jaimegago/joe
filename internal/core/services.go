@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/drift"
 	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
@@ -55,7 +56,14 @@ type Services struct {
 	// declare/resolve/attach/transfer so incident history survives resolve
 	// (bug #3). Insert-only by interface; UPDATE/DELETE are also blocked at
 	// the database via migration 015 triggers.
-	Audit         audit.Repository
+	Audit audit.Repository
+	// LLMUsage records one row per LLM Chat call (Stream G phase G2,
+	// migration 017). Wired by cmd/joe-core/main.go alongside the other
+	// store-backed repositories; nil in unit-test harnesses that don't
+	// need the recorder. Insert-only by interface — usage rows are an
+	// observability log, and the recorder is fail-open against this
+	// surface.
+	LLMUsage      llmusage.Repository
 	SessionModel  sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
 	RunModel      runmodel.Repository          // nil until wired in cmd/joe-core/main.go
 	Findings      findings.Repository          // nil until wired in cmd/joe-core/main.go
