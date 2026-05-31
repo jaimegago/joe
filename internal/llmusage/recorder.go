@@ -41,12 +41,24 @@ package llmusage
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/rbac"
 )
+
+// ErrCostLimitExceeded is reserved for a later phase: the pre-call
+// cost-window gate inserted just before the inner adapter call in
+// RecorderAdapter.Chat. No code path returns this sentinel yet —
+// declaring it now lets the downstream classifier add a single
+// errors.Is case when the gate lands, and lets callers distinguish a
+// gated refusal (no tokens consumed, no llm_usage row written) from an
+// inner adapter failure or the session-runaway sentinel
+// agentloop.ErrSessionTokenCeiling. The two enforcement primitives are
+// deliberately separable.
+var ErrCostLimitExceeded = errors.New("llmusage: cost limit exceeded")
 
 // RecorderAdapter wraps an inner llm.LLMAdapter and records one llm_usage
 // row per Chat call. Provider, model, currency, and the USD-to-configured

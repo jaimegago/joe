@@ -16,10 +16,27 @@ import (
 // ErrUsageWriteFailed) when asserting fail-open behaviour.
 var ErrUsageWriteFailed = errors.New("llmusage: write failed")
 
+// TimestampLayout is the canonical UTC layout for llm_usage.created_at and
+// every boundary string compared against it. The fractional-second segment
+// is fixed at nine digits with leading zeros preserved so EVERY formatted
+// timestamp has the same byte length and byte-wise lexicographic order
+// agrees with chronological order across every pair — including pairs that
+// straddle a whole-second boundary (which RFC3339Nano's trailing-zero
+// trimming silently inverts, since '.' (0x2E) sorts below 'Z' (0x5A)).
+//
+// Range queries on idx_llm_usage_created_at must format their lower and
+// upper bound strings with this same layout; using RFC3339Nano on a
+// boundary would re-introduce the same monotonicity break.
+//
+// The column type stays TEXT (migration 017) — this is a write-side
+// formatting decision only.
+const TimestampLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
 // Row is one llm_usage record. Field names mirror the columns added by
 // migration 017. Timestamp is filled by the repository when zero; the
 // recorder leaves it zero so the SQL store stamps the canonical UTC
-// RFC3339Nano value.
+// value formatted with TimestampLayout (fixed-width nanosecond) so
+// lexicographic order over created_at matches chronological order.
 //
 // Principal, SessionID, and TaskID are stored as SQL NULL when empty —
 // the migration 017 columns are nullable for exactly this case, matching
@@ -92,7 +109,7 @@ func (r *sqlRepository) Insert(ctx context.Context, row Row) error {
 		INSERT INTO llm_usage
 			(created_at, principal, model, input_tokens, output_tokens, estimated_cost_nano, currency, session_id, task_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		row.Timestamp.UTC().Format(time.RFC3339Nano),
+		row.Timestamp.UTC().Format(TimestampLayout),
 		principal,
 		row.Model,
 		row.InputTokens,
