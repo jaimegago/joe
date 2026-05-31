@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -298,6 +299,12 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 }
 
 // taskStatus maps an agent run error to the wire status + error message.
+// Classification is by typed sentinels via errors.Is — never by string
+// match — so a reworded error message cannot silently mis-bucket a
+// terminal condition. The G3 enforcement phase will extend this switch
+// with cases for agentloop.ErrSessionTokenCeiling and
+// llmusage.ErrCostLimitExceeded; the structure here is deliberately
+// shaped to accept new errors.Is cases without further refactor.
 func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 	status = "completed"
 	if runErr != nil {
@@ -305,7 +312,7 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 		case ctx.Err() == context.DeadlineExceeded:
 			status = "timeout"
 			errMsg = "task timed out"
-		case isMaxIterationsError(runErr):
+		case errors.Is(runErr, agentloop.ErrMaxIterations):
 			status = "max_iterations_reached"
 			errMsg = runErr.Error()
 		default:
@@ -566,14 +573,6 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 		sourceZoneMap:    sourceZoneMap,
 		namespaceZoneMap: namespaceZoneMap,
 	}
-}
-
-func isMaxIterationsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Agent.Run returns: "max iterations (%d) reached without final response"
-	return len(err.Error()) > 15 && err.Error()[:15] == "max iterations "
 }
 
 // collectSecretValuesFromSteps extracts any raw string values that appeared in

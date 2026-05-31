@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -119,6 +120,100 @@ func TestSQLRepository_Insert_EmptyToNull(t *testing.T) {
 	}
 	if taskID.Valid {
 		t.Errorf("task_id stored as %q; want NULL", taskID.String)
+	}
+}
+
+// TestTimestampLayout_LexMatchesChronology asserts the layout produces
+// fixed-width strings whose byte-wise order matches chronological order
+// across whole-second boundaries. With the pre-fix RFC3339Nano layout
+// the +500ms timestamp formatted to "12:00:00.5Z" and lex-sorted BELOW
+// the whole-second "12:00:00Z" boundary string because '.' (0x2E) sorts
+// below 'Z' (0x5A). The fixed-width layout pads the fractional segment
+// to nine digits so '.' is always present and the comparison is sound.
+func TestTimestampLayout_LexMatchesChronology(t *testing.T) {
+	whole := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	half := time.Date(2026, 1, 1, 12, 0, 0, 500_000_000, time.UTC)
+	wholeStr := whole.Format(llmusage.TimestampLayout)
+	halfStr := half.Format(llmusage.TimestampLayout)
+
+	if len(wholeStr) != len(halfStr) {
+		t.Fatalf("formatted timestamps have differing lengths: whole=%d half=%d (whole=%q, half=%q)",
+			len(wholeStr), len(halfStr), wholeStr, halfStr)
+	}
+	if !(wholeStr < halfStr) {
+		t.Fatalf("lex order disagrees with chronology: whole=%q halfPlus=%q (want whole < half)",
+			wholeStr, halfStr)
+	}
+
+	// Differing-precision pairs (a property that mattered for RFC3339Nano)
+	// are not produceable with this layout since width is fixed, but the
+	// equivalent assertion — that a sub-microsecond difference still
+	// sorts correctly — is verified here.
+	finerA := time.Date(2026, 1, 1, 12, 0, 0, 1, time.UTC).Format(llmusage.TimestampLayout)
+	finerB := time.Date(2026, 1, 1, 12, 0, 0, 2, time.UTC).Format(llmusage.TimestampLayout)
+	if !(finerA < finerB) {
+		t.Fatalf("lex order disagrees with chronology at 1ns granularity: a=%q b=%q", finerA, finerB)
+	}
+}
+
+// TestSQLRepository_HalfOpenRange_SubSecondCluster is the empirical
+// pre-G3 regression: insert two rows whose created_at differ only in
+// sub-second fraction — one at a whole-second instant and one 500ms
+// later — both at-or-after the whole-second lower bound and before the
+// upper bound, then run the half-open range query the cost-window
+// aggregation will use, with the lower bound formatted by the same
+// llmusage.TimestampLayout constant. Both rows must be returned and a
+// SUM over estimated_cost_nano must equal the sum of both. Against the
+// pre-fix RFC3339Nano write format this fails by returning one row.
+func TestSQLRepository_HalfOpenRange_SubSecondCluster(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+
+	boundary := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) // inclusive lower
+	later := boundary.Add(500 * time.Millisecond)            // same window, +500ms
+	end := boundary.Add(time.Hour)                           // exclusive upper
+
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp:         boundary,
+		Model:             "claude-sonnet-4-20250514",
+		EstimatedCostNano: 3,
+		Currency:          "USD",
+	}); err != nil {
+		t.Fatalf("insert boundary: %v", err)
+	}
+	if err := repo.Insert(context.Background(), llmusage.Row{
+		Timestamp:         later,
+		Model:             "claude-sonnet-4-20250514",
+		EstimatedCostNano: 5,
+		Currency:          "USD",
+	}); err != nil {
+		t.Fatalf("insert later: %v", err)
+	}
+
+	lowerBound := boundary.Format(llmusage.TimestampLayout)
+	upperBound := end.Format(llmusage.TimestampLayout)
+
+	var count int
+	if err := s.DB().QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM llm_usage WHERE created_at >= ? AND created_at < ?`,
+		lowerBound, upperBound,
+	).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("range query returned %d rows; want 2 (lower=%q upper=%q)",
+			count, lowerBound, upperBound)
+	}
+
+	var sum int64
+	if err := s.DB().QueryRowContext(context.Background(),
+		`SELECT COALESCE(SUM(estimated_cost_nano), 0) FROM llm_usage WHERE created_at >= ? AND created_at < ?`,
+		lowerBound, upperBound,
+	).Scan(&sum); err != nil {
+		t.Fatalf("sum: %v", err)
+	}
+	if sum != 8 {
+		t.Errorf("SUM(estimated_cost_nano) = %d; want 8 (3 boundary + 5 later)", sum)
 	}
 }
 

@@ -248,5 +248,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		session.AddMessages(ctx, resultMessages)
 	}
 
-	return "", fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)
+	// Wrap ErrMaxIterations so downstream code can errors.Is the typed
+	// sentinel while log readers still see the existing descriptive text.
+	return "", fmt.Errorf("max iterations (%d) reached without final response: %w", a.maxIterations, ErrMaxIterations)
 }

@@ -3,12 +3,15 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
@@ -17,6 +20,53 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )
+
+// TestTaskStatus_MaxIterations_ClassifiedByErrorsIs asserts the
+// classifier maps the wrapped ErrMaxIterations sentinel to the
+// "max_iterations_reached" status via errors.Is, not via substring
+// matching on the message text. The previous classifier used a
+// 15-character prefix match; this test guards against regressing back
+// to that posture.
+func TestTaskStatus_MaxIterations_ClassifiedByErrorsIs(t *testing.T) {
+	wrapped := fmt.Errorf("max iterations (10) reached without final response: %w", agentloop.ErrMaxIterations)
+	status, errMsg := taskStatus(context.Background(), wrapped)
+	if status != "max_iterations_reached" {
+		t.Errorf("status = %q, want %q", status, "max_iterations_reached")
+	}
+	if errMsg == "" {
+		t.Error("errMsg empty; want the wrapped error message")
+	}
+	if !errors.Is(wrapped, agentloop.ErrMaxIterations) {
+		t.Fatal("test wrapping is itself broken — sentinel not reachable via errors.Is")
+	}
+}
+
+// TestTaskStatus_MaxIterations_RewordResilient ensures the classifier
+// does NOT depend on the message text starting with "max iterations ".
+// Wrapping the sentinel with an entirely different descriptive prefix
+// must still classify as max_iterations_reached.
+func TestTaskStatus_MaxIterations_RewordResilient(t *testing.T) {
+	reworded := fmt.Errorf("iteration ceiling hit at step 7: %w", agentloop.ErrMaxIterations)
+	status, _ := taskStatus(context.Background(), reworded)
+	if status != "max_iterations_reached" {
+		t.Errorf("status = %q for reworded wrap of ErrMaxIterations; want %q",
+			status, "max_iterations_reached")
+	}
+}
+
+// TestTaskStatus_Unrelated_NotMaxIterations ensures a generic error
+// that mentions "max iterations" in its text (but does NOT wrap the
+// sentinel) is NOT mis-classified. Under the old substring matcher
+// this string was indistinguishable from a real exhaustion; under
+// errors.Is it falls through to the "error" bucket.
+func TestTaskStatus_Unrelated_NotMaxIterations(t *testing.T) {
+	stray := errors.New("max iterations were configured incorrectly by caller")
+	status, _ := taskStatus(context.Background(), stray)
+	if status == "max_iterations_reached" {
+		t.Errorf("status = %q for stray text-only error; should not bucket as max_iterations_reached",
+			status)
+	}
+}
 
 // taskStubLLM returns a canned response with no tool calls (single iteration).
 type taskStubLLM struct {
