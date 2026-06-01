@@ -64,11 +64,28 @@ type costLimitView struct {
 	Window    string `json:"window"`
 	StoredRaw int64  `json:"stored_raw"`
 	State     string `json:"state"`
+	// Effective is the value the cost-window gate actually enforces for
+	// this window right now, sourced from the SAME CostLimitsProvider the
+	// recorder gates with (services.CostLimitsProvider) so the displayed
+	// number cannot drift from the enforced one. When State is
+	// "configured" it equals StoredRaw; when State is "backstop_fallback"
+	// it is the hardcoded backstop the provider substitutes for the unset
+	// (stored-zero) window — NOT zero. A negative StoredRaw (the
+	// explicit-disable sentinel) reports an Effective of 0 because the
+	// gate enforces nothing on a non-positive limit (see effectiveEnforced).
+	Effective int64 `json:"effective"`
 }
 
 type runawayCeilingView struct {
 	StoredRaw int    `json:"stored_raw"`
 	State     string `json:"state"`
+	// Effective is the session token ceiling agentloop.Agent.Run actually
+	// enforces, sourced from the SAME SessionLimitsProvider the loop reads
+	// (services.SessionLimitsProvider). Same convention as costLimitView:
+	// the substituted backstop for an unset (zero) ceiling, the stored
+	// value for a configured positive one, and 0 for a negative
+	// explicit-disable (the loop's "ceiling > 0" guard enforces nothing).
+	Effective int `json:"effective"`
 }
 
 type llmSettingsResponse struct {
@@ -90,6 +107,26 @@ func stateForLimit(rawNonZero bool) string {
 	return LimitStateBackstop
 }
 
+// effectiveEnforced maps a provider-returned limit to the number the
+// enforcement gate actually applies, for display. The enforcement
+// convention is identical at both gate sites — the cost-window gate
+// (internal/llmusage RecorderAdapter.gate skips any window whose limit
+// is <= 0) and the runaway ceiling (agentloop.Agent.Run enforces only
+// when ceiling > 0): a value of zero or below disables the check, so the
+// window enforces NOTHING. We surface that as a zero effective limit —
+// "no limit in force" — rather than echoing a raw negative sentinel that
+// a client would misread as a negative threshold. A positive provider
+// value (a configured limit OR a substituted backstop) is the number
+// actually enforced and passes through unchanged. Sourcing the input
+// from the live provider, not a re-derived constant, is what keeps the
+// displayed number pinned to the enforced one.
+func effectiveEnforced[T int | int64](providerValue T) T {
+	if providerValue > 0 {
+		return providerValue
+	}
+	return 0
+}
+
 func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	if h.server.services == nil || h.server.services.LLMSettings == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
@@ -98,6 +135,17 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	repo := h.server.services.LLMSettings.Repo()
 	if repo == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings repository not available")
+		return
+	}
+	// The effective enforced value is read from the live enforcement
+	// providers, not re-derived from the backstop constants here, so the
+	// displayed number is the one the gate decides with. Both are wired
+	// in cmd/joe-core/main.go; their absence means the instrumentation
+	// stack is not fully up, so report unavailable rather than guess.
+	costProvider := h.server.services.CostLimitsProvider
+	sessionProvider := h.server.services.SessionLimitsProvider
+	if costProvider == nil || sessionProvider == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm limits providers not available")
 		return
 	}
 
@@ -120,13 +168,14 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	resp := llmSettingsResponse{
 		ActiveModel: active,
 		CostLimits: []costLimitView{
-			{Window: llmsettings.WindowHourly, StoredRaw: limits.HourlyNano, State: stateForLimit(limits.HourlyNano != 0)},
-			{Window: llmsettings.WindowDaily, StoredRaw: limits.DailyNano, State: stateForLimit(limits.DailyNano != 0)},
-			{Window: llmsettings.WindowMonthly, StoredRaw: limits.MonthlyNano, State: stateForLimit(limits.MonthlyNano != 0)},
+			{Window: llmsettings.WindowHourly, StoredRaw: limits.HourlyNano, State: stateForLimit(limits.HourlyNano != 0), Effective: effectiveEnforced(costProvider.HourlyLimitNano())},
+			{Window: llmsettings.WindowDaily, StoredRaw: limits.DailyNano, State: stateForLimit(limits.DailyNano != 0), Effective: effectiveEnforced(costProvider.DailyLimitNano())},
+			{Window: llmsettings.WindowMonthly, StoredRaw: limits.MonthlyNano, State: stateForLimit(limits.MonthlyNano != 0), Effective: effectiveEnforced(costProvider.MonthlyLimitNano())},
 		},
 		RunawayCeiling: runawayCeilingView{
 			StoredRaw: ceiling,
 			State:     stateForLimit(ceiling != 0),
+			Effective: effectiveEnforced(sessionProvider.SessionTokenCeiling()),
 		},
 	}
 	writeJSON(w, http.StatusOK, resp)

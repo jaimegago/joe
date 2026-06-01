@@ -417,6 +417,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.LLMUsage = llmUsageRepo
 	services.LLMSettings = llmSettingsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
+	services.CostLimitsProvider = costLimitsProvider
 	services.SessionModel = sessionModelRepo
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo

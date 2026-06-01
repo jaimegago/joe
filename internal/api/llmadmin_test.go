@@ -76,6 +76,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	settingsRepo := llmsettings.NewRepository(s.DB(), s.Driver())
 	settingsSvc := llmsettings.NewMutationService(settingsRepo, auditRepo)
 	sessionLimitsProvider := llmsettings.NewSessionLimitsProvider(settingsRepo, agentloop.NewStaticSessionLimits(), nil)
+	costLimitsProvider := llmsettings.NewCostLimitsProvider(settingsRepo, llmusage.NewStaticCostLimits(), nil)
 
 	cfg := &config.Config{
 		LLM: config.LLMConfig{
@@ -95,6 +96,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	services.LLMUsage = usageRepo
 	services.LLMSettings = settingsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
+	services.CostLimitsProvider = costLimitsProvider
 	services.RBACEnabled = rbacEnabled
 	services.LLM = llm.NewSwappableAdapter(&silentLLMAdapter{}, "default")
 
@@ -291,10 +293,12 @@ func TestSettingsGet_BackstopAndConfiguredLabels(t *testing.T) {
 			Window    string `json:"window"`
 			StoredRaw int64  `json:"stored_raw"`
 			State     string `json:"state"`
+			Effective int64  `json:"effective"`
 		} `json:"cost_limits"`
 		RunawayCeiling struct {
 			StoredRaw int    `json:"stored_raw"`
 			State     string `json:"state"`
+			Effective int    `json:"effective"`
 		} `json:"runaway_ceiling"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -302,15 +306,26 @@ func TestSettingsGet_BackstopAndConfiguredLabels(t *testing.T) {
 	}
 	stateByWindow := map[string]string{}
 	rawByWindow := map[string]int64{}
+	effByWindow := map[string]int64{}
 	for _, l := range resp.CostLimits {
 		stateByWindow[l.Window] = l.State
 		rawByWindow[l.Window] = l.StoredRaw
+		effByWindow[l.Window] = l.Effective
 	}
+	// Unset (stored zero) window: backstop-fallback state, and the
+	// effective value is the hardcoded backstop the gate substitutes —
+	// NOT zero — sourced through services.CostLimitsProvider.
 	if stateByWindow["hourly"] != LimitStateBackstop {
 		t.Errorf("hourly state=%q raw=%d; want backstop label for unset zero", stateByWindow["hourly"], rawByWindow["hourly"])
 	}
+	if effByWindow["hourly"] != llmusage.DefaultHourlyCostLimitNano {
+		t.Errorf("hourly effective=%d; want backstop %d for unset zero", effByWindow["hourly"], llmusage.DefaultHourlyCostLimitNano)
+	}
 	if resp.RunawayCeiling.State != LimitStateBackstop || resp.RunawayCeiling.StoredRaw != 0 {
 		t.Errorf("runaway: state=%q raw=%d; want backstop+0", resp.RunawayCeiling.State, resp.RunawayCeiling.StoredRaw)
+	}
+	if resp.RunawayCeiling.Effective != agentloop.DefaultSessionTokenCeiling {
+		t.Errorf("runaway effective=%d; want backstop ceiling %d for unset zero", resp.RunawayCeiling.Effective, agentloop.DefaultSessionTokenCeiling)
 	}
 
 	if err := f.settings.SetCostLimit(ctx, "hourly", 42_000); err != nil {
@@ -329,19 +344,35 @@ func TestSettingsGet_BackstopAndConfiguredLabels(t *testing.T) {
 	}
 	stateByWindow = map[string]string{}
 	rawByWindow = map[string]int64{}
+	effByWindow = map[string]int64{}
 	for _, l := range resp.CostLimits {
 		stateByWindow[l.Window] = l.State
 		rawByWindow[l.Window] = l.StoredRaw
+		effByWindow[l.Window] = l.Effective
 	}
+	// Configured positive: effective equals the stored value.
 	if stateByWindow["hourly"] != LimitStateConfigured || rawByWindow["hourly"] != 42_000 {
 		t.Errorf("hourly after set: state=%q raw=%d; want configured+42000", stateByWindow["hourly"], rawByWindow["hourly"])
 	}
+	if effByWindow["hourly"] != 42_000 {
+		t.Errorf("hourly effective=%d after set; want stored value 42000", effByWindow["hourly"])
+	}
+	// Negative explicit-disable: state stays configured, but the gate
+	// enforces nothing on a non-positive limit, so the effective value is
+	// 0 ("no limit in force") — not the raw negative the UI would misread.
 	if stateByWindow["monthly"] != LimitStateConfigured || rawByWindow["monthly"] != -1 {
 		t.Errorf("monthly after explicit-disable: state=%q raw=%d; want configured+(-1) — negative is operator-explicit, not backstop",
 			stateByWindow["monthly"], rawByWindow["monthly"])
 	}
+	if effByWindow["monthly"] != 0 {
+		t.Errorf("monthly effective=%d after explicit-disable; want 0 — gate enforces nothing on a non-positive limit", effByWindow["monthly"])
+	}
+	// Untouched window still backstop-fallback with its backstop effective.
 	if stateByWindow["daily"] != LimitStateBackstop || rawByWindow["daily"] != 0 {
 		t.Errorf("daily untouched: state=%q raw=%d; want backstop+0", stateByWindow["daily"], rawByWindow["daily"])
+	}
+	if effByWindow["daily"] != llmusage.DefaultDailyCostLimitNano {
+		t.Errorf("daily effective=%d; want backstop %d for unset zero", effByWindow["daily"], llmusage.DefaultDailyCostLimitNano)
 	}
 }
 
