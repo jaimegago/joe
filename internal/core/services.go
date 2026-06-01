@@ -91,15 +91,24 @@ type Services struct {
 	// need to know how the limit is sourced — same interface, swapped
 	// implementation.
 	SessionLimitsProvider *llmsettings.SessionLimitsProvider
-	SessionModel          sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
-	RunModel              runmodel.Repository          // nil until wired in cmd/joe-core/main.go
-	Findings              findings.Repository          // nil until wired in cmd/joe-core/main.go
-	Warnings              warnings.Repository          // nil until wired in cmd/joe-core/main.go
-	CaptainSvc            *sessionmodel.CaptainService // nil until wired in cmd/joe-core/main.go
-	Review                *review.Service              // nil when code review is not configured
-	ReviewAgent           *review.ReviewAgent          // nil when review agent is not configured
-	Skills                *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher         *skills.Watcher              // nil when hot reload is disabled or failed to start
+	// CostLimitsProvider is the SAME storage-backed llmusage.CostLimits
+	// instance the recorder's cost-window gate enforces with (wired into
+	// llmusage.NewRecorderAdapter as Limits in cmd/joe-core/main.go). The
+	// settings GET handler reads it to surface the effective enforced
+	// value — backstop-substituted for an unset window — so the displayed
+	// number is sourced from the same object the gate decides with and
+	// cannot drift from it. nil in unit-test harnesses that don't
+	// exercise the settings GET endpoint.
+	CostLimitsProvider *llmsettings.CostLimitsProvider
+	SessionModel       sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
+	RunModel           runmodel.Repository          // nil until wired in cmd/joe-core/main.go
+	Findings           findings.Repository          // nil until wired in cmd/joe-core/main.go
+	Warnings           warnings.Repository          // nil until wired in cmd/joe-core/main.go
+	CaptainSvc         *sessionmodel.CaptainService // nil until wired in cmd/joe-core/main.go
+	Review             *review.Service              // nil when code review is not configured
+	ReviewAgent        *review.ReviewAgent          // nil when review agent is not configured
+	Skills             *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher      *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,
