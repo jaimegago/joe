@@ -24,6 +24,7 @@ import (
 	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
@@ -41,6 +42,7 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/sync/notion"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmfactory"
+	"github.com/jaimegago/joe/internal/llmsettings"
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/observability"
@@ -319,6 +321,26 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Insert-only by interface — there is no UPDATE/DELETE path.
 	llmUsageRepo := llmusage.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Wire the LLM settings repository, the storage-backed limit
+	// providers, and the mutation service (Stream G phase G4,
+	// migration 017). Layered:
+	//
+	//   - llmSettingsRepo: reads + transactional UPDATEs on the three
+	//     settings tables.
+	//   - storage-backed CostLimits / SessionLimits providers: drop-
+	//     in replacements for the static providers at the enforcement
+	//     check sites (recorder cost-window gate, agentloop runaway
+	//     gate). Unset (zero) values fall back to the conservative
+	//     hardcoded backstop — a freshly migrated system stays
+	//     protected.
+	//   - llmSettingsSvc: the SOLE write path. Every mutation commits
+	//     atomically with one llm_settings_mutation audit row through
+	//     audit.Repository.InsertTx.
+	llmSettingsRepo := llmsettings.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	costLimitsProvider := llmsettings.NewCostLimitsProvider(llmSettingsRepo, llmusage.NewStaticCostLimits(), slog.Default())
+	sessionLimitsProvider := llmsettings.NewSessionLimitsProvider(llmSettingsRepo, agentloop.NewStaticSessionLimits(), slog.Default())
+	llmSettingsSvc := llmsettings.NewMutationService(llmSettingsRepo, auditRepo)
+
 	// Wire session-model repository (tables created by migration 009).
 	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -393,6 +415,8 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
 	services.LLMUsage = llmUsageRepo
+	services.LLMSettings = llmSettingsSvc
+	services.SessionLimitsProvider = sessionLimitsProvider
 	services.SessionModel = sessionModelRepo
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
@@ -458,10 +482,23 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// Get listen address from config (defaults to localhost:7777)
 	addr := cfg.Server.Address
 
-	// Initialize LLM adapter for Core Agent
-	currentModelCfg, err := cfg.LLM.CurrentModel()
-	if err != nil {
-		slog.Error("failed to get current model config for core agent", "error", err)
+	// Stream G phase G4: active-model startup precedence is encoded
+	// in llmsettings.ResolveActiveModelOnStartup so the policy lives
+	// in one tested place. The persisted active model in llm_settings
+	// wins ONLY if it still resolves against the currently configured
+	// available models; otherwise configuration wins loudly. We never
+	// FAIL startup on a stale stored model.
+	availableKeys := make(map[string]bool, len(cfg.LLM.Available))
+	for k := range cfg.LLM.Available {
+		availableKeys[k] = true
+	}
+	activeModelKey := llmsettings.ResolveActiveModelOnStartup(ctx, llmSettingsRepo, cfg.LLM.Current, availableKeys, slog.Default())
+
+	// Initialize LLM adapter for Core Agent against the resolved
+	// active model.
+	currentModelCfg, ok := cfg.LLM.Available[activeModelKey]
+	if !ok {
+		slog.Error("resolved active model not found in available models", "model", activeModelKey)
 		return 1
 	}
 
@@ -486,14 +523,18 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// clients do not expose provider/model identity, so the wiring site
 	// is the single source of truth). Recording is fail-open by design;
 	// see internal/llmusage/recorder.go's package doc.
-	// Stream G phase G3b: the recorder is also the gate. The static
-	// CostLimits provider is installed by NewRecorderAdapter when Limits
-	// is omitted, made visible here as the single wiring site so the
-	// later storage-backed swap is a one-line edit (same pattern as the
-	// SessionLimits wiring in api/tasks.go's buildTaskRun). services.Audit
-	// is threaded through so a gate refusal — or a gate-read failure —
-	// writes its KindLLMLimitTriggered row to the same append-only sink
-	// the accessor, captaingate, and runaway gate use.
+	// Stream G phase G3b → G4: the recorder is also the gate. The
+	// CostLimits provider passed in is now the storage-backed
+	// implementation that reads per-window thresholds from the
+	// llm_cost_limits table; the gate site in
+	// RecorderAdapter.Chat / .gate is untouched, satisfying the
+	// "swap behind the interface" invariant. An unset stored
+	// threshold falls back to the conservative hardcoded backstop
+	// (llmusage.StaticCostLimits) inside the provider, so a fresh
+	// system stays protected. services.Audit is threaded through so a
+	// gate refusal — or a gate-read failure — writes its
+	// KindLLMLimitTriggered row to the same append-only sink the
+	// accessor, captaingate, and runaway gate use.
 	llmAdapter = llmusage.NewRecorderAdapter(llmusage.Config{
 		Inner:    llmAdapter,
 		Repo:     llmUsageRepo,
@@ -501,7 +542,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		Model:    currentModelCfg.Model,
 		Currency: cfg.LLM.Currency,
 		FXRate:   cfg.LLM.USDToConfiguredRate,
-		Limits:   llmusage.NewStaticCostLimits(),
+		Limits:   costLimitsProvider,
 		Audit:    auditRepo,
 	})
 
@@ -511,7 +552,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// restart. The raw adapter is retained below for the knowledge embedder
 	// and background services — embeddings must stay on a stable model and
 	// must not follow interactive chat-model swaps.
-	services.LLM = llm.NewSwappableAdapter(llmAdapter, cfg.LLM.Current)
+	services.LLM = llm.NewSwappableAdapter(llmAdapter, activeModelKey)
 
 	// Wire the LLM embedder into the Knowledge Service now that the adapter is ready.
 	embModelName := cfg.Knowledge.EmbeddingModel

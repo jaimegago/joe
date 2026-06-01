@@ -29,6 +29,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"time"
@@ -164,15 +165,37 @@ type Event struct {
 
 // Repository is the insert-only audit-log surface. There is NO Update or
 // Delete method by design — the AST guard
-// internal/audit/append_only_guard_test.go asserts this. Production code
-// receives this interface (never the concrete SQL repository) so no caller
-// has a path that could mutate or remove a row.
+// (TestRepositoryAPISurface_AppendOnly in audit_test.go) asserts the
+// interface exposes EXACTLY the two insert-shaped methods below and
+// nothing else. Production code receives this interface (never the
+// concrete SQL repository) so no caller has a path that could mutate or
+// remove a row.
+//
+// Two inserts, one audit row. The non-transactional Insert is the path
+// the accessor and the regime/captain transitions use today — each
+// audit row is its own atomic event. InsertTx is the path the (later)
+// settings service uses to make a settings change AND its audit row a
+// single durable event: the caller opens a transaction, writes the
+// settings row, then asks the audit repository to write its row against
+// the same transaction. Both rows commit together or roll back together.
+// The two methods share one private SQL body in the concrete repository
+// (sql.go) so the row shape cannot diverge.
 type Repository interface {
-	// Insert writes one audit row. If e.Timestamp is the zero value it is
-	// stamped with time.Now().UTC(). On error the row was NOT written;
-	// callers MUST honour the fail-open / fail-closed split for the
-	// kind/action being audited (see FailurePosture).
+	// Insert writes one audit row on its own connection. If e.Timestamp
+	// is the zero value it is stamped with time.Now().UTC(). On error the
+	// row was NOT written; callers MUST honour the fail-open /
+	// fail-closed split for the kind/action being audited (see
+	// FailurePosture).
 	Insert(ctx context.Context, e Event) error
+	// InsertTx writes one audit row against the caller-supplied
+	// transaction. The row commits or rolls back atomically with the
+	// caller's transaction; the audit repository never calls Commit or
+	// Rollback. A nil tx is a programming error and returns
+	// ErrAuditWriteFailed rather than silently falling back to the
+	// database handle. Defaulting, empty-to-null mapping, and required
+	// fields are identical to Insert — the two paths share one private
+	// SQL body in the concrete repository.
+	InsertTx(ctx context.Context, tx *sql.Tx, e Event) error
 }
 
 // FailurePosture decides what to do when an audit Insert fails. It

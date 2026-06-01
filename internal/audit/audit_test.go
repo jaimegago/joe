@@ -18,10 +18,35 @@ import (
 // dual append-only enforcement (docs/joe-identity-design.md §2.6, Phase F
 // req 2a). It parses the audit package source and asserts that the
 // Repository interface — the surface every audit caller depends on —
-// declares EXACTLY one method, Insert. There is no Update, Delete,
-// Truncate, or other mutator. The database-side trigger
-// (migrations/015_audit_log.up.sql) is the belt-and-suspenders half.
+// declares EXACTLY the two insert-shaped methods on the allow-list
+// (Insert, InsertTx) and nothing else. The two-method allow-list, not a
+// raw "must equal Insert" check, is the load-bearing structure: Stream G
+// phase G4 added InsertTx so a settings mutation and its audit row can
+// share one transaction, but every method name is still insert-shaped
+// and the count must match the allow-list size. There is no Update,
+// Delete, Truncate, or other mutator. The database-side trigger
+// (migrations/015_audit_log.up.sql, preserved by 017) is the
+// belt-and-suspenders half.
+//
+// To regress this guard a future maintainer would have to:
+//
+//   - add a third method to the interface (the count check fires); OR
+//   - rename one of the existing methods to something not on the
+//     allow-list (the per-method check fires).
+//
+// The separate mutator-name guard
+// (TestRepositoryAPISurface_NoMutatorPackageFunctions) keeps top-level
+// package functions from sneaking in Update/Delete/Truncate/Purge/Erase/
+// Remove — InsertTx is insert-shaped so it does not collide.
 func TestRepositoryAPISurface_AppendOnly(t *testing.T) {
+	// Allow-list of permitted method names on audit.Repository. Both
+	// names are insert-shaped: the row is appended; there is no caller
+	// path to mutate or remove a row.
+	allow := map[string]bool{
+		"Insert":   true,
+		"InsertTx": true,
+	}
+
 	fset := token.NewFileSet()
 	wd, err := os.Getwd()
 	if err != nil {
@@ -63,9 +88,36 @@ func TestRepositoryAPISurface_AppendOnly(t *testing.T) {
 	if !found {
 		t.Fatalf("audit.Repository interface not found")
 	}
-	if len(methodNames) != 1 || methodNames[0] != "Insert" {
-		t.Fatalf("audit.Repository must expose exactly one method (Insert) — found %v. The append-only contract forbids Update/Delete on the API surface.", methodNames)
+	// Count must equal the allow-list size — guards against a stray
+	// third method being added.
+	if len(methodNames) != len(allow) {
+		t.Fatalf("audit.Repository must expose exactly %d method(s) (the insert-shaped allow-list %v) — found %d: %v. The append-only contract forbids Update/Delete on the API surface; new methods may be added only if they are themselves insert-shaped and the allow-list is updated together.",
+			len(allow), keysSorted(allow), len(methodNames), methodNames)
 	}
+	// Every method must be on the allow-list — guards against a rename
+	// of either method to something non-insert-shaped.
+	for _, name := range methodNames {
+		if !allow[name] {
+			t.Fatalf("audit.Repository method %q is not on the insert-shaped allow-list %v. The append-only contract forbids Update/Delete on the API surface.", name, keysSorted(allow))
+		}
+	}
+}
+
+// keysSorted returns the keys of m in sorted order so the failure
+// message above is stable.
+func keysSorted(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	// Tiny inline sort to avoid pulling sort into the test for two
+	// elements; the allow-list is small and rarely changes.
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
 }
 
 // TestRepositoryAPISurface_NoMutatorPackageFunctions asserts the audit

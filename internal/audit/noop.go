@@ -1,6 +1,9 @@
 package audit
 
-import "context"
+import (
+	"context"
+	"database/sql"
+)
 
 // NoopRepository discards every Insert call. Used by code paths that have
 // no audit store wired (legacy tests, dev/local runs without a database).
@@ -15,3 +18,8 @@ func NewNoopRepository() Repository { return NoopRepository{} }
 
 // Insert always succeeds and writes nothing.
 func (NoopRepository) Insert(_ context.Context, _ Event) error { return nil }
+
+// InsertTx always succeeds and writes nothing. A nil tx is tolerated —
+// the noop repository never touches it, so the SQL repository's
+// "nil-tx is a programming error" rule does not apply here.
+func (NoopRepository) InsertTx(_ context.Context, _ *sql.Tx, _ Event) error { return nil }
