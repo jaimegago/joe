@@ -1,16 +1,33 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, Database, MessageSquare, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Network, Database, MessageSquare, ShieldCheck, Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
-const navItems = [
+interface NavItem {
+  to: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  end: boolean;
+  adminOnly?: boolean;
+}
+
+const navItems: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/graph', icon: Network, label: 'Graph', end: false },
   { to: '/sources', icon: Database, label: 'Sources', end: false },
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
-  { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false },
+  { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false, adminOnly: true },
+  { to: '/llm-settings', icon: Cpu, label: 'LLM Settings', end: false, adminOnly: true },
 ];
 
 export function Sidebar() {
+  const meQ = useCurrentUser();
+  // is_admin is true in auth-disabled local mode, so this single predicate
+  // surfaces admin entries there too. Until the query resolves, isAdmin is
+  // false so admin-only entries never flash before status is known.
+  const isAdmin = meQ.data?.is_admin === true;
+  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+
   return (
     <aside className="fixed inset-y-0 left-0 z-10 flex w-60 flex-col border-r bg-background">
       <div className="flex h-16 items-center border-b px-6">
@@ -18,7 +35,7 @@ export function Sidebar() {
         <span className="ml-1 text-xs text-muted-foreground">infra copilot</span>
       </div>
       <nav className="flex-1 space-y-1 p-3">
-        {navItems.map(({ to, icon: Icon, label, end }) => (
+        {visibleItems.map(({ to, icon: Icon, label, end }) => (
           <NavLink
             key={to}
             to={to}
