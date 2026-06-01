@@ -10,6 +10,7 @@ const GraphPage = lazy(() => import('@/pages/GraphPage').then(m => ({ default: m
 const SourcesPage = lazy(() => import('@/pages/SourcesPage').then(m => ({ default: m.SourcesPage })));
 const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
 const AdminPage = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
+const LLMSettingsPage = lazy(() => import('@/pages/LLMSettingsPage').then(m => ({ default: m.LLMSettingsPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ export function App() {
             <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
             <Route path="chat/:sessionId" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
             <Route path="admin" element={<Suspense fallback={<LoadingPage />}><AdminPage /></Suspense>} />
+            <Route path="llm-settings" element={<Suspense fallback={<LoadingPage />}><LLMSettingsPage /></Suspense>} />
           </Route>
         </Routes>
       </BrowserRouter>

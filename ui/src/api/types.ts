@@ -13,6 +13,17 @@ import type {
   SessionSchema,
   ChatResponseSchema,
   AlertSchema,
+  CurrentUserSchema,
+  LLMLimitStateSchema,
+  LLMCostLimitSchema,
+  LLMRunawayCeilingSchema,
+  LLMSettingsSchema,
+  UsageBreakdownSchema,
+  UsageAggregateSchema,
+  UsageWindowSchema,
+  UsageSessionSchema,
+  LLMProviderSchema,
+  LLMProvidersSchema,
 } from './schemas';
 
 // Types derived from Zod schemas — single source of truth
@@ -29,3 +40,14 @@ export type ToolCall = z.infer<typeof ToolCallSchema>;
 export type Session = z.infer<typeof SessionSchema>;
 export type ChatResponse = z.infer<typeof ChatResponseSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
+export type CurrentUser = z.infer<typeof CurrentUserSchema>;
+export type LLMLimitState = z.infer<typeof LLMLimitStateSchema>;
+export type LLMCostLimit = z.infer<typeof LLMCostLimitSchema>;
+export type LLMRunawayCeiling = z.infer<typeof LLMRunawayCeilingSchema>;
+export type LLMSettings = z.infer<typeof LLMSettingsSchema>;
+export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
+export type UsageAggregate = z.infer<typeof UsageAggregateSchema>;
+export type UsageWindow = z.infer<typeof UsageWindowSchema>;
+export type UsageSession = z.infer<typeof UsageSessionSchema>;
+export type LLMProvider = z.infer<typeof LLMProviderSchema>;
+export type LLMProviders = z.infer<typeof LLMProvidersSchema>;
