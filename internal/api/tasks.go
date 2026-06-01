@@ -283,21 +283,31 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		systemPrompt += "\n\n" + section
 	}
 
-	// Stream G phase G3a: the production task loop supplies the static
-	// SessionLimits provider explicitly (the safe default that NewAgent
-	// installs anyway, made visible here as the single wiring site so
-	// the later storage-backed swap is a one-line edit) and threads
-	// services.Audit through so a ceiling termination writes its
-	// KindLLMLimitTriggered row to the same append-only sink the
-	// accessor and captaingate use. services.Audit may be nil in
-	// auth-disabled local/dev runs; the recorder tolerates that.
+	// Stream G phase G3a → G4: the production task loop reads its
+	// session token ceiling through the storage-backed provider
+	// hung off services.SessionLimitsProvider. The provider is
+	// constructed once at startup in cmd/joe-core/main.go and shared
+	// across tasks — per-task construction would either need its
+	// own repository reference or a settings handle threaded
+	// through, neither of which the check site needs. When the
+	// services container has no provider wired (test harnesses),
+	// fall back to the static backstop so the ceiling is still
+	// enforced. services.Audit is threaded through so a ceiling
+	// termination writes its KindLLMLimitTriggered row to the same
+	// append-only sink the accessor and captaingate use.
+	var sessionLimits agentloop.SessionLimits
+	if h.server.services.SessionLimitsProvider != nil {
+		sessionLimits = h.server.services.SessionLimitsProvider
+	} else {
+		sessionLimits = agentloop.NewStaticSessionLimits()
+	}
 	agent := agentloop.NewAgent(
 		h.server.services.LLM,
 		loopExec,
 		registry,
 		systemPrompt,
 		agentloop.WithObserver(observer),
-		agentloop.WithSessionLimits(agentloop.NewStaticSessionLimits()),
+		agentloop.WithSessionLimits(sessionLimits),
 		agentloop.WithAuditRepo(h.server.services.Audit),
 	)
 	agent.SetMaxIterations(maxIterations)

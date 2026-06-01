@@ -2,6 +2,7 @@ package agentloop_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"sync"
@@ -252,6 +253,17 @@ type spyAuditRepo struct {
 }
 
 func (s *spyAuditRepo) Insert(_ context.Context, e audit.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rows = append(s.rows, e)
+	return nil
+}
+
+// InsertTx satisfies the Stream G phase G4 addition to
+// audit.Repository. The agent loop only calls Insert; the
+// transactional path exists for the settings service. Stub records
+// through the same slice so an unexpected use is visible.
+func (s *spyAuditRepo) InsertTx(_ context.Context, _ *sql.Tx, e audit.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rows = append(s.rows, e)

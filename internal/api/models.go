@@ -54,7 +54,33 @@ func (h *modelHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSetCurrent hot-swaps the active model on the single LLM contact point.
+// handleSetCurrent hot-swaps the active model on the single LLM
+// contact point.
+//
+// Stream G phase G4. The endpoint is durable AND has exactly one
+// path: it persists the new active model AND writes one
+// llm_settings_mutation audit row atomically through
+// services.LLMSettings BEFORE swapping the live adapter. The swap
+// happens only after the persist-and-audit transaction commits, so a
+// failed persist never leaves the live adapter pointing at a model
+// the table does not record. Conversely, a successful persist
+// guarantees the audit row — every model change has a forensic trail.
+//
+// G4 correction. The settings service is REQUIRED. When it is not
+// wired (services.LLMSettings == nil) the endpoint refuses the
+// request with 503 — there is no swap-only fallback, because a swap
+// that did not persist and did not audit would silently bypass the
+// settings table and the audit log, which is exactly the invariant
+// G4 closes. Production wiring in cmd/joe-core/main.go always
+// supplies services.LLMSettings; test harnesses that exercise this
+// endpoint must do the same.
+//
+// If the new adapter cannot be constructed (commonly a missing
+// provider API key), we build it BEFORE the persist transaction so a
+// preflightable failure does not produce a phantom audit row and a
+// table state out of sync with what providers the deployment can
+// actually use. Building the adapter has no side effects beyond the
+// initial provider-key validation, so doing it first is safe.
 func (h *modelHandler) handleSetCurrent(w http.ResponseWriter, r *http.Request) {
 	var req setModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -83,10 +109,28 @@ func (h *modelHandler) handleSetCurrent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// G4 correction: the settings service must be present. A nil
+	// service is not a fallback to swap-only — it is an
+	// unconfigured / not-ready deployment, and the endpoint refuses
+	// rather than perform an un-audited mutation.
+	if h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "model switching not available: settings service not wired")
+		return
+	}
+
 	adapter, err := newModelAdapter(r.Context(), mc)
 	if err != nil {
 		// Most commonly a missing API key for the target provider.
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("cannot switch to %q: %s", req.Name, err))
+		return
+	}
+
+	// Persist + audit atomically. On any failure the mutation
+	// service rolls back the transaction — no settings row, no
+	// audit row — and we return before reaching Swap, so the live
+	// adapter is also unchanged.
+	if err := h.server.services.LLMSettings.SetActiveModel(r.Context(), req.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to persist active model: %s", err))
 		return
 	}
 

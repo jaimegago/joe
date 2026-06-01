@@ -2,6 +2,7 @@ package access_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
@@ -22,6 +23,22 @@ type recordingAudit struct {
 }
 
 func (r *recordingAudit) Insert(_ context.Context, e audit.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.errFn != nil {
+		if err := r.errFn(e); err != nil {
+			return err
+		}
+	}
+	r.rows = append(r.rows, e)
+	return nil
+}
+
+// InsertTx satisfies the Stream G phase G4 addition to
+// audit.Repository. The accessor only uses Insert; the transactional
+// path exists for the settings service. The stub records via the same
+// path so any unexpected use surfaces in the snapshot.
+func (r *recordingAudit) InsertTx(_ context.Context, _ *sql.Tx, e audit.Event) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.errFn != nil {

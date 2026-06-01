@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/knowledge/drift"
 	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/llmsettings"
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -63,16 +64,30 @@ type Services struct {
 	// need the recorder. Insert-only by interface — usage rows are an
 	// observability log, and the recorder is fail-open against this
 	// surface.
-	LLMUsage      llmusage.Repository
-	SessionModel  sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
-	RunModel      runmodel.Repository          // nil until wired in cmd/joe-core/main.go
-	Findings      findings.Repository          // nil until wired in cmd/joe-core/main.go
-	Warnings      warnings.Repository          // nil until wired in cmd/joe-core/main.go
-	CaptainSvc    *sessionmodel.CaptainService // nil until wired in cmd/joe-core/main.go
-	Review        *review.Service              // nil when code review is not configured
-	ReviewAgent   *review.ReviewAgent          // nil when review agent is not configured
-	Skills        *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher *skills.Watcher              // nil when hot reload is disabled or failed to start
+	LLMUsage llmusage.Repository
+	// LLMSettings is the storage-backed settings service (Stream G
+	// phase G4). Owns reads and atomic writes against the three
+	// settings tables (llm_settings, llm_cost_limits,
+	// llm_runaway_limits) created in migration 017. Every mutation
+	// commits with its audit row through audit.Repository.InsertTx —
+	// either both rows land or neither does. nil in unit-test
+	// harnesses that don't exercise model switching or limit edits.
+	LLMSettings *llmsettings.MutationService
+	// SessionLimitsProvider is the storage-backed agentloop.SessionLimits
+	// the per-task agent construction reads from. Built once at startup
+	// and shared across tasks so a per-task agent construction does not
+	// need to know how the limit is sourced — same interface, swapped
+	// implementation.
+	SessionLimitsProvider *llmsettings.SessionLimitsProvider
+	SessionModel          sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
+	RunModel              runmodel.Repository          // nil until wired in cmd/joe-core/main.go
+	Findings              findings.Repository          // nil until wired in cmd/joe-core/main.go
+	Warnings              warnings.Repository          // nil until wired in cmd/joe-core/main.go
+	CaptainSvc            *sessionmodel.CaptainService // nil until wired in cmd/joe-core/main.go
+	Review                *review.Service              // nil when code review is not configured
+	ReviewAgent           *review.ReviewAgent          // nil when review agent is not configured
+	Skills                *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher         *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,
