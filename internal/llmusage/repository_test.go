@@ -344,6 +344,134 @@ func TestSQLRepository_CountForeignCurrency(t *testing.T) {
 	}
 }
 
+// TestSQLRepository_SessionUsage_GroupsByCurrency — Stream G phase
+// G5. The session view groups by currency so a session whose rows
+// span two currencies (operator changed the configured currency
+// mid-session) renders as TWO rows, never one summed-across-
+// currencies row that would violate locked Rule 4.
+func TestSQLRepository_SessionUsage_GroupsByCurrency(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	for i, row := range []llmusage.Row{
+		{Model: "m", Currency: "USD", EstimatedCostNano: 100, SessionID: "sess"},
+		{Model: "m", Currency: "USD", EstimatedCostNano: 200, SessionID: "sess"},
+		{Model: "m", Currency: "EUR", EstimatedCostNano: 50, SessionID: "sess"},
+		{Model: "m", Currency: "USD", EstimatedCostNano: 999, SessionID: "other"},
+	} {
+		row.Timestamp = time.Date(2026, 1, 1, 12, i, 0, 0, time.UTC)
+		if err := repo.Insert(ctx, row); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+	got, err := repo.SessionUsage(ctx, "sess")
+	if err != nil {
+		t.Fatalf("SessionUsage: %v", err)
+	}
+	byCur := map[string]llmusage.UsageBreakdown{}
+	for _, r := range got {
+		byCur[r.Currency] = r
+	}
+	if usd, ok := byCur["USD"]; !ok || usd.EstimatedCostNano != 300 || usd.Calls != 2 {
+		t.Errorf("USD row = %+v; want 2 calls / 300 cost", usd)
+	}
+	if eur, ok := byCur["EUR"]; !ok || eur.EstimatedCostNano != 50 || eur.Calls != 1 {
+		t.Errorf("EUR row = %+v; want 1 call / 50 cost", eur)
+	}
+	for _, r := range got {
+		if r.SessionID != "sess" {
+			t.Errorf("row carries wrong session id: %+v", r)
+		}
+	}
+}
+
+// TestSQLRepository_AggregateUsage_GroupsByCurrencyOverRange exercises
+// the aggregate view's window filter + currency-grouping. Two rows
+// inside the window in different currencies → two breakdown rows.
+// A row outside the window must be excluded.
+func TestSQLRepository_AggregateUsage_GroupsByCurrencyOverRange(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	lower := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	upper := lower.Add(time.Hour)
+	for i, row := range []llmusage.Row{
+		{Model: "m", Currency: "USD", EstimatedCostNano: 100, Timestamp: lower.Add(10 * time.Minute)},
+		{Model: "m", Currency: "USD", EstimatedCostNano: 200, Timestamp: lower.Add(20 * time.Minute)},
+		{Model: "m", Currency: "EUR", EstimatedCostNano: 75, Timestamp: lower.Add(30 * time.Minute)},
+		{Model: "m", Currency: "USD", EstimatedCostNano: 999, Timestamp: upper.Add(time.Minute)}, // outside
+	} {
+		if err := repo.Insert(ctx, row); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	got, err := repo.AggregateUsage(ctx, lower, upper)
+	if err != nil {
+		t.Fatalf("AggregateUsage: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %d; want 2 (USD + EUR)", len(got))
+	}
+	byCur := map[string]llmusage.UsageBreakdown{}
+	for _, r := range got {
+		byCur[r.Currency] = r
+	}
+	if usd := byCur["USD"]; usd.EstimatedCostNano != 300 || usd.Calls != 2 {
+		t.Errorf("USD row = %+v; want 300 cost / 2 calls", usd)
+	}
+	if eur := byCur["EUR"]; eur.EstimatedCostNano != 75 || eur.Calls != 1 {
+		t.Errorf("EUR row = %+v; want 75 cost / 1 call", eur)
+	}
+}
+
+// TestSQLRepository_PerPrincipalUsage_NullPrincipalToEmpty — a row
+// with no principal (anonymous/auth-disabled) must round-trip to an
+// empty Principal string in the result so the HTTP renderer can
+// render "anonymous" rather than fabricate a value.
+func TestSQLRepository_PerPrincipalUsage_NullPrincipalToEmpty(t *testing.T) {
+	s := freshStore(t)
+	repo := llmusage.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	lower := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	upper := lower.Add(time.Hour)
+	if err := repo.Insert(ctx, llmusage.Row{
+		Model: "m", Currency: "USD", EstimatedCostNano: 100,
+		Timestamp: lower.Add(10 * time.Minute),
+		// Principal intentionally empty → stored as NULL.
+	}); err != nil {
+		t.Fatalf("insert anonymous: %v", err)
+	}
+	if err := repo.Insert(ctx, llmusage.Row{
+		Model: "m", Currency: "USD", EstimatedCostNano: 200,
+		Timestamp: lower.Add(15 * time.Minute),
+		Principal: "user:alice",
+	}); err != nil {
+		t.Fatalf("insert alice: %v", err)
+	}
+
+	got, err := repo.PerPrincipalUsage(ctx, lower, upper)
+	if err != nil {
+		t.Fatalf("PerPrincipalUsage: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %d; want 2 (one empty, one user:alice)", len(got))
+	}
+	byPrincipal := map[string]llmusage.UsageBreakdown{}
+	for _, r := range got {
+		byPrincipal[r.Principal] = r
+	}
+	if anon, ok := byPrincipal[""]; !ok || anon.EstimatedCostNano != 100 {
+		t.Errorf("anonymous row = %+v; want empty-principal 100 cost", anon)
+	}
+	if alice, ok := byPrincipal["user:alice"]; !ok || alice.EstimatedCostNano != 200 {
+		t.Errorf("alice row = %+v; want 200 cost", alice)
+	}
+}
+
 // TestSQLRepository_Insert_EmptyCurrencyRejected — the currency
 // column is NOT NULL with no default, so the recorder must always
 // supply it. An empty Currency at the repository boundary is a wiring

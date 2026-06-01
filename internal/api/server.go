@@ -126,6 +126,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerCaptainRoutes(mux, apiPrefix)
 	// Phase 1 Change 7: run lifecycle HTTP API.
 	s.registerRunRoutes(mux, apiPrefix)
+	// Stream G phase G5: LLM-instrumentation HTTP API — current-user,
+	// settings reads + admin-gated writes, usage views, providers.
+	s.registerCurrentUserRoutes(mux, apiPrefix)
+	s.registerLLMSettingsRoutes(mux, apiPrefix)
+	s.registerLLMUsageRoutes(mux, apiPrefix)
+	s.registerLLMProvidersRoutes(mux, apiPrefix)
 }
 
 // registerStatusRoutes registers status and health check routes

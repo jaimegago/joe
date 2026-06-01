@@ -54,6 +54,32 @@ type Row struct {
 	TaskID            string
 }
 
+// UsageBreakdown is one row of an aggregated usage report. The view
+// methods (SessionUsage / AggregateUsage / PerModelUsage /
+// PerPrincipalUsage) return slices of these so the HTTP layer can
+// render columnar tables WITHOUT a second round-trip per row. Every
+// breakdown carries Currency so amounts (EstimatedCostNano in
+// nano-units of the row's currency) can be labelled correctly — a
+// table that summed across currencies would violate the locked Rule 4
+// the cost-window gate also obeys.
+//
+// Model and Principal are populated only by the breakdown variants
+// that group on them. PerModelUsage fills Model, PerPrincipalUsage
+// fills Principal, the session and overall-aggregate variants leave
+// both empty. SessionID is filled only by SessionUsage. A consumer
+// that needs to know which grouping it is reading does so by which
+// method it called, not by sniffing the row fields.
+type UsageBreakdown struct {
+	Calls             int64
+	InputTokens       int64
+	OutputTokens      int64
+	EstimatedCostNano int64
+	Currency          string
+	Model             string
+	Principal         string
+	SessionID         string
+}
+
 // Repository is the read+insert surface for llm_usage. Like audit, there
 // is no Update, Delete, or Truncate method — usage rows are an
 // observability log, and the recorder is fail-open against the write
@@ -65,6 +91,17 @@ type Row struct {
 // range [lower, upper) AND whose currency equals the supplied filter.
 // The currency filter is locked Rule 4 — nano-units of different
 // currencies cannot be added, so the gate sums only same-currency rows.
+//
+// The four breakdown methods below are the Stream G phase G5 read-only
+// VIEW path, separate from the enforcement SumCostNano: the gate
+// returns one scalar to decide pass/deny, the views return rows to
+// render an admin or operator UI. Splitting them keeps the
+// enforcement query small (one COALESCE-SUM over an indexed range,
+// hot path) and the display queries' GROUP BYs out of the
+// per-call path. A consumer that wants to render a UI MUST go through
+// the views; reusing SumCostNano on the display path would force every
+// future shape change (added columns, a different group) to also touch
+// the gate.
 type Repository interface {
 	Insert(ctx context.Context, r Row) error
 	SumCostNano(ctx context.Context, lower, upper time.Time, currency string) (int64, error)
@@ -75,6 +112,30 @@ type Repository interface {
 	// an operator who changed the configured currency between
 	// deployments, leaving rows in two denominations in the same table.
 	CountForeignCurrency(ctx context.Context, currency string) (int64, error)
+	// SessionUsage returns one row per currency for the given session
+	// id (the SQL NULL principal/model/task columns are ignored — only
+	// rows whose session_id matches participate). An empty result for
+	// an unknown id is not an error; the caller decides whether to map
+	// to 404. Stream G phase G5.
+	SessionUsage(ctx context.Context, sessionID string) ([]UsageBreakdown, error)
+	// AggregateUsage returns one row per currency over the half-open
+	// time range [lower, upper). The HTTP layer calls it three times
+	// (today, this week, this month) to assemble the dashboard summary.
+	// Stream G phase G5.
+	AggregateUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error)
+	// PerModelUsage returns one row per (model, currency) pair over
+	// [lower, upper). Rows with the same currency are added; rows in
+	// different currencies are emitted as separate breakdown rows so
+	// amounts remain comparable within a row. Stream G phase G5.
+	PerModelUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error)
+	// PerPrincipalUsage returns one row per (principal, currency)
+	// pair over [lower, upper). NULL principals (anonymous /
+	// auth-disabled rows) round-trip to an empty Principal string in
+	// the result; the HTTP handler decides how to render them. The
+	// endpoint that serves this method is admin-gated — the breakdown
+	// reveals per-user spending patterns, which non-admins should not
+	// see. Stream G phase G5.
+	PerPrincipalUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error)
 }
 
 // NewRepository builds the SQL-backed Repository for the given database
@@ -174,6 +235,160 @@ func (r *sqlRepository) SumCostNano(ctx context.Context, lower, upper time.Time,
 		return 0, fmt.Errorf("llmusage: sum cost: %w", err)
 	}
 	return sum, nil
+}
+
+// SessionUsage returns one breakdown row per currency for the given
+// session id, summing tokens / cost across every row that carries the
+// session_id. Empty result for an unknown id is a normal outcome (no
+// error). NULL session_id rows are excluded by the WHERE clause.
+func (r *sqlRepository) SessionUsage(ctx context.Context, sessionID string) ([]UsageBreakdown, error) {
+	if sessionID == "" {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(estimated_cost_nano), 0),
+			currency
+		FROM llm_usage
+		WHERE session_id = ?
+		GROUP BY currency
+		ORDER BY currency`),
+		sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("llmusage: session usage: %w", err)
+	}
+	defer rows.Close()
+	var out []UsageBreakdown
+	for rows.Next() {
+		var b UsageBreakdown
+		if err := rows.Scan(&b.Calls, &b.InputTokens, &b.OutputTokens, &b.EstimatedCostNano, &b.Currency); err != nil {
+			return nil, fmt.Errorf("llmusage: scan session usage: %w", err)
+		}
+		b.SessionID = sessionID
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("llmusage: iter session usage: %w", err)
+	}
+	return out, nil
+}
+
+// AggregateUsage returns one row per currency over the half-open
+// [lower, upper) range. Bounds are formatted with TimestampLayout
+// (same fixed-width layout the gate uses) so the comparison agrees
+// with the write-time format on the index.
+func (r *sqlRepository) AggregateUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(estimated_cost_nano), 0),
+			currency
+		FROM llm_usage
+		WHERE created_at >= ? AND created_at < ?
+		GROUP BY currency
+		ORDER BY currency`),
+		lower.UTC().Format(TimestampLayout),
+		upper.UTC().Format(TimestampLayout),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("llmusage: aggregate usage: %w", err)
+	}
+	defer rows.Close()
+	var out []UsageBreakdown
+	for rows.Next() {
+		var b UsageBreakdown
+		if err := rows.Scan(&b.Calls, &b.InputTokens, &b.OutputTokens, &b.EstimatedCostNano, &b.Currency); err != nil {
+			return nil, fmt.Errorf("llmusage: scan aggregate usage: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("llmusage: iter aggregate usage: %w", err)
+	}
+	return out, nil
+}
+
+// PerModelUsage returns one row per (model, currency) over [lower,
+// upper). Rows in different currencies for the same model are emitted
+// as separate breakdown rows so a consumer never adds nano-units
+// across currencies (locked Rule 4).
+func (r *sqlRepository) PerModelUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT
+			model,
+			currency,
+			COUNT(*),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(estimated_cost_nano), 0)
+		FROM llm_usage
+		WHERE created_at >= ? AND created_at < ?
+		GROUP BY model, currency
+		ORDER BY model, currency`),
+		lower.UTC().Format(TimestampLayout),
+		upper.UTC().Format(TimestampLayout),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("llmusage: per-model usage: %w", err)
+	}
+	defer rows.Close()
+	var out []UsageBreakdown
+	for rows.Next() {
+		var b UsageBreakdown
+		if err := rows.Scan(&b.Model, &b.Currency, &b.Calls, &b.InputTokens, &b.OutputTokens, &b.EstimatedCostNano); err != nil {
+			return nil, fmt.Errorf("llmusage: scan per-model usage: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("llmusage: iter per-model usage: %w", err)
+	}
+	return out, nil
+}
+
+// PerPrincipalUsage returns one row per (principal, currency) over
+// [lower, upper). NULL principal columns (anonymous /
+// auth-disabled rows) round-trip to an empty Principal string — the
+// HTTP layer renders that as "anonymous" or similar, never as a
+// fabricated identity.
+func (r *sqlRepository) PerPrincipalUsage(ctx context.Context, lower, upper time.Time) ([]UsageBreakdown, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT
+			COALESCE(principal, '') AS principal,
+			currency,
+			COUNT(*),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(estimated_cost_nano), 0)
+		FROM llm_usage
+		WHERE created_at >= ? AND created_at < ?
+		GROUP BY principal, currency
+		ORDER BY principal, currency`),
+		lower.UTC().Format(TimestampLayout),
+		upper.UTC().Format(TimestampLayout),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("llmusage: per-principal usage: %w", err)
+	}
+	defer rows.Close()
+	var out []UsageBreakdown
+	for rows.Next() {
+		var b UsageBreakdown
+		if err := rows.Scan(&b.Principal, &b.Currency, &b.Calls, &b.InputTokens, &b.OutputTokens, &b.EstimatedCostNano); err != nil {
+			return nil, fmt.Errorf("llmusage: scan per-principal usage: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("llmusage: iter per-principal usage: %w", err)
+	}
+	return out, nil
 }
 
 // CountForeignCurrency counts rows whose currency differs from the

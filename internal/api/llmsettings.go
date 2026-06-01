@@ -1,0 +1,252 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/llmsettings"
+)
+
+// Stream G phase G5 — LLM settings HTTP API.
+//
+// Reads: GET /api/v1/llm/settings returns the current active model,
+// per-window cost limits, and runaway ceiling. Available to any
+// authenticated caller because none of those values is sensitive
+// (they are policy knobs, not credentials).
+//
+// Writes: three admin-gated mutators that route directly through
+// services.LLMSettings (the existing mutation service), which already
+// persists the value AND writes the audit row in one transaction.
+// SetActiveModel goes through the SAME mutation-service method
+// internal/api/models.go::handleSetCurrent now uses, so there is
+// exactly one persisted-and-audited path for an active-model change
+// — settings and admin endpoints share it.
+//
+// Unset-vs-configured labelling. The storage-backed CostLimits /
+// SessionLimits providers (internal/llmsettings/providers.go)
+// reinterpret a stored ZERO as "unset, fall back to the hardcoded
+// backstop"; a stored NEGATIVE is the explicit "disabled" sentinel the
+// gate honours; a stored POSITIVE is the configured limit. The GET
+// response carries the raw stored value AND a configured-vs-backstop
+// label computed from that convention so the frontend can render
+// "unlimited (backstop)" for an unset window without re-implementing
+// the predicate. The label kinds are pinned in the constants below.
+
+const (
+	// LimitStateBackstop labels a raw stored zero — the migration seed
+	// — which the storage-backed provider replaces with the hardcoded
+	// backstop. The displayed limit is the backstop, not the stored
+	// value. A consumer rendering "current limit" reads the backstop
+	// (which the response also carries) rather than zero.
+	LimitStateBackstop = "backstop_fallback"
+	// LimitStateConfigured labels a raw stored value that is NOT zero
+	// — operator-set, possibly negative. A negative value means the
+	// operator explicitly cleared the window's limit (the gate's
+	// zero-or-below disable convention trips on a negative read); a
+	// positive value is the configured limit. Either way the stored
+	// value is what the gate uses.
+	LimitStateConfigured = "configured"
+)
+
+type llmSettingsHandler struct{ server *Server }
+
+func (s *Server) registerLLMSettingsRoutes(mux *http.ServeMux, prefix string) {
+	h := &llmSettingsHandler{server: s}
+	mux.HandleFunc(fmt.Sprintf("GET %s/llm/settings", prefix), h.handleGet)
+	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/active-model", prefix), h.handleSetActiveModel)
+	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/cost-limit", prefix), h.handleSetCostLimit)
+	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/runaway-ceiling", prefix), h.handleSetRunawayCeiling)
+}
+
+type costLimitView struct {
+	Window    string `json:"window"`
+	StoredRaw int64  `json:"stored_raw"`
+	State     string `json:"state"`
+}
+
+type runawayCeilingView struct {
+	StoredRaw int    `json:"stored_raw"`
+	State     string `json:"state"`
+}
+
+type llmSettingsResponse struct {
+	ActiveModel    string             `json:"active_model"`
+	CostLimits     []costLimitView    `json:"cost_limits"`
+	RunawayCeiling runawayCeilingView `json:"runaway_ceiling"`
+}
+
+// stateForLimit applies the documented backstop convention: a stored
+// ZERO labels as backstop fallback; ANY other value (positive limit or
+// negative explicit-disable) labels as operator-configured. This is
+// the SAME predicate the storage-backed providers use to decide
+// whether to substitute the backstop value, expressed here so the
+// labelling cannot drift.
+func stateForLimit(rawNonZero bool) string {
+	if rawNonZero {
+		return LimitStateConfigured
+	}
+	return LimitStateBackstop
+}
+
+func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	if h.server.services == nil || h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
+		return
+	}
+	repo := h.server.services.LLMSettings.Repo()
+	if repo == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings repository not available")
+		return
+	}
+
+	active, err := repo.ReadActiveModel(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "llm settings read active model")
+		return
+	}
+	limits, err := repo.ReadCostLimits(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "llm settings read cost limits")
+		return
+	}
+	ceiling, err := repo.ReadRunawayCeiling(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "llm settings read runaway ceiling")
+		return
+	}
+
+	resp := llmSettingsResponse{
+		ActiveModel: active,
+		CostLimits: []costLimitView{
+			{Window: llmsettings.WindowHourly, StoredRaw: limits.HourlyNano, State: stateForLimit(limits.HourlyNano != 0)},
+			{Window: llmsettings.WindowDaily, StoredRaw: limits.DailyNano, State: stateForLimit(limits.DailyNano != 0)},
+			{Window: llmsettings.WindowMonthly, StoredRaw: limits.MonthlyNano, State: stateForLimit(limits.MonthlyNano != 0)},
+		},
+		RunawayCeiling: runawayCeilingView{
+			StoredRaw: ceiling,
+			State:     stateForLimit(ceiling != 0),
+		},
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type setActiveModelRequest struct {
+	Name string `json:"name"`
+}
+
+// handleSetActiveModel admin-gates the same atomic-persist-and-audit
+// path internal/api/models.go::handleSetCurrent uses. The two
+// endpoints share the mutation service so there remains exactly one
+// audited way to change the active model.
+//
+// Like handleSetCurrent, this endpoint validates the model name
+// against the configured catalogue and constructs the adapter BEFORE
+// the mutation runs — a missing API key for the new provider must
+// not produce a phantom audit row of a swap that could not happen.
+// On success the live SwappableAdapter is hot-swapped, so a settings
+// write through the admin surface and a write through /models/current
+// produce equivalent post-conditions.
+func (h *llmSettingsHandler) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setActiveModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set active model", "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "name is required")
+		return
+	}
+	if h.server.services == nil || h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
+		return
+	}
+	cfg := h.server.services.Config
+	if cfg == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "LLM config not available")
+		return
+	}
+	mc, ok := cfg.LLM.Available[req.Name]
+	if !ok {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("unknown model %q", req.Name))
+		return
+	}
+
+	sw, ok := h.server.services.LLM.(*llm.SwappableAdapter)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "model switching not available")
+		return
+	}
+	adapter, err := newModelAdapter(r.Context(), mc)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("cannot switch to %q: %s", req.Name, err))
+		return
+	}
+	if err := h.server.services.LLMSettings.SetActiveModel(r.Context(), req.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to persist active model: %s", err))
+		return
+	}
+	sw.Swap(adapter, req.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"current": req.Name})
+}
+
+type setCostLimitRequest struct {
+	Window string `json:"window"`
+	// Value is the new stored value in nano-units of the configured
+	// currency. The mutation service forwards the value unchanged to
+	// the repository; the storage provider's backstop convention then
+	// interprets zero as unset and negative as explicit-disable.
+	Value int64 `json:"value"`
+}
+
+func (h *llmSettingsHandler) handleSetCostLimit(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setCostLimitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set cost limit", "invalid request body")
+		return
+	}
+	if req.Window == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "window is required")
+		return
+	}
+	if h.server.services == nil || h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
+		return
+	}
+	if err := h.server.services.LLMSettings.SetCostLimit(r.Context(), req.Window, req.Value); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("failed to set cost limit: %s", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"window": req.Window, "value": req.Value})
+}
+
+type setRunawayCeilingRequest struct {
+	Value int `json:"value"`
+}
+
+func (h *llmSettingsHandler) handleSetRunawayCeiling(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setRunawayCeilingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set runaway ceiling", "invalid request body")
+		return
+	}
+	if h.server.services == nil || h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
+		return
+	}
+	if err := h.server.services.LLMSettings.SetRunawayCeiling(r.Context(), req.Value); err != nil {
+		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to set runaway ceiling: %s", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"value": req.Value})
+}
