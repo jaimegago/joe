@@ -106,6 +106,121 @@ func (r *fakeRepo) SumCostNano(_ context.Context, lower, upper time.Time, curren
 	return sum, nil
 }
 
+// SessionUsage / AggregateUsage / PerModelUsage / PerPrincipalUsage —
+// Stream G phase G5 view-path methods. fakeRepo isn't a primary test
+// subject for these (the SQL repository tests in repository_test.go
+// cover the GROUP BY semantics directly), so the in-memory
+// implementation here is enough to satisfy the interface for the
+// recorder/gate tests that already exist. They sum across the same
+// in-memory rows the gate test uses; behaviour mirrors the SQL
+// repository's columnar shape one row per group.
+func (r *fakeRepo) SessionUsage(_ context.Context, sessionID string) ([]llmusage.UsageBreakdown, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byCur := map[string]*llmusage.UsageBreakdown{}
+	for _, row := range r.rows {
+		if row.SessionID != sessionID {
+			continue
+		}
+		b, ok := byCur[row.Currency]
+		if !ok {
+			b = &llmusage.UsageBreakdown{Currency: row.Currency, SessionID: sessionID}
+			byCur[row.Currency] = b
+		}
+		b.Calls++
+		b.InputTokens += int64(row.InputTokens)
+		b.OutputTokens += int64(row.OutputTokens)
+		b.EstimatedCostNano += row.EstimatedCostNano
+	}
+	out := make([]llmusage.UsageBreakdown, 0, len(byCur))
+	for _, b := range byCur {
+		out = append(out, *b)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) AggregateUsage(_ context.Context, lower, upper time.Time) ([]llmusage.UsageBreakdown, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byCur := map[string]*llmusage.UsageBreakdown{}
+	for _, row := range r.rows {
+		t := row.Timestamp
+		if t.Before(lower) || !t.Before(upper) {
+			continue
+		}
+		b, ok := byCur[row.Currency]
+		if !ok {
+			b = &llmusage.UsageBreakdown{Currency: row.Currency}
+			byCur[row.Currency] = b
+		}
+		b.Calls++
+		b.InputTokens += int64(row.InputTokens)
+		b.OutputTokens += int64(row.OutputTokens)
+		b.EstimatedCostNano += row.EstimatedCostNano
+	}
+	out := make([]llmusage.UsageBreakdown, 0, len(byCur))
+	for _, b := range byCur {
+		out = append(out, *b)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) PerModelUsage(_ context.Context, lower, upper time.Time) ([]llmusage.UsageBreakdown, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	type key struct{ model, currency string }
+	groups := map[key]*llmusage.UsageBreakdown{}
+	for _, row := range r.rows {
+		t := row.Timestamp
+		if t.Before(lower) || !t.Before(upper) {
+			continue
+		}
+		k := key{row.Model, row.Currency}
+		b, ok := groups[k]
+		if !ok {
+			b = &llmusage.UsageBreakdown{Model: row.Model, Currency: row.Currency}
+			groups[k] = b
+		}
+		b.Calls++
+		b.InputTokens += int64(row.InputTokens)
+		b.OutputTokens += int64(row.OutputTokens)
+		b.EstimatedCostNano += row.EstimatedCostNano
+	}
+	out := make([]llmusage.UsageBreakdown, 0, len(groups))
+	for _, b := range groups {
+		out = append(out, *b)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) PerPrincipalUsage(_ context.Context, lower, upper time.Time) ([]llmusage.UsageBreakdown, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	type key struct{ principal, currency string }
+	groups := map[key]*llmusage.UsageBreakdown{}
+	for _, row := range r.rows {
+		t := row.Timestamp
+		if t.Before(lower) || !t.Before(upper) {
+			continue
+		}
+		k := key{row.Principal, row.Currency}
+		b, ok := groups[k]
+		if !ok {
+			b = &llmusage.UsageBreakdown{Principal: row.Principal, Currency: row.Currency}
+			groups[k] = b
+		}
+		b.Calls++
+		b.InputTokens += int64(row.InputTokens)
+		b.OutputTokens += int64(row.OutputTokens)
+		b.EstimatedCostNano += row.EstimatedCostNano
+	}
+	out := make([]llmusage.UsageBreakdown, 0, len(groups))
+	for _, b := range groups {
+		out = append(out, *b)
+	}
+	return out, nil
+}
+
 // CountForeignCurrency counts rows whose Currency differs from the
 // supplied currency. Mirrors the SQL repository contract.
 func (r *fakeRepo) CountForeignCurrency(_ context.Context, currency string) (int64, error) {

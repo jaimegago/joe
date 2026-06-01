@@ -93,6 +93,19 @@ func (s *MutationService) WithClock(now func() time.Time) *MutationService {
 	return s
 }
 
+// Repo exposes the underlying repository for READ-ONLY callers. The
+// Stream G phase G5 settings GET endpoint reads the active model, cost
+// limits, and runaway ceiling through this accessor so handlers do
+// not need a second injected dependency alongside the mutation
+// service. Writes MUST still go through the SetActiveModel /
+// SetCostLimit / SetRunawayCeiling methods on the service — they
+// commit the value AND the audit row in one transaction. The
+// repository surface exposes mutator methods (UpdateActiveModelTx
+// etc.), but those require a transaction handle; calling them outside
+// the mutation service is a programming error and skips the audit
+// row, which the service is the SINGLE point of.
+func (s *MutationService) Repo() Repository { return s.repo }
+
 // SetActiveModel persists the new active-model value and writes one
 // settings-mutation audit row atomically against the same
 // transaction. The caller (api/models.go) is responsible for swapping

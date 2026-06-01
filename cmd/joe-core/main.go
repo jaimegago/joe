@@ -656,6 +656,13 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if saResolver.Configured() || oidcConfigured {
 		policyEngine = rbac.NewPolicyEngine(rbacRepo)
 	}
+	// Stream G phase G5: surface the RBAC-enabled signal to handlers.
+	// Set once here at the engine-build site so the accessor's
+	// rbac-disabled short-circuit predicate, the policy engine
+	// nil-ness, and services.RBACEnabled are the SAME statement
+	// about the same configuration. Handlers (current-user, the admin
+	// gate) consult this field rather than re-deriving the predicate.
+	services.RBACEnabled = policyEngine != nil
 
 	// Identity Phase C: server-side sessions + the OIDC login flow.
 	// authRepo persists sessions and in-flight login flows (migration 014).

@@ -49,6 +49,18 @@ type Services struct {
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
 	RBAC           rbac.Repository // nil when RBAC is not configured
+	// RBACEnabled mirrors the predicate the policy engine is built
+	// from in cmd/joe-core/main.go: true exactly when a real caller
+	// principal can be established (a service account OR OIDC is
+	// configured). It is the SAME predicate the accessor uses to
+	// decide whether to short-circuit its rbac-disabled allow-path and
+	// the same condition that makes rbac.PolicyEngine non-nil. Set
+	// once at the engine-build site (Stream G phase G5) so HTTP
+	// handlers — the current-user endpoint and the admin gate — can
+	// answer "is enforcement active right now?" without re-deriving
+	// the predicate from config. A nil PolicyEngine and RBACEnabled
+	// false are equivalent statements about the same configuration.
+	RBACEnabled bool
 	// Audit is the append-only audit trail (Identity Phase F,
 	// docs/joe-identity-design.md §2.6). Wired by cmd/joe-core/main.go after
 	// the store migrations run. Consumers: the guarded accessor
