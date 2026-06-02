@@ -109,6 +109,15 @@ export const CurrentUserSchema = z.object({
   oidc_enabled: z.boolean(),
 });
 
+// Public auth config (Stream H2 follow-up — GET /api/v1/auth/config).
+//
+// The single app-wide capability the logged-out shell needs before any
+// credential exists: whether OIDC human login is configured. Served under the
+// public /api/v1/auth/ prefix so it is readable pre-auth, unlike /me.
+export const AuthConfigSchema = z.object({
+  oidc_enabled: z.boolean(),
+});
+
 // LLM settings (Stream G phase G5 — GET /api/v1/llm/settings)
 //
 // State is the backend's configured-vs-backstop label; effective is the
