@@ -63,13 +63,29 @@ func NewProvisioner(repo rbac.Repository) *Provisioner {
 // this every time a login's verified email matches auth.admin_email. A
 // failure fails the login loudly rather than masquerading as a working
 // admin.
-func (p *Provisioner) GrantAdmin(ctx context.Context, principal rbac.Principal) error {
+//
+// The returned wasNew reports whether this call was a real privilege
+// escalation (the principal was NOT already an admin) versus a repeat grant
+// on an existing admin. The AddAdmin upsert advances granted_at on every
+// call and so cannot itself distinguish the two; the discriminator is an
+// IsAdmin pre-check read here, BEFORE the upsert, so wasNew reflects the
+// state prior to this call. Keeping the read and the upsert inside this one
+// method keeps them atomic from the caller's view — callers must not split
+// the IsAdmin check and the grant across two calls (a TOCTOU window).
+// wasNew lets the OIDC callback audit first-time escalations exactly once
+// (internal/auth/handlers.go::recordAdminGrantAudit) without auditing
+// per-login repeats.
+func (p *Provisioner) GrantAdmin(ctx context.Context, principal rbac.Principal) (wasNew bool, err error) {
+	already, err := p.repo.IsAdmin(ctx, string(principal))
+	if err != nil {
+		return false, fmt.Errorf("auth: check existing admin status: %w", err)
+	}
 	if err := p.repo.AddAdmin(ctx, rbac.Admin{
 		Principal: string(principal),
 		GrantedBy: GrantedByBootstrapAdminEmail,
 		Reason:    BootstrapAdminReason,
 	}); err != nil {
-		return fmt.Errorf("auth: mark admin: %w", err)
+		return false, fmt.Errorf("auth: mark admin: %w", err)
 	}
 	// Single source of truth: any rbac_policies rows for the admin are
 	// redundant (the admin capability covers them on every zone) and could
@@ -77,7 +93,7 @@ func (p *Provisioner) GrantAdmin(ctx context.Context, principal rbac.Principal) 
 	// authority has exactly one storage site. This is also the migration
 	// step from the Phase C snapshot definition.
 	if _, err := p.repo.DeletePoliciesForPrincipal(ctx, string(principal)); err != nil {
-		return fmt.Errorf("auth: clean up redundant policies for admin %q: %w", principal, err)
+		return false, fmt.Errorf("auth: clean up redundant policies for admin %q: %w", principal, err)
 	}
-	return nil
+	return !already, nil
 }

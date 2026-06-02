@@ -20,6 +20,11 @@ import (
 // column of an OIDC-login audit row.
 const auditSourceOIDC = "oidc"
 
+// auditSourceAdminBootstrap names the mechanism recorded in the Source column
+// of an admin-grant audit row: the auth.admin_email match in the OIDC callback
+// that bootstraps a logging-in user to admin for the first time.
+const auditSourceAdminBootstrap = "admin-bootstrap"
+
 // Handlers serves the three OIDC endpoints the Web UI front end calls:
 // login initiation, IdP callback, and logout. The front end is separate; this
 // package provides the complete, testable server flow.
@@ -191,13 +196,16 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	// Admin bootstrap: the configured admin email gains admin authority on
 	// (every) login (design §2.9). A grant failure must not silently masquerade
 	// as a working admin, so it fails the login loudly.
+	adminWasNew := false
 	if h.adminEmail != "" && strings.EqualFold(vt.Claims.Email, h.adminEmail) {
-		if err := h.provisioner.GrantAdmin(ctx, principal); err != nil {
+		wasNew, err := h.provisioner.GrantAdmin(ctx, principal)
+		if err != nil {
 			slog.Error("auth: admin bootstrap grant failed", "principal", principal, "error", err)
 			writeError(w, http.StatusInternalServerError, "bootstrap_failed", "failed to provision admin authority")
 			return
 		}
-		slog.Info("auth: admin bootstrap granted", "principal", principal)
+		adminWasNew = wasNew
+		slog.Info("auth: admin bootstrap granted", "principal", principal, "first_grant", wasNew)
 	}
 
 	session, err := h.sessions.Mint(ctx, principal)
@@ -212,6 +220,13 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	// write is fail-open-but-loud — an audit failure must not block the
 	// login or the redirect.
 	h.recordLoginAudit(ctx, principal, vt.Claims.Email, r)
+	// Privilege-escalation audit: record the admin grant only when it was a
+	// real first-time escalation (wasNew). Repeat admin logins are not
+	// escalation events and must produce no per-login noise. Fail-open-but-
+	// loud, like recordLoginAudit.
+	if adminWasNew {
+		h.recordAdminGrantAudit(ctx, principal, vt.Claims.Email, r)
+	}
 	http.Redirect(w, r, h.postLoginRedirect, http.StatusFound)
 }
 
@@ -241,6 +256,38 @@ func (h *Handlers) recordLoginAudit(ctx context.Context, principal rbac.Principa
 	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
 	// gives fail-open-but-loud without changing FailurePosture.
 	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login")
+}
+
+// recordAdminGrantAudit writes one auth_login audit row recording a privilege
+// escalation: the first-time admin bootstrap of a logging-in user via the
+// auth.admin_email match. The caller invokes this ONLY when GrantAdmin
+// reported wasNew (a real escalation), so it never fires on repeat admin
+// logins. Like recordLoginAudit it is fail-open-but-loud — on a write failure
+// it calls FailurePosture (loud log) and discards the return so the login
+// still completes and redirects. nil-safe — a nil audit repository skips the
+// write.
+func (h *Handlers) recordAdminGrantAudit(ctx context.Context, principal rbac.Principal, email string, r *http.Request) {
+	if h.audit == nil {
+		return
+	}
+	blob, _ := json.Marshal(map[string]string{
+		"email":      email,
+		"remote":     r.RemoteAddr,
+		"user_agent": r.UserAgent(),
+	})
+	err := h.audit.Insert(ctx, audit.Event{
+		Principal: string(principal),
+		Action:    audit.ActionAdminGranted,
+		Source:    auditSourceAdminBootstrap,
+		Decision:  audit.DecisionAllow,
+		Reason:    "admin_granted",
+		Kind:      audit.KindAuthLogin,
+		Context:   string(blob),
+	})
+	// Discard the return: an admin-grant escalation is not read-class, so
+	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
+	// gives fail-open-but-loud without changing FailurePosture.
+	_ = audit.FailurePosture(ctx, audit.ActionAdminGranted, err, "auth:admin_granted")
 }
 
 // Logout revokes the server-side session (immediate, by deleting the row) and

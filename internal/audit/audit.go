@@ -169,6 +169,15 @@ const (
 	// within the session-TTL window) rather than on every request. The
 	// principal is svc:<name>.
 	ActionBreakGlassUse = "break_glass_use"
+
+	// ActionAdminGranted records a privilege escalation: a logging-in user
+	// bootstrapped to admin for the FIRST time via the auth.admin_email
+	// match in the OIDC callback. Carries kind KindAuthLogin and decision
+	// "allow", like the other auth-login verbs. Written exactly once — on
+	// the login that first grants admin authority — never on subsequent
+	// repeat admin logins, so it captures escalation without per-login
+	// noise. The principal is user:<email>.
+	ActionAdminGranted = "admin_granted"
 )
 
 // Event is one audit row. The fields map 1:1 to audit_log columns

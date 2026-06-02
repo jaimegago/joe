@@ -19,8 +19,12 @@ func TestPhaseH_GrantAdminMarksDynamicCapability(t *testing.T) {
 	prov := NewProvisioner(rbacRepo)
 
 	ctx := context.Background()
-	if err := prov.GrantAdmin(ctx, "user:admin@example.com"); err != nil {
+	wasNew, err := prov.GrantAdmin(ctx, "user:admin@example.com")
+	if err != nil {
 		t.Fatalf("GrantAdmin: %v", err)
+	}
+	if !wasNew {
+		t.Error("first GrantAdmin must report wasNew=true (a real escalation)")
 	}
 
 	isAdmin, err := rbacRepo.IsAdmin(ctx, "user:admin@example.com")
@@ -77,7 +81,7 @@ func TestPhaseH_NoLeftoverSnapshotGrants(t *testing.T) {
 		}
 	}
 
-	if err := prov.GrantAdmin(ctx, "user:admin@example.com"); err != nil {
+	if _, err := prov.GrantAdmin(ctx, "user:admin@example.com"); err != nil {
 		t.Fatalf("GrantAdmin: %v", err)
 	}
 
@@ -107,8 +111,14 @@ func TestPhaseH_GrantAdminIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		if err := prov.GrantAdmin(ctx, "user:admin@example.com"); err != nil {
+		wasNew, err := prov.GrantAdmin(ctx, "user:admin@example.com")
+		if err != nil {
 			t.Fatalf("GrantAdmin call %d: %v", i+1, err)
+		}
+		// First call is the escalation; repeats must report wasNew=false so
+		// the OIDC callback audits the grant exactly once.
+		if want := i == 0; wasNew != want {
+			t.Errorf("GrantAdmin call %d: wasNew = %v, want %v", i+1, wasNew, want)
 		}
 	}
 
