@@ -55,6 +55,7 @@ import (
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/warnings"
+	"github.com/jaimegago/joe/internal/webui"
 )
 
 // version is set at build time via ldflags:
@@ -731,9 +732,20 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 		slog.Info("API rate limiting enabled", "rps", cfg.Server.RateLimitRPS, "burst", cfg.Server.RateLimitBurst)
 	}
 
+	// Mount the embedded web UI outside the middleware chain. Requests under
+	// /api/v1 are delegated to the wrapped chain above unchanged (including its
+	// JSON 404s for unknown API paths); every other path is served same-origin
+	// from the embedded SPA with no edge auth, so the logged-out login UI loads
+	// without any credential. This is the H2 OIDC same-origin prerequisite.
+	rootHandler, err := webui.Mount(handler)
+	if err != nil {
+		slog.Error("failed to initialize embedded web UI handler", "error", err)
+		return 1
+	}
+
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      handler,
+		Handler:      rootHandler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}

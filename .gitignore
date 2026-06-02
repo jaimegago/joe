@@ -28,6 +28,13 @@ vendor/
 # Build cache
 /dist/
 
+# Embedded web UI build output. `make build-ui` stages the real Vite build
+# (index.html, vite.svg, hashed assets/*) into internal/webui/dist; none of it
+# is committed. Only the .gitkeep placeholder stays tracked so the go:embed
+# directive matches in a fresh checkout.
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
 # macOS
 .DS_Store
 
