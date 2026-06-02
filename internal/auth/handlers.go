@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,8 +12,13 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
+
+// auditSourceOIDC names the credential mechanism recorded in the Source
+// column of an OIDC-login audit row.
+const auditSourceOIDC = "oidc"
 
 // Handlers serves the three OIDC endpoints the Web UI front end calls:
 // login initiation, IdP callback, and logout. The front end is separate; this
@@ -24,6 +31,10 @@ type Handlers struct {
 	adminEmail        string
 	postLoginRedirect string
 	now               func() time.Time
+	// audit records one auth_login row per successful login (Stream H3).
+	// nil when no audit store is wired (dev/local, tests) — the login
+	// proceeds exactly as before in that case.
+	audit audit.Repository
 }
 
 // HandlerConfig wires the dependencies for Handlers.
@@ -34,6 +45,9 @@ type HandlerConfig struct {
 	RBAC              rbac.Repository
 	AdminEmail        string
 	PostLoginRedirect string
+	// Audit is the append-only audit trail. nil-safe: a nil repository
+	// disables the auth_login write and leaves the login flow unchanged.
+	Audit audit.Repository
 }
 
 // NewHandlers builds the auth Handlers. PostLoginRedirect defaults to "/".
@@ -50,6 +64,7 @@ func NewHandlers(cfg HandlerConfig) *Handlers {
 		adminEmail:        cfg.AdminEmail,
 		postLoginRedirect: redirect,
 		now:               time.Now,
+		audit:             cfg.Audit,
 	}
 }
 
@@ -192,7 +207,40 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	h.sessions.SetCookie(w, session)
 	slog.Info("auth: login succeeded", "principal", principal)
+	// Stream H3: record credential use. Mint fires exactly once per login
+	// episode, so this writes exactly one auth_login row per login. The
+	// write is fail-open-but-loud — an audit failure must not block the
+	// login or the redirect.
+	h.recordLoginAudit(ctx, principal, vt.Claims.Email, r)
 	http.Redirect(w, r, h.postLoginRedirect, http.StatusFound)
+}
+
+// recordLoginAudit writes one auth_login audit row for a successful OIDC
+// human login. It is fail-open-but-loud: on a write failure it calls
+// FailurePosture (which logs loudly) and discards the return so the login
+// still completes. nil-safe — a nil audit repository skips the write.
+func (h *Handlers) recordLoginAudit(ctx context.Context, principal rbac.Principal, email string, r *http.Request) {
+	if h.audit == nil {
+		return
+	}
+	blob, _ := json.Marshal(map[string]string{
+		"email":      email,
+		"remote":     r.RemoteAddr,
+		"user_agent": r.UserAgent(),
+	})
+	err := h.audit.Insert(ctx, audit.Event{
+		Principal: string(principal),
+		Action:    audit.ActionOIDCLogin,
+		Source:    auditSourceOIDC,
+		Decision:  audit.DecisionAllow,
+		Reason:    "oidc_login",
+		Kind:      audit.KindAuthLogin,
+		Context:   string(blob),
+	})
+	// Discard the return: a login action is not read-class, so
+	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
+	// gives fail-open-but-loud without changing FailurePosture.
+	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login")
 }
 
 // Logout revokes the server-side session (immediate, by deleting the row) and

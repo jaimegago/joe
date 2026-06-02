@@ -165,6 +165,7 @@ func TestMigration017_AuditLog_AllKindConstantsInsertable(t *testing.T) {
 		audit.KindCaptainTransition,
 		audit.KindLLMSettingsMutation,
 		audit.KindLLMLimitTriggered,
+		audit.KindAuthLogin,
 	}
 	for _, k := range kinds {
 		if err := repo.Insert(ctx, audit.Event{

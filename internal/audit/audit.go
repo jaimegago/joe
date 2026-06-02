@@ -87,6 +87,16 @@ const (
 	// the same table as authorization decisions. The audit_log.kind
 	// CHECK admits this value as of migration 017.
 	KindLLMLimitTriggered Kind = "llm_limit_triggered"
+
+	// KindAuthLogin records credential use at the edge: an OIDC human
+	// login (one row per login episode, written from the auth callback
+	// after the session cookie is set) and break-glass service-account
+	// bearer use (one row per episode, windowed-deduplicated in the edge
+	// middleware so it is not written on every request). Stream H3; the
+	// audit_log.kind CHECK admits this value as of migration 018. Both
+	// paths are fail-open-but-loud — an audit-write failure logs loudly
+	// via FailurePosture but never blocks the login or the request.
+	KindAuthLogin Kind = "auth_login"
 )
 
 // Action-verb constants for transition rows. Accessor rows use the
@@ -143,6 +153,22 @@ const (
 	// an LLM call because a configured threshold would be exceeded.
 	// The decision on this row is "deny".
 	ActionLLMCostLimitRefused = "llm_cost_limit_refused"
+
+	// Stream H3 auth-login action verbs. Both rows carry kind
+	// KindAuthLogin and decision "allow" (the row records that the
+	// credential was used and accepted, not a separate gate outcome).
+
+	// ActionOIDCLogin records a successful OIDC human login. Written once
+	// per login episode from the auth callback, after the session cookie
+	// is set and before the redirect. The principal is user:<email>.
+	ActionOIDCLogin = "oidc_login"
+
+	// ActionBreakGlassUse records break-glass service-account bearer
+	// credential use. Written from the edge middleware, windowed-
+	// deduplicated so it fires once per episode (per principal+remote
+	// within the session-TTL window) rather than on every request. The
+	// principal is svc:<name>.
+	ActionBreakGlassUse = "break_glass_use"
 )
 
 // Event is one audit row. The fields map 1:1 to audit_log columns
