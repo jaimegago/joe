@@ -3,15 +3,25 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { AuthProvider } from '@/auth/AuthContext';
+import { createWrapper } from '@/test/utils';
 
 vi.mock('@/hooks/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 const mockUseCurrentUser = vi.mocked(useCurrentUser);
 
+// Sidebar consumes both useCurrentUser (admin-link visibility) and the auth
+// context (logout control), so it renders inside an AuthProvider. AuthProvider
+// reads the same mocked useCurrentUser, so a single mock drives both.
 function renderSidebar() {
+  const { Wrapper } = createWrapper();
   render(
-    <MemoryRouter>
-      <Sidebar />
-    </MemoryRouter>
+    <Wrapper>
+      <AuthProvider>
+        <MemoryRouter>
+          <Sidebar />
+        </MemoryRouter>
+      </AuthProvider>
+    </Wrapper>
   );
 }
 

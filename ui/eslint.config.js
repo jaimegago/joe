@@ -38,6 +38,15 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  // The auth context file exports the AuthProvider component alongside its
+  // companion useAuth hook — the standard React context pattern. Allow the
+  // mixed export rather than splitting the tightly-coupled pair.
+  {
+    files: ['src/auth/AuthContext.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
   // React Flow controlled mode requires setState in useEffect to sync external data.
   // This is the documented React Flow pattern; the rule is too strict here.
   {

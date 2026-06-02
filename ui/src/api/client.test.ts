@@ -68,4 +68,49 @@ describe('ApiClient', () => {
     const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((opts.headers as Record<string, string>).Authorization).toBe('Bearer my-token');
   });
+
+  it('throws a typed ApiRequestError carrying the HTTP status on 401', async () => {
+    const mod = await import('./client');
+    const client = mod.apiClient;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ message: 'unauthorized' }),
+      })
+    );
+
+    await expect(client.get('/secure')).rejects.toBeInstanceOf(mod.ApiRequestError);
+    await expect(client.get('/secure')).rejects.toMatchObject({ status: 401, message: 'unauthorized' });
+  });
+
+  it('invokes the unauthorized handler exactly on 401, not on other non-2xx', async () => {
+    const client = await getClient();
+    const onUnauthorized = vi.fn();
+    client.setUnauthorizedHandler(onUnauthorized);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ message: 'nope' }),
+      })
+    );
+    await expect(client.get('/secure')).rejects.toBeTruthy();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ message: 'boom' }),
+      })
+    );
+    await expect(client.get('/secure')).rejects.toBeTruthy();
+    // Still once — a 500 must not trip the logged-out transition.
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
 });
