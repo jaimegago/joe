@@ -1,7 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, Database, MessageSquare, ShieldCheck, Cpu } from 'lucide-react';
+import { LayoutDashboard, Network, Database, MessageSquare, ShieldCheck, Cpu, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAuth } from '@/auth/AuthContext';
+import { Button } from '@/components/ui/button';
 
 interface NavItem {
   to: string;
@@ -22,6 +24,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const meQ = useCurrentUser();
+  const { rbacEnabled, principal, logout } = useAuth();
   // is_admin is true in auth-disabled local mode, so this single predicate
   // surfaces admin entries there too. Until the query resolves, isAdmin is
   // false so admin-only entries never flash before status is known.
@@ -55,6 +58,21 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {/* Logout is only meaningful when RBAC is enforced; in permit-all local
+          dev there is no credential to drop, so the control stays hidden. */}
+      {rbacEnabled && (
+        <div className="border-t p-3">
+          {principal && (
+            <p className="mb-2 truncate px-3 text-xs text-muted-foreground" title={principal}>
+              {principal}
+            </p>
+          )}
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-3" onClick={logout}>
+            <LogOut className="h-4 w-4" />
+            Log out
+          </Button>
+        </div>
+      )}
     </aside>
   );
 }

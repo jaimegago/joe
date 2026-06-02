@@ -1,4 +1,8 @@
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:7777';
+// Default to a relative, same-origin base. In dev the Vite proxy
+// (vite.config.ts) forwards /api to joe-core; in prod the UI and API are
+// served from the same origin. VITE_API_URL remains an explicit override
+// for the rare cross-origin deployment.
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
 
 interface ApiError {
   error: string;
@@ -6,8 +10,26 @@ interface ApiError {
   details?: Record<string, unknown>;
 }
 
+// ApiRequestError is thrown for every non-2xx response. It extends Error so
+// existing catch sites that only read `.message` keep working, while adding
+// the HTTP `status` so callers (and the auth layer) can branch on 401 etc.
+// without parsing the message string.
+export class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    // Restore the prototype chain so `instanceof ApiRequestError` holds when
+    // compiled to ES targets that break subclassing of built-ins.
+    Object.setPrototypeOf(this, ApiRequestError.prototype);
+  }
+}
+
 class ApiClient {
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   setToken(token: string) {
     this.token = token;
@@ -15,6 +37,13 @@ class ApiClient {
 
   clearToken() {
     this.token = null;
+  }
+
+  // setUnauthorizedHandler registers a single callback invoked whenever any
+  // request returns 401. The auth layer uses it to flip the app to its
+  // logged-out state from anywhere, without each call site handling 401.
+  setUnauthorizedHandler(fn: (() => void) | null) {
+    this.onUnauthorized = fn;
   }
 
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -40,7 +69,10 @@ class ApiClient {
       } catch {
         // ignore parse error
       }
-      throw new Error(errMsg);
+      if (response.status === 401) {
+        this.onUnauthorized?.();
+      }
+      throw new ApiRequestError(response.status, errMsg);
     }
 
     return response.json() as Promise<T>;

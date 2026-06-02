@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
+import { AuthProvider } from '@/auth/AuthContext';
+import { AuthGate } from '@/auth/AuthGate';
+import { RequireAdmin } from '@/auth/RequireAdmin';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const GraphPage = lazy(() => import('@/pages/GraphPage').then(m => ({ default: m.GraphPage })));
@@ -27,19 +30,23 @@ export function App() {
   }, []);
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<AppShell />}>
-            <Route index element={<Suspense fallback={<LoadingPage />}><DashboardPage /></Suspense>} />
-            <Route path="graph" element={<Suspense fallback={<LoadingPage />}><GraphPage /></Suspense>} />
-            <Route path="sources" element={<Suspense fallback={<LoadingPage />}><SourcesPage /></Suspense>} />
-            <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
-            <Route path="chat/:sessionId" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
-            <Route path="admin" element={<Suspense fallback={<LoadingPage />}><AdminPage /></Suspense>} />
-            <Route path="llm-settings" element={<Suspense fallback={<LoadingPage />}><LLMSettingsPage /></Suspense>} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <AuthGate>
+            <Routes>
+              <Route path="/" element={<AppShell />}>
+                <Route index element={<Suspense fallback={<LoadingPage />}><DashboardPage /></Suspense>} />
+                <Route path="graph" element={<Suspense fallback={<LoadingPage />}><GraphPage /></Suspense>} />
+                <Route path="sources" element={<Suspense fallback={<LoadingPage />}><SourcesPage /></Suspense>} />
+                <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
+                <Route path="chat/:sessionId" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
+                <Route path="admin" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><AdminPage /></Suspense></RequireAdmin>} />
+                <Route path="llm-settings" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><LLMSettingsPage /></Suspense></RequireAdmin>} />
+              </Route>
+            </Routes>
+          </AuthGate>
+        </BrowserRouter>
+      </AuthProvider>
       <Toaster position="top-right" />
     </QueryClientProvider>
   );
