@@ -104,6 +104,9 @@ export const CurrentUserSchema = z.object({
   principal: z.string(),
   is_admin: z.boolean(),
   rbac_enabled: z.boolean(),
+  // Stream H2 — app-wide capability flag: whether OIDC human login is
+  // configured. Always sent by the server, so required here.
+  oidc_enabled: z.boolean(),
 });
 
 // LLM settings (Stream G phase G5 — GET /api/v1/llm/settings)

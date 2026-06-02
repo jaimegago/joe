@@ -6,6 +6,7 @@ import {
   ChatMessageSchema,
   AlertSchema,
   SessionSchema,
+  CurrentUserSchema,
 } from './schemas';
 
 describe('GraphNodeSchema', () => {
@@ -126,6 +127,25 @@ describe('AlertSchema', () => {
         timestamp: 't',
         acknowledged: false,
       })
+    ).toThrow();
+  });
+});
+
+describe('CurrentUserSchema', () => {
+  it('parses a current-user payload including oidc_enabled', () => {
+    const user = CurrentUserSchema.parse({
+      principal: 'user:alice',
+      is_admin: true,
+      rbac_enabled: true,
+      oidc_enabled: true,
+    });
+    expect(user.oidc_enabled).toBe(true);
+    expect(user.principal).toBe('user:alice');
+  });
+
+  it('requires oidc_enabled', () => {
+    expect(() =>
+      CurrentUserSchema.parse({ principal: 'user:bob', is_admin: false, rbac_enabled: true })
     ).toThrow();
   });
 });

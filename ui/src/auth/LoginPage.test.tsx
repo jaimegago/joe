@@ -64,7 +64,13 @@ describe('LoginPage', () => {
             ? {
                 ok: true,
                 status: 200,
-                json: () => Promise.resolve({ principal: 'alice', is_admin: false, rbac_enabled: true }),
+                json: () =>
+                  Promise.resolve({
+                    principal: 'alice',
+                    is_admin: false,
+                    rbac_enabled: true,
+                    oidc_enabled: false,
+                  }),
               }
             : { ok: false, status: 401, json: () => Promise.resolve({ message: 'unauthorized' }) }
         );

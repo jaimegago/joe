@@ -25,6 +25,12 @@ type currentUserResponse struct {
 	Principal   string `json:"principal"`
 	IsAdmin     bool   `json:"is_admin"`
 	RBACEnabled bool   `json:"rbac_enabled"`
+	// OIDCEnabled tells the Web UI whether to offer the OIDC login button
+	// (Stream H2). Sourced from cfg.Auth.OIDC.Configured() via
+	// services.OIDCEnabled; present and correct whether OIDC is
+	// configured or not. It is an app-wide capability flag, not a
+	// per-caller fact, but rides on /me to avoid a second endpoint.
+	OIDCEnabled bool `json:"oidc_enabled"`
 }
 
 // handleCurrentUser implements GET /api/v1/me.
@@ -46,6 +52,7 @@ func (s *Server) handleCurrentUser(w http.ResponseWriter, r *http.Request) {
 		Principal:   string(principal),
 		IsAdmin:     isAdmin,
 		RBACEnabled: rbacEnabled,
+		OIDCEnabled: s.services != nil && s.services.OIDCEnabled,
 	})
 }
 
