@@ -129,6 +129,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Stream G phase G5: LLM-instrumentation HTTP API — current-user,
 	// settings reads + admin-gated writes, usage views, providers.
 	s.registerCurrentUserRoutes(mux, apiPrefix)
+	// Stream H2 follow-up: public auth-config endpoint under /api/v1/auth/,
+	// so the cold logged-out shell can read oidc_enabled before /me (which
+	// 401s pre-auth) is reachable.
+	s.registerAuthConfigRoutes(mux, apiPrefix)
 	s.registerLLMSettingsRoutes(mux, apiPrefix)
 	s.registerLLMUsageRoutes(mux, apiPrefix)
 	s.registerLLMProvidersRoutes(mux, apiPrefix)

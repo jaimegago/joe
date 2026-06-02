@@ -14,6 +14,7 @@ import type {
   ChatResponseSchema,
   AlertSchema,
   CurrentUserSchema,
+  AuthConfigSchema,
   LLMLimitStateSchema,
   LLMCostLimitSchema,
   LLMRunawayCeilingSchema,
@@ -41,6 +42,7 @@ export type Session = z.infer<typeof SessionSchema>;
 export type ChatResponse = z.infer<typeof ChatResponseSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
 export type CurrentUser = z.infer<typeof CurrentUserSchema>;
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type LLMLimitState = z.infer<typeof LLMLimitStateSchema>;
 export type LLMCostLimit = z.infer<typeof LLMCostLimitSchema>;
 export type LLMRunawayCeiling = z.infer<typeof LLMRunawayCeilingSchema>;

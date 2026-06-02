@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from './AuthContext';
+import { AuthGate } from './AuthGate';
 
 // These tests drive the whole chain — apiClient.request → fetchCurrentUser →
 // useCurrentUser → AuthProvider — through a mocked global fetch, so the
@@ -103,6 +104,11 @@ describe('AuthProvider', () => {
         if (String(url).includes('/api/v1/me')) {
           return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }));
         }
+        // The public auth-config endpoint is reachable and not a session
+        // signal — it must not be the 401 this test drives through /graph.
+        if (String(url).includes('/api/v1/auth/config')) {
+          return Promise.resolve(response(200, { oidc_enabled: false }));
+        }
         return Promise.resolve(response(401, { message: 'session expired' }));
       })
     );
@@ -184,5 +190,38 @@ describe('AuthProvider', () => {
     await userEvent.click(screen.getByRole('button', { name: 'login' }));
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'));
     expect(screen.getByTestId('principal')).toHaveTextContent('alice');
+  });
+
+  it('shows the OIDC button on the cold logged-out shell via the real path: /me 401 + public auth-config 200', async () => {
+    // The actual unauthed cold-load sequence, NOT a mocked oidcEnabled flag.
+    // /me sits behind the edge gate and 401s with no credential; the public
+    // /api/v1/auth/config endpoint returns oidc_enabled=true unauthed. Pre-fix
+    // the OIDC signal was read off the 401'd /me and defaulted to false, so
+    // the logged-out shell rendered the key field instead of the OIDC button —
+    // this test fails against that behavior and passes once the signal reads
+    // from the public endpoint.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown) => {
+        if (String(url).includes('/api/v1/auth/config')) {
+          return Promise.resolve(response(200, { oidc_enabled: true }));
+        }
+        // /me (and any other protected path) 401s for the credential-less caller.
+        return Promise.resolve(response(401, { message: 'unauthorized' }));
+      })
+    );
+
+    renderWithAuth(
+      <AuthGate>
+        <div>app shell</div>
+      </AuthGate>
+    );
+
+    // The OIDC primary button appears on the logged-out shell; the
+    // break-glass key field stays behind its disclosure.
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Service-account key')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /use a service-account key/i })).toBeInTheDocument();
+    expect(screen.queryByText('app shell')).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { apiClient, API_BASE } from '@/api/client';
 import { loadToken, saveToken, clearStoredToken } from '@/api/tokenStorage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAuthConfig } from '@/hooks/useAuthConfig';
 
 // Stream H1 — web UI authentication context.
 //
@@ -22,9 +23,13 @@ export interface AuthContextValue {
   principal: string | null;
   isAdmin: boolean;
   rbacEnabled: boolean;
-  // oidcEnabled reflects the server's app-wide OIDC-configured flag (from
-  // /me). The login view reads it to decide whether to offer the OIDC
-  // button; false until /me resolves.
+  // oidcEnabled reflects the server's app-wide OIDC-configured flag, read
+  // from the public GET /api/v1/auth/config endpoint (NOT /me). /me sits
+  // behind the edge gate and 401s pre-auth, so a /me-sourced flag would
+  // never be true on the cold logged-out shell — the OIDC button could not
+  // appear. The public endpoint resolves with no credential, so the login
+  // view reads it to decide whether to offer the OIDC button; false until
+  // the public config resolves.
   oidcEnabled: boolean;
   // login sets the bearer token, persists it, and re-fetches /me. It
   // rejects (without persisting an invalid token) if /me does not accept
@@ -62,6 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionExpired, setSessionExpired] = useState(false);
 
   const meQ = useCurrentUser();
+  // The OIDC-button signal comes from the public auth-config endpoint, fetched
+  // unauthed on load so it is available on the cold logged-out shell before
+  // any /me result. /me drives the authed state below; only this login-style
+  // capability flag reads from the public endpoint.
+  const authConfigQ = useAuthConfig();
 
   // Register the global 401 handler: clear the credential and force the
   // logged-out state from anywhere a request 401s after load.
@@ -132,12 +142,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       principal: data?.principal ?? null,
       isAdmin: data?.is_admin ?? false,
       rbacEnabled: data?.rbac_enabled ?? false,
-      oidcEnabled: data?.oidc_enabled ?? false,
+      oidcEnabled: authConfigQ.data?.oidc_enabled ?? false,
       login,
       loginWithOIDC,
       logout,
     };
-  }, [meQ.data, meQ.isError, sessionExpired, login, loginWithOIDC, logout]);
+  }, [meQ.data, meQ.isError, authConfigQ.data, sessionExpired, login, loginWithOIDC, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
