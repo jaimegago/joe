@@ -688,6 +688,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 			RBAC:              rbacRepo,
 			AdminEmail:        cfg.Auth.AdminEmail,
 			PostLoginRedirect: cfg.Auth.PostLoginRedirect,
+			Audit:             services.Audit,
 		})
 		authHandlers.RegisterRoutes(mux, "/api/v1")
 		slog.Info("OIDC login enabled", "issuer", cfg.Auth.OIDC.Issuer, "admin_email", cfg.Auth.AdminEmail != "")
@@ -711,9 +712,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 			return observability.HTTPMetricsMiddleware(h, metrics)
 		},
 		auth.EdgeAuth(auth.EdgeConfig{
-			Sessions:        sessionMgr,
-			ServiceAccounts: saResolver,
-			OIDCConfigured:  oidcConfigured,
+			Sessions:         sessionMgr,
+			ServiceAccounts:  saResolver,
+			OIDCConfigured:   oidcConfigured,
+			Audit:            services.Audit,
+			AuditDedupWindow: cfg.Auth.SessionTTL,
 		}),
 		// Phase 1 Change 9: thread session/run/idempotency-key
 		// request headers into context AFTER identity is resolved
