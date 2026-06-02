@@ -276,6 +276,37 @@ func TestCurrentUser_AuthDisabled(t *testing.T) {
 	}
 }
 
+// Stream H2 — /me reports oidc_enabled sourced from services.OIDCEnabled
+// (cfg.Auth.OIDC.Configured() at the build site). Present and correct
+// whether OIDC is configured or not.
+func TestCurrentUser_OIDCEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		oidcEnabled bool
+	}{
+		{"oidc configured", true},
+		{"oidc not configured", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newLLMAdminFixture(t, true)
+			f.services.OIDCEnabled = tc.oidcEnabled
+			w := f.do(http.MethodGet, "/api/v1/me", "", "user:alice")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			var body struct {
+				OIDCEnabled bool `json:"oidc_enabled"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if body.OIDCEnabled != tc.oidcEnabled {
+				t.Errorf("oidc_enabled = %v; want %v", body.OIDCEnabled, tc.oidcEnabled)
+			}
+		})
+	}
+}
+
 // --- Settings GET: backstop-fallback vs configured (including negative) ---
 
 func TestSettingsGet_BackstopAndConfiguredLabels(t *testing.T) {

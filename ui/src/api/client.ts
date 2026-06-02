@@ -2,7 +2,7 @@
 // (vite.config.ts) forwards /api to joe-core; in prod the UI and API are
 // served from the same origin. VITE_API_URL remains an explicit override
 // for the rare cross-origin deployment.
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
 
 interface ApiError {
   error: string;
@@ -59,6 +59,12 @@ class ApiClient {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
+      // Send the joe_session cookie on every request. Same-origin would send
+      // it by default, but 'include' also covers the cross-origin
+      // VITE_API_URL override so the human (cookie) session resolves there
+      // too. The conditional Authorization bearer header above is untouched,
+      // so cookie (human) and bearer (break-glass) coexist.
+      credentials: 'include',
     });
 
     if (!response.ok) {

@@ -61,6 +61,15 @@ type Services struct {
 	// the predicate from config. A nil PolicyEngine and RBACEnabled
 	// false are equivalent statements about the same configuration.
 	RBACEnabled bool
+	// OIDCEnabled mirrors cfg.Auth.OIDC.Configured() — true exactly when
+	// an OIDC issuer is configured and the login/callback/logout
+	// endpoints are registered (Stream H2). Set once at the same
+	// main.go build site that computes oidcConfigured, so the
+	// current-user handler can tell the Web UI whether to offer the OIDC
+	// login button without re-deriving the predicate from config. There
+	// is deliberately no second auth-config endpoint: /me already
+	// reports the per-caller auth facts and this rides alongside them.
+	OIDCEnabled bool
 	// Audit is the append-only audit trail (Identity Phase F,
 	// docs/joe-identity-design.md §2.6). Wired by cmd/joe-core/main.go after
 	// the store migrations run. Consumers: the guarded accessor

@@ -665,6 +665,11 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// about the same configuration. Handlers (current-user, the admin
 	// gate) consult this field rather than re-deriving the predicate.
 	services.RBACEnabled = policyEngine != nil
+	// Stream H2: surface OIDC-configured to the current-user handler so the
+	// Web UI knows whether to offer the OIDC login button. Same build site,
+	// same single-source predicate (oidcConfigured) the auth endpoints are
+	// registered from below — no second auth-config endpoint.
+	services.OIDCEnabled = oidcConfigured
 
 	// Identity Phase C: server-side sessions + the OIDC login flow.
 	// authRepo persists sessions and in-flight login flows (migration 014).

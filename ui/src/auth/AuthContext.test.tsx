@@ -31,12 +31,13 @@ function renderWithAuth(children: ReactNode) {
 }
 
 function Probe() {
-  const { status, isAdmin, rbacEnabled, principal, login, logout } = useAuth();
+  const { status, isAdmin, rbacEnabled, oidcEnabled, principal, login, logout } = useAuth();
   return (
     <div>
       <span data-testid="status">{status}</span>
       <span data-testid="admin">{String(isAdmin)}</span>
       <span data-testid="rbac">{String(rbacEnabled)}</span>
+      <span data-testid="oidc">{String(oidcEnabled)}</span>
       <span data-testid="principal">{principal ?? ''}</span>
       <button onClick={() => void apiClient.get('/api/v1/graph').catch(() => undefined)}>ping</button>
       <button onClick={() => void login('break-glass-token').catch(() => undefined)}>login</button>
@@ -56,7 +57,9 @@ describe('AuthProvider', () => {
   it('treats RBAC-off as authed regardless of token, with no login prompt', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(response(200, { principal: 'local', is_admin: true, rbac_enabled: false }))
+      vi.fn().mockResolvedValue(
+        response(200, { principal: 'local', is_admin: true, rbac_enabled: false, oidc_enabled: false })
+      )
     );
     renderWithAuth(<Probe />);
 
@@ -68,7 +71,7 @@ describe('AuthProvider', () => {
   it('is authed when RBAC is on and /me succeeds', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true }))
+      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }))
     );
     renderWithAuth(<Probe />);
 
@@ -98,7 +101,7 @@ describe('AuthProvider', () => {
       'fetch',
       vi.fn((url: unknown) => {
         if (String(url).includes('/api/v1/me')) {
-          return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true }));
+          return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }));
         }
         return Promise.resolve(response(401, { message: 'session expired' }));
       })
@@ -112,6 +115,55 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthed'));
   });
 
+  it('logout POSTs the server logout then clears local state', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown, opts?: RequestInit) => {
+        calls.push({ url: String(url), method: opts?.method });
+        if (String(url).includes('/api/v1/auth/logout')) {
+          return Promise.resolve(response(200, { ok: true }));
+        }
+        return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: true }));
+      })
+    );
+    renderWithAuth(<Probe />);
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'));
+    sessionStorage.setItem('joe.auth.token', 'some-token');
+
+    await userEvent.click(screen.getByRole('button', { name: 'logout' }));
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthed'));
+    // Server-side revoke was issued via POST before local state cleared.
+    const logoutCall = calls.find((c) => c.url.includes('/api/v1/auth/logout'));
+    expect(logoutCall?.method).toBe('POST');
+    // Local credential is gone.
+    expect(sessionStorage.getItem('joe.auth.token')).toBeNull();
+  });
+
+  it('clears local state even when the server logout POST fails (best-effort)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown) => {
+        if (String(url).includes('/api/v1/auth/logout')) {
+          // A stale cookie / server error on logout must not block local clear.
+          return Promise.resolve(response(500, { message: 'logout failed' }));
+        }
+        return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: true }));
+      })
+    );
+    renderWithAuth(<Probe />);
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'));
+    sessionStorage.setItem('joe.auth.token', 'some-token');
+
+    await userEvent.click(screen.getByRole('button', { name: 'logout' }));
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unauthed'));
+    expect(sessionStorage.getItem('joe.auth.token')).toBeNull();
+  });
+
   it('clears the session-expired flag so a logout then a valid login returns to authed in one session', async () => {
     // /me accepts every call; the only thing that moves auth state here is
     // logout() setting the session-expired flag and login() clearing it. If
@@ -119,7 +171,7 @@ describe('AuthProvider', () => {
     // after a successful re-login — this test guards that regression.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true }))
+      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }))
     );
     renderWithAuth(<Probe />);
 
