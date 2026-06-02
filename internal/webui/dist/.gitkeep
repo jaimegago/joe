@@ -1,0 +1,6 @@
+# This file keeps the embed target (internal/webui/dist) present in a fresh
+# checkout so `//go:embed all:dist` matches a file and the module compiles
+# before the UI is built. `make build-ui` stages the real Vite output
+# (index.html, vite.svg, assets/*) alongside it; all of that staged output is
+# gitignored. This .gitkeep is the only committed file under dist/ and is never
+# touched by the build, so a build leaves the git tree clean.

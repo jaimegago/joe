@@ -1,4 +1,10 @@
-.PHONY: run run-joe run-joe-core run-default run-ui run-stack build build-joe build-joe-core test clean fmt vet deps test-coverage-packages
+.PHONY: run run-joe run-joe-core run-default run-ui run-stack build build-joe build-joe-core build-ui test clean fmt vet deps test-coverage-packages
+
+# Directory the production UI build is staged into for go:embed. go:embed
+# cannot reach ui/dist directly (it lives outside the webui package subtree),
+# so build-ui copies the Vite output here. Only .gitkeep is committed; the
+# staged build output is gitignored.
+EMBED_UI_DIR := internal/webui/dist
 
 # Run joe-core (daemon) - start this first
 run-joe-core:
@@ -34,7 +40,16 @@ build: build-joe build-joe-core
 build-joe:
 	go build -o joe ./cmd/joe
 
-build-joe-core:
+# Build the production web UI and stage it into the embed directory. Old
+# staged output is cleared first (it is gitignored) while the committed
+# .gitkeep — never wiped — keeps the git tree clean across builds.
+build-ui:
+	cd ui && npm ci && npm run build
+	rm -rf $(EMBED_UI_DIR)/assets $(EMBED_UI_DIR)/index.html $(EMBED_UI_DIR)/vite.svg
+	mkdir -p $(EMBED_UI_DIR)
+	cp -R ui/dist/. $(EMBED_UI_DIR)/
+
+build-joe-core: build-ui
 	go build -o joe-core ./cmd/joe-core
 
 # Run all tests

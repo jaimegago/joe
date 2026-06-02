@@ -89,6 +89,13 @@ jobs:
         with:
           go-version: '1.25'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -97,7 +104,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Build binaries
+      # `make build` now embeds the real UI via the build-ui prerequisite, so
+      # the UI is built here (Node setup above). The unit, integration, and
+      # lint jobs deliberately stay Node-free and compile against the committed
+      # placeholder.
+      - name: Build binaries (embeds the web UI)
         run: make build
 
       - name: Run e2e tests
