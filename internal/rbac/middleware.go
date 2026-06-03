@@ -41,7 +41,7 @@ func contextWithPrincipal(ctx context.Context, p Principal) context.Context {
 
 // IdentityMiddleware injects the caller's Principal into the request context.
 // Retained for test harnesses that build their own auth chains. The production
-// chain in cmd/joe-core/main.go uses auth.EdgeAuth (Phase C/D), which resolves
+// chain in cmd/joe/server.go uses auth.EdgeAuth (Phase C/D), which resolves
 // the principal from a session cookie or service-account key and sets it via
 // WithPrincipal — exactly the same context value this middleware writes.
 func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handler {

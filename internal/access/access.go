@@ -76,7 +76,7 @@ type Accessor struct {
 	// docs/joe-identity-design.md §2.6). Every decision the accessor
 	// makes — allow and deny alike — writes ONE row here at the decision
 	// point. A nil auditRepo is treated as "audit disabled" (used by
-	// dev/local runs without a database); cmd/joe-core/main.go always
+	// dev/local runs without a database); cmd/joe/server.go always
 	// wires a real one. The failure split (§4) is fail-CLOSED for
 	// mutating actions and fail-OPEN for reads (see audit.FailurePosture).
 	auditRepo audit.Repository
@@ -85,7 +85,7 @@ type Accessor struct {
 // New builds an Accessor over the given registry, graph store, policy
 // engine, and audit repository. engine may be nil (RBAC disabled); auditRepo
 // may be nil (audit disabled — for tests and dev runs without a DB).
-// Production wiring in cmd/joe-core/main.go and internal/api/server.go
+// Production wiring in cmd/joe/server.go and internal/api/server.go
 // always supplies a real audit.Repository.
 func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.PolicyEngine, auditRepo audit.Repository) *Accessor {
 	return &Accessor{registry: registry, graph: graphStore, engine: engine, auditRepo: auditRepo}
@@ -108,7 +108,7 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 // A nil engine permits everything (RBAC disabled) — but the audit row is
 // still written, with reason "rbac_disabled", so the trail is complete even
 // in unauthenticated dev mode. A nil auditRepo skips the audit write
-// entirely (test/dev only; cmd/joe-core/main.go always wires a real repo).
+// entirely (test/dev only; cmd/joe/server.go always wires a real repo).
 //
 // At launch the set has exactly one member — the caller's own context-derived
 // principal — formed by permitForPrincipal below; the set shape is built now so

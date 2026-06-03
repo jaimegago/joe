@@ -1,4 +1,4 @@
-.PHONY: run run-joe run-joe-core run-default run-ui run-stack build build-joe build-joe-core build-ui test clean fmt vet deps test-coverage-packages
+.PHONY: run run-joe run-ui run-stack build build-joe build-ui test clean fmt vet deps test-coverage-packages
 
 # Directory the production UI build is staged into for go:embed. go:embed
 # cannot reach ui/dist directly (it lives outside the webui package subtree),
@@ -6,38 +6,31 @@
 # staged build output is gitignored.
 EMBED_UI_DIR := internal/webui/dist
 
-# Run joe-core (daemon) - start this first
-run-joe-core:
-	go run ./cmd/joe-core
-
-# Run joe (CLI) - requires joe-core to be running
+# Run joe (the server daemon) - start this first
 run-joe:
 	go run ./cmd/joe
 
-# Run joe with default config location
-run-default:
-	go run ./cmd/joe
-
-# Run the web UI dev server (requires joe-core to be running)
+# Run the web UI dev server (requires joe to be running)
 run-ui:
 	cd ui && npm run dev
 
-# Run joe-core + web UI together (requires two terminals; use this as a reminder)
-# In practice, run each in a separate terminal: make run-joe-core / make run-ui
+# Run joe + web UI together (requires two terminals; use this as a reminder)
+# In practice, run each in a separate terminal: make run-joe / make run-ui
 run-stack:
 	@echo "Start the stack in two terminals:"
-	@echo "  Terminal 1: make run-joe-core"
+	@echo "  Terminal 1: make run-joe"
 	@echo "  Terminal 2: make run-ui"
 	@echo ""
 	@echo "Then open http://localhost:5173"
 
-# Alias: "make run" starts joe-core (the component you run first)
-run: run-joe-core
+# Alias: "make run" starts the joe server (the component you run first)
+run: run-joe
 
-# Build all binaries
-build: build-joe build-joe-core
+# Build the joe binary (server + subcommands), with the production web UI
+# embedded via the build-ui prerequisite.
+build: build-joe
 
-build-joe:
+build-joe: build-ui
 	go build -o joe ./cmd/joe
 
 # Build the production web UI and stage it into the embed directory. Old
@@ -48,9 +41,6 @@ build-ui:
 	rm -rf $(EMBED_UI_DIR)/assets $(EMBED_UI_DIR)/index.html $(EMBED_UI_DIR)/vite.svg
 	mkdir -p $(EMBED_UI_DIR)
 	cp -R ui/dist/. $(EMBED_UI_DIR)/
-
-build-joe-core: build-ui
-	go build -o joe-core ./cmd/joe-core
 
 # Run all tests
 test:
@@ -111,7 +101,7 @@ test-verbose:
 
 # Clean build artifacts
 clean:
-	rm -f joe joe-core
+	rm -f joe
 
 # Format code
 fmt:

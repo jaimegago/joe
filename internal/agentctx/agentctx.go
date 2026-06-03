@@ -1,5 +1,5 @@
 // Package agentctx carries the session/run/idempotency-key request
-// context that joe-core's HTTP middleware (api.SessionMiddleware) reads
+// context that joe's HTTP middleware (api.SessionMiddleware) reads
 // from request headers and the durable executor wrapper
 // (coreagent.DurableExecutor) consumes when persisting tool-call intent.
 //

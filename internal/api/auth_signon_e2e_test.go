@@ -6,7 +6,7 @@ package api_test
 // auth.Handlers + api.Server (/me, /auth/config) + the append-only audit log +
 // server-side sessions — over a TLS httptest server with a cookie-jar client.
 //
-// The one thing it does NOT use is a live IdP: joe-core has no config seam to
+// The one thing it does NOT use is a live IdP: joe has no config seam to
 // point the binary at a fake Google, and an automated test must not talk to the
 // real one. So it injects a fakeProvider implementing the auth.Provider seam
 // (the same seam the production oidcProvider implements). Everything else —
@@ -129,7 +129,7 @@ func newAuthServer(t *testing.T, adminEmail string) *authTestServer {
 	srv.RegisterRoutes(mux)                 // /api/v1/me, /api/v1/auth/config, /api/v1/status, ...
 	handlers.RegisterRoutes(mux, "/api/v1") // /api/v1/auth/{login,callback,logout}
 
-	// The real edge gate, configured exactly as cmd/joe-core wires it: OIDC on,
+	// The real edge gate, configured exactly as cmd/joe wires it: OIDC on,
 	// break-glass dedup window = the session TTL.
 	handler := auth.EdgeAuth(auth.EdgeConfig{
 		Sessions:         sessionMgr,

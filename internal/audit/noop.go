@@ -7,7 +7,7 @@ import (
 
 // NoopRepository discards every Insert call. Used by code paths that have
 // no audit store wired (legacy tests, dev/local runs without a database).
-// In production, cmd/joe-core/main.go always wires the SQL repository, so
+// In production, cmd/joe/server.go always wires the SQL repository, so
 // the accessor and transition sites get real audit rows.
 type NoopRepository struct{}
 

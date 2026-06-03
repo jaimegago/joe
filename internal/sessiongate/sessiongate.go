@@ -21,7 +21,7 @@
 // enumerates every config permutation and asserts non-captain mutation
 // in incident regime is refused in all of them.
 //
-// Change 10 wires this into joe-core's executor wrapper. Phase 1 ships
+// Change 10 wires this into joe's executor wrapper. Phase 1 ships
 // the function callable but unwired.
 package sessiongate
 

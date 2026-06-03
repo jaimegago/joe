@@ -39,7 +39,7 @@ type CaptainService struct {
 
 // NewCaptainService constructs a CaptainService. thresholdSeconds is the
 // §6-D reachability window — captains heard from more recently than this
-// are reachable. Production callers in cmd/joe-core/main.go pass a
+// are reachable. Production callers in cmd/joe/server.go pass a
 // config-driven value; tests pass small values to exercise the
 // unreachable branch.
 func NewCaptainService(repo Repository, runRepo runmodel.Repository, thresholdSeconds int) *CaptainService {

@@ -34,7 +34,7 @@ type rbacRepo interface {
 	RemoveAdmin(ctx context.Context, principal string) (int64, error)
 }
 
-// openRBACRepoDefault opens the joe-core database directly and returns an RBAC
+// openRBACRepoDefault opens the joe server database directly and returns an RBAC
 // repository over it. Zone provisioning is an operator-on-host task (design
 // §2.9: "CLI command only for v1"); it writes rbac_policies rows directly
 // rather than through an admin HTTP endpoint (deliberately none in this phase),
@@ -58,7 +58,7 @@ func openRBACRepoDefault(cfg *config.Config) (rbacRepo, func() error, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
-	// Idempotent — joe-core normally created the schema already; running here
+	// Idempotent — the joe server normally created the schema already; running here
 	// covers the rare case where provisioning happens before the daemon's first
 	// boot.
 	if err := sqlStore.Migrate(); err != nil {

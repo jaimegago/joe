@@ -223,7 +223,7 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	// Step 3: Classify and check safety policy
 	classification := safety.ClassifyTool(name)
 
-	// Safe mode: only T1 (Observe) tools are permitted while joe-core is in
+	// Safe mode: only T1 (Observe) tools are permitted while joe is in
 	// emergency shutdown recovery mode.
 	if safety.IsSafeModeActive() && classification.Tier > safety.TierObserve {
 		err := fmt.Errorf("safe mode active: only read-only (T1) tools are allowed — run 'joe unlock --reason \"...\"' to resume")

@@ -17,7 +17,7 @@ type TaskStreamRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
-// SSE event names emitted by joe-core's streaming task endpoint. These mirror
+// SSE event names emitted by joe's streaming task endpoint. These mirror
 // the server-side names; the end-to-end test asserts they stay in sync.
 const (
 	TaskEventStep  = "step"
@@ -32,7 +32,7 @@ type TaskEvent struct {
 	Data json.RawMessage
 }
 
-// StreamTask opens a streamed agentic turn against joe-core and invokes onEvent
+// StreamTask opens a streamed agentic turn against joe and invokes onEvent
 // for each SSE event until the stream closes or onEvent returns an error.
 //
 // A streamed turn can run for minutes, so this uses a client without the

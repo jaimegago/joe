@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// JoeTestHarness manages joe and joe-core for E2E testing
+// JoeTestHarness manages the joe server for E2E testing
 type JoeTestHarness struct {
 	t            *testing.T
 	joeCore      *exec.Cmd
@@ -47,31 +47,31 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 	}
 }
 
-// Start builds and starts joe-core
+// Start builds and starts joe
 func (h *JoeTestHarness) Start() error {
-	// Build joe-core if needed
+	// Build joe if needed
 	if err := h.buildBinaries(); err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}
-	// Start joe-core
-	logFile, err := os.Create(filepath.Join(h.tmpDir, "joe-core.log"))
+	// Start joe
+	logFile, err := os.Create(filepath.Join(h.tmpDir, "joe.log"))
 	if err != nil {
 		return err
 	}
 	h.joeCoreLog = logFile
-	// Find repository root and joe-core binary
+	// Find repository root and joe binary
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		return fmt.Errorf("failed to find repo root: %w", err)
 	}
-	joeCorePath := filepath.Join(repoRoot, "joe-core")
+	joeCorePath := filepath.Join(repoRoot, "joe")
 	h.joeCore = exec.Command(joeCorePath)
 	h.joeCore.Env = append(os.Environ(),
 		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
 		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
 		"JOE_LOG_LEVEL=debug",
 		// Dummy LLM key: must clear gemini's minAPIKeyLength (20) placeholder
-		// check so joe-core boots. The e2e tests drive their own client-side
+		// check so joe boots. The e2e tests drive their own client-side
 		// mock LLM and never make a real Gemini call, so the value only needs
 		// to pass the format check — it is never used to authenticate.
 		"GEMINI_API_KEY=e2e-dummy-key-not-a-real-credential",
@@ -79,9 +79,9 @@ func (h *JoeTestHarness) Start() error {
 	h.joeCore.Stdout = logFile
 	h.joeCore.Stderr = logFile
 	if err := h.joeCore.Start(); err != nil {
-		return fmt.Errorf("failed to start joe-core: %w", err)
+		return fmt.Errorf("failed to start joe: %w", err)
 	}
-	h.t.Logf("Started joe-core (PID: %d) on port %s", h.joeCore.Process.Pid, h.testPort)
+	h.t.Logf("Started joe (PID: %d) on port %s", h.joeCore.Process.Pid, h.testPort)
 	// Wait for API to be ready
 	if err := h.waitForAPI(30 * time.Second); err != nil {
 		h.Stop()
@@ -90,10 +90,10 @@ func (h *JoeTestHarness) Start() error {
 	return nil
 }
 
-// Stop stops joe-core and cleans up
+// Stop stops joe and cleans up
 func (h *JoeTestHarness) Stop() {
 	if h.joeCore != nil && h.joeCore.Process != nil {
-		h.t.Logf("Stopping joe-core (PID: %d)", h.joeCore.Process.Pid)
+		h.t.Logf("Stopping joe (PID: %d)", h.joeCore.Process.Pid)
 		h.joeCore.Process.Kill()
 		h.joeCore.Wait()
 	}
@@ -101,7 +101,7 @@ func (h *JoeTestHarness) Stop() {
 		h.joeCoreLog.Close()
 		// Print logs on failure
 		if h.t.Failed() {
-			h.t.Log("=== joe-core logs ===")
+			h.t.Log("=== joe logs ===")
 			content, _ := os.ReadFile(h.joeCoreLog.Name())
 			h.t.Log(string(content))
 		}
@@ -158,7 +158,7 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 			// Print logs for debugging
 			if h.joeCoreLog != nil {
 				content, _ := os.ReadFile(h.joeCoreLog.Name())
-				h.t.Logf("joe-core logs:\n%s", content)
+				h.t.Logf("joe logs:\n%s", content)
 			}
 			return fmt.Errorf("timeout waiting for API to start")
 		case <-ticker.C:
@@ -179,7 +179,7 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 	}
 }
 
-// buildBinaries builds joe and joe-core
+// buildBinaries builds the joe binary
 func (h *JoeTestHarness) buildBinaries() error {
 	h.t.Log("Building binaries...")
 	// Find repository root (go up two directories from test/e2e)

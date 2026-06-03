@@ -283,7 +283,7 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	if code := call(); code != http.StatusForbidden {
 		t.Errorf("ungranted co-located key (svc:server): got %d, want 403", code)
 	}
-	// Grant svc:server the zone — the CLI's path through joe-core reaches infra
+	// Grant svc:server the zone — the CLI's path through joe reaches infra
 	// end-to-end via the accessor (the only RBAC gate after Phase E).
 	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:server", ZoneID: "prod-readonly"}); err != nil {
 		t.Fatalf("grant svc:server: %v", err)

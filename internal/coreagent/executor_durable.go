@@ -15,7 +15,7 @@ import (
 )
 
 // DurableExecutor enforces the §D5 idempotency-key persist-before-issue
-// protocol for joe-core's tool calls. Phase 1 Change 9.
+// protocol for joe's tool calls. Phase 1 Change 9.
 //
 // Phase G note: until Phase G this wrapper also hosted the §C
 // captain-session gate + §B1 principal substitution. The gate has
@@ -55,8 +55,8 @@ import (
 // No-run fallback: if the request context carries no run ID, the
 // wrapper passes through to the inner executor without persisting.
 //
-// This wrapper is wired into joe-core's executor. Since Phase 2 the CLI
-// runs no loop of its own, so joe-core's is the only agentic loop.
+// This wrapper is wired into joe's executor. Since Phase 2 the CLI
+// runs no loop of its own, so joe's is the only agentic loop.
 type DurableExecutor struct {
 	inner ToolExecutor
 	repo  runmodel.Repository
@@ -65,7 +65,7 @@ type DurableExecutor struct {
 // NewDurableExecutor wraps inner with §D5 idempotency-key persistence.
 // inner is typically *tools.Executor (which satisfies ToolExecutor) or
 // the *captaingate.Wrapper that hosts the §C gate. Production wiring in
-// cmd/joe-core/main.go composes captaingate around DurableExecutor so a
+// cmd/joe/server.go composes captaingate around DurableExecutor so a
 // refused mutation never reaches persistence.
 //
 // Phase G: the constructor lost its sessRepo parameter when the §C gate
@@ -86,7 +86,7 @@ func NewDurableExecutor(inner ToolExecutor, repo runmodel.Repository) *DurableEx
 //
 // The §C gate that used to live here is now in
 // internal/captaingate.Wrapper, composed OUTSIDE this wrapper by
-// cmd/joe-core/main.go. The Phase G TestPhaseG_GateThenAccessorOrdering
+// cmd/joe/server.go. The Phase G TestPhaseG_GateThenAccessorOrdering
 // test asserts captaingate runs upstream of (this) DurableExecutor and
 // of the accessor.
 func (d *DurableExecutor) Execute(ctx context.Context, name string, args map[string]any) (any, error) {

@@ -48,7 +48,7 @@ func New(services *core.Services) *Server {
 	}
 	services.Metrics = observability.EnsureMetrics(services.Metrics)
 	// Phase F: the accessor writes one audit row per decision. The audit
-	// repository is wired via core.Services.Audit by cmd/joe-core/main.go;
+	// repository is wired via core.Services.Audit by cmd/joe/server.go;
 	// when nil (auth-disabled local/dev runs without the audit table
 	// migration), the accessor skips the audit write and behaves
 	// identically to pre-Phase-F.
@@ -66,7 +66,7 @@ func New(services *core.Services) *Server {
 }
 
 // newPolicyEngine builds the RBAC policy engine the accessor enforces with.
-// It mirrors cmd/joe-core/main.go exactly: enforcement is enabled when a real
+// It mirrors cmd/joe/server.go exactly: enforcement is enabled when a real
 // caller principal can be established — i.e. a service account (Identity
 // Phase D) OR OIDC login (Phase C) is configured. Otherwise the engine is nil
 // and the accessor permits every decision — identical to

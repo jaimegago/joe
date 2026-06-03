@@ -71,7 +71,7 @@ func (h *modelHandler) handleList(w http.ResponseWriter, r *http.Request) {
 // request with 503 — there is no swap-only fallback, because a swap
 // that did not persist and did not audit would silently bypass the
 // settings table and the audit log, which is exactly the invariant
-// G4 closes. Production wiring in cmd/joe-core/main.go always
+// G4 closes. Production wiring in cmd/joe/server.go always
 // supplies services.LLMSettings; test harnesses that exercise this
 // endpoint must do the same.
 //

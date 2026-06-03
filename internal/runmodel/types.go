@@ -5,7 +5,7 @@
 // Phase 1 builds the substrate, not the agentic loop. Downstream changes
 // layer the HTTP control plane (Change 7), the §C captain-session gate
 // (Changes 8/10), and the §D5 idempotency-key persist-before-issue protocol
-// in joe-core's executor wrapper (Change 9) on top.
+// in joe's executor wrapper (Change 9) on top.
 package runmodel
 
 import "time"

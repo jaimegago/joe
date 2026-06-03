@@ -4,7 +4,7 @@ import "github.com/mark3labs/mcp-go/mcp"
 
 // toolDefs returns the static MCP tool definitions for all 8 Joe tools.
 // Tools are category-based: callers describe *what* they want, not *how* to query a specific backend.
-// joe-core resolves the backend, translates the question, executes, and returns normalized results.
+// joe resolves the backend, translates the question, executes, and returns normalized results.
 func toolDefs() []mcp.Tool {
 	return []mcp.Tool{
 		mcp.NewTool("joe_graph_query",

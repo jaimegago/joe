@@ -39,6 +39,10 @@ type runDeps struct {
 	// because admin status (Phase H) and zone grants (Phase C) read and
 	// write different methods on the same underlying repo.
 	openRBACRepo func(cfg *config.Config) (rbacRepo, func() error, error)
+	// runServer boots the HTTP API daemon — Joe's default (no-subcommand)
+	// behavior. Injectable so dispatcher tests can assert routing without
+	// actually binding a port or opening a database.
+	runServer func(ctx context.Context) int
 }
 
 func defaultRunDeps() runDeps {
@@ -55,6 +59,7 @@ func defaultRunDeps() runDeps {
 			return skills.LoadPolicy(joeDir)
 		},
 		openRBACRepo: openRBACRepoDefault,
+		runServer:    runServer,
 	}
 }
 
@@ -73,7 +78,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return runWithDeps(ctx, args, stdout, stderr, defaultRunDeps())
 }
 
-// runPanicCommand sends an emergency shutdown request to joe-core.
+// runPanicCommand sends an emergency shutdown request to the joe server.
 func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe panic", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -105,12 +110,12 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 		return 1
 	}
 
-	fmt.Fprintln(stdout, "Emergency shutdown triggered. joe-core will restart in safe mode.")
+	fmt.Fprintln(stdout, "Emergency shutdown triggered. joe will restart in safe mode.")
 	fmt.Fprintln(stdout, "Use 'joe unlock --reason \"...\"' to resume normal operation.")
 	return 0
 }
 
-// runUnlockCommand exits joe-core's safe mode.
+// runUnlockCommand exits the joe server's safe mode.
 func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -265,8 +270,8 @@ func runReviewCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 // runMCPCommand starts Joe as an MCP stdio server.
 // Connection details are read from environment variables:
 //
-//	JOE_SERVER  — joe-core base URL (default: http://localhost:7777)
-//	JOE_API_KEY — Bearer token for joe-core API auth (optional)
+//	JOE_SERVER  — joe server base URL (default: http://localhost:7777)
+//	JOE_API_KEY — Bearer token for joe API auth (optional)
 func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps) int {
 	serverURL := os.Getenv("JOE_SERVER")
 	if serverURL == "" {
@@ -282,7 +287,7 @@ func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps
 	coreClient := deps.newClient(serverURL, opts...)
 	s := mcp.NewServer(coreClient)
 
-	fmt.Fprintf(stderr, "joe mcp: connecting to joe-core at %s\n", serverURL)
+	fmt.Fprintf(stderr, "joe mcp: connecting to joe at %s\n", serverURL)
 
 	if err := mcpserver.ServeStdio(s); err != nil {
 		fmt.Fprintf(stderr, "joe mcp: server error: %v\n", err)
@@ -296,8 +301,8 @@ func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps
 //
 //	SLACK_BOT_TOKEN  — Bot User OAuth token (xoxb-...)
 //	SLACK_APP_TOKEN  — App-Level token with connections:write scope (xapp-...)
-//	JOE_SERVER       — joe-core base URL (default: http://localhost:7777)
-//	JOE_API_KEY      — Bearer token for joe-core API auth (optional)
+//	JOE_SERVER       — joe server base URL (default: http://localhost:7777)
+//	JOE_API_KEY      — Bearer token for joe API auth (optional)
 func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps runDeps) int {
 	botToken := os.Getenv("SLACK_BOT_TOKEN")
 	if botToken == "" {
@@ -331,7 +336,7 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 	defer stop()
 
 	slog.Info("joe slack: starting", "server", serverURL)
-	fmt.Fprintf(stderr, "joe slack: connecting to joe-core at %s\n", serverURL)
+	fmt.Fprintf(stderr, "joe slack: connecting to joe at %s\n", serverURL)
 
 	if err := srv.Start(ctx); err != nil {
 		fmt.Fprintf(stderr, "joe slack: %v\n", err)
@@ -343,7 +348,7 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 // runSkillsCommand implements `joe skills <subcommand>` — install, list,
 // remove, update, and (Phase 3) reload Agent Skills sources installed at
 // ~/.joe/skills/. install/list/remove/update operate on the local filesystem
-// only; reload calls into joe-core to refresh its in-memory registry without
+// only; reload calls into the joe server to refresh its in-memory registry without
 // a restart.
 func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
@@ -359,7 +364,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "                              containing the named skill.")
 		fmt.Fprintln(stderr, "  approve <skill-name>        Move a quarantined skill into the active registry.")
 		fmt.Fprintln(stderr, "  reject  <skill-name>        Delete a quarantined skill from disk.")
-		fmt.Fprintln(stderr, "  reload                      Trigger joe-core to rescan ~/.joe/skills/ without a restart.")
+		fmt.Fprintln(stderr, "  reload                      Trigger the joe server to rescan ~/.joe/skills/ without a restart.")
 	}
 	if len(args) == 0 {
 		usage()
@@ -373,7 +378,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 
 	// Load config so install can enforce trusted_sources and reload can
-	// find joe-core's address. A missing config file falls back to
+	// find the joe server's address. A missing config file falls back to
 	// defaults — both fields are simply empty in that case, which is
 	// the correct behaviour for a fresh install.
 	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
@@ -425,7 +430,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			fmt.Fprintf(stdout, "Reason: %s\n", install.QuarantineReason)
 			fmt.Fprintln(stdout, "Run `joe skills approve <name>` to activate, or `joe skills reject <name>` to discard.")
 		} else {
-			fmt.Fprintln(stdout, "joe-core will pick up the new skills automatically; run `joe skills reload` if hot reload is disabled.")
+			fmt.Fprintln(stdout, "joe will pick up the new skills automatically; run `joe skills reload` if hot reload is disabled.")
 		}
 		return 0
 
@@ -476,7 +481,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		} else {
 			fmt.Fprintf(stdout, "Removed %d skill(s): %s\n", len(removed), strings.Join(removed, ", "))
 		}
-		fmt.Fprintln(stdout, "joe-core will drop the removed skills automatically; run `joe skills reload` if hot reload is disabled.")
+		fmt.Fprintln(stdout, "joe will drop the removed skills automatically; run `joe skills reload` if hot reload is disabled.")
 		return 0
 
 	case "update":
@@ -508,7 +513,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			}
 			fmt.Fprintf(stdout, "Updated %s @ %s (%d skill(s))%s\n", in.Repo, shortCommit(in.Commit), len(in.Skills), suffix)
 		}
-		fmt.Fprintln(stdout, "Run `joe skills reload` to refresh joe-core without a restart.")
+		fmt.Fprintln(stdout, "Run `joe skills reload` to refresh the joe server without a restart.")
 		return 0
 
 	case "approve":
@@ -530,7 +535,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		for _, s := range install.Skills {
 			fmt.Fprintf(stdout, "  - %s\n", s.Name)
 		}
-		fmt.Fprintln(stdout, "joe-core will pick up the approved skills automatically; run `joe skills reload` if hot reload is disabled.")
+		fmt.Fprintln(stdout, "joe will pick up the approved skills automatically; run `joe skills reload` if hot reload is disabled.")
 		return 0
 
 	case "reject":
@@ -639,7 +644,9 @@ func reorderFlagsFirst(args []string, valueFlags map[string]bool) []string {
 }
 
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	if len(args) > 0 {
+	// A non-flag first argument selects a subcommand. A leading flag (e.g.
+	// `--config`) or no argument at all belongs to the default server path.
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		switch args[0] {
 		case "panic":
 			return runPanicCommand(ctx, args[1:], stdout, stderr, deps)
@@ -657,19 +664,24 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runZoneCommand(ctx, args[1:], stdout, stderr, deps)
 		case "admin":
 			return runAdminCommand(ctx, args[1:], stdout, stderr, deps)
+		default:
+			fmt.Fprintf(stderr, "Unknown command: %q\n\n", args[0])
+			printUsage(stderr)
+			return 2
 		}
 	}
 
-	// The interactive REPL has been removed: joe is now a launcher for its
-	// subcommands (mcp, slack, panic, unlock, review, skills, zone, admin).
-	// A bare invocation or unknown subcommand prints usage and exits non-zero.
-	printUsage(stderr)
-	return 2
+	// No subcommand (bare `joe`) or server flags only (e.g. `joe --config ...`):
+	// run the HTTP API daemon, which is Joe's default behavior. Its subcommands
+	// (mcp, slack, panic, unlock, review, skills, zone, admin) ride alongside.
+	return deps.runServer(ctx)
 }
 
 // printUsage writes the top-level command summary to w.
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: joe <command> [flags]")
+	fmt.Fprintln(w, "Usage: joe [command] [flags]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Run with no command (or only --config) to start the joe server daemon.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  mcp      Run Joe as an MCP stdio server")
@@ -678,8 +690,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
 	fmt.Fprintln(w, "  zone     Manage RBAC zone grants")
 	fmt.Fprintln(w, "  admin    Manage admin provisioning")
-	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of joe-core")
-	fmt.Fprintln(w, "  unlock   Lift joe-core safe mode")
+	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
+	fmt.Fprintln(w, "  unlock   Lift the joe server's safe mode")
 }
 
 func main() {

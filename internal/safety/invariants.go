@@ -101,7 +101,7 @@ const skillsPolicyFileName = "skills-policy.yaml"
 // Returns an error if the command violates self-protection invariants.
 //
 // Blocked commands (hardcoded):
-// - joe, joe-core (cannot restart/modify self)
+// - joe (cannot restart/modify self)
 // - kill, pkill, killall (cannot kill self or other processes)
 //
 // Note: This only blocks the base command. The policy's run_command allowlist
@@ -111,12 +111,12 @@ func IsCommandAllowed(command string) error {
 	// Extract base command name (remove path)
 	baseCmd := filepath.Base(command)
 
-	// Block Joe binaries
-	if baseCmd == "joe" || baseCmd == "joe-core" {
+	// Block the Joe binary
+	if baseCmd == "joe" {
 		return &InvariantViolationError{
 			Type:   "command_protection",
 			Target: command,
-			Reason: "Joe cannot execute joe or joe-core commands (self-protection)",
+			Reason: "Joe cannot execute the joe command (self-protection)",
 		}
 	}
 

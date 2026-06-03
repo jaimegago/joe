@@ -50,7 +50,7 @@ type Services struct {
 	DriftDet       *drift.Detector
 	RBAC           rbac.Repository // nil when RBAC is not configured
 	// RBACEnabled mirrors the predicate the policy engine is built
-	// from in cmd/joe-core/main.go: true exactly when a real caller
+	// from in cmd/joe/server.go: true exactly when a real caller
 	// principal can be established (a service account OR OIDC is
 	// configured). It is the SAME predicate the accessor uses to
 	// decide whether to short-circuit its rbac-disabled allow-path and
@@ -71,7 +71,7 @@ type Services struct {
 	// reports the per-caller auth facts and this rides alongside them.
 	OIDCEnabled bool
 	// Audit is the append-only audit trail (Identity Phase F,
-	// docs/joe-identity-design.md §2.6). Wired by cmd/joe-core/main.go after
+	// docs/joe-identity-design.md §2.6). Wired by cmd/joe/server.go after
 	// the store migrations run. Consumers: the guarded accessor
 	// (internal/access) writes one row per authorization decision; the
 	// regime and captain handlers (internal/api) write durable rows for
@@ -80,7 +80,7 @@ type Services struct {
 	// the database via migration 015 triggers.
 	Audit audit.Repository
 	// LLMUsage records one row per LLM Chat call (Stream G phase G2,
-	// migration 017). Wired by cmd/joe-core/main.go alongside the other
+	// migration 017). Wired by cmd/joe/server.go alongside the other
 	// store-backed repositories; nil in unit-test harnesses that don't
 	// need the recorder. Insert-only by interface — usage rows are an
 	// observability log, and the recorder is fail-open against this
@@ -102,18 +102,18 @@ type Services struct {
 	SessionLimitsProvider *llmsettings.SessionLimitsProvider
 	// CostLimitsProvider is the SAME storage-backed llmusage.CostLimits
 	// instance the recorder's cost-window gate enforces with (wired into
-	// llmusage.NewRecorderAdapter as Limits in cmd/joe-core/main.go). The
+	// llmusage.NewRecorderAdapter as Limits in cmd/joe/server.go). The
 	// settings GET handler reads it to surface the effective enforced
 	// value — backstop-substituted for an unset window — so the displayed
 	// number is sourced from the same object the gate decides with and
 	// cannot drift from it. nil in unit-test harnesses that don't
 	// exercise the settings GET endpoint.
 	CostLimitsProvider *llmsettings.CostLimitsProvider
-	SessionModel       sessionmodel.Repository      // nil until wired in cmd/joe-core/main.go
-	RunModel           runmodel.Repository          // nil until wired in cmd/joe-core/main.go
-	Findings           findings.Repository          // nil until wired in cmd/joe-core/main.go
-	Warnings           warnings.Repository          // nil until wired in cmd/joe-core/main.go
-	CaptainSvc         *sessionmodel.CaptainService // nil until wired in cmd/joe-core/main.go
+	SessionModel       sessionmodel.Repository      // nil until wired in cmd/joe/server.go
+	RunModel           runmodel.Repository          // nil until wired in cmd/joe/server.go
+	Findings           findings.Repository          // nil until wired in cmd/joe/server.go
+	Warnings           warnings.Repository          // nil until wired in cmd/joe/server.go
+	CaptainSvc         *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
 	Review             *review.Service              // nil when code review is not configured
 	ReviewAgent        *review.ReviewAgent          // nil when review agent is not configured
 	Skills             *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
