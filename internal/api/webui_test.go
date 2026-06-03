@@ -538,4 +538,3 @@ func TestWebUITestSource_EmptyID(t *testing.T) {
 		t.Errorf("expected 400 for empty id, got %d", w.Code)
 	}
 }
-

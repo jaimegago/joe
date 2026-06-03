@@ -77,6 +77,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	settingsSvc := llmsettings.NewMutationService(settingsRepo, auditRepo)
 	sessionLimitsProvider := llmsettings.NewSessionLimitsProvider(settingsRepo, agentloop.NewStaticSessionLimits(), nil)
 	costLimitsProvider := llmsettings.NewCostLimitsProvider(settingsRepo, llmusage.NewStaticCostLimits(), nil)
+	contextBudgetProvider := llmsettings.NewContextBudgetProvider(settingsRepo, agentloop.NewStaticContextBudget(), nil)
 
 	cfg := &config.Config{
 		LLM: config.LLMConfig{
@@ -97,6 +98,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	services.LLMSettings = settingsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
 	services.CostLimitsProvider = costLimitsProvider
+	services.ContextBudgetProvider = contextBudgetProvider
 	services.RBACEnabled = rbacEnabled
 	services.LLM = llm.NewSwappableAdapter(&silentLLMAdapter{}, "default")
 

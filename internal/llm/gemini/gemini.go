@@ -81,6 +81,13 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	model := c.client.GenerativeModel(c.model)
 
+	// Apply the explicit output cap when the caller set one. Previously the
+	// Gemini adapter set NO output limit at all (unlike the Claude adapter's
+	// 4096 default), so an agentic turn could generate up to the model's full
+	// output ceiling. The agentic path now passes the capabilities table's
+	// max-output through ChatRequest.MaxTokens; honour it here.
+	applyMaxOutputTokens(model, req.MaxTokens)
+
 	// Set system instruction if provided
 	if req.SystemPrompt != "" {
 		model.SystemInstruction = &genai.Content{
@@ -177,6 +184,18 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 
 	// Convert response
 	return c.convertResponse(resp), nil
+}
+
+// applyMaxOutputTokens sets the model's output-token cap from the
+// ChatRequest's MaxTokens. The genai GenerativeModel embeds a
+// GenerationConfig; SetMaxOutputTokens bounds the response length. A value
+// <= 0 leaves the provider default in place (matching the prior behaviour
+// for callers that don't set MaxTokens). Extracted as a free function so it
+// is testable without a live genai client or a network round-trip.
+func applyMaxOutputTokens(model *genai.GenerativeModel, maxTokens int) {
+	if maxTokens > 0 {
+		model.SetMaxOutputTokens(int32(maxTokens))
+	}
 }
 
 // ChatStream is not yet implemented

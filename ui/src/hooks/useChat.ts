@@ -42,6 +42,10 @@ export interface AssistantTurn {
   failureLabel?: string;
   errorMessage?: string;
   tokens: number;
+  // historyTrimmed is true when this turn's history pruning dropped earlier
+  // messages from the model's context (token budget or count backstop). The
+  // view renders a single unobtrusive notice when it is set.
+  historyTrimmed?: boolean;
 }
 
 export type DisplayItem =
@@ -192,6 +196,7 @@ export function useChat(initialSessionId?: string) {
               errorMessage: final.status === 'completed' ? undefined : final.error ?? STATUS_LABELS[final.status],
               // Snap the counter to the authoritative server total.
               tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
+              historyTrimmed: final.history_trimmed,
             })),
           onError: (message, preStream) =>
             updateTurn(turnId, (t) => ({

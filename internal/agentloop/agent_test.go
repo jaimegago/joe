@@ -480,3 +480,28 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// TestAgent_Run_MaxOutputTokensStamped asserts WithMaxOutputTokens causes the
+// loop to stamp ChatRequest.MaxTokens on every request it builds, and that the
+// default (no option) leaves it unset.
+func TestAgent_Run_MaxOutputTokensStamped(t *testing.T) {
+	withCap := &mockLLM{responses: []*llm.ChatResponse{{Content: "done"}}}
+	registry := tools.NewRegistry()
+	executor := tools.NewExecutor(registry, nil)
+	agent := NewAgent(withCap, executor, registry, "sys", WithMaxOutputTokens(4096))
+	if _, err := agent.Run(context.Background(), NewSession(nil), "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if withCap.lastReq.MaxTokens != 4096 {
+		t.Errorf("MaxTokens = %d, want 4096", withCap.lastReq.MaxTokens)
+	}
+
+	noCap := &mockLLM{responses: []*llm.ChatResponse{{Content: "done"}}}
+	agent2 := NewAgent(noCap, executor, registry, "sys")
+	if _, err := agent2.Run(context.Background(), NewSession(nil), "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if noCap.lastReq.MaxTokens != 0 {
+		t.Errorf("MaxTokens = %d without the option, want 0 (provider default)", noCap.lastReq.MaxTokens)
+	}
+}

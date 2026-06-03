@@ -63,6 +63,12 @@ export const FinalEventSchema = z.object({
   total_tokens: TokenUsageSchema,
   duration_ms: z.number(),
   error: z.string().optional(),
+  // Additive, optional history-pruning fields. The server omits them when
+  // nothing was dropped (omitempty), so they default to false/0 here. When
+  // history_trimmed is true, earlier messages fell out of the model's context
+  // this turn and the UI surfaces an unobtrusive notice.
+  history_trimmed: z.boolean().default(false),
+  messages_dropped: z.number().default(0),
 });
 
 export type StepEvent = z.infer<typeof StepEventSchema>;

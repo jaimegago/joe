@@ -114,6 +114,13 @@ type Repository interface {
 	// ReadRunawayCeilingTx is the transactional read counterpart used
 	// by the mutation service.
 	ReadRunawayCeilingTx(ctx context.Context, tx *sql.Tx) (int, error)
+	// ReadContextBudget returns the stored context-budget fraction. A
+	// zero value means "unset" — the storage-backed provider applies the
+	// documented backstop fall-back (DefaultContextBudgetFraction).
+	ReadContextBudget(ctx context.Context) (float64, error)
+	// ReadContextBudgetTx is the transactional read counterpart used by
+	// the mutation service to capture the "before" value.
+	ReadContextBudgetTx(ctx context.Context, tx *sql.Tx) (float64, error)
 
 	// UpdateActiveModelTx persists the new active-model value inside
 	// the caller's transaction. last_modified is stamped to the
@@ -128,6 +135,9 @@ type Repository interface {
 	// UpdateRunawayCeilingTx persists the new session token ceiling
 	// inside the caller's transaction.
 	UpdateRunawayCeilingTx(ctx context.Context, tx *sql.Tx, value int, now time.Time) error
+	// UpdateContextBudgetTx persists the new context-budget fraction
+	// inside the caller's transaction.
+	UpdateContextBudgetTx(ctx context.Context, tx *sql.Tx, value float64, now time.Time) error
 
 	// DB exposes the underlying database handle so the mutation
 	// service can BeginTx against it without re-importing *sql.DB.
@@ -249,6 +259,31 @@ func (r *sqlRepository) ReadRunawayCeilingTx(ctx context.Context, tx *sql.Tx) (i
 	return v, nil
 }
 
+func (r *sqlRepository) ReadContextBudget(ctx context.Context) (float64, error) {
+	var v float64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT budget_fraction FROM llm_context_budget WHERE id = 1`,
+	).Scan(&v)
+	if err != nil {
+		return 0, fmt.Errorf("llmsettings: read context budget: %w", err)
+	}
+	return v, nil
+}
+
+func (r *sqlRepository) ReadContextBudgetTx(ctx context.Context, tx *sql.Tx) (float64, error) {
+	if tx == nil {
+		return 0, fmt.Errorf("%w: nil transaction", ErrSettingsWriteFailed)
+	}
+	var v float64
+	err := tx.QueryRowContext(ctx,
+		`SELECT budget_fraction FROM llm_context_budget WHERE id = 1`,
+	).Scan(&v)
+	if err != nil {
+		return 0, fmt.Errorf("llmsettings: read context budget (tx): %w", err)
+	}
+	return v, nil
+}
+
 func (r *sqlRepository) UpdateActiveModelTx(ctx context.Context, tx *sql.Tx, value string, now time.Time) error {
 	if tx == nil {
 		return fmt.Errorf("%w: nil transaction", ErrSettingsWriteFailed)
@@ -287,6 +322,19 @@ func (r *sqlRepository) UpdateRunawayCeilingTx(ctx context.Context, tx *sql.Tx, 
 		value, now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("%w: update runaway ceiling: %v", ErrSettingsWriteFailed, err)
+	}
+	return nil
+}
+
+func (r *sqlRepository) UpdateContextBudgetTx(ctx context.Context, tx *sql.Tx, value float64, now time.Time) error {
+	if tx == nil {
+		return fmt.Errorf("%w: nil transaction", ErrSettingsWriteFailed)
+	}
+	_, err := tx.ExecContext(ctx, store.Rebind(r.driver,
+		`UPDATE llm_context_budget SET budget_fraction = ?, last_modified = ? WHERE id = 1`),
+		value, now.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("%w: update context budget: %v", ErrSettingsWriteFailed, err)
 	}
 	return nil
 }

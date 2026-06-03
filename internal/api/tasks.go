@@ -58,6 +58,14 @@ type taskResponse struct {
 	TotalTokens taskTokenUsage `json:"total_tokens"`
 	DurationMs  int            `json:"duration_ms"`
 	Error       string         `json:"error,omitempty"`
+	// HistoryTrimmed / MessagesDropped report whether this turn's history
+	// pruning dropped any earlier messages (token budget or count backstop)
+	// and how many. Additive, optional fields — omitted when nothing was
+	// dropped — so the event shape is unchanged for the common no-trim case.
+	// The streaming chat UI renders an unobtrusive notice when
+	// history_trimmed is true.
+	HistoryTrimmed  bool `json:"history_trimmed,omitempty"`
+	MessagesDropped int  `json:"messages_dropped,omitempty"`
 }
 
 type taskStep struct {
@@ -288,6 +296,26 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	} else {
 		sessionLimits = agentloop.NewStaticSessionLimits()
 	}
+	// Resolve the active model's capabilities (context window + default max
+	// output) from the compile-time table. The active catalogue key is the
+	// live SwappableAdapter's current key (it tracks runtime model swaps);
+	// fall back to the configured Current key, then to the conservative
+	// default for an unknown / unconfigured model. The capabilities drive
+	// both the explicit per-request output cap (set on the agent below) and
+	// the token budget the session prunes history to.
+	caps := llmusage.LookupCapabilities("", "")
+	if cfg := h.server.services.Config; cfg != nil {
+		activeKey := cfg.LLM.Current
+		if sw, ok := h.server.services.LLM.(*llm.SwappableAdapter); ok {
+			if cur := sw.Current(); cur != "" {
+				activeKey = cur
+			}
+		}
+		if mc, ok := cfg.LLM.Available[activeKey]; ok {
+			caps = llmusage.LookupCapabilities(mc.Provider, mc.Model)
+		}
+	}
+
 	agent := agentloop.NewAgent(
 		h.server.services.LLM,
 		loopExec,
@@ -296,11 +324,36 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		agentloop.WithObserver(observer),
 		agentloop.WithSessionLimits(sessionLimits),
 		agentloop.WithAuditRepo(h.server.services.Audit),
+		// Stream G context pass: set an explicit output cap on every request
+		// the loop builds, so the agentic path never relies on a provider's
+		// implicit default (Claude defaulted to 4096; Gemini set none).
+		agentloop.WithMaxOutputTokens(caps.MaxOutputTokens),
 	)
 	agent.SetMaxIterations(maxIterations)
 
 	metrics := observability.EnsureMetrics(h.server.services.Metrics)
 	session := agentloop.NewSession(metrics)
+
+	// Stream G context pass: compute this turn's input token budget —
+	// floor(window * fraction) - reserved output - fixed prompt/tool overhead
+	// — and prune history to it. The fraction is read live from the
+	// storage-backed provider (re-read per request, so an operator change
+	// takes effect on the next message without a restart); absent a provider
+	// (test harnesses) it falls back to the static backstop. A pathologically
+	// small computed budget is clamped to a positive floor so token pruning
+	// still engages (the most-recent user message is always kept regardless).
+	fraction := agentloop.DefaultContextBudgetFraction
+	if h.server.services.ContextBudgetProvider != nil {
+		fraction = h.server.services.ContextBudgetProvider.BudgetFraction()
+	}
+	overhead := agentloop.EstimateOverheadTokens(systemPrompt, registry.ToDefinitions())
+	budget := agentloop.ComputeInputTokenBudget(caps.ContextWindowTokens, caps.MaxOutputTokens, overhead, fraction)
+	if budget < 1 {
+		budget = 1
+	}
+	session.TokenBudget = budget
+	// Count cap stays as the secondary backstop, applied after the token
+	// budget (cheap guard against pathological many-tiny-messages cases).
 	session.MaxMessages = agentloop.DefaultMaxMessages
 
 	return &preparedTask{agent: agent, session: session, sessionID: sessionID}
@@ -449,8 +502,10 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 			InputTokens:  session.TotalInputTokens,
 			OutputTokens: session.TotalOutputTokens,
 		},
-		DurationMs: int(duration.Milliseconds()),
-		Error:      errMsg,
+		DurationMs:      int(duration.Milliseconds()),
+		Error:           errMsg,
+		HistoryTrimmed:  session.HistoryTrimmed(),
+		MessagesDropped: session.MessagesDropped(),
 	}
 }
 

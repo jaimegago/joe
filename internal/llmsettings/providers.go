@@ -156,3 +156,58 @@ func (p *SessionLimitsProvider) SessionTokenCeiling() int {
 // Compile-time check: SessionLimitsProvider satisfies the existing
 // agentloop.SessionLimits interface.
 var _ agentloop.SessionLimits = (*SessionLimitsProvider)(nil)
+
+// ContextBudgetProvider satisfies the agentloop.ContextBudget interface by
+// reading the stored context-budget fraction from the settings repository.
+//
+// Backstop fall-back. Same policy as the cost-limits and session-limits
+// providers: a stored value of zero (the migration seed, "unset") OR a
+// non-positive / out-of-range value (defence-in-depth against a corrupt row)
+// is reinterpreted as the hardcoded backstop fraction from
+// agentloop.StaticContextBudget (DefaultContextBudgetFraction = 0.7). Read
+// failures log warn and fall back to the backstop too — a settings-read blip
+// must not silently widen or collapse the budget.
+//
+// buildTaskRun reads the fraction per request (each /tasks/stream rebuilds
+// its session), so a change written through the mutation service takes
+// effect on the next message without a restart. The repository read is the
+// only shared state and database/sql is safe for concurrent use.
+type ContextBudgetProvider struct {
+	repo     Repository
+	backstop agentloop.ContextBudget
+	logger   *slog.Logger
+}
+
+// NewContextBudgetProvider builds a storage-backed ContextBudget provider.
+// backstop is the hardcoded provider returned on a zero/out-of-range stored
+// value or a read failure; production passes agentloop.NewStaticContextBudget().
+func NewContextBudgetProvider(repo Repository, backstop agentloop.ContextBudget, logger *slog.Logger) *ContextBudgetProvider {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if backstop == nil {
+		backstop = agentloop.NewStaticContextBudget()
+	}
+	return &ContextBudgetProvider{repo: repo, backstop: backstop, logger: logger}
+}
+
+// BudgetFraction returns the stored fraction when it is a valid (0, 1] value,
+// or the hardcoded backstop fraction when the stored value is zero (unset),
+// out of range, or the read failed.
+func (p *ContextBudgetProvider) BudgetFraction() float64 {
+	v, err := p.repo.ReadContextBudget(context.Background())
+	if err != nil {
+		p.logger.Warn("llmsettings: context-budget read failed; falling back to hardcoded backstop",
+			"error", err,
+		)
+		return p.backstop.BudgetFraction()
+	}
+	if v <= 0 || v > 1.0 {
+		return p.backstop.BudgetFraction()
+	}
+	return v
+}
+
+// Compile-time check: ContextBudgetProvider satisfies the
+// agentloop.ContextBudget interface.
+var _ agentloop.ContextBudget = (*ContextBudgetProvider)(nil)

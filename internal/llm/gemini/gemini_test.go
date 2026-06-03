@@ -885,3 +885,25 @@ func TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage(t *testing.T) {
 		t.Errorf("Code = %d, want 400", enhanced.Code)
 	}
 }
+
+// TestApplyMaxOutputTokens asserts the agentic path's output cap is wired
+// onto the genai model's GenerationConfig, and that a non-positive value
+// leaves the provider default in place (no limit set). This is the seam that
+// fixes the prior behaviour where the Gemini adapter set NO output limit at
+// all, unlike the Claude adapter's 4096 default.
+func TestApplyMaxOutputTokens(t *testing.T) {
+	m := &genai.GenerativeModel{}
+	applyMaxOutputTokens(m, 4096)
+	if m.MaxOutputTokens == nil {
+		t.Fatal("MaxOutputTokens not set for a positive cap")
+	}
+	if *m.MaxOutputTokens != 4096 {
+		t.Errorf("MaxOutputTokens = %d, want 4096", *m.MaxOutputTokens)
+	}
+
+	zero := &genai.GenerativeModel{}
+	applyMaxOutputTokens(zero, 0)
+	if zero.MaxOutputTokens != nil {
+		t.Errorf("MaxOutputTokens = %d for a zero cap, want unset (provider default)", *zero.MaxOutputTokens)
+	}
+}

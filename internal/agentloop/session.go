@@ -25,7 +25,27 @@ type Session struct {
 
 	// MaxMessages limits conversation history size to prevent unbounded growth
 	// When 0, no limit is applied. Recommended: 100-200 for typical conversations.
+	// Applied as a SECONDARY backstop after the token budget (a cheap guard
+	// against pathological many-tiny-messages cases); the token budget is
+	// primary.
 	MaxMessages int
+
+	// TokenBudget is the per-turn input token budget the history is pruned
+	// to. When 0 (the default for a session constructed without a budget),
+	// token-based pruning is disabled and only the MaxMessages count
+	// backstop applies — preserving the prior behaviour for callers that
+	// never set a budget. buildTaskRun computes it from the active model's
+	// context window, the reserved output, and the prompt/tool overhead.
+	TokenBudget int
+
+	// historyTrimmed / messagesDropped record whether this turn's pruning
+	// dropped any messages and how many. Surfaced on the final SSE event so
+	// the UI can tell the user earlier messages are no longer in context.
+	// They accumulate over the session's lifetime, which is per-task (a
+	// fresh session is built per request in buildTaskRun), so they describe
+	// exactly this turn.
+	historyTrimmed  bool
+	messagesDropped int
 }
 
 // NewSession creates a new session with empty conversation history
@@ -63,12 +83,116 @@ func (s *Session) AddMessages(ctx context.Context, messages []llm.Message) {
 	s.pruneMessages()
 }
 
-// pruneMessages trims the conversation history to MaxMessages using a sliding window.
+// pruneMessages trims the conversation history. The token budget is applied
+// first (primary), then the MaxMessages count cap (secondary backstop). Both
+// drop from the OLDEST end and respect two hard correctness constraints: the
+// most recent genuine user message is never dropped (even if it alone exceeds
+// the budget), and a tool-result message is never left without its preceding
+// tool-call message (call/result pairs are dropped together) — the Gemini
+// adapter renders a tool result as a FunctionResponse paired with the call,
+// so an orphaned result would be malformed.
 func (s *Session) pruneMessages() {
-	if s.MaxMessages > 0 && len(s.Messages) > s.MaxMessages {
-		s.Messages = s.Messages[len(s.Messages)-s.MaxMessages:]
+	before := len(s.Messages)
+	s.pruneToTokenBudget()
+	s.pruneToCountBackstop()
+	if dropped := before - len(s.Messages); dropped > 0 {
+		s.historyTrimmed = true
+		s.messagesDropped += dropped
 	}
 }
+
+// pruneToTokenBudget drops oldest messages until the estimated token total
+// is within TokenBudget, stopping short of the most recent genuine user
+// message and never leaving a leading orphaned tool-result. Disabled when
+// TokenBudget <= 0.
+func (s *Session) pruneToTokenBudget() {
+	if s.TokenBudget <= 0 {
+		return
+	}
+	n := len(s.Messages)
+	per := make([]int, n)
+	total := 0
+	for i := range s.Messages {
+		per[i] = EstimateMessageTokens(s.Messages[i])
+		total += per[i]
+	}
+	if total <= s.TokenBudget {
+		return
+	}
+	protect := s.lastUserMessageIndex()
+	cutoff := 0
+	for total > s.TokenBudget {
+		if cutoff >= n || (protect >= 0 && cutoff >= protect) {
+			break
+		}
+		total -= per[cutoff]
+		cutoff++
+		// Dropping a tool-call message must also drop its result(s): if the
+		// new boundary is a tool-result, advance past the whole run so the
+		// kept slice never begins with an orphaned result.
+		for cutoff < n && (protect < 0 || cutoff < protect) && s.Messages[cutoff].ToolResultID != "" {
+			total -= per[cutoff]
+			cutoff++
+		}
+	}
+	if cutoff > 0 {
+		s.Messages = s.Messages[cutoff:]
+	}
+}
+
+// pruneToCountBackstop applies the MaxMessages count cap after the token
+// budget. It honours the same pair-integrity and most-recent-user-message
+// guards, so the kept slice may slightly exceed MaxMessages rather than
+// orphan a tool result — correctness over an exact count.
+func (s *Session) pruneToCountBackstop() {
+	if s.MaxMessages <= 0 || len(s.Messages) <= s.MaxMessages {
+		return
+	}
+	cutoff := len(s.Messages) - s.MaxMessages
+	protect := s.lastUserMessageIndex()
+	if protect >= 0 && cutoff > protect {
+		cutoff = protect
+	}
+	cutoff = s.skipLeadingOrphanResults(cutoff, protect)
+	if cutoff > 0 {
+		s.Messages = s.Messages[cutoff:]
+	}
+}
+
+// skipLeadingOrphanResults advances cutoff past a run of tool-result messages
+// so the kept slice (s.Messages[cutoff:]) never begins with a tool-result
+// whose tool-call parent was dropped. It never advances past protect (the
+// most recent genuine user message) when one exists.
+func (s *Session) skipLeadingOrphanResults(cutoff, protect int) int {
+	limit := len(s.Messages)
+	if protect >= 0 {
+		limit = protect
+	}
+	for cutoff < limit && s.Messages[cutoff].ToolResultID != "" {
+		cutoff++
+	}
+	return cutoff
+}
+
+// lastUserMessageIndex returns the index of the most recent GENUINE user
+// message — Role "user" with no ToolResultID. Tool-result messages also
+// carry Role "user" (see tools.ResultToMessage), so the ToolResultID guard
+// is what distinguishes a real user turn from a tool result. Returns -1 when
+// there is no genuine user message.
+func (s *Session) lastUserMessageIndex() int {
+	for i := len(s.Messages) - 1; i >= 0; i-- {
+		if s.Messages[i].Role == "user" && s.Messages[i].ToolResultID == "" {
+			return i
+		}
+	}
+	return -1
+}
+
+// HistoryTrimmed reports whether pruning dropped any messages this turn.
+func (s *Session) HistoryTrimmed() bool { return s.historyTrimmed }
+
+// MessagesDropped reports how many messages pruning dropped this turn.
+func (s *Session) MessagesDropped() int { return s.messagesDropped }
 
 // Clear clears the conversation history
 func (s *Session) Clear() {

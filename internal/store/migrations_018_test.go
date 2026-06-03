@@ -54,9 +54,11 @@ func TestMigration018_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step one migration down: reverts 018 only.
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("Steps(-1): %v", err)
+	// 2) Step two migrations down: reverts 019 (the LLM context-budget table,
+	// which now sits above 018) then 018. Stepping -2 lands the schema just
+	// below 018, isolating 018's down migration as this test intends.
+	if err := m.Steps(-2); err != nil {
+		t.Fatalf("Steps(-2): %v", err)
 	}
 	if kindAdmitted(t, s, "auth_login") {
 		t.Error("after down: audit_log CHECK must reject 'auth_login' again")
