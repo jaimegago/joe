@@ -29,7 +29,7 @@ type SkillsReloadResult struct {
 	Error   string   `json:"error,omitempty"`
 }
 
-// ReloadSkills triggers a synchronous rescan of joe-core's ~/.joe/skills/
+// ReloadSkills triggers a synchronous rescan of joe's ~/.joe/skills/
 // directory and atomic registry swap. Returns the reload summary.
 func (c *Client) ReloadSkills(ctx context.Context) (*SkillsReloadResult, error) {
 	var result SkillsReloadResult
@@ -60,7 +60,7 @@ type SkillsListResult struct {
 	Quarantined []SkillStatusEntry `json:"quarantined"`
 }
 
-// ListSkills fetches every installed skill from joe-core, split into active
+// ListSkills fetches every installed skill from joe, split into active
 // and quarantined buckets.
 func (c *Client) ListSkills(ctx context.Context) (*SkillsListResult, error) {
 	var result SkillsListResult
@@ -81,7 +81,7 @@ type SkillsApprovalResult struct {
 	Skills []string `json:"skills"`
 }
 
-// ApproveSkill asks joe-core to move a quarantined skill into the active
+// ApproveSkill asks joe to move a quarantined skill into the active
 // registry. The name parameter identifies any skill in the quarantined
 // install; the whole install is approved as a unit.
 func (c *Client) ApproveSkill(ctx context.Context, name string) (*SkillsApprovalResult, error) {
@@ -93,7 +93,7 @@ func (c *Client) ApproveSkill(ctx context.Context, name string) (*SkillsApproval
 	return &result, nil
 }
 
-// RejectSkill asks joe-core to delete a quarantined install. Returns the
+// RejectSkill asks joe to delete a quarantined install. Returns the
 // names of every skill that was removed (one install can carry multiple).
 func (c *Client) RejectSkill(ctx context.Context, name string) (*SkillsApprovalResult, error) {
 	body, _ := json.Marshal(map[string]string{"name": name})

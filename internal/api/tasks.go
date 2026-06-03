@@ -184,7 +184,6 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 type preparedTask struct {
 	agent     *agentloop.Agent
 	session   *agentloop.Session
-	registry  *tools.Registry
 	sessionID string
 }
 
@@ -244,7 +243,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// non-captain session is refused (no infra call, no accessor call);
 	// the gate stays DENY-ONLY, never widens authority. Identical
 	// wrapper is installed around the Core Agent's executor in
-	// cmd/joe-core/main.go, so the §C logic exists in EXACTLY ONE
+	// cmd/joe/server.go, so the §C logic exists in EXACTLY ONE
 	// place. The wrapper is a drop-in for *tools.Executor (it
 	// implements ExecuteBatch + ResultsToMessages); when SessionModel
 	// is nil (auth-disabled local/dev), we install no wrapper and the
@@ -274,7 +273,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// Stream G phase G3a → G4: the production task loop reads its
 	// session token ceiling through the storage-backed provider
 	// hung off services.SessionLimitsProvider. The provider is
-	// constructed once at startup in cmd/joe-core/main.go and shared
+	// constructed once at startup in cmd/joe/server.go and shared
 	// across tasks — per-task construction would either need its
 	// own repository reference or a settings handle threaded
 	// through, neither of which the check site needs. When the
@@ -304,7 +303,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	session := agentloop.NewSession(metrics)
 	session.MaxMessages = agentloop.DefaultMaxMessages
 
-	return &preparedTask{agent: agent, session: session, registry: registry, sessionID: sessionID}
+	return &preparedTask{agent: agent, session: session, sessionID: sessionID}
 }
 
 // taskStatus maps an agent run error to the wire status + error message.

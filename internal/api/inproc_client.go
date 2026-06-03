@@ -72,7 +72,7 @@ type inProcessCoreClient struct {
 
 // newInProcessCoreClient builds the in-process accessor-backed client used by
 // the loop's tool registry. It panics on a nil accessor or services — both are
-// composition-time invariants in joe-core's wiring.
+// composition-time invariants in joe's wiring.
 func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) *inProcessCoreClient {
 	if accessor == nil {
 		panic("api.newInProcessCoreClient: accessor must not be nil")

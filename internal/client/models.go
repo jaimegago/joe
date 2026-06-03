@@ -14,7 +14,7 @@ type ModelsList struct {
 	Current   string   `json:"current"`
 }
 
-// ListModels returns the model keys joe-core has configured and the active one.
+// ListModels returns the model keys joe has configured and the active one.
 func (c *Client) ListModels(ctx context.Context) (*ModelsList, error) {
 	var out ModelsList
 	if err := c.doJSON(ctx, "GET", c.baseURL+apiModelsPath, nil, http.StatusOK, &out, "list models"); err != nil {
@@ -30,7 +30,7 @@ type SetModelResult struct {
 	Model    string `json:"model"`
 }
 
-// SetModel hot-swaps joe-core's active model to the given configured key.
+// SetModel hot-swaps joe's active model to the given configured key.
 func (c *Client) SetModel(ctx context.Context, name string) (*SetModelResult, error) {
 	payload, err := json.Marshal(setModelBody{Name: name})
 	if err != nil {

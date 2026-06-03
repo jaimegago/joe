@@ -1,6 +1,6 @@
 // Package captaingate is the SHARED tool-executor wrapper that enforces
 // the §C captain-session mutation gate (and the §B1 principal
-// substitution) on every agentic tool call — joe-core's Core-Agent loop
+// substitution) on every agentic tool call — joe's Core-Agent loop
 // (onboarding/refresh) AND the user task loop (`agentloop.Agent.Run`
 // behind /api/v1/tasks and /api/v1/tasks/stream).
 //
@@ -106,7 +106,7 @@ type Wrapper struct {
 // that backs sessiongate.Check; auditRepo is the same audit.Repository
 // the accessor writes through (so a gate refusal lands in the same
 // append-only audit_log as every other event). Production wiring in
-// cmd/joe-core/main.go always passes both; tests pass nil when they
+// cmd/joe/server.go always passes both; tests pass nil when they
 // deliberately want to bypass the gate or the audit row.
 func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit.Repository) *Wrapper {
 	return &Wrapper{inner: inner, sessRepo: sessRepo, auditRep: auditRepo}

@@ -70,7 +70,7 @@ func TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal(t *testing.T) {
 	registry.Register("s-prod", apiFakeK8s{})
 
 	// Service-account configured ⇒ accessor's policy engine is non-nil and
-	// enforces — mirrors cmd/joe-core/main.go's newPolicyEngine condition.
+	// enforces — mirrors cmd/joe/server.go's newPolicyEngine condition.
 	services := buildPhaseEServices(t, sqlStore, rbacRepo, registry,
 		[]config.ServiceAccount{{Name: "any", Key: "any"}})
 
@@ -128,7 +128,7 @@ func TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal(t *testing.T) {
 }
 
 // TestPhaseE_LoopGraphAccessIsInProcess proves the graph tool reaches
-// services.Graph in-process via the accessor — no HTTP hop to joe-core's own
+// services.Graph in-process via the accessor — no HTTP hop to joe's own
 // /api/v1/graph endpoint. We seed the graph store directly, run the loop with
 // NO HTTP server started, and assert the seeded node appears in the loop's
 // output. A loopback HTTP client would fail with a connection error; the

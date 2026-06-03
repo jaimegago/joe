@@ -20,7 +20,7 @@ import (
 // rbacTestEnv holds the components needed to build varied middleware stacks.
 // After Phase D (D-0007) BearerAuth + APIKeyProvider were deleted; after Phase
 // E (D-0008) EnforcementMiddleware was demoted to a pass-through. The
-// production-shaped chain here mirrors cmd/joe-core/main.go: auth.EdgeAuth
+// production-shaped chain here mirrors cmd/joe/server.go: auth.EdgeAuth
 // resolves the caller principal from a service-account bearer key, and the
 // guarded accessor (inside the handlers) is the sole authoritative RBAC gate.
 type rbacTestEnv struct {
@@ -54,7 +54,7 @@ func newRBACEnv(t *testing.T, accounts ...config.ServiceAccount) *rbacTestEnv {
 }
 
 // buildHandler wraps env.mux with auth.EdgeAuth (the production edge gate),
-// matching cmd/joe-core/main.go. The accessor inside the handlers is now the
+// matching cmd/joe/server.go. The accessor inside the handlers is now the
 // sole RBAC gate (Phase E demotion).
 func (e *rbacTestEnv) buildHandler(accounts ...config.ServiceAccount) http.Handler {
 	resolver, err := auth.NewServiceAccountResolver(accounts)

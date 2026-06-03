@@ -400,7 +400,7 @@ func (m *Manager) installPath(in Install) string {
 // the lockfile.
 //
 // Hot reload is Phase 3; today, an updated install only takes effect after
-// joe-core restarts. The CLI prints that reminder.
+// joe restarts. The CLI prints that reminder.
 func (m *Manager) Update(ctx context.Context, skillName string) ([]*Install, error) {
 	lf, err := m.LoadLockfile()
 	if err != nil {

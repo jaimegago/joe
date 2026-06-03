@@ -8,7 +8,7 @@ How an authorized operator reaches Joe when the normal OIDC human-login path is 
 
 A **break-glass credential** is a service-account bearer key that resolves to a `svc:<name>` principal and is granted admin. "Break-glass" is an operational role, not a separate subsystem: the credential is an ordinary service-account key, and it becomes break-glass only because policy grants it admin and reserves it for emergencies.
 
-It is the **same mechanism as the dev-token path** — the key the `joe` CLI uses to talk to a co-located `joe-core` is the same kind of service-account bearer key. Break-glass and the dev token differ only in operational policy (who holds the key, what it is granted, and when you reach for it), not in code. Do not treat them as two systems.
+It is the **same mechanism as the dev-token path** — the key a `joe` subcommand (e.g. `joe mcp`) uses to talk to a co-located `joe` server is the same kind of service-account bearer key. Break-glass and the dev token differ only in operational policy (who holds the key, what it is granted, and when you reach for it), not in code. Do not treat them as two systems.
 
 Break-glass exists so that when the OIDC issuer is down, misconfigured, or otherwise unreachable, an authorized operator can still authenticate to Joe and act.
 
@@ -33,7 +33,7 @@ The example above defines the principal `svc:breakglass-oncall`, authenticated b
 
 Service-account keys are stored **in plaintext** in the config file — there is no hashing or encryption at rest. The key *is* the credential: anyone who can read the config file holds the credential. Protect the config file accordingly:
 
-- Restrict file permissions so only the account running `joe-core` can read it.
+- Restrict file permissions so only the account running `joe` can read it.
 - Never commit the config file to version control.
 - Treat the file as you would any secret store.
 
@@ -100,7 +100,7 @@ A valid human session cookie takes **precedence** over a bearer key. If a reques
 
 Auth is enforced only when service accounts **or** OIDC are configured. With **neither** configured, Joe runs permit-all: every request is allowed and a bearer key grants nothing special. Before you rely on break-glass as a real boundary, confirm the running binary is in an enforcing mode.
 
-Check the `joe-core` startup log. One of these lines tells you the mode:
+Check the `joe` startup log. One of these lines tells you the mode:
 
 | Startup log line | What it means for break-glass |
 | --- | --- |
@@ -134,7 +134,7 @@ Be precise about the evidentiary value. An audit row proves that **a given servi
 
 The log is deduplicated: at most **one row per `(principal, source address)` per window**, where the window is the session TTL. The log therefore shows that break-glass was *active* in a window from a given address — not one row per request. Do not read the row count as a request count.
 
-The dedup state is held in memory. A `joe-core` restart resets it, so a restart may produce one extra row for an already-seen `(principal, source address)` pair within the same window. This is expected.
+The dedup state is held in memory. A `joe` restart resets it, so a restart may produce one extra row for an already-seen `(principal, source address)` pair within the same window. This is expected.
 
 ### Failure posture: fail-open-but-loud
 

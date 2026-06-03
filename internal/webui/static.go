@@ -16,7 +16,7 @@ import (
 const assetPrefix = "/assets/"
 
 // fallbackIndex is served at the root when no embedded index.html is present
-// (placeholder-only checkout). It keeps joe-core booting and serving something
+// (placeholder-only checkout). It keeps joe booting and serving something
 // useful when the UI has not been built.
 const fallbackIndex = `<!doctype html>
 <html lang="en">

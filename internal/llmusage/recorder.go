@@ -1,7 +1,7 @@
 // Package llmusage records one llm_usage row per Chat call.
 //
 // The package wraps the raw llm.LLMAdapter at a single wire site in
-// cmd/joe-core/main.go so every downstream consumer — the swappable
+// cmd/joe/server.go so every downstream consumer — the swappable
 // hot-swap wrapper, the knowledge embedder, the doc drafter, the review
 // agent, the Core Agent — invokes the recorder transparently through the
 // same interface. The recorder reads the caller principal, session id,
@@ -372,7 +372,7 @@ func (r *RecorderAdapter) gate(ctx context.Context) error {
 	// the same asymmetric-risk logic that drove Rule 4: a read failure
 	// that blocked every LLM call would be a denial of service against
 	// the whole system — including the operator's own path to call
-	// joe-core and intervene — whereas a read failure that lets calls
+	// joe and intervene — whereas a read failure that lets calls
 	// through degrades the cap temporarily and visibly. The failure
 	// MUST be loud: emit a warning and write one gate-read-failure
 	// audit row so a persistent gate outage shows up in the operational

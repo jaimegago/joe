@@ -10,7 +10,7 @@ import (
 // warningsHandler exposes the §E warnings surface — Phase 1 Change 4.
 //
 // Humans cannot raise warnings via HTTP: there is no POST /warnings.
-// The raise path is for joe-core internal use only (Joe raises warnings
+// The raise path is for joe internal use only (Joe raises warnings
 // for incident judgments it is not authorized to act on, per §E1 / §R3).
 // Humans only read the list and (in a later change) mark a warning
 // reviewed.

@@ -13,12 +13,12 @@ import (
 // AnthropicAPIKey, GeminiAPIKey, GoogleAPIKey.
 const noProviderKeyMessage = `You need to connect Joe to an LLM.
 
-No supported provider API key was found in joe-core's environment.
+No supported provider API key was found in joe's environment.
 Set exactly one of:
   - Claude (Anthropic): export %s=...
   - Gemini (Google):    export %s=...   (or %s)
 
-Then restart joe-core. To force a specific provider/model regardless of which
+Then restart joe. To force a specific provider/model regardless of which
 keys are present, set:
   export JOE_LLM_PROVIDER=claude|gemini
   export JOE_LLM_MODEL=<model-name>`
@@ -26,7 +26,7 @@ keys are present, set:
 // AutoSelectProvider fills the provider gap for a user who expressed no explicit
 // LLM provider preference (no JOE_LLM_PROVIDER and no llm.current in the config
 // file), choosing a provider from whichever supported API key is present in the
-// environment. joe-core calls this once at startup so a stranger with exactly
+// environment. joe calls this once at startup so a stranger with exactly
 // one provider key can run with zero configuration.
 //
 // Rules:

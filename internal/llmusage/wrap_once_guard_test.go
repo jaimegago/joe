@@ -15,7 +15,7 @@ import (
 // TestPhaseG2_LLMAdapterConstructorWrappedOnce is the structural guard
 // that pins the Stream-G-G2 wrap-once invariant: the raw LLM adapter
 // constructor (deps.newLLMAdapter) is called EXACTLY ONCE inside
-// cmd/joe-core/main.go's runWithDeps, and that single call site is
+// cmd/joe/server.go's runServerWithDeps, and that single call site is
 // immediately followed by the assignment to the recording wrapper.
 //
 // Why this matters. The four (or more) downstream consumers — the
@@ -34,7 +34,7 @@ import (
 // lives in a different package.
 func TestPhaseG2_LLMAdapterConstructorWrappedOnce(t *testing.T) {
 	repoRoot := findRepoRootForGuard(t)
-	mainPath := filepath.Join(repoRoot, "cmd", "joe-core", "main.go")
+	mainPath := filepath.Join(repoRoot, "cmd", "joe", "server.go")
 
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, mainPath, nil, 0)
@@ -63,13 +63,13 @@ func TestPhaseG2_LLMAdapterConstructorWrappedOnce(t *testing.T) {
 		// reference it exactly once.
 		if ident.Name == "deps" && sel.Sel.Name == "newLLMAdapter" {
 			pos := fset.Position(call.Pos())
-			callSites = append(callSites, "main.go:"+strconv.Itoa(pos.Line))
+			callSites = append(callSites, "server.go:"+strconv.Itoa(pos.Line))
 		}
 		return true
 	})
 
 	if got := len(callSites); got != 1 {
-		t.Fatalf("deps.newLLMAdapter is called %d times in cmd/joe-core/main.go; want exactly 1 (the recorder wrap site). "+
+		t.Fatalf("deps.newLLMAdapter is called %d times in cmd/joe/server.go; want exactly 1 (the recorder wrap site). "+
 			"call sites: %v. "+
 			"A second call would hand a downstream consumer the RAW, unrecorded adapter. "+
 			"Route the new consumer through the existing wrapped llmAdapter handle instead.",
@@ -85,7 +85,7 @@ func TestPhaseG2_LLMAdapterConstructorWrappedOnce(t *testing.T) {
 		t.Fatalf("read %s: %v", mainPath, err)
 	}
 	if !strings.Contains(string(src), "llmusage.NewRecorderAdapter") {
-		t.Errorf("cmd/joe-core/main.go does not reference llmusage.NewRecorderAdapter; the raw adapter is constructed but never wrapped — every Chat call would go unrecorded.")
+		t.Errorf("cmd/joe/server.go does not reference llmusage.NewRecorderAdapter; the raw adapter is constructed but never wrapped — every Chat call would go unrecorded.")
 	}
 }
 

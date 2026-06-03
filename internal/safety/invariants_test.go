@@ -161,12 +161,6 @@ func TestIsCommandAllowed(t *testing.T) {
 			errType: "command_protection",
 		},
 		{
-			name:    "blocked: joe-core binary",
-			command: "joe-core",
-			wantErr: true,
-			errType: "command_protection",
-		},
-		{
 			name:    "blocked: joe with path",
 			command: "/usr/local/bin/joe",
 			wantErr: true,

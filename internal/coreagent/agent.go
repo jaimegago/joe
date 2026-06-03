@@ -19,7 +19,7 @@ import (
 
 // ToolExecutor is the minimal interface the Core Agent uses to run tool
 // calls. Both *tools.Executor and *DurableExecutor satisfy it. Phase 1
-// Change 9 introduced the interface so cmd/joe-core/main.go can swap
+// Change 9 introduced the interface so cmd/joe/server.go can swap
 // in the §D5 durable wrapper without touching this file's construction
 // path.
 type ToolExecutor interface {
@@ -39,7 +39,7 @@ type Agent struct {
 	stopCh    chan struct{}
 }
 
-// SetToolExecutor swaps the underlying tool executor. cmd/joe-core/main.go
+// SetToolExecutor swaps the underlying tool executor. cmd/joe/server.go
 // uses this after wiring the §D5 durable wrapper around the base executor.
 // Calling with nil is a no-op (defensive — never deliberately disable the
 // executor at runtime).
@@ -50,7 +50,7 @@ func (a *Agent) SetToolExecutor(e ToolExecutor) {
 	a.executor = e
 }
 
-// ToolExecutor returns the current executor. Used by cmd/joe-core/main.go
+// ToolExecutor returns the current executor. Used by cmd/joe/server.go
 // to compose the §D5 durable wrapper around whatever was wired at New
 // time.
 func (a *Agent) ToolExecutor() ToolExecutor {

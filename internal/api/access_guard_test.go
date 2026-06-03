@@ -54,7 +54,7 @@ import (
 //     the refresh should be moved under the accessor (or under captaingate
 //     with a synthetic caller principal).
 //
-//   - cmd/joe-core — the composition root. Its only access is a process-level
+//   - cmd/joe — the composition root. Its only access is a process-level
 //     OpenTelemetry business-metrics gauge that reads graph.Summary; this is
 //     server-internal telemetry with no caller principal, so it is not a
 //     principal-gated request/loop path and the accessor (which requires a
@@ -67,7 +67,7 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 	allowedPrefixes := []string{
 		filepath.FromSlash("internal/access/"),
 		filepath.FromSlash("internal/coreagent/"),
-		filepath.FromSlash("cmd/joe-core/"),
+		filepath.FromSlash("cmd/joe/"),
 	}
 
 	// GraphStore methods that constitute graph ACCESS (graph.GraphStore).

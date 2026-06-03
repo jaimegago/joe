@@ -73,7 +73,7 @@ type skillsReloadResponse struct {
 func (h *skillsHandler) handleReload(w http.ResponseWriter, r *http.Request) {
 	if h.watcher == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
-			"skills hot reload is not enabled on this joe-core instance")
+			"skills hot reload is not enabled on this joe instance")
 		return
 	}
 	result := h.watcher.Reload(r.Context(), "manual")
@@ -122,7 +122,7 @@ type skillsListResponse struct {
 func (h *skillsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
-			"skills manager is not available on this joe-core instance")
+			"skills manager is not available on this joe instance")
 		return
 	}
 	installs, err := h.manager.List()
@@ -176,7 +176,7 @@ type skillsApprovalResponse struct {
 func (h *skillsHandler) handleApprove(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
-			"skills manager is not available on this joe-core instance")
+			"skills manager is not available on this joe instance")
 		return
 	}
 	var req skillsApprovalRequest
@@ -212,7 +212,7 @@ func (h *skillsHandler) handleApprove(w http.ResponseWriter, r *http.Request) {
 func (h *skillsHandler) handleReject(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
-			"skills manager is not available on this joe-core instance")
+			"skills manager is not available on this joe instance")
 		return
 	}
 	var req skillsApprovalRequest

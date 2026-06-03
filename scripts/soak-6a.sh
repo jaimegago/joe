@@ -2,8 +2,8 @@
 # soak-6a.sh — §6-A staging-soak walkthrough for PHASE-1-DECOMPOSITION
 # Change 10 (captain-session gate insertion).
 #
-# Drives the HTTP-observable half of §6-A against a RUNNING joe-core
-# instance. Captures real declare/resolve timestamps + session IDs into
+# Drives the HTTP-observable half of §6-A against a RUNNING joe
+# server. Captures real declare/resolve timestamps + session IDs into
 # the six-line §6-A artifact the decomposition's commit-message
 # template requires.
 #
@@ -19,7 +19,7 @@
 #   - captain T2 mutation <tool> against <source_id>: PASSED
 #   - non-captain T2 mutation from session <id>: REFUSED with redirect
 #
-#   Joe-core has no HTTP endpoint that runs a single T2 tool with a
+#   The joe server has no HTTP endpoint that runs a single T2 tool with a
 #   given session/run context. T2 tool calls happen inside the
 #   Core Agent's LLM-driven reasoning loop, which is non-deterministic
 #   to drive via curl. The behavior is verified at the wiring level by
@@ -43,7 +43,7 @@
 #   JOE_SERVER=http://localhost:7777 JOE_API_KEY=... ./scripts/soak-6a.sh
 #
 # PREREQUISITES:
-#   - joe-core running and reachable at $JOE_SERVER.
+#   - joe running and reachable at $JOE_SERVER.
 #   - $JOE_API_KEY maps to a principal that holds 'can_declare_incident'
 #     AND 'can_resolve_incident' via a rbac_policies entry for the
 #     'regime-control' zone (seeded by migration 012; the grant is

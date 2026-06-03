@@ -140,7 +140,7 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	// The effective enforced value is read from the live enforcement
 	// providers, not re-derived from the backstop constants here, so the
 	// displayed number is the one the gate decides with. Both are wired
-	// in cmd/joe-core/main.go; their absence means the instrumentation
+	// in cmd/joe/server.go; their absence means the instrumentation
 	// stack is not fully up, so report unavailable rather than guess.
 	costProvider := h.server.services.CostLimitsProvider
 	sessionProvider := h.server.services.SessionLimitsProvider

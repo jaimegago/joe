@@ -31,7 +31,7 @@ type regimeHandler struct {
 	// incident and when. Phase F redirects this history out of the mutable
 	// system_regime row (which currently gets nulled on resolve — bug #3)
 	// and into the append-only audit table. May be nil in dev/local runs
-	// without a database; production wiring in cmd/joe-core/main.go always
+	// without a database; production wiring in cmd/joe/server.go always
 	// supplies a real repository.
 	auditRepo audit.Repository
 }
@@ -40,7 +40,7 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	if s.services == nil || s.services.SessionModel == nil {
 		return
 	}
-	// The policy engine is constructed in cmd/joe-core/main.go from the
+	// The policy engine is constructed in cmd/joe/server.go from the
 	// same rbacRepo wired into services.RBAC. The Server doesn't currently
 	// hold a reference to the engine, so we construct one on demand from
 	// services.RBAC. When RBAC is unconfigured (nil), declare/resolve

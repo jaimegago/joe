@@ -61,7 +61,7 @@ import (
 
 // version is set at build time via ldflags:
 //
-//	go build -ldflags "-X main.version=1.2.3" ./cmd/joe-core
+//	go build -ldflags "-X main.version=1.2.3" ./cmd/joe
 var version string
 
 type coreAgentRunner interface {
@@ -148,11 +148,11 @@ func (o adapterRegistryOps) GitLabPostNote(ctx context.Context, sourceID, projec
 	return gl.PostNote(ctx, projectID, iid, body)
 }
 
-type runDeps struct {
+type serverDeps struct {
 	// configPath is the resolved path to the config file. Empty means "use the
-	// default ~/.joe/config.yaml". run() fills it from the --config flag /
-	// JOE_CONFIG env; tests that drive runWithDeps directly leave it empty to
-	// get the default-path behaviour.
+	// default ~/.joe/config.yaml". runServer() fills it from the --config flag /
+	// JOE_CONFIG env; tests that drive runServerWithDeps directly leave it empty
+	// to get the default-path behaviour.
 	configPath             string
 	loadConfig             func(path string) (*config.Config, error)
 	setupOTel              func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
@@ -178,8 +178,8 @@ type runDeps struct {
 	waitForShutdown        func(ctx context.Context) <-chan struct{}
 }
 
-func defaultRunDeps() runDeps {
-	return runDeps{
+func defaultServerDeps() serverDeps {
+	return serverDeps{
 		loadConfig:        config.Load,
 		setupOTel:         observability.Setup,
 		defaultOTelConfig: observability.DefaultConfig,
@@ -213,19 +213,22 @@ func defaultRunDeps() runDeps {
 	}
 }
 
-func run(ctx context.Context) int {
-	deps := defaultRunDeps()
+// runServer is Joe's default (no-subcommand) behavior: it boots the HTTP API
+// daemon on :7777. The CLI dispatcher in main.go routes here for a bare `joe`
+// invocation or one carrying only server flags (e.g. `joe --config ...`).
+func runServer(ctx context.Context) int {
+	deps := defaultServerDeps()
 	deps.configPath = resolveConfigPath(os.Args[1:])
-	return runWithDeps(ctx, deps)
+	return runServerWithDeps(ctx, deps)
 }
 
-// resolveConfigPath determines which config file joe-core loads, in descending
+// resolveConfigPath determines which config file the server loads, in descending
 // precedence: the --config flag, then the JOE_CONFIG environment variable, then
 // "" (the caller falls back to the default ~/.joe/config.yaml). It parses a
 // private FlagSet over the given args rather than the global flag.CommandLine so
 // it never collides with go test's flags.
 func resolveConfigPath(args []string) string {
-	fs := flag.NewFlagSet("joe-core", flag.ContinueOnError)
+	fs := flag.NewFlagSet("joe", flag.ContinueOnError)
 	var configFlag string
 	fs.StringVar(&configFlag, "config", "",
 		"path to the config file (overrides JOE_CONFIG and the default ~/.joe/config.yaml)")
@@ -242,7 +245,7 @@ func resolveConfigPath(args []string) string {
 	return ""
 }
 
-func runWithDeps(ctx context.Context, deps runDeps) int {
+func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// Setup initial logger at info level
 	initialLogger := logging.SetupLogger("info")
 	slog.SetDefault(initialLogger)
@@ -646,7 +649,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	// EXACTLY ONE place across both agentic paths (the static guard
 	// TestPhaseG_SingleSharedCaptainGateImplementation asserts there
 	// is no second copy in coreagent or anywhere else). Type-assert is
-	// safe — newCoreAgent in defaultRunDeps returns *coreagent.Agent.
+	// safe — newCoreAgent in defaultServerDeps returns *coreagent.Agent.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
 		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
 		gated := captaingate.New(durable, services.SessionModel, services.Audit)
@@ -821,7 +824,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if cfg.Server.TLSConfigured() {
 		slog.Info("TLS enabled", "cert", cfg.Server.TLSCertFile, "key", cfg.Server.TLSKeyFile)
 	} else {
-		slog.Warn("TLS disabled — connections to joe-core are unencrypted")
+		slog.Warn("TLS disabled — connections to joe are unencrypted")
 	}
 
 	errCh := deps.startServer(server, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
@@ -843,7 +846,7 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	if err := deps.shutdownServer(shutdownCtx, server); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
-	slog.Info("joe-core stopped")
+	slog.Info("joe stopped")
 
 	return 0
 }
@@ -1088,8 +1091,8 @@ func defaultStartMetricsServer(server *http.Server) error {
 func defaultStartServer(server *http.Server, certFile, keyFile string) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("joe-core starting", "addr", server.Addr, "tls", certFile != "")
-		fmt.Printf("joe-core listening on %s\n", server.Addr)
+		slog.Info("joe starting", "addr", server.Addr, "tls", certFile != "")
+		fmt.Printf("joe listening on %s\n", server.Addr)
 		var err error
 		if certFile != "" && keyFile != "" {
 			err = server.ListenAndServeTLS(certFile, keyFile)
@@ -1101,9 +1104,4 @@ func defaultStartServer(server *http.Server, certFile, keyFile string) <-chan er
 		}
 	}()
 	return errCh
-}
-
-func main() {
-	ctx := context.Background()
-	os.Exit(run(ctx))
 }

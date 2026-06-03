@@ -122,7 +122,7 @@ func TestRunSkillsCommand_Install_Success(t *testing.T) {
 	if !strings.Contains(out, "Installed https://example.com/foo.git") || !strings.Contains(out, "abcdef012345") {
 		t.Errorf("stdout missing install summary: %q", out)
 	}
-	if !strings.Contains(out, "joe-core will pick up the new skills") {
+	if !strings.Contains(out, "joe will pick up the new skills") {
 		t.Errorf("install should mention hot reload behaviour, got %q", out)
 	}
 }
@@ -458,7 +458,7 @@ func TestRunSkillsCommand_JoeDirError(t *testing.T) {
 }
 
 func TestRunSkillsCommand_Reload_Success(t *testing.T) {
-	// Spin up a fake joe-core that returns a reload summary, then call
+	// Spin up a fake joe server that returns a reload summary, then call
 	// `joe skills reload` against it. Verifies the client+CLI wire shape.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/skills/reload" || r.Method != "POST" {
@@ -502,7 +502,7 @@ func TestRunSkillsCommand_Reload_Success(t *testing.T) {
 }
 
 func TestRunSkillsCommand_Reload_FailureExitCode(t *testing.T) {
-	// joe-core returns 500 with a failure payload. The CLI must propagate
+	// The joe server returns 500 with a failure payload. The CLI must propagate
 	// a non-zero exit code so CI/CD pipelines fail loudly.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

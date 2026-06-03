@@ -27,7 +27,7 @@ import (
 // regardless of this CLI: it writes the same admin_principals row through
 // the auth.Provisioner on every matching login. The CLI exists so an
 // operator can delegate additional admins (consistent with how Phase C
-// added `joe zone`) without restarting joe-core or editing config.
+// added `joe zone`) without restarting the joe server or editing config.
 func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
 		fmt.Fprintln(stderr, "Usage: joe admin <list|grant|revoke> [flags]")

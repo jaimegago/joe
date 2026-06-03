@@ -25,10 +25,10 @@ func registerSharedTools(registry *Registry) {
 // NewCoreRegistry creates a registry with shared diagnostic tools and core
 // tools. It omits local tools (read_file, write_file, run_command, git tools,
 // askuser) since those only make sense on the user's local machine. This is
-// used by the task execution endpoint on joe-core.
+// used by the task execution endpoint on joe.
 //
 // After Identity Phase E (docs/joe-identity-design.md §3), the value passed in
-// is an in-process accessor-backed client constructed by joe-core (see
+// is an in-process accessor-backed client constructed by joe (see
 // internal/api/inproc_client.go) — there is no loopback HTTP self-call. The
 // argument type is coretools.CoreToolsClient (the aggregate of each tool's
 // small *Client interface), so the HTTP *client.Client also satisfies it for

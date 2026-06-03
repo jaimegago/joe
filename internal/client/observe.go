@@ -15,7 +15,7 @@ type observeRequest struct {
 	Question string `json:"question"`
 }
 
-// QueryMetrics asks joe-core to resolve the metrics source for the service, translate
+// QueryMetrics asks joe to resolve the metrics source for the service, translate
 // the question, execute it, and return a normalized ObservabilityResult.
 func (c *Client) QueryMetrics(ctx context.Context, service, question string) (*observe.ObservabilityResult, error) {
 	payload, err := json.Marshal(observeRequest{Service: service, Question: question})
@@ -30,7 +30,7 @@ func (c *Client) QueryMetrics(ctx context.Context, service, question string) (*o
 	return &result, nil
 }
 
-// QueryLogs asks joe-core to resolve the logs source for the service, translate
+// QueryLogs asks joe to resolve the logs source for the service, translate
 // the question, execute it, and return a normalized ObservabilityResult.
 func (c *Client) QueryLogs(ctx context.Context, service, question string) (*observe.ObservabilityResult, error) {
 	payload, err := json.Marshal(observeRequest{Service: service, Question: question})
@@ -45,7 +45,7 @@ func (c *Client) QueryLogs(ctx context.Context, service, question string) (*obse
 	return &result, nil
 }
 
-// QueryTraces asks joe-core to resolve the traces source for the service and return
+// QueryTraces asks joe to resolve the traces source for the service and return
 // recent trace results as a normalized ObservabilityResult.
 func (c *Client) QueryTraces(ctx context.Context, service, question string) (*observe.ObservabilityResult, error) {
 	payload, err := json.Marshal(observeRequest{Service: service, Question: question})
@@ -60,7 +60,7 @@ func (c *Client) QueryTraces(ctx context.Context, service, question string) (*ob
 	return &result, nil
 }
 
-// QueryAlerts asks joe-core to resolve the alerts source for the service and return
+// QueryAlerts asks joe to resolve the alerts source for the service and return
 // active alerts as a normalized AlertsResult.
 func (c *Client) QueryAlerts(ctx context.Context, service, question string) (*observe.AlertsResult, error) {
 	payload, err := json.Marshal(observeRequest{Service: service, Question: question})
@@ -75,7 +75,7 @@ func (c *Client) QueryAlerts(ctx context.Context, service, question string) (*ob
 	return &result, nil
 }
 
-// QueryK8s asks joe-core to resolve the Kubernetes source for the service and answer
+// QueryK8s asks joe to resolve the Kubernetes source for the service and answer
 // the question (pod list or logs) as a normalized K8sResult.
 func (c *Client) QueryK8s(ctx context.Context, service, question string) (*observe.K8sResult, error) {
 	payload, err := json.Marshal(observeRequest{Service: service, Question: question})

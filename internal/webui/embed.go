@@ -1,4 +1,4 @@
-// Package webui serves the embedded single-page web UI for joe-core.
+// Package webui serves the embedded single-page web UI for joe.
 //
 // The production React build (ui/dist) is copied into this package's in-tree
 // dist directory by `make build-ui` and embedded at compile time. go:embed
@@ -8,7 +8,7 @@
 // A committed placeholder (dist/.gitkeep) keeps `go build` and `go vet` green
 // in a fresh checkout where the UI has not been built; the real build output is
 // gitignored. When no embedded index.html is present (placeholder only, e.g.
-// `go run ./cmd/joe-core` without a UI build) the handler serves a minimal
+// `go run ./cmd/joe` without a UI build) the handler serves a minimal
 // built-in page instead of failing.
 package webui
 
@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-// apiPathPrefix is the absolute prefix for every joe-core API route. Requests
+// apiPathPrefix is the absolute prefix for every joe API route. Requests
 // under it are delegated to the API middleware chain unchanged; every other
 // request is served from the embedded UI. Kept in sync with
 // internal/api.apiPrefix ("/api/v1").

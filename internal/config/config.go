@@ -127,9 +127,9 @@ type KnowledgeConfig struct {
 }
 
 // serverServiceAccountName is the reserved name of the service account that
-// represents joe-core itself (principal svc:server). The joe CLI and REPL —
+// represents joe itself (principal svc:server). The joe CLI and REPL —
 // separate external processes that share this config — present this account's
-// key when authenticating against joe-core's HTTP API. It is the direct
+// key when authenticating against joe's HTTP API. It is the direct
 // descendant of the old single server.api_key, folded into the service-account
 // map (D-0007). Identity Phase E (D-0008) removed the in-process loopback,
 // so the in-process agent-loop no longer uses this key; the surviving
@@ -153,7 +153,7 @@ type ServiceAccount struct {
 // ServerConfig holds joecored server settings
 type ServerConfig struct {
 	Address string `yaml:"address"` // e.g., ":7777" or "localhost:7777"
-	// ServiceAccounts is the set of named machine identities joe-core accepts
+	// ServiceAccounts is the set of named machine identities joe accepts
 	// (Identity Phase D). It is the ONLY machine-authentication input; there is
 	// no separate single api_key. Each entry maps its Key to principal
 	// svc:<Name>. Empty means no machine authentication is configured.
@@ -179,7 +179,7 @@ func (s *ServerConfig) ServiceAccountsConfigured() bool {
 }
 
 // LoopbackKey returns the bearer key a co-located external client process
-// presents to joe-core: the joe CLI and the REPL. It is the key of the
+// presents to joe: the joe CLI and the REPL. It is the key of the
 // service account that represents the server itself — the one named "server"
 // (svc:server), the fold of the old single server.api_key. When no "server"
 // account exists it falls back to the first configured account (deterministic,
@@ -192,7 +192,7 @@ func (s *ServerConfig) ServiceAccountsConfigured() bool {
 // loopback (Identity Phase E, D-0008). The loopback itself is gone — the
 // agent-loop reaches infra directly through the in-process accessor with the
 // real caller principal — but the joe CLI and REPL are still external HTTP
-// clients to joe-core and still present this key.
+// clients to joe and still present this key.
 func (s *ServerConfig) LoopbackKey() string {
 	for _, sa := range s.ServiceAccounts {
 		if sa.Name == serverServiceAccountName {

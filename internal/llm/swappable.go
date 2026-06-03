@@ -6,7 +6,7 @@ import (
 )
 
 // SwappableAdapter wraps an LLMAdapter behind an RWMutex so the active model
-// can be hot-swapped at runtime without restarting joe-core. After the Phase 2
+// can be hot-swapped at runtime without restarting joe. After the Phase 2
 // runtime collapse it is the single LLM contact point: the server-side agentic
 // loop and the Web UI chat handler read through it, and the /model HTTP API
 // swaps the inner adapter via Swap.
