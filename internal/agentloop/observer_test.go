@@ -7,7 +7,6 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/tools/local/echo"
 )
 
 // permissivePolicy returns a safety policy that allows all actions.
@@ -85,7 +84,7 @@ func TestObserver_WithToolCalls(t *testing.T) {
 		},
 	}
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil, tools.WithPolicy(permissivePolicy()))
 	observer := &SliceObserver{}
 	agent := NewAgent(mockLLM, executor, registry, "test", WithObserver(observer))
@@ -165,7 +164,7 @@ func TestObserver_ToolsAvailable(t *testing.T) {
 		},
 	}
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	observer := &SliceObserver{}
 	agent := NewAgent(mockLLM, executor, registry, "test", WithObserver(observer))

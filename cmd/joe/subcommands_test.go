@@ -36,7 +36,7 @@ func TestRunPanicCommand_Success(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
 
-	deps := testDeps(&fakeRepl{}, t.TempDir())
+	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"panic", "-config", cfgPath, "-reason", "test emergency"}, &stdout, &stderr, deps)
@@ -49,7 +49,7 @@ func TestRunPanicCommand_Success(t *testing.T) {
 }
 
 func TestRunPanicCommand_BadConfig(t *testing.T) {
-	deps := testDeps(&fakeRepl{}, t.TempDir())
+	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"panic", "-config", "/nonexistent/config.yaml"}, &stdout, &stderr, deps)
@@ -63,7 +63,7 @@ func TestRunUnlockCommand_Success(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
 
-	deps := testDeps(&fakeRepl{}, t.TempDir())
+	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"unlock", "-config", cfgPath, "-reason", "incident resolved"}, &stdout, &stderr, deps)
@@ -80,7 +80,7 @@ func TestRunUnlockCommand_MissingReason(t *testing.T) {
 	addr := strings.TrimPrefix(server.URL, "http://")
 	cfgPath := writeConfig(t, addr, "info")
 
-	deps := testDeps(&fakeRepl{}, t.TempDir())
+	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"unlock", "-config", cfgPath}, &stdout, &stderr, deps)
@@ -93,7 +93,7 @@ func TestRunUnlockCommand_MissingReason(t *testing.T) {
 }
 
 func TestRunUnlockCommand_BadConfig(t *testing.T) {
-	deps := testDeps(&fakeRepl{}, t.TempDir())
+	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"unlock", "-config", "/nonexistent/config.yaml", "-reason", "test"}, &stdout, &stderr, deps)

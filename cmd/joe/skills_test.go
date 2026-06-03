@@ -74,7 +74,7 @@ func (f *fakeSkillManager) Reject(_ context.Context, name string) ([]string, err
 }
 
 func skillsDeps(t *testing.T, joeDir string, mgr *fakeSkillManager) runDeps {
-	deps := testDeps(&fakeRepl{}, joeDir)
+	deps := testDeps(joeDir)
 	deps.newSkillManager = func(root string, trusted []string, policy *skills.Policy) skillManager {
 		return mgr
 	}

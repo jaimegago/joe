@@ -8,43 +8,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-
-	"github.com/jaimegago/joe/internal/llm"
 )
-
-// ClientToolDef advertises a local tool the CLI can execute on the user's
-// machine. joe-core registers it as a delegating stub for the LLM.
-type ClientToolDef struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Parameters  llm.ParameterSchema `json:"parameters"`
-}
 
 // TaskStreamRequest is the body for a streamed agentic turn.
 type TaskStreamRequest struct {
-	Message     string          `json:"message"`
-	SessionID   string          `json:"session_id,omitempty"`
-	ClientTools []ClientToolDef `json:"client_tools,omitempty"`
-}
-
-// LocalToolCall is the decoded payload of a "local_tool_call" SSE event: a
-// request from joe-core for the CLI to execute a local tool and POST the
-// result via SubmitToolResult.
-type LocalToolCall struct {
-	TaskID string         `json:"task_id"`
-	CallID string         `json:"call_id"`
-	Name   string         `json:"name"`
-	Args   map[string]any `json:"args"`
+	Message   string `json:"message"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // SSE event names emitted by joe-core's streaming task endpoint. These mirror
 // the server-side names; the end-to-end test asserts they stay in sync.
 const (
-	TaskEventStep          = "step"
-	TaskEventFinal         = "final"
-	TaskEventLocalToolCall = "local_tool_call"
+	TaskEventStep  = "step"
+	TaskEventFinal = "final"
 )
 
 // TaskEvent is one decoded Server-Sent Event from the streaming task endpoint.
@@ -53,14 +30,6 @@ const (
 type TaskEvent struct {
 	Type string
 	Data json.RawMessage
-}
-
-// TaskResult is the payload of the terminal "final" event.
-type TaskResult struct {
-	FinalAnswer string `json:"final_answer"`
-	Status      string `json:"status"`
-	Error       string `json:"error,omitempty"`
-	SessionID   string `json:"session_id"`
 }
 
 // StreamTask opens a streamed agentic turn against joe-core and invokes onEvent
@@ -140,21 +109,4 @@ func parseSSE(body io.Reader, onEvent func(TaskEvent) error) error {
 	}
 	// Flush a trailing event with no terminating blank line.
 	return dispatch()
-}
-
-// SubmitToolResult delivers a delegated local-tool result back to joe-core for
-// the given streamed task. errMsg is non-empty when the local tool failed.
-func (c *Client) SubmitToolResult(ctx context.Context, taskID, callID string, result any, errMsg string) error {
-	payload, err := json.Marshal(toolResultBody{CallID: callID, Result: result, Error: errMsg})
-	if err != nil {
-		return fmt.Errorf("marshal tool result: %w", err)
-	}
-	u := fmt.Sprintf("%s%s/%s/tool-results", c.baseURL, apiTasksStreamPath, url.PathEscape(taskID))
-	return c.doJSON(ctx, "POST", u, bytes.NewReader(payload), http.StatusOK, nil, "submit tool result")
-}
-
-type toolResultBody struct {
-	CallID string `json:"call_id"`
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/tools"
-	"github.com/jaimegago/joe/internal/tools/local/echo"
 )
 
 // mockLLM is a mock LLM adapter for testing
@@ -134,7 +133,7 @@ func TestAgent_Run_WithToolCall(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
@@ -189,7 +188,7 @@ func TestAgent_Run_MultipleToolCalls(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
@@ -318,7 +317,7 @@ func TestAgent_Run_MaxIterations(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
@@ -374,7 +373,7 @@ func TestAgent_Run_ToolDefinitionsIncluded(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	registry.Register(echo.NewTool())
+	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
 
