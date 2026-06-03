@@ -197,10 +197,11 @@ func (h *JoeTestHarness) buildBinaries() error {
 // setupTestConfig creates a test configuration file
 func setupTestConfig(t *testing.T, path, port string) {
 	config := fmt.Sprintf(`llm:
-  provider: gemini
-  current_model: gemini-2.0-flash
-  available_models:
-    - gemini-2.0-flash
+  current: gemini-flash
+  available:
+    gemini-flash:
+      provider: gemini
+      model: gemini-2.0-flash
 server:
   address: localhost:%s
 logging:

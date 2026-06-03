@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -148,6 +149,11 @@ func (o adapterRegistryOps) GitLabPostNote(ctx context.Context, sourceID, projec
 }
 
 type runDeps struct {
+	// configPath is the resolved path to the config file. Empty means "use the
+	// default ~/.joe/config.yaml". run() fills it from the --config flag /
+	// JOE_CONFIG env; tests that drive runWithDeps directly leave it empty to
+	// get the default-path behaviour.
+	configPath             string
 	loadConfig             func(path string) (*config.Config, error)
 	setupOTel              func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
 	defaultOTelConfig      func() observability.Config
@@ -208,7 +214,32 @@ func defaultRunDeps() runDeps {
 }
 
 func run(ctx context.Context) int {
-	return runWithDeps(ctx, defaultRunDeps())
+	deps := defaultRunDeps()
+	deps.configPath = resolveConfigPath(os.Args[1:])
+	return runWithDeps(ctx, deps)
+}
+
+// resolveConfigPath determines which config file joe-core loads, in descending
+// precedence: the --config flag, then the JOE_CONFIG environment variable, then
+// "" (the caller falls back to the default ~/.joe/config.yaml). It parses a
+// private FlagSet over the given args rather than the global flag.CommandLine so
+// it never collides with go test's flags.
+func resolveConfigPath(args []string) string {
+	fs := flag.NewFlagSet("joe-core", flag.ContinueOnError)
+	var configFlag string
+	fs.StringVar(&configFlag, "config", "",
+		"path to the config file (overrides JOE_CONFIG and the default ~/.joe/config.yaml)")
+	// A parse error (unknown flag, -h) is non-fatal: fall through to env/default
+	// so the daemon still boots. fs already wrote any usage text to stderr.
+	_ = fs.Parse(args)
+
+	if configFlag != "" {
+		return configFlag
+	}
+	if env := os.Getenv("JOE_CONFIG"); env != "" {
+		return env
+	}
+	return ""
 }
 
 func runWithDeps(ctx context.Context, deps runDeps) int {
@@ -216,10 +247,16 @@ func runWithDeps(ctx context.Context, deps runDeps) int {
 	initialLogger := logging.SetupLogger("info")
 	slog.SetDefault(initialLogger)
 
-	// Load config (defaults to ~/.joe/config.yaml if exists, otherwise uses hardcoded defaults)
-	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	// Load config from the resolved path (--config / JOE_CONFIG), falling back to
+	// the default ~/.joe/config.yaml. A missing file is not fatal — config.Load
+	// uses hardcoded defaults in that case.
+	configPath := deps.configPath
+	if configPath == "" {
+		configPath = paths.DefaultConfigPath()
+	}
+	cfg, err := deps.loadConfig(configPath)
 	if err != nil {
-		slog.Error("failed to load config", "error", err)
+		slog.Error("failed to load config", "error", err, "path", configPath)
 		return 1
 	}
 
