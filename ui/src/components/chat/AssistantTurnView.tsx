@@ -54,6 +54,14 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
           </div>
         )}
 
+        {/* Unobtrusive notice when earlier messages fell out of context this
+            turn (history pruning to fit the model's context budget). */}
+        {turn.historyTrimmed && (
+          <p className="px-1 text-xs italic text-muted-foreground" data-testid="history-trimmed-notice">
+            Some earlier messages are no longer in context.
+          </p>
+        )}
+
         {/* Final answer for a completed turn. */}
         {!isFailed && turn.finalAnswer && (
           <div className="rounded-2xl bg-muted px-4 py-2 text-sm text-foreground">

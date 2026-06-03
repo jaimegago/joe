@@ -57,6 +57,8 @@ function makeFinal(over: Partial<FinalEvent>): FinalEvent {
     tools_used: [],
     total_tokens: { input_tokens: 0, output_tokens: 0 },
     duration_ms: 1,
+    history_trimmed: false,
+    messages_dropped: 0,
     ...over,
   };
 }
@@ -108,6 +110,27 @@ describe('useChat streaming lifecycle', () => {
     // Both steps' tools remain visible in the settled turn.
     expect(screen.getByText('k8s')).toBeInTheDocument();
     expect(screen.getByText('metrics')).toBeInTheDocument();
+  });
+
+  it('renders the history-trimmed notice when the final reports history_trimmed', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('long conversation');
+    act(() => {
+      captured[0].onFinal(makeFinal({ final_answer: 'ok', history_trimmed: true, messages_dropped: 3 }));
+      resolvers[0]();
+    });
+    await waitFor(() => expect(screen.getByTestId('history-trimmed-notice')).toBeInTheDocument());
+
+    // A turn that did not trim shows no notice.
+    await sendMessage('short');
+    act(() => {
+      captured[1].onFinal(makeFinal({ final_answer: 'ok2' }));
+      resolvers[1]();
+    });
+    await waitFor(() => expect(screen.getByText('ok2')).toBeInTheDocument());
+    expect(screen.getAllByTestId('history-trimmed-notice')).toHaveLength(1);
   });
 
   it('renders a pre-stream non-200 error as a failed turn with no steps', async () => {

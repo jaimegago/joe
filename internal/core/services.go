@@ -109,15 +109,23 @@ type Services struct {
 	// cannot drift from it. nil in unit-test harnesses that don't
 	// exercise the settings GET endpoint.
 	CostLimitsProvider *llmsettings.CostLimitsProvider
-	SessionModel       sessionmodel.Repository      // nil until wired in cmd/joe/server.go
-	RunModel           runmodel.Repository          // nil until wired in cmd/joe/server.go
-	Findings           findings.Repository          // nil until wired in cmd/joe/server.go
-	Warnings           warnings.Repository          // nil until wired in cmd/joe/server.go
-	CaptainSvc         *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
-	Review             *review.Service              // nil when code review is not configured
-	ReviewAgent        *review.ReviewAgent          // nil when review agent is not configured
-	Skills             *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher      *skills.Watcher              // nil when hot reload is disabled or failed to start
+	// ContextBudgetProvider is the storage-backed agentloop.ContextBudget
+	// the per-task agent construction reads the context-budget fraction
+	// from. Built once at startup and shared across tasks (re-reads the DB
+	// per call), so a fraction changed through the settings API takes effect
+	// on the next message without a restart. nil in unit-test harnesses that
+	// don't exercise context budgeting (buildTaskRun then falls back to the
+	// static backstop fraction).
+	ContextBudgetProvider *llmsettings.ContextBudgetProvider
+	SessionModel          sessionmodel.Repository      // nil until wired in cmd/joe/server.go
+	RunModel              runmodel.Repository          // nil until wired in cmd/joe/server.go
+	Findings              findings.Repository          // nil until wired in cmd/joe/server.go
+	Warnings              warnings.Repository          // nil until wired in cmd/joe/server.go
+	CaptainSvc            *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
+	Review                *review.Service              // nil when code review is not configured
+	ReviewAgent           *review.ReviewAgent          // nil when review agent is not configured
+	Skills                *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher         *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,

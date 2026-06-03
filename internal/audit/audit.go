@@ -143,6 +143,14 @@ const (
 	// session token ceiling (table llm_runaway_limits).
 	ActionLLMSetRunawayCeiling = "llm_set_runaway_ceiling"
 
+	// ActionLLMSetContextBudget records an operator change to the
+	// context-budget fraction (table llm_context_budget). The audit row's
+	// context carries the prior and new fraction. Kind is
+	// KindLLMSettingsMutation, like the other settings mutations; the
+	// audit_log.kind CHECK already admits that kind (migration 017), so no
+	// schema change is needed for this action.
+	ActionLLMSetContextBudget = "llm_set_context_budget"
+
 	// ActionLLMRunawayTerminated records a session termination by the
 	// runaway gate when a session exceeded the configured token
 	// ceiling. The decision on this row is "deny" (the action the gate

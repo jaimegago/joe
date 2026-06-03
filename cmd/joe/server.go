@@ -380,6 +380,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	llmSettingsRepo := llmsettings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	costLimitsProvider := llmsettings.NewCostLimitsProvider(llmSettingsRepo, llmusage.NewStaticCostLimits(), slog.Default())
 	sessionLimitsProvider := llmsettings.NewSessionLimitsProvider(llmSettingsRepo, agentloop.NewStaticSessionLimits(), slog.Default())
+	contextBudgetProvider := llmsettings.NewContextBudgetProvider(llmSettingsRepo, agentloop.NewStaticContextBudget(), slog.Default())
 	llmSettingsSvc := llmsettings.NewMutationService(llmSettingsRepo, auditRepo)
 
 	// Wire session-model repository (tables created by migration 009).
@@ -459,6 +460,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.LLMSettings = llmSettingsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
 	services.CostLimitsProvider = costLimitsProvider
+	services.ContextBudgetProvider = contextBudgetProvider
 	services.SessionModel = sessionModelRepo
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo

@@ -47,6 +47,9 @@ const (
 	// AuditCtxTargetRunawayCeiling is the canonical target string for
 	// a runaway-ceiling mutation.
 	AuditCtxTargetRunawayCeiling = "runaway_ceiling"
+	// AuditCtxTargetContextBudget is the canonical target string for a
+	// context-budget mutation.
+	AuditCtxTargetContextBudget = "context_budget"
 )
 
 // AuditCtxTargetCostLimit returns the canonical target string for a
@@ -153,6 +156,25 @@ func (s *MutationService) SetRunawayCeiling(ctx context.Context, value int) erro
 				return nil, nil, rerr
 			}
 			if werr := s.repo.UpdateRunawayCeilingTx(ctx, tx, value, s.now()); werr != nil {
+				return nil, nil, werr
+			}
+			return prev, value, nil
+		})
+}
+
+// SetContextBudget persists the new context-budget fraction and writes the
+// audit row atomically. Range validation (fraction in (0, 1]) is enforced at
+// the HTTP boundary so an invalid value is a 400 before it reaches here; the
+// service forwards the value unchanged, and the storage provider's backstop
+// convention interprets a stored zero as "unset, use the default fraction".
+func (s *MutationService) SetContextBudget(ctx context.Context, value float64) error {
+	return s.runMutation(ctx, AuditCtxTargetContextBudget, audit.ActionLLMSetContextBudget,
+		func(tx *sql.Tx) (before any, after any, err error) {
+			prev, rerr := s.repo.ReadContextBudgetTx(ctx, tx)
+			if rerr != nil {
+				return nil, nil, rerr
+			}
+			if werr := s.repo.UpdateContextBudgetTx(ctx, tx, value, s.now()); werr != nil {
 				return nil, nil, werr
 			}
 			return prev, value, nil

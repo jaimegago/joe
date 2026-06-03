@@ -42,6 +42,17 @@ func WithSessionLimits(p SessionLimits) AgentOption {
 	return func(a *Agent) { a.sessionLimits = p }
 }
 
+// WithMaxOutputTokens sets the explicit per-request output cap the loop
+// stamps on every ChatRequest.MaxTokens it builds (Stream G context pass).
+// buildTaskRun resolves it from the active model's capabilities table entry
+// so the agentic path never relies on a provider's implicit default (the
+// Claude adapter defaulted to 4096; the Gemini adapter set no limit at all).
+// A value <= 0 leaves MaxTokens unset, preserving prior behaviour for
+// callers that don't supply it.
+func WithMaxOutputTokens(n int) AgentOption {
+	return func(a *Agent) { a.maxOutputTokens = n }
+}
+
 // WithAuditRepo wires the append-only audit.Repository used by the loop
 // when a terminal limit fires (Stream G phase G3a: runaway termination
 // writes one KindLLMLimitTriggered row). When omitted (or nil), the
@@ -92,6 +103,10 @@ type Agent struct {
 	// best-effort posture for refusal audit when no repo is wired.
 	sessionLimits SessionLimits
 	auditRepo     audit.Repository
+
+	// maxOutputTokens is the explicit per-request output cap stamped on
+	// ChatRequest.MaxTokens. Zero leaves MaxTokens unset (provider default).
+	maxOutputTokens int
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
@@ -182,6 +197,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			SystemPrompt: a.systemPrompt,
 			Messages:     session.Messages,
 			Tools:        toolDefs,
+			MaxTokens:    a.maxOutputTokens,
 		}
 
 		// Capture tool names for observer

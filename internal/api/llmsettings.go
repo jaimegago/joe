@@ -58,6 +58,7 @@ func (s *Server) registerLLMSettingsRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/active-model", prefix), h.handleSetActiveModel)
 	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/cost-limit", prefix), h.handleSetCostLimit)
 	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/runaway-ceiling", prefix), h.handleSetRunawayCeiling)
+	mux.HandleFunc(fmt.Sprintf("POST %s/llm/settings/context-budget", prefix), h.handleSetContextBudget)
 }
 
 type costLimitView struct {
@@ -88,10 +89,23 @@ type runawayCeilingView struct {
 	Effective int `json:"effective"`
 }
 
+// contextBudgetView mirrors the cost-limit / runaway-ceiling views: the raw
+// stored fraction, the unset-vs-configured label, and the EFFECTIVE fraction
+// the agentic path actually budgets with — sourced from the SAME
+// ContextBudgetProvider buildTaskRun reads, so the displayed number cannot
+// drift from the enforced one. A stored zero (unset) reports the
+// backstop-substituted default fraction as Effective.
+type contextBudgetView struct {
+	StoredRaw float64 `json:"stored_raw"`
+	State     string  `json:"state"`
+	Effective float64 `json:"effective"`
+}
+
 type llmSettingsResponse struct {
 	ActiveModel    string             `json:"active_model"`
 	CostLimits     []costLimitView    `json:"cost_limits"`
 	RunawayCeiling runawayCeilingView `json:"runaway_ceiling"`
+	ContextBudget  contextBudgetView  `json:"context_budget"`
 }
 
 // stateForLimit applies the documented backstop convention: a stored
@@ -144,7 +158,8 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	// stack is not fully up, so report unavailable rather than guess.
 	costProvider := h.server.services.CostLimitsProvider
 	sessionProvider := h.server.services.SessionLimitsProvider
-	if costProvider == nil || sessionProvider == nil {
+	budgetProvider := h.server.services.ContextBudgetProvider
+	if costProvider == nil || sessionProvider == nil || budgetProvider == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm limits providers not available")
 		return
 	}
@@ -164,6 +179,11 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "llm settings read runaway ceiling")
 		return
 	}
+	budget, err := repo.ReadContextBudget(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "llm settings read context budget")
+		return
+	}
 
 	resp := llmSettingsResponse{
 		ActiveModel: active,
@@ -176,6 +196,11 @@ func (h *llmSettingsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			StoredRaw: ceiling,
 			State:     stateForLimit(ceiling != 0),
 			Effective: effectiveEnforced(sessionProvider.SessionTokenCeiling()),
+		},
+		ContextBudget: contextBudgetView{
+			StoredRaw: budget,
+			State:     stateForLimit(budget != 0),
+			Effective: budgetProvider.BudgetFraction(),
 		},
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -303,4 +328,41 @@ func (h *llmSettingsHandler) handleSetRunawayCeiling(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"value": req.Value})
+}
+
+type setContextBudgetRequest struct {
+	// Fraction is the new context-budget fraction. Validated here to be in
+	// the half-open range (0, 1]: a fraction of zero or below, or above 1.0,
+	// is rejected with 400 before it reaches the mutation service. (A stored
+	// zero remains a valid "unset" sentinel, but it is reached only via the
+	// migration seed, never written through this endpoint — an operator
+	// clearing the budget is not an expressible request.)
+	Fraction float64 `json:"fraction"`
+}
+
+// handleSetContextBudget admin-gates the atomic persist-and-audit path for
+// the context-budget fraction. Validation (0 < fraction <= 1.0) happens here
+// so an out-of-range value is a 400 before the mutation runs.
+func (h *llmSettingsHandler) handleSetContextBudget(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setContextBudgetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set context budget", "invalid request body")
+		return
+	}
+	if req.Fraction <= 0 || req.Fraction > 1.0 {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "fraction must be greater than 0 and at most 1.0")
+		return
+	}
+	if h.server.services == nil || h.server.services.LLMSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "llm settings service not available")
+		return
+	}
+	if err := h.server.services.LLMSettings.SetContextBudget(r.Context(), req.Fraction); err != nil {
+		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to set context budget: %s", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"fraction": req.Fraction})
 }
