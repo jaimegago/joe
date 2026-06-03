@@ -43,6 +43,20 @@ func Handler() (http.Handler, error) {
 	return newStaticHandler(sub), nil
 }
 
+// Embedded reports whether this binary was built with a real web UI embedded
+// (via `make build`) rather than only the committed placeholder. It reuses the
+// uiBuilt discriminator (presence of an assets/ directory of hashed Vite
+// chunks), so it cannot false-positive on a real build. The server calls this
+// once at startup to decide whether to warn about a UI-less binary; it is cheap
+// and never runs per request.
+func Embedded() bool {
+	sub, err := fs.Sub(distFS, "dist")
+	if err != nil {
+		return false
+	}
+	return uiBuilt(sub)
+}
+
 // Mount wraps the API middleware chain so requests under /api/v1 are delegated
 // to apiChain unchanged, and all other requests are served from the embedded
 // UI entirely outside the chain (no edge auth, rate limit, metrics, or body

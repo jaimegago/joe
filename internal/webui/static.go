@@ -15,13 +15,24 @@ import (
 // chunk name would silently return HTML and break the app.
 const assetPrefix = "/assets/"
 
-// fallbackIndex is served at the root when no embedded index.html is present
-// (placeholder-only checkout). It keeps joe booting and serving something
-// useful when the UI has not been built.
+// fallbackIndex is served for navigation paths when this binary was built
+// without its web UI (placeholder-only embed — see uiBuilt). It states plainly
+// that the UI is missing and names the supported fix (`make build`), since this
+// is what a person trying joe from a bare `go build` would otherwise hit with
+// no explanation.
 const fallbackIndex = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>joe</title></head>
-<body><p>The joe web UI has not been built. Run <code>make build-ui</code>, or use the Vite dev server (<code>make run-ui</code>).</p></body>
+<head><meta charset="utf-8"><title>joe — web UI not built</title></head>
+<body>
+<h1>joe was built without its web UI</h1>
+<p>This binary was compiled without the embedded web UI. That happens when joe
+is built with a bare <code>go build ./cmd/joe</code>, which embeds only a
+placeholder instead of the real UI assets.</p>
+<p>To get a UI-complete binary, build with <code>make build</code>. That target
+builds the web UI first and embeds it into the binary; a plain
+<code>go build</code> does not.</p>
+<p>The joe API is still fully available under <code>/api/v1</code>.</p>
+</body>
 </html>`
 
 // staticHandler serves the embedded SPA from a filesystem rooted at the dist
@@ -31,12 +42,26 @@ type staticHandler struct {
 	index []byte
 }
 
-// newStaticHandler builds a handler over fsys. index.html is read once at
-// construction; if it is absent the built-in fallback page is used so the
-// handler is always serviceable.
+// uiBuilt reports whether fsys holds a real Vite build rather than only the
+// committed placeholder. It tests for an assets/ directory: a production Vite
+// build always emits assets/ with hashed JS/CSS chunks, and the only way that
+// directory reaches the embed tree is `make build` copying ui/dist into it.
+// The placeholder checkout contains just .gitkeep and no assets/. This is the
+// authoritative discriminator — a stray index.html is not, since a placeholder
+// could carry one, but no placeholder can manufacture an assets/ dir of hashed
+// build chunks, so this signal cannot false-positive on a real build.
+func uiBuilt(fsys fs.FS) bool {
+	info, err := fs.Stat(fsys, "assets")
+	return err == nil && info.IsDir()
+}
+
+// newStaticHandler builds a handler over fsys. The SPA shell is read once at
+// construction: a real build's index.html when the UI is embedded, otherwise
+// the built-in fallback page (which explains how to produce a UI-complete
+// binary) so the handler is always serviceable.
 func newStaticHandler(fsys fs.FS) *staticHandler {
 	index, err := fs.ReadFile(fsys, "index.html")
-	if err != nil {
+	if err != nil || !uiBuilt(fsys) {
 		index = []byte(fallbackIndex)
 	}
 	return &staticHandler{fsys: fsys, index: index}

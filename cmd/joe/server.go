@@ -790,6 +790,9 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Error("failed to initialize embedded web UI handler", "error", err)
 		return 1
 	}
+	if !webui.Embedded() {
+		slog.Warn("web UI not embedded in this binary — only the API under /api/v1 and a fallback page are served; build with `make build` to produce a UI-complete binary")
+	}
 
 	server := &http.Server{
 		Addr:         addr,
