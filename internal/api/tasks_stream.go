@@ -123,24 +123,6 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 
 	taskID := uid.New()
 
-	// Register the client's local tools as delegating stubs so the LLM can
-	// call them; their execution is sent back to the CLI over the stream. A
-	// client may never shadow a server-side tool — the server's own tool wins.
-	if len(req.ClientTools) > 0 {
-		coord := newDelegationCoordinator(sse, taskID)
-		h.inflight.add(taskID, coord)
-		defer h.inflight.remove(taskID)
-		for _, ct := range req.ClientTools {
-			if ct.Name == "" {
-				continue
-			}
-			if _, err := prepared.registry.Get(ct.Name); err == nil {
-				continue
-			}
-			prepared.registry.Register(newDelegatedTool(ct, coord))
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 

@@ -8,61 +8,6 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 )
 
-func TestNewDefaultRegistry(t *testing.T) {
-	registry := NewDefaultRegistry(nil)
-
-	if registry == nil {
-		t.Fatal("NewDefaultRegistry() returned nil")
-	}
-
-	// Define expected tools (local tools + shared diagnostic tools)
-	expectedTools := map[string]bool{
-		"ask_user":         true,
-		"read_file":        true,
-		"write_file":       true,
-		"local_git_status": true,
-		"local_git_diff":   true,
-		"run_command":      true,
-		// Shared diagnostic tools (Phase 6.6)
-		"tcp_connect":  true,
-		"port_scan":    true,
-		"dns_lookup":   true,
-		"http_request": true,
-		"system_info":  true,
-		"trace_route":  true,
-	}
-
-	// Test that all expected tools are registered
-	for toolName := range expectedTools {
-		tool, err := registry.Get(toolName)
-		if err != nil {
-			t.Errorf("NewDefaultRegistry() missing '%s' tool: %v", toolName, err)
-		}
-		if tool == nil {
-			t.Errorf("NewDefaultRegistry() '%s' tool is nil", toolName)
-		}
-	}
-
-	// Test that we have exactly the expected number of tools
-	allTools := registry.GetAll()
-	if len(allTools) != len(expectedTools) {
-		t.Errorf("NewDefaultRegistry() has %d tools, want %d", len(allTools), len(expectedTools))
-	}
-
-	// Test that tool definitions can be generated
-	definitions := registry.ToDefinitions()
-	if len(definitions) != len(expectedTools) {
-		t.Errorf("NewDefaultRegistry().ToDefinitions() returned %d definitions, want %d", len(definitions), len(expectedTools))
-	}
-
-	// Verify all tool names in definitions are expected
-	for _, def := range definitions {
-		if !expectedTools[def.Name] {
-			t.Errorf("Unexpected tool in definitions: %s", def.Name)
-		}
-	}
-}
-
 // validatePropertySchema checks a single property for schema correctness.
 // Returns a non-nil error describing the exact problem so the developer knows
 // what to fix in the tool's Parameters() definition.
@@ -83,7 +28,7 @@ func validatePropertySchema(toolName, propName string, prop llm.Property) error 
 // schema bugs are caught by `go test` rather than at runtime against a live API.
 func TestToolSchemaValidity(t *testing.T) {
 	coreClient := client.New("http://localhost:7777")
-	registry := NewDefaultRegistryWithClient(coreClient, nil)
+	registry := NewCoreRegistry(coreClient, nil)
 
 	for _, tool := range registry.GetAll() {
 		t.Run(tool.Name(), func(t *testing.T) {
@@ -97,22 +42,16 @@ func TestToolSchemaValidity(t *testing.T) {
 	}
 }
 
-func TestNewDefaultRegistryWithClient(t *testing.T) {
+func TestNewCoreRegistry(t *testing.T) {
 	coreClient := client.New("http://localhost:7777")
-	registry := NewDefaultRegistryWithClient(coreClient, nil)
+	registry := NewCoreRegistry(coreClient, nil)
 
 	if registry == nil {
-		t.Fatal("NewDefaultRegistryWithClient() returned nil")
+		t.Fatal("NewCoreRegistry() returned nil")
 	}
 
-	// Should have all local tools + shared diagnostic tools + core tools
+	// Should have shared diagnostic tools + core tools (no local tools)
 	expectedTools := map[string]bool{
-		"ask_user":         true,
-		"read_file":        true,
-		"write_file":       true,
-		"local_git_status": true,
-		"local_git_diff":   true,
-		"run_command":      true,
 		// Shared diagnostic tools (Phase 6.6)
 		"tcp_connect":  true,
 		"port_scan":    true,

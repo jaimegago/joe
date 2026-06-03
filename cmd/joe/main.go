@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	gslack "github.com/slack-go/slack"
@@ -20,32 +19,17 @@ import (
 
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/mcp"
-	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
-	"github.com/jaimegago/joe/internal/repl"
 	"github.com/jaimegago/joe/internal/review"
-	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
-	"github.com/jaimegago/joe/internal/tools"
 )
-
-type replRunner interface {
-	Run(ctx context.Context) error
-}
 
 type runDeps struct {
 	loadConfig       func(path string) (*config.Config, error)
-	setupOTel        func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error)
-	newMetrics       func() *observability.Metrics
 	joeDirPath       func() (string, error)
-	loadPolicy       func(configDir string) (*safety.SafetyPolicy, error)
 	newClient        func(baseURL string, opts ...client.ClientOption) *client.Client
-	newRegistry      func(policy *safety.SafetyPolicy) *tools.Registry
-	newExecutor      func(registry *tools.Registry, metrics *observability.Metrics, opts ...tools.ExecutorOption) *tools.Executor
-	newRepl          func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner
 	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
 	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
 	// openRBACRepo opens the RBAC repository for `joe zone` and
@@ -59,17 +43,9 @@ type runDeps struct {
 
 func defaultRunDeps() runDeps {
 	return runDeps{
-		loadConfig:  config.Load,
-		setupOTel:   observability.Setup,
-		newMetrics:  observability.NewMetrics,
-		joeDirPath:  paths.JoeDirPath,
-		loadPolicy:  safety.LoadPolicy,
-		newClient:   client.New,
-		newRegistry: tools.NewLocalRegistry,
-		newExecutor: tools.NewExecutor,
-		newRepl: func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner {
-			return repl.New(c, cfg, executor, registry)
-		},
+		loadConfig: config.Load,
+		joeDirPath: paths.JoeDirPath,
+		newClient:  client.New,
 		newSkillManager: func(root string, trusted []string, policy *skills.Policy) skillManager {
 			return skills.NewManager(root, nil).
 				WithTrustedSources(trusted).
@@ -663,7 +639,6 @@ func reorderFlagsFirst(args []string, valueFlags map[string]bool) []string {
 }
 
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	// Dispatch subcommands before parsing REPL flags.
 	if len(args) > 0 {
 		switch args[0] {
 		case "panic":
@@ -685,123 +660,26 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		}
 	}
 
-	fs := flag.NewFlagSet("joe", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
+	// The interactive REPL has been removed: joe is now a launcher for its
+	// subcommands (mcp, slack, panic, unlock, review, skills, zone, admin).
+	// A bare invocation or unknown subcommand prints usage and exits non-zero.
+	printUsage(stderr)
+	return 2
+}
 
-	// Initialize a basic logger before config is available
-	initialLogger := logging.SetupLogger(logging.LevelInfo)
-	slog.SetDefault(initialLogger)
-
-	// Load configuration
-	cfg, err := deps.loadConfig(*configPath)
-	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		return 1
-	}
-
-	// Initialize OpenTelemetry (default to no tracing in CLI unless explicitly enabled)
-	otelCfg := observability.DefaultConfig()
-	if _, ok := os.LookupEnv("OTEL_TRACES_ENABLED"); !ok {
-		otelCfg.TracesEnabled = false
-	}
-	if _, ok := os.LookupEnv("OTEL_TRACES_EXPORTER"); !ok {
-		otelCfg.TracesExporter = "none"
-	}
-	shutdownOTel, err := deps.setupOTel(ctx, otelCfg)
-	if err != nil {
-		slog.Warn("OpenTelemetry setup failed", "error", err)
-	} else {
-		defer func() { _ = shutdownOTel(context.Background()) }()
-	}
-
-	// Create metrics instance
-	metrics := deps.newMetrics()
-
-	// Note: after the Phase 2 runtime collapse the CLI makes no LLM calls and
-	// holds no LLM adapter — the single LLM contact point lives in joe-core.
-	// The CLI therefore does not validate llm.* config or require provider API
-	// keys; that is joe-core's concern.
-
-	// Connect to joe-core
-	scheme := "http"
-	if cfg.Server.TLSEnabled {
-		scheme = "https"
-	}
-	joecoreURL := scheme + "://" + cfg.Server.Address
-	var clientOpts []client.ClientOption
-	if key := cfg.Server.LoopbackKey(); key != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(key))
-	}
-	if cfg.Server.TLSEnabled {
-		clientOpts = append(clientOpts, client.WithTLS())
-	}
-	coreClient := deps.newClient(joecoreURL, clientOpts...)
-
-	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer pingCancel()
-
-	if err := coreClient.Ping(pingCtx); err != nil {
-		fmt.Fprintf(stderr, "Error: Cannot connect to joe-core at %s\n", joecoreURL)
-		fmt.Fprintf(stderr, "Make sure joe-core is running: joe-core\n\n")
-		return 1
-	}
-
-	// Set up structured logging based on config
-	logger, logCleanup := logging.SetupLoggerWithFile(cfg.Logging.Level, cfg.Logging.File)
-	defer logCleanup()
-	slog.SetDefault(logger)
-
-	// Log debug mode if enabled
-	if cfg.Logging.Level == logging.LevelDebug {
-		slog.Debug("running in debug mode")
-		fmt.Fprintln(stdout, "Debug mode enabled")
-	}
-
-	// Load safety policy from ~/.joe/safety-policy.yaml
-	// If the file doesn't exist, DefaultPolicy is used (most restrictive for T3).
-	// If the file is malformed, we refuse to start.
-	joeDir, err := deps.joeDirPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "Error: cannot determine Joe config directory: %v\n", err)
-		return 1
-	}
-	safetyPolicy, err := deps.loadPolicy(joeDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "Error: %v\n", err)
-		return 1
-	}
-	slog.Info("safety policy loaded", "config_dir", joeDir)
-
-	// Create the local tool registry (read_file, write_file, run_command, git,
-	// ask_user). These execute on the operator's machine when joe-core's loop
-	// delegates a tool call back over the stream. Core/shared tools run inside
-	// joe-core's loop, not here. Pass safety policy so tool-specific settings
-	// (e.g., allowed_directories) are enforced locally.
-	registry := deps.newRegistry(safetyPolicy)
-
-	// Create REPL notifier for T3 pre-execution countdown and T2/T3 post-execution log
-	replNotifier := repl.NewNotifier()
-
-	// Create the local tool executor with safety policy enforcement and
-	// notifications. Used to service delegated tool callbacks.
-	executor := deps.newExecutor(registry, metrics,
-		tools.WithPolicy(safetyPolicy),
-		tools.WithNotifier(replNotifier),
-	)
-
-	// Create and run the thin REPL: it drives joe-core's single agentic loop
-	// over HTTP and renders the streamed output.
-	replInstance := deps.newRepl(coreClient, cfg, executor, registry)
-	if err := replInstance.Run(ctx); err != nil {
-		slog.Error("repl failed", "error", err)
-		return 1
-	}
-
-	return 0
+// printUsage writes the top-level command summary to w.
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: joe <command> [flags]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  mcp      Run Joe as an MCP stdio server")
+	fmt.Fprintln(w, "  slack    Run Joe as a Slack bot")
+	fmt.Fprintln(w, "  review   Manage code-review jobs")
+	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
+	fmt.Fprintln(w, "  zone     Manage RBAC zone grants")
+	fmt.Fprintln(w, "  admin    Manage admin provisioning")
+	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of joe-core")
+	fmt.Fprintln(w, "  unlock   Lift joe-core safe mode")
 }
 
 func main() {

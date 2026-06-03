@@ -59,7 +59,7 @@ func TestAgentFlow_ToolCallRoundtrip(t *testing.T) {
 
 	// Wire core tools to the running joecored (port 7778).
 	coreClient := client.New("http://localhost:7778")
-	registry := tools.NewDefaultRegistryWithClient(coreClient, nil)
+	registry := tools.NewCoreRegistry(coreClient, nil)
 	executor := tools.NewExecutor(registry, nil)
 
 	mockLLM := &sequentialMockLLM{
@@ -99,52 +99,6 @@ func TestAgentFlow_ToolCallRoundtrip(t *testing.T) {
 	}
 }
 
-// TestAgentFlow_LocalToolExecution verifies that local tools (not HTTP-bound)
-// execute correctly inside the agent loop: MockLLM triggers an echo tool call
-// and the result is fed back before the final answer.
-func TestAgentFlow_LocalToolExecution(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	harness := NewTestHarness(t)
-	defer harness.Stop()
-	if err := harness.Start(); err != nil {
-		t.Fatalf("failed to start harness: %v", err)
-	}
-
-	coreClient := client.New("http://localhost:7778")
-	registry := tools.NewDefaultRegistryWithClient(coreClient, nil)
-	executor := tools.NewExecutor(registry, nil)
-
-	mockLLM := &sequentialMockLLM{
-		responses: []*llm.ChatResponse{
-			// Turn 1: call the local echo tool.
-			{
-				ToolCalls: []llm.ToolCall{
-					{Name: "echo", Args: map[string]any{"message": "hello from e2e"}},
-				},
-			},
-			// Turn 2: produce final answer after seeing echo result.
-			{Content: "Echo confirmed: hello from e2e."},
-		},
-	}
-
-	agent := agentloop.NewAgent(mockLLM, executor, registry, "You are a test agent.")
-	session := agentloop.NewSession(nil)
-
-	response, err := agent.Run(context.Background(), session, "echo hello from e2e")
-	if err != nil {
-		t.Fatalf("agent.Run() error = %v", err)
-	}
-	if response == "" {
-		t.Error("expected non-empty response")
-	}
-	if mockLLM.callCount != 2 {
-		t.Errorf("LLM callCount = %d, want 2", mockLLM.callCount)
-	}
-}
-
 // TestAgentFlow_MaxIterationsRespected verifies the agent stops after reaching
 // DefaultMaxIterations (20) when the LLM never stops calling tools.
 func TestAgentFlow_MaxIterationsRespected(t *testing.T) {
@@ -159,7 +113,7 @@ func TestAgentFlow_MaxIterationsRespected(t *testing.T) {
 	}
 
 	coreClient := client.New("http://localhost:7778")
-	registry := tools.NewDefaultRegistryWithClient(coreClient, nil)
+	registry := tools.NewCoreRegistry(coreClient, nil)
 	executor := tools.NewExecutor(registry, nil)
 
 	// MockLLM always returns an echo tool call — never a final text answer.

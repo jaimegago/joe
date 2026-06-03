@@ -4,43 +4,20 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jaimegago/joe/internal/client"
-	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/observability"
-	"github.com/jaimegago/joe/internal/safety"
-	"github.com/jaimegago/joe/internal/tools"
 )
 
-type fakeRepl struct {
-	called bool
-	err    error
-}
-
-func (f *fakeRepl) Run(ctx context.Context) error {
-	f.called = true
-	return f.err
-}
-
-func testDeps(repl *fakeRepl, joeDir string) runDeps {
+// testDeps builds a runDeps for subcommand tests, overriding only the Joe
+// config directory so tests stay off the real filesystem. The interactive REPL
+// was removed in the deletion pass; the no-subcommand default branch now just
+// prints usage and exits non-zero.
+func testDeps(joeDir string) runDeps {
 	deps := defaultRunDeps()
-	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
-		return func(context.Context) error { return nil }, nil
-	}
 	deps.joeDirPath = func() (string, error) {
 		return joeDir, nil
-	}
-	deps.loadPolicy = func(configDir string) (*safety.SafetyPolicy, error) {
-		return safety.DefaultPolicy(), nil
-	}
-	deps.newRepl = func(c *client.Client, cfg *config.Config, executor *tools.Executor, registry *tools.Registry) replRunner {
-		return repl
 	}
 	return deps
 }
@@ -57,212 +34,36 @@ func writeConfig(t *testing.T, addr, logLevel string) string {
 	return configPath
 }
 
-func statusServer(t *testing.T, statusCode int) *httptest.Server {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/status" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(statusCode)
-			if statusCode == http.StatusOK {
-				fmt.Fprint(w, `{"status":"ok","version":"test","time":"now"}`)
-			}
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(server.Close)
-	return server
-}
-
-// TestRun_Success also asserts the CLI starts with NO provider API key set —
-// after the Phase 2 collapse the CLI makes no LLM calls and needs no keys.
-func TestRun_Success(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
+// TestRun_NoSubcommand verifies the no-subcommand default branch prints usage
+// and exits non-zero now that the interactive REPL has been removed.
+func TestRun_NoSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runWithDeps(context.Background(), nil, &stdout, &stderr, defaultRunDeps())
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit for bare invocation, got 0")
 	}
-	if !fake.called {
-		t.Fatalf("expected repl to run")
+	if !strings.Contains(stderr.String(), "Usage: joe") {
+		t.Errorf("expected usage on stderr, got %q", stderr.String())
 	}
 }
 
-func TestRun_InvalidConfig(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("llm: ["), 0600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-	if fake.called {
-		t.Fatalf("did not expect repl to run")
-	}
-}
-
-func TestRun_InvalidFlag(t *testing.T) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-unknown"}, &stdout, &stderr, defaultRunDeps())
+// TestRun_UnknownSubcommand verifies an unrecognized subcommand falls through
+// to usage and exits non-zero.
+func TestRun_UnknownSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runWithDeps(context.Background(), []string{"bogus"}, &stdout, &stderr, defaultRunDeps())
 	if exitCode != 2 {
 		t.Fatalf("expected exit code 2, got %d", exitCode)
 	}
 }
 
-func TestRun_ConfigLoadError(t *testing.T) {
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.loadConfig = func(path string) (*config.Config, error) {
-		return nil, fmt.Errorf("boom")
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", "missing.yaml"}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-	if fake.called {
-		t.Fatalf("did not expect repl to run")
-	}
-}
-
-func TestRun_PingFailure(t *testing.T) {
-	server := statusServer(t, http.StatusInternalServerError)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, defaultRunDeps())
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-	if !strings.Contains(stderr.String(), "Cannot connect to joe-core") {
-		t.Fatalf("expected ping failure message, got %q", stderr.String())
-	}
-}
-
-func TestRun_JoeDirError(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.joeDirPath = func() (string, error) {
-		return "", fmt.Errorf("no home")
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_LoadPolicyError(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.loadPolicy = func(configDir string) (*safety.SafetyPolicy, error) {
-		return nil, fmt.Errorf("bad policy")
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_ReplError(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
-	fake := &fakeRepl{err: fmt.Errorf("repl failed")}
-	deps := testDeps(fake, t.TempDir())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRun_DebugOutputAndOTelFailure(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "debug")
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-	deps.setupOTel = func(ctx context.Context, cfg observability.Config) (func(context.Context) error, error) {
-		return nil, fmt.Errorf("otel down")
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, deps)
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d", exitCode)
-	}
-	if !strings.Contains(stdout.String(), "Debug mode enabled") {
-		t.Fatalf("expected debug output, got %q", stdout.String())
-	}
-}
-
-func TestRun_APIKeyConfigApplied(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/status" {
-			if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
-				t.Fatalf("expected auth header, got %q", got)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"status":"ok","version":"test","time":"now"}`)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(server.Close)
-
-	addr := strings.TrimPrefix(server.URL, "http://")
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	cfg := fmt.Sprintf("llm:\n  current: test\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\n  service_accounts:\n    - name: server\n      key: test-token\nlogging:\n  level: info\n  file: \"\"\n", addr)
-	if err := os.WriteFile(configPath, []byte(cfg), 0600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", configPath}, &stdout, &stderr, deps)
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
+// TestRun_InvalidFlag verifies a flag-like first argument is treated as an
+// unknown command and exits non-zero with usage.
+func TestRun_InvalidFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runWithDeps(context.Background(), []string{"-unknown"}, &stdout, &stderr, defaultRunDeps())
+	if exitCode != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitCode)
 	}
 }
 
@@ -272,55 +73,5 @@ func TestRun_DirectCall(t *testing.T) {
 	exitCode := run(context.Background(), []string{"-unknown-flag-xyz"}, &stdout, &stderr)
 	if exitCode != 2 {
 		t.Fatalf("expected exit code 2, got %d", exitCode)
-	}
-}
-
-// TestRun_WithTLSEnabled covers the cfg.Server.TLSEnabled branches (scheme=https, WithTLS opt).
-func TestRun_WithTLSEnabled(t *testing.T) {
-	server := statusServer(t, http.StatusOK)
-	addr := strings.TrimPrefix(server.URL, "http://")
-
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	cfgContent := fmt.Sprintf(
-		"llm:\n  current: test\n  available:\n    test:\n      provider: claude\n      model: test-model\nserver:\n  address: %s\n  tls_enabled: true\nlogging:\n  level: info\n  file: \"\"\n",
-		addr,
-	)
-	if err := os.WriteFile(configPath, []byte(cfgContent), 0600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	fake := &fakeRepl{}
-	deps := testDeps(fake, t.TempDir())
-
-	var gotURL string
-	deps.newClient = func(baseURL string, opts ...client.ClientOption) *client.Client {
-		gotURL = baseURL
-		// Point to the HTTP test server so Ping succeeds without a real TLS handshake.
-		return client.New(server.URL)
-	}
-
-	var stdout, stderr bytes.Buffer
-	exitCode := runWithDeps(context.Background(), []string{"-config", configPath}, &stdout, &stderr, deps)
-	if exitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d (stderr: %s)", exitCode, stderr.String())
-	}
-	if !strings.HasPrefix(gotURL, "https://") {
-		t.Errorf("expected HTTPS URL when TLS enabled, got %q", gotURL)
-	}
-}
-
-// TestDefaultRunDeps_NewReplClosure covers the newRepl closure body in defaultRunDeps.
-func TestDefaultRunDeps_NewReplClosure(t *testing.T) {
-	deps := defaultRunDeps()
-
-	policy := safety.DefaultPolicy()
-	coreClient := client.New("http://localhost:9999")
-	registry := tools.NewLocalRegistry(policy)
-	executor := tools.NewExecutor(registry, observability.NewMetrics())
-	cfg := &config.Config{}
-
-	r := deps.newRepl(coreClient, cfg, executor, registry)
-	if r == nil {
-		t.Error("newRepl closure returned nil")
 	}
 }

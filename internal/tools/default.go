@@ -3,48 +3,12 @@ package tools
 import (
 	"github.com/jaimegago/joe/internal/safety"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
-	"github.com/jaimegago/joe/internal/tools/local/askuser"
-	"github.com/jaimegago/joe/internal/tools/local/gitdiff"
-	"github.com/jaimegago/joe/internal/tools/local/gitstatus"
-	"github.com/jaimegago/joe/internal/tools/local/readfile"
-	"github.com/jaimegago/joe/internal/tools/local/runcmd"
-	"github.com/jaimegago/joe/internal/tools/local/writefile"
 	"github.com/jaimegago/joe/internal/tools/shared/dnsquery"
 	"github.com/jaimegago/joe/internal/tools/shared/httpreq"
 	"github.com/jaimegago/joe/internal/tools/shared/netcheck"
 	"github.com/jaimegago/joe/internal/tools/shared/sysinfo"
 	"github.com/jaimegago/joe/internal/tools/shared/traceroute"
 )
-
-// registerLocalTools registers the tools that only make sense on the user's
-// local machine (filesystem, shell, local git, interactive prompt). If policy
-// is non-nil, tool-specific settings (e.g., allowed_directories for write_file)
-// are extracted from it.
-func registerLocalTools(registry *Registry, policy *safety.SafetyPolicy) {
-	// Basic / interactive tools
-	registry.Register(askuser.NewTool())
-
-	// File tools
-	registry.Register(readfile.New())
-
-	var writeAllowedDirs []string
-	if policy != nil {
-		writeAllowedDirs = policy.Act.WriteFile.AllowedDirectories
-	}
-	registry.Register(writefile.New(writeAllowedDirs...))
-
-	// Git tools
-	registry.Register(gitstatus.New())
-	registry.Register(gitdiff.New())
-
-	// Command runner with safe defaults. Only read-only commands are included.
-	// Mutation-capable commands (kubectl, helm, argocd) are excluded — they
-	// must be explicitly enabled in ~/.joe/safety-policy.yaml and are subject
-	// to subcommand allowlists even when enabled.
-	registry.Register(runcmd.New([]string{
-		"ls", "cat", "head", "tail", "grep", "find", "wc",
-	}))
-}
 
 // registerSharedTools registers shared diagnostic tools (T1, Go-native, no CLI
 // deps). These run in-process and work from both joe (user's machine
@@ -58,32 +22,10 @@ func registerSharedTools(registry *Registry) {
 	registry.Register(traceroute.NewTraceRouteTool())
 }
 
-// NewDefaultRegistry creates a registry with all default tools registered
-// (local + shared). If policy is non-nil, tool-specific settings are extracted
-// from it. If nil, tools use permissive defaults.
-func NewDefaultRegistry(policy *safety.SafetyPolicy) *Registry {
-	registry := NewRegistry()
-	registerLocalTools(registry, policy)
-	registerSharedTools(registry)
-	return registry
-}
-
-// NewLocalRegistry creates a registry with only the local-machine tools
-// (read_file, write_file, run_command, local git, ask_user). After the Phase 2
-// runtime collapse the CLI uses this set both to advertise its local tools to
-// joe-core and to execute the delegated callbacks against the operator's own
-// machine — shared and core tools run inside joe-core's loop instead.
-func NewLocalRegistry(policy *safety.SafetyPolicy) *Registry {
-	registry := NewRegistry()
-	registerLocalTools(registry, policy)
-	return registry
-}
-
 // NewCoreRegistry creates a registry with shared diagnostic tools and core
-// tools. Unlike NewDefaultRegistryWithClient, it omits local tools (read_file,
-// write_file, run_command, git tools, askuser) since those only make sense on
-// the user's local machine. This is used by the task execution endpoint on
-// joe-core.
+// tools. It omits local tools (read_file, write_file, run_command, git tools,
+// askuser) since those only make sense on the user's local machine. This is
+// used by the task execution endpoint on joe-core.
 //
 // After Identity Phase E (docs/joe-identity-design.md §3), the value passed in
 // is an in-process accessor-backed client constructed by joe-core (see
@@ -97,7 +39,7 @@ func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.Safety
 	// Shared diagnostic tools (T1, Go-native, no CLI deps).
 	registerSharedTools(registry)
 
-	// Core tools (same set as NewDefaultRegistryWithClient).
+	// Core tools.
 	registerCoreTools(registry, coreClient)
 
 	return registry
@@ -203,15 +145,4 @@ func registerCoreTools(registry *Registry, coreClient coretools.CoreToolsClient)
 	registry.Register(coretools.NewGitLabMRGetTool(coreClient))
 	registry.Register(coretools.NewGitLabMRDiffTool(coreClient))
 	registry.Register(coretools.NewGitLabCommentTool(coreClient))
-}
-
-// NewDefaultRegistryWithClient creates a registry with all default tools plus
-// core tools. The argument is the same aggregate CoreToolsClient interface
-// NewCoreRegistry takes; the HTTP *client.Client satisfies it for the e2e
-// harness, schema-validity test, and integration tests that drive joe-core
-// over a real socket.
-func NewDefaultRegistryWithClient(coreClient coretools.CoreToolsClient, policy *safety.SafetyPolicy) *Registry {
-	registry := NewDefaultRegistry(policy)
-	registerCoreTools(registry, coreClient)
-	return registry
 }
