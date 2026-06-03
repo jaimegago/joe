@@ -321,8 +321,8 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 // (no audit wired in tests / dev) is tolerated and skips the write
 // silently — termination has already been decided by the time we get
 // here, so the audit row is forensic, not gating. On a real repository
-// failure we route through audit.FailurePosture so the
-// mutating-action fail-closed log lands in operational logs, but we
+// failure we route through audit.FailurePosture (fail-open-but-loud) so the
+// loud failure log lands in operational logs, but we
 // still return; the loop is already exiting with the ceiling sentinel
 // and the caller should see that error, not an internal audit error
 // that masks the real reason.
@@ -344,10 +344,10 @@ func (a *Agent) writeRunawayAudit(ctx context.Context, total, ceiling int) {
 		Kind:      audit.KindLLMLimitTriggered,
 		Context:   string(blob),
 	})
-	// FailurePosture treats ActionLLMRunawayTerminated as mutating
-	// (fail-closed log path) and returns the original err. We discard
-	// the returned error: the loop is already exiting via the ceiling
-	// sentinel; surfacing an audit error here would replace the typed
-	// terminal error the classifier wants to see.
-	_ = audit.FailurePosture(ctx, audit.ActionLLMRunawayTerminated, err, "agentloop:runaway")
+	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
+	// outcome (the termination PROCEEDED) rather than claiming a fail-closed
+	// abort, and discard the returned error. The loop is already exiting via
+	// the ceiling sentinel; surfacing an audit error here would replace the
+	// typed terminal error the classifier wants to see.
+	_ = audit.FailurePosture(ctx, audit.ActionLLMRunawayTerminated, err, "agentloop:runaway", audit.FailOpen)
 }

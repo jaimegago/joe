@@ -325,5 +325,5 @@ func (h *captainHandler) writeCaptainAudit(ctx context.Context, principal rbac.P
 		Kind:      audit.KindCaptainTransition,
 		Context:   ctxJSON,
 	})
-	return audit.FailurePosture(ctx, action, err, "captain:"+action)
+	return audit.FailurePosture(ctx, action, err, "captain:"+action, audit.FailClosed)
 }

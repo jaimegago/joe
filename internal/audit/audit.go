@@ -233,13 +233,52 @@ type Repository interface {
 	InsertTx(ctx context.Context, tx *sql.Tx, e Event) error
 }
 
+// Posture is what the CALLER will do with FailurePosture's return value. It
+// selects the WORDING of the loud failure log so the log names the outcome
+// that actually happens at the call site. It does NOT decide the §4 split
+// (the return value and log level) — that stays derived from the action
+// inside FailurePosture, so the split cannot drift.
+//
+// The posture is necessary because a mutating-class action can be handled
+// two ways: a site that propagates the return ABORTS, while a site that
+// discards it (the fail-open-but-loud auth / observability writes) PROCEEDS.
+// isFailOpen(action) alone cannot tell those apart, so the caller must say.
+type Posture int
+
+const (
+	// FailClosed: the caller propagates the returned error and ABORTS the
+	// action. The log reads "... ABORTED (fail-closed ...)".
+	FailClosed Posture = iota
+	// FailOpen: the caller discards the return and PROCEEDS regardless. The
+	// log still fires loudly, but reads "... PROCEEDED ..." — never claiming
+	// an abort that did not happen. Used by the read-class accessor path and
+	// by the fail-open-but-loud auth / observability sites.
+	FailOpen
+)
+
+// PostureForAction returns the §4 default posture for an action: read-class
+// actions are FailOpen (the caller proceeds), everything else FailClosed
+// (the caller aborts). Call sites that HONOR FailurePosture's return — i.e.
+// propagate it and act on it — pass this so the logged wording matches the
+// action's split. Sites that always discard the return pass FailOpen
+// directly. Keeping the read/mutate classification here means it lives in
+// one place and cannot drift.
+func PostureForAction(action string) Posture {
+	if isFailOpen(action) {
+		return FailOpen
+	}
+	return FailClosed
+}
+
 // FailurePosture decides what to do when an audit Insert fails. It
 // implements the §4 split: mutating actions fail CLOSED, reads fail OPEN.
 // One helper, called from every audit caller, so the split cannot drift.
 //
 // Returns nil iff the action should proceed (audit succeeded, or the
 // action is a read and the failure is fail-open). Returns the original
-// audit error iff the action should be aborted (fail-closed).
+// audit error iff the action should be aborted (fail-closed). The return
+// value and the log LEVEL are derived from the action — NOT from posture —
+// so the §4 split cannot be overridden by a caller.
 //
 // The action argument is the rbac.Action constant or one of the transition
 // action verbs above. Transition action verbs are treated as mutating —
@@ -247,27 +286,43 @@ type Repository interface {
 // are state changes; if the audit row cannot be written, the durable trail
 // the design demands does not exist, so the mutation must not proceed.
 //
+// posture tells the helper what the caller will actually do with the
+// return, so the loud log names the real outcome: a fail-open caller that
+// discards the return PROCEEDS even on a mutating action, and the log must
+// say PROCEEDED, not ABORTED. Propagating callers pass
+// PostureForAction(action); discarding callers pass FailOpen.
+//
 // `where` is a short label used in the warn log (e.g. "accessor:k8s_read"
 // or "regime:declare"); it stays out of the audit row.
-func FailurePosture(ctx context.Context, action string, auditErr error, where string) error {
+func FailurePosture(ctx context.Context, action string, auditErr error, where string, posture Posture) error {
 	if auditErr == nil {
 		return nil
+	}
+	// Wording follows the caller's posture (what actually happens); level
+	// and return follow the §4 split (derived from the action, so it cannot
+	// drift). A fail-open caller logs loudly but says PROCEEDED; a
+	// fail-closed caller says ABORTED.
+	msg := "AUDIT WRITE FAILED — mutating action ABORTED (fail-closed per §4)"
+	if posture == FailOpen {
+		msg = "AUDIT WRITE FAILED — action PROCEEDED without audit row (fail-open-but-loud per §4); investigate audit store"
 	}
 	if isFailOpen(action) {
 		// Reads and queries proceed despite a missing audit row. The
 		// failure is logged loudly per §4 ("a read proceeds even if its
 		// audit row cannot be written, with a loud operational alert").
-		slog.Warn("AUDIT WRITE FAILED — read proceeded without audit row (fail-open per §4); investigate audit store",
+		slog.Warn(msg,
 			"where", where,
 			"action", action,
 			"error", auditErr,
 		)
 		return nil
 	}
-	// Mutating actions and every transition row fail CLOSED. The original
-	// audit error is returned to the caller, which surfaces it as an
-	// internal-error / fails the mutation.
-	slog.Error("AUDIT WRITE FAILED — mutating action ABORTED (fail-closed per §4)",
+	// Mutating actions and every transition row fail CLOSED at the return:
+	// the original audit error is returned to the caller, which either
+	// surfaces it (fail-closed, aborting the mutation) or discards it
+	// (fail-open-but-loud, proceeding). The posture above already named the
+	// real outcome in the log.
+	slog.Error(msg,
 		"where", where,
 		"action", action,
 		"error", auditErr,

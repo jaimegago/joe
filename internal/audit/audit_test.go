@@ -166,7 +166,7 @@ func TestRepositoryAPISurface_NoMutatorPackageFunctions(t *testing.T) {
 func TestFailurePosture_FailOpenOnRead(t *testing.T) {
 	auditErr := errors.New("disk full")
 	for _, action := range []string{string(rbac.ActionRead), string(rbac.ActionQuery)} {
-		got := audit.FailurePosture(context.Background(), action, auditErr, "test:read")
+		got := audit.FailurePosture(context.Background(), action, auditErr, "test:read", audit.PostureForAction(action))
 		if got != nil {
 			t.Errorf("FailurePosture(%q, auditErr) returned %v; reads must fail-open per §4", action, got)
 		}
@@ -189,7 +189,7 @@ func TestFailurePosture_FailClosedOnMutate(t *testing.T) {
 		audit.ActionCaptainTransferCancel,
 	}
 	for _, action := range mutating {
-		got := audit.FailurePosture(context.Background(), action, auditErr, "test:mutate")
+		got := audit.FailurePosture(context.Background(), action, auditErr, "test:mutate", audit.PostureForAction(action))
 		if got == nil {
 			t.Errorf("FailurePosture(%q, auditErr) returned nil; mutating actions must fail-closed per §4", action)
 		}
@@ -203,7 +203,7 @@ func TestFailurePosture_NoErrorReturnsNil(t *testing.T) {
 		string(rbac.ActionMutate),
 		audit.ActionDeclareIncident,
 	} {
-		if got := audit.FailurePosture(context.Background(), action, nil, "test"); got != nil {
+		if got := audit.FailurePosture(context.Background(), action, nil, "test", audit.PostureForAction(action)); got != nil {
 			t.Errorf("FailurePosture(%q, nil) = %v; want nil", action, got)
 		}
 	}

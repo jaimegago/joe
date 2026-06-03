@@ -411,8 +411,8 @@ func (r *RecorderAdapter) gate(ctx context.Context) error {
 // nil repository (no audit wired in tests / dev) is tolerated and skips
 // the write silently — the refusal has already been decided, so the
 // audit row is forensic, not gating. On a real repository failure we
-// route through audit.FailurePosture so the mutating-action fail-closed
-// log lands in operational logs, but we still return; the gate is
+// route through audit.FailurePosture (fail-open-but-loud) so the loud
+// failure log lands in operational logs, but we still return; the gate is
 // already returning the cost-limit sentinel and the caller should see
 // THAT error, not an internal audit error.
 //
@@ -449,7 +449,7 @@ func (r *RecorderAdapter) writeCostLimitRefusedAudit(ctx context.Context, trippe
 		Kind:      audit.KindLLMLimitTriggered,
 		Context:   string(blob),
 	})
-	_ = audit.FailurePosture(ctx, audit.ActionLLMCostLimitRefused, err, "llmusage:cost_gate_refused")
+	_ = audit.FailurePosture(ctx, audit.ActionLLMCostLimitRefused, err, "llmusage:cost_gate_refused", audit.FailOpen)
 }
 
 // writeGateReadFailureAudit records one KindLLMLimitTriggered row when
@@ -478,7 +478,7 @@ func (r *RecorderAdapter) writeGateReadFailureAudit(ctx context.Context, readErr
 		Kind:      audit.KindLLMLimitTriggered,
 		Context:   string(blob),
 	})
-	_ = audit.FailurePosture(ctx, audit.ActionLLMCostLimitRefused, err, "llmusage:cost_gate_read_failed")
+	_ = audit.FailurePosture(ctx, audit.ActionLLMCostLimitRefused, err, "llmusage:cost_gate_read_failed", audit.FailOpen)
 }
 
 // detectMixedCurrency runs the once-only foreign-currency check at
@@ -535,5 +535,5 @@ func (r *RecorderAdapter) detectMixedCurrency(ctx context.Context) {
 		Kind:      audit.KindLLMLimitTriggered,
 		Context:   string(blob),
 	})
-	_ = audit.FailurePosture(detectCtx, audit.ActionLLMCostLimitRefused, insertErr, "llmusage:mixed_currency")
+	_ = audit.FailurePosture(detectCtx, audit.ActionLLMCostLimitRefused, insertErr, "llmusage:mixed_currency", audit.FailOpen)
 }
