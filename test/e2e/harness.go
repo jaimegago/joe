@@ -70,8 +70,11 @@ func (h *JoeTestHarness) Start() error {
 		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
 		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
 		"JOE_LOG_LEVEL=debug",
-		// Use mock/test API keys if needed
-		"GEMINI_API_KEY=test-key-for-e2e",
+		// Dummy LLM key: must clear gemini's minAPIKeyLength (20) placeholder
+		// check so joe-core boots. The e2e tests drive their own client-side
+		// mock LLM and never make a real Gemini call, so the value only needs
+		// to pass the format check — it is never used to authenticate.
+		"GEMINI_API_KEY=e2e-dummy-key-not-a-real-credential",
 	)
 	h.joeCore.Stdout = logFile
 	h.joeCore.Stderr = logFile
