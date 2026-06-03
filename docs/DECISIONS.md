@@ -10,6 +10,108 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0012 — We found a privilege escalation in our own RBAC admin API: the admin gate was never applied to it
+
+- Date: 2026-06-03
+- Decision: This is not a polish entry. The post-Stream-K admin-surface
+  read (`ADMIN_SURFACE_AUDIT.md`, Launch Blocker 1) found that the RBAC
+  admin HTTP API in `internal/api/admin.go` — `POST /api/v1/admin/zones`,
+  `POST /api/v1/admin/policies`, `POST /api/v1/admin/source-zones`,
+  `DELETE /api/v1/admin/policies/{id}`, and the four `GET` read endpoints —
+  was never admin-gated. Every handler required only bearer auth. **Any
+  authenticated principal, including a brand-new zero-zone OIDC user who
+  resolves to the read-only `unassigned` zone, could `POST` itself a policy
+  into any zone — or mint a new zone with `allowed_actions`
+  `["read","query","mutate","delete"]` and grant itself that — fully
+  escalating its own access.** Because the same path can grant
+  `regime-control`, it also reopened `declare_incident`/`resolve_incident`
+  to anyone (Blocker 2). The fix applies the EXISTING `requireAdmin` gate
+  (`internal/api/admingate.go`) to every admin handler — the same one-line
+  `if _, gated := h.server.requireAdmin(w, r); gated { return }` inlining
+  Stream G uses on the LLM settings/usage endpoints. No new gate, no
+  changed gate semantics, no audit-writer change. Specifics:
+  - **(a) The gap.** `registerAdminRoutes` wired eight handlers under
+    `/api/v1/admin/`; none called `requireAdmin`. The UI's `RequireAdmin`
+    React component (`ui/src/auth/RequireAdmin.tsx`) gated the admin *pages*
+    client-side off the `/me` `is_admin` flag, which hides the nav but does
+    nothing for a direct `curl`. The server-side check that should have sat
+    behind it did not exist. The reads were gated too (not just the writes):
+    `GET /admin/policies` and `GET /admin/zones` expose the full
+    authorization map — who holds which zone and what each zone permits — so
+    leaving them open leaks the access-control topology to any caller.
+  - **(b) Why it existed — an honest account.** `requireAdmin` was
+    introduced by Stream G (phase G5) specifically to gate the LLM
+    instrumentation endpoints (settings writes, the per-principal usage
+    breakdown). It was applied there and only there. The RBAC admin
+    endpoints predate that gate (Phase 9.3 / migration 006) and shipped when
+    the *only* deployed posture was "bearer key == trusted operator." When
+    Phase C/H turned principals into a spectrum — OIDC users, `svc:` keys,
+    zero-zone newcomers — the admin API's "bearer auth is enough" assumption
+    silently became false, and the new gate was never retroactively swept
+    back across the older surface. The gate's own doc comment even scoped
+    itself to "the Stream G phase G5 LLM-instrumentation HTTP endpoints" —
+    the narrow framing is exactly how the older surface got missed. No test
+    asserted the property for `admin.go`, so nothing failed when the gate
+    skipped it. This is the classic shape of a self-inflicted gap: a control
+    added for one stream, correct in that stream, never generalized to the
+    sibling surface that needed it just as much.
+  - **(c) The structural invariant added to prevent recurrence.**
+    `TestAdminRoutes_AllRequireAdminGate`
+    (`internal/api/admin_gate_guard_test.go`) is an AST guard in the style
+    of the identity refactor's single-implementation guards
+    (`captaingate.TestPhaseG_SingleSharedCaptainGateImplementation`,
+    `sessiongate`'s import guard). It parses `admin.go`, extracts the set of
+    `adminHandler` methods registered by `registerAdminRoutes` (the handler
+    arg of each `mux.HandleFunc`) and the set whose body calls
+    `requireAdmin`, and fails the build if the former is not a subset of the
+    latter. The regression tests pin the endpoints that exist today; this
+    invariant pins the property for endpoints that do not exist yet — a
+    future `POST /api/v1/admin/admins` added without the gate fails the
+    build naming the ungated handler, rather than silently re-opening the
+    escalation. The guard was break-tested: removing the gate from
+    `createPolicy` makes it fail with `admin handler "createPolicy" is
+    registered under /api/v1/admin/ but its body never calls requireAdmin`,
+    and the companion regression test simultaneously shows the live
+    escalation (a non-admin `POST` returns 201 with a `regime-control`
+    policy granted to itself); restoring the gate returns both to green.
+  - **Regression tests** (`internal/api/admin_gate_test.go`) reuse the
+    Stream G fixture (`llmadminFixture`): a non-admin `POST` to
+    `/admin/policies` and `/admin/zones` each returns 403 with the resource
+    not created; an admin gets 201 with the resource created; a non-admin
+    cannot self-grant `regime-control` (Blocker 2 closed); and the
+    auth-disabled (`rbacEnabled=false`) local/dev posture still permits, so
+    the fix does not block keyless deployments.
+- Honest scope note — audit of admin mutations is a SEPARATE, still-open
+  gap. The audit flagged (and the fix confirmed) that the RBAC admin
+  endpoints write **no** audit rows at all: `admin.go` imports no audit
+  package, `requireAdmin` does not audit denials, and there is no
+  `audit.Kind`/`audit.Action` for zone/policy/source-zone mutations. Phase
+  F's machinery covers infra-access decisions, regime/captain transitions,
+  LLM-settings mutations, and auth-login — not this surface, and not gate
+  denials in general (LLM-settings denials are not audited either). This fix
+  is deliberately scoped to the privilege escalation and does NOT add an
+  audit writer (that would change Phase F's mechanics). The
+  zone/policy-mutation audit gap is recorded here as known and deferred; it
+  is not closed by D-0012.
+- Basis: `ADMIN_SURFACE_AUDIT.md` (Investigation 1 §2/§5, Prioritized Gaps
+  Blockers 1–2), read against current code; `internal/api/admingate.go`
+  (the existing gate, unchanged); the Stream G application pattern in
+  `internal/api/llmsettings.go` / `internal/api/llmusageapi.go`. Verified by
+  `go test ./internal/api/` green, plus the break-test described in (c).
+- Supersedes: nothing — it closes a defect, it does not revise a prior
+  decision. D-0011's admin capability and its `IsAdmin` semantics are
+  untouched and unchanged; this entry only applies the gate that consults
+  them to a surface that was missing it. Touched files:
+  `internal/api/admin.go` (gate applied to all eight handlers; `adminHandler`
+  gains a `*Server` back-reference), `internal/api/admin_internal_test.go`
+  (repo-error fixture now constructs a permissive server), and two new test
+  files. The audit table, its writers, and `requireAdmin`'s implementation
+  are unchanged.
+- Status: active. Privilege escalation closed; structural invariant in
+  place. The admin-mutation audit gap remains open and is tracked above.
+
+---
+
 ## D-0011 — Identity Phase H: admin as a dynamic capability evaluated at decision time; snapshot grants removed
 
 - Date: 2026-05-30
