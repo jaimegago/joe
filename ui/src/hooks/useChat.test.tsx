@@ -1,0 +1,183 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { createWrapper } from '@/test/utils';
+import { useChat } from './useChat';
+import { ChatWindow } from '@/components/chat/ChatWindow';
+import { streamTask } from '@/api/taskStream';
+import type { StepEvent, FinalEvent, StreamHandlers } from '@/api/taskStream';
+
+// useChat drives the streaming lifecycle; the network is mocked at the
+// streamTask + session-api boundary so these tests assert the React-state and
+// rendering behavior (steps, token counter, failure handling, per-turn reset).
+vi.mock('@/api/taskStream', () => ({ streamTask: vi.fn() }));
+vi.mock('@/api/chat', () => ({
+  createSession: vi.fn(() => Promise.resolve({ id: 's-test', started_at: '', message_count: 0 })),
+  fetchMessages: vi.fn(() => Promise.resolve([])),
+}));
+
+const streamTaskMock = vi.mocked(streamTask);
+
+// Each streamTask call captures its handlers and a resolver, so a test can
+// drive events for turn N and then settle that turn's promise.
+let captured: StreamHandlers[] = [];
+let resolvers: (() => void)[] = [];
+
+function installStreamMock() {
+  captured = [];
+  resolvers = [];
+  streamTaskMock.mockImplementation((_body, handlers) => {
+    captured.push(handlers);
+    return new Promise<void>((res) => resolvers.push(res));
+  });
+}
+
+function makeStep(stepNumber: number, opts: { input: number; output: number; tool?: string }): StepEvent {
+  return {
+    step_number: stepNumber,
+    llm_request: { message_count: stepNumber, tools_available: [] },
+    llm_response: {
+      content: `reasoning ${stepNumber}`,
+      tool_calls: opts.tool ? [{ id: `tc-${stepNumber}`, name: opts.tool, args: {} }] : [],
+      usage: { input_tokens: opts.input, output_tokens: opts.output },
+    },
+    tool_results: opts.tool ? [{ id: `tc-${stepNumber}`, name: opts.tool, result: 'ok', duration_ms: 1 }] : [],
+  };
+}
+
+function makeFinal(over: Partial<FinalEvent>): FinalEvent {
+  return {
+    task_id: 't1',
+    session_id: 's-test',
+    status: 'completed',
+    iterations: 1,
+    steps: [],
+    final_answer: 'done',
+    tools_used: [],
+    total_tokens: { input_tokens: 0, output_tokens: 0 },
+    duration_ms: 1,
+    ...over,
+  };
+}
+
+function Harness() {
+  const chat = useChat();
+  return (
+    <ChatWindow items={chat.messages} isSending={chat.isSending} onSend={(m) => void chat.send(m)} />
+  );
+}
+
+async function sendMessage(text: string) {
+  const before = streamTaskMock.mock.calls.length;
+  await userEvent.type(screen.getByRole('textbox'), `${text}{Enter}`);
+  await waitFor(() => expect(streamTaskMock.mock.calls.length).toBe(before + 1));
+}
+
+describe('useChat streaming lifecycle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    installStreamMock();
+  });
+
+  it('renders a multi-step turn: final answer, tool calls from both steps, and a token counter that sums steps and matches the final total', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('investigate');
+    expect(screen.getByText('investigate')).toBeInTheDocument(); // optimistic user msg
+
+    // Step 1 lands: 10+5 = 15 tokens, tool "k8s".
+    act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5, tool: 'k8s' })));
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('15 tokens');
+    expect(screen.getByText('k8s')).toBeInTheDocument();
+
+    // Step 2 lands: +20+10 → running 45, tool "metrics".
+    act(() => captured[0].onStep(makeStep(2, { input: 20, output: 10, tool: 'metrics' })));
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('45 tokens');
+    expect(screen.getByText('metrics')).toBeInTheDocument();
+
+    // Final: authoritative total 30+15 = 45 (matches the running sum).
+    act(() => {
+      captured[0].onFinal(makeFinal({ final_answer: 'the answer', total_tokens: { input_tokens: 30, output_tokens: 15 } }));
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('the answer')).toBeInTheDocument());
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('45 tokens');
+    // Both steps' tools remain visible in the settled turn.
+    expect(screen.getByText('k8s')).toBeInTheDocument();
+    expect(screen.getByText('metrics')).toBeInTheDocument();
+  });
+
+  it('renders a pre-stream non-200 error as a failed turn with no steps', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('bad');
+    act(() => {
+      captured[0].onError('message is required', true);
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('message is required')).toBeInTheDocument());
+    expect(screen.getByText('Request rejected')).toBeInTheDocument();
+    // No steps → no tool activity and no token badge.
+    expect(screen.queryByTestId('turn-tokens')).not.toBeInTheDocument();
+  });
+
+  it('renders an in-stream final with status=error as a failed turn surfacing final.error', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('go');
+    act(() => {
+      captured[0].onFinal(makeFinal({ status: 'error', error: 'llm exploded', final_answer: '' }));
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('llm exploded')).toBeInTheDocument());
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+  });
+
+  it('renders a timeout final with its human label', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('slow');
+    act(() => {
+      captured[0].onFinal(makeFinal({ status: 'timeout', error: 'task timed out', final_answer: '' }));
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('Timed out')).toBeInTheDocument());
+    expect(screen.getByText('task timed out')).toBeInTheDocument();
+  });
+
+  it('resets the per-turn token counter to 0 at the start of a second message', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    // First turn accumulates 15 and completes.
+    await sendMessage('first');
+    act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5 })));
+    act(() => {
+      captured[0].onFinal(makeFinal({ final_answer: 'first answer', total_tokens: { input_tokens: 10, output_tokens: 5 } }));
+      resolvers[0]();
+    });
+    await waitFor(() => expect(screen.getByText('first answer')).toBeInTheDocument());
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('15 tokens');
+
+    // Second turn: a fresh counter starts at 0 before any step accumulates.
+    await sendMessage('second');
+    let badges = screen.getAllByTestId('turn-tokens');
+    expect(badges).toHaveLength(2);
+    expect(badges[1]).toHaveTextContent('0 tokens');
+
+    // Then it accumulates independently of the first turn.
+    act(() => captured[1].onStep(makeStep(1, { input: 4, output: 3 })));
+    badges = screen.getAllByTestId('turn-tokens');
+    expect(badges[0]).toHaveTextContent('15 tokens'); // first turn unchanged
+    expect(badges[1]).toHaveTextContent('7 tokens');
+  });
+});

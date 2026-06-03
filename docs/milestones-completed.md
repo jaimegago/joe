@@ -638,7 +638,7 @@ Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, 
 - `GET /api/v1/graph/node/{id}/related` — node relationships
 - `GET/POST /api/v1/sessions` — list/create sessions
 - `GET /api/v1/sessions/{id}/messages` — session message history
-- `POST /api/v1/chat` — send message to core agent
+- `POST /api/v1/chat` — send message to core agent _(later removed; the Web UI now streams agentic turns via `POST /api/v1/tasks/stream`)_
 - `GET /api/v1/alerts` — alerts list
 - `POST /api/v1/sources/{id}/test` — test source connectivity
 

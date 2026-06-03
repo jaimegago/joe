@@ -1,13 +1,7 @@
 import { apiClient } from './client';
-import { ChatMessageSchema, SessionSchema, ChatResponseSchema } from './schemas';
+import { ChatMessageSchema, SessionSchema } from './schemas';
 import { z } from 'zod';
-import type { ChatMessage, Session, ChatResponse } from './types';
-
-export function sendMessage(sessionId: string, content: string): Promise<ChatResponse> {
-  return apiClient
-    .post<unknown>('/api/v1/chat', { session_id: sessionId, message: content })
-    .then((r) => ChatResponseSchema.parse(r));
-}
+import type { ChatMessage, Session } from './types';
 
 export function fetchMessages(sessionId: string): Promise<ChatMessage[]> {
   return apiClient

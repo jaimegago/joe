@@ -1,17 +1,12 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/llm"
-	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/uid"
@@ -263,139 +258,6 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 	})
 }
 
-// chatMessageRequest is the request body for POST /api/v1/chat.
-type chatMessageRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
-}
-
-// chatMessageResponse is the response for POST /api/v1/chat.
-type chatMessageResponse struct {
-	Message   *store.SessionMessage `json:"message"`
-	ToolCalls []llm.ToolCall        `json:"tool_calls,omitempty"`
-}
-
-// handleChat processes a chat message using the LLM.
-func (h *webUIHandler) handleChat(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.LLM == nil {
-		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "LLM not available")
-		return
-	}
-
-	var req chatMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid request body")
-		return
-	}
-	if req.Message == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "message is required")
-		return
-	}
-
-	sessionID := req.SessionID
-	if sessionID == "" {
-		sessionID = uid.New()
-	}
-
-	// Ensure session exists
-	if h.server.services.Store != nil {
-		sess, _ := h.server.services.Store.Sessions.Get(r.Context(), sessionID)
-		if sess == nil {
-			_ = h.server.services.Store.Sessions.Create(r.Context(), &store.Session{
-				ID:        sessionID,
-				StartedAt: time.Now().UTC(),
-			})
-		}
-	}
-
-	// Load message history for context
-	var history []llm.Message
-	if h.server.services.Store != nil {
-		msgs, err := h.server.services.Store.Sessions.GetMessages(r.Context(), sessionID)
-		if err == nil {
-			for _, m := range msgs {
-				if m.Role == "user" || m.Role == "assistant" {
-					history = append(history, llm.Message{
-						Role:    m.Role,
-						Content: m.Content,
-					})
-				}
-			}
-		}
-	}
-
-	// Get graph summary for context
-	graphSummary := ""
-	if h.server.accessor.GraphAvailable() {
-		chatPrincipal := rbac.PrincipalFromContext(r.Context())
-		if summary, err := h.server.accessor.GraphSummary(r.Context(), chatPrincipal); err == nil {
-			graphSummary = fmt.Sprintf(
-				"Infrastructure graph: %d nodes, %d edges. Node types: %v",
-				summary.NodeCount, summary.EdgeCount, summary.NodesByType,
-			)
-		}
-	}
-
-	systemPrompt := prompts.WebUISystem
-
-	if graphSummary != "" {
-		systemPrompt += "\n\nCurrent infrastructure context:\n" + graphSummary
-	}
-	if section := renderSkillsForQuery(h.server.services.Skills.Snapshot(), req.Message); section != "" {
-		systemPrompt += "\n\n" + section
-	}
-
-	// Append user message
-	history = append(history, llm.Message{
-		Role:    "user",
-		Content: req.Message,
-	})
-
-	// Stream G phase G2: thread the session id into context BEFORE the
-	// Chat call so the usage recorder can stamp it on the per-call row.
-	// This is the non-agentic chat path; there is no task id to thread.
-	chatCtx := agentctx.WithSessionID(r.Context(), sessionID)
-
-	// Call LLM
-	llmResp, err := h.server.services.LLM.Chat(chatCtx, llm.ChatRequest{
-		SystemPrompt: systemPrompt,
-		Messages:     history,
-		MaxTokens:    2048,
-	})
-	if err != nil {
-		slog.Error("chat LLM call failed", "error", err)
-		writeInternalError(w, err, "chat")
-		return
-	}
-
-	// Store user message
-	userMsg := &store.SessionMessage{
-		SessionID: sessionID,
-		Role:      "user",
-		Content:   req.Message,
-		CreatedAt: time.Now().UTC(),
-	}
-	if h.server.services.Store != nil {
-		_ = h.server.services.Store.Sessions.AddMessage(r.Context(), userMsg)
-	}
-
-	// Store assistant response
-	assistantMsg := &store.SessionMessage{
-		SessionID: sessionID,
-		Role:      "assistant",
-		Content:   llmResp.Content,
-		CreatedAt: time.Now().UTC(),
-	}
-	if h.server.services.Store != nil {
-		_ = h.server.services.Store.Sessions.AddMessage(r.Context(), assistantMsg)
-	}
-
-	writeJSON(w, http.StatusOK, chatMessageResponse{
-		Message:   assistantMsg,
-		ToolCalls: llmResp.ToolCalls,
-	})
-}
-
 // handleGetAlerts returns an aggregated list of active alerts (stub).
 func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 	// TODO: aggregate from Alertmanager/Grafana sources
@@ -446,9 +308,6 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)
-
-	// Chat
-	mux.HandleFunc(fmt.Sprintf("POST %s/chat", prefix), h.handleChat)
 
 	// Alerts aggregation
 	mux.HandleFunc(fmt.Sprintf("GET %s/alerts", prefix), h.handleGetAlerts)

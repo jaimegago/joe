@@ -1,20 +1,22 @@
 import { useEffect, useRef } from 'react';
-import type { ChatMessage } from '@/api/types';
-import { MessageBubble } from './MessageBubble';
+import type { DisplayItem } from '@/hooks/useChat';
+import { UserBubble } from './UserBubble';
+import { AssistantTurnView } from './AssistantTurnView';
 import { MessageSquare } from 'lucide-react';
 
 interface MessageListProps {
-  messages: ChatMessage[];
+  items: DisplayItem[];
 }
 
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({ items }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Scroll to the bottom as the transcript grows or a live turn updates.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [items]);
 
-  if (messages.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
         <MessageSquare className="h-10 w-10 opacity-30" />
@@ -25,9 +27,13 @@ export function MessageList({ messages }: MessageListProps) {
 
   return (
     <div className="flex flex-col gap-4 py-4">
-      {messages.map((m) => (
-        <MessageBubble key={m.id} message={m} />
-      ))}
+      {items.map((item) =>
+        item.kind === 'user' ? (
+          <UserBubble key={item.id} content={item.content} createdAt={item.createdAt} />
+        ) : (
+          <AssistantTurnView key={item.id} turn={item.turn} />
+        ),
+      )}
       <div ref={bottomRef} />
     </div>
   );

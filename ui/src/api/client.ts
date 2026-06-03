@@ -84,6 +84,36 @@ class ApiClient {
     return response.json() as Promise<T>;
   }
 
+  // requestRaw performs a fetch with the same base URL and auth as request()
+  // — cookie (credentials: 'include') plus the conditional Authorization
+  // bearer header — but returns the raw Response without parsing JSON or
+  // throwing on non-2xx. Streaming callers (SSE) need the live ReadableStream
+  // body and must inspect a possible pre-stream non-200 JSON error themselves.
+  // A 401 still trips the logged-out transition so an expired session logs out
+  // on a streamed turn exactly as it does on any other request.
+  async requestRaw(path: string, options: RequestInit = {}): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+
+    if (response.status === 401) {
+      this.onUnauthorized?.();
+    }
+
+    return response;
+  }
+
   get<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: 'GET' });
   }
