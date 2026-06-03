@@ -9,6 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
@@ -44,7 +45,12 @@ func openClosedRBACDB(t *testing.T) *sql.DB {
 func newClosedDBAdminHandler(t *testing.T) *adminHandler {
 	t.Helper()
 	db := openClosedRBACDB(t)
-	return &adminHandler{repo: rbac.NewRepository(db, "sqlite")}
+	repo := rbac.NewRepository(db, "sqlite")
+	// RBACEnabled defaults to false → requireAdmin permits unconditionally
+	// (auth-disabled convention), so these repo-error tests still exercise
+	// the handler body and the closed-DB 500 path, not the gate.
+	srv := New(&core.Services{RBAC: repo})
+	return &adminHandler{repo: repo, server: srv}
 }
 
 func TestAdminListZones_RepoError(t *testing.T) {
