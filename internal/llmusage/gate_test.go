@@ -306,8 +306,13 @@ func TestGate_MultipleWindowsOver_AllNamedInAuditContext(t *testing.T) {
 	// all three windows simultaneously. A single row in the current
 	// hour is also in the current day and current month, so one row
 	// at 3 nano covers all three windows when limits are tight.
+	// Stamp it at `now` itself: any backdated offset (e.g. -10m) falls
+	// in the PREVIOUS hour window when the test runs in the first
+	// minutes of a clock hour, leaving the hourly window un-tripped and
+	// flaking this assertion. `now` is by definition inside all three
+	// current windows regardless of wall-clock position.
 	repo.rows = []llmusage.Row{{
-		Timestamp:         now.Add(-10 * time.Minute),
+		Timestamp:         now,
 		Currency:          "USD",
 		EstimatedCostNano: 3,
 	}}
