@@ -230,11 +230,16 @@ func (h *llmSettingsHandler) handleSetActiveModel(w http.ResponseWriter, r *http
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "model switching not available")
 		return
 	}
-	adapter, err := newModelAdapter(r.Context(), mc)
+	raw, err := newModelAdapter(r.Context(), mc)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("cannot switch to %q: %s", req.Name, err))
 		return
 	}
+	// Wrap the raw client in the SAME recording / cost-gating chain the
+	// boot path and /models/current install (services.BuildLLMChain).
+	// The admin surface must produce an identical post-swap chain so a
+	// model change here keeps usage recording and cost-gate enforcement.
+	adapter := h.server.services.BuildLLMChain(raw, mc)
 	if err := h.server.services.LLMSettings.SetActiveModel(r.Context(), req.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to persist active model: %s", err))
 		return

@@ -118,12 +118,20 @@ func (h *modelHandler) handleSetCurrent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	adapter, err := newModelAdapter(r.Context(), mc)
+	raw, err := newModelAdapter(r.Context(), mc)
 	if err != nil {
 		// Most commonly a missing API key for the target provider.
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, fmt.Sprintf("cannot switch to %q: %s", req.Name, err))
 		return
 	}
+	// Wrap the raw client in the SAME recording / cost-gating chain the
+	// boot path installs (services.BuildLLMChain — the single chain
+	// construction site). Without this the hot-swapped adapter would be
+	// the raw provider client and every Chat after the first swap would
+	// bypass usage recording and the cost-window gate. Wrapping has no
+	// side effects, so it stays before the persist transaction alongside
+	// the construction it extends.
+	adapter := h.server.services.BuildLLMChain(raw, mc)
 
 	// Persist + audit atomically. On any failure the mutation
 	// service rolls back the transaction — no settings row, no

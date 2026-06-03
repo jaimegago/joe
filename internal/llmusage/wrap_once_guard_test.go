@@ -28,10 +28,21 @@ import (
 // that mistake at compile-test time instead of in production when a
 // cost-window aggregate undercounts.
 //
-// If this fails: do NOT add a second call to satisfy a new consumer;
-// instead, route the new consumer through the existing wrapped
-// llmAdapter handle, or expose it via core.Services if the consumer
-// lives in a different package.
+// The wrap moved out of an inline NewRecorderAdapter call in server.go
+// into core.Services.BuildLLMChain so the boot path and the two runtime
+// model-swap HTTP handlers share ONE chain builder and can never drift
+// apart (a hot swap that re-installed a raw, unwrapped adapter — losing
+// cost recording and the cost-window gate — is the defect this
+// centralisation closes). The guard therefore asserts (a) the raw
+// constructor is called once in server.go, (b) server.go hands it to
+// BuildLLMChain, and (c) BuildLLMChain is the single site that constructs
+// the RecorderAdapter.
+//
+// If this fails: do NOT add a second deps.newLLMAdapter call to satisfy a
+// new consumer; route it through the existing wrapped llmAdapter handle
+// or expose it via core.Services. And do NOT add a second
+// NewRecorderAdapter call site — keep the wrap in BuildLLMChain so boot
+// and the swap handlers stay in lockstep.
 func TestPhaseG2_LLMAdapterConstructorWrappedOnce(t *testing.T) {
 	repoRoot := findRepoRootForGuard(t)
 	mainPath := filepath.Join(repoRoot, "cmd", "joe", "server.go")
@@ -69,23 +80,36 @@ func TestPhaseG2_LLMAdapterConstructorWrappedOnce(t *testing.T) {
 	})
 
 	if got := len(callSites); got != 1 {
-		t.Fatalf("deps.newLLMAdapter is called %d times in cmd/joe/server.go; want exactly 1 (the recorder wrap site). "+
+		t.Fatalf("deps.newLLMAdapter is called %d times in cmd/joe/server.go; want exactly 1 (the raw adapter handed to BuildLLMChain). "+
 			"call sites: %v. "+
 			"A second call would hand a downstream consumer the RAW, unrecorded adapter. "+
 			"Route the new consumer through the existing wrapped llmAdapter handle instead.",
 			got, callSites)
 	}
 
-	// Belt-and-suspenders: the SINGLE call site must be in close
-	// proximity to a llmusage.NewRecorderAdapter call site. We accept
-	// any usage within the same file because the structure is "raw
-	// adapter constructed, then immediately wrapped".
+	// The single raw adapter must be handed to the centralised chain
+	// builder. server.go itself no longer constructs the RecorderAdapter
+	// inline — the wrap lives in core.Services.BuildLLMChain so the boot
+	// path and the runtime swap handlers share one site.
 	src, err := os.ReadFile(mainPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", mainPath, err)
 	}
-	if !strings.Contains(string(src), "llmusage.NewRecorderAdapter") {
-		t.Errorf("cmd/joe/server.go does not reference llmusage.NewRecorderAdapter; the raw adapter is constructed but never wrapped — every Chat call would go unrecorded.")
+	if !strings.Contains(string(src), "BuildLLMChain") {
+		t.Errorf("cmd/joe/server.go does not reference BuildLLMChain; the raw adapter is constructed but not handed to the shared chain builder — boot would diverge from the swap path and Chat calls could go unrecorded.")
+	}
+
+	// BuildLLMChain must be the single site that constructs the
+	// RecorderAdapter. Exactly one NewRecorderAdapter call there pins
+	// "the chain is built in one place"; a second call site anywhere is
+	// the drift this guard exists to prevent.
+	chainPath := filepath.Join(repoRoot, "internal", "core", "llmchain.go")
+	chainSrc, err := os.ReadFile(chainPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", chainPath, err)
+	}
+	if n := strings.Count(string(chainSrc), "llmusage.NewRecorderAdapter("); n != 1 {
+		t.Errorf("internal/core/llmchain.go has %d llmusage.NewRecorderAdapter( call sites; want exactly 1 — BuildLLMChain is the single chain construction site.", n)
 	}
 }
 

@@ -577,16 +577,17 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// gate refusal — or a gate-read failure — writes its
 	// KindLLMLimitTriggered row to the same append-only sink the
 	// accessor, captaingate, and runaway gate use.
-	llmAdapter = llmusage.NewRecorderAdapter(llmusage.Config{
-		Inner:    llmAdapter,
-		Repo:     llmUsageRepo,
-		Provider: currentModelCfg.Provider,
-		Model:    currentModelCfg.Model,
-		Currency: cfg.LLM.Currency,
-		FXRate:   cfg.LLM.USDToConfiguredRate,
-		Limits:   costLimitsProvider,
-		Audit:    auditRepo,
-	})
+	//
+	// The wrap is built by services.BuildLLMChain — the SINGLE chain
+	// construction site shared with the two model-swap HTTP handlers
+	// (internal/api models.go / llmsettings.go), so a runtime model swap
+	// installs an identically-wrapped chain and cost recording + gating
+	// survive the swap. BuildLLMChain reads Repo / Limits / Audit /
+	// Currency / FXRate from services (wired above at services.LLMUsage,
+	// services.CostLimitsProvider, services.Audit, services.Config), so
+	// the recorder identity (provider/model) comes from currentModelCfg
+	// and every dependency is the same instance the gate enforces with.
+	llmAdapter = services.BuildLLMChain(llmAdapter, currentModelCfg)
 
 	// Phase 2: services.LLM is the single LLM contact point for the agentic
 	// loop and the Web UI chat handler. Wrap it in a SwappableAdapter so the
