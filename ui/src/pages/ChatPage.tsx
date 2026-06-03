@@ -22,9 +22,8 @@ export function ChatPage() {
       />
       <div className="flex-1 overflow-hidden">
         <ChatWindow
-          messages={chat.messages}
+          items={chat.messages}
           isSending={chat.isSending}
-          sendError={chat.sendError}
           onSend={(msg) => { void chat.send(msg); }}
         />
       </div>

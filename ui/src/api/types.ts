@@ -11,7 +11,6 @@ import type {
   ChatMessageSchema,
   ToolCallSchema,
   SessionSchema,
-  ChatResponseSchema,
   AlertSchema,
   CurrentUserSchema,
   AuthConfigSchema,
@@ -39,7 +38,6 @@ export type RbacPolicy = z.infer<typeof RbacPolicySchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 export type Session = z.infer<typeof SessionSchema>;
-export type ChatResponse = z.infer<typeof ChatResponseSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
 export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;

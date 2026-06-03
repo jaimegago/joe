@@ -570,7 +570,7 @@ func (h *JoeTestHarness) RunCommand(args ...string) (string, error) {
 // SendMessage sends a message through the API
 func (h *JoeTestHarness) SendMessage(message string) (string, error) {
     // TODO: Implement API client call
-    // POST /api/v1/chat with message, return response
+    // POST /api/v1/tasks/stream with message, consume SSE, return final answer
     return "", nil
 }
 

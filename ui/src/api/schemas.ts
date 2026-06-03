@@ -94,11 +94,6 @@ export const SessionSchema = z.object({
   message_count: z.number(),
 });
 
-export const ChatResponseSchema = z.object({
-  message: ChatMessageSchema,
-  toolCalls: z.array(ToolCallSchema).optional(),
-});
-
 // Current user (Stream G phase G5 — GET /api/v1/me)
 export const CurrentUserSchema = z.object({
   principal: z.string(),

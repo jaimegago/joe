@@ -5,38 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )
 
-// stubLLM is a minimal LLM adapter that returns a canned response.
-type stubLLM struct{}
-
-func (s *stubLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
-	return &llm.ChatResponse{Content: "stub response"}, nil
-}
-
-func (s *stubLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
-func (s *stubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1, 0.2}, nil
-}
-
 // setupWebUIServer builds a test server with an in-memory store and graph.
-// Pass withLLM=true to wire up a stub LLM (required by the chat endpoint).
-func setupWebUIServer(t *testing.T, withLLM bool) (*Server, *http.ServeMux) {
+func setupWebUIServer(t *testing.T) (*Server, *http.ServeMux) {
 	t.Helper()
 
 	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
@@ -54,9 +34,6 @@ func setupWebUIServer(t *testing.T, withLLM bool) (*Server, *http.ServeMux) {
 		Store:    sqlStore,
 		Adapters: adapters.NewRegistry(),
 	}
-	if withLLM {
-		services.LLM = &stubLLM{}
-	}
 
 	srv := New(services)
 	mux := http.NewServeMux()
@@ -66,7 +43,7 @@ func setupWebUIServer(t *testing.T, withLLM bool) (*Server, *http.ServeMux) {
 
 // TestWebUIEndpointsRegistered confirms none of the 9 endpoints return 404.
 func TestWebUIEndpointsRegistered(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 
 	routes := []struct {
 		method string
@@ -78,7 +55,6 @@ func TestWebUIEndpointsRegistered(t *testing.T) {
 		{"GET", "/api/v1/sessions"},
 		{"POST", "/api/v1/sessions"},
 		{"GET", "/api/v1/sessions/some-id/messages"},
-		{"POST", "/api/v1/chat"},
 		{"GET", "/api/v1/alerts"},
 		// source test omitted: legitimately returns 404 for unknown source,
 		// indistinguishable from "route not found" here; covered by TestWebUISourceTest.
@@ -96,7 +72,7 @@ func TestWebUIEndpointsRegistered(t *testing.T) {
 
 // TestWebUIGetGraph returns empty graph when store has no nodes.
 func TestWebUIGetGraph(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 	w := doRequest(mux, "GET", "/api/v1/graph", nil)
 
 	if w.Code != http.StatusOK {
@@ -116,7 +92,7 @@ func TestWebUIGetGraph(t *testing.T) {
 
 // TestWebUIGetAlerts returns an empty alerts list (stub endpoint).
 func TestWebUIGetAlerts(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 	w := doRequest(mux, "GET", "/api/v1/alerts", nil)
 
 	if w.Code != http.StatusOK {
@@ -137,7 +113,7 @@ func TestWebUIGetAlerts(t *testing.T) {
 
 // TestWebUICreateAndListSessions tests the session lifecycle.
 func TestWebUICreateAndListSessions(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 
 	// Create session
 	wCreate := doRequest(mux, "POST", "/api/v1/sessions", map[string]any{})
@@ -177,53 +153,9 @@ func TestWebUICreateAndListSessions(t *testing.T) {
 	}
 }
 
-// TestWebUIChatRequiresLLM is a regression test for the bug where services.LLM
-// was never assigned in main.go, causing every chat request to return 503.
-func TestWebUIChatRequiresLLM(t *testing.T) {
-	t.Run("503 when LLM not wired", func(t *testing.T) {
-		_, mux := setupWebUIServer(t, false) // withLLM=false
-		w := doRequest(mux, "POST", "/api/v1/chat", map[string]any{
-			"session_id": "test-session",
-			"message":    "hello",
-		})
-		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("expected 503 when LLM is nil, got %d", w.Code)
-		}
-	})
-
-	t.Run("200 when LLM is wired", func(t *testing.T) {
-		_, mux := setupWebUIServer(t, true) // withLLM=true
-		w := doRequest(mux, "POST", "/api/v1/chat", map[string]any{
-			"session_id": "test-session",
-			"message":    "hello",
-		})
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200 with LLM wired, got %d: %s", w.Code, w.Body.String())
-		}
-		var resp map[string]any
-		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-			t.Fatalf("decode chat response: %v", err)
-		}
-		if resp["message"] == nil {
-			t.Error("chat response missing 'message' field")
-		}
-	})
-
-	t.Run("400 when message is empty", func(t *testing.T) {
-		_, mux := setupWebUIServer(t, true)
-		w := doRequest(mux, "POST", "/api/v1/chat", map[string]any{
-			"session_id": "test-session",
-			"message":    "",
-		})
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 for empty message, got %d", w.Code)
-		}
-	})
-}
-
 // TestWebUISourceTest returns 404 for unknown source.
 func TestWebUISourceTest(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 	w := doRequest(mux, "POST", "/api/v1/sources/nonexistent/test", nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for unknown source, got %d", w.Code)
@@ -232,7 +164,7 @@ func TestWebUISourceTest(t *testing.T) {
 
 // TestWebUISourceTest_Success seeds a source and verifies 200 is returned.
 func TestWebUISourceTest_Success(t *testing.T) {
-	srv, mux := setupWebUIServer(t, false)
+	srv, mux := setupWebUIServer(t)
 
 	if err := srv.services.Store.Sources.Create(context.Background(), &store.Source{
 		ID: "test-src", Type: "kubernetes", Name: "test cluster",
@@ -365,7 +297,7 @@ func TestEdgeToWebUI(t *testing.T) {
 // --- handleGetNode endpoint tests ---
 
 func TestWebUIGetNode_NotFound(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 	w := doRequest(mux, "GET", "/api/v1/graph/node/nonexistent-id", nil)
 	// GetNode returns ErrNodeNotFound (an error), so the handler returns 500.
 	if w.Code != http.StatusInternalServerError {
@@ -374,7 +306,7 @@ func TestWebUIGetNode_NotFound(t *testing.T) {
 }
 
 func TestWebUIGetNode_Success(t *testing.T) {
-	srv, mux := setupWebUIServer(t, false)
+	srv, mux := setupWebUIServer(t)
 
 	// Seed a node directly via the graph store.
 	ctx := context.Background()
@@ -409,7 +341,7 @@ func TestWebUIGetNode_Success(t *testing.T) {
 // --- handleGetRelatedNodes endpoint tests ---
 
 func TestWebUIGetRelatedNodes_NoRelations(t *testing.T) {
-	srv, mux := setupWebUIServer(t, false)
+	srv, mux := setupWebUIServer(t)
 
 	ctx := context.Background()
 	if err := srv.services.Graph.AddNode(ctx, graph.Node{
@@ -436,7 +368,7 @@ func TestWebUIGetRelatedNodes_NoRelations(t *testing.T) {
 }
 
 func TestWebUIGetRelatedNodes_WithDepthParam(t *testing.T) {
-	srv, mux := setupWebUIServer(t, false)
+	srv, mux := setupWebUIServer(t)
 
 	ctx := context.Background()
 	if err := srv.services.Graph.AddNode(ctx, graph.Node{ID: "svc-a", Type: "service"}); err != nil {
@@ -458,7 +390,7 @@ func TestWebUIGetRelatedNodes_WithDepthParam(t *testing.T) {
 // --- handleGetFullGraph with nodes ---
 
 func TestWebUIGetGraph_WithNodes(t *testing.T) {
-	srv, mux := setupWebUIServer(t, false)
+	srv, mux := setupWebUIServer(t)
 
 	ctx := context.Background()
 	if err := srv.services.Graph.AddNode(ctx, graph.Node{
@@ -500,7 +432,7 @@ func TestWebUIGetGraph_WithNodes(t *testing.T) {
 
 // TestWebUIListSessions_WithLimitParam verifies the ?limit= query param is honored.
 func TestWebUIListSessions_WithLimitParam(t *testing.T) {
-	_, mux := setupWebUIServer(t, false)
+	_, mux := setupWebUIServer(t)
 
 	// Create 3 sessions.
 	for i := 0; i < 3; i++ {
@@ -607,28 +539,3 @@ func TestWebUITestSource_EmptyID(t *testing.T) {
 	}
 }
 
-// TestWebUIChat_EmptySessionID covers the session-id auto-generation path.
-func TestWebUIChat_EmptySessionID(t *testing.T) {
-	_, mux := setupWebUIServer(t, true) // withLLM=true
-
-	// Omit session_id — handler should auto-generate one.
-	w := doRequest(mux, "POST", "/api/v1/chat", map[string]any{
-		"message": "hello",
-	})
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200 when session_id omitted, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// TestWebUIChat_InvalidJSON covers the JSON decode error path in handleChat.
-func TestWebUIChat_InvalidJSON(t *testing.T) {
-	_, mux := setupWebUIServer(t, true) // withLLM=true
-
-	req := httptest.NewRequest("POST", "/api/v1/chat", strings.NewReader("{bad json"))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
-	}
-}

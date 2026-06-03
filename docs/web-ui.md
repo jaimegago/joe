@@ -540,7 +540,7 @@ Web-based chat interface to interact with Joe.
 - Code syntax highlighting
 
 **API Calls:**
-- `POST /api/v1/chat` → send message, get response
+- `POST /api/v1/tasks/stream` → run an agentic turn, streaming `step`/`final` SSE events
 - `GET /api/v1/sessions/{id}/messages` → load session history
 - `POST /api/v1/sessions` → create new session
 
