@@ -216,10 +216,10 @@ func recordBreakGlassAudit(ctx context.Context, repo audit.Repository, dedup *lo
 		Kind:      audit.KindAuthLogin,
 		Context:   string(blob),
 	})
-	// Discard the return: a break-glass-use action is not read-class, so
-	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
-	// gives fail-open-but-loud without blocking the request.
-	_ = audit.FailurePosture(ctx, audit.ActionBreakGlassUse, err, "auth:break_glass_use")
+	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
+	// outcome (the request PROCEEDED) rather than claiming a fail-closed
+	// abort, and discard the return so the request is never blocked.
+	_ = audit.FailurePosture(ctx, audit.ActionBreakGlassUse, err, "auth:break_glass_use", audit.FailOpen)
 }
 
 // bearerToken extracts the token from an "Authorization: Bearer <token>"

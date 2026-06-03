@@ -287,5 +287,5 @@ func (h *regimeHandler) writeRegimeAudit(ctx context.Context, principal rbac.Pri
 		Kind:      audit.KindRegimeTransition,
 		Context:   ctxJSON,
 	})
-	return audit.FailurePosture(ctx, action, err, "regime:"+action)
+	return audit.FailurePosture(ctx, action, err, "regime:"+action, audit.FailClosed)
 }

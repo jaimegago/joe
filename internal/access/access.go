@@ -159,7 +159,7 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 		})
 		if auditErr != nil {
 			// Fail-closed for mutate/delete; fail-open for reads.
-			if blocking := audit.FailurePosture(ctx, string(action), auditErr, "accessor"); blocking != nil {
+			if blocking := audit.FailurePosture(ctx, string(action), auditErr, "accessor", audit.PostureForAction(string(action))); blocking != nil {
 				return fmt.Errorf("audit write failed for mutating action: %w", blocking)
 			}
 		}

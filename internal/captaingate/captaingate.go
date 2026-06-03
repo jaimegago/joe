@@ -264,5 +264,5 @@ func (w *Wrapper) writeRefusalAudit(ctx context.Context, principal, sessionID, t
 		Kind:      audit.KindCaptainTransition,
 		Context:   string(blob),
 	})
-	return audit.FailurePosture(ctx, audit.ActionCaptainGateRefused, err, "captaingate:refusal")
+	return audit.FailurePosture(ctx, audit.ActionCaptainGateRefused, err, "captaingate:refusal", audit.FailClosed)
 }

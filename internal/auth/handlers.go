@@ -252,10 +252,10 @@ func (h *Handlers) recordLoginAudit(ctx context.Context, principal rbac.Principa
 		Kind:      audit.KindAuthLogin,
 		Context:   string(blob),
 	})
-	// Discard the return: a login action is not read-class, so
-	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
-	// gives fail-open-but-loud without changing FailurePosture.
-	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login")
+	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
+	// outcome (the login PROCEEDED) rather than claiming a fail-closed abort,
+	// and discard the return so the login is never blocked.
+	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login", audit.FailOpen)
 }
 
 // recordAdminGrantAudit writes one auth_login audit row recording a privilege
@@ -284,10 +284,10 @@ func (h *Handlers) recordAdminGrantAudit(ctx context.Context, principal rbac.Pri
 		Kind:      audit.KindAuthLogin,
 		Context:   string(blob),
 	})
-	// Discard the return: an admin-grant escalation is not read-class, so
-	// FailurePosture would otherwise signal fail-closed. The `_ =`-discard
-	// gives fail-open-but-loud without changing FailurePosture.
-	_ = audit.FailurePosture(ctx, audit.ActionAdminGranted, err, "auth:admin_granted")
+	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
+	// outcome (the login PROCEEDED) rather than claiming a fail-closed abort,
+	// and discard the return so the login is never blocked.
+	_ = audit.FailurePosture(ctx, audit.ActionAdminGranted, err, "auth:admin_granted", audit.FailOpen)
 }
 
 // Logout revokes the server-side session (immediate, by deleting the row) and
