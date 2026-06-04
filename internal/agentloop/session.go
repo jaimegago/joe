@@ -46,6 +46,15 @@ type Session struct {
 	// exactly this turn.
 	historyTrimmed  bool
 	messagesDropped int
+
+	// toolResultsTruncated / userMessageTruncated record this turn's
+	// per-message ingestion truncation: how many tool-result messages were
+	// shortened to fit their cap, and whether the incoming user message was.
+	// Surfaced on the final SSE event (tool_results_truncated /
+	// user_message_truncated). Like historyTrimmed they describe this turn —
+	// the session is built per-task in buildTaskRun.
+	toolResultsTruncated int
+	userMessageTruncated bool
 }
 
 // NewSession creates a new session with empty conversation history
@@ -193,6 +202,69 @@ func (s *Session) HistoryTrimmed() bool { return s.historyTrimmed }
 
 // MessagesDropped reports how many messages pruning dropped this turn.
 func (s *Session) MessagesDropped() int { return s.messagesDropped }
+
+// ToolResultsTruncated reports how many tool-result messages were shortened
+// at ingestion this turn to fit their per-message cap.
+func (s *Session) ToolResultsTruncated() int { return s.toolResultsTruncated }
+
+// UserMessageTruncated reports whether the incoming user message was shortened
+// at ingestion this turn to fit its per-message cap.
+func (s *Session) UserMessageTruncated() bool { return s.userMessageTruncated }
+
+// truncationLimit returns the per-message token cap for the given budget
+// fraction: max(fraction * TokenBudget, minTruncationTokenFloor). It returns 0
+// when the session has no positive token budget — mirroring
+// pruneToTokenBudget's gate — so callers leave content untouched for sessions
+// that never set a budget (legacy / test callers), preserving prior behaviour.
+func (s *Session) truncationLimit(fraction float64) int {
+	if s.TokenBudget <= 0 {
+		return 0
+	}
+	limit := int(float64(s.TokenBudget) * fraction)
+	if limit < minTruncationTokenFloor {
+		limit = minTruncationTokenFloor
+	}
+	return limit
+}
+
+// truncateUserMessage bounds the incoming user message to
+// userMessageBudgetFraction of the turn's token budget before it enters
+// history, recording whether it was shortened. The message is never rejected;
+// it is only truncated with the marker so the turn can proceed. No-op when the
+// session has no token budget.
+func (s *Session) truncateUserMessage(content string) string {
+	limit := s.truncationLimit(userMessageBudgetFraction)
+	if limit <= 0 {
+		return content
+	}
+	out, did := TruncateContent(content, limit)
+	if did {
+		s.userMessageTruncated = true
+	}
+	return out
+}
+
+// truncateResultMessages bounds each tool-result message's content to
+// toolResultBudgetFraction of the turn's token budget, in place, counting how
+// many were shortened. Only tool-result messages (ToolResultID set) are
+// touched. Applied at ingestion, before the messages are appended; messages
+// already in history are never re-truncated.
+func (s *Session) truncateResultMessages(msgs []llm.Message) {
+	limit := s.truncationLimit(toolResultBudgetFraction)
+	if limit <= 0 {
+		return
+	}
+	for i := range msgs {
+		if msgs[i].ToolResultID == "" {
+			continue
+		}
+		out, did := TruncateContent(msgs[i].Content, limit)
+		if did {
+			msgs[i].Content = out
+			s.toolResultsTruncated++
+		}
+	}
+}
 
 // Clear clears the conversation history
 func (s *Session) Clear() {

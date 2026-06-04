@@ -488,6 +488,48 @@ func TestEnhanceError_NotFound_GeminiModel(t *testing.T) {
 	}
 }
 
+// TestEnhanceError_ContextOverflow: a 400 invalid_request_error whose message
+// names a prompt-too-long overflow classifies into llm.ErrContextOverflow.
+func TestEnhanceError_ContextOverflow(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	cases := []string{
+		`400 invalid_request_error: prompt is too long: 215024 tokens > 200000 maximum`,
+		`400 {"type":"error","error":{"type":"invalid_request_error","message":"input length and max_tokens exceed context limit: 200000 + 8192 > 200000"}}`,
+	}
+	for _, raw := range cases {
+		err := client.enhanceError(errors.New(raw))
+		if !errors.Is(err, llm.ErrContextOverflow) {
+			t.Errorf("overflow %q did not classify as ErrContextOverflow: %v", raw, err)
+		}
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != 400 {
+			t.Errorf("overflow %q: want *APIError code 400, got %v", raw, err)
+		}
+	}
+}
+
+// TestEnhanceError_NonOverflow400: an ordinary malformed-request 400 stays a
+// generic invalid-request error and does NOT classify as overflow.
+func TestEnhanceError_NonOverflow400(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	err := client.enhanceError(errors.New("400 invalid request: unsupported parameter 'foo'"))
+	if errors.Is(err, llm.ErrContextOverflow) {
+		t.Error("non-overflow 400 misclassified as ErrContextOverflow")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != 400 {
+		t.Errorf("want *APIError code 400, got %v", err)
+	}
+}
+
 func TestEnhanceError_Auth(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "test-key")
 	defer os.Unsetenv("ANTHROPIC_API_KEY")

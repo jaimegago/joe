@@ -66,6 +66,15 @@ type taskResponse struct {
 	// history_trimmed is true.
 	HistoryTrimmed  bool `json:"history_trimmed,omitempty"`
 	MessagesDropped int  `json:"messages_dropped,omitempty"`
+	// ToolResultsTruncated / UserMessageTruncated report this turn's
+	// per-message ingestion truncation: how many oversized tool results were
+	// shortened in place, and whether the incoming user message was shortened
+	// to fit its share of the context budget. Additive optional fields
+	// alongside HistoryTrimmed — omitted in the common no-truncation case.
+	// The truncated tool results carry a visible marker inside the rendered
+	// result, so only user_message_truncated drives a dedicated UI notice.
+	ToolResultsTruncated int  `json:"tool_results_truncated,omitempty"`
+	UserMessageTruncated bool `json:"user_message_truncated,omitempty"`
 }
 
 type taskStep struct {
@@ -396,6 +405,15 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 			// bucket.
 			status = "cost_limit_exceeded"
 			errMsg = runErr.Error()
+		case errors.Is(runErr, llm.ErrContextOverflow):
+			// Context pass: the provider rejected the request because the
+			// prompt/input exceeded the model's context window (an adapter
+			// classified the rejection into llm.ErrContextOverflow). Distinct
+			// from the generic error bucket. Detection-and-reporting only — no
+			// retry, no budget adjustment. The wire error is a friendly
+			// message, never the raw provider text.
+			status = "context_overflow"
+			errMsg = "The conversation or a tool output was too large for the model's context window."
 		default:
 			status = "error"
 			errMsg = runErr.Error()
@@ -502,10 +520,12 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 			InputTokens:  session.TotalInputTokens,
 			OutputTokens: session.TotalOutputTokens,
 		},
-		DurationMs:      int(duration.Milliseconds()),
-		Error:           errMsg,
-		HistoryTrimmed:  session.HistoryTrimmed(),
-		MessagesDropped: session.MessagesDropped(),
+		DurationMs:           int(duration.Milliseconds()),
+		Error:                errMsg,
+		HistoryTrimmed:       session.HistoryTrimmed(),
+		MessagesDropped:      session.MessagesDropped(),
+		ToolResultsTruncated: session.ToolResultsTruncated(),
+		UserMessageTruncated: session.UserMessageTruncated(),
 	}
 }
 
