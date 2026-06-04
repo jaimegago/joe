@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
@@ -50,6 +53,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal
 	// test harness that flips the flag without wiring the repo gets a
 	// clean forbidden rather than a nil-deref.
 	if s.services.RBAC == nil {
+		s.recordAdminDenial(r.Context(), r, "rbac_repo_unavailable")
 		writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied: admin capability required")
 		return principal, true
 	}
@@ -59,12 +63,51 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (principal
 		// administrative surface fails CLOSED — operationally the
 		// safer posture than fail-open admin access. A persistent
 		// outage will be visible via the accompanying internal log.
+		s.recordAdminDenial(r.Context(), r, "is_admin_read_error")
 		writeInternalError(w, err, "admin gate is_admin read")
 		return principal, true
 	}
 	if !isAdmin {
+		s.recordAdminDenial(r.Context(), r, "non_admin")
 		writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied: admin capability required")
 		return principal, true
 	}
 	return principal, false
+}
+
+// recordAdminDenial writes one KindAdminAccess / decision=deny audit row for
+// a requireAdmin gate refusal (D-0013). This is the "non-admin tried to
+// escalate" trail that completes the D-0012 privilege-escalation story: a
+// principal that lacks admin capability attempted an /api/v1/admin/ endpoint
+// and was refused. The row captures the attempting principal, the attempted
+// endpoint ("<METHOD> <path>" in the Details.Target field), the timestamp
+// (stamped by the repository), and the denial reason.
+//
+// The optional denial-audit is the ONLY behavioural extension to requireAdmin
+// allowed by D-0013's scope; the gate's signature and admit/deny mechanism
+// are otherwise unchanged. When the audit repository is not wired (nil —
+// unit-test harnesses that don't exercise the trail) this is a no-op, the
+// same carve-out captaingate.Wrapper and recordAdminAudit use.
+//
+// The denial itself is enforced regardless of whether this row lands —
+// denying is the fail-closed-safe direction, so there is no "more denied"
+// state to escalate to (unlike a mutation, which a missing row must abort).
+// FailurePosture is still called so an audit-store failure logs loudly at
+// Error level; its return is intentionally discarded, matching
+// captaingate.Wrapper.writeRefusalAudit's posture where the action stays
+// refused either way.
+func (s *Server) recordAdminDenial(ctx context.Context, r *http.Request, reason string) {
+	if s.services == nil || s.services.Audit == nil {
+		return
+	}
+	blob, _ := json.Marshal(audit.Details{Target: r.Method + " " + r.URL.Path})
+	err := s.services.Audit.Insert(ctx, audit.Event{
+		Principal: string(rbac.PrincipalFromContext(ctx)),
+		Action:    audit.ActionAdminAccessDenied,
+		Decision:  audit.DecisionDeny,
+		Reason:    reason,
+		Kind:      audit.KindAdminAccess,
+		Context:   string(blob),
+	})
+	_ = audit.FailurePosture(ctx, audit.ActionAdminAccessDenied, err, "admingate:denial", audit.FailClosed)
 }

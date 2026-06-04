@@ -10,6 +10,134 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0013 — The RBAC admin surface was gated (D-0012) but wrote zero audit rows; extend the audit vocabulary to cover authorization-config mutations
+
+- Date: 2026-06-04
+- Decision: D-0012 closed the GATE gap on the RBAC admin HTTP API
+  (`internal/api/admin.go`) but explicitly left a second gap open and tracked
+  it: the surface wrote **no** audit rows at all. The most
+  authorization-critical mutations in the system — mint a zone, grant/revoke a
+  policy, assign a source to a zone — were unrecorded, and gate denials left
+  no trail. D-0013 closes that gap by extending Phase F's (D-0009) audit
+  machinery to this surface, with Phase F's failure posture preserved
+  exactly. Specifics:
+  - **(a) The gap, precisely.** Phase F (D-0009) modelled the guarded
+    accessor's DECISION point — every allow/deny the accessor makes against an
+    infra adapter or the graph store, recorded as a `kind=infra_access` row.
+    It never modelled mutations of the authorization CONFIGURATION the
+    accessor reads. A zone's `allowed_actions`, a principal→zone policy, a
+    source→zone assignment: changing these changes what every future accessor
+    decision will permit, but the change itself produced no row. That is a
+    different decision shape than the one Phase F's scope (the accessor's
+    chokepoint) covered, which is why the vocabulary never grew to include it.
+  - **(b) The fix — action vocabulary.** Nine action verbs were added to the
+    existing audit vocabulary file (`internal/audit/audit.go`), NOT a parallel
+    taxonomy: `zone.create`, `zone.read`, `policy.grant`, `policy.revoke`,
+    `policy.read`, `source_zone.assign`, `source_zone.read`, plus
+    `admin.grant` / `admin.revoke` (declared for the CLI-only admin-promotion
+    path per `ADMIN_SURFACE_AUDIT.md`, so a future HTTP endpoint reuses them
+    rather than inventing new strings), and `admin.access_denied` for gate
+    refusals. All carry a new `kind=admin_access` — the admin-surface parallel
+    of `infra_access`: one kind for the whole surface, discriminated by action
+    + decision.
+  - **(c) The fix — typed details.** Each row's `context` column uses the
+    `{target, before, after}` shape Stream G locked for `llm_settings_mutation`
+    rows (`internal/llmsettings.AuditCtxTarget`/`Before`/`After`, written by
+    `MutationService.runMutation`). That shape is now a named type,
+    `audit.Details`, documented inline; admin and settings mutations share the
+    audit table with this typed details column, per the locked decision. For a
+    create/grant the row carries the after-state; for a revoke the
+    before-state; for a read that leaks structure, the requested resource.
+  - **(d) The fix — failure posture, unchanged from Phase F §4.** The eight
+    handlers write their row through `recordAdminAudit`, which routes the
+    write's outcome through the same `audit.FailurePosture` helper every Phase
+    F caller uses. Mutating actions fail CLOSED: the audit row is written
+    BEFORE the repository mutation, and a failed write aborts before any state
+    change (no row ⇒ no mutation), the same audit-before-act ordering the
+    accessor uses. The three `.read` actions are read-class and fail OPEN: the
+    read proceeds even if the row cannot be written, logged loudly. The
+    read/mutate split lives in `isFailOpen`, extended to admit the three admin
+    read verbs — the §4 invariant itself is untouched. Denials write a
+    `decision=deny` row from `requireAdmin` (the only behavioural change to the
+    gate, scoped to the optional denial-audit D-0012's `requireAdmin` left
+    room for); the denial is enforced regardless of whether the row lands
+    (denying is the fail-closed-safe direction), matching
+    `captaingate.Wrapper.writeRefusalAudit`'s posture.
+  - **(e) Schema touch — one migration, required not optional.** Admin-RBAC
+    events had no semantically-correct home among the six kinds the
+    migration-018 `audit_log.kind` CHECK admitted. An INSERT with an
+    unadmitted kind fails the CHECK, and under (d)'s fail-closed posture that
+    would break every admin mutation outright — so the kind had to be added to
+    the CHECK to record admin actions at all. Migration 020
+    (`020_admin_audit.up.sql`/`.down.sql`) widens the CHECK to add
+    `admin_access`, following the byte-for-byte table-rebuild sequence
+    migrations 017 and 018 established (SQLite cannot alter a CHECK in place);
+    all other columns, defaults, the decision CHECK, the indexes, and the two
+    append-only triggers are preserved verbatim. This is the only schema
+    change; the typed details column (`context`) was already present from
+    Stream G. The choice between this and reusing an existing (wrong-named)
+    kind was made explicitly: a `kind` named for one surface holding another
+    surface's rows would corrupt kind-based forensic queries, so a minimal
+    widening was preferred — the same reasoning, inverted, that led
+    `captaingate` to REUSE `captain_transition` for gate refusals (there the
+    existing kind was semantically correct; here none was).
+  - **(f) The structural invariant.** `TestAdminRoutes_AllAuditOnAllow`
+    (`internal/api/admin_audit_guard_test.go`) is the sibling of D-0012's
+    `TestAdminRoutes_AllRequireAdminGate`, in the same AST-guard style as
+    `captaingate.TestPhaseG_SingleSharedCaptainGateImplementation`. It parses
+    `admin.go` and fails the build if any handler registered under
+    `/api/v1/admin/` does not call `recordAdminAudit` in its body. Together
+    the two guards pin both halves of the admin-surface contract: every admin
+    endpoint admin-gates AND leaves an audit trail. A future
+    `POST /api/v1/admin/admins` added without an audit write fails the build
+    naming the unaudited handler. The guard was break-tested: removing the
+    audit writer from `createPolicy` makes it fail with `admin handler
+    "createPolicy" is registered under /api/v1/admin/ but its body never calls
+    recordAdminAudit`, and the companion regression tests simultaneously go red
+    (`no policy.grant audit row written`; a grant returns 201 even with a
+    failing audit injected — the live gap); restoring the writer returns all
+    to green.
+  - **Regression tests** (`internal/api/admin_audit_test.go`) reuse the
+    Stream G fixture: each new action's row is asserted written with the
+    correct action, principal, decision, and target details; each mutating
+    action is asserted to fail CLOSED under an injected audit-write failure
+    (the mutation does not commit); reads fail OPEN (the read still 200s); and
+    a non-admin attempt records an `admin.access_denied` row naming the
+    attempting principal and the attempted endpoint.
+- Basis: D-0012's "Honest scope note" (this entry closes the gap it tracked);
+  `internal/llmsettings/service.go` (the `{target, before, after}` shape and
+  the InsertTx atomic-write pattern reused here); `internal/captaingate/
+  captaingate.go::writeRefusalAudit` (the fail-closed deny-audit pattern
+  matched); migrations 017/018 (the kind-CHECK-widening rebuild pattern
+  followed by 020); `internal/audit/audit.go` §4 `FailurePosture`/`isFailOpen`
+  (the read/mutate split extended, not altered). Verified by `go test ./...`
+  green, plus the break-test described in (f). NOTE: Stream G's audit-table
+  extension (the `llm_settings_mutation` kind, migration 017) has no standalone
+  DECISIONS entry — it is documented in the migration and `audit.go` code
+  comments; D-0013 is the first DECISIONS entry to record the shared-table /
+  typed-details arrangement explicitly.
+- Supersedes: nothing — it closes the gap D-0012 tracked as deferred. D-0012
+  closed the GATE gap (privilege escalation); D-0013 closes the AUDIT gap.
+  Together they make the admin RBAC surface match what the README claims about
+  RBAC and audit. D-0011's admin capability and `IsAdmin` semantics are
+  untouched. Touched files: `internal/audit/audit.go` (new kind, action verbs,
+  `Details` type, `isFailOpen` extension), `internal/api/admin.go` (the
+  `recordAdminAudit` writer + eight handler call sites),
+  `internal/api/admingate.go` (`recordAdminDenial` + three gate call sites),
+  `internal/store/migrations/020_admin_audit.{up,down}.sql`, three new/updated
+  test files (`admin_audit_guard_test.go`, `admin_audit_test.go`,
+  `migrations_020_test.go`), and the step-count bumps in the 017/018/019
+  migration round-trip tests (each now steps down one further past the new
+  head — a pre-existing brittleness in those tests, not a behaviour change).
+- Status: active. Admin-audit gap closed; structural invariant in place and
+  break-tested; both admin-surface invariants (gate + audit) now enforced
+  together. Known follow-up: the README's "All admin endpoints require Bearer
+  auth" (RBAC section) is stale post-D-0012 (they require admin capability) and
+  silent about D-0013's audit trail — flagged for the later combined README
+  rewrite pass, not edited here.
+
+---
+
 ## D-0012 — We found a privilege escalation in our own RBAC admin API: the admin gate was never applied to it
 
 - Date: 2026-06-03

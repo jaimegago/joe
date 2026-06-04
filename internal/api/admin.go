@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
@@ -13,15 +15,29 @@ import (
 //
 // Every route under /api/v1/admin/ mutates or exposes authorization state
 // (zones, policies, source-zone assignments, the unassigned-source roster),
-// so EVERY handler below admin-gates via server.requireAdmin — the same gate
-// Stream G applied to the LLM settings/usage endpoints. The gate was applied
-// to LLM settings but not retroactively to this RBAC admin surface; the
-// resulting privilege escalation (any authenticated principal could grant
-// itself a policy or a zone with arbitrary allowed-actions) is documented in
-// ADMIN_SURFACE_AUDIT.md (Launch Blocker 1) and DECISIONS.md (D-0012). The
-// structural invariant TestAdminRoutes_AllRequireAdminGate
-// (admin_gate_guard_test.go) fails the build if a future admin route is
-// registered without the gate.
+// so EVERY handler below does two things:
+//
+//  1. Admin-gates via server.requireAdmin — the same gate Stream G applied
+//     to the LLM settings/usage endpoints. The gate was applied to LLM
+//     settings but not retroactively to this RBAC admin surface; the
+//     resulting privilege escalation (any authenticated principal could
+//     grant itself a policy or a zone with arbitrary allowed-actions) is
+//     documented in ADMIN_SURFACE_AUDIT.md (Launch Blocker 1) and
+//     DECISIONS.md (D-0012). TestAdminRoutes_AllRequireAdminGate
+//     (admin_gate_guard_test.go) fails the build if a future admin route is
+//     registered without the gate.
+//
+//  2. Writes one KindAdminAccess audit row (D-0013). D-0012 closed the GATE
+//     gap but the surface still wrote ZERO audit rows — the most
+//     authorization-critical mutations in the system went unrecorded.
+//     Phase F's audit covered the guarded accessor's DECISION point, not
+//     mutations of the authorization CONFIGURATION the accessor reads. Each
+//     handler now records its event through recordAdminAudit with Phase F's
+//     §4 failure posture: mutating actions fail CLOSED (no row ⇒ no
+//     mutation), the .read actions fail OPEN (the read proceeds, the failure
+//     is logged loudly). TestAdminRoutes_AllAuditOnAllow
+//     (admin_audit_guard_test.go) fails the build if a future admin route is
+//     registered without an audit write in its allow path.
 type adminHandler struct {
 	repo   rbac.Repository
 	server *Server
@@ -47,6 +63,53 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/unassigned", admin), h.listUnassigned)
 }
 
+// recordAdminAudit writes one KindAdminAccess audit row for an admin-surface
+// event and applies Phase F's §4 failure posture (audit.FailurePosture) for
+// the action.
+//
+// Returns a non-nil error ONLY for a mutating (fail-closed) action whose
+// audit write failed: the caller MUST abort the mutation (no durable row ⇒
+// no mutation). The .read actions are read-class and always return nil — the
+// read proceeds and the failure is logged loudly (fail-open per §4). When
+// the audit repository is not wired (nil — unit-test harnesses that don't
+// exercise the trail) this is a no-op returning nil, the same carve-out
+// captaingate.Wrapper uses for a nil audit repo.
+//
+// Mutations call this BEFORE performing the repository write, so a failed
+// audit write aborts before any state change. This is the same audit-before-
+// act ordering the Phase F accessor uses (it records the decision before the
+// caller performs the infra call). It over-records rather than under-records:
+// a mutation whose audit row landed but whose repository write then failed
+// leaves a row for a mutation that did not commit. Closing that residual
+// window would require a transaction shared between the rbac repository and
+// the audit repository — D-0013 deliberately leaves that out of scope (it
+// would refactor the rbac storage layer, which the fix's scope forbids).
+// Over-recording is the safe direction for a forensic trail.
+func (h *adminHandler) recordAdminAudit(ctx context.Context, action string, decision audit.Decision, reason string, d audit.Details, where string) error {
+	if h.server.services == nil || h.server.services.Audit == nil {
+		return nil
+	}
+	blob, err := json.Marshal(d)
+	if err != nil {
+		// Practically unreachable for the resource shapes admin rows carry,
+		// but a marshal failure on a mutating action must abort it (the row
+		// could not be formed). Route through FailurePosture so the §4 split
+		// — and the loud log — applies uniformly.
+		return audit.FailurePosture(ctx, action,
+			fmt.Errorf("%w: marshal admin audit details: %v", audit.ErrAuditWriteFailed, err),
+			where, audit.PostureForAction(action))
+	}
+	insErr := h.server.services.Audit.Insert(ctx, audit.Event{
+		Principal: string(rbac.PrincipalFromContext(ctx)),
+		Action:    action,
+		Decision:  decision,
+		Reason:    reason,
+		Kind:      audit.KindAdminAccess,
+		Context:   string(blob),
+	})
+	return audit.FailurePosture(ctx, action, insErr, where, audit.PostureForAction(action))
+}
+
 // --- Zone endpoints ---
 
 func (h *adminHandler) listZones(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +121,11 @@ func (h *adminHandler) listZones(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "list zones")
 		return
 	}
+	// Read-class audit: GET /admin/zones leaks the authz topology (which zone
+	// permits what), so the access is recorded (D-0012). Fail-open per §4 —
+	// the read proceeds even if the row cannot be written.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminZoneRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "zones"}, "admin:zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"zones": zones,
 		"count": len(zones),
@@ -81,6 +149,13 @@ func (h *adminHandler) createZone(w http.ResponseWriter, r *http.Request) {
 		z.AllowedActions = []rbac.Action{rbac.ActionRead}
 	}
 
+	// Fail-closed audit BEFORE the mutation: no durable row ⇒ no zone minted.
+	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminZoneCreate, audit.DecisionAllow,
+		"admin_mutation", audit.Details{Target: "zone:" + z.ID, After: z}, "admin:zone.create"); err != nil {
+		writeInternalError(w, err, "audit zone create")
+		return
+	}
+
 	created, err := h.repo.CreateZone(r.Context(), z)
 	if err != nil {
 		writeInternalError(w, err, "create zone")
@@ -100,6 +175,9 @@ func (h *adminHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "list source-zone assignments")
 		return
 	}
+	// Read-class audit (fail-open): the source→zone map is authz topology.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "source_zones"}, "admin:source_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"assignments": assignments,
 		"count":       len(assignments),
@@ -117,6 +195,21 @@ func (h *adminHandler) assignSourceZone(w http.ResponseWriter, r *http.Request) 
 	}
 	if a.SourceID == "" || a.ZoneID == "" || a.AssignedBy == "" {
 		writeBadRequest(w, nil, "assign source zone", "source_id, zone_id, and assigned_by are required")
+		return
+	}
+
+	// Capture before-state: UpsertAssignment may overwrite an existing
+	// assignment, so the row records the prior zone for an edit. Best-effort:
+	// a not-found source has no prior assignment (Before stays unset).
+	d := audit.Details{Target: "source_zone:" + a.SourceID, After: a}
+	if before, gerr := h.repo.GetAssignment(r.Context(), a.SourceID); gerr == nil && before != nil {
+		d.Before = *before
+	}
+
+	// Fail-closed audit BEFORE the mutation.
+	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneAssign, audit.DecisionAllow,
+		"admin_mutation", d, "admin:source_zone.assign"); err != nil {
+		writeInternalError(w, err, "audit assign source zone")
 		return
 	}
 
@@ -138,6 +231,10 @@ func (h *adminHandler) listPolicies(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "list policies")
 		return
 	}
+	// Read-class audit (fail-open): GET /admin/policies leaks who holds which
+	// zone — the access-control map (D-0012).
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminPolicyRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "policies"}, "admin:policy.read")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"policies": policies,
 		"count":    len(policies),
@@ -155,6 +252,16 @@ func (h *adminHandler) createPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Principal == "" || p.ZoneID == "" {
 		writeBadRequest(w, nil, "create policy", "principal and zone_id are required")
+		return
+	}
+
+	// Fail-closed audit BEFORE the mutation: a grant is the canonical
+	// escalation vector D-0012 closed the gate on; no row ⇒ no grant.
+	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminPolicyGrant, audit.DecisionAllow,
+		"admin_mutation",
+		audit.Details{Target: fmt.Sprintf("policy:%s@%s", p.Principal, p.ZoneID), After: p},
+		"admin:policy.grant"); err != nil {
+		writeInternalError(w, err, "audit policy grant")
 		return
 	}
 
@@ -177,6 +284,27 @@ func (h *adminHandler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture before-state: locate the policy being revoked so the row
+	// records WHAT grant was removed (the repo has no GetPolicy(id), so scan
+	// the list). Best-effort — a missing policy leaves Before unset and the
+	// DeletePolicy below is a no-op.
+	d := audit.Details{Target: fmt.Sprintf("policy:%d", id)}
+	if policies, lerr := h.repo.ListPolicies(r.Context()); lerr == nil {
+		for i := range policies {
+			if policies[i].ID == id {
+				d.Before = policies[i]
+				break
+			}
+		}
+	}
+
+	// Fail-closed audit BEFORE the mutation.
+	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminPolicyRevoke, audit.DecisionAllow,
+		"admin_mutation", d, "admin:policy.revoke"); err != nil {
+		writeInternalError(w, err, "audit policy revoke")
+		return
+	}
+
 	if err := h.repo.DeletePolicy(r.Context(), id); err != nil {
 		writeInternalError(w, err, "delete policy")
 		return
@@ -195,6 +323,10 @@ func (h *adminHandler) listUnassigned(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "list unassigned sources")
 		return
 	}
+	// Read-class audit (fail-open): the unassigned roster is part of the
+	// source→zone authz map; recorded under the same source_zone.read verb.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "unassigned"}, "admin:source_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"source_ids": ids,
 		"count":      len(ids),
