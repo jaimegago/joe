@@ -186,7 +186,109 @@ const (
 	// repeat admin logins, so it captures escalation without per-login
 	// noise. The principal is user:<email>.
 	ActionAdminGranted = "admin_granted"
+
+	// --- D-0013 admin-RBAC-surface action verbs ---
+	//
+	// These verbs cover every event on the RBAC admin HTTP surface
+	// (internal/api/admin.go): the eight handlers under /api/v1/admin/
+	// plus the gate denial. All carry kind KindAdminAccess. D-0012
+	// admin-gated that surface but it wrote ZERO audit rows; D-0013 wires
+	// these verbs in so a zone mint, a policy grant/revoke, a source-zone
+	// assignment, and a denied escalation attempt all leave a durable
+	// trail. The dotted naming (zone.create, policy.grant, ...) is the
+	// vocabulary specified by D-0013; it reads as resource.verb and groups
+	// cleanly under the admin_access kind. The mutating verbs fail CLOSED
+	// (no audit row ⇒ no mutation); the .read verbs are read-class and
+	// fail OPEN (see isFailOpen below).
+
+	// ActionAdminZoneCreate records an admin minting a new security zone
+	// (POST /api/v1/admin/zones). Decision "allow"; mutating (fail-closed).
+	ActionAdminZoneCreate = "zone.create"
+	// ActionAdminZoneRead records an admin listing/reading zones
+	// (GET /api/v1/admin/zones). The read leaks the authz topology
+	// (D-0012), so it is audited; read-class, fail-open.
+	ActionAdminZoneRead = "zone.read"
+	// ActionAdminPolicyGrant records an admin granting a principal access
+	// to a zone (POST /api/v1/admin/policies). Decision "allow"; mutating.
+	ActionAdminPolicyGrant = "policy.grant"
+	// ActionAdminPolicyRevoke records an admin revoking such a grant
+	// (DELETE /api/v1/admin/policies/{id}). Decision "allow"; mutating.
+	ActionAdminPolicyRevoke = "policy.revoke"
+	// ActionAdminPolicyRead records an admin listing/reading policies
+	// (GET /api/v1/admin/policies) — leaks who holds which zone. Read-class.
+	ActionAdminPolicyRead = "policy.read"
+	// ActionAdminSourceZoneAssign records an admin assigning a source to a
+	// zone (POST /api/v1/admin/source-zones). Decision "allow"; mutating.
+	ActionAdminSourceZoneAssign = "source_zone.assign"
+	// ActionAdminSourceZoneRead records an admin listing source-zone
+	// assignments OR the unassigned-source roster (GET
+	// /api/v1/admin/source-zones, GET /api/v1/admin/unassigned). Read-class.
+	ActionAdminSourceZoneRead = "source_zone.read"
+	// ActionAdminGrant records an admin promoting another principal to
+	// admin. CLI-only today (joe admin, internal/rbac AddAdmin — see
+	// ADMIN_SURFACE_AUDIT.md); declared here so that if/when an HTTP
+	// endpoint lands it reuses this verb rather than inventing a new one.
+	// Decision "allow"; mutating (fail-closed). NOTE: distinct from
+	// ActionAdminGranted ("admin_granted"), which is the OIDC bootstrap
+	// self-escalation under KindAuthLogin.
+	ActionAdminGrant = "admin.grant"
+	// ActionAdminRevoke records an admin demoting another principal.
+	// CLI-only today; same forward-compat rationale as ActionAdminGrant.
+	ActionAdminRevoke = "admin.revoke"
+	// ActionAdminAccessDenied records a requireAdmin gate denial: a
+	// non-admin (or a principal whose admin status could not be read)
+	// attempted an /api/v1/admin/ endpoint and got 403. Decision "deny".
+	// This is the "non-admin tried to escalate" trail that completes the
+	// D-0012 privilege-escalation story. The attempted endpoint
+	// (method + path) rides in the Context blob's "target" field.
+	ActionAdminAccessDenied = "admin.access_denied"
 )
+
+// KindAdminAccess is every event on the RBAC admin HTTP surface
+// (internal/api/admin.go): zone/policy/source-zone reads, creates,
+// grants, revokes, and assignments, plus requireAdmin gate denials. It is
+// the admin-surface parallel of KindInfraAccess (which is every decision
+// the guarded accessor makes): one kind for the whole surface,
+// discriminated by action + decision. Added by D-0013; the audit_log.kind
+// CHECK admits this value as of migration 020. Phase F covered the
+// accessor's decision point but not mutations of the authorization
+// CONFIGURATION the accessor reads — this kind is that missing surface.
+const KindAdminAccess Kind = "admin_access"
+
+// Details is the typed JSON shape for the audit_log.context column on
+// configuration-mutation rows. It is the shape Stream G locked for LLM
+// settings mutations — the llm_settings_mutation rows carry the identical
+// {target, before, after} keys (see internal/llmsettings.AuditCtxTarget /
+// AuditCtxBefore / AuditCtxAfter, written by MutationService.runMutation).
+// D-0013 reuses that shape for admin-RBAC rows per the locked decision that
+// "settings-mutations and admin-mutations share the audit table with a
+// typed details column."
+//
+// Field semantics:
+//
+//   - Target: WHAT was acted on — the target resource identifier. For a
+//     zone: "zone:<id>"; a policy grant: "policy:<principal>@<zone>"; a
+//     policy revoke: "policy:<id>"; a source-zone assignment:
+//     "source_zone:<sourceID>"; a read: the resource collection name
+//     ("zones", "policies", "source_zones", "unassigned"); a denial: the
+//     attempted endpoint "<METHOD> <path>". Always set.
+//
+//   - Before: the target's state BEFORE the mutation, for revokes and
+//     edits. Omitted (omitempty) for creates/grants (no prior state) and
+//     reads.
+//
+//   - After: the target's state AFTER the mutation, for creates/grants and
+//     edits. Omitted for revokes (no remaining state) and reads.
+//
+// The any-typed Before/After hold whatever the resource marshals to (a
+// Zone, a Policy, a SourceZoneAssignment), matching the settings service's
+// any-typed before/after. omitempty keeps read and create/revoke rows from
+// carrying meaningless null keys.
+type Details struct {
+	Target string `json:"target"`
+	Before any    `json:"before,omitempty"`
+	After  any    `json:"after,omitempty"`
+}
 
 // Event is one audit row. The fields map 1:1 to audit_log columns
 // (migration 015). Timestamp is filled by the repository if zero; callers
@@ -340,11 +442,16 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 
 // isFailOpen reports whether the given action verb is read-class for the
 // purposes of the §4 failure split. Read-class: rbac.ActionRead,
-// rbac.ActionQuery. Mutate-class: everything else, including all
-// transition verbs.
+// rbac.ActionQuery, and the D-0013 admin-surface read verbs (zone.read,
+// policy.read, source_zone.read). Mutate-class: everything else, including
+// all transition verbs, the admin mutations (zone.create, policy.grant,
+// policy.revoke, source_zone.assign), and the admin gate-denial verb
+// (admin.access_denied is a deny event, not a read — its absence must be
+// loud, matching captaingate's fail-closed refusal posture).
 func isFailOpen(action string) bool {
 	switch action {
-	case string(rbac.ActionRead), string(rbac.ActionQuery):
+	case string(rbac.ActionRead), string(rbac.ActionQuery),
+		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminSourceZoneRead:
 		return true
 	default:
 		return false

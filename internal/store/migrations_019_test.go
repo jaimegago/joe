@@ -45,9 +45,12 @@ func TestMigration019_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// Down reverts 019 (the head): the table must be gone.
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("Steps(-1): %v", err)
+	// Step two migrations down: reverts 020 (the admin-audit kind widening,
+	// which now sits above 019) then 019. Stepping -2 lands the schema just
+	// below 019, isolating 019's down migration as this test intends; the
+	// table must be gone.
+	if err := m.Steps(-2); err != nil {
+		t.Fatalf("Steps(-2): %v", err)
 	}
 	if tableExists(t, s, "llm_context_budget") {
 		t.Error("llm_context_budget still exists after down")
