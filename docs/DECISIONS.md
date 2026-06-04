@@ -10,6 +10,105 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0014 — Close the Stream G structural-guard gap and the operator-surface launch blockers (incident CLI, zero-zone dead-end, incident banner, write-failure feedback)
+
+- Date: 2026-06-04
+- Decision: Close the remaining launch blockers found by two read-only
+  verifications — `STREAM_G_VERIFICATION.md` (the LLM instrumentation / admin
+  settings subsystem) and `OPERATOR_SURFACE_VERIFICATION.md` (incident mode +
+  user management). Eight discrete changes, each its own commit, build-green
+  and tests-passing after each. The work is two clusters:
+
+  **(a) Stream G structural-guard gap.** `STREAM_G_VERIFICATION.md` (Item 7 /
+  cross-cutting C) found the D-0013 admin guards parse only `admin.go` /
+  `adminHandler`, so the LLM admin mutators on `llmSettingsHandler` /
+  `llmUsageHandler` (`internal/api/llmsettings.go`, `llmusageapi.go`),
+  registered under `/api/v1/llm/`, were covered by NO AST invariant — the
+  exact regression class D-0012/D-0013 closed for the RBAC surface remained
+  open here. Closed with two structural guards
+  (`internal/api/llm_admin_guard_test.go`) mirroring
+  `admin_gate_guard_test.go` / `admin_audit_guard_test.go`:
+  - `TestLLMAdminRoutes_MutatorsRequireAdminGate` — every mutating
+    (POST/PUT/DELETE/PATCH) route, plus the per-principal usage GET
+    (admin-only by design), must call `requireAdmin`. GET reads stay open per
+    Stream G design.
+  - `TestLLMAdminRoutes_MutatorsAudit` — every mutating route must route
+    through `services.LLMSettings` (the MutationService), which is the
+    ACTUAL Stream G audit writer: it persists the change AND writes the
+    `KindLLMSettingsMutation` audit row in one transaction
+    (`internal/llmsettings/service.go`), NOT `recordAdminAudit`. The guard
+    asserts this path structurally rather than asserting a `recordAdminAudit`
+    call that does not exist on this surface.
+  Verb+pattern are parsed from the `fmt.Sprintf` registration literal. The
+  gate invariant was break-tested (removing the gate from `handleSetCostLimit`
+  turns the guard red naming that handler; restoring returns green) — an
+  invariant never seen red proves nothing. Two adjacent Stream G test gaps were
+  also closed: a route-level `RequireAdmin` test for `/llm-settings`
+  (`ui/src/auth/RequireAdmin.test.tsx`; the section-level UsageTab test was the
+  only prior coverage), and a skip-staged regression net for ChatStream/Embed
+  usage recording (`internal/llmusage/recorder_test.go`) that activates when
+  either provider stub
+  (`internal/llm/claude/claude.go:141-148`,
+  `internal/llm/gemini/gemini.go:202-209`) is implemented.
+
+  **(b) Operator-surface launch blockers.** `OPERATOR_SURFACE_VERIFICATION.md`
+  found the incident-mode enforcement is solid on both agentic paths (D-0010)
+  but had NO human-facing trigger or feedback surface, and a new zero-zone
+  user dead-ended silently. Closed:
+  - **Incident CLI** (`cmd/joe/incident.go`, dispatched at
+    `cmd/joe/main.go`): `joe incident status|declare|resolve` over the HTTP API
+    (`GET/POST /api/v1/regime[/declare|/resolve]`), mirroring
+    `cmd/joe/zone.go` / `admin.go`. `list` is an intentional stub — no
+    `/regime/history` endpoint exists (verified ABSENT; durable history lives
+    in the append-only `audit_log`) — printing audit-log guidance and exiting
+    non-zero so the v1 limitation is explicit, not implied success.
+  - **`/me` extended with the caller's reachable zones**
+    (`internal/api/currentuser.go`): admin → every zone; non-admin → their
+    granted zones; zero-zone → non-nil `[]`. This is the data dependency for
+    the next two items.
+  - **Zero-zone empty state** (`ui/src/components/chat/ZeroZoneEmptyState.tsx`):
+    ChatPage renders "Access pending" in place of the doomed chat input when
+    `rbacEnabled && !isAdmin && zones.length === 0`.
+  - **Active-incident banner** (`ui/src/components/layout/IncidentBanner.tsx`):
+    app-shell-wide, polls `/api/v1/regime` (30s), shows a top-of-page alert in
+    incident mode. An app-shell concern — it never enters the chat-history
+    snapshot.
+  - **Differentiated write-failure feedback** (Item 8): a denied write surfaces
+    a typed code — `incident_mode` (captain gate) vs `zone_denial` (RBAC) vs
+    `internal_error` — classified by `classifyWriteFailure`
+    (`internal/api/writefailure.go`) and injected into the loop via the new
+    `agentloop.WithToolErrorClassifier`, so `agentloop` stays unaware of the
+    gate/RBAC error types. Because a denied write does NOT terminate the
+    agentic loop (the LLM receives the tool error and the turn still
+    completes), the code rides on the turn-level `error_code` of the final
+    event (first per-tool denial seen); the chat UI dispatches it to a specific
+    message via `writeFailureMessage`.
+
+- Honest scope notes:
+  - The Item 8 backend classifier is exercised by unit tests over each typed
+    error; the end-to-end chat path surfaces the code through the final
+    event's turn-level `error_code` rather than a pre-stream HTTP 403, because
+    in this architecture a tool-level denial is non-terminal and the original
+    typed error is stringified onto the wire. The pre-stream 403 code path
+    (`streamTask` onError) is wired too, for any future gate that refuses the
+    whole task before streaming.
+  - The Stream G GET reads remain intentionally un-gated (policy knobs, not
+    credentials); only the per-principal usage GET is admin-gated, and the
+    guard encodes that distinction explicitly.
+- Basis: `STREAM_G_VERIFICATION.md` (Items 3, 7; cross-cutting A/C) and
+  `OPERATOR_SURFACE_VERIFICATION.md` (items 5, 6, 8, 9, 11; prioritized
+  launch blockers), both read against `main` at HEAD `2b16665`; the D-0013
+  structural-guard pattern and the D-0010 captain-gate single-impl invariant.
+- Supersedes: nothing. Extends D-0013 (structural gate+audit guards) to the
+  Stream G admin surface and adds the operator-facing incident + RBAC surfaces
+  the verifications found missing. The pre-existing invariants (D-0012 admin
+  gate, D-0013 admin audit, D-0010 captaingate single-impl,
+  `regime_invariant_test.go`) are unchanged and still pass alongside the new
+  Item 1 guards.
+- Status: active.
+
+---
+
 ## D-0013 — The RBAC admin surface was gated (D-0012) but wrote zero audit rows; extend the audit vocabulary to cover authorization-config mutations
 
 - Date: 2026-06-04
