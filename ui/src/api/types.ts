@@ -14,6 +14,7 @@ import type {
   AlertSchema,
   CurrentUserSchema,
   ZoneAccessSchema,
+  RegimeSchema,
   AuthConfigSchema,
   LLMLimitStateSchema,
   LLMCostLimitSchema,
@@ -42,6 +43,7 @@ export type Session = z.infer<typeof SessionSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
 export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 export type ZoneAccess = z.infer<typeof ZoneAccessSchema>;
+export type Regime = z.infer<typeof RegimeSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type LLMLimitState = z.infer<typeof LLMLimitStateSchema>;
 export type LLMCostLimit = z.infer<typeof LLMCostLimitSchema>;
