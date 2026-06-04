@@ -233,6 +233,14 @@ func (c *Client) enhanceError(err error) error {
 	} else if strings.Contains(errMsg, "429") || strings.Contains(errMsg, "rate limit") {
 		code = 429
 		enhancedErr = fmt.Errorf("rate limit exceeded for Claude API.\n\nPlease wait a moment before retrying:\n  %s", errMsg)
+	} else if isContextOverflowMessage(errMsg) {
+		// Context overflow: a 400 invalid_request_error whose message names a
+		// prompt/input length over the model's maximum. Classified BEFORE the
+		// generic 400 branch (overflow messages also carry "400") so it maps
+		// to the context_overflow terminal status rather than the generic
+		// error bucket. Wraps llm.ErrContextOverflow for errors.Is.
+		code = 400
+		enhancedErr = fmt.Errorf("Claude rejected the request: the prompt or a tool output exceeds the model's maximum context length:\n  %s\n\n%w", errMsg, llm.ErrContextOverflow)
 	} else if strings.Contains(errMsg, "400") || strings.Contains(errMsg, "invalid") {
 		code = 400
 		enhancedErr = fmt.Errorf("invalid request to Claude API.\n\nThis might indicate unsupported parameters:\n  %s", errMsg)
@@ -246,4 +254,23 @@ func (c *Client) enhanceError(err error) error {
 		Message: errMsg,
 		Err:     enhancedErr,
 	}
+}
+
+// isContextOverflowMessage reports whether a Claude API error message is
+// clearly an input/context-length overflow (a 400 invalid_request_error).
+// Conservative: only the documented overflow phrasings map true, so an
+// ordinary malformed-request 400 stays a generic invalid-request error.
+//
+// Matched shapes (verified against real Anthropic 400 errors / docs):
+//   - "prompt is too long: 215024 tokens > 200000 maximum" — input exceeds
+//     the model's context window. Confirmed (anthropic API errors; portkey.ai
+//     error library; multiple anthropics/claude-code issue reports).
+//   - "input length and max_tokens exceed context limit: ..." — input plus the
+//     reserved output cap exceeds the window. Best-effort: documented variant,
+//     matched on the stable "exceed(s) context limit" fragment.
+func isContextOverflowMessage(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "prompt is too long") ||
+		strings.Contains(m, "exceed context limit") ||
+		strings.Contains(m, "exceeds context limit")
 }

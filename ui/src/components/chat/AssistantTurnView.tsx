@@ -62,6 +62,15 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
           </p>
         )}
 
+        {/* Unobtrusive notice when this turn's message was shortened to fit the
+            context budget (oversized tool results carry their own inline
+            marker, so they need no separate notice). */}
+        {turn.userMessageTruncated && (
+          <p className="px-1 text-xs italic text-muted-foreground" data-testid="user-message-truncated-notice">
+            Your message was shortened to fit the context budget.
+          </p>
+        )}
+
         {/* Final answer for a completed turn. */}
         {!isFailed && turn.finalAnswer && (
           <div className="rounded-2xl bg-muted px-4 py-2 text-sm text-foreground">

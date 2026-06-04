@@ -2,7 +2,9 @@ package agentloop
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"strings"
 
 	"github.com/jaimegago/joe/internal/llm"
 )
@@ -76,6 +78,63 @@ func EstimateOverheadTokens(systemPrompt string, tools []llm.ToolDefinition) int
 func ComputeInputTokenBudget(windowTokens, maxOutputTokens, overheadTokens int, fraction float64) int {
 	usable := int(math.Floor(float64(windowTokens) * fraction))
 	return usable - maxOutputTokens - overheadTokens
+}
+
+// truncationMarkerFmt is the explicit marker inserted in place of the elided
+// middle of a truncated message. It names the exact number of characters
+// dropped and tells the model how to recover the full output, so the
+// truncation is unmistakable rather than a silent cut. The %d is the elided
+// character count.
+const truncationMarkerFmt = "\n\n[... %d characters omitted to fit the context budget — re-invoke the tool with a narrower query for the full output ...]\n\n"
+
+// truncationHeadNumerator / truncationSplitDenominator express the head share
+// of the kept span: head ≈ 60%, tail ≈ 40%. Infra tool output carries its
+// identity up front (resource names, kinds) and its status/errors at the end,
+// so a head-heavy split preserves the most diagnostic regions.
+const (
+	truncationHeadNumerator    = 6
+	truncationSplitDenominator = 10
+)
+
+// TruncateContent bounds a single message's content to tokenCap estimated
+// tokens, using the same chars/4 heuristic as EstimateMessageTokens so the
+// cap is denominated consistently with the budget it derives from. Content
+// already within the cap is returned unchanged with didTruncate=false.
+//
+// Otherwise the head (~60%) and tail (~40%) of the budgeted character span are
+// kept and the elided middle is replaced with truncationMarkerFmt naming how
+// many characters were dropped. The marker length is reserved using an
+// upper-bound digit count (the full content length), so the actual marker —
+// which names the real, smaller elided count — is never longer than reserved
+// and the result stays at or under the cap.
+//
+// This is the single centralised ingestion-truncation primitive; callers
+// apply it before a message enters session history (see Session.truncate*),
+// never to messages already in history.
+func TruncateContent(content string, tokenCap int) (truncated string, didTruncate bool) {
+	if tokenCap < 1 {
+		tokenCap = 1
+	}
+	if ceilDiv(len(content), 4) <= tokenCap {
+		return content, false
+	}
+	charCap := tokenCap * 4
+	reserve := len(fmt.Sprintf(truncationMarkerFmt, len(content)))
+	keep := charCap - reserve
+	if keep < 0 {
+		keep = 0
+	}
+	// keep < len(content) always holds here: keep <= charCap < len(content)
+	// (content is over the cap), so the elided count below is positive.
+	head := keep * truncationHeadNumerator / truncationSplitDenominator
+	tail := keep - head
+	elided := len(content) - head - tail
+	var b strings.Builder
+	b.Grow(head + reserve + tail)
+	b.WriteString(content[:head])
+	b.WriteString(fmt.Sprintf(truncationMarkerFmt, elided))
+	b.WriteString(content[len(content)-tail:])
+	return b.String(), true
 }
 
 func ceilDiv(n, d int) int {

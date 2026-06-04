@@ -374,6 +374,19 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 			errDetails = "(no error message provided by API)"
 		}
 
+		// Context overflow: a 400-class rejection whose message names an input
+		// token count over the model's maximum. Classified BEFORE the generic
+		// code switch (which would otherwise bucket it as a generic 400
+		// invalid request) so it maps to the context_overflow terminal status.
+		// Wraps llm.ErrContextOverflow for errors.Is.
+		if isContextOverflowMessage(errDetails) {
+			return &APIError{
+				Code:    apiErr.Code,
+				Message: apiErr.Message,
+				Err:     fmt.Errorf("Gemini rejected the request: the input exceeds the model's maximum context length:\n  %s\n\n%w", errDetails, llm.ErrContextOverflow),
+			}
+		}
+
 		switch apiErr.Code {
 		case 404:
 			// Model not found - fetch available models from API
@@ -433,6 +446,24 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 
 	// Return original error if we can't enhance it
 	return fmt.Errorf("gemini API call failed: %w", err)
+}
+
+// isContextOverflowMessage reports whether a Gemini API error message is
+// clearly an input-token overflow. Conservative: only the documented phrasing
+// maps true, so an ordinary malformed-request 400 stays a generic error.
+//
+// Matched shape (verified against real Gemini 400 errors):
+//
+//	"The input token count (461428) exceeds the maximum number of tokens
+//	 allowed (131072)."
+//
+// Confirmed from numerous google-gemini/gemini-cli issue reports (e.g. #10393,
+// #11507, #12493). Matched on the two stable fragments "input token count" and
+// "exceeds the maximum number of tokens"; the parenthesised counts vary.
+func isContextOverflowMessage(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "input token count") &&
+		strings.Contains(m, "exceeds the maximum number of tokens")
 }
 
 // listAvailableModels fetches the list of available models from Gemini API

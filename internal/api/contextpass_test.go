@@ -20,6 +20,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmsettings"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/tools"
 )
 
 // capturingChatLLM records the last ChatRequest the loop built so a test can
@@ -129,6 +130,85 @@ func TestBuildTaskRun_ContextBudgetLiveAdjustable(t *testing.T) {
 	}
 	if b1-b2 != 40000 {
 		t.Errorf("budget delta = %d (b1=%d b2=%d), want 40000 for 0.7->0.5 over a 200000 window", b1-b2, b1, b2)
+	}
+}
+
+// finalScriptLLM emits a scripted sequence of responses, ignoring input.
+type finalScriptLLM struct {
+	responses []*llm.ChatResponse
+	i         int
+}
+
+func (s *finalScriptLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	r := s.responses[s.i]
+	s.i++
+	return r, nil
+}
+func (s *finalScriptLLM) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	return nil, nil
+}
+func (s *finalScriptLLM) Embed(context.Context, string) ([]float32, error) { return nil, nil }
+
+// bigResultTool registers under a T1 (read-only) name so the default executor
+// policy permits it, and returns a large payload to drive result truncation.
+type bigResultTool struct{ payload string }
+
+func (t *bigResultTool) Name() string        { return "read_file" }
+func (t *bigResultTool) Description() string { return "big" }
+func (t *bigResultTool) Parameters() llm.ParameterSchema {
+	return llm.ParameterSchema{Type: "object", Properties: map[string]llm.Property{}}
+}
+func (t *bigResultTool) Execute(context.Context, map[string]any) (any, error) {
+	return map[string]string{"data": t.payload}, nil
+}
+
+// TestFinalizeTaskResponse_TruncationCounters_OnFinal asserts that a turn with
+// two oversized tool results and an oversized user message reports
+// tool_results_truncated=2 and user_message_truncated=true on the final
+// response, and that a clean turn reports zero/false. This exercises the full
+// ingestion → session-counter → finalize path.
+func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(&bigResultTool{payload: strings.Repeat("Z", 40000)})
+	exec := tools.NewExecutor(reg, nil)
+
+	// First turn: two oversized tool results then a final answer.
+	llmTrunc := &finalScriptLLM{responses: []*llm.ChatResponse{
+		{ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "read_file", Args: map[string]any{}},
+			{ID: "c2", Name: "read_file", Args: map[string]any{}},
+		}},
+		{Content: "done"},
+	}}
+	agent := agentloop.NewAgent(llmTrunc, exec, reg, "sys")
+	session := agentloop.NewSession(nil)
+	session.TokenBudget = 1000 // floor-governed: 2000-token caps
+
+	if _, err := agent.Run(context.Background(), session, strings.Repeat("Q", 40000)); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	resp := finalizeTaskResponse("t1", "s1", "completed", "", "done", nil, session, time.Second)
+	if resp.ToolResultsTruncated != 2 {
+		t.Errorf("tool_results_truncated = %d, want 2", resp.ToolResultsTruncated)
+	}
+	if !resp.UserMessageTruncated {
+		t.Error("user_message_truncated = false, want true")
+	}
+
+	// Clean turn: nothing oversized.
+	cleanLLM := &finalScriptLLM{responses: []*llm.ChatResponse{{Content: "ok"}}}
+	cleanReg := tools.NewRegistry()
+	cleanExec := tools.NewExecutor(cleanReg, nil)
+	cleanAgent := agentloop.NewAgent(cleanLLM, cleanExec, cleanReg, "sys")
+	cleanSession := agentloop.NewSession(nil)
+	cleanSession.TokenBudget = 100000
+	if _, err := cleanAgent.Run(context.Background(), cleanSession, "small"); err != nil {
+		t.Fatalf("clean Run: %v", err)
+	}
+	resp2 := finalizeTaskResponse("t2", "s2", "completed", "", "ok", nil, cleanSession, time.Second)
+	if resp2.ToolResultsTruncated != 0 || resp2.UserMessageTruncated {
+		t.Errorf("clean turn: tool_results_truncated=%d user_message_truncated=%v, want 0/false",
+			resp2.ToolResultsTruncated, resp2.UserMessageTruncated)
 	}
 }
 

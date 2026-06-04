@@ -41,14 +41,16 @@ export const StepEventSchema = z.object({
   tool_results: z.array(StepToolResultSchema).default([]),
 });
 
-// The six terminal statuses the server can report on `final`. Only `completed`
-// is success; the rest are failures surfaced to the user with `final.error`.
+// The seven terminal statuses the server can report on `final`. Only
+// `completed` is success; the rest are failures surfaced to the user with
+// `final.error`.
 export const TaskStatusSchema = z.enum([
   'completed',
   'timeout',
   'max_iterations_reached',
   'runaway_terminated',
   'cost_limit_exceeded',
+  'context_overflow',
   'error',
 ]);
 
@@ -69,6 +71,13 @@ export const FinalEventSchema = z.object({
   // this turn and the UI surfaces an unobtrusive notice.
   history_trimmed: z.boolean().default(false),
   messages_dropped: z.number().default(0),
+  // Per-message ingestion-truncation fields, also additive/optional. The
+  // server omits them when nothing was truncated, so they default to 0/false.
+  // tool_results_truncated needs no dedicated notice (the marker is visible
+  // inside the rendered tool result); user_message_truncated drives an
+  // unobtrusive notice that the message was shortened to fit the budget.
+  tool_results_truncated: z.number().default(0),
+  user_message_truncated: z.boolean().default(false),
 });
 
 export type StepEvent = z.infer<typeof StepEventSchema>;

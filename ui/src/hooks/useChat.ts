@@ -46,13 +46,17 @@ export interface AssistantTurn {
   // messages from the model's context (token budget or count backstop). The
   // view renders a single unobtrusive notice when it is set.
   historyTrimmed?: boolean;
+  // userMessageTruncated is true when this turn's incoming user message was
+  // shortened at ingestion to fit its share of the context budget. The view
+  // renders a single unobtrusive notice when it is set.
+  userMessageTruncated?: boolean;
 }
 
 export type DisplayItem =
   | { kind: 'user'; id: string; content: string; createdAt: string }
   | { kind: 'assistant'; id: string; turn: AssistantTurn };
 
-// Human labels for the six terminal statuses. `completed` never surfaces a
+// Human labels for the seven terminal statuses. `completed` never surfaces a
 // label (it renders the answer); the rest render as failed turns.
 const STATUS_LABELS: Record<TaskStatus, string> = {
   completed: 'Completed',
@@ -60,6 +64,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   max_iterations_reached: 'Stopped — reached the step limit',
   runaway_terminated: 'Stopped — runaway protection tripped',
   cost_limit_exceeded: 'Stopped — cost limit reached',
+  context_overflow: 'Stopped — too large for the context window',
   error: 'Something went wrong',
 };
 
@@ -197,6 +202,7 @@ export function useChat(initialSessionId?: string) {
               // Snap the counter to the authoritative server total.
               tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
               historyTrimmed: final.history_trimmed,
+              userMessageTruncated: final.user_message_truncated,
             })),
           onError: (message, preStream) =>
             updateTurn(turnId, (t) => ({

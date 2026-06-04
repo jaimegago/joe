@@ -59,6 +59,8 @@ function makeFinal(over: Partial<FinalEvent>): FinalEvent {
     duration_ms: 1,
     history_trimmed: false,
     messages_dropped: 0,
+    tool_results_truncated: 0,
+    user_message_truncated: false,
     ...over,
   };
 }
@@ -131,6 +133,47 @@ describe('useChat streaming lifecycle', () => {
     });
     await waitFor(() => expect(screen.getByText('ok2')).toBeInTheDocument());
     expect(screen.getAllByTestId('history-trimmed-notice')).toHaveLength(1);
+  });
+
+  it('renders the user-message-truncated notice when the final reports it, and not otherwise', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('a very long message');
+    act(() => {
+      captured[0].onFinal(makeFinal({ final_answer: 'ok', user_message_truncated: true }));
+      resolvers[0]();
+    });
+    await waitFor(() => expect(screen.getByTestId('user-message-truncated-notice')).toBeInTheDocument());
+
+    // A turn whose message was not truncated shows no notice.
+    await sendMessage('short');
+    act(() => {
+      captured[1].onFinal(makeFinal({ final_answer: 'ok2' }));
+      resolvers[1]();
+    });
+    await waitFor(() => expect(screen.getByText('ok2')).toBeInTheDocument());
+    expect(screen.getAllByTestId('user-message-truncated-notice')).toHaveLength(1);
+  });
+
+  it('renders the context_overflow status with its label and friendly message', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('huge');
+    act(() => {
+      captured[0].onFinal(
+        makeFinal({
+          status: 'context_overflow',
+          error: 'The conversation or a tool output was too large for the model’s context window.',
+          final_answer: '',
+        }),
+      );
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('Stopped — too large for the context window')).toBeInTheDocument());
+    expect(screen.getByText(/too large for the model/i)).toBeInTheDocument();
   });
 
   it('renders a pre-stream non-200 error as a failed turn with no steps', async () => {

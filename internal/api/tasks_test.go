@@ -172,6 +172,41 @@ func TestTaskStatus_CostLimitExceeded_DistinctBucket(t *testing.T) {
 	}
 }
 
+// TestTaskStatus_ContextOverflow_DistinctBucket asserts the classifier maps a
+// wrapped llm.ErrContextOverflow (as the agentic loop produces it: an adapter
+// error wrapped in "llm chat failed: %w") to the "context_overflow" status via
+// errors.Is, with a friendly wire message that is NOT the raw provider text,
+// and that this bucket is distinct from the other terminal buckets.
+func TestTaskStatus_ContextOverflow_DistinctBucket(t *testing.T) {
+	// Mirror the real chain: adapter wrap → loop's "llm chat failed: %w".
+	adapterErr := fmt.Errorf("Claude rejected the request: prompt is too long: 215024 tokens > 200000 maximum: %w", llm.ErrContextOverflow)
+	wrapped := fmt.Errorf("llm chat failed: %w", adapterErr)
+
+	status, errMsg := taskStatus(context.Background(), wrapped)
+	if status != "context_overflow" {
+		t.Errorf("status = %q, want %q", status, "context_overflow")
+	}
+	if !strings.Contains(errMsg, "too large for the model's context window") {
+		t.Errorf("errMsg = %q, want the friendly context-window message", errMsg)
+	}
+	if strings.Contains(errMsg, "215024") {
+		t.Errorf("errMsg leaks raw provider text: %q", errMsg)
+	}
+
+	// Distinct from every other terminal bucket.
+	for _, bucket := range []string{"max_iterations_reached", "runaway_terminated", "cost_limit_exceeded", "timeout", "error"} {
+		if status == bucket {
+			t.Errorf("context overflow mis-bucketed as %q", bucket)
+		}
+	}
+
+	// A non-overflow generic provider error stays "error".
+	generic := fmt.Errorf("llm chat failed: %w", errors.New("invalid request to Claude API: unsupported parameter"))
+	if s, _ := taskStatus(context.Background(), generic); s != "error" {
+		t.Errorf("generic provider error classified as %q; want %q", s, "error")
+	}
+}
+
 // taskStubLLM returns a canned response with no tool calls (single iteration).
 type taskStubLLM struct {
 	response string

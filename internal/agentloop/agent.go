@@ -174,10 +174,14 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 	// Reset per-run token tracking
 	session.ResetRunStats()
 
-	// Add user message to history
+	// Add user message to history. Per-message ingestion truncation (context
+	// pass): bound the incoming user message to its share of the turn's token
+	// budget before it enters history. The message is never rejected — only
+	// shortened with the explicit marker — and the turn proceeds. No-op when
+	// the session has no token budget.
 	session.AddMessage(ctx, llm.Message{
 		Role:    "user",
-		Content: userMessage,
+		Content: session.truncateUserMessage(userMessage),
 	})
 
 	// Get tool definitions for the LLM
@@ -324,6 +328,12 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		// Convert tool results to messages and add to history
 		// This includes error messages for failed tools, which the LLM can respond to
 		resultMessages := a.executor.ResultsToMessages(results)
+		// Per-message ingestion truncation (context pass): bound each
+		// oversized tool result to its share of the turn's token budget
+		// before it enters history. Truncation happens only here at
+		// ingestion; messages already in history are never re-truncated on
+		// later iterations.
+		session.truncateResultMessages(resultMessages)
 		session.AddMessages(ctx, resultMessages)
 	}
 

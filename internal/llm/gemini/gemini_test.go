@@ -678,6 +678,51 @@ func TestEnhanceErrorWithDebug_GoogleAPI429(t *testing.T) {
 	}
 }
 
+// TestEnhanceErrorWithDebug_ContextOverflow: a 400 whose message names an
+// input-token overflow classifies into llm.ErrContextOverflow.
+func TestEnhanceErrorWithDebug_ContextOverflow(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{
+		Code:    400,
+		Message: "The input token count (461428) exceeds the maximum number of tokens allowed (131072).",
+	}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+	if !errors.Is(err, llm.ErrContextOverflow) {
+		t.Errorf("overflow did not classify as ErrContextOverflow: %v", err)
+	}
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) || enhanced.Code != 400 {
+		t.Errorf("want *APIError code 400, got %v", err)
+	}
+}
+
+// TestEnhanceErrorWithDebug_NonOverflow400: an ordinary 400 stays a generic
+// error and does NOT classify as overflow.
+func TestEnhanceErrorWithDebug_NonOverflow400(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	apiErr := &googleapi.Error{Code: 400, Message: "Invalid value at 'contents'"}
+	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
+	if errors.Is(err, llm.ErrContextOverflow) {
+		t.Error("non-overflow 400 misclassified as ErrContextOverflow")
+	}
+	var enhanced *APIError
+	if !errors.As(err, &enhanced) || enhanced.Code != 400 {
+		t.Errorf("want *APIError code 400, got %v", err)
+	}
+}
+
 func TestEnhanceErrorWithDebug_GoogleAPIDefault(t *testing.T) {
 	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")
