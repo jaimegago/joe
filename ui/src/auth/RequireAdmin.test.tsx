@@ -22,6 +22,7 @@ function setAdmin(isAdmin: boolean) {
     principal: 'user:alice',
     isAdmin,
     rbacEnabled: true,
+    zones: [],
     oidcEnabled: false,
     login: vi.fn(),
     loginWithOIDC: vi.fn(),

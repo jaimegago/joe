@@ -95,6 +95,14 @@ export const SessionSchema = z.object({
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)
+
+// ZoneAccessSchema is one zone the caller can reach, with the actions that
+// zone permits. The zones array is the data the zero-zone empty state keys on.
+export const ZoneAccessSchema = z.object({
+  id: z.string(),
+  allowed_actions: z.array(z.string()),
+});
+
 export const CurrentUserSchema = z.object({
   principal: z.string(),
   is_admin: z.boolean(),
@@ -102,6 +110,11 @@ export const CurrentUserSchema = z.object({
   // Stream H2 — app-wide capability flag: whether OIDC human login is
   // configured. Always sent by the server, so required here.
   oidc_enabled: z.boolean(),
+  // Zones the caller can reach (admin: all; non-admin: their granted zones;
+  // zero-zone caller: []). Always sent by the server as an array. Optional in
+  // the schema with a [] default so a stale cached response without the field
+  // still parses as "no zones known" rather than throwing.
+  zones: z.array(ZoneAccessSchema).default([]),
 });
 
 // Public auth config (Stream H2 follow-up — GET /api/v1/auth/config).
