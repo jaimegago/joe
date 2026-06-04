@@ -117,6 +117,27 @@ export const CurrentUserSchema = z.object({
   zones: z.array(ZoneAccessSchema).default([]),
 });
 
+// System regime (incident mode) — GET /api/v1/regime.
+//
+// The server marshals sessionmodel.Regime with no JSON tags, so the wire keys
+// are the exported Go field names (Mode, DeclaredAt, ...). The schema accepts
+// those and transforms to a lower-cased, null-normalized shape the UI
+// consumes. DeclaredAt/DeclaredByPrincipal/DeclaredKind are null when the mode
+// is normal.
+export const RegimeSchema = z
+  .object({
+    Mode: z.string(),
+    DeclaredAt: z.string().nullable().optional(),
+    DeclaredByPrincipal: z.string().nullable().optional(),
+    DeclaredKind: z.string().nullable().optional(),
+  })
+  .transform((r) => ({
+    mode: r.Mode,
+    declaredAt: r.DeclaredAt ?? null,
+    declaredByPrincipal: r.DeclaredByPrincipal ?? null,
+    declaredKind: r.DeclaredKind ?? null,
+  }));
+
 // Public auth config (Stream H2 follow-up — GET /api/v1/auth/config).
 //
 // The single app-wide capability the logged-out shell needs before any
