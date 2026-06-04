@@ -4,6 +4,7 @@ import { apiClient, API_BASE } from '@/api/client';
 import { loadToken, saveToken, clearStoredToken } from '@/api/tokenStorage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthConfig } from '@/hooks/useAuthConfig';
+import type { ZoneAccess } from '@/api/types';
 
 // Stream H1 — web UI authentication context.
 //
@@ -23,6 +24,11 @@ export interface AuthContextValue {
   principal: string | null;
   isAdmin: boolean;
   rbacEnabled: boolean;
+  // zones is the set of security zones the caller can reach, from /me. Empty
+  // for a brand-new zero-zone user — the condition the chat page's
+  // access-pending empty state renders on (every write would otherwise 403
+  // with no explanation). Admins see every zone.
+  zones: ZoneAccess[];
   // oidcEnabled reflects the server's app-wide OIDC-configured flag, read
   // from the public GET /api/v1/auth/config endpoint (NOT /me). /me sits
   // behind the edge gate and 401s pre-auth, so a /me-sourced flag would
@@ -142,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       principal: data?.principal ?? null,
       isAdmin: data?.is_admin ?? false,
       rbacEnabled: data?.rbac_enabled ?? false,
+      zones: data?.zones ?? [],
       oidcEnabled: authConfigQ.data?.oidc_enabled ?? false,
       login,
       loginWithOIDC,

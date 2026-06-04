@@ -278,6 +278,89 @@ func TestCurrentUser_AuthDisabled(t *testing.T) {
 	}
 }
 
+// --- Current-user zone assignments (Item 5 / OPERATOR_SURFACE_VERIFICATION
+// item 11): /me carries the caller's reachable zones so the UI can detect the
+// zero-zone dead-end. The fixture store runs migration 006, which seeds the
+// four default zones (prod-readonly, prod-write, dev-full, unassigned).
+
+type meZonesBody struct {
+	Zones []struct {
+		ID             string   `json:"id"`
+		AllowedActions []string `json:"allowed_actions"`
+	} `json:"zones"`
+}
+
+func (f *llmadminFixture) meZones(t *testing.T, principal rbac.Principal) meZonesBody {
+	t.Helper()
+	w := f.do(http.MethodGet, "/api/v1/me", "", principal)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body meZonesBody
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return body
+}
+
+// TestCurrentUser_Zones_AdminSeesAll: an admin reaches every seeded zone, each
+// carrying its allowed actions.
+func TestCurrentUser_Zones_AdminSeesAll(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	f.markAdmin("user:alice")
+
+	all, err := f.rbac.ListZones(context.Background())
+	if err != nil {
+		t.Fatalf("ListZones: %v", err)
+	}
+	body := f.meZones(t, "user:alice")
+	if len(body.Zones) != len(all) {
+		t.Fatalf("admin zones = %d; want all %d seeded zones", len(body.Zones), len(all))
+	}
+	// allowed_actions must be populated for at least one zone (not just ids).
+	var sawActions bool
+	for _, z := range body.Zones {
+		if len(z.AllowedActions) > 0 {
+			sawActions = true
+		}
+	}
+	if !sawActions {
+		t.Errorf("no zone reported allowed_actions; got %+v", body.Zones)
+	}
+}
+
+// TestCurrentUser_Zones_NonAdminSeesOnlyGranted: a non-admin reaches exactly
+// the zones their rbac_policies grants cover, not the full set.
+func TestCurrentUser_Zones_NonAdminSeesOnlyGranted(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	if _, err := f.rbac.CreatePolicy(context.Background(), rbac.Policy{
+		Principal: "user:bob", ZoneID: "prod-readonly",
+	}); err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+
+	body := f.meZones(t, "user:bob")
+	if len(body.Zones) != 1 || body.Zones[0].ID != "prod-readonly" {
+		t.Fatalf("non-admin zones = %+v; want exactly [prod-readonly]", body.Zones)
+	}
+}
+
+// TestCurrentUser_Zones_ZeroZoneIsEmptyArray: a non-admin with no grants gets
+// a non-nil empty array — the exact signal the UI keys its access-pending
+// empty state on (it must serialize as [], never null).
+func TestCurrentUser_Zones_ZeroZoneIsEmptyArray(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	body := f.meZones(t, "user:nobody")
+	if len(body.Zones) != 0 {
+		t.Fatalf("zero-zone user zones = %+v; want empty", body.Zones)
+	}
+	// Assert the wire form is [] not null.
+	w := f.do(http.MethodGet, "/api/v1/me", "", "user:nobody")
+	if !strings.Contains(w.Body.String(), `"zones":[]`) {
+		t.Errorf("expected `\"zones\":[]` in body, got %s", w.Body.String())
+	}
+}
+
 // Stream H2 — /me reports oidc_enabled sourced from services.OIDCEnabled
 // (cfg.Auth.OIDC.Configured() at the build site). Present and correct
 // whether OIDC is configured or not.
