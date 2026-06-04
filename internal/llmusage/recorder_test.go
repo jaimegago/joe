@@ -560,3 +560,109 @@ func TestRecorder_Embed_NotImplementedPropagatesNoRow(t *testing.T) {
 		t.Errorf("Embed recorded %d rows; want 0", len(rows))
 	}
 }
+
+// implementedStreamEmbedAdapter is a forward-looking llm.LLMAdapter whose
+// ChatStream and Embed SUCCEED and carry token usage — the shape a provider
+// will have once streaming or embeddings actually land. It is the antithesis
+// of fakeInnerAdapter (whose ChatStream/Embed return "not implemented"), and
+// exists only for the skipped regression test below.
+type implementedStreamEmbedAdapter struct {
+	chatResp    *llm.ChatResponse
+	streamUsage llm.TokenUsage
+	embedUsage  llm.TokenUsage
+}
+
+func (a *implementedStreamEmbedAdapter) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return a.chatResp, nil
+}
+
+// ChatStream succeeds: it emits the streamed content and a terminal Done
+// chunk. A real implementation would surface the final token usage on a
+// terminal event; this mock carries it on streamUsage for the recorder to
+// read once the recording path for streaming exists.
+func (a *implementedStreamEmbedAdapter) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	ch := make(chan llm.StreamChunk, 2)
+	ch <- llm.StreamChunk{Content: "streamed"}
+	ch <- llm.StreamChunk{Done: true}
+	close(ch)
+	return ch, nil
+}
+
+// Embed succeeds: it returns a real vector (no error). A real implementation
+// would also report embedUsage tokens for recording.
+func (a *implementedStreamEmbedAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1, 0.2, 0.3}, nil
+}
+
+// TestRecorder_StreamEmbed_RecordsRow_WhenImplemented is the regression
+// safety net for the "every token-producing LLM call records a usage row"
+// property (STREAM_G_VERIFICATION.md Item 3 / cross-cutting A). Today both
+// production providers stub these methods — Claude at
+// internal/llm/claude/claude.go:141-148 and Gemini at
+// internal/llm/gemini/gemini.go:202-209 ("streaming not yet implemented" /
+// "embeddings not yet implemented") — so RecorderAdapter.ChatStream / Embed
+// correctly pass through and record NOTHING (there is no usage to record).
+//
+// When a provider implements ChatStream or Embed and starts producing real
+// token usage, that pass-through silently becomes a recording GAP: the
+// "every call records" invariant regresses with no test catching it. This
+// test pins the future contract — a successful streaming/embedding call must
+// land an llm_usage row with the real principal/model/tokens — and is kept
+// SKIPPED until those stubs go away so it does not flag today's correct
+// pass-through behaviour. Re-enable (delete the t.Skip) in the same change
+// that implements streaming or embeddings and wires their usage recording.
+func TestRecorder_StreamEmbed_RecordsRow_WhenImplemented(t *testing.T) {
+	t.Skip("ChatStream/Embed not yet implemented in any provider — re-enable " +
+		"when streaming or embeddings land. Both are stubbed today at " +
+		"internal/llm/claude/claude.go:141-148 and " +
+		"internal/llm/gemini/gemini.go:202-209; while they return " +
+		"\"not yet implemented\" there is no usage to record and the " +
+		"recorder's pass-through is correct.")
+
+	inner := &implementedStreamEmbedAdapter{
+		chatResp:    &llm.ChatResponse{Content: "hi", Usage: llm.TokenUsage{InputTokens: 12, OutputTokens: 7, TotalTokens: 19}},
+		streamUsage: llm.TokenUsage{InputTokens: 20, OutputTokens: 9, TotalTokens: 29},
+		embedUsage:  llm.TokenUsage{InputTokens: 4, OutputTokens: 0, TotalTokens: 4},
+	}
+	repo := &fakeRepo{}
+	rec := llmusage.NewRecorderAdapter(llmusage.Config{
+		Inner:    inner,
+		Repo:     repo,
+		Provider: "claude",
+		Model:    "claude-sonnet-4-20250514",
+		Currency: "USD",
+		FXRate:   1.0,
+	})
+
+	ctx := rbac.WithPrincipal(context.Background(), rbac.Principal("user:alice"))
+	ctx = agentctx.WithSessionID(ctx, "sess-1")
+	ctx = agentctx.WithTaskID(ctx, "task-7")
+
+	// Drive a Chat-shaped flow through the streaming path: open the stream
+	// and drain it to completion, the way a streaming caller would.
+	stream, err := rec.ChatStream(ctx, llm.ChatRequest{})
+	if err != nil {
+		t.Fatalf("ChatStream returned error: %v", err)
+	}
+	for chunk := range stream {
+		if chunk.Error != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Error)
+		}
+	}
+
+	rows := repo.snapshot()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 usage row from the implemented stream, got %d", len(rows))
+	}
+	got := rows[0]
+	if got.Principal != "user:alice" {
+		t.Errorf("principal = %q, want user:alice", got.Principal)
+	}
+	if got.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("model = %q, want claude-sonnet-4-20250514", got.Model)
+	}
+	if got.InputTokens != inner.streamUsage.InputTokens || got.OutputTokens != inner.streamUsage.OutputTokens {
+		t.Errorf("tokens (in/out) = %d/%d, want %d/%d",
+			got.InputTokens, got.OutputTokens, inner.streamUsage.InputTokens, inner.streamUsage.OutputTokens)
+	}
+}
