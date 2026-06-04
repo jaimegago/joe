@@ -50,6 +50,28 @@ export interface AssistantTurn {
   // shortened at ingestion to fit its share of the context budget. The view
   // renders a single unobtrusive notice when it is set.
   userMessageTruncated?: boolean;
+  // writeFailureCode is the backend's typed reason a write was denied this
+  // turn ('zone_denial' | 'incident_mode' | 'internal_error'). A denied write
+  // does NOT fail the turn (the LLM still answers), so the view renders a
+  // dedicated notice — distinct from a generic failure — explaining why.
+  writeFailureCode?: string;
+}
+
+// writeFailureMessage maps a backend write-failure code to the user-facing
+// sentence shown in chat (Item 8). Returns undefined for an unknown/absent
+// code so callers fall back to the generic error text. Kept pure and exported
+// so the dispatch is unit-tested independently of the streaming machinery.
+export function writeFailureMessage(code: string | undefined): string | undefined {
+  switch (code) {
+    case 'zone_denial':
+      return 'Access to this zone has not been granted to you. Ask your administrator.';
+    case 'incident_mode':
+      return 'System is in incident mode. Writes are temporarily blocked.';
+    case 'internal_error':
+      return 'Unexpected error. Please try again.';
+    default:
+      return undefined;
+  }
 }
 
 export type DisplayItem =
@@ -193,23 +215,35 @@ export function useChat(initialSessionId?: string) {
               tokens: t.tokens + step.llm_response.usage.input_tokens + step.llm_response.usage.output_tokens,
             })),
           onFinal: (final) =>
-            updateTurn(turnId, (t) => ({
-              ...t,
-              finalAnswer: final.final_answer,
-              status: final.status === 'completed' ? 'completed' : 'failed',
-              failureLabel: final.status === 'completed' ? undefined : STATUS_LABELS[final.status],
-              errorMessage: final.status === 'completed' ? undefined : final.error ?? STATUS_LABELS[final.status],
-              // Snap the counter to the authoritative server total.
-              tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
-              historyTrimmed: final.history_trimmed,
-              userMessageTruncated: final.user_message_truncated,
-            })),
-          onError: (message, preStream) =>
+            updateTurn(turnId, (t) => {
+              const failed = final.status !== 'completed';
+              // A typed write-failure code yields a specific message; it wins
+              // over the raw server error text on a failed turn, and drives a
+              // dedicated notice on an otherwise-completed turn (a denied write
+              // does not fail the turn — the LLM still answers).
+              const specific = writeFailureMessage(final.error_code);
+              return {
+                ...t,
+                finalAnswer: final.final_answer,
+                status: failed ? 'failed' : 'completed',
+                failureLabel: failed ? STATUS_LABELS[final.status] : undefined,
+                errorMessage: failed ? specific ?? final.error ?? STATUS_LABELS[final.status] : undefined,
+                // Snap the counter to the authoritative server total.
+                tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
+                historyTrimmed: final.history_trimmed,
+                userMessageTruncated: final.user_message_truncated,
+                writeFailureCode: final.error_code,
+              };
+            }),
+          onError: (message, preStream, code) =>
             updateTurn(turnId, (t) => ({
               ...t,
               status: 'failed',
               failureLabel: preStream ? 'Request rejected' : 'Connection lost',
-              errorMessage: message,
+              // A typed code (e.g. a pre-stream 403 carrying zone_denial /
+              // incident_mode) maps to the specific message; otherwise the raw
+              // server/transport message is shown.
+              errorMessage: writeFailureMessage(code) ?? message,
             })),
         },
       );

@@ -75,6 +75,13 @@ type taskResponse struct {
 	// result, so only user_message_truncated drives a dedicated UI notice.
 	ToolResultsTruncated int  `json:"tool_results_truncated,omitempty"`
 	UserMessageTruncated bool `json:"user_message_truncated,omitempty"`
+	// ErrorCode is the turn-level write-failure classification: the first
+	// per-tool denial code observed across this turn's steps (Item 8). It lets
+	// the chat UI surface a specific "why the write failed" message even though
+	// a denied tool call does NOT terminate the agentic loop (the LLM receives
+	// the tool error and the turn still completes). Empty when no write was
+	// denied. See classifyWriteFailure / firstWriteFailureCode.
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 type taskStep struct {
@@ -102,10 +109,15 @@ type taskToolCall struct {
 }
 
 type taskToolResult struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Result     any    `json:"result"`
-	Error      string `json:"error,omitempty"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Result any    `json:"result"`
+	Error  string `json:"error,omitempty"`
+	// ErrorCode is the stable write-failure classification for a denied tool
+	// call (Item 8): "zone_denial" (RBAC) or "incident_mode" (captain gate).
+	// Empty for a success or an unclassified failure. Lets the UI render a
+	// specific message instead of the raw error string.
+	ErrorCode  string `json:"error_code,omitempty"`
 	DurationMs int    `json:"duration_ms"`
 }
 
@@ -337,6 +349,10 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		// the loop builds, so the agentic path never relies on a provider's
 		// implicit default (Claude defaulted to 4096; Gemini set none).
 		agentloop.WithMaxOutputTokens(caps.MaxOutputTokens),
+		// Item 8: classify a denied tool call into a stable write-failure code
+		// (incident_mode / zone_denial) so the chat UI can show a specific
+		// message instead of the raw error string.
+		agentloop.WithToolErrorClassifier(classifyWriteFailure),
 	)
 	agent.SetMaxIterations(maxIterations)
 
@@ -475,6 +491,7 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 				Name:       tr.Name,
 				Result:     tr.Result,
 				Error:      tr.Error,
+				ErrorCode:  tr.ErrorCode,
 				DurationMs: tr.DurationMs,
 			}
 		}
@@ -526,7 +543,24 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		MessagesDropped:      session.MessagesDropped(),
 		ToolResultsTruncated: session.ToolResultsTruncated(),
 		UserMessageTruncated: session.UserMessageTruncated(),
+		ErrorCode:            firstWriteFailureCode(outSteps),
 	}
+}
+
+// firstWriteFailureCode returns the first non-empty per-tool write-failure
+// code across the turn's steps, or "" if no tool call was denied. A denied
+// write does not terminate the agentic loop — the LLM receives the tool error
+// and the turn still completes — so this turn-level summary is how the chat UI
+// learns a write was refused and why, without scanning every step itself.
+func firstWriteFailureCode(steps []taskStep) string {
+	for _, s := range steps {
+		for _, tr := range s.ToolResults {
+			if tr.ErrorCode != "" {
+				return tr.ErrorCode
+			}
+		}
+	}
+	return ""
 }
 
 // seedHistory loads prior user/assistant turns for sessionID from the store

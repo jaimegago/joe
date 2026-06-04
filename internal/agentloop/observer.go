@@ -36,6 +36,7 @@ type ToolResultRecord struct {
 	Name       string
 	Result     any
 	Error      string // empty on success
+	ErrorCode  string // stable write-failure code (incident_mode/zone_denial), empty otherwise
 	DurationMs int
 }
 
