@@ -664,6 +664,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runZoneCommand(ctx, args[1:], stdout, stderr, deps)
 		case "admin":
 			return runAdminCommand(ctx, args[1:], stdout, stderr, deps)
+		case "incident":
+			return runIncidentCommand(ctx, args[1:], stdout, stderr, deps)
 		default:
 			fmt.Fprintf(stderr, "Unknown command: %q\n\n", args[0])
 			printUsage(stderr)
@@ -673,7 +675,7 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 
 	// No subcommand (bare `joe`) or server flags only (e.g. `joe --config ...`):
 	// run the HTTP API daemon, which is Joe's default behavior. Its subcommands
-	// (mcp, slack, panic, unlock, review, skills, zone, admin) ride alongside.
+	// (mcp, slack, panic, unlock, review, skills, zone, admin, incident) ride alongside.
 	return deps.runServer(ctx)
 }
 
@@ -690,6 +692,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
 	fmt.Fprintln(w, "  zone     Manage RBAC zone grants")
 	fmt.Fprintln(w, "  admin    Manage admin provisioning")
+	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Lift the joe server's safe mode")
 }
