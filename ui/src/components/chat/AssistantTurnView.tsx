@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { Markdown } from './Markdown';
+import { writeFailureMessage } from '@/hooks/useChat';
 import type { AssistantTurn, TurnToolCall } from '@/hooks/useChat';
 import type { ToolCall } from '@/api/types';
 
@@ -30,6 +31,10 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
   const isFailed = turn.status === 'failed';
   const isStreaming = turn.status === 'streaming';
   const showTokens = turn.tokens > 0 || isStreaming;
+  // A denied write does not fail the turn (the LLM still answers), so surface
+  // its specific reason as a dedicated notice on the completed turn. On a
+  // failed turn the failure box already carries the mapped message.
+  const writeFailure = !isFailed ? writeFailureMessage(turn.writeFailureCode) : undefined;
 
   return (
     <div className="flex justify-start">
@@ -69,6 +74,18 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
           <p className="px-1 text-xs italic text-muted-foreground" data-testid="user-message-truncated-notice">
             Your message was shortened to fit the context budget.
           </p>
+        )}
+
+        {/* Differentiated write-failure notice: a tool write was denied this
+            turn (RBAC zone or incident-mode), even though the turn completed. */}
+        {writeFailure && (
+          <div
+            className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+            data-testid="write-failure-notice"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="min-w-0 whitespace-pre-wrap break-words">{writeFailure}</p>
+          </div>
         )}
 
         {/* Final answer for a completed turn. */}

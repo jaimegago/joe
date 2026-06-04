@@ -160,7 +160,8 @@ describe('streamTask', () => {
 
     await streamTask({ message: '' }, { onStep, onFinal, onError });
 
-    expect(onError).toHaveBeenCalledWith('message is required', true);
+    // The typed code from the error body (`error`) rides along as the third arg.
+    expect(onError).toHaveBeenCalledWith('message is required', true, 'invalid_request');
     expect(onStep).not.toHaveBeenCalled();
     expect(onFinal).not.toHaveBeenCalled();
   });

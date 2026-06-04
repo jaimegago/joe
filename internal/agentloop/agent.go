@@ -53,6 +53,19 @@ func WithMaxOutputTokens(n int) AgentOption {
 	return func(a *Agent) { a.maxOutputTokens = n }
 }
 
+// WithToolErrorClassifier installs a function that maps a per-tool execution
+// error to a stable, machine-readable code recorded on the step's
+// ToolResultRecord (Item 8 / differentiated write-failure feedback). The
+// classifier runs on the TYPED error — before it is stringified for the wire
+// — so it can use errors.As / errors.Is to distinguish, e.g., a captain-gate
+// incident-mode refusal from an RBAC zone denial. Keeping the classifier
+// injected (rather than importing the gate/RBAC error types here) preserves
+// the loop's generality: agentloop stays unaware of captaingate / access. A
+// nil classifier (the default) records no code.
+func WithToolErrorClassifier(fn func(error) string) AgentOption {
+	return func(a *Agent) { a.toolErrorClassifier = fn }
+}
+
 // WithAuditRepo wires the append-only audit.Repository used by the loop
 // when a terminal limit fires (Stream G phase G3a: runaway termination
 // writes one KindLLMLimitTriggered row). When omitted (or nil), the
@@ -107,6 +120,12 @@ type Agent struct {
 	// maxOutputTokens is the explicit per-request output cap stamped on
 	// ChatRequest.MaxTokens. Zero leaves MaxTokens unset (provider default).
 	maxOutputTokens int
+
+	// toolErrorClassifier maps a typed per-tool error to a stable code
+	// (e.g. "incident_mode", "zone_denial") recorded on ToolResultRecord.
+	// nil (default) records no code. Installed via WithToolErrorClassifier
+	// by the api layer, which owns the gate/RBAC error vocabulary.
+	toolErrorClassifier func(error) string
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
@@ -307,6 +326,12 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				}
 				if r.Error != nil {
 					rec.Error = r.Error.Error()
+					// Classify the TYPED error before it is lost to the string
+					// above, so the wire can carry a stable write-failure code
+					// (incident_mode / zone_denial) the UI dispatches on.
+					if a.toolErrorClassifier != nil {
+						rec.ErrorCode = a.toolErrorClassifier(r.Error)
+					}
 				}
 				toolResultRecords[j] = rec
 			}

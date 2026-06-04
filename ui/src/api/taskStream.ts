@@ -24,6 +24,9 @@ const StepToolResultSchema = z.object({
   name: z.string(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  // Stable write-failure code for a denied tool call: 'zone_denial' or
+  // 'incident_mode' (Item 8). Absent for a success or unclassified failure.
+  error_code: z.string().optional(),
   duration_ms: z.number().optional(),
 });
 
@@ -78,6 +81,12 @@ export const FinalEventSchema = z.object({
   // unobtrusive notice that the message was shortened to fit the budget.
   tool_results_truncated: z.number().default(0),
   user_message_truncated: z.boolean().default(false),
+  // Turn-level write-failure code (Item 8): the first per-tool denial code
+  // seen this turn ('zone_denial' | 'incident_mode'). A denied write does NOT
+  // terminate the loop, so this rides on an otherwise-completed turn and is
+  // how the chat UI learns a write was refused and why. Absent when no write
+  // was denied.
+  error_code: z.string().optional(),
 });
 
 export type StepEvent = z.infer<typeof StepEventSchema>;
@@ -151,8 +160,10 @@ export interface StreamHandlers {
   // message, LLM unavailable). `preStream: false` is a transport failure or an
   // unparseable/ malformed frame mid-stream. An in-stream agentic failure is
   // NOT an error here — it arrives as a `final` event with a non-completed
-  // status and is delivered via onFinal.
-  onError: (message: string, preStream: boolean) => void;
+  // status and is delivered via onFinal. `code` is the server's typed error
+  // code from a pre-stream JSON error body (e.g. zone_denial / incident_mode),
+  // when present, so the caller can show a specific message.
+  onError: (message: string, preStream: boolean, code?: string) => void;
 }
 
 // streamTask opens a streamed agentic turn against POST /api/v1/tasks/stream
@@ -176,13 +187,17 @@ export async function streamTask(body: TaskStreamRequest, handlers: StreamHandle
   // Pre-stream validation failure: a normal JSON error body, no SSE bytes.
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
+    let code: string | undefined;
     try {
       const errBody = (await response.json()) as { message?: string; error?: string };
       message = errBody.message ?? errBody.error ?? message;
+      // `error` is the typed code (e.g. zone_denial / incident_mode); pass it
+      // through so the caller can map it to a specific message.
+      code = errBody.error;
     } catch {
       // Non-JSON error body — keep the status-based fallback.
     }
-    handlers.onError(message, true);
+    handlers.onError(message, true, code);
     return;
   }
 
