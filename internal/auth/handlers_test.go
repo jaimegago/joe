@@ -23,6 +23,7 @@ func newTestHandlers(t *testing.T, prov Provider, adminEmail string) (*Handlers,
 		Sessions:   NewSessionManager(repo, time.Hour),
 		Repo:       repo,
 		RBAC:       rbacRepo,
+		Principals: rbacRepo,
 		AdminEmail: adminEmail,
 	})
 	return h, repo, rbacRepo, s

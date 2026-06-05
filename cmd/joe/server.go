@@ -733,6 +733,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 			Sessions:          sessionMgr,
 			Repo:              authRepo,
 			RBAC:              rbacRepo,
+			Principals:        rbacRepo,
 			AdminEmail:        cfg.Auth.AdminEmail,
 			PostLoginRedirect: cfg.Auth.PostLoginRedirect,
 			Audit:             services.Audit,

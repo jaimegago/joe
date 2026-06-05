@@ -54,6 +54,12 @@ type Repository interface {
 	// controllable clock so expiry is deterministically testable.
 	GetSession(ctx context.Context, id string) (*Session, error)
 	DeleteSession(ctx context.Context, id string) error
+	// DeleteSessionsForPrincipal deletes every session held by principal and
+	// returns the number removed. It is the instant-revocation primitive the
+	// identity-disable path uses: server-side sessions resolve by row lookup,
+	// so removing the rows invalidates the principal's live sessions
+	// immediately — no per-request status check is required.
+	DeleteSessionsForPrincipal(ctx context.Context, principal string) (int64, error)
 
 	CreateFlow(ctx context.Context, f LoginFlow) error
 	GetFlow(ctx context.Context, state string) (*LoginFlow, error)
@@ -107,6 +113,19 @@ func (r *SQLRepository) DeleteSession(ctx context.Context, id string) error {
 		return fmt.Errorf("delete auth session: %w", err)
 	}
 	return nil
+}
+
+func (r *SQLRepository) DeleteSessionsForPrincipal(ctx context.Context, principal string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`DELETE FROM auth_sessions WHERE principal = ?`), principal)
+	if err != nil {
+		return 0, fmt.Errorf("delete auth sessions for principal: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
 }
 
 func (r *SQLRepository) CreateFlow(ctx context.Context, f LoginFlow) error {

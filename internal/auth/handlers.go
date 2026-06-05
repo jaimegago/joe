@@ -29,10 +29,16 @@ const auditSourceAdminBootstrap = "admin-bootstrap"
 // login initiation, IdP callback, and logout. The front end is separate; this
 // package provides the complete, testable server flow.
 type Handlers struct {
-	provider          Provider
-	sessions          *SessionManager
-	repo              Repository
-	provisioner       *Provisioner
+	provider    Provider
+	sessions    *SessionManager
+	repo        Repository
+	provisioner *Provisioner
+	// principals is the authoritative identity registry. The callback consults
+	// it for account status (disabled → reject at mint) and populates it on
+	// every successful login. nil when no registry is wired (dev/local, tests):
+	// the status check and the provisioning upsert are both skipped and the
+	// login flow proceeds exactly as before.
+	principals        rbac.PrincipalRepository
 	adminEmail        string
 	postLoginRedirect string
 	now               func() time.Time
@@ -44,10 +50,15 @@ type Handlers struct {
 
 // HandlerConfig wires the dependencies for Handlers.
 type HandlerConfig struct {
-	Provider          Provider
-	Sessions          *SessionManager
-	Repo              Repository
-	RBAC              rbac.Repository
+	Provider Provider
+	Sessions *SessionManager
+	Repo     Repository
+	RBAC     rbac.Repository
+	// Principals is the identity registry the callback reads for account status
+	// and writes at provisioning time. nil-safe: a nil registry disables the
+	// disabled-at-mint check and the provisioning upsert, leaving the login
+	// flow unchanged.
+	Principals        rbac.PrincipalRepository
 	AdminEmail        string
 	PostLoginRedirect string
 	// Audit is the append-only audit trail. nil-safe: a nil repository
@@ -66,6 +77,7 @@ func NewHandlers(cfg HandlerConfig) *Handlers {
 		sessions:          cfg.Sessions,
 		repo:              cfg.Repo,
 		provisioner:       NewProvisioner(cfg.RBAC),
+		principals:        cfg.Principals,
 		adminEmail:        cfg.AdminEmail,
 		postLoginRedirect: redirect,
 		now:               time.Now,
@@ -193,6 +205,31 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Account status is checked BEFORE authorization. The ordering is
+	// account-status → authentication-complete → authorization: authentication
+	// is already complete (the token is verified and the principal derived), so
+	// a disabled account is rejected here, AHEAD of the admin bootstrap grant.
+	// This is what makes "disabled wins over the auth.admin_email bootstrap
+	// match" structural: a disabled principal whose email matches admin_email
+	// never reaches GrantAdmin. A disabled login mints no session, runs no
+	// bootstrap, and does not touch the registry — only an append-only audit
+	// row recording the rejected attempt is written. nil-safe: with no registry
+	// wired the check is skipped. A principal with no registry row yet is active
+	// by default (GetPrincipal returns nil).
+	if h.principals != nil {
+		rec, err := h.principals.GetPrincipal(ctx, string(principal))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to check account status")
+			return
+		}
+		if rec != nil && rec.Status == rbac.PrincipalStatusDisabled {
+			slog.Warn("auth: login rejected for disabled principal", "principal", principal)
+			h.recordDisabledLoginAudit(ctx, principal, vt.Claims.Email, r)
+			writeError(w, http.StatusForbidden, "account_disabled", "this account has been disabled")
+			return
+		}
+	}
+
 	// Admin bootstrap: the configured admin email gains admin authority on
 	// (every) login (design §2.9). A grant failure must not silently masquerade
 	// as a working admin, so it fails the login loudly.
@@ -220,6 +257,25 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	// write is fail-open-but-loud — an audit failure must not block the
 	// login or the redirect.
 	h.recordLoginAudit(ctx, principal, vt.Claims.Email, r)
+	// Provisioning: populate/refresh the authoritative identity registry. On a
+	// first-ever login this inserts the principal's row (active by default); on
+	// subsequent logins the ON CONFLICT upsert refreshes only last_seen_at, so
+	// the row is never duplicated and status/provenance are preserved. This is
+	// the population step deferred from Stage 1 (the table was created empty).
+	// Best-effort and loud: the session is already minted, so a registry write
+	// failure must not fail the login — it is logged, not surfaced. Disabled
+	// principals never reach here (they returned above), so the upsert can
+	// safely assert active.
+	if h.principals != nil {
+		now := h.now().UTC()
+		if err := h.principals.UpsertPrincipal(ctx, rbac.PrincipalRecord{
+			Principal:  string(principal),
+			Status:     rbac.PrincipalStatusActive,
+			LastSeenAt: &now,
+		}); err != nil {
+			slog.Error("auth: identity registry upsert failed", "principal", principal, "error", err)
+		}
+	}
 	// Privilege-escalation audit: record the admin grant only when it was a
 	// real first-time escalation (wasNew). Repeat admin logins are not
 	// escalation events and must produce no per-login noise. Fail-open-but-
@@ -256,6 +312,35 @@ func (h *Handlers) recordLoginAudit(ctx context.Context, principal rbac.Principa
 	// outcome (the login PROCEEDED) rather than claiming a fail-closed abort,
 	// and discard the return so the login is never blocked.
 	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login", audit.FailOpen)
+}
+
+// recordDisabledLoginAudit writes one append-only audit row for a login
+// attempt REJECTED because the principal is disabled in the identity registry.
+// It rides the SAME login-audit stream as a success — kind KindAuthLogin,
+// action ActionOIDCLogin — but flips the decision to DecisionDeny with reason
+// "principal_disabled", so disabled-login attempts are visible alongside
+// successes when querying the auth_login kind. The rejection has already been
+// decided by the caller; this only records it, so it is fail-open-but-loud
+// (a write failure is logged, never blocks the 403) and nil-safe.
+func (h *Handlers) recordDisabledLoginAudit(ctx context.Context, principal rbac.Principal, email string, r *http.Request) {
+	if h.audit == nil {
+		return
+	}
+	blob, _ := json.Marshal(map[string]string{
+		"email":      email,
+		"remote":     r.RemoteAddr,
+		"user_agent": r.UserAgent(),
+	})
+	err := h.audit.Insert(ctx, audit.Event{
+		Principal: string(principal),
+		Action:    audit.ActionOIDCLogin,
+		Source:    auditSourceOIDC,
+		Decision:  audit.DecisionDeny,
+		Reason:    "principal_disabled",
+		Kind:      audit.KindAuthLogin,
+		Context:   string(blob),
+	})
+	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login_disabled", audit.FailOpen)
 }
 
 // recordAdminGrantAudit writes one auth_login audit row recording a privilege
