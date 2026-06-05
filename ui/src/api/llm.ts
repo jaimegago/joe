@@ -4,6 +4,7 @@ import {
   SetActiveModelResponseSchema,
   SetCostLimitResponseSchema,
   SetRunawayCeilingResponseSchema,
+  SetContextBudgetResponseSchema,
   UsageAggregateSchema,
   UsageWindowSchema,
   UsageSessionSchema,
@@ -50,6 +51,15 @@ export function setRunawayCeiling(value: number): Promise<{ value: number }> {
   return apiClient
     .post<unknown>('/api/v1/llm/settings/runaway-ceiling', { value })
     .then((r) => SetRunawayCeilingResponseSchema.parse(r));
+}
+
+// fraction is the share of the model's context window reserved for input,
+// in (0, 1.0]. The backend re-validates the range and returns 400 on a value
+// outside it; the response echoes the accepted fraction.
+export function setContextBudget(fraction: number): Promise<{ fraction: number }> {
+  return apiClient
+    .post<unknown>('/api/v1/llm/settings/context-budget', { fraction })
+    .then((r) => SetContextBudgetResponseSchema.parse(r));
 }
 
 // Usage views.
