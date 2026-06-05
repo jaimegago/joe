@@ -94,15 +94,42 @@ var auditedRepoMutations = map[string]bool{
 	"AddAdmin": true, "RemoveAdmin": true,
 }
 
-// callsAuditedRepoMutation reports whether the call is h.repo.<AuditedMutation>(…).
+// auditedSeamMutations are the lower-layer orchestration methods (Identity
+// Stage 3) that write their KindAdminAccess audit row transactionally through
+// the RBAC repository they wrap — so a handler delegating to one leaves the same
+// durable trail an h.repo mutation would, just on a different handler field.
+// Each entry maps the handler-struct field the seam lives on to the audited
+// method names it exposes:
+//
+//   - h.provisioner.GrantAdmin → repository AddAdmin (admin.grant row)
+//   - h.principalAdmin.Disable/Enable → repository SetPrincipalStatus
+//     (principal.disable / principal.enable row)
+var auditedSeamMutations = map[string]map[string]bool{
+	"provisioner":    {"GrantAdmin": true},
+	"principalAdmin": {"Disable": true, "Enable": true},
+}
+
+// callsAuditedRepoMutation reports whether the call is an audited mutation on
+// one of the handler's audited fields: h.repo.<AuditedMutation>(…) OR an
+// audited Stage-3 seam (h.provisioner.GrantAdmin, h.principalAdmin.Disable/
+// Enable). In every case the audit row is written transactionally by the
+// repository underneath, so the handler needs no in-handler recordAdminAudit.
 func callsAuditedRepoMutation(call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || !auditedRepoMutations[sel.Sel.Name] {
+	if !ok {
 		return false
 	}
-	// Receiver must be h.repo (a selector whose field is "repo").
 	recv, ok := sel.X.(*ast.SelectorExpr)
-	return ok && recv.Sel.Name == "repo"
+	if !ok {
+		return false
+	}
+	if recv.Sel.Name == "repo" && auditedRepoMutations[sel.Sel.Name] {
+		return true
+	}
+	if methods, ok := auditedSeamMutations[recv.Sel.Name]; ok && methods[sel.Sel.Name] {
+		return true
+	}
+	return false
 }
 
 // auditingAdminHandlers returns the set of adminHandler method names whose

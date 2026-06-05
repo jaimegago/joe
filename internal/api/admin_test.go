@@ -195,7 +195,7 @@ func TestAdminCreatePolicy(t *testing.T) {
 	ts, _ := newAdminServer(t)
 
 	body, _ := json.Marshal(map[string]any{
-		"principal": "bob",
+		"principal": "svc:bob",
 		"zone_id":   "unassigned",
 	})
 

@@ -460,6 +460,19 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
+	// Identity Stage 3: the admin REST surface (internal/api/admin.go) manages
+	// the identity registry and admin roster. Wire the read path (the registry
+	// repository, satisfied by rbacRepo) and the two orchestration seams it
+	// wraps — the admin-grant provisioner and the disable/enable lifecycle —
+	// here, BEFORE RegisterRoutes (registerAdminRoutes reads them at
+	// registration time). authSessions is the session store the disable path
+	// purges; sessionMgr below reuses it. They are wired whenever RBAC exists so
+	// the admin surface (registered on the same RBAC!=nil predicate) is fully
+	// backed.
+	authSessions := auth.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	services.Principals = rbacRepo
+	services.Provisioner = auth.NewProvisioner(rbacRepo)
+	services.PrincipalAdmin = auth.NewPrincipalAdmin(rbacRepo, authSessions)
 	services.LLMUsage = llmUsageRepo
 	services.LLMSettings = llmSettingsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
@@ -719,9 +732,10 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.OIDCEnabled = oidcConfigured
 
 	// Identity Phase C: server-side sessions + the OIDC login flow.
-	// authRepo persists sessions and in-flight login flows (migration 014).
-	// The session manager mints/resolves/revokes sessions and owns the cookie.
-	authRepo := auth.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	// authSessions (wired above for the disable path) persists sessions and
+	// in-flight login flows (migration 014). The session manager
+	// mints/resolves/revokes sessions and owns the cookie.
+	authRepo := authSessions
 	sessionMgr := auth.NewSessionManager(authRepo, cfg.Auth.SessionTTL)
 
 	// Register the OIDC login/callback/logout endpoints when an issuer is

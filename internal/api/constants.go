@@ -17,6 +17,7 @@ const (
 	errorCodeInvalidSource      = "invalid_source"
 	errorCodeServiceUnavailable = "service_unavailable"
 	errorCodeForbidden          = "forbidden"
+	errorCodeConflict           = "conflict"
 
 	// Typed write-failure codes (Item 8 / differentiated write-failure
 	// feedback). A denied write surfaces one of these so the chat UI can show

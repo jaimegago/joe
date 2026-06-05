@@ -253,6 +253,14 @@ const (
 	// D-0012 privilege-escalation story. The attempted endpoint
 	// (method + path) rides in the Context blob's "target" field.
 	ActionAdminAccessDenied = "admin.access_denied"
+	// ActionAdminAdminRead records an admin listing the admin roster
+	// (GET /api/v1/admin/admins) — leaks who holds admin authority.
+	// Read-class (fail-open), so it is in isFailOpen below.
+	ActionAdminAdminRead = "admin.read"
+	// ActionAdminPrincipalRead records an admin listing the identity
+	// registry (GET /api/v1/admin/principals) — the Users page query.
+	// Read-class (fail-open), so it is in isFailOpen below.
+	ActionAdminPrincipalRead = "principal.read"
 
 	// --- Identity Stage 1 admin-mutation action verbs ---
 	//
@@ -479,7 +487,8 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 // isFailOpen reports whether the given action verb is read-class for the
 // purposes of the §4 failure split. Read-class: the infra read verbs "read"
 // and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
-// D-0013 admin-surface read verbs (zone.read, policy.read, source_zone.read).
+// D-0013 admin-surface read verbs (zone.read, policy.read, source_zone.read,
+// admin.read, principal.read).
 // Mutate-class: everything else, including all transition verbs, the admin
 // mutations (zone.create, zone.update, zone.delete, policy.grant,
 // policy.revoke, source_zone.assign, source_zone.unassign, admin.grant,
@@ -496,7 +505,8 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 func isFailOpen(action string) bool {
 	switch action {
 	case "read", "query",
-		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminSourceZoneRead:
+		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminSourceZoneRead,
+		ActionAdminAdminRead, ActionAdminPrincipalRead:
 		return true
 	default:
 		return false

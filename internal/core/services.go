@@ -6,6 +6,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/graph"
@@ -49,6 +50,22 @@ type Services struct {
 	DocDrafter     *drafts.Generator
 	DriftDet       *drift.Detector
 	RBAC           rbac.Repository // nil when RBAC is not configured
+	// Principals is the authoritative identity registry (migration 021),
+	// satisfied by the same *rbac.SQLRepository wired into RBAC. Read path for
+	// the admin Users page (GET /api/v1/admin/principals). nil when RBAC is not
+	// configured.
+	Principals rbac.PrincipalRepository
+	// Provisioner is the admin-grant seam (auth.Provisioner.GrantAdmin): grant
+	// admin authority AND clean up the principal's redundant policy grants in
+	// one call. The admin-add REST handler (POST /api/v1/admin/admins) wraps it
+	// so the grant-plus-cleanup invariant is not re-implemented. nil when RBAC
+	// is not configured.
+	Provisioner *auth.Provisioner
+	// PrincipalAdmin orchestrates principal disable/enable across the identity
+	// registry and the session store (auth.PrincipalAdmin): Disable sets status
+	// then revokes live sessions; Enable restores status. The disable/enable
+	// REST handlers wrap it. nil when RBAC is not configured.
+	PrincipalAdmin *auth.PrincipalAdmin
 	// RBACEnabled mirrors the predicate the policy engine is built
 	// from in cmd/joe/server.go: true exactly when a real caller
 	// principal can be established (a service account OR OIDC is
