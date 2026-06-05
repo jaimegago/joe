@@ -49,24 +49,29 @@ Any named break-glass account (`svc:breakglass-oncall`, `svc:operator`, and so o
 
 A service-account principal becomes admin **exactly like a user principal**. The principal is an opaque string; admin grants do no prefix-specific logic, so granting admin to `svc:breakglass-oncall` is the same operation as granting it to `user:alice@example.com`.
 
-Admin grants are **CLI or OIDC-bootstrap only**. There is no HTTP API path and no Web UI path to grant admin. This is an access-control property, not just a limitation: provisioning a break-glass admin requires host/CLI access to the machine running Joe, so the ability to mint admin is bounded by who can log into that host — it cannot be done remotely over the API by a holder of any key.
+Admin is minted two ways: the **OIDC admin-email bootstrap** (`auth.admin_email` in config) and the **admin REST API** (`/api/v1/admin/admins`). The bootstrap is the only non-circular cold-start path — it is the sole way to create the *first* admin, because the REST endpoints are themselves admin-gated and so cannot bootstrap. Every REST grant writes an append-only `admin_access` audit row in the same transaction as the mutation. There is no longer a CLI path (the operator CLI was removed in identity Stage 4): the audited REST surface is the single writer to admin state.
 
-Grant admin to a service account:
+Grant admin to a service account (requires an existing admin's credential):
 
 ```bash
-joe admin grant --principal svc:breakglass-oncall --reason "on-call break-glass for OIDC outages"
+curl -X POST -H "Authorization: Bearer <existing-admin-credential>" \
+  -H "Content-Type: application/json" \
+  -d '{"principal":"svc:breakglass-oncall","reason":"on-call break-glass for OIDC outages"}' \
+  http://localhost:7777/api/v1/admin/admins
 ```
 
 Revoke it when it is no longer needed:
 
 ```bash
-joe admin revoke --principal svc:breakglass-oncall
+curl -X DELETE -H "Authorization: Bearer <existing-admin-credential>" \
+  http://localhost:7777/api/v1/admin/admins/svc:breakglass-oncall
 ```
 
 List the principals that currently hold admin:
 
 ```bash
-joe admin list
+curl -H "Authorization: Bearer <existing-admin-credential>" \
+  http://localhost:7777/api/v1/admin/admins
 ```
 
 ---
@@ -148,7 +153,7 @@ Break-glass is an internal-tool capability, not an internet-facing one; keep its
 
 - **Use it for what it is for.** Reach for break-glass when OIDC is unavailable, not as a routine login path.
 - **Prefer per-operator named accounts where attribution matters.** Because a shared key is not personally attributable in the audit log, give individual operators their own named service accounts (`svc:operator-alice`, `svc:operator-bob`) when you need to know who acted.
-- **Revoke what you no longer need.** Use `joe admin revoke --principal svc:<name>` to drop admin from a key once the situation is resolved, and remove unused keys from the config.
+- **Revoke what you no longer need.** Use `DELETE /api/v1/admin/admins/svc:<name>` to drop admin from a key once the situation is resolved, and remove unused keys from the config.
 - **Review use in the audit log.** The `audit_log` (`kind` = `auth_login`, `action` = `break_glass_use`) is where break-glass activity is reviewed.
 
 ---

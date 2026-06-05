@@ -236,9 +236,9 @@ const (
 	// /api/v1/admin/source-zones, GET /api/v1/admin/unassigned). Read-class.
 	ActionAdminSourceZoneRead = "source_zone.read"
 	// ActionAdminGrant records an admin promoting another principal to
-	// admin. CLI-only today (joe admin, internal/rbac AddAdmin — see
-	// ADMIN_SURFACE_AUDIT.md); declared here so that if/when an HTTP
-	// endpoint lands it reuses this verb rather than inventing a new one.
+	// admin via the admin REST surface (POST /api/v1/admin/admins →
+	// Provisioner.GrantAdmin → internal/rbac AddAdmin), the single audited
+	// writer now that the operator CLI is gone (identity Stage 4).
 	// Decision "allow"; mutating (fail-closed). NOTE: distinct from
 	// ActionAdminGranted ("admin_granted"), which is the OIDC bootstrap
 	// self-escalation under KindAuthLogin.

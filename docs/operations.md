@@ -129,8 +129,8 @@ history lives in the append-only audit log (there is no `list` history endpoint)
 ## RBAC administration
 
 Sources are assigned to zones; principals are granted access to zones. Manage all
-of this from the Web UI admin panel, the `joe zone` / `joe admin` subcommands, or
-the admin API below. All admin endpoints require Bearer auth.
+of this from the Web UI admin panel or the admin API below — the single audited
+writer to RBAC state. All admin endpoints require Bearer auth.
 
 ### Default zones
 

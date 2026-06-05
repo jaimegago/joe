@@ -32,13 +32,6 @@ type runDeps struct {
 	newClient        func(baseURL string, opts ...client.ClientOption) *client.Client
 	newSkillManager  func(root string, trusted []string, policy *skills.Policy) skillManager
 	loadSkillsPolicy func(joeDir string) (*skills.Policy, error)
-	// openRBACRepo opens the RBAC repository for `joe zone` and
-	// `joe admin` provisioning (direct DB access; design §2.9, Phase H
-	// D-0011). Injectable so tests use an in-memory repo instead of
-	// opening a real database. Returns the full rbac.Repository surface
-	// because admin status (Phase H) and zone grants (Phase C) read and
-	// write different methods on the same underlying repo.
-	openRBACRepo func(cfg *config.Config) (rbacRepo, func() error, error)
 	// runServer boots the HTTP API daemon — Joe's default (no-subcommand)
 	// behavior. Injectable so dispatcher tests can assert routing without
 	// actually binding a port or opening a database.
@@ -58,8 +51,7 @@ func defaultRunDeps() runDeps {
 		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
 			return skills.LoadPolicy(joeDir)
 		},
-		openRBACRepo: openRBACRepoDefault,
-		runServer:    runServer,
+		runServer: runServer,
 	}
 }
 
@@ -660,10 +652,6 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runSlackCommand(ctx, args[1:], stderr, deps)
 		case "skills":
 			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
-		case "zone":
-			return runZoneCommand(ctx, args[1:], stdout, stderr, deps)
-		case "admin":
-			return runAdminCommand(ctx, args[1:], stdout, stderr, deps)
 		case "incident":
 			return runIncidentCommand(ctx, args[1:], stdout, stderr, deps)
 		default:
@@ -675,7 +663,9 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 
 	// No subcommand (bare `joe`) or server flags only (e.g. `joe --config ...`):
 	// run the HTTP API daemon, which is Joe's default behavior. Its subcommands
-	// (mcp, slack, panic, unlock, review, skills, zone, admin, incident) ride alongside.
+	// (mcp, slack, panic, unlock, review, skills, incident) ride alongside. RBAC
+	// zone/admin provisioning is no longer a CLI surface — it runs over the admin
+	// REST API (internal/api/admin.go), the single audited writer.
 	return deps.runServer(ctx)
 }
 
@@ -690,8 +680,6 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  slack    Run Joe as a Slack bot")
 	fmt.Fprintln(w, "  review   Manage code-review jobs")
 	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
-	fmt.Fprintln(w, "  zone     Manage RBAC zone grants")
-	fmt.Fprintln(w, "  admin    Manage admin provisioning")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Lift the joe server's safe mode")
