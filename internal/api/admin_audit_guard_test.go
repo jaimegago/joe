@@ -10,8 +10,16 @@ import (
 
 // TestAdminRoutes_AllAuditOnAllow is the structural guard for D-0013 (the
 // admin-audit gap): EVERY handler registered under the /api/v1/admin/ prefix
-// must write an audit row in its allow path — i.e. its body must call
-// h.recordAdminAudit, the single KindAdminAccess writer (admin.go).
+// must leave a durable audit trail in its allow path. There are now two ways a
+// handler satisfies this, both accepted by the guard:
+//
+//   - Read handlers call h.recordAdminAudit directly (fail-open per §4).
+//   - Mutating handlers delegate the audit write to the RBAC repository, which
+//     (Identity Stage 1) writes the KindAdminAccess row in the SAME transaction
+//     as the mutation itself. A handler that calls one of the repository's
+//     audited mutation methods on h.repo therefore leaves a trail without an
+//     in-handler recordAdminAudit call. This is the stronger guarantee — the
+//     mutation and its row are atomic — so the guard accepts it.
 //
 // It is the sibling of TestAdminRoutes_AllRequireAdminGate
 // (admin_gate_guard_test.go), which pins the GATE invariant from D-0012.
@@ -64,14 +72,37 @@ func TestAdminRoutes_AllAuditOnAllow(t *testing.T) {
 
 	for _, name := range unaudited {
 		t.Errorf("admin handler %q is registered under /api/v1/admin/ but its "+
-			"body never calls recordAdminAudit — this re-opens the admin-audit "+
-			"gap closed per DECISIONS.md D-0013 (authorization-config mutations "+
-			"unrecorded). Add an `h.recordAdminAudit(...)` call in %s's allow "+
-			"path: fail-closed (check the returned error, abort the mutation) "+
-			"for a mutating action, fail-open (discard the return) for a read. "+
-			"Do NOT route an admin endpoint around the audit writer.",
+			"body neither calls recordAdminAudit nor an audited h.repo mutation "+
+			"— this re-opens the admin-audit gap closed per DECISIONS.md D-0013 "+
+			"(authorization-config mutations unrecorded). Either call "+
+			"`h.recordAdminAudit(...)` in %s's allow path (reads: fail-open) or "+
+			"route the mutation through an audited repository method (which writes "+
+			"its row in the same transaction). Do NOT route an admin endpoint "+
+			"around the audit writer.",
 			name, name)
 	}
+}
+
+// auditedRepoMutations is the set of rbac.Repository methods that write their
+// own KindAdminAccess audit row in the same transaction as the mutation
+// (Identity Stage 1). A handler calling one of these on h.repo leaves a durable
+// audit trail without an in-handler recordAdminAudit call.
+var auditedRepoMutations = map[string]bool{
+	"CreateZone": true, "UpdateZone": true, "DeleteZone": true,
+	"UpsertAssignment": true, "DeleteAssignment": true,
+	"CreatePolicy": true, "DeletePolicy": true, "DeletePolicyForPrincipalZone": true,
+	"AddAdmin": true, "RemoveAdmin": true,
+}
+
+// callsAuditedRepoMutation reports whether the call is h.repo.<AuditedMutation>(…).
+func callsAuditedRepoMutation(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || !auditedRepoMutations[sel.Sel.Name] {
+		return false
+	}
+	// Receiver must be h.repo (a selector whose field is "repo").
+	recv, ok := sel.X.(*ast.SelectorExpr)
+	return ok && recv.Sel.Name == "repo"
 }
 
 // auditingAdminHandlers returns the set of adminHandler method names whose
@@ -97,6 +128,13 @@ func auditingAdminHandlers(f *ast.File) map[string]bool {
 				return true
 			}
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "recordAdminAudit" {
+				auditing[fd.Name.Name] = true
+				return false
+			}
+			// A mutating handler satisfies the audit invariant by routing the
+			// mutation through an audited repository method (which writes its
+			// row in the same transaction).
+			if callsAuditedRepoMutation(call) {
 				auditing[fd.Name.Name] = true
 				return false
 			}

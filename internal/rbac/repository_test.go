@@ -67,7 +67,7 @@ func TestSQLRepository_CreateZone(t *testing.T) {
 		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionQuery},
 	}
 
-	created, err := repo.CreateZone(ctx, newZone)
+	created, err := repo.CreateZone(ctx, newZone, "test")
 	if err != nil {
 		t.Fatalf("CreateZone: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestSQLRepository_UpsertAssignment(t *testing.T) {
 	}
 
 	// First upsert
-	if err := repo.UpsertAssignment(ctx, a); err != nil {
+	if err := repo.UpsertAssignment(ctx, a, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestSQLRepository_UpsertAssignment(t *testing.T) {
 	// Second upsert (update)
 	a.ZoneID = "prod-write"
 	a.Reason = "escalated"
-	if err := repo.UpsertAssignment(ctx, a); err != nil {
+	if err := repo.UpsertAssignment(ctx, a, "test"); err != nil {
 		t.Fatalf("UpsertAssignment (update): %v", err)
 	}
 	got, err = repo.GetAssignment(ctx, "k8s-prod")
@@ -169,7 +169,7 @@ func TestSQLRepository_ListAssignments(t *testing.T) {
 	// Assign k8s-prod
 	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestSQLRepository_CreatePolicy(t *testing.T) {
 		ZoneID:    "prod-readonly",
 	}
 
-	created, err := repo.CreatePolicy(ctx, p)
+	created, err := repo.CreatePolicy(ctx, p, "test")
 	if err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSQLRepository_ListPolicies(t *testing.T) {
 	for _, principal := range []string{"alice", "bob"} {
 		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 			Principal: principal, ZoneID: "prod-readonly",
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("CreatePolicy %s: %v", principal, err)
 		}
 	}
@@ -236,13 +236,13 @@ func TestSQLRepository_ListPoliciesForPrincipal(t *testing.T) {
 	for _, zone := range []string{"prod-readonly", "dev-full"} {
 		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 			Principal: "alice", ZoneID: zone,
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("CreatePolicy alice/%s: %v", zone, err)
 		}
 	}
 	if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 		Principal: "bob", ZoneID: "dev-full",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("CreatePolicy bob: %v", err)
 	}
 
@@ -278,12 +278,12 @@ func TestSQLRepository_DeletePolicy(t *testing.T) {
 
 	created, err := repo.CreatePolicy(ctx, rbac.Policy{
 		Principal: "carol", ZoneID: "prod-readonly",
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
 
-	if err := repo.DeletePolicy(ctx, created.ID); err != nil {
+	if err := repo.DeletePolicy(ctx, created.ID, "test"); err != nil {
 		t.Fatalf("DeletePolicy: %v", err)
 	}
 
@@ -315,7 +315,7 @@ func TestSQLRepository_ListUnassignedSourceIDs(t *testing.T) {
 	// Assign k8s-prod → should drop to 1
 	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
@@ -366,7 +366,7 @@ func TestSQLRepository_CreateZone_VerifyAllowedActions(t *testing.T) {
 		ID:             "full-custom",
 		Name:           "Full Custom Zone",
 		AllowedActions: want,
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("CreateZone: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestSQLRepository_UpsertAssignment_TimestampSet(t *testing.T) {
 		ZoneID:     "dev-full",
 		AssignedBy: "auto-test",
 	}
-	if err := repo.UpsertAssignment(ctx, a); err != nil {
+	if err := repo.UpsertAssignment(ctx, a, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
@@ -432,7 +432,7 @@ func TestSQLRepository_ListAssignments_ScanRows(t *testing.T) {
 			ZoneID:     s.zoneID,
 			AssignedBy: "admin",
 			Reason:     "test",
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("UpsertAssignment %s: %v", s.sourceID, err)
 		}
 	}
@@ -465,7 +465,7 @@ func TestSQLRepository_ListPolicies_ScanRows(t *testing.T) {
 	for _, p := range principals {
 		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 			Principal: p, ZoneID: "prod-readonly",
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("CreatePolicy %s: %v", p, err)
 		}
 	}
@@ -501,7 +501,7 @@ func TestSQLRepository_ListPoliciesForPrincipal_ScanRows(t *testing.T) {
 	for _, z := range zones {
 		if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 			Principal: "multi-zone-user", ZoneID: z,
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("CreatePolicy multi-zone-user/%s: %v", z, err)
 		}
 	}
@@ -534,7 +534,7 @@ func TestSQLRepository_CreatePolicy_TimestampSet(t *testing.T) {
 	created, err := repo.CreatePolicy(ctx, rbac.Policy{
 		Principal: "timestamp-test-user",
 		ZoneID:    "prod-readonly",
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestSQLRepository_DeletePolicy_NonExistentID(t *testing.T) {
 	ctx := context.Background()
 
 	// ID 9999 does not exist; ExecContext should succeed (0 rows affected).
-	if err := repo.DeletePolicy(ctx, 9999); err != nil {
+	if err := repo.DeletePolicy(ctx, 9999, "test"); err != nil {
 		t.Errorf("DeletePolicy for non-existent ID should not error, got: %v", err)
 	}
 }
@@ -570,7 +570,7 @@ func TestSQLRepository_ListUnassignedSourceIDs_AllAssigned(t *testing.T) {
 	} {
 		if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 			SourceID: s.id, ZoneID: s.zone, AssignedBy: "admin",
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("UpsertAssignment %s: %v", s.id, err)
 		}
 	}
@@ -614,7 +614,7 @@ func TestSQLRepository_CreateZone_DBError(t *testing.T) {
 		ID:             "new-zone",
 		Name:           "New Zone",
 		AllowedActions: []rbac.Action{rbac.ActionRead},
-	})
+	}, "test")
 	if err == nil {
 		t.Error("expected error from CreateZone on closed DB")
 	}
@@ -646,7 +646,7 @@ func TestSQLRepository_UpsertAssignment_DBError(t *testing.T) {
 	db.Close()
 	err := repo.UpsertAssignment(context.Background(), rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
-	})
+	}, "test")
 	if err == nil {
 		t.Error("expected error from UpsertAssignment on closed DB")
 	}
@@ -678,7 +678,7 @@ func TestSQLRepository_CreatePolicy_DBError(t *testing.T) {
 	db.Close()
 	_, err := repo.CreatePolicy(context.Background(), rbac.Policy{
 		Principal: "alice", ZoneID: "prod-readonly",
-	})
+	}, "test")
 	if err == nil {
 		t.Error("expected error from CreatePolicy on closed DB")
 	}
@@ -688,7 +688,7 @@ func TestSQLRepository_DeletePolicy_DBError(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
 	db.Close()
-	err := repo.DeletePolicy(context.Background(), 1)
+	err := repo.DeletePolicy(context.Background(), 1, "test")
 	if err == nil {
 		t.Error("expected error from DeletePolicy on closed DB")
 	}

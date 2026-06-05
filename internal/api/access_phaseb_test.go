@@ -48,10 +48,10 @@ func TestPhaseB_ContextPrincipalReachesAccessorDecision(t *testing.T) {
 	repo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
-	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant alice: %v", err)
 	}
 

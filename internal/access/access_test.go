@@ -72,16 +72,27 @@ func (f *fakeRepo) ListPoliciesForPrincipal(_ context.Context, principal string)
 }
 
 // Unused-by-PolicyEngine methods (interface completeness).
-func (f *fakeRepo) ListZones(context.Context) ([]rbac.Zone, error)            { return nil, nil }
-func (f *fakeRepo) CreateZone(context.Context, rbac.Zone) (*rbac.Zone, error) { return nil, nil }
+func (f *fakeRepo) ListZones(context.Context) ([]rbac.Zone, error) { return nil, nil }
+func (f *fakeRepo) CreateZone(context.Context, rbac.Zone, string) (*rbac.Zone, error) {
+	return nil, nil
+}
+func (f *fakeRepo) UpdateZone(context.Context, rbac.Zone, string) (*rbac.Zone, error) {
+	return nil, nil
+}
+func (f *fakeRepo) DeleteZone(context.Context, string, string) error { return nil }
 func (f *fakeRepo) ListAssignments(context.Context) ([]rbac.SourceZoneAssignment, error) {
 	return nil, nil
 }
-func (f *fakeRepo) UpsertAssignment(context.Context, rbac.SourceZoneAssignment) error { return nil }
-func (f *fakeRepo) ListPolicies(context.Context) ([]rbac.Policy, error)               { return nil, nil }
-func (f *fakeRepo) CreatePolicy(context.Context, rbac.Policy) (*rbac.Policy, error)   { return nil, nil }
-func (f *fakeRepo) DeletePolicy(context.Context, int64) error                         { return nil }
-func (f *fakeRepo) DeletePolicyForPrincipalZone(context.Context, string, string) (int64, error) {
+func (f *fakeRepo) UpsertAssignment(context.Context, rbac.SourceZoneAssignment, string) error {
+	return nil
+}
+func (f *fakeRepo) DeleteAssignment(context.Context, string, string) (int64, error) { return 0, nil }
+func (f *fakeRepo) ListPolicies(context.Context) ([]rbac.Policy, error)             { return nil, nil }
+func (f *fakeRepo) CreatePolicy(context.Context, rbac.Policy, string) (*rbac.Policy, error) {
+	return nil, nil
+}
+func (f *fakeRepo) DeletePolicy(context.Context, int64, string) error { return nil }
+func (f *fakeRepo) DeletePolicyForPrincipalZone(context.Context, string, string, string) (int64, error) {
 	return 0, nil
 }
 func (f *fakeRepo) ListUnassignedSourceIDs(context.Context) ([]string, error) { return nil, nil }
@@ -103,11 +114,11 @@ func (f *fakeRepo) ListAdmins(_ context.Context) ([]rbac.Admin, error) {
 	}
 	return out, nil
 }
-func (f *fakeRepo) AddAdmin(_ context.Context, a rbac.Admin) error {
+func (f *fakeRepo) AddAdmin(_ context.Context, a rbac.Admin, _ string) error {
 	f.admins[a.Principal] = true
 	return nil
 }
-func (f *fakeRepo) RemoveAdmin(_ context.Context, principal string) (int64, error) {
+func (f *fakeRepo) RemoveAdmin(_ context.Context, principal string, _ string) (int64, error) {
 	if !f.admins[principal] {
 		return 0, nil
 	}

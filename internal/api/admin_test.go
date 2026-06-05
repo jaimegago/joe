@@ -128,7 +128,7 @@ func TestAdminListAssignments(t *testing.T) {
 	// Add one assignment first.
 	_ = repo.UpsertAssignment(context.Background(), rbac.SourceZoneAssignment{
 		SourceID: "src-1", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
+	}, "test")
 
 	resp, err := http.Get(ts.URL + "/api/v1/admin/source-zones")
 	if err != nil {
@@ -171,7 +171,7 @@ func TestAdminAssignSourceZone(t *testing.T) {
 
 func TestAdminListPolicies(t *testing.T) {
 	ts, repo := newAdminServer(t)
-	_, _ = repo.CreatePolicy(context.Background(), rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	_, _ = repo.CreatePolicy(context.Background(), rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	resp, err := http.Get(ts.URL + "/api/v1/admin/policies")
 	if err != nil {
@@ -212,7 +212,7 @@ func TestAdminCreatePolicy(t *testing.T) {
 
 func TestAdminDeletePolicy(t *testing.T) {
 	ts, repo := newAdminServer(t)
-	p, _ := repo.CreatePolicy(context.Background(), rbac.Policy{Principal: "eve", ZoneID: "unassigned"})
+	p, _ := repo.CreatePolicy(context.Background(), rbac.Policy{Principal: "eve", ZoneID: "unassigned"}, "test")
 
 	req, _ := http.NewRequest("DELETE",
 		ts.URL+"/api/v1/admin/policies/"+itoa(p.ID), nil)

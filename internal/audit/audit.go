@@ -33,8 +33,6 @@ import (
 	"errors"
 	"log/slog"
 	"time"
-
-	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // Decision is the recorded outcome of an authorization decision (and of a
@@ -255,6 +253,31 @@ const (
 	// D-0012 privilege-escalation story. The attempted endpoint
 	// (method + path) rides in the Context blob's "target" field.
 	ActionAdminAccessDenied = "admin.access_denied"
+
+	// --- Identity Stage 1 admin-mutation action verbs ---
+	//
+	// These complete the admin-surface vocabulary so every RBAC/identity
+	// mutation the repository now performs (and audits in the same
+	// transaction) has a verb. All carry kind KindAdminAccess and decision
+	// "allow"; all are mutating (fail-closed) — none is added to isFailOpen.
+
+	// ActionAdminZoneUpdate records an admin editing a zone's name,
+	// description, or allowed_actions (PATCH /api/v1/admin/zones/{id}).
+	ActionAdminZoneUpdate = "zone.update"
+	// ActionAdminZoneDelete records an admin deleting a zone
+	// (DELETE /api/v1/admin/zones/{id}). rbac_policies for the zone cascade;
+	// a zone still referenced by a source assignment is refused (RESTRICT).
+	ActionAdminZoneDelete = "zone.delete"
+	// ActionAdminSourceZoneUnassign records an admin removing a source→zone
+	// assignment (DELETE /api/v1/admin/source-zones/{sourceID}). The source
+	// then falls back to the default unassigned zone.
+	ActionAdminSourceZoneUnassign = "source_zone.unassign"
+	// ActionAdminPrincipalDisable records an admin disabling a principal in
+	// the identity registry (status active→disabled).
+	ActionAdminPrincipalDisable = "principal.disable"
+	// ActionAdminPrincipalEnable records an admin re-enabling a principal
+	// (status disabled→active).
+	ActionAdminPrincipalEnable = "principal.enable"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface
@@ -454,16 +477,25 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 }
 
 // isFailOpen reports whether the given action verb is read-class for the
-// purposes of the §4 failure split. Read-class: rbac.ActionRead,
-// rbac.ActionQuery, and the D-0013 admin-surface read verbs (zone.read,
-// policy.read, source_zone.read). Mutate-class: everything else, including
-// all transition verbs, the admin mutations (zone.create, policy.grant,
-// policy.revoke, source_zone.assign), and the admin gate-denial verb
-// (admin.access_denied is a deny event, not a read — its absence must be
-// loud, matching captaingate's fail-closed refusal posture).
+// purposes of the §4 failure split. Read-class: the infra read verbs "read"
+// and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
+// D-0013 admin-surface read verbs (zone.read, policy.read, source_zone.read).
+// Mutate-class: everything else, including all transition verbs, the admin
+// mutations (zone.create, zone.update, zone.delete, policy.grant,
+// policy.revoke, source_zone.assign, source_zone.unassign, admin.grant,
+// admin.revoke, principal.disable, principal.enable), and the admin
+// gate-denial verb (admin.access_denied is a deny event, not a read — its
+// absence must be loud, matching captaingate's fail-closed refusal posture).
+//
+// The two infra verbs are compared as string literals rather than via
+// rbac.ActionRead / rbac.ActionQuery so this package does NOT import
+// internal/rbac: internal/rbac now writes its admin-mutation audit rows in the
+// same transaction as the mutation (via InsertTx), so rbac imports audit, and
+// an audit→rbac import would close a cycle. The literals are the canonical
+// values of those constants and are asserted to stay in sync by audit_test.go.
 func isFailOpen(action string) bool {
 	switch action {
-	case string(rbac.ActionRead), string(rbac.ActionQuery),
+	case "read", "query",
 		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminSourceZoneRead:
 		return true
 	default:

@@ -76,7 +76,7 @@ func TestPhaseH_NoLeftoverSnapshotGrants(t *testing.T) {
 		if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{
 			Principal: "user:admin@example.com",
 			ZoneID:    z.ID,
-		}); err != nil {
+		}, "test"); err != nil {
 			t.Fatalf("seed snapshot grant %q: %v", z.ID, err)
 		}
 	}

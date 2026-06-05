@@ -47,14 +47,14 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step four migrations down: reverts 020 then 019 then 018 then 017.
-	// Migrations 018 (Stream H3, the auth_login kind), 019 (the LLM
-	// context-budget table), and 020 (D-0013, the admin-audit kind widening)
-	// now sit above 017, so reverting 017 requires first reverting them.
-	// Stepping -4 lands the schema just below 017, which is what this test
-	// exercises.
-	if err := m.Steps(-4); err != nil {
-		t.Fatalf("Steps(-4): %v", err)
+	// 2) Step five migrations down: reverts 021 then 020 then 019 then 018 then
+	// 017. Migrations 018 (Stream H3, the auth_login kind), 019 (the LLM
+	// context-budget table), 020 (D-0013, the admin-audit kind widening), and
+	// 021 (the principals table) now sit above 017, so reverting 017 requires
+	// first reverting them. Stepping -5 lands the schema just below 017, which
+	// is what this test exercises.
+	if err := m.Steps(-5); err != nil {
+		t.Fatalf("Steps(-5): %v", err)
 	}
 	// After the down, the four new tables must be gone.
 	for _, table := range []string{

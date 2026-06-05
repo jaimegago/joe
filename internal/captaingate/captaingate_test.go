@@ -428,10 +428,10 @@ func TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance(t *testing.T) {
 	}
 	if err := rbacRepo.UpsertAssignment(e.ctx, rbac.SourceZoneAssignment{
 		SourceID: "src-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign zone: %v", err)
 	}
-	if _, err := rbacRepo.CreatePolicy(e.ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(e.ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("create policy: %v", err)
 	}
 

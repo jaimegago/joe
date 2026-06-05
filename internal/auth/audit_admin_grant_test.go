@@ -57,7 +57,7 @@ type failingGrantRepo struct {
 	rbac.Repository
 }
 
-func (failingGrantRepo) AddAdmin(context.Context, rbac.Admin) error {
+func (failingGrantRepo) AddAdmin(context.Context, rbac.Admin, string) error {
 	return errors.New("rbac store unavailable")
 }
 

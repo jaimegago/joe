@@ -108,7 +108,7 @@ func runAdminGrant(ctx context.Context, args []string, stdout, stderr io.Writer,
 		GrantedAt: time.Now().UTC(),
 		GrantedBy: "cli",
 		Reason:    *reason,
-	}); err != nil {
+	}, cliActor); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1
 	}
@@ -124,7 +124,7 @@ func runAdminGrant(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return 1
 	}
 	for _, p := range existing {
-		if _, err := repo.DeletePolicyForPrincipalZone(ctx, p.Principal, p.ZoneID); err != nil {
+		if _, err := repo.DeletePolicyForPrincipalZone(ctx, p.Principal, p.ZoneID, cliActor); err != nil {
 			fmt.Fprintf(stderr, "Error: %v\n", err)
 			return 1
 		}
@@ -154,7 +154,7 @@ func runAdminRevoke(ctx context.Context, args []string, stdout, stderr io.Writer
 		return 1
 	}
 
-	n, err := repo.RemoveAdmin(ctx, *principal)
+	n, err := repo.RemoveAdmin(ctx, *principal, cliActor)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1

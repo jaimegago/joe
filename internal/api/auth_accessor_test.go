@@ -35,12 +35,12 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
 	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "s-other", ZoneID: "prod-write", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign s-other: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 	}
 
 	// CLI-equivalent grant: user:alice@example.com → prod-readonly.
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: string(principal), ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: string(principal), ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant prod-readonly: %v", err)
 	}
 
