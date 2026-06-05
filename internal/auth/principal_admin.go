@@ -30,7 +30,8 @@ func NewPrincipalAdmin(principals rbac.PrincipalRepository, sessions Repository)
 // live session it holds, giving instant revocation without any per-request
 // status check. It returns the number of registry rows changed (0 if the
 // principal is not in the registry, so the caller can tell a real disable from
-// a no-op).
+// a no-op) and the number of live sessions revoked (the instant-revocation
+// count the HTTP handler surfaces to the operator).
 //
 // Sequencing — status-change FIRST, session-deletion SECOND, NOT one atomic
 // cross-store transaction. SetPrincipalStatus owns its own transaction (it
@@ -46,15 +47,16 @@ func NewPrincipalAdmin(principals rbac.PrincipalRepository, sessions Repository)
 // the login callback re-checks status, and re-running Disable purges them. The
 // reverse ordering could delete sessions yet leave the principal active on a
 // crash, which is strictly worse.
-func (a *PrincipalAdmin) Disable(ctx context.Context, principal, actor string) (int64, error) {
-	changed, err := a.principals.SetPrincipalStatus(ctx, principal, rbac.PrincipalStatusDisabled, actor)
+func (a *PrincipalAdmin) Disable(ctx context.Context, principal, actor string) (changed, sessionsRevoked int64, err error) {
+	changed, err = a.principals.SetPrincipalStatus(ctx, principal, rbac.PrincipalStatusDisabled, actor)
 	if err != nil {
-		return 0, fmt.Errorf("auth: disable principal %q: %w", principal, err)
+		return 0, 0, fmt.Errorf("auth: disable principal %q: %w", principal, err)
 	}
-	if _, err := a.sessions.DeleteSessionsForPrincipal(ctx, principal); err != nil {
-		return changed, fmt.Errorf("auth: revoke sessions for disabled principal %q: %w", principal, err)
+	sessionsRevoked, err = a.sessions.DeleteSessionsForPrincipal(ctx, principal)
+	if err != nil {
+		return changed, 0, fmt.Errorf("auth: revoke sessions for disabled principal %q: %w", principal, err)
 	}
-	return changed, nil
+	return changed, sessionsRevoked, nil
 }
 
 // Enable restores principal's registry status to active. It does NOT restore

@@ -119,7 +119,9 @@ func TestAdminAssignSourceZone_RepoError(t *testing.T) {
 
 func TestAdminCreatePolicy_RepoError(t *testing.T) {
 	h := newClosedDBAdminHandler(t)
-	body := `{"principal":"alice","zone_id":"z1"}`
+	// Prefixed principal so the new prefix validation passes and the request
+	// reaches the (closed-DB) repository, exercising the 500 path.
+	body := `{"principal":"user:alice","zone_id":"z1"}`
 	req := httptest.NewRequest("POST", "/api/v1/admin/policies", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

@@ -219,12 +219,15 @@ func TestPrincipalAdmin_DisablePurgesSessions(t *testing.T) {
 	mk("s2", principal)
 	mk("s3", other)
 
-	changed, err := admin.Disable(ctx, principal, "operator")
+	changed, sessionsRevoked, err := admin.Disable(ctx, principal, "operator")
 	if err != nil {
 		t.Fatalf("Disable: %v", err)
 	}
 	if changed != 1 {
 		t.Fatalf("Disable changed = %d, want 1", changed)
+	}
+	if sessionsRevoked != 2 {
+		t.Fatalf("Disable sessionsRevoked = %d, want 2 (s1, s2)", sessionsRevoked)
 	}
 
 	status, _, _ := principalRow(t, s, principal)

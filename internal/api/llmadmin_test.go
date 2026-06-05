@@ -15,6 +15,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/env"
@@ -52,6 +53,10 @@ type llmadminFixture struct {
 	services  *core.Services
 	server    *Server
 	mux       *http.ServeMux
+	// sessions is the auth session store the principal-disable path purges
+	// (Identity Stage 3). Tests seed sessions through it and assert they are
+	// gone after a disable.
+	sessions auth.Repository
 }
 
 func newLLMAdminStore(t *testing.T) *store.Store {
@@ -68,6 +73,14 @@ func newLLMAdminStore(t *testing.T) *store.Store {
 }
 
 func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
+	return newLLMAdminFixtureCfg(t, rbacEnabled, "")
+}
+
+// newLLMAdminFixtureCfg is newLLMAdminFixture with a configurable bootstrap
+// admin email (auth.admin_email) so the Stage 3 admin-remove bootstrap-guard
+// test can exercise the 409. adminEmail must be set BEFORE RegisterRoutes — the
+// admin handler captures it at registration time.
+func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *llmadminFixture {
 	t.Helper()
 	s := newLLMAdminStore(t)
 	// The audit sink is wrapped in a swappable indirection shared by BOTH the
@@ -84,6 +97,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	costLimitsProvider := llmsettings.NewCostLimitsProvider(settingsRepo, llmusage.NewStaticCostLimits(), nil)
 	contextBudgetProvider := llmsettings.NewContextBudgetProvider(settingsRepo, agentloop.NewStaticContextBudget(), nil)
 
+	sessionsRepo := auth.NewRepository(s.DB(), s.Driver())
 	cfg := &config.Config{
 		LLM: config.LLMConfig{
 			Current: "default",
@@ -95,6 +109,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 			USDToConfiguredRate: 1.0,
 		},
 	}
+	cfg.Auth.AdminEmail = adminEmail
 	metrics := observability.NewMetrics()
 	services := core.New(cfg, s, s.DB(), s.Driver(), nil, metrics)
 	services.RBAC = rbacRepo
@@ -106,6 +121,11 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	services.ContextBudgetProvider = contextBudgetProvider
 	services.RBACEnabled = rbacEnabled
 	services.LLM = llm.NewSwappableAdapter(&silentLLMAdapter{}, "default")
+	// Identity Stage 3 wiring: the admin REST surface manages the identity
+	// registry and admin roster. rbacRepo satisfies PrincipalRepository too.
+	services.Principals = rbacRepo
+	services.Provisioner = auth.NewProvisioner(rbacRepo)
+	services.PrincipalAdmin = auth.NewPrincipalAdmin(rbacRepo, sessionsRepo)
 
 	srv := New(services)
 	mux := http.NewServeMux()
@@ -121,6 +141,7 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 		services:  services,
 		server:    srv,
 		mux:       mux,
+		sessions:  sessionsRepo,
 	}
 }
 
