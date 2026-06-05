@@ -306,11 +306,11 @@ func (h *adminHandler) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, nil, "create policy", "principal and zone_id are required")
 		return
 	}
-	// Validate the principal carries a reserved kind prefix (user:/group:/svc:),
-	// the same guard the CLI grant path enforced (cmd/joe/zone.go validatePrincipal
-	// → rbac.HasReservedPrefix). Without it an operator typo grants an unprefixed
-	// string that gates nobody. Both grant paths (this and addAdmin) now validate
-	// identically.
+	// Validate the principal carries a reserved kind prefix (user:/group:/svc:)
+	// via rbac.HasReservedPrefix. Without it an operator typo grants an unprefixed
+	// string that gates nobody. Both grant paths (this and addAdmin) validate
+	// identically — this is the single audited writer now that the CLI grant path
+	// is gone (identity Stage 4).
 	if !rbac.HasReservedPrefix(p.Principal) {
 		writeBadRequest(w, nil, "create policy",
 			fmt.Sprintf("principal %q must carry a reserved prefix (%q, %q, or %q)",
@@ -549,7 +549,7 @@ func (h *adminHandler) listAdmins(w http.ResponseWriter, r *http.Request) {
 // (NOT AddAdmin directly), so the grant-plus-redundant-policy-cleanup invariant
 // is not re-implemented. GrantAdmin writes its audit row transactionally via
 // the repository's AddAdmin, so the handler writes none. The principal prefix is
-// validated with the same guard createPolicy and the CLI applied.
+// validated with the same guard createPolicy applies.
 func (h *adminHandler) addAdmin(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
 		return

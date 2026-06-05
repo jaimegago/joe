@@ -29,9 +29,11 @@ var ErrZoneInUse = errors.New("rbac: zone has source assignments and cannot be d
 // (where any non-handler caller produced no row) into the repository, so the
 // audit guarantee holds for every caller. Authorization/gating is NOT in the
 // repository — it stays at the HTTP boundary. When the repository is
-// constructed without an audit sink (NewRepository, used by the CLI and unit
-// tests) the mutation runs directly with no audit row, the same nil-audit
-// carve-out the handler's recordAdminAudit and the captaingate wrapper use.
+// constructed without an audit sink (NewRepository, a test-only constructor)
+// the mutation runs directly with no audit row, the same nil-audit carve-out
+// the handler's recordAdminAudit and the captaingate wrapper use. No production
+// wiring uses the audit-less constructor — the server wires
+// NewRepositoryWithAudit (cmd/joe/server.go), the sole writer to RBAC state.
 type Repository interface {
 	// Zones
 	ListZones(ctx context.Context) ([]Zone, error)
@@ -61,8 +63,9 @@ type Repository interface {
 	DeletePolicy(ctx context.Context, id int64, actor string) error
 	// DeletePolicyForPrincipalZone revokes a single principal→zone grant by its
 	// natural key. Returns the number of policy rows removed (0 if the grant
-	// did not exist). Used by CLI zone revocation, which keys on
-	// (principal, zone) rather than the synthetic policy id.
+	// did not exist). Used by the admin REST revoke handler
+	// (POST /api/v1/admin/policies/revoke), which keys on (principal, zone)
+	// rather than the synthetic policy id.
 	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string, actor string) (int64, error)
 	// DeletePoliciesForPrincipal removes ALL rbac_policies rows for the given
 	// principal in one statement. Returns the number of rows removed. Phase H
@@ -93,16 +96,18 @@ type SQLRepository struct {
 	db     *sql.DB
 	driver string
 	// audit is the append-only audit sink. When nil, mutations run directly
-	// on the db handle and write no audit row (the CLI and unit-test path).
-	// When set (production wiring), every mutation and its audit row commit
-	// or roll back as one transaction.
+	// on the db handle and write no audit row (the test-only path). When set
+	// (production wiring), every mutation and its audit row commit or roll
+	// back as one transaction.
 	audit audit.Repository
 }
 
 // NewRepository creates a new SQL-backed RBAC repository WITHOUT an audit sink.
-// Mutations run directly and write no audit row. This is the constructor the
-// CLI (operator-on-host) and unit tests use; production wiring uses
-// NewRepositoryWithAudit so admin mutations are recorded.
+// Mutations run directly and write no audit row. This is a TEST-ONLY
+// constructor: it has no production caller (the operator CLI that once used it
+// was removed in Identity Stage 4). All production wiring uses
+// NewRepositoryWithAudit so every admin mutation is recorded in the same
+// transaction.
 func NewRepository(db *sql.DB, driver string) *SQLRepository {
 	return &SQLRepository{db: db, driver: driver}
 }
@@ -655,8 +660,8 @@ func (r *SQLRepository) ListAdmins(ctx context.Context) ([]Admin, error) {
 // is updated in place (granted_at advanced, granted_by/reason replaced).
 // Phase H bootstrap relies on the idempotency to safely re-run on every
 // matching admin_email login. The choice of UPSERT (vs INSERT-OR-IGNORE)
-// is so an operator re-issuing `joe admin grant --reason "..."` can update
-// the rationale without first revoking.
+// is so an operator re-issuing the admin REST grant
+// (POST /api/v1/admin/admins) can update the rationale without first revoking.
 func (r *SQLRepository) AddAdmin(ctx context.Context, a Admin, actor string) error {
 	if a.Principal == "" {
 		return fmt.Errorf("add admin: principal is required")

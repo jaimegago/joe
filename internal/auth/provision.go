@@ -7,17 +7,15 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
-// GrantedByBootstrapAdminEmail is the granted_by value the bootstrap path
-// writes to admin_principals.granted_by when the configured auth.admin_email
-// match triggers admin designation. The Phase H CLI (`joe admin grant`) uses
-// the symmetric "cli" value so an operator reading admin_principals can
-// distinguish bootstrap-designated admins from CLI-promoted ones without
-// parsing the reason field.
+// GrantedByBootstrapAdminEmail is the granted_by value GrantAdmin writes to
+// admin_principals.granted_by. Both callers route through GrantAdmin — the OIDC
+// admin_email bootstrap and the admin REST surface (POST /api/v1/admin/admins) —
+// so an operator reading admin_principals sees a single, uniform provenance
+// value for every dynamically-granted admin.
 const GrantedByBootstrapAdminEmail = "bootstrap_admin_email"
 
-// BootstrapAdminReason is the reason value the bootstrap path stores in
-// admin_principals.reason. CLI promotions pass through the operator's
-// --reason flag instead.
+// BootstrapAdminReason is the reason value GrantAdmin stores in
+// admin_principals.reason for every grant it performs.
 const BootstrapAdminReason = "auth.admin_email match"
 
 // Provisioner manages admin authority. In Phase H (see docs/joe-identity-design.md
@@ -29,10 +27,10 @@ const BootstrapAdminReason = "auth.admin_email match"
 // it left a day-100 gap where zones created AFTER bootstrap were silently
 // uncovered.
 //
-// The provisioner's only automated caller is the OIDC callback's admin
-// bootstrap on every matching admin_email login (idempotent). CLI
-// promotions (`joe admin grant`) hit the same admin_principals.AddAdmin
-// path through the repository directly.
+// The provisioner has two callers, both routed through GrantAdmin: the OIDC
+// callback's admin bootstrap on every matching admin_email login (idempotent),
+// and the admin REST handler (POST /api/v1/admin/admins), which wraps GrantAdmin
+// so the grant-plus-redundant-policy-cleanup invariant is not re-implemented.
 type Provisioner struct {
 	repo rbac.Repository
 }

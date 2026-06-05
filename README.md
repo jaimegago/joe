@@ -41,8 +41,6 @@ joe mcp        — MCP stdio server for Claude Code / Cursor / Codex
 joe slack      — Slack bot via Socket Mode (no public URL required)
 joe panic      — emergency shutdown
 joe unlock     — clear safe mode
-joe zone       — manage RBAC zones
-joe admin      — admin provisioning
 joe skills     — install/manage Agent Skills
 joe review     — code-review integration
 joe incident   — declare/resolve an incident regime
@@ -172,8 +170,8 @@ zones; principals are granted access to zones.
 | `unassigned`    | read (default for new sources)       |
 
 Machine callers authenticate with a service-account bearer token; humans log in
-via OIDC. Manage zones and policies from the Web UI admin panel, the `joe zone` /
-`joe admin` subcommands, or the admin API. See
+via OIDC. Manage zones and policies from the Web UI admin panel or the admin REST
+API (`/api/v1/admin/...`) — the single audited writer to RBAC state. See
 [docs/operations.md](docs/operations.md) for the admin recipes and
 [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) for the spec.
 

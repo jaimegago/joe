@@ -24,7 +24,7 @@ const (
 	// seam (design §2.7/§6); nothing mints them yet.
 	PrefixGroup = "group:"
 	// PrefixSvc tags a service account / machine identity (named API keys,
-	// Phase D). Reserved now so the CLI can provision svc: grants ahead of D.
+	// Phase D). Reserved so the admin REST surface can provision svc: grants.
 	PrefixSvc = "svc:"
 )
 
