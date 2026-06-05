@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/agentloop"
+	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/uid"
 )
 
@@ -137,6 +139,9 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(start)
 
 	status, errMsg := taskStatus(ctx, runErr)
+	if errors.Is(runErr, llm.ErrContextOverflow) {
+		h.writeContextOverflowAudit(ctx, prepared)
+	}
 	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, start)
 	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.steps, prepared.session, duration)
 

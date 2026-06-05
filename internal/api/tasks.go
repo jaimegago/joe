@@ -12,6 +12,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/agentloop"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmusage"
@@ -185,6 +186,9 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(start)
 
 	status, errMsg := taskStatus(ctx, runErr)
+	if errors.Is(runErr, llm.ErrContextOverflow) {
+		h.writeContextOverflowAudit(ctx, prepared)
+	}
 
 	// Persist the raw (un-redacted) conversation, then build the redacted
 	// response — matching prior behavior where the store keeps the raw answer.
@@ -214,6 +218,12 @@ type preparedTask struct {
 	agent     *agentloop.Agent
 	session   *agentloop.Session
 	sessionID string
+	// caps + model describe the active model the run was built for. They are
+	// retained so a terminal context-overflow can be audited with the model and
+	// its effective context window (writeContextOverflowAudit) without
+	// re-resolving the catalogue after the loop has returned.
+	caps  llmusage.ModelCapabilities
+	model string
 }
 
 // buildTaskRun constructs the core-tool agent + session for a task request.
@@ -325,6 +335,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// both the explicit per-request output cap (set on the agent below) and
 	// the token budget the session prunes history to.
 	caps := llmusage.LookupCapabilities("", "")
+	activeModel := ""
 	if cfg := h.server.services.Config; cfg != nil {
 		activeKey := cfg.LLM.Current
 		if sw, ok := h.server.services.LLM.(*llm.SwappableAdapter); ok {
@@ -332,6 +343,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 				activeKey = cur
 			}
 		}
+		activeModel = activeKey
 		if mc, ok := cfg.LLM.Available[activeKey]; ok {
 			caps = llmusage.LookupCapabilities(mc.Provider, mc.Model)
 		}
@@ -381,7 +393,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// budget (cheap guard against pathological many-tiny-messages cases).
 	session.MaxMessages = agentloop.DefaultMaxMessages
 
-	return &preparedTask{agent: agent, session: session, sessionID: sessionID}
+	return &preparedTask{agent: agent, session: session, sessionID: sessionID, caps: caps, model: activeModel}
 }
 
 // taskStatus maps an agent run error to the wire status + error message.
@@ -436,6 +448,49 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 		}
 	}
 	return status, errMsg
+}
+
+// writeContextOverflowAudit records one KindLLMLimitTriggered audit row for a
+// turn refused because its prompt exceeded the model's context window
+// (llm.ErrContextOverflow → "context_overflow" terminal status). It mirrors the
+// runaway-ceiling writer (internal/agentloop/agent.go writeRunawayAudit): same
+// kind, decision "deny", real caller principal, typed context blob.
+//
+// Best-effort and FAIL-OPEN, matching writeRunawayAudit: the turn has ALREADY
+// failed by the time we get here, so an audit-write failure must not compound
+// the already-failed turn — we route through audit.FailurePosture with FailOpen
+// (loud log, proceed) and discard the error. A nil repository (tests/dev with no
+// audit wired) is tolerated and skips the write silently. This closes the parity
+// gap CONTEXT_MANAGEMENT_VERIFICATION.md Cross-Cutting A(c) flagged.
+func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *preparedTask) {
+	repo := h.server.services.Audit
+	if repo == nil {
+		return
+	}
+	// The estimated input total is the same chars/4 heuristic the loop prunes
+	// with, summed over the messages still in the session (the Chat call that
+	// overflowed left them in place). It is a forensic estimate, not provider
+	// accounting — labelled as such in the blob key.
+	blob, _ := json.Marshal(map[string]any{
+		"session_id":             agentctx.SessionID(ctx),
+		"task_id":                agentctx.TaskID(ctx),
+		"model":                  p.model,
+		"estimated_input_tokens": agentloop.EstimateMessagesTokens(p.session.Messages),
+		"context_window_tokens":  p.caps.ContextWindowTokens,
+	})
+	err := repo.Insert(ctx, audit.Event{
+		Principal: string(rbac.PrincipalFromContext(ctx)),
+		Action:    audit.ActionLLMContextOverflow,
+		Decision:  audit.DecisionDeny,
+		Reason:    "context_window_exceeded",
+		Kind:      audit.KindLLMLimitTriggered,
+		Context:   string(blob),
+	})
+	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
+	// outcome (the turn already failed and we PROCEED) and discard the error —
+	// surfacing it here would mask the typed terminal error the classifier
+	// already returned. Same posture writeRunawayAudit uses.
+	_ = audit.FailurePosture(ctx, audit.ActionLLMContextOverflow, err, "api:context_overflow", audit.FailOpen)
 }
 
 // persistTaskMessages writes the user message and (if non-empty) the raw
