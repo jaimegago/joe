@@ -13,38 +13,44 @@ Joe (Joe Operates Everything) helps platform engineers understand, debug, and op
 
 ## Architecture
 
-Joe runs as two binaries with a clean HTTP boundary. The LLM, the agentic loop,
-and every provider API key live entirely in `joe-core`; `joe` is a thin client
-that streams from it over SSE and never talks to an LLM directly:
+Joe is a **single binary**. Run bare `joe` and it starts the Core daemon — the
+HTTP API on `:7777`, the agentic loop, the LLM adapter, the graph, and the
+infrastructure adapters all run in that one process:
 
 ```text
-joe (User Agent)                          joe-core (Core Daemon)
-thin SSE-streaming client                 the single runtime
-─────────────────────────                 ───────────────────────────────────
-Interactive REPL              prompt       API (:7777)
-Consumes the SSE event    ──────────────► Agentic loop (internal/agentloop)
-  stream                  ◄────────────── Single LLM adapter (holds API keys)
-Runs local tools via        SSE events    Tool-execution gating (safety tiers)
-  streamed callback                       Graph store (SQLite)
-                                          SQL store (sources, sessions)
-No LLM · no agentic loop                  Infrastructure adapters
-No provider API keys                      Core Agent (background refresh)
-                                          Knowledge store (embeddings)
+joe (the daemon)
+─────────────────────────────────
+HTTP API (:7777)
+Agentic loop (internal/agentloop)
+LLM adapter (holds provider API keys)
+Tool execution + safety-tier gating
+Graph store (SQLite)
+SQL store (sources, sessions)
+Infrastructure adapters
+Core Agent (background refresh)
+Knowledge store (embeddings)
 ```
 
-`joe` sends a prompt and then just renders the event stream. When the loop in
-`joe-core` needs a tool that must run on the user's machine (a *local* tool), it
-emits a `local_tool_call` event; `joe` executes it via callback and streams the
-result back, and the loop continues. `joe-core` classifies and gates every tool
-against the safety tiers *before* it is dispatched, so the same policy applies
-whether a tool runs in the daemon or back in the CLI.
-
-`joe` also ships two integrated modes via subcommands:
+You talk to the daemon through one of its front-ends — the **Web UI**, **Slack**,
+or your editor over **MCP**. The same subcommands that ship in the binary also
+cover operator tasks (panic, RBAC, skills, code review, incidents):
 
 ```text
-joe mcp    — MCP stdio server for Claude Code / Cursor / Codex
-joe slack  — Slack bot via Socket Mode (no public URL required)
+joe            — start the Core daemon (default, no subcommand)
+joe mcp        — MCP stdio server for Claude Code / Cursor / Codex
+joe slack      — Slack bot via Socket Mode (no public URL required)
+joe panic      — emergency shutdown
+joe unlock     — clear safe mode
+joe zone       — manage RBAC zones
+joe admin      — admin provisioning
+joe skills     — install/manage Agent Skills
+joe review     — code-review integration
+joe incident   — declare/resolve an incident regime
 ```
+
+Every tool is classified into a safety tier and gated **before** dispatch, so the
+same policy applies no matter which front-end issued the request. See
+[docs/operations.md](docs/operations.md) for safety tiers and emergency controls.
 
 ---
 
@@ -53,8 +59,9 @@ joe slack  — Slack bot via Socket Mode (no public URL required)
 ### Prerequisites
 
 - Go 1.25 or later
+- Node 18+ (to build the Web UI)
 - One LLM API key — Anthropic **or** Google — set in the environment that runs
-  `joe-core`. The `joe` CLI needs no key of its own.
+  `joe`.
 
 ### Build
 
@@ -64,237 +71,78 @@ cd joe
 make build
 ```
 
-Produces two binaries:
+This builds the Web UI and compiles a single `joe` binary
+(`go build -o joe ./cmd/joe`).
 
-| Binary     | Purpose                          |
-| ---------- | -------------------------------- |
-| `joe`      | Interactive CLI + mode launcher  |
-| `joe-core` | Background daemon                |
+### Set an API key
 
-### Configure (optional)
-
-Config is optional. If you set exactly one provider key (see below), `joe-core`
-auto-selects that provider and its default model with **zero config** — a config
-file only becomes useful when you want to pin a model, run both providers, or
-tune the server. To customize, create `~/.joe/config.yaml`:
-
-```yaml
-llm:
-  current: claude-sonnet          # active model key
-
-  available:
-    claude-sonnet:
-      provider: claude
-      model: claude-sonnet-4-20250514
-    gemini-flash:
-      provider: gemini
-      model: gemini-2.5-flash
-
-  # API keys are NEVER stored in config — set them in joe-core's environment:
-  #   ANTHROPIC_API_KEY   (Claude)
-  #   GEMINI_API_KEY      (Gemini)
-
-server:
-  address: "localhost:7777"
-  api_key: ""                     # Bearer token for API auth (recommended in production)
-  principal: "default-operator"   # RBAC principal name for this API key
-
-refresh:
-  interval_minutes: 5
-
-logging:
-  level: info                     # debug | info | warn | error
-```
-
-Or copy the bundled example:
-
-```bash
-cp config.example.yaml ~/.joe/config.yaml
-```
-
-### Set API Keys
-
-Provider keys live **only** in `joe-core`'s environment — set them in the
-terminal that runs `./joe-core` (Terminal 1 below). The `joe` CLI never reads a
-provider key. Set just **one**; `joe-core` auto-selects the matching provider:
+Provider keys live **only** in the environment that runs `joe`. Set just **one**;
+`joe` auto-selects the matching provider:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."   # for Claude
 # — or —
-export GEMINI_API_KEY="AIza..."         # for Gemini
+export GEMINI_API_KEY="AIza..."         # for Gemini  (GOOGLE_API_KEY also works)
 ```
 
-If both keys are present, `joe-core` defaults to Claude; override with
-`JOE_LLM_PROVIDER=gemini` (optionally `JOE_LLM_MODEL=<model>`). If neither is
-set, `joe-core` exits at startup with instructions.
+If both keys are present, `joe` defaults to Claude; override with
+`JOE_LLM_PROVIDER=gemini` (optionally `JOE_LLM_MODEL=<model>`). If neither is set,
+`joe` exits at startup with instructions. Configuration is otherwise optional —
+see [docs/configuration.md](docs/configuration.md) to pin a model, enable auth, or
+tune the server.
 
 ### Run
 
 ```bash
-# Terminal 1 — start the daemon (this is where the provider key lives)
-joe-core
-
-# Terminal 2 — start the interactive client (no key needed)
+# Start the daemon (this is where the provider key lives)
 joe
 ```
 
-`joe-core` logs the model it selected at startup (e.g.
-`llm.model=claude/claude-sonnet-4-20250514`). The CLI just connects and streams:
+`joe` logs the model it selected at startup (e.g.
+`llm.model=claude/claude-sonnet-4-20250514`).
+
+### Talk to Joe
+
+The primary interface is the **Web UI**:
+
+```bash
+# First time only: install UI dependencies
+cd ui && npm install && cd ..
+
+# Run the daemon and the UI dev server (each in its own terminal)
+make run-joe
+make run-ui
+```
+
+Open `http://localhost:5173`. The UI connects to `joe` at `localhost:7777` and
+gives you chat, a graph explorer, a dashboard, and the RBAC admin panel.
 
 ```text
 > why is the payment service slow?
-[Joe queries K8s, metrics, graph, and responds]
+[Joe queries K8s, metrics, graph, and responds — with each tool call shown]
 ```
+
+Prefer Slack or your editor? Joe also ships a Slack bot and an MCP server — see
+[docs/integrations.md](docs/integrations.md).
 
 ---
 
-## Configuration Reference
+## Web UI
 
-### `~/.joe/config.yaml`
+A browser dashboard for graph exploration, admin tasks, and chat:
 
-```yaml
-llm:
-  current: <model-key>            # key from llm.available
-  available:
-    <key>:
-      provider: claude | gemini | ollama
-      model: <model-id>
+- **Dashboard** — source health, active alerts, recent sessions
+- **Graph explorer** — interactive React Flow visualization of infrastructure relationships
+- **Admin panel** — manage RBAC zones, policies, and source-zone assignments
+- **Chat** — conversational interface to Joe with tool-call display, including a `/model` switcher
 
-server:
-  address: "localhost:7777"       # joe-core listen address
-  api_key: ""                     # Bearer token (empty = auth disabled)
-  principal: "default-operator"   # RBAC identity for this API key
-  tls_cert_file: ""               # path to TLS cert (enables HTTPS)
-  tls_key_file: ""                # path to TLS key
-  tls_enabled: false              # joe client: connect over HTTPS
-  rate_limit_rps: 0               # requests/sec per IP (0 = disabled)
-  rate_limit_burst: 10
-
-refresh:
-  interval_minutes: 5
-  llm_budget:
-    max_calls_per_hour: 100
-    batch_threshold: 10
-    batch_timeout_sec: 30
-
-logging:
-  level: info                     # debug | info | warn | error
-  file: ""                        # log file path (empty = stderr only)
-
-knowledge:
-  embedding_model: ""             # model key for embeddings (defaults to llm.current)
-  semantic_top_k: 5
-  sync_enabled: false             # enable Confluence/Notion background sync
-```
-
-### Environment Variables
-
-| Variable              | Config equivalent  | Notes                              |
-| --------------------- | ------------------ | ---------------------------------- |
-| `ANTHROPIC_API_KEY`   | —                  | Required for Claude                |
-| `GEMINI_API_KEY`      | —                  | Required for Gemini                |
-| `JOE_SERVER_ADDRESS`  | `server.address`   |                                    |
-| `JOE_API_KEY`         | `server.api_key`   | Bearer token                       |
-| `JOE_LOG_LEVEL`       | `logging.level`    |                                    |
-| `JOE_DATABASE_DSN`    | —                  | Override database path/DSN         |
-| `JOE_LLM_PROVIDER`   | `llm.current` key  | Override LLM provider at runtime   |
-| `JOE_LLM_MODEL`      | model ID           | Override LLM model at runtime      |
+See [docs/web-ui.md](docs/web-ui.md) for the full specification.
 
 ---
 
-## REPL Commands
+## Safety & Emergency Controls
 
-Inside `joe`, type `/` followed by a command:
-
-| Command   | Description                                                              |
-| --------- | ------------------------------------------------------------------------ |
-| `/model`  | Interactively switch LLM models without restart                         |
-| `/panic`  | **Emergency shutdown** — halt all ops, restart in safe mode             |
-| `/help`   | Show all available commands                                             |
-| `/exit`   | Exit                                                                    |
-
-### Model Switching
-
-```text
-> /model
-
-Select model:
-  • claude-sonnet (current)
-    gemini-flash
-    gemini-pro
-
-Use ↑/↓ to navigate, Enter to select, Esc to cancel
-```
-
----
-
-## Emergency Shutdown (Panic Mode)
-
-Joe has a kill switch for runaway operations. Four ways to trigger it:
-
-**From the REPL:**
-
-```text
-> /panic
-⚠️  This will halt all Joe operations and restart joe-core in safe mode.
-Type 'yes' to confirm: yes
-Emergency shutdown triggered. joe-core will restart in safe mode.
-```
-
-**From the CLI:**
-
-```bash
-joe panic --reason "runaway mutation detected"
-```
-
-**Via HTTP API:**
-
-```bash
-curl -X POST http://localhost:7777/api/v1/panic \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"reason": "runaway mutation detected"}'
-```
-
-**Via Unix signal:**
-
-```bash
-kill -USR1 $(pidof joe-core)
-```
-
-### What Happens
-
-1. joe-core writes `~/.joe/panic.state` and exits with code 2
-2. On restart, joe-core reads `panic.state` and boots in **safe mode**
-3. In safe mode, only T1 (read-only) tools are allowed — no writes or mutations
-4. Joe logs a warning on every startup until safe mode is cleared
-
-### Check Status
-
-```bash
-curl http://localhost:7777/api/v1/panic/status \
-  -H "Authorization: Bearer $JOE_API_KEY"
-# {"safe_mode":true,"triggered_at":"...","trigger_source":"api","trigger_reason":"..."}
-```
-
-### Resume Normal Operation
-
-A reason is required for the audit log:
-
-```bash
-# CLI
-joe unlock --reason "false alarm — incident resolved"
-
-# HTTP
-curl -X POST http://localhost:7777/api/v1/unlock \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"reason": "false alarm — incident resolved"}'
-```
-
----
-
-## Action Safety Tiers
-
-Every tool Joe can execute is classified into one of three tiers. The tier determines confirmation behavior and safe-mode restrictions.
+Every tool Joe can execute is classified into one of three tiers:
 
 | Tier | Name    | Examples                                        | Safe Mode  |
 | ---- | ------- | ----------------------------------------------- | ---------- |
@@ -302,35 +150,19 @@ Every tool Joe can execute is classified into one of three tiers. The tier deter
 | T2   | Record  | `write_file`, `graph_add_node`                  | ❌ Blocked |
 | T3   | Act     | `run_command` (mutations), `kubectl apply`      | ❌ Blocked |
 
-Configure tier behavior in `~/.joe/safety-policy.yaml`:
+Joe also has a kill switch. `joe panic` (or `kill -USR1 <joe-pid>`, or
+`POST /api/v1/panic`) halts all operations and restarts `joe` in **safe mode**,
+where only T1 tools run. Clear it with `joe unlock --reason "..."`.
 
-```yaml
-# ~/.joe/safety-policy.yaml
-
-# Allow T3 tools (disabled by default — explicit opt-in required)
-allow_t3: false
-
-# Directories write_file is allowed to write to (empty = unrestricted)
-allowed_directories:
-  - /tmp/joe-workspace
-  - /home/me/projects
-
-# run_command allowlist by subcommand
-run_command:
-  allowed_subcommands:
-    - kubectl get
-    - kubectl logs
-    - kubectl describe
-    - helm list
-```
+Full details — the `safety-policy.yaml` format, all four panic triggers, and how
+to resume — are in [docs/operations.md](docs/operations.md).
 
 ---
 
-## RBAC (Role-Based Access Control)
+## RBAC
 
-Joe supports security zones for multi-user scenarios. Sources are assigned to zones; principals are granted access to zones.
-
-### Default Zones
+Joe supports security zones for multi-user scenarios. Sources are assigned to
+zones; principals are granted access to zones.
 
 | Zone            | Allowed Actions                      |
 | --------------- | ------------------------------------ |
@@ -339,153 +171,11 @@ Joe supports security zones for multi-user scenarios. Sources are assigned to zo
 | `dev-full`      | read, query, mutate, delete          |
 | `unassigned`    | read (default for new sources)       |
 
-### Managing Zones via Admin API
-
-All admin endpoints require Bearer auth.
-
-**List zones:**
-
-```bash
-curl http://localhost:7777/api/v1/admin/zones \
-  -H "Authorization: Bearer $JOE_API_KEY"
-```
-
-**Create a zone:**
-
-```bash
-curl -X POST http://localhost:7777/api/v1/admin/zones \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"id":"staging","name":"Staging","allowed_actions":["read","query","mutate"]}'
-```
-
-**Assign a source to a zone:**
-
-```bash
-curl -X POST http://localhost:7777/api/v1/admin/source-zones \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"source_id":"k8s-prod","zone_id":"prod-readonly","assigned_by":"alice","reason":"initial setup"}'
-```
-
-**Grant a principal access to a zone:**
-
-```bash
-curl -X POST http://localhost:7777/api/v1/admin/policies \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"principal":"alice","zone_id":"prod-readonly"}'
-```
-
-**List unassigned sources:**
-
-```bash
-curl http://localhost:7777/api/v1/admin/unassigned \
-  -H "Authorization: Bearer $JOE_API_KEY"
-```
-
-### Configure the Principal for Your API Key
-
-```yaml
-# ~/.joe/config.yaml
-server:
-  api_key: "my-secret-token"
-  principal: "ops-team"   # RBAC identity mapped to this token
-```
-
----
-
-## MCP Server (Claude Code / Cursor / Codex)
-
-`joe mcp` exposes 8 Joe tools over the Model Context Protocol, letting your editor query live infrastructure directly.
-
-### Setup
-
-Add to your MCP client config (e.g. Claude Code's `.claude/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "joe": {
-      "command": "joe",
-      "args": ["mcp"],
-      "env": {
-        "JOE_SERVER": "http://localhost:7777",
-        "JOE_API_KEY": "<your-api-key>"
-      }
-    }
-  }
-}
-```
-
-### Available MCP Tools
-
-All observability tools accept natural language questions — Joe resolves the backend from the graph automatically.
-
-| Tool                   | Description                                                        |
-| ---------------------- | ------------------------------------------------------------------ |
-| `joe_graph_query`      | Search infrastructure graph nodes                                  |
-| `joe_graph_related`    | Find nodes related to a given node                                 |
-| `joe_k8s`              | Answer Kubernetes questions (pods, deployments, logs) for a service |
-| `joe_metrics`          | Query metrics — Joe resolves Prometheus/Datadog/etc. from the graph |
-| `joe_logs`             | Search logs — Joe resolves Loki/Splunk/etc. from the graph          |
-| `joe_traces`           | Find traces — Joe resolves Tempo/Jaeger from the graph              |
-| `joe_alerts`           | List active alerts from Alertmanager/PagerDuty                     |
-| `joe_knowledge_search` | Semantic search over runbooks and docs                             |
-
----
-
-## Slack Bot
-
-`joe slack` connects Joe to Slack via Socket Mode — no public URL required.
-
-### Slack Setup
-
-```bash
-export SLACK_BOT_TOKEN="xoxb-..."    # Bot User OAuth token
-export SLACK_APP_TOKEN="xapp-..."    # App-Level token (connections:write scope)
-export JOE_SERVER="http://localhost:7777"
-export JOE_API_KEY="<your-api-key>"  # optional
-
-joe slack
-```
-
-### Available Slash Commands
-
-| Command             | Description                                                     |
-| ------------------- | --------------------------------------------------------------- |
-| `/joe ask <query>`  | Query the infrastructure graph and knowledge store              |
-| `/joe status`       | Show graph summary                                              |
-| `/joe help`         | Show available commands                                         |
-
-Unrecognized subcommands are treated as queries (same as `/joe ask <text>`).
-
----
-
-## Web UI
-
-Joe includes a browser-based dashboard for graph exploration, admin tasks, and chat.
-
-### Run the Web UI
-
-```bash
-# Install dependencies (first time only)
-cd ui && npm install && cd ..
-
-# Start joe-core + Web UI together
-make run-stack
-
-# Or start the UI dev server separately (requires joe-core running)
-make run-ui
-```
-
-Open `http://localhost:5173`. The UI connects to joe-core at `localhost:7777`.
-
-### Features
-
-- **Dashboard** — source health, active alerts, recent sessions
-- **Graph explorer** — interactive React Flow visualization of infrastructure relationships
-- **Admin panel** — manage RBAC zones, policies, and source-zone assignments
-- **Chat** — conversational interface to Joe with tool call display
-
-See [docs/web-ui.md](docs/web-ui.md) for the full specification.
+Machine callers authenticate with a service-account bearer token; humans log in
+via OIDC. Manage zones and policies from the Web UI admin panel, the `joe zone` /
+`joe admin` subcommands, or the admin API. See
+[docs/operations.md](docs/operations.md) for the admin recipes and
+[docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) for the spec.
 
 ---
 
@@ -493,61 +183,35 @@ See [docs/web-ui.md](docs/web-ui.md) for the full specification.
 
 Joe loads [Agent Skills](https://agentskills.io) — small, portable folders containing a `SKILL.md` with YAML frontmatter and a markdown body — and surfaces relevant ones into the LLM's context at decision time. Skills encode *how a senior SRE thinks about a class of situation* (judgment frames), not `if-this-then-that` rules. The LLM still does all situational reasoning; skills just ensure it reasons with the right frame loaded.
 
-Skills do **not** bypass safety enforcement. A skill that says "scale aggressively" still goes through the same T3 policy check, blast radius cap, and notification contract before any scaling happens.
-
-### Install from a git repo
+Skills do **not** bypass safety enforcement. A skill that says "scale aggressively" still goes through the same T3 policy check before any scaling happens.
 
 ```bash
-# Install all skills from a repo
+# Install all skills from a repo, or a single skill (sparse checkout)
 joe skills install github.com/jaimegago/joe-sre-skills
-
-# Install a single skill (sparse checkout)
 joe skills install github.com/jaimegago/joe-sre-skills/restart-loop-diagnosis
 
-# Inspect what's installed
+# Inspect, update, remove
 joe skills list
 joe skills status
-
-# Update / remove
 joe skills update
 joe skills remove restart-loop-diagnosis
 ```
 
-Installed skills live under `~/.joe/skills/`, tracked by `~/.joe/skills/skills.lock.yaml` for reproducibility. joe-core watches the directory and hot-reloads on change via atomic registry swap.
-
-### Trust and quarantine
-
-`~/.joe/skills-policy.yaml` defines trusted sources and auto-approve rules — a protected config that Joe cannot read or modify itself, parallel to `safety-policy.yaml`. New skills (or changes from non-allowlisted sources) land in quarantine and require explicit human approval:
-
-```bash
-joe skills approve <name>
-joe skills reject <name>
-```
-
-Without this layer, anyone who can write to `~/.joe/skills/` could drop a prompt-injection vector that activates the next time Joe reasons. Quarantine catches it.
-
-### API
-
-```
-POST /api/v1/skills/reload      Trigger immediate rescan (CI/CD webhook)
-GET  /api/v1/skills             List installed skills with status
-POST /api/v1/skills/approve     Approve a quarantined skill
-```
-
-### Starter skill library
-
-A starter library of 6 senior-SRE judgment skills lives at [github.com/jaimegago/joe-sre-skills](https://github.com/jaimegago/joe-sre-skills) (MIT licensed): diagnosing-slow-service, restart-loop-diagnosis, rate-of-change, downstream-dependency-check, recent-change-correlation, rollback-vs-forward-fix.
-
-See [docs/joe-skills-design.md](docs/joe-skills-design.md) for the full architecture.
+Installed skills live under `~/.joe/skills/`, tracked by
+`~/.joe/skills/skills.lock.yaml`. New or untrusted skills land in quarantine and
+require `joe skills approve <name>` before Joe will load them — `~/.joe/skills-policy.yaml`
+defines trusted sources. A starter library of senior-SRE judgment skills lives at
+[github.com/jaimegago/joe-sre-skills](https://github.com/jaimegago/joe-sre-skills)
+(MIT). See [docs/joe-skills-design.md](docs/joe-skills-design.md) for the design.
 
 ---
 
 ## Infrastructure Adapters
 
-Joe connects to your infrastructure through registered sources. Add sources via the API:
+Joe connects to your infrastructure through registered sources. Add a source via
+the API:
 
 ```bash
-# Register a Kubernetes cluster
 curl -X POST http://localhost:7777/api/v1/sources \
   -H "Authorization: Bearer $JOE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -556,17 +220,6 @@ curl -X POST http://localhost:7777/api/v1/sources \
     "name": "Production Cluster",
     "type": "kubernetes",
     "config": {"kubeconfig_path": "/home/me/.kube/config"}
-  }'
-
-# Register a Prometheus instance
-curl -X POST http://localhost:7777/api/v1/sources \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "prom-prod",
-    "name": "Production Prometheus",
-    "type": "prometheus",
-    "config": {"endpoint": "http://prometheus.monitoring.svc:9090"}
   }'
 ```
 
@@ -582,34 +235,22 @@ Joe learns from your documentation and operations:
 - **Synced** (Tier 2) — Confluence / Notion pages fetched and cached
 - **Derived** (Tier 3) — Patterns inferred from sessions; shown with provenance
 
-Enable background sync in config:
-
-```yaml
-knowledge:
-  sync_enabled: true
-  embedding_model: claude-sonnet  # model used for semantic embeddings
-```
+Enable background sync under `knowledge:` in your config — see
+[docs/configuration.md](docs/configuration.md).
 
 ---
 
 ## Testing
 
 ```bash
-# Run all unit tests
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# Integration tests only
-go test -tags=integration ./...
-
-# Build check
-go build ./...
-
-# Lint
-go vet ./...
+go test ./...                    # unit tests
+go test -cover ./...             # with coverage
+go test -tags=integration ./...  # integration tests
+go build ./...                   # build check
+go vet ./...                     # lint
 ```
+
+See [docs/testing-strategy.md](docs/testing-strategy.md) for the full strategy.
 
 ---
 
@@ -618,22 +259,30 @@ go vet ./...
 ```text
 joe/
 ├── cmd/
-│   ├── joe/            # Interactive CLI + mcp/slack subcommands
-│   └── joe-core/       # Background daemon
+│   └── joe/            # The single binary: daemon (server.go) + subcommands
 ├── internal/
+│   ├── access/         # In-process infra access with caller principal
 │   ├── adapters/       # Infrastructure adapters (K8s, AWS, Prometheus, ...)
-│   ├── api/            # HTTP API handlers (joe-core) + Web UI endpoints
-│   ├── client/         # HTTP client (joe → joe-core)
+│   ├── agentctx/       # Agent execution context
+│   ├── agentloop/      # The agentic loop (single runtime)
+│   ├── api/            # HTTP API handlers
+│   ├── audit/          # Append-only audit log
+│   ├── auth/           # Authentication (service accounts, OIDC login)
+│   ├── captaingate/    # Captain-reachability gating
+│   ├── client/         # HTTP client (subcommands → daemon)
 │   ├── config/         # Configuration loading
 │   ├── constants/      # Shared constants
 │   ├── core/           # Core services container
 │   ├── coreagent/      # Core Agent (background refresh, onboarding)
 │   ├── crypto/         # Cryptography utilities
 │   ├── env/            # Environment variable handling
+│   ├── findings/       # Code-review findings
 │   ├── graph/          # Graph store (SQLite)
 │   ├── knowledge/      # Knowledge store, embeddings, sync, proposals
 │   ├── llm/            # LLM adapter interface + Claude/Gemini implementations
 │   ├── llmfactory/     # LLM adapter factory
+│   ├── llmsettings/    # Runtime LLM settings (model switching)
+│   ├── llmusage/       # Token/cost accounting
 │   ├── logging/        # Logging configuration
 │   ├── mcp/            # MCP server implementation
 │   ├── notify/         # Notification system
@@ -642,21 +291,25 @@ joe/
 │   ├── paths/          # ~/.joe/ path helpers
 │   ├── prompts/        # All LLM prompt strings (centralized)
 │   ├── rbac/           # RBAC zones, policy engine, middleware
-│   ├── repl/           # Interactive REPL + model selector
 │   ├── review/         # Code review integration (GitHub/GitLab)
+│   ├── runmodel/       # Run/execution model
 │   ├── safety/         # Action tiers, panic mode, safe mode, policy loader
+│   ├── seams/          # Cross-cutting seams / extension points
 │   ├── session/        # Session management
+│   ├── sessiongate/    # Session-level gating
+│   ├── sessionmodel/   # Session data model
 │   ├── slack/          # Slack bot (Socket Mode)
 │   ├── sqlutil/        # SQL utilities
-│   ├── store/          # SQL store (SQLite) + migrations (001–006)
+│   ├── store/          # SQL store (SQLite) + migrations (001–020)
 │   ├── tools/          # Tool registry, executor, tier enforcement
 │   │   ├── core/       # Core tools (graph, K8s, cloud via HTTP)
 │   │   ├── local/      # Local tools (file I/O, git, run_command)
 │   │   └── shared/     # Shared tools (dns, http, netcheck, traceroute)
 │   ├── uid/            # UID generation
-│   └── useragent/      # User Agent orchestration + session
+│   ├── warnings/       # Operator warnings surface
+│   └── webui/          # Web UI backend endpoints
 ├── ui/                 # Web UI (React 18 + Vite + Tailwind + shadcn/ui)
-├── docs/               # Architecture and design docs
+├── docs/               # Architecture, design, and operator docs
 ├── test/               # Integration + E2E test harness
 ├── config.example.yaml
 └── Makefile
@@ -664,36 +317,18 @@ joe/
 
 ---
 
-## Development Status
-
-| Phase | Description                                                                                    | Status      |
-| ----- | ---------------------------------------------------------------------------------------------- | ----------- |
-| 1     | Foundation — two-binary architecture, LLM interface                                           | ✅ Complete |
-| 2     | User Agent loop — REPL, tools, session management                                             | ✅ Complete |
-| 3     | Core Services + API — SQL/graph store, API handlers                                           | ✅ Complete |
-| 4     | Infrastructure Adapters — K8s, Git                                                            | ✅ Complete |
-| 5     | Core Agent — background refresh, clarifications, onboarding                                   | ✅ Complete |
-| 5.5   | Action Safety Framework — tiers, policy, self-protection                                      | ✅ Complete |
-| 6     | Infrastructure Adapters — cloud, observability, alerting, data stores, GitOps, networking     | ✅ Complete |
-| 7     | Knowledge Store — curated, synced, derived; semantic search                                   | ✅ Complete |
-| 8     | Documentation Co-Pilot — draft generation, drift detection, proposal flow                     | ✅ Complete |
-| 9     | Emergency Controls + MCP Server + RBAC                                                        | ✅ Complete |
-| 10    | Code Review Integration — GitHub/GitLab PR adapters, review agent                            | ✅ Complete |
-| 11    | Slack Bot                                                                                      | ✅ Complete |
-| 12    | Web UI — React + graph explorer, dashboard, admin, chat                                       | ✅ Complete |
-| 13    | Skills — Agent Skills consumer, `joe skills` CLI, hot reload, quarantine/approval, starter library | ✅ Complete |
-
----
-
 ## Documentation
 
+- [docs/configuration.md](docs/configuration.md) — Config file reference and environment variables
+- [docs/operations.md](docs/operations.md) — Safety tiers, emergency shutdown, RBAC admin
+- [docs/integrations.md](docs/integrations.md) — MCP server and Slack bot setup
 - [docs/joe-architecture.md](docs/joe-architecture.md) — Full architecture and component diagrams
 - [docs/joe-dataflow.md](docs/joe-dataflow.md) — Data flow and `.joe/` file processing
+- [docs/web-ui.md](docs/web-ui.md) — Web UI specification
 - [docs/security-in-layers.md](docs/security-in-layers.md) — Action Safety Framework and Panic Mode spec
 - [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview
 - [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
-- [docs/web-ui.md](docs/web-ui.md) — Web UI specification
-- [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design (Agent Skills consumer, registry, hot reload, quarantine)
+- [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design
 - [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
 - [docs/testing-strategy.md](docs/testing-strategy.md) — Testing strategy (unit, integration, E2E)
 
