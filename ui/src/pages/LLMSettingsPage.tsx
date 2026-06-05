@@ -42,6 +42,7 @@ export function LLMSettingsPage() {
                 activeModel={settings.active_model}
                 costLimits={settings.cost_limits}
                 runawayCeiling={settings.runaway_ceiling}
+                contextBudget={settings.context_budget}
                 models={providers?.providers ?? []}
               />
             ) : (

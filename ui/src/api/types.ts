@@ -19,6 +19,7 @@ import type {
   LLMLimitStateSchema,
   LLMCostLimitSchema,
   LLMRunawayCeilingSchema,
+  LLMContextBudgetSchema,
   LLMSettingsSchema,
   UsageBreakdownSchema,
   UsageAggregateSchema,
@@ -48,6 +49,7 @@ export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type LLMLimitState = z.infer<typeof LLMLimitStateSchema>;
 export type LLMCostLimit = z.infer<typeof LLMCostLimitSchema>;
 export type LLMRunawayCeiling = z.infer<typeof LLMRunawayCeilingSchema>;
+export type LLMContextBudget = z.infer<typeof LLMContextBudgetSchema>;
 export type LLMSettings = z.infer<typeof LLMSettingsSchema>;
 export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
 export type UsageAggregate = z.infer<typeof UsageAggregateSchema>;

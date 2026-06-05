@@ -168,10 +168,23 @@ export const LLMRunawayCeilingSchema = z.object({
   effective: z.number(),
 });
 
+// context_budget mirrors runaway_ceiling's shape, but the values are
+// fractions of the model's context window (in (0, 1.0]) rather than token
+// counts. effective is the fraction the agentic path actually budgets with —
+// the backstop-substituted default when state is "backstop_fallback", the
+// stored fraction when "configured". See internal/api/llmsettings.go
+// contextBudgetView.
+export const LLMContextBudgetSchema = z.object({
+  stored_raw: z.number(),
+  state: LLMLimitStateSchema,
+  effective: z.number(),
+});
+
 export const LLMSettingsSchema = z.object({
   active_model: z.string(),
   cost_limits: z.array(LLMCostLimitSchema),
   runaway_ceiling: LLMRunawayCeilingSchema,
+  context_budget: LLMContextBudgetSchema,
 });
 
 // LLM settings write request/response bodies.
@@ -181,6 +194,9 @@ export const SetCostLimitResponseSchema = z.object({
   value: z.number(),
 });
 export const SetRunawayCeilingResponseSchema = z.object({ value: z.number() });
+// The context-budget POST echoes the accepted fraction back (the handler
+// returns {"fraction": ...}, NOT {"value": ...} like the other two writes).
+export const SetContextBudgetResponseSchema = z.object({ fraction: z.number() });
 
 // LLM usage views (Stream G phase G5). Every row carries its own currency
 // so display surfaces can subtotal per currency without ever summing
