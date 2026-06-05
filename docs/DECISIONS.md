@@ -10,6 +10,120 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0015 — Context-management architecture: FIFO pruning, ingestion truncation, conservative model-window registry, and a distinct context-overflow terminal status
+
+- Date: 2026-06-05
+- Provenance (stated honestly): this entry exists because a read-only
+  verification (`CONTEXT_MANAGEMENT_VERIFICATION.md`, lines 7 and 197) found that
+  the context-management workstream — described in-task as a "locked
+  launch-blocking decision" — had **no decision of record**. The work was
+  self-labelled "Stream G context pass" in code comments only
+  (`internal/store/migrations/019_llm_context_budget.up.sql:1`,
+  `internal/api/tasks.go:362`); a code comment is not a decision of record. The
+  verification graded the engine PRESENT-and-tested but the build narrative
+  incomplete. Closing that narrative gap is part of the engineer-who-tests-
+  honestly posture, so the locked choices are recorded here after the fact.
+  The decisions below describe what the shipped code does; this entry documents
+  and ratifies it, it does not change it.
+
+- Decision: the context-management engine binds every assembled LLM prompt to the
+  active model's published context window via six locked choices.
+
+  **(a) Pruning strategy — FIFO oldest-first drop.** History that exceeds the
+  per-turn input budget is trimmed by dropping whole messages from the OLDEST
+  end until the estimated total fits (`internal/agentloop/session.go`
+  `pruneToTokenBudget`), NOT by summarization and NOT by a sliding-window count
+  as the primary mechanism (a `MaxMessages=100` count cap remains a secondary
+  backstop). Rationale: deterministic, cheap, and requires no external LLM
+  summarization call on the hot path — the behaviour an operator reads in the
+  audit/SSE trail is predictable and reconstructable, never a model's lossy
+  paraphrase.
+
+  **(b) Most-recent-user-message protection invariant.** Pruning never advances
+  past the last GENUINE user message — a `Role:"user"` turn with no
+  `ToolResultID`, distinguished from a tool result that also carries
+  `Role:"user"` (`session.go` `lastUserMessageIndex`) — even when that one
+  message alone exceeds the budget. Tool-call/tool-result pair integrity is
+  likewise preserved (never a leading orphaned result). Rationale: preserves the
+  user's most recent intent; combined with per-message truncation (c) this keeps
+  the turn coherent rather than dropping the very message being answered.
+
+  **(c) Per-message ingestion truncation fractions — 25% / 50% with a 2000-token
+  floor.** Before a message enters history, an oversized tool result is capped at
+  `toolResultBudgetFraction = 0.25` of the turn budget and an oversized incoming
+  user message at `userMessageBudgetFraction = 0.50`, with a
+  `minTruncationTokenFloor = 2000` floor (`internal/agentloop/constants.go`,
+  `session.go` truncate*, `tokens.go` `TruncateContent`). The elided middle is
+  replaced with an explicit, recoverable marker ("re-invoke the tool with a
+  narrower query"). Rationale: tool results are typically large and recoverable
+  (re-invoke narrower); user input is small but cannot be re-fetched, so it gets
+  the larger share and is shortened, never rejected. The floor protects small
+  budgets from collapsing to nothing.
+
+  **(d) Conservative unknown-model default — 100,000-token window / 4096
+  output.** Any `{provider, model}` pair absent from the compile-time
+  capabilities registry resolves to `defaultContextWindowTokens = 100000` /
+  `defaultMaxOutputTokens = 4096` (`internal/llmusage/capabilities.go`
+  `LookupCapabilities`), never an optimistic guess and never an error. Rationale:
+  safety over capability — under-using a model's context is recoverable;
+  overrunning a window fails unpredictably. Trade-off acknowledged: an operator
+  running a new model loses available context until a registry entry (with cited
+  source + capture date, as the shipped Claude/Gemini rows carry) is added.
+
+  **(e) Context overflow is a distinct TERMINAL STATUS, separate from the D-0014
+  `error_code` write-failure vocabulary.** A provider rejection for an oversized
+  prompt is classified at the LLM boundary into the typed sentinel
+  `llm.ErrContextOverflow` and mapped to the terminal task status
+  `"context_overflow"` (`internal/api/tasks.go` `taskStatus`, via `errors.Is`,
+  never a string match), a sibling of `runaway_terminated` /
+  `cost_limit_exceeded`. It is deliberately NOT folded into D-0014 Item 8's
+  `error_code` codes (`incident_mode` / `zone_denial` / `internal_error`).
+  Rationale (per `CONTEXT_MANAGEMENT_VERIFICATION.md` Cross-Cutting C): terminal
+  `status` is for a turn that FAILED; `error_code` is for a non-fatal tool-write
+  denial that rides on an otherwise-`completed` turn. Distinct lifecycles,
+  distinct vocabularies — overflow fails the turn, so it owns the status channel.
+  Detection-and-reporting only: no retry, no automatic budget adjustment.
+
+  **(f) Audit policy — overflow audited, pruning and truncation not (per
+  Cross-Cutting A).** Pruning writes NO audit row (high-volume, routine; the SSE
+  `history_trimmed`/`messages_dropped` flags are the right surface).
+  Per-message truncation writes NO audit row today (a deferred fast-follow:
+  the user sees the marker; an auditor does not — tracked, not closed here).
+  Context overflow IS audited — a `KindLLMLimitTriggered` /
+  `llm_context_overflow` row for parity with the runaway ceiling's
+  `llm_runaway_terminated` row — closed in this session (commit "feat(audit):
+  write a context-overflow audit row…", `internal/api/tasks.go`
+  `writeContextOverflowAudit`). The UI control gap (verification Item 9 /
+  launch blocker) is likewise closed this session (commit "feat(ui):
+  context-budget control…").
+
+- Basis: `CONTEXT_MANAGEMENT_VERIFICATION.md` (read against `main` at HEAD;
+  Items 1–9, Cross-Cutting A/B/C, and the prioritized gaps) verified against the
+  code it cites: migration 019 (`internal/store/migrations/019_llm_context_budget.up.sql`),
+  the `internal/agentloop` package (`session.go`, `tokens.go`, `constants.go`,
+  `contextbudget.go`, `agent.go`), the `internal/llmusage` capabilities registry
+  (`capabilities.go`), and the typed sentinel + status mapping
+  (`internal/llm/errors.go`, `internal/api/tasks.go`). The per-turn context fit
+  is applied before request assembly and is independent of the Stream G
+  session-token ceiling, which is checked post-`Chat` from real provider usage
+  (verification Item 6); the two map to distinct terminal statuses and distinct
+  audit actions.
+- Supersedes: nothing — first context-management decision. Relates to D-0014
+  (the context budget is exposed through the same admin-gated, audited
+  `/api/v1/llm/settings/*` surface whose structural guards D-0014 added; this
+  entry's `error_code`-vs-`status` boundary is the deliberate counterpart to
+  D-0014 Item 8) and D-0003 (the `context_overflow` status rides the SSE final
+  event as an additive, `omitempty`-compatible field, consistent with the Phase 2
+  streaming protocol).
+- Status: active. Engine PRESENT and tested; the UI control and the
+  context-overflow audit row are closed this session. The two
+  defer-with-documentation fast-follows the verification named — per-message
+  truncation auditing (Cross-Cutting A(b)) and per-turn budget-consumption
+  telemetry ("used X of Y", verification gap 4) — remain open and are NOT closed
+  by this entry.
+
+---
+
 ## D-0014 — Close the Stream G structural-guard gap and the operator-surface launch blockers (incident CLI, zero-zone dead-end, incident banner, write-failure feedback)
 
 - Date: 2026-06-04
