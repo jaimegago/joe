@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/jaimegago/joe/internal/adapters"
 	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
 	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
 	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
@@ -46,6 +48,64 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 		"sources": sources,
 		"count":   len(sources),
 	})
+}
+
+// newAdapterForType returns a fresh, unconnected adapter for the given source
+// type, or nil when the type has no live connection to establish (config-only or
+// metadata source types that are persisted as-is). It is the single source of
+// truth for the type→adapter mapping shared by source creation and connection
+// testing, so the two paths can never disagree on which sources have adapters.
+func newAdapterForType(sourceType string) adapters.Adapter {
+	switch sourceType {
+	case store.SourceTypeAWS:
+		return awsadapter.New()
+	case store.SourceTypeAzure:
+		return azureadapter.New()
+	case store.SourceTypeKubernetes:
+		return k8s.New()
+	case store.SourceTypeGit:
+		return gitadapter.New()
+	case store.SourceTypePrometheus, store.SourceTypeMimir:
+		return prometheusadapter.New()
+	case store.SourceTypeLoki:
+		return lokiadapter.New()
+	case store.SourceTypeTempo:
+		return tempoadapter.New()
+	case store.SourceTypeJaeger:
+		return jaegeradapter.New()
+	case store.SourceTypeAlertmanager:
+		return alertmanageradapter.New()
+	case store.SourceTypePagerDuty:
+		return pagerdutyadapter.New()
+	case store.SourceTypeGrafana:
+		return grafanaadapter.New()
+	case store.SourceTypePostgreSQL:
+		return postgresadapter.New()
+	case store.SourceTypeMySQL:
+		return mysqladapter.New()
+	case store.SourceTypeRedis:
+		return redisadapter.New()
+	case store.SourceTypeMongoDB:
+		return mongodbadapter.New()
+	case store.SourceTypeKafka:
+		return kafkaadapter.New()
+	case store.SourceTypeElasticsearch:
+		return elasticsearchadapter.New()
+	case store.SourceTypeArgoCd:
+		return argocdadapter.New()
+	case store.SourceTypeTerraform:
+		return terraformadapter.New()
+	case store.SourceTypeHelm:
+		return helmadapter.New()
+	case store.SourceTypeNginx:
+		return nginxadapter.New()
+	case store.SourceTypeEnvoy:
+		return envoyadapter.New()
+	case store.SourceTypeFalco:
+		return falcoadapter.New()
+	default:
+		return nil
+	}
 }
 
 // createSourceRequest is the JSON body for POST /api/v1/sources.
@@ -114,167 +174,12 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		Config: req.Config,
 	}
 
-	// Try to connect the adapter before saving
+	// Try to connect the adapter before saving. Source types with no adapter
+	// (config-only/metadata types) return nil and are persisted directly.
 	ctx := r.Context()
-	switch req.Type {
-	case store.SourceTypeAWS:
-		adapter := awsadapter.New()
+	if adapter := newAdapterForType(req.Type); adapter != nil {
 		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect aws source", "failed to connect to AWS")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeAzure:
-		adapter := azureadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect azure source", "failed to connect to Azure")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeKubernetes:
-		adapter := k8s.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect kubernetes source", "failed to connect to cluster")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeGit:
-		adapter := gitadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect git source", "failed to connect to git repo")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypePrometheus, store.SourceTypeMimir:
-		adapter := prometheusadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect prometheus source", "failed to connect to Prometheus/Mimir")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeLoki:
-		adapter := lokiadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect loki source", "failed to connect to Loki")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeTempo:
-		adapter := tempoadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect tempo source", "failed to connect to Tempo")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeJaeger:
-		adapter := jaegeradapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect jaeger source", "failed to connect to Jaeger")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeAlertmanager:
-		adapter := alertmanageradapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect alertmanager source", "failed to connect to Alertmanager")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypePagerDuty:
-		adapter := pagerdutyadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect pagerduty source", "failed to connect to PagerDuty")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeGrafana:
-		adapter := grafanaadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect grafana source", "failed to connect to Grafana")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypePostgreSQL:
-		adapter := postgresadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect postgresql source", "failed to connect to PostgreSQL")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeMySQL:
-		adapter := mysqladapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect mysql source", "failed to connect to MySQL")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeRedis:
-		adapter := redisadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect redis source", "failed to connect to Redis")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeMongoDB:
-		adapter := mongodbadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect mongodb source", "failed to connect to MongoDB")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeKafka:
-		adapter := kafkaadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect kafka source", "failed to connect to Kafka")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeElasticsearch:
-		adapter := elasticsearchadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect elasticsearch source", "failed to connect to Elasticsearch")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeArgoCd:
-		adapter := argocdadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect argocd source", "failed to connect to Argo CD")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeTerraform:
-		adapter := terraformadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect terraform source", "failed to load Terraform state")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeHelm:
-		adapter := helmadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect helm source", "failed to connect to Helm")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeNginx:
-		adapter := nginxadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect nginx source", "failed to connect to NGINX Ingress Controller")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeEnvoy:
-		adapter := envoyadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect envoy source", "failed to connect to Envoy admin API")
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	case store.SourceTypeFalco:
-		adapter := falcoadapter.New()
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect falco source", "failed to connect to Falco")
+			writeBadRequest(w, err, "connect "+req.Type+" source", fmt.Sprintf("failed to connect to %s source", req.Type))
 			return
 		}
 		s.services.Adapters.Register(req.ID, adapter)

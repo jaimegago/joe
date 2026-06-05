@@ -44,7 +44,14 @@ export function SourcesPage() {
   const testMut = useMutation({
     mutationFn: (id: string) => testSource(id),
     onSuccess: (res) => {
-      toast.success(res.ok ? 'Connection successful' : (res.message ?? 'Test failed'));
+      if (res.ok) {
+        toast.success(res.message ?? 'Connection successful');
+        // The test (re)connects and clears the source's error status server-side,
+        // so refresh the list to reflect the recovered status.
+        void qc.invalidateQueries({ queryKey: ['sources'] });
+      } else {
+        toast.error(res.message ?? 'Connection failed');
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -61,6 +68,12 @@ export function SourcesPage() {
 
   const sources = sourcesQ.data ?? [];
   const zones = zonesQ.data ?? [];
+
+  // Render the detail card from the live list so status/last_error stay in sync
+  // after a Test Connection refreshes the data (the selected copy is stale).
+  const selectedLive = selected
+    ? (sources.find((s) => s.id === selected.id) ?? selected)
+    : null;
 
   const types = [...new Set(sources.map((s) => s.type))];
 
@@ -162,35 +175,35 @@ export function SourcesPage() {
           </Table>
         )}
 
-        {selected && (
+        {selected && selectedLive && (
           <Card className="mt-4">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">
-                {selected.id}
+                {selectedLive.id}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Type</p>
-                  <p>{selected.type}</p>
+                  <p>{selectedLive.type}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Zone</p>
-                  <p>{selected.zone ?? '—'}</p>
+                  <p>{selectedLive.zone ?? '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
-                  <StatusDot status={selected.status} />
+                  <StatusDot status={selectedLive.status} />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Last Sync</p>
-                  <p>{selected.last_sync_at ? new Date(selected.last_sync_at).toLocaleString() : '—'}</p>
+                  <p>{selectedLive.last_sync_at ? new Date(selectedLive.last_sync_at).toLocaleString() : '—'}</p>
                 </div>
               </div>
-              {selected.last_error && (
+              {selectedLive.last_error && (
                 <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                  {selected.last_error}
+                  {selectedLive.last_error}
                 </p>
               )}
               <div className="flex gap-2 pt-1">
