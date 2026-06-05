@@ -157,6 +157,19 @@ const (
 	// refused to allow to continue).
 	ActionLLMRunawayTerminated = "llm_runaway_terminated"
 
+	// ActionLLMContextOverflow records a turn refused because its assembled
+	// prompt exceeded the model's context window (the provider rejected it and
+	// an adapter classified the rejection into llm.ErrContextOverflow). The
+	// decision on this row is "deny" — the turn did not proceed. Kind is
+	// KindLLMLimitTriggered, the SAME kind the runaway-ceiling termination uses
+	// (ActionLLMRunawayTerminated): both are enforcement events on the LLM
+	// path, distinguished by action. The audit_log.kind CHECK already admits
+	// KindLLMLimitTriggered (migration 017), so no schema change is needed —
+	// the CHECK enumerates kinds, not actions. This closes the parity gap
+	// CONTEXT_MANAGEMENT_VERIFICATION.md Cross-Cutting A(c) flagged: overflow's
+	// sibling failure already audited, overflow did not.
+	ActionLLMContextOverflow = "llm_context_overflow"
+
 	// ActionLLMCostLimitRefused records the cost-window gate refusing
 	// an LLM call because a configured threshold would be exceeded.
 	// The decision on this row is "deny".
