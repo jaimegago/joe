@@ -54,6 +54,23 @@ describe('ApiClient', () => {
     expect(result).toEqual({ hello: 'world' });
   });
 
+  it('returns undefined on 204 No Content without parsing JSON', async () => {
+    const client = await getClient();
+    const json = vi.fn(() => Promise.reject(new Error('should not be called')));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        json,
+      })
+    );
+
+    const result = await client.delete<void>('/api/v1/sources/some-id');
+    expect(result).toBeUndefined();
+    expect(json).not.toHaveBeenCalled();
+  });
+
   it('sends Authorization header when token is set', async () => {
     const client = await getClient();
     const fetchMock = vi.fn().mockResolvedValue({

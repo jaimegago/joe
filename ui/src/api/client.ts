@@ -81,6 +81,13 @@ class ApiClient {
       throw new ApiRequestError(response.status, errMsg);
     }
 
+    // 204 No Content (returned by DELETE endpoints) has an empty body. Calling
+    // response.json() on it throws "Unexpected end of JSON input", so return
+    // undefined to keep void-typed callers (delete<void>) working.
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     return response.json() as Promise<T>;
   }
 
