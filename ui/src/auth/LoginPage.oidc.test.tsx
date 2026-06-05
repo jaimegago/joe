@@ -21,6 +21,7 @@ vi.mock('./AuthContext', () => ({
     principal: null,
     isAdmin: false,
     rbacEnabled: true,
+    zones: [],
     oidcEnabled: h.oidcEnabled,
     login: h.login,
     loginWithOIDC: h.loginWithOIDC,
