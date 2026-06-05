@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -44,15 +45,63 @@ type DatabaseConfig struct {
 	DSN string
 }
 
+// sqlitePragmas are the per-connection PRAGMAs every SQLite connection in the
+// pool must carry, in modernc.org/sqlite's _pragma(value) form. busy_timeout
+// makes a connection wait (rather than fail instantly with SQLITE_BUSY) when
+// another holds the write lock; foreign_keys enables FK enforcement (off by
+// default in SQLite); journal_mode=WAL is file-persistent but included so a
+// brand-new database is in WAL from its first connection.
+var sqlitePragmas = []string{
+	"busy_timeout(5000)",
+	"foreign_keys(1)",
+	"journal_mode(WAL)",
+}
+
+// withSQLitePragmas appends sqlitePragmas to a SQLite DSN as modernc _pragma
+// query parameters, choosing ? or & based on whether the DSN already carries a
+// query string. A pragma the caller already set in the DSN (e.g. an operator
+// override of busy_timeout) is left untouched so the override wins.
+func withSQLitePragmas(dsn string) string {
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	var b strings.Builder
+	b.WriteString(dsn)
+	for _, p := range sqlitePragmas {
+		name := p[:strings.IndexByte(p, '(')]
+		if strings.Contains(dsn, "_pragma="+name+"(") {
+			continue // caller already set this pragma in the DSN; respect it
+		}
+		b.WriteString(sep)
+		b.WriteString("_pragma=")
+		b.WriteString(p)
+		sep = "&"
+	}
+	return b.String()
+}
+
 // New opens a database connection and returns a fully wired Store.
-// SQLite-specific PRAGMAs are applied via Exec after the connection is opened,
-// so the DSN never needs to carry driver-specific query parameters.
+// SQLite-specific PRAGMAs are encoded in the DSN (see withSQLitePragmas) so
+// they apply to EVERY connection the pool opens — not just one.
 func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 	if cfg.Driver == "" {
 		cfg.Driver = DriverSQLite
 	}
 
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
+	dsn := cfg.DSN
+	if cfg.Driver == DriverSQLite {
+		// busy_timeout and foreign_keys are PER-CONNECTION settings. Applying
+		// them with a one-off db.Exec after Open lands on a single pooled
+		// connection and leaves the pool's other connections at SQLite's
+		// defaults — busy_timeout=0 (instant SQLITE_BUSY under write
+		// contention) and foreign_keys=OFF (no FK enforcement). Encoding them
+		// in the DSN makes modernc.org/sqlite run them on every connection it
+		// opens. Postgres has built-in MVCC and FK enforcement; not needed.
+		dsn = withSQLitePragmas(dsn)
+	}
+
+	db, err := sql.Open(cfg.Driver, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -63,18 +112,6 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 	}
 
 	if cfg.Driver == DriverSQLite {
-		// Apply SQLite-specific settings that were previously embedded in the
-		// DSN query string. Postgres has built-in MVCC; these are not needed.
-		for _, pragma := range []string{
-			"PRAGMA foreign_keys = ON",
-			"PRAGMA journal_mode = WAL",
-			"PRAGMA busy_timeout = 5000",
-		} {
-			if _, err := db.Exec(pragma); err != nil {
-				db.Close()
-				return nil, fmt.Errorf("apply sqlite pragma %q: %w", pragma, err)
-			}
-		}
 		// WAL mode caps concurrent writers; match the previous behaviour.
 		db.SetMaxOpenConns(10)
 		db.SetMaxIdleConns(2)

@@ -7,6 +7,7 @@ import { PrincipalsTable, type PrincipalRow } from '@/components/admin/Principal
 import { usePrincipals, useAdmins } from '@/hooks/usePrincipals';
 import { usePolicies } from '@/hooks/usePolicies';
 import { useAuth } from '@/auth/AuthContext';
+import { ApiRequestError } from '@/api/client';
 import { Users } from 'lucide-react';
 
 // UsersPage is the admin operator view of identity. It lists provisioned
@@ -45,16 +46,32 @@ export function UsersPage() {
 
   if (principalsQ.isLoading || policiesQ.isLoading || adminsQ.isLoading) return <LoadingPage />;
 
+  // Only a 503 means the registry is genuinely unconfigured (RBAC/OIDC off);
+  // server-side the handler returns 503 when the principal repository is
+  // unwired. Any other failure (500, network, a transient DB lock) is reported
+  // as a retriable error rather than misattributed to misconfiguration.
+  const notConfigured =
+    principalsQ.error instanceof ApiRequestError && principalsQ.error.status === 503;
+
   return (
     <>
       <Header title="Users" />
       <PageContainer>
         {principalsQ.isError ? (
-          <EmptyState
-            icon={Users}
-            title="Identity registry unavailable"
-            description="The principals registry could not be loaded. It requires RBAC and OIDC to be configured."
-          />
+          notConfigured ? (
+            <EmptyState
+              icon={Users}
+              title="Identity registry unavailable"
+              description="The principals registry could not be loaded. It requires RBAC and OIDC to be configured."
+            />
+          ) : (
+            <EmptyState
+              icon={Users}
+              title="Couldn't load users"
+              description="The identity registry request failed. This may be a transient error — try again."
+              action={{ label: 'Retry', onClick: () => void principalsQ.refetch() }}
+            />
+          )
         ) : rows.length === 0 ? (
           <EmptyState
             icon={Users}
