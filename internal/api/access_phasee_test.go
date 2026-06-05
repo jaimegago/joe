@@ -56,13 +56,13 @@ func TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal(t *testing.T) {
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign s-prod: %v", err)
 	}
 	// alice has the grant; mallory does NOT. NOTE: svc:server is NOT granted —
 	// proving that the loop no longer needs the server account to reach infra
 	// (it reaches it as the caller).
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "user:alice", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "user:alice", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant user:alice: %v", err)
 	}
 
@@ -190,13 +190,13 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 	mustCreateSource(t, sqlStore, "s-allow")
 	mustCreateSource(t, sqlStore, "s-deny")
 	repo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-deny: %v", err)
 	}
-	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:operator", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:operator", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant svc:operator: %v", err)
 	}
 

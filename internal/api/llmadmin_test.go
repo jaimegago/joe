@@ -70,8 +70,13 @@ func newLLMAdminStore(t *testing.T) *store.Store {
 func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 	t.Helper()
 	s := newLLMAdminStore(t)
-	rbacRepo := rbac.NewRepository(s.DB(), s.Driver())
-	auditRepo := audit.NewRepository(s.DB(), s.Driver())
+	// The audit sink is wrapped in a swappable indirection shared by BOTH the
+	// RBAC repository (which now writes admin-mutation rows in-transaction) and
+	// services.Audit (the handler path for reads and gate denials). A test can
+	// break the underlying sink via breakAudit() to exercise the fail-closed /
+	// fail-open paths uniformly across both layers.
+	auditRepo := &swappableAudit{inner: audit.NewRepository(s.DB(), s.Driver())}
+	rbacRepo := rbac.NewRepositoryWithAudit(s.DB(), s.Driver(), auditRepo)
 	usageRepo := llmusage.NewRepository(s.DB(), s.Driver())
 	settingsRepo := llmsettings.NewRepository(s.DB(), s.Driver())
 	settingsSvc := llmsettings.NewMutationService(settingsRepo, auditRepo)
@@ -124,7 +129,7 @@ func (f *llmadminFixture) markAdmin(principal string) {
 	if err := f.rbac.AddAdmin(context.Background(), rbac.Admin{
 		Principal: principal,
 		GrantedBy: "test", Reason: "test fixture",
-	}); err != nil {
+	}, "test"); err != nil {
 		f.t.Fatalf("AddAdmin %q: %v", principal, err)
 	}
 }
@@ -335,7 +340,7 @@ func TestCurrentUser_Zones_NonAdminSeesOnlyGranted(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	if _, err := f.rbac.CreatePolicy(context.Background(), rbac.Policy{
 		Principal: "user:bob", ZoneID: "prod-readonly",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
 

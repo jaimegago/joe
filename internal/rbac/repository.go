@@ -4,34 +4,66 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// ErrZoneInUse is returned by DeleteZone when the zone still has at least one
+// source assigned to it (source_zone_assignments.zone_id is ON DELETE
+// RESTRICT). It is a distinguishable sentinel so a caller — the HTTP handler
+// in a later stage — can map it to a 409 Conflict rather than a 500. The
+// referencing rbac_policies rows, by contrast, are ON DELETE CASCADE and are
+// removed silently with the zone; only the RESTRICT case blocks the delete.
+var ErrZoneInUse = errors.New("rbac: zone has source assignments and cannot be deleted")
+
 // Repository provides read/write access to RBAC data.
+//
+// Every mutating method takes an `actor` (the acting principal) as its final
+// argument and writes one append-only audit row in the SAME database
+// transaction as the mutation itself: the mutation and its audit row commit or
+// roll back together. This moves the audit write down from the HTTP handler
+// (where any non-handler caller produced no row) into the repository, so the
+// audit guarantee holds for every caller. Authorization/gating is NOT in the
+// repository — it stays at the HTTP boundary. When the repository is
+// constructed without an audit sink (NewRepository, used by the CLI and unit
+// tests) the mutation runs directly with no audit row, the same nil-audit
+// carve-out the handler's recordAdminAudit and the captaingate wrapper use.
 type Repository interface {
 	// Zones
 	ListZones(ctx context.Context) ([]Zone, error)
 	GetZone(ctx context.Context, id string) (*Zone, error)
-	CreateZone(ctx context.Context, z Zone) (*Zone, error)
+	CreateZone(ctx context.Context, z Zone, actor string) (*Zone, error)
+	// UpdateZone edits a zone's name, description, and allowed_actions for the
+	// given zone id. Returns the updated zone, or (nil, nil) if no zone with
+	// that id exists.
+	UpdateZone(ctx context.Context, z Zone, actor string) (*Zone, error)
+	// DeleteZone deletes the zone with the given id. Referencing rbac_policies
+	// rows cascade away; if any source is still assigned to the zone the delete
+	// is refused with ErrZoneInUse (the RESTRICT foreign key).
+	DeleteZone(ctx context.Context, id string, actor string) error
 
 	// Source → Zone assignments
 	ListAssignments(ctx context.Context) ([]SourceZoneAssignment, error)
 	GetAssignment(ctx context.Context, sourceID string) (*SourceZoneAssignment, error)
-	UpsertAssignment(ctx context.Context, a SourceZoneAssignment) error
+	UpsertAssignment(ctx context.Context, a SourceZoneAssignment, actor string) error
+	// DeleteAssignment removes a source→zone assignment by source id. Returns
+	// the number of rows removed (0 if the source had no assignment).
+	DeleteAssignment(ctx context.Context, sourceID string, actor string) (int64, error)
 
 	// Policies
 	ListPolicies(ctx context.Context) ([]Policy, error)
 	ListPoliciesForPrincipal(ctx context.Context, principal string) ([]Policy, error)
-	CreatePolicy(ctx context.Context, p Policy) (*Policy, error)
-	DeletePolicy(ctx context.Context, id int64) error
+	CreatePolicy(ctx context.Context, p Policy, actor string) (*Policy, error)
+	DeletePolicy(ctx context.Context, id int64, actor string) error
 	// DeletePolicyForPrincipalZone revokes a single principal→zone grant by its
 	// natural key. Returns the number of policy rows removed (0 if the grant
 	// did not exist). Used by CLI zone revocation, which keys on
 	// (principal, zone) rather than the synthetic policy id.
-	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error)
+	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string, actor string) (int64, error)
 	// DeletePoliciesForPrincipal removes ALL rbac_policies rows for the given
 	// principal in one statement. Returns the number of rows removed. Phase H
 	// uses this to enforce "admin authority has exactly one source of truth"
@@ -50,19 +82,119 @@ type Repository interface {
 	// the zone's own allowed_actions still being meaningful (see D-0011).
 	IsAdmin(ctx context.Context, principal string) (bool, error)
 	ListAdmins(ctx context.Context) ([]Admin, error)
-	AddAdmin(ctx context.Context, a Admin) error
-	RemoveAdmin(ctx context.Context, principal string) (int64, error)
+	AddAdmin(ctx context.Context, a Admin, actor string) error
+	RemoveAdmin(ctx context.Context, principal string, actor string) (int64, error)
 }
 
-// SQLRepository implements Repository on top of a *sql.DB.
+// SQLRepository implements Repository (and PrincipalRepository) on top of a
+// *sql.DB. When audit is non-nil every mutating method writes its audit row in
+// the same transaction as the mutation via audit.Repository.InsertTx.
 type SQLRepository struct {
 	db     *sql.DB
 	driver string
+	// audit is the append-only audit sink. When nil, mutations run directly
+	// on the db handle and write no audit row (the CLI and unit-test path).
+	// When set (production wiring), every mutation and its audit row commit
+	// or roll back as one transaction.
+	audit audit.Repository
 }
 
-// NewRepository creates a new SQL-backed RBAC repository.
+// NewRepository creates a new SQL-backed RBAC repository WITHOUT an audit sink.
+// Mutations run directly and write no audit row. This is the constructor the
+// CLI (operator-on-host) and unit tests use; production wiring uses
+// NewRepositoryWithAudit so admin mutations are recorded.
 func NewRepository(db *sql.DB, driver string) *SQLRepository {
 	return &SQLRepository{db: db, driver: driver}
+}
+
+// NewRepositoryWithAudit creates a SQL-backed RBAC repository that writes one
+// append-only audit row in the same transaction as every mutation. The server
+// uses this so the audit guarantee holds for every mutation regardless of which
+// caller (HTTP handler today, others later) invoked it.
+func NewRepositoryWithAudit(db *sql.DB, driver string, auditRepo audit.Repository) *SQLRepository {
+	return &SQLRepository{db: db, driver: driver, audit: auditRepo}
+}
+
+// execQuerier is the subset of *sql.DB / *sql.Tx the repository mutations use.
+// A mutation runs against this so the SAME handle (the db, or the open
+// transaction) performs the before-state read, the write, and — for the
+// transactional path — the audit insert, all atomically.
+type execQuerier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// mutate runs an audited mutation. The fn performs the before-read and the
+// write against the supplied execQuerier and returns the audit Event to record.
+//
+//   - With no audit sink: fn runs directly on the db handle and the returned
+//     Event is discarded (no row) — the nil-audit carve-out.
+//   - With an audit sink: a transaction is opened, fn runs against it, the
+//     Event is written via InsertTx on the SAME transaction, and both commit
+//     together. Any error rolls the whole thing back, so there is no code path
+//     where the mutation commits without its audit row.
+//
+// fn may return a nil-Action Event together with a nil error to signal "no
+// mutation happened, do not audit" (e.g. an early return before any write); in
+// that case the transaction commits with no audit row.
+func (r *SQLRepository) mutate(ctx context.Context, fn func(exec execQuerier) (audit.Event, error)) error {
+	if r.audit == nil {
+		_, err := fn(r.db)
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	ev, err := fn(tx)
+	if err != nil {
+		return err
+	}
+	if ev.Action != "" {
+		if err := r.audit.InsertTx(ctx, tx, ev); err != nil {
+			return fmt.Errorf("audit insert: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+// auditCtx marshals a Details into the JSON string the audit_log.context column
+// carries. A marshal failure aborts the mutation (the row could not be formed),
+// matching the handler's prior fail-closed posture for admin mutations.
+func auditCtx(d audit.Details) (string, error) {
+	blob, err := json.Marshal(d)
+	if err != nil {
+		return "", fmt.Errorf("marshal audit details: %w", err)
+	}
+	return string(blob), nil
+}
+
+// adminEvent builds a KindAdminAccess "allow" audit Event for a mutating action
+// with the given acting principal and details.
+func adminEvent(actor, action string, d audit.Details) (audit.Event, error) {
+	blob, err := auditCtx(d)
+	if err != nil {
+		return audit.Event{}, err
+	}
+	return audit.Event{
+		Principal: actor,
+		Action:    action,
+		Decision:  audit.DecisionAllow,
+		Reason:    "admin_mutation",
+		Kind:      audit.KindAdminAccess,
+		Context:   blob,
+	}, nil
 }
 
 // --- Zones ---
@@ -112,7 +244,7 @@ func (r *SQLRepository) GetZone(ctx context.Context, id string) (*Zone, error) {
 	return &z, nil
 }
 
-func (r *SQLRepository) CreateZone(ctx context.Context, z Zone) (*Zone, error) {
+func (r *SQLRepository) CreateZone(ctx context.Context, z Zone, actor string) (*Zone, error) {
 	if z.CreatedAt.IsZero() {
 		z.CreatedAt = time.Now().UTC()
 	}
@@ -120,13 +252,114 @@ func (r *SQLRepository) CreateZone(ctx context.Context, z Zone) (*Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal allowed_actions: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, store.Rebind(r.driver, `
-		INSERT INTO security_zones (id, name, description, allowed_actions, created_at)
-		VALUES (?, ?, ?, ?, ?)`),
-		z.ID, z.Name, z.Description, string(actionsJSON), z.CreatedAt.Format(time.RFC3339))
+	err = r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+			INSERT INTO security_zones (id, name, description, allowed_actions, created_at)
+			VALUES (?, ?, ?, ?, ?)`),
+			z.ID, z.Name, z.Description, string(actionsJSON), z.CreatedAt.Format(time.RFC3339)); err != nil {
+			return audit.Event{}, fmt.Errorf("create zone: %w", err)
+		}
+		return adminEvent(actor, audit.ActionAdminZoneCreate,
+			audit.Details{Target: "zone:" + z.ID, After: z})
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create zone: %w", err)
+		return nil, err
 	}
+	return &z, nil
+}
+
+// UpdateZone edits a zone's name, description, and allowed_actions. The prior
+// zone state is captured inside the same transaction for the audit Before, and
+// the update + audit row commit together. If no zone with the id exists the
+// method is a no-op and returns (nil, nil).
+func (r *SQLRepository) UpdateZone(ctx context.Context, z Zone, actor string) (*Zone, error) {
+	actionsJSON, err := json.Marshal(z.AllowedActions)
+	if err != nil {
+		return nil, fmt.Errorf("marshal allowed_actions: %w", err)
+	}
+	var updated *Zone
+	err = r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		before, gerr := getZoneOn(ctx, exec, r.driver, z.ID)
+		if gerr != nil {
+			return audit.Event{}, gerr
+		}
+		if before == nil {
+			// Nothing to update; do not write an audit row for a no-op.
+			return audit.Event{}, nil
+		}
+		res, uerr := exec.ExecContext(ctx, store.Rebind(r.driver, `
+			UPDATE security_zones SET name = ?, description = ?, allowed_actions = ?
+			WHERE id = ?`),
+			z.Name, z.Description, string(actionsJSON), z.ID)
+		if uerr != nil {
+			return audit.Event{}, fmt.Errorf("update zone: %w", uerr)
+		}
+		if _, aerr := res.RowsAffected(); aerr != nil {
+			return audit.Event{}, fmt.Errorf("rows affected: %w", aerr)
+		}
+		// created_at is immutable; carry it onto the returned/after state.
+		z.CreatedAt = before.CreatedAt
+		updated = &z
+		return adminEvent(actor, audit.ActionAdminZoneUpdate,
+			audit.Details{Target: "zone:" + z.ID, Before: *before, After: z})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// DeleteZone deletes the zone with the given id. If any source is still
+// assigned to the zone (source_zone_assignments.zone_id ON DELETE RESTRICT) the
+// delete is refused with ErrZoneInUse rather than relying on the driver's
+// foreign-key error text. Referencing rbac_policies rows are ON DELETE CASCADE
+// and are removed with the zone.
+func (r *SQLRepository) DeleteZone(ctx context.Context, id string, actor string) error {
+	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		var assigned int
+		if err := exec.QueryRowContext(ctx, store.Rebind(r.driver,
+			`SELECT COUNT(*) FROM source_zone_assignments WHERE zone_id = ?`), id).Scan(&assigned); err != nil {
+			return audit.Event{}, fmt.Errorf("count zone assignments: %w", err)
+		}
+		if assigned > 0 {
+			return audit.Event{}, ErrZoneInUse
+		}
+		before, gerr := getZoneOn(ctx, exec, r.driver, id)
+		if gerr != nil {
+			return audit.Event{}, gerr
+		}
+		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver,
+			`DELETE FROM security_zones WHERE id = ?`), id); err != nil {
+			return audit.Event{}, fmt.Errorf("delete zone: %w", err)
+		}
+		d := audit.Details{Target: "zone:" + id}
+		if before != nil {
+			d.Before = *before
+		}
+		return adminEvent(actor, audit.ActionAdminZoneDelete, d)
+	})
+}
+
+// getZoneOn reads a single zone against the supplied execQuerier (db or tx) so
+// the before-state read for an audited zone mutation runs inside the same
+// transaction as the mutation. Returns (nil, nil) when the zone is absent.
+func getZoneOn(ctx context.Context, exec execQuerier, driver, id string) (*Zone, error) {
+	var z Zone
+	var actionsJSON, createdAtStr string
+	err := exec.QueryRowContext(ctx, store.Rebind(driver, `
+		SELECT id, name, COALESCE(description,''), allowed_actions, created_at
+		FROM security_zones WHERE id = ?`), id).
+		Scan(&z.ID, &z.Name, &z.Description, &actionsJSON, &createdAtStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get zone: %w", err)
+	}
+	if err := json.Unmarshal([]byte(actionsJSON), &z.AllowedActions); err != nil {
+		return nil, fmt.Errorf("parse allowed_actions: %w", err)
+	}
+	z.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
 	return &z, nil
 }
 
@@ -171,23 +404,86 @@ func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*So
 	return &a, nil
 }
 
-func (r *SQLRepository) UpsertAssignment(ctx context.Context, a SourceZoneAssignment) error {
+func (r *SQLRepository) UpsertAssignment(ctx context.Context, a SourceZoneAssignment, actor string) error {
 	if a.AssignedAt.IsZero() {
 		a.AssignedAt = time.Now().UTC()
 	}
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
-		INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(source_id) DO UPDATE SET
-			zone_id     = excluded.zone_id,
-			assigned_by = excluded.assigned_by,
-			reason      = excluded.reason,
-			assigned_at = excluded.assigned_at`),
-		a.SourceID, a.ZoneID, a.AssignedBy, a.Reason, a.AssignedAt.Format(time.RFC3339))
+	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		// Capture prior assignment (an upsert may overwrite one) inside the
+		// transaction so the audit Before reflects true prior state.
+		before, gerr := getAssignmentOn(ctx, exec, r.driver, a.SourceID)
+		if gerr != nil {
+			return audit.Event{}, gerr
+		}
+		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+			INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(source_id) DO UPDATE SET
+				zone_id     = excluded.zone_id,
+				assigned_by = excluded.assigned_by,
+				reason      = excluded.reason,
+				assigned_at = excluded.assigned_at`),
+			a.SourceID, a.ZoneID, a.AssignedBy, a.Reason, a.AssignedAt.Format(time.RFC3339)); err != nil {
+			return audit.Event{}, fmt.Errorf("upsert assignment: %w", err)
+		}
+		d := audit.Details{Target: "source_zone:" + a.SourceID, After: a}
+		if before != nil {
+			d.Before = *before
+		}
+		return adminEvent(actor, audit.ActionAdminSourceZoneAssign, d)
+	})
+}
+
+// DeleteAssignment removes a source→zone assignment by source id. Returns the
+// number of rows removed (0 if the source had no assignment). The prior
+// assignment is captured in-transaction for the audit Before.
+func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, actor string) (int64, error) {
+	var removed int64
+	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		before, gerr := getAssignmentOn(ctx, exec, r.driver, sourceID)
+		if gerr != nil {
+			return audit.Event{}, gerr
+		}
+		res, derr := exec.ExecContext(ctx, store.Rebind(r.driver,
+			`DELETE FROM source_zone_assignments WHERE source_id = ?`), sourceID)
+		if derr != nil {
+			return audit.Event{}, fmt.Errorf("delete assignment: %w", derr)
+		}
+		n, aerr := res.RowsAffected()
+		if aerr != nil {
+			return audit.Event{}, fmt.Errorf("rows affected: %w", aerr)
+		}
+		removed = n
+		d := audit.Details{Target: "source_zone:" + sourceID}
+		if before != nil {
+			d.Before = *before
+		}
+		return adminEvent(actor, audit.ActionAdminSourceZoneUnassign, d)
+	})
 	if err != nil {
-		return fmt.Errorf("upsert assignment: %w", err)
+		return 0, err
 	}
-	return nil
+	return removed, nil
+}
+
+// getAssignmentOn reads a single source-zone assignment against the supplied
+// execQuerier so the before-state read runs inside the mutation's transaction.
+// Returns (nil, nil) when no assignment exists for the source.
+func getAssignmentOn(ctx context.Context, exec execQuerier, driver, sourceID string) (*SourceZoneAssignment, error) {
+	var a SourceZoneAssignment
+	var assignedAtStr string
+	err := exec.QueryRowContext(ctx, store.Rebind(driver, `
+		SELECT source_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
+		FROM source_zone_assignments WHERE source_id = ?`), sourceID).
+		Scan(&a.SourceID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get assignment: %w", err)
+	}
+	a.AssignedAt, _ = time.Parse(time.RFC3339, assignedAtStr)
+	return &a, nil
 }
 
 // --- Policies ---
@@ -236,40 +532,73 @@ func (r *SQLRepository) ListPoliciesForPrincipal(ctx context.Context, principal 
 	return out, rows.Err()
 }
 
-func (r *SQLRepository) CreatePolicy(ctx context.Context, p Policy) (*Policy, error) {
+func (r *SQLRepository) CreatePolicy(ctx context.Context, p Policy, actor string) (*Policy, error) {
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now().UTC()
 	}
-	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
-		INSERT INTO rbac_policies (principal, zone_id, created_at)
-		VALUES (?, ?, ?)
-		RETURNING id`),
-		p.Principal, p.ZoneID, p.CreatedAt.Format(time.RFC3339)).Scan(&p.ID)
+	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		if err := exec.QueryRowContext(ctx, store.Rebind(r.driver, `
+			INSERT INTO rbac_policies (principal, zone_id, created_at)
+			VALUES (?, ?, ?)
+			RETURNING id`),
+			p.Principal, p.ZoneID, p.CreatedAt.Format(time.RFC3339)).Scan(&p.ID); err != nil {
+			return audit.Event{}, fmt.Errorf("create policy: %w", err)
+		}
+		return adminEvent(actor, audit.ActionAdminPolicyGrant,
+			audit.Details{Target: fmt.Sprintf("policy:%s@%s", p.Principal, p.ZoneID), After: p})
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create policy: %w", err)
+		return nil, err
 	}
 	return &p, nil
 }
 
-func (r *SQLRepository) DeletePolicy(ctx context.Context, id int64) error {
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `DELETE FROM rbac_policies WHERE id = ?`), id)
-	if err != nil {
-		return fmt.Errorf("delete policy: %w", err)
-	}
-	return nil
+func (r *SQLRepository) DeletePolicy(ctx context.Context, id int64, actor string) error {
+	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		// Capture the grant being revoked (in-transaction) so the audit Before
+		// records what was removed.
+		d := audit.Details{Target: fmt.Sprintf("policy:%d", id)}
+		var p Policy
+		var createdAtStr string
+		switch err := exec.QueryRowContext(ctx, store.Rebind(r.driver,
+			`SELECT id, principal, zone_id, created_at FROM rbac_policies WHERE id = ?`), id).
+			Scan(&p.ID, &p.Principal, &p.ZoneID, &createdAtStr); err {
+		case nil:
+			p.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+			d.Before = p
+		case sql.ErrNoRows:
+			// No such grant — the delete below is a no-op; Before stays unset.
+		default:
+			return audit.Event{}, fmt.Errorf("read policy: %w", err)
+		}
+		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver,
+			`DELETE FROM rbac_policies WHERE id = ?`), id); err != nil {
+			return audit.Event{}, fmt.Errorf("delete policy: %w", err)
+		}
+		return adminEvent(actor, audit.ActionAdminPolicyRevoke, d)
+	})
 }
 
-func (r *SQLRepository) DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error) {
-	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
-		`DELETE FROM rbac_policies WHERE principal = ? AND zone_id = ?`), principal, zoneID)
+func (r *SQLRepository) DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string, actor string) (int64, error) {
+	var removed int64
+	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		res, err := exec.ExecContext(ctx, store.Rebind(r.driver,
+			`DELETE FROM rbac_policies WHERE principal = ? AND zone_id = ?`), principal, zoneID)
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("delete policy for principal/zone: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("rows affected: %w", err)
+		}
+		removed = n
+		return adminEvent(actor, audit.ActionAdminPolicyRevoke,
+			audit.Details{Target: fmt.Sprintf("policy:%s@%s", principal, zoneID)})
+	})
 	if err != nil {
-		return 0, fmt.Errorf("delete policy for principal/zone: %w", err)
+		return 0, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("rows affected: %w", err)
-	}
-	return n, nil
+	return removed, nil
 }
 
 func (r *SQLRepository) DeletePoliciesForPrincipal(ctx context.Context, principal string) (int64, error) {
@@ -328,38 +657,49 @@ func (r *SQLRepository) ListAdmins(ctx context.Context) ([]Admin, error) {
 // matching admin_email login. The choice of UPSERT (vs INSERT-OR-IGNORE)
 // is so an operator re-issuing `joe admin grant --reason "..."` can update
 // the rationale without first revoking.
-func (r *SQLRepository) AddAdmin(ctx context.Context, a Admin) error {
+func (r *SQLRepository) AddAdmin(ctx context.Context, a Admin, actor string) error {
 	if a.Principal == "" {
 		return fmt.Errorf("add admin: principal is required")
 	}
 	if a.GrantedAt.IsZero() {
 		a.GrantedAt = time.Now().UTC()
 	}
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
-		INSERT INTO admin_principals (principal, granted_at, granted_by, reason)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(principal) DO UPDATE SET
-			granted_at = excluded.granted_at,
-			granted_by = excluded.granted_by,
-			reason     = excluded.reason`),
-		a.Principal, a.GrantedAt.Format(time.RFC3339), a.GrantedBy, a.Reason)
-	if err != nil {
-		return fmt.Errorf("add admin: %w", err)
-	}
-	return nil
+	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+			INSERT INTO admin_principals (principal, granted_at, granted_by, reason)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(principal) DO UPDATE SET
+				granted_at = excluded.granted_at,
+				granted_by = excluded.granted_by,
+				reason     = excluded.reason`),
+			a.Principal, a.GrantedAt.Format(time.RFC3339), a.GrantedBy, a.Reason); err != nil {
+			return audit.Event{}, fmt.Errorf("add admin: %w", err)
+		}
+		return adminEvent(actor, audit.ActionAdminGrant,
+			audit.Details{Target: "admin:" + a.Principal, After: a})
+	})
 }
 
-func (r *SQLRepository) RemoveAdmin(ctx context.Context, principal string) (int64, error) {
-	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
-		`DELETE FROM admin_principals WHERE principal = ?`), principal)
+func (r *SQLRepository) RemoveAdmin(ctx context.Context, principal string, actor string) (int64, error) {
+	var removed int64
+	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		res, err := exec.ExecContext(ctx, store.Rebind(r.driver,
+			`DELETE FROM admin_principals WHERE principal = ?`), principal)
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("remove admin: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("rows affected: %w", err)
+		}
+		removed = n
+		return adminEvent(actor, audit.ActionAdminRevoke,
+			audit.Details{Target: "admin:" + principal})
+	})
 	if err != nil {
-		return 0, fmt.Errorf("remove admin: %w", err)
+		return 0, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("rows affected: %w", err)
-	}
-	return n, nil
+	return removed, nil
 }
 
 func (r *SQLRepository) ListUnassignedSourceIDs(ctx context.Context) ([]string, error) {

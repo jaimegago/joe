@@ -110,6 +110,15 @@ func (h *adminHandler) recordAdminAudit(ctx context.Context, action string, deci
 	return audit.FailurePosture(ctx, action, insErr, where, audit.PostureForAction(action))
 }
 
+// actor returns the acting principal for the request — the authenticated
+// caller. It is threaded into the repository's mutating methods so the audit
+// row the repository writes (in the same transaction as the mutation) records
+// who performed it. Same source as recordAdminAudit's principal field, kept in
+// one helper so the two cannot drift.
+func (h *adminHandler) actor(r *http.Request) string {
+	return string(rbac.PrincipalFromContext(r.Context()))
+}
+
 // --- Zone endpoints ---
 
 func (h *adminHandler) listZones(w http.ResponseWriter, r *http.Request) {
@@ -149,14 +158,10 @@ func (h *adminHandler) createZone(w http.ResponseWriter, r *http.Request) {
 		z.AllowedActions = []rbac.Action{rbac.ActionRead}
 	}
 
-	// Fail-closed audit BEFORE the mutation: no durable row ⇒ no zone minted.
-	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminZoneCreate, audit.DecisionAllow,
-		"admin_mutation", audit.Details{Target: "zone:" + z.ID, After: z}, "admin:zone.create"); err != nil {
-		writeInternalError(w, err, "audit zone create")
-		return
-	}
-
-	created, err := h.repo.CreateZone(r.Context(), z)
+	// The repository writes the KindAdminAccess audit row in the same
+	// transaction as the insert (atomic), so the handler no longer calls
+	// recordAdminAudit for this mutation. The acting principal is threaded down.
+	created, err := h.repo.CreateZone(r.Context(), z, h.actor(r))
 	if err != nil {
 		writeInternalError(w, err, "create zone")
 		return
@@ -198,22 +203,9 @@ func (h *adminHandler) assignSourceZone(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Capture before-state: UpsertAssignment may overwrite an existing
-	// assignment, so the row records the prior zone for an edit. Best-effort:
-	// a not-found source has no prior assignment (Before stays unset).
-	d := audit.Details{Target: "source_zone:" + a.SourceID, After: a}
-	if before, gerr := h.repo.GetAssignment(r.Context(), a.SourceID); gerr == nil && before != nil {
-		d.Before = *before
-	}
-
-	// Fail-closed audit BEFORE the mutation.
-	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneAssign, audit.DecisionAllow,
-		"admin_mutation", d, "admin:source_zone.assign"); err != nil {
-		writeInternalError(w, err, "audit assign source zone")
-		return
-	}
-
-	if err := h.repo.UpsertAssignment(r.Context(), a); err != nil {
+	// The repository captures the prior assignment and writes the audit row in
+	// the same transaction as the upsert; the handler threads the actor down.
+	if err := h.repo.UpsertAssignment(r.Context(), a, h.actor(r)); err != nil {
 		writeInternalError(w, err, "assign source zone")
 		return
 	}
@@ -255,17 +247,9 @@ func (h *adminHandler) createPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fail-closed audit BEFORE the mutation: a grant is the canonical
-	// escalation vector D-0012 closed the gate on; no row ⇒ no grant.
-	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminPolicyGrant, audit.DecisionAllow,
-		"admin_mutation",
-		audit.Details{Target: fmt.Sprintf("policy:%s@%s", p.Principal, p.ZoneID), After: p},
-		"admin:policy.grant"); err != nil {
-		writeInternalError(w, err, "audit policy grant")
-		return
-	}
-
-	created, err := h.repo.CreatePolicy(r.Context(), p)
+	// The repository writes the policy.grant audit row atomically with the
+	// insert; the handler threads the acting principal down.
+	created, err := h.repo.CreatePolicy(r.Context(), p, h.actor(r))
 	if err != nil {
 		writeInternalError(w, err, "create policy")
 		return
@@ -284,28 +268,10 @@ func (h *adminHandler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture before-state: locate the policy being revoked so the row
-	// records WHAT grant was removed (the repo has no GetPolicy(id), so scan
-	// the list). Best-effort — a missing policy leaves Before unset and the
-	// DeletePolicy below is a no-op.
-	d := audit.Details{Target: fmt.Sprintf("policy:%d", id)}
-	if policies, lerr := h.repo.ListPolicies(r.Context()); lerr == nil {
-		for i := range policies {
-			if policies[i].ID == id {
-				d.Before = policies[i]
-				break
-			}
-		}
-	}
-
-	// Fail-closed audit BEFORE the mutation.
-	if err := h.recordAdminAudit(r.Context(), audit.ActionAdminPolicyRevoke, audit.DecisionAllow,
-		"admin_mutation", d, "admin:policy.revoke"); err != nil {
-		writeInternalError(w, err, "audit policy revoke")
-		return
-	}
-
-	if err := h.repo.DeletePolicy(r.Context(), id); err != nil {
+	// The repository captures the revoked grant for the audit Before and writes
+	// the policy.revoke row in the same transaction as the delete; the handler
+	// threads the acting principal down.
+	if err := h.repo.DeletePolicy(r.Context(), id, h.actor(r)); err != nil {
 		writeInternalError(w, err, "delete policy")
 		return
 	}

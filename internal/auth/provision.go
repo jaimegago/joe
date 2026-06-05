@@ -80,11 +80,14 @@ func (p *Provisioner) GrantAdmin(ctx context.Context, principal rbac.Principal) 
 	if err != nil {
 		return false, fmt.Errorf("auth: check existing admin status: %w", err)
 	}
+	// The acting principal for the bootstrap grant is the logging-in user
+	// itself (admin_email self-escalation). The repository records the
+	// admin.grant audit row in the same transaction as the AddAdmin upsert.
 	if err := p.repo.AddAdmin(ctx, rbac.Admin{
 		Principal: string(principal),
 		GrantedBy: GrantedByBootstrapAdminEmail,
 		Reason:    BootstrapAdminReason,
-	}); err != nil {
+	}, string(principal)); err != nil {
 		return false, fmt.Errorf("auth: mark admin: %w", err)
 	}
 	// Single source of truth: any rbac_policies rows for the admin are

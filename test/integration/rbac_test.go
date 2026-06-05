@@ -113,12 +113,12 @@ func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 	// Seed: local-k8s → prod-readonly; svc:ops → prod-readonly.
 	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 	if _, err := env.repo.CreatePolicy(ctx, rbac.Policy{
 		Principal: string(principal), ZoneID: "prod-readonly",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("CreatePolicy: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestIntegration_RBAC_Auth_DeniesReadWithoutPolicy(t *testing.T) {
 	// Assign source to a zone but grant no policy to svc:nobody.
 	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 

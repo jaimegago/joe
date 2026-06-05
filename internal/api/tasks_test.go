@@ -618,14 +618,14 @@ func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, 
 	_, err = rbacRepo.CreateZone(ctx, rbac.Zone{
 		ID: "zone-a", Name: "Frontend Zone",
 		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionQuery},
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("create zone-a: %v", err)
 	}
 	_, err = rbacRepo.CreateZone(ctx, rbac.Zone{
 		ID: "zone-b", Name: "Payments Zone",
 		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionQuery},
-	})
+	}, "test")
 	if err != nil {
 		t.Fatalf("create zone-b: %v", err)
 	}
@@ -633,12 +633,12 @@ func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, 
 	// Assign sources to zones
 	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-frontend", ZoneID: "zone-a", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign k8s-frontend: %v", err)
 	}
 	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-payments", ZoneID: "zone-b", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("assign k8s-payments: %v", err)
 	}
 

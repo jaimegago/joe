@@ -32,8 +32,14 @@ func (r *errRepository) ListZones(_ context.Context) ([]rbac.Zone, error) {
 func (r *errRepository) GetZone(_ context.Context, _ string) (*rbac.Zone, error) {
 	return r.getZoneResult, r.getZoneErr
 }
-func (r *errRepository) CreateZone(_ context.Context, z rbac.Zone) (*rbac.Zone, error) {
+func (r *errRepository) CreateZone(_ context.Context, z rbac.Zone, _ string) (*rbac.Zone, error) {
 	return &z, nil
+}
+func (r *errRepository) UpdateZone(_ context.Context, z rbac.Zone, _ string) (*rbac.Zone, error) {
+	return &z, nil
+}
+func (r *errRepository) DeleteZone(_ context.Context, _ string, _ string) error {
+	return nil
 }
 func (r *errRepository) ListAssignments(_ context.Context) ([]rbac.SourceZoneAssignment, error) {
 	return nil, nil
@@ -41,8 +47,11 @@ func (r *errRepository) ListAssignments(_ context.Context) ([]rbac.SourceZoneAss
 func (r *errRepository) GetAssignment(_ context.Context, _ string) (*rbac.SourceZoneAssignment, error) {
 	return r.getAssignmentResult, r.getAssignmentErr
 }
-func (r *errRepository) UpsertAssignment(_ context.Context, _ rbac.SourceZoneAssignment) error {
+func (r *errRepository) UpsertAssignment(_ context.Context, _ rbac.SourceZoneAssignment, _ string) error {
 	return nil
+}
+func (r *errRepository) DeleteAssignment(_ context.Context, _ string, _ string) (int64, error) {
+	return 0, nil
 }
 func (r *errRepository) ListPolicies(_ context.Context) ([]rbac.Policy, error) {
 	return nil, nil
@@ -50,13 +59,13 @@ func (r *errRepository) ListPolicies(_ context.Context) ([]rbac.Policy, error) {
 func (r *errRepository) ListPoliciesForPrincipal(_ context.Context, _ string) ([]rbac.Policy, error) {
 	return r.listPoliciesResult, r.listPoliciesForPrincipalErr
 }
-func (r *errRepository) CreatePolicy(_ context.Context, p rbac.Policy) (*rbac.Policy, error) {
+func (r *errRepository) CreatePolicy(_ context.Context, p rbac.Policy, _ string) (*rbac.Policy, error) {
 	return &p, nil
 }
-func (r *errRepository) DeletePolicy(_ context.Context, _ int64) error {
+func (r *errRepository) DeletePolicy(_ context.Context, _ int64, _ string) error {
 	return nil
 }
-func (r *errRepository) DeletePolicyForPrincipalZone(_ context.Context, _, _ string) (int64, error) {
+func (r *errRepository) DeletePolicyForPrincipalZone(_ context.Context, _, _ string, _ string) (int64, error) {
 	return 0, nil
 }
 func (r *errRepository) ListUnassignedSourceIDs(_ context.Context) ([]string, error) {
@@ -74,10 +83,10 @@ func (r *errRepository) IsAdmin(_ context.Context, _ string) (bool, error) {
 func (r *errRepository) ListAdmins(_ context.Context) ([]rbac.Admin, error) {
 	return nil, nil
 }
-func (r *errRepository) AddAdmin(_ context.Context, _ rbac.Admin) error {
+func (r *errRepository) AddAdmin(_ context.Context, _ rbac.Admin, _ string) error {
 	return nil
 }
-func (r *errRepository) RemoveAdmin(_ context.Context, _ string) (int64, error) {
+func (r *errRepository) RemoveAdmin(_ context.Context, _ string, _ string) (int64, error) {
 	return 0, nil
 }
 
@@ -149,10 +158,10 @@ func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 	// Assign k8s-prod to prod-readonly zone.
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
+	}, "test")
 
 	// Grant alice access to prod-readonly.
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -174,8 +183,8 @@ func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test",
-	})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "bob", ZoneID: "prod-write"})
+	}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "bob", ZoneID: "prod-write"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -193,7 +202,7 @@ func TestPolicyEngine_IsAllowed_Unassigned(t *testing.T) {
 	ctx := context.Background()
 
 	// k8s-dev has no zone assignment — defaults to "unassigned" (read only).
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "charlie", ZoneID: "unassigned"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "charlie", ZoneID: "unassigned"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -212,7 +221,7 @@ func TestPolicyEngine_IsAllowed_NoPolicyDenied(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
+	}, "test")
 	// No policy for dave.
 
 	engine := rbac.NewPolicyEngine(repo)
@@ -229,8 +238,8 @@ func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test",
-	})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "eve", ZoneID: "dev-full"})
+	}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "eve", ZoneID: "dev-full"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -289,8 +298,8 @@ func TestPolicyEngine_IsAllowed_ActionNotInZone(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "grace", ZoneID: "prod-readonly"})
+	}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "grace", ZoneID: "prod-readonly"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -357,8 +366,8 @@ func TestPolicyEngine_IsAllowed_SetSingleMember(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -381,9 +390,9 @@ func TestPolicyEngine_IsAllowed_SetUnion(t *testing.T) {
 
 	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
-	})
+	}, "test")
 	// Only alice is granted; bob and mallory are not.
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -435,7 +444,7 @@ func TestPolicyEngine_HasZoneAccess_SetSingleMember(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -461,7 +470,7 @@ func TestPolicyEngine_HasZoneAccess_SetUnion(t *testing.T) {
 	ctx := context.Background()
 
 	// Only alice is granted.
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"})
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "regime-control"}, "test")
 
 	engine := rbac.NewPolicyEngine(repo)
 
@@ -501,7 +510,7 @@ func TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation(t *testing.T) {
 
 	// Designate alice as dynamic admin BEFORE the new zone exists. No
 	// rbac_policies row is created — admin status is the sole basis.
-	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}); err != nil {
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
 	}
 
@@ -512,12 +521,12 @@ func TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation(t *testing.T) {
 		ID:             "post-bootstrap-zone",
 		Name:           "Late Zone",
 		AllowedActions: []rbac.Action{rbac.ActionRead, rbac.ActionMutate},
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("create zone: %v", err)
 	}
 	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
 		SourceID: "k8s-prod", ZoneID: "post-bootstrap-zone", AssignedBy: "test",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("upsert assignment: %v", err)
 	}
 
@@ -557,10 +566,10 @@ func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
 
 	// Pre-seed every source onto a distinct zone (all four are seeded by
 	// openTestDB).
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"})
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"})
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"}, "test")
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"}, "test")
 
-	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}); err != nil {
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
 	}
 
@@ -616,12 +625,12 @@ func TestPhaseH_NonAdminOutcomesUnchanged(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	// An admin also exists in the same DB — its existence must not
 	// affect non-admin decisions either way.
-	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
 	}
 
@@ -660,9 +669,9 @@ func TestPhaseH_AdminDecisionReasonIsDistinct(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"})
-	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"})
-	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
+	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
 	}
 
@@ -693,7 +702,7 @@ func TestPhaseH_HasZoneAccessAdminCapability(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}); err != nil {
+	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
 	}
 	engine := rbac.NewPolicyEngine(repo)

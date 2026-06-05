@@ -19,20 +19,29 @@ import (
 // shape with admin-status methods so `joe admin` can read and manage rows
 // in the admin_principals table introduced by migration 016.
 type rbacRepo interface {
-	// Zones + policies (Phase C, used by `joe zone`).
+	// Zones + policies (Phase C, used by `joe zone`). The mutating methods now
+	// take the acting principal as their final argument (threaded into the
+	// audit row the repository writes); the CLI passes "cli". These callers are
+	// removed in Stage 4 when the CLI admin/zone surface is retired.
 	GetZone(ctx context.Context, id string) (*rbac.Zone, error)
 	ListZones(ctx context.Context) ([]rbac.Zone, error)
-	CreatePolicy(ctx context.Context, p rbac.Policy) (*rbac.Policy, error)
-	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string) (int64, error)
+	CreatePolicy(ctx context.Context, p rbac.Policy, actor string) (*rbac.Policy, error)
+	DeletePolicyForPrincipalZone(ctx context.Context, principal, zoneID string, actor string) (int64, error)
 	ListPolicies(ctx context.Context) ([]rbac.Policy, error)
 	ListPoliciesForPrincipal(ctx context.Context, principal string) ([]rbac.Policy, error)
 
 	// Admin status (Phase H, used by `joe admin`, D-0011).
 	IsAdmin(ctx context.Context, principal string) (bool, error)
 	ListAdmins(ctx context.Context) ([]rbac.Admin, error)
-	AddAdmin(ctx context.Context, a rbac.Admin) error
-	RemoveAdmin(ctx context.Context, principal string) (int64, error)
+	AddAdmin(ctx context.Context, a rbac.Admin, actor string) error
+	RemoveAdmin(ctx context.Context, principal string, actor string) (int64, error)
 }
+
+// cliActor is the acting-principal value the CLI threads into the repository's
+// audited mutations. The CLI repo is constructed without an audit sink, so no
+// row is actually written today; the value keeps the signatures satisfied and
+// names the operator-on-host path. Removed with the CLI in Stage 4.
+const cliActor = "cli"
 
 // openRBACRepoDefault opens the joe server database directly and returns an RBAC
 // repository over it. Zone provisioning is an operator-on-host task (design
@@ -171,7 +180,7 @@ func runZoneGrant(ctx context.Context, args []string, stdout, stderr io.Writer, 
 		}
 	}
 
-	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: *principal, ZoneID: *zone}); err != nil {
+	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: *principal, ZoneID: *zone}, cliActor); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1
 	}
@@ -192,7 +201,7 @@ func runZoneRevoke(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return 1
 	}
 
-	n, err := repo.DeletePolicyForPrincipalZone(ctx, *principal, *zone)
+	n, err := repo.DeletePolicyForPrincipalZone(ctx, *principal, *zone, cliActor)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1

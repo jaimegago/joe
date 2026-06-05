@@ -348,13 +348,17 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	}
 	slog.Info("database ready", "path", dbCfg.DSN)
 
-	// Wire RBAC repository (uses the same SQLite DB, tables created by migration 006).
-	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-
 	// Wire the append-only audit log (Identity Phase F, migration 015).
 	// Every authorization decision the accessor makes and every
 	// regime/captain transition writes one row here.
 	auditRepo := audit.NewRepository(sqlStore.DB(), sqlStore.Driver())
+
+	// Wire RBAC repository (uses the same SQLite DB, tables created by migration
+	// 006). It is given the audit sink so every RBAC/admin mutation writes its
+	// KindAdminAccess audit row in the same transaction as the mutation itself
+	// (Identity Stage 1): the mutation and its audit row commit or roll back as
+	// one, for every caller — not just the HTTP handler.
+	rbacRepo := rbac.NewRepositoryWithAudit(sqlStore.DB(), sqlStore.Driver(), auditRepo)
 
 	// Wire the per-call LLM usage repository (Stream G phase G2,
 	// migration 017). The recorder wrapper installed around the raw

@@ -103,7 +103,7 @@ func grantRegimeControl(t *testing.T, rbacRepo rbac.Repository, principal string
 	if _, err := rbacRepo.CreatePolicy(context.Background(), rbac.Policy{
 		Principal: principal,
 		ZoneID:    "regime-control",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("grant regime-control to %s: %v", principal, err)
 	}
 }
@@ -474,7 +474,7 @@ func TestRegime_6B_NoIncidentalSourceWidening(t *testing.T) {
 	// Grant regime-control.
 	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{
 		Principal: "alice", ZoneID: "regime-control",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("grant regime-control: %v", err)
 	}
 

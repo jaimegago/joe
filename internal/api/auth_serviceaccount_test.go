@@ -32,17 +32,17 @@ func TestPhaseD_TwoServiceAccountsIndependentZones(t *testing.T) {
 	mustCreateSource(t, sqlStore, "s-mcp") // granted to svc:mcp only
 
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-ci", ZoneID: "prod-readonly", AssignedBy: "test"}); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-ci", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-ci: %v", err)
 	}
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-mcp", ZoneID: "dev-full", AssignedBy: "test"}); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-mcp", ZoneID: "dev-full", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-mcp: %v", err)
 	}
 	// Independent grants: svc:ci → prod-readonly, svc:mcp → dev-full.
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:ci", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:ci", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant svc:ci: %v", err)
 	}
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:mcp", ZoneID: "dev-full"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:mcp", ZoneID: "dev-full"}, "test"); err != nil {
 		t.Fatalf("grant svc:mcp: %v", err)
 	}
 
@@ -129,7 +129,7 @@ func TestPhaseD_ZeroZoneDeniedThenGrantAllows(t *testing.T) {
 
 	mustCreateSource(t, sqlStore, "s-allow")
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestPhaseD_ZeroZoneDeniedThenGrantAllows(t *testing.T) {
 		t.Errorf("zero-zone svc:ci: got %d, want 403", code)
 	}
 	// CLI-equivalent grant: svc:ci → prod-readonly.
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:ci", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:ci", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant svc:ci: %v", err)
 	}
 	if code := call(); code != http.StatusOK {
@@ -242,7 +242,7 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 
 	mustCreateSource(t, sqlStore, "s-infra")
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-infra", ZoneID: "prod-readonly", AssignedBy: "test"}); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-infra", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-infra: %v", err)
 	}
 
@@ -285,7 +285,7 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	}
 	// Grant svc:server the zone — the CLI's path through joe reaches infra
 	// end-to-end via the accessor (the only RBAC gate after Phase E).
-	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:server", ZoneID: "prod-readonly"}); err != nil {
+	if _, err := rbacRepo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:server", ZoneID: "prod-readonly"}, "test"); err != nil {
 		t.Fatalf("grant svc:server: %v", err)
 	}
 	if code := call(); code != http.StatusOK {

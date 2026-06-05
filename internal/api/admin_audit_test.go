@@ -24,9 +24,7 @@ import (
 // admin gate enabled, markAdmin, and the do() principal-injecting helper.
 
 // failingAudit is an audit.Repository whose every write fails, used to drive
-// the fail-closed path. It is injected into services.Audit after fixture
-// construction; recordAdminAudit / recordAdminDenial read services.Audit at
-// call time, so the swap takes effect without rebuilding the server.
+// the fail-closed path.
 type failingAudit struct{}
 
 func (failingAudit) Insert(context.Context, audit.Event) error {
@@ -34,6 +32,27 @@ func (failingAudit) Insert(context.Context, audit.Event) error {
 }
 func (failingAudit) InsertTx(context.Context, *sql.Tx, audit.Event) error {
 	return audit.ErrAuditWriteFailed
+}
+
+// swappableAudit is an audit.Repository whose underlying sink can be swapped at
+// runtime. The fixture shares ONE instance between the RBAC repository (which
+// writes admin-mutation rows in-transaction via InsertTx) and services.Audit
+// (the handler path for reads and gate denials), so breakAudit() drives the
+// fail-closed / fail-open paths uniformly across both layers without rebuilding
+// the server.
+type swappableAudit struct{ inner audit.Repository }
+
+func (s *swappableAudit) Insert(ctx context.Context, e audit.Event) error {
+	return s.inner.Insert(ctx, e)
+}
+func (s *swappableAudit) InsertTx(ctx context.Context, tx *sql.Tx, e audit.Event) error {
+	return s.inner.InsertTx(ctx, tx, e)
+}
+
+// breakAudit makes every subsequent audit write fail, for both the in-handler
+// read/denial path and the in-transaction repository-mutation path.
+func (f *llmadminFixture) breakAudit() {
+	f.audit.(*swappableAudit).inner = failingAudit{}
 }
 
 // latestAudit returns the most recent audit_log row for the given action,
@@ -210,7 +229,7 @@ func TestAdminAudit_Reads_WriteRows(t *testing.T) {
 func TestAdminAudit_ZoneCreate_FailClosed(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	f.services.Audit = failingAudit{} // every audit write now fails
+	f.breakAudit()
 
 	before := countZones(t, f)
 	w := f.do(http.MethodPost, "/api/v1/admin/zones",
@@ -227,7 +246,7 @@ func TestAdminAudit_ZoneCreate_FailClosed(t *testing.T) {
 func TestAdminAudit_PolicyGrant_FailClosed(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	f.services.Audit = failingAudit{}
+	f.breakAudit()
 
 	before := countPolicies(t, f)
 	w := f.do(http.MethodPost, "/api/v1/admin/policies",
@@ -246,7 +265,7 @@ func TestAdminAudit_PolicyGrant_FailClosed(t *testing.T) {
 func TestAdminAudit_Read_FailOpen(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	f.services.Audit = failingAudit{}
+	f.breakAudit()
 
 	w := f.do(http.MethodGet, "/api/v1/admin/zones", "", "user:alice")
 	if w.Code != http.StatusOK {

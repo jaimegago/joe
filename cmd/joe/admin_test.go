@@ -97,7 +97,7 @@ func TestPhaseH_AdminGrantCleansUpZoneSnapshots(t *testing.T) {
 	if _, err := repo.CreatePolicy(ctx, rbac.Policy{
 		Principal: "user:operator@example.com",
 		ZoneID:    "prod-readonly",
-	}); err != nil {
+	}, "test"); err != nil {
 		t.Fatalf("seed zone grant: %v", err)
 	}
 
