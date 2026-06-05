@@ -66,6 +66,30 @@ export const RbacPolicySchema = z.object({
   created_at: z.string(),
 });
 
+// Identity registry entry (Stage 1-3 — GET /api/v1/admin/principals). A row is
+// created at a principal's first OIDC login; status flips between 'active' and
+// 'disabled' on admin disable/enable. disabled_at/disabled_by are present only
+// while disabled; display_name and last_seen_at are present when known (the Go
+// struct omits them when empty, so they are optional here).
+export const PrincipalRecordSchema = z.object({
+  principal: z.string(),
+  created_at: z.string(),
+  status: z.enum(['active', 'disabled']),
+  disabled_at: z.string().optional(),
+  disabled_by: z.string().optional(),
+  display_name: z.string().optional(),
+  last_seen_at: z.string().optional(),
+});
+
+// Admin roster entry (GET /api/v1/admin/admins). granted_by/reason are always
+// sent by the server (no omitempty), so they are required here.
+export const AdminSchema = z.object({
+  principal: z.string(),
+  granted_at: z.string(),
+  granted_by: z.string(),
+  reason: z.string(),
+});
+
 // Chat / Sessions
 export const ToolCallSchema = z.object({
   id: z.string(),

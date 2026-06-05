@@ -8,6 +8,8 @@ import type {
   SecurityZoneSchema,
   SourceZoneAssignmentSchema,
   RbacPolicySchema,
+  PrincipalRecordSchema,
+  AdminSchema,
   ChatMessageSchema,
   ToolCallSchema,
   SessionSchema,
@@ -38,6 +40,8 @@ export type Source = z.infer<typeof SourceSchema>;
 export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
 export type SourceZoneAssignment = z.infer<typeof SourceZoneAssignmentSchema>;
 export type RbacPolicy = z.infer<typeof RbacPolicySchema>;
+export type PrincipalRecord = z.infer<typeof PrincipalRecordSchema>;
+export type Admin = z.infer<typeof AdminSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 export type Session = z.infer<typeof SessionSchema>;
