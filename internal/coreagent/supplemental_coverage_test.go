@@ -291,13 +291,13 @@ func TestRefresher_RefreshLoop_ExitsOnStop(t *testing.T) {
 	}
 
 	time.Sleep(10 * time.Millisecond)
-	close(r.stopCh)
+	r.cancel()
 
 	select {
 	case <-r.doneCh:
 		// OK
 	case <-time.After(2 * time.Second):
-		t.Error("refreshLoop did not exit after stopCh closed")
+		t.Error("refreshLoop did not exit after cancel")
 	}
 }
 

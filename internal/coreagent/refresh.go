@@ -51,7 +51,7 @@ type Refresher struct {
 	logger         *slog.Logger
 	metrics        *observability.Metrics
 	interval       time.Duration
-	stopCh         chan struct{}
+	cancel         context.CancelFunc
 	doneCh         chan struct{}
 }
 
@@ -65,7 +65,6 @@ func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *sl
 		logger:         logger.With("component", "refresher"),
 		metrics:        observability.EnsureMetrics(metrics),
 		interval:       5 * time.Minute,
-		stopCh:         make(chan struct{}),
 		doneCh:         make(chan struct{}),
 	}
 }
@@ -74,7 +73,9 @@ func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *sl
 func (r *Refresher) Start(ctx context.Context) error {
 	r.logger.Info("starting background refresh", "interval", r.interval)
 
-	go r.refreshLoop(ctx)
+	loopCtx, cancel := context.WithCancel(ctx)
+	r.cancel = cancel
+	go r.refreshLoop(loopCtx)
 	return nil
 }
 
@@ -82,7 +83,11 @@ func (r *Refresher) Start(ctx context.Context) error {
 func (r *Refresher) Stop(ctx context.Context) error {
 	r.logger.Info("stopping background refresh")
 
-	close(r.stopCh)
+	// Signal the loop to stop via context cancellation. A nil cancel means
+	// Start was never called; the doneCh wait below then hits its timeout.
+	if r.cancel != nil {
+		r.cancel()
+	}
 
 	// Wait for refresh loop to finish, with timeout
 	select {
@@ -108,11 +113,8 @@ func (r *Refresher) refreshLoop(ctx context.Context) {
 			if err := r.refresh(ctx); err != nil {
 				r.logger.Error("refresh cycle failed", "error", err)
 			}
-		case <-r.stopCh:
-			r.logger.Info("refresh loop stopping")
-			return
 		case <-ctx.Done():
-			r.logger.Info("refresh loop stopping due to context cancellation")
+			r.logger.Info("refresh loop stopping")
 			return
 		}
 	}
