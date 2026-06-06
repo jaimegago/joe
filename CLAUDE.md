@@ -48,6 +48,7 @@ npm run test
 - RBAC enforcement middleware fires only on paths with sourceID (`/api/v1/{adapter}/{sourceID}/...`)
 - Panic state persisted to `~/.joe/panic.state` (YAML); safe mode blocks T2/T3 tools in executor
 - MCP server (`joe mcp`) reads `JOE_SERVER` + `JOE_API_KEY` env vars
+- **repo-specific override:** do not add a `Co-Authored-By` trailer to commit messages
 
 ## Reference Documents
 
