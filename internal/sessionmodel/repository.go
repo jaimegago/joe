@@ -22,11 +22,27 @@ type Repository interface {
 	GetSession(ctx context.Context, id string) (*AgentSession, error)
 	ListSessions(ctx context.Context) ([]AgentSession, error)
 	ListSessionsByType(ctx context.Context, t SessionType) ([]AgentSession, error)
+	// ListSessionsByCreator is the owner-scoped Web UI chat list (§11 Phase 1
+	// isolation fix): only the caller's own sessions, newest activity first,
+	// with a per-session message count. Distinct from ListSessions, which is
+	// team-global and backs the /agent-sessions route.
+	ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
 	// DeleteSession removes one session by ID. The schema's ON DELETE CASCADE
 	// FKs (linked investigations via the self-FK, plus child tables landed in
 	// Changes 2/3) carry the §5b-5 expunge downward. This is a single SQL
 	// statement (no application-level fan-out).
 	DeleteSession(ctx context.Context, id string) error
+
+	// Chat messages (interim flat store, migration 022)
+
+	// AddChatMessage appends a message to a session's flat timeline and bumps
+	// the session's last_activity_at. Used by the task handlers'
+	// persistTaskMessages.
+	AddChatMessage(ctx context.Context, m ChatMessage) (*ChatMessage, error)
+	// ListChatMessages returns a session's messages in seq order. Used by the
+	// owner-checked Web UI messages endpoint and the streaming task handler's
+	// history seeding.
+	ListChatMessages(ctx context.Context, sessionID string) ([]ChatMessage, error)
 
 	// Regime
 
@@ -174,6 +190,10 @@ func (r *SQLRepository) CreateSession(ctx context.Context, s AgentSession) (*Age
 		s.LastActivityAt = s.CreatedAt
 	}
 
+	if s.Visibility == "" {
+		s.Visibility = VisibilityPrivate
+	}
+
 	var incidentState any
 	if s.IncidentState != nil {
 		incidentState = string(*s.IncidentState)
@@ -186,14 +206,18 @@ func (r *SQLRepository) CreateSession(ctx context.Context, s AgentSession) (*Age
 	if s.RetentionClass != nil {
 		retentionClass = *s.RetentionClass
 	}
+	var title any
+	if s.Title != nil {
+		title = *s.Title
+	}
 
 	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO agent_sessions
-			(id, type, incident_state, created_at, last_activity_at, creator_principal, linked_incident_id, retention_class)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			(id, type, incident_state, created_at, last_activity_at, creator_principal, linked_incident_id, retention_class, title, visibility)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		s.ID, string(s.Type), incidentState,
 		s.CreatedAt.Format(time.RFC3339), s.LastActivityAt.Format(time.RFC3339),
-		s.CreatorPrincipal, linkedID, retentionClass)
+		s.CreatorPrincipal, linkedID, retentionClass, title, s.Visibility)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -203,7 +227,7 @@ func (r *SQLRepository) CreateSession(ctx context.Context, s AgentSession) (*Age
 func (r *SQLRepository) GetSession(ctx context.Context, id string) (*AgentSession, error) {
 	row := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class
+		       creator_principal, linked_incident_id, retention_class, title, visibility
 		FROM agent_sessions WHERE id = ?`), id)
 	return scanSession(row.Scan)
 }
@@ -211,7 +235,7 @@ func (r *SQLRepository) GetSession(ctx context.Context, id string) (*AgentSessio
 func (r *SQLRepository) ListSessions(ctx context.Context) ([]AgentSession, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class
+		       creator_principal, linked_incident_id, retention_class, title, visibility
 		FROM agent_sessions ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -223,7 +247,7 @@ func (r *SQLRepository) ListSessions(ctx context.Context) ([]AgentSession, error
 func (r *SQLRepository) ListSessionsByType(ctx context.Context, t SessionType) ([]AgentSession, error) {
 	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
 		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class
+		       creator_principal, linked_incident_id, retention_class, title, visibility
 		FROM agent_sessions WHERE type = ? ORDER BY created_at`), string(t))
 	if err != nil {
 		return nil, fmt.Errorf("list sessions by type: %w", err)
@@ -253,6 +277,145 @@ func (r *SQLRepository) UpdateIncidentState(ctx context.Context, sessionID strin
 	return nil
 }
 
+// ListSessionsByCreator returns the caller's own sessions, newest activity
+// first, capped at limit (<=0 means no cap). This is the owner-scoped Web UI
+// chat list — the §11 Phase 1 isolation fix: unlike ListSessions (team-global,
+// used by /agent-sessions), this filters by creator_principal so one user never
+// sees another's chat history. The LEFT JOIN counts messages in one query (no
+// N+1) so the list can render a message count per session.
+func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
+	query := `
+		SELECT s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
+		       s.creator_principal, s.linked_incident_id, s.retention_class, s.title, s.visibility,
+		       COUNT(m.id) AS message_count
+		FROM agent_sessions s
+		LEFT JOIN chat_messages m ON m.session_id = s.id
+		WHERE s.creator_principal = ?
+		GROUP BY s.id
+		ORDER BY s.last_activity_at DESC`
+	if limit > 0 {
+		query += "\n\t\tLIMIT ?"
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if limit > 0 {
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), principal, limit)
+	} else {
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), principal)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list sessions by creator: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ChatSessionRow
+	for rows.Next() {
+		var count int
+		// scanSession reads the 10 session columns; the join's trailing
+		// message_count is captured by passing &count as the final scan dest.
+		s, err := scanSession(func(dest ...any) error {
+			return rows.Scan(append(dest, &count)...)
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			out = append(out, ChatSessionRow{AgentSession: *s, MessageCount: count})
+		}
+	}
+	return out, rows.Err()
+}
+
+// --- Chat messages (interim flat store, migration 022) ---
+
+// AddChatMessage appends a message to a session and bumps the session's
+// last_activity_at so the owner-scoped list orders by recency. Seq is assigned
+// as MAX(seq)+1 for the session; chat is single-threaded per session (the run
+// model permits at most one running run per session), so the read-then-insert
+// is safe, and a concurrent collision is caught by the UNIQUE(session_id, seq)
+// constraint rather than producing a duplicate.
+func (r *SQLRepository) AddChatMessage(ctx context.Context, m ChatMessage) (*ChatMessage, error) {
+	if m.ID == "" {
+		return nil, fmt.Errorf("add chat message: id required")
+	}
+	if m.SessionID == "" {
+		return nil, fmt.Errorf("add chat message: session_id required")
+	}
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+
+	var maxSeq sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, store.Rebind(r.driver,
+		`SELECT MAX(seq) FROM chat_messages WHERE session_id = ?`), m.SessionID).Scan(&maxSeq); err != nil {
+		return nil, fmt.Errorf("add chat message: next seq: %w", err)
+	}
+	m.Seq = int(maxSeq.Int64) + 1
+
+	var toolName any
+	if m.ToolName != nil {
+		toolName = *m.ToolName
+	}
+	var toolArgs any
+	if m.ToolArgs != nil {
+		toolArgs = *m.ToolArgs
+	}
+
+	if _, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		INSERT INTO chat_messages
+			(id, session_id, seq, role, content, tool_name, tool_args, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		m.ID, m.SessionID, m.Seq, m.Role, m.Content, toolName, toolArgs,
+		m.CreatedAt.Format(time.RFC3339)); err != nil {
+		return nil, fmt.Errorf("add chat message: %w", err)
+	}
+
+	// Best-effort recency bump; a failure here must not lose the message.
+	if _, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`UPDATE agent_sessions SET last_activity_at = ? WHERE id = ?`),
+		m.CreatedAt.Format(time.RFC3339), m.SessionID); err != nil {
+		return nil, fmt.Errorf("add chat message: bump activity: %w", err)
+	}
+	return &m, nil
+}
+
+// ListChatMessages returns a session's messages in seq order (oldest first).
+func (r *SQLRepository) ListChatMessages(ctx context.Context, sessionID string) ([]ChatMessage, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT id, session_id, seq, role, content, tool_name, tool_args, created_at
+		FROM chat_messages WHERE session_id = ? ORDER BY seq`), sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list chat messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ChatMessage
+	for rows.Next() {
+		var (
+			m            ChatMessage
+			toolName     sql.NullString
+			toolArgs     sql.NullString
+			createdAtStr string
+		)
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Seq, &m.Role, &m.Content,
+			&toolName, &toolArgs, &createdAtStr); err != nil {
+			return nil, fmt.Errorf("scan chat message: %w", err)
+		}
+		if toolName.Valid {
+			m.ToolName = &toolName.String
+		}
+		if toolArgs.Valid {
+			m.ToolArgs = &toolArgs.String
+		}
+		m.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func scanSession(scan func(...any) error) (*AgentSession, error) {
 	var (
 		s                 AgentSession
@@ -262,9 +425,11 @@ func scanSession(scan func(...any) error) (*AgentSession, error) {
 		lastActivityAtStr string
 		linkedIncidentID  sql.NullString
 		retentionClass    sql.NullString
+		title             sql.NullString
+		visibility        string
 	)
 	err := scan(&s.ID, &typ, &incidentState, &createdAtStr, &lastActivityAtStr,
-		&s.CreatorPrincipal, &linkedIncidentID, &retentionClass)
+		&s.CreatorPrincipal, &linkedIncidentID, &retentionClass, &title, &visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -284,6 +449,10 @@ func scanSession(scan func(...any) error) (*AgentSession, error) {
 	if retentionClass.Valid {
 		s.RetentionClass = &retentionClass.String
 	}
+	if title.Valid {
+		s.Title = &title.String
+	}
+	s.Visibility = visibility
 	return &s, nil
 }
 

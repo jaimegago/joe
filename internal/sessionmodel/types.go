@@ -31,6 +31,14 @@ const (
 	IncidentStateReviewed          IncidentState = "reviewed"
 )
 
+// Visibility values for a session (migration 022). v1 is binary; per-principal
+// sharing is future (DESIGN-CHAT-SESSIONS.md §10). Validation lives at the app
+// layer — the column carries no CHECK so it stays droppable on SQLite.
+const (
+	VisibilityPrivate = "private"
+	VisibilityPublic  = "public"
+)
+
 // AgentSession is one row of the agent_sessions table.
 type AgentSession struct {
 	ID               string
@@ -41,6 +49,35 @@ type AgentSession struct {
 	CreatorPrincipal string
 	LinkedIncidentID *string
 	RetentionClass   *string
+	// Title is the human-editable session label (migration 022). nil until a
+	// title is set; Phase 2 auto-suggests and lets the owner override it.
+	Title *string
+	// Visibility is 'private' (default) or 'public' (migration 022). Phase 1
+	// only ever writes 'private'; the public read path is Phase 3.
+	Visibility string
+}
+
+// ChatSessionRow is a session plus its chat message count — the projection the
+// owner-scoped Web UI chat list renders (DESIGN-CHAT-SESSIONS.md §6).
+type ChatSessionRow struct {
+	AgentSession
+	MessageCount int
+}
+
+// ChatMessage is one row of the interim chat_messages table (migration 022):
+// the flat, owner-scoped Web UI chat message store keyed to agent_sessions.
+// Seq is the per-session ordering key (1-based, gap-free under single-threaded
+// chat). The committed endgame is agent_runs->run_steps; this type is retired
+// when chat moves to the run model (DESIGN-CHAT-SESSIONS.md §10).
+type ChatMessage struct {
+	ID        string
+	SessionID string
+	Seq       int
+	Role      string
+	Content   string
+	ToolName  *string
+	ToolArgs  *string
+	CreatedAt time.Time
 }
 
 // RegimeMode is the system-wide regime — §R1.

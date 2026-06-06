@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/jaimegago/joe/internal/llm"
-	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 )
 
 // recordingLLM records each ChatRequest and returns a canned no-tool answer.
@@ -141,17 +141,22 @@ func TestHandleTaskStream_MultiTurnHistory(t *testing.T) {
 	llmRec := &recordingLLM{answer: "a2"}
 	srv, mux := setupTaskServer(t, llmRec)
 
-	// Seed a prior turn for session "s1" directly in the store.
+	// Seed a prior turn for session "s1" directly in the session model. The
+	// session is owned by the unauthenticated test principal (rbac.Unknown) so
+	// the handler's owner-scope check admits the continue.
 	ctx := context.Background()
-	if err := srv.services.Store.Sessions.Create(ctx, &store.Session{ID: "s1", StartedAt: time.Now().UTC()}); err != nil {
+	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+		ID:               "s1",
+		Type:             sessionmodel.SessionTypeOther,
+		CreatorPrincipal: string(rbac.Unknown),
+	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	for _, m := range []store.SessionMessage{
-		{SessionID: "s1", Role: "user", Content: "q1", CreatedAt: time.Now().UTC()},
-		{SessionID: "s1", Role: "assistant", Content: "a1", CreatedAt: time.Now().UTC()},
+	for _, m := range []sessionmodel.ChatMessage{
+		{ID: "m1", SessionID: "s1", Role: "user", Content: "q1"},
+		{ID: "m2", SessionID: "s1", Role: "assistant", Content: "a1"},
 	} {
-		mm := m
-		if err := srv.services.Store.Sessions.AddMessage(ctx, &mm); err != nil {
+		if _, err := srv.services.SessionModel.AddChatMessage(ctx, m); err != nil {
 			t.Fatalf("seed message: %v", err)
 		}
 	}

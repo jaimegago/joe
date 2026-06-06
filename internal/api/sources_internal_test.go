@@ -12,6 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -109,12 +110,20 @@ func TestHandleTestSource_StoreError(t *testing.T) {
 	}
 }
 
-// TestHandleCreateSession_StoreError covers the Sessions.Create error path.
+// closedSessionModel returns a session-model repository backed by a closed DB so
+// every query fails with "sql: database is closed" — the substrate for the chat
+// handlers' DB-error (500) paths now that they read the session model.
+func closedSessionModel(t *testing.T) sessionmodel.Repository {
+	t.Helper()
+	return sessionmodel.NewRepository(newClosedStore(t).DB(), store.DriverSQLite)
+}
+
+// TestHandleCreateSession_StoreError covers the CreateSession error path.
 func TestHandleCreateSession_StoreError(t *testing.T) {
 	s := New(&core.Services{
-		Config:   &config.Config{},
-		Store:    newClosedStore(t),
-		Adapters: adapters.NewRegistry(),
+		Config:       &config.Config{},
+		SessionModel: closedSessionModel(t),
+		Adapters:     adapters.NewRegistry(),
 	})
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("POST", "/api/v1/sessions", nil)
@@ -125,12 +134,12 @@ func TestHandleCreateSession_StoreError(t *testing.T) {
 	}
 }
 
-// TestHandleListSessions_StoreError covers the Sessions.List error path.
+// TestHandleListSessions_StoreError covers the ListSessionsByCreator error path.
 func TestHandleListSessions_StoreError(t *testing.T) {
 	s := New(&core.Services{
-		Config:   &config.Config{},
-		Store:    newClosedStore(t),
-		Adapters: adapters.NewRegistry(),
+		Config:       &config.Config{},
+		SessionModel: closedSessionModel(t),
+		Adapters:     adapters.NewRegistry(),
 	})
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/sessions", nil)
@@ -141,12 +150,12 @@ func TestHandleListSessions_StoreError(t *testing.T) {
 	}
 }
 
-// TestHandleGetSessionMessages_StoreError covers the Sessions.GetMessages error path.
+// TestHandleGetSessionMessages_StoreError covers the GetSession error path.
 func TestHandleGetSessionMessages_StoreError(t *testing.T) {
 	s := New(&core.Services{
-		Config:   &config.Config{},
-		Store:    newClosedStore(t),
-		Adapters: adapters.NewRegistry(),
+		Config:       &config.Config{},
+		SessionModel: closedSessionModel(t),
+		Adapters:     adapters.NewRegistry(),
 	})
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/sessions/my-session/messages", nil)
