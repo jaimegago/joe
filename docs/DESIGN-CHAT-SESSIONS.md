@@ -246,10 +246,14 @@ phase it — security first.
   bump `last_activity_at` (metadata, not chat activity, so it must not reorder the
   recency-sorted browse list).
 - Auto-title (`internal/api/sessiontitle.go`, wired in `persistTaskMessages`): on a
-  session's opening turn, a first-words heuristic title is written synchronously,
-  then an async LLM upgrade (`prompts.ChatTitleSystem`, `context.WithoutCancel` +
-  timeout) replaces it — but only while the title is still the heuristic, so a
-  manual rename always wins. A no-op once the session already has a title.
+  session's opening turn, `generateTitleAsync` makes a single LLM call
+  (`prompts.ChatTitleSystem`, `context.WithoutCancel` + timeout) and writes the
+  result — but only while the session is still untitled, so a manual rename and a
+  second turn never overwrite it. claude.ai-style: there is no synchronous
+  first-words heuristic, so the UI shows a "New chat" placeholder until the async
+  title lands (`ChatPage` polls `GET /sessions/{id}` until `title` is non-null,
+  then stops). Best-effort: an unconfigured/failed LLM leaves the session
+  untitled and the placeholder persists.
 - UI: `/sessions` browse page (`SessionsPage.tsx`) + sidebar nav item (between Chat
   and Admin); inline rename, delete-with-confirm, open, "New chat" CTA.
   `RecentSessions` labels by `title ?? summary`. Client: `updateSessionTitle` /
@@ -261,8 +265,8 @@ phase it — security first.
   access in tests.
 - Tests: repo `UpdateSessionTitle` (persist + no activity bump); webui PATCH/DELETE
   owner-only (404 cross-user, empty-title 400, list reflects rename, cascade delete);
-  auto-title heuristic-on-first-message + does-not-overwrite; `heuristicTitle` /
-  `sanitizeLLMTitle` units; `SessionsPage` list/empty/rename/delete frontend tests.
+  auto-title generated-on-first-message + does-not-overwrite; `sanitizeLLMTitle`
+  units; `SessionsPage` list/empty/rename/delete frontend tests.
 
 **Phase 3 — Sharing. ✅ Implemented.**
 - API (`internal/api/webui.go`): `PATCH /sessions/{id}` now also accepts

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/agentloop"
@@ -426,11 +427,12 @@ func TestTaskEndpoint_SessionPersisted(t *testing.T) {
 	}
 }
 
-// TestTaskAutoTitle_HeuristicOnFirstMessage verifies a freshly-started session
-// is given a non-empty title synchronously on its opening turn. (The exact text
-// is either the first-words heuristic or its async LLM upgrade — both non-empty
-// — so this asserts only the synchronous "a title now exists" guarantee.)
-func TestTaskAutoTitle_HeuristicOnFirstMessage(t *testing.T) {
+// TestTaskAutoTitle_GeneratedOnFirstMessage verifies a freshly-started session
+// is auto-titled from its opening message. The title is written asynchronously
+// (a background LLM call, claude.ai-style — there is no synchronous first-words
+// heuristic), so this polls until it lands rather than asserting it exists the
+// instant the turn returns.
+func TestTaskAutoTitle_GeneratedOnFirstMessage(t *testing.T) {
 	const alice = "user:alice@example.com"
 	srv, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
 	ctx := context.Background()
@@ -443,12 +445,20 @@ func TestTaskAutoTitle_HeuristicOnFirstMessage(t *testing.T) {
 	var resp taskResponse
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
-	if err != nil || sess == nil {
-		t.Fatalf("GetSession: %v", err)
+	var title string
+	for range 200 {
+		sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
+		if err != nil || sess == nil {
+			t.Fatalf("GetSession: %v", err)
+		}
+		if sess.Title != nil && *sess.Title != "" {
+			title = *sess.Title
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if sess.Title == nil || *sess.Title == "" {
-		t.Fatalf("session has no title after first message; want an auto-title")
+	if title == "" {
+		t.Fatalf("session has no auto-title after first message (waited 2s)")
 	}
 }
 

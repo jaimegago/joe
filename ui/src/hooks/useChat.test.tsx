@@ -7,6 +7,8 @@ import { useChat } from './useChat';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { streamTask } from '@/api/taskStream';
 import type { StepEvent, FinalEvent, StreamHandlers } from '@/api/taskStream';
+import { fetchMessages } from '@/api/chat';
+import type { ChatMessage } from '@/api/types';
 
 // useChat drives the streaming lifecycle; the network is mocked at the
 // streamTask + session-api boundary so these tests assert the React-state and
@@ -33,7 +35,10 @@ function installStreamMock() {
   });
 }
 
-function makeStep(stepNumber: number, opts: { input: number; output: number; tool?: string }): StepEvent {
+function makeStep(
+  stepNumber: number,
+  opts: { input: number; output: number; tool?: string }
+): StepEvent {
   return {
     step_number: stepNumber,
     llm_request: { message_count: stepNumber, tools_available: [] },
@@ -42,7 +47,9 @@ function makeStep(stepNumber: number, opts: { input: number; output: number; too
       tool_calls: opts.tool ? [{ id: `tc-${stepNumber}`, name: opts.tool, args: {} }] : [],
       usage: { input_tokens: opts.input, output_tokens: opts.output },
     },
-    tool_results: opts.tool ? [{ id: `tc-${stepNumber}`, name: opts.tool, result: 'ok', duration_ms: 1 }] : [],
+    tool_results: opts.tool
+      ? [{ id: `tc-${stepNumber}`, name: opts.tool, result: 'ok', duration_ms: 1 }]
+      : [],
   };
 }
 
@@ -65,10 +72,14 @@ function makeFinal(over: Partial<FinalEvent>): FinalEvent {
   };
 }
 
-function Harness() {
-  const chat = useChat();
+function Harness({ initialSessionId }: { initialSessionId?: string } = {}) {
+  const chat = useChat(initialSessionId);
   return (
-    <ChatWindow items={chat.messages} isSending={chat.isSending} onSend={(m) => void chat.send(m)} />
+    <ChatWindow
+      items={chat.messages}
+      isSending={chat.isSending}
+      onSend={(m) => void chat.send(m)}
+    />
   );
 }
 
@@ -103,7 +114,12 @@ describe('useChat streaming lifecycle', () => {
 
     // Final: authoritative total 30+15 = 45 (matches the running sum).
     act(() => {
-      captured[0].onFinal(makeFinal({ final_answer: 'the answer', total_tokens: { input_tokens: 30, output_tokens: 15 } }));
+      captured[0].onFinal(
+        makeFinal({
+          final_answer: 'the answer',
+          total_tokens: { input_tokens: 30, output_tokens: 15 },
+        })
+      );
       resolvers[0]();
     });
 
@@ -120,7 +136,9 @@ describe('useChat streaming lifecycle', () => {
 
     await sendMessage('long conversation');
     act(() => {
-      captured[0].onFinal(makeFinal({ final_answer: 'ok', history_trimmed: true, messages_dropped: 3 }));
+      captured[0].onFinal(
+        makeFinal({ final_answer: 'ok', history_trimmed: true, messages_dropped: 3 })
+      );
       resolvers[0]();
     });
     await waitFor(() => expect(screen.getByTestId('history-trimmed-notice')).toBeInTheDocument());
@@ -144,7 +162,9 @@ describe('useChat streaming lifecycle', () => {
       captured[0].onFinal(makeFinal({ final_answer: 'ok', user_message_truncated: true }));
       resolvers[0]();
     });
-    await waitFor(() => expect(screen.getByTestId('user-message-truncated-notice')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId('user-message-truncated-notice')).toBeInTheDocument()
+    );
 
     // A turn whose message was not truncated shows no notice.
     await sendMessage('short');
@@ -167,12 +187,14 @@ describe('useChat streaming lifecycle', () => {
           status: 'context_overflow',
           error: 'The conversation or a tool output was too large for the model’s context window.',
           final_answer: '',
-        }),
+        })
       );
       resolvers[0]();
     });
 
-    await waitFor(() => expect(screen.getByText('Stopped — too large for the context window')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Stopped — too large for the context window')).toBeInTheDocument()
+    );
     expect(screen.getByText(/too large for the model/i)).toBeInTheDocument();
   });
 
@@ -212,12 +234,61 @@ describe('useChat streaming lifecycle', () => {
 
     await sendMessage('slow');
     act(() => {
-      captured[0].onFinal(makeFinal({ status: 'timeout', error: 'task timed out', final_answer: '' }));
+      captured[0].onFinal(
+        makeFinal({ status: 'timeout', error: 'task timed out', final_answer: '' })
+      );
       resolvers[0]();
     });
 
     await waitFor(() => expect(screen.getByText('Timed out')).toBeInTheDocument());
     expect(screen.getByText('task timed out')).toBeInTheDocument();
+  });
+
+  it('does not mask a reopened session: a session created mid-mount must not cache an empty transcript', async () => {
+    // Regression: creating a session in the fresh-/chat flow used to fetch its
+    // (still-empty) message list the instant its id was set and freeze that []
+    // under staleTime: Infinity. Reopening the session later from the route then
+    // hit the poisoned cache and rendered a blank chat. The fix: only fetch
+    // history for a session the route handed us. A single shared QueryClient
+    // across both renders reproduces the cross-mount cache.
+    const fetchMessagesMock = vi.mocked(fetchMessages);
+    const { Wrapper } = createWrapper();
+
+    // 1) Fresh /chat: no route session id. Send a message; createSession lazily
+    //    mints 's-test'. fetchMessages must NOT be called for it.
+    const first = render(<Harness />, { wrapper: Wrapper });
+    await sendMessage('hello');
+    act(() => {
+      captured[0].onFinal(makeFinal({ final_answer: 'streamed answer' }));
+      resolvers[0]();
+    });
+    await waitFor(() => expect(screen.getByText('streamed answer')).toBeInTheDocument());
+    expect(fetchMessagesMock).not.toHaveBeenCalled();
+    first.unmount();
+
+    // 2) The turn is now persisted server-side. Reopen 's-test' from the route.
+    const persisted: ChatMessage[] = [
+      {
+        id: 1,
+        session_id: 's-test',
+        role: 'user',
+        content: 'hello',
+        created_at: '2026-06-06T00:00:00Z',
+      },
+      {
+        id: 2,
+        session_id: 's-test',
+        role: 'assistant',
+        content: 'persisted answer',
+        created_at: '2026-06-06T00:00:01Z',
+      },
+    ];
+    fetchMessagesMock.mockResolvedValueOnce(persisted);
+    render(<Harness initialSessionId="s-test" />, { wrapper: Wrapper });
+
+    // The persisted transcript loads instead of a blank chat.
+    await waitFor(() => expect(screen.getByText('persisted answer')).toBeInTheDocument());
+    expect(fetchMessagesMock).toHaveBeenCalledWith('s-test');
   });
 
   it('resets the per-turn token counter to 0 at the start of a second message', async () => {
@@ -228,7 +299,12 @@ describe('useChat streaming lifecycle', () => {
     await sendMessage('first');
     act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5 })));
     act(() => {
-      captured[0].onFinal(makeFinal({ final_answer: 'first answer', total_tokens: { input_tokens: 10, output_tokens: 5 } }));
+      captured[0].onFinal(
+        makeFinal({
+          final_answer: 'first answer',
+          total_tokens: { input_tokens: 10, output_tokens: 5 },
+        })
+      );
       resolvers[0]();
     });
     await waitFor(() => expect(screen.getByText('first answer')).toBeInTheDocument());

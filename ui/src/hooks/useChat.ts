@@ -144,16 +144,43 @@ export function useChat(initialSessionId?: string) {
   // Monotonic counter for unique live-turn ids (avoids Date.now collisions
   // when two turns start in the same millisecond).
   const seqRef = useRef(0);
+  // The id minted by this mount's own createSession() call (see send). History
+  // is never fetched for it: its transcript lives in liveItems, and the server
+  // only persists it as the turn completes, so a fetch would cache an empty list
+  // that staleTime: Infinity would later freeze in place of the real transcript
+  // when the session is reopened. Held as state (not a ref) because `enabled`
+  // reads it during render; it survives the URL being synced to the new id.
+  const [locallyCreatedId, setLocallyCreatedId] = useState<string | null>(null);
+
+  // The id the route handed us (null on a fresh /chat). When it changes to a
+  // *different* session — the user opened another session without this component
+  // remounting — reset the view to it and drop the previous mount's live turns.
+  // When the URL is merely updated to match a session we just created locally
+  // (routeSessionId === sessionId), keep everything: it is the same session, now
+  // reflected in the address bar.
+  const routeSessionId = initialSessionId ?? null;
+  const prevRouteId = useRef(routeSessionId);
+  if (routeSessionId !== prevRouteId.current) {
+    prevRouteId.current = routeSessionId;
+    if (routeSessionId !== sessionId) {
+      setSessionId(routeSessionId);
+      setLiveItems([]);
+      setLocallyCreatedId(null);
+    }
+  }
 
   // Persisted history is loaded ONCE per session (staleTime: Infinity, no
   // window-focus refetch) and never invalidated. Because it is frozen at
   // session-open, it can never overlap the live turns appended afterwards —
   // this is how we avoid the streamed turn duplicating its persisted copy
   // without a post-completion message-list refetch.
+  //
+  // We fetch history for any session that existed before this mount — never for
+  // one created locally this mount (see locallyCreatedId above).
   const messagesQ = useQuery({
     queryKey: ['messages', sessionId],
     queryFn: () => fetchMessages(sessionId!),
-    enabled: sessionId != null,
+    enabled: sessionId != null && sessionId !== locallyCreatedId,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
@@ -161,7 +188,9 @@ export function useChat(initialSessionId?: string) {
   // updateTurn applies fn to the assistant turn with the given id, in place.
   const updateTurn = useCallback((id: string, fn: (turn: AssistantTurn) => AssistantTurn) => {
     setLiveItems((prev) =>
-      prev.map((it) => (it.kind === 'assistant' && it.id === id ? { kind: 'assistant', id, turn: fn(it.turn) } : it)),
+      prev.map((it) =>
+        it.kind === 'assistant' && it.id === id ? { kind: 'assistant', id, turn: fn(it.turn) } : it
+      )
     );
   }, []);
 
@@ -190,6 +219,7 @@ export function useChat(initialSessionId?: string) {
       if (!sid) {
         try {
           const session = await createSession();
+          setLocallyCreatedId(session.id);
           setSessionId(session.id);
           sid = session.id;
         } catch {
@@ -212,7 +242,10 @@ export function useChat(initialSessionId?: string) {
               ...t,
               steps: [...t.steps, stepToTurnStep(step)],
               // Running sum of per-step usage while the turn streams.
-              tokens: t.tokens + step.llm_response.usage.input_tokens + step.llm_response.usage.output_tokens,
+              tokens:
+                t.tokens +
+                step.llm_response.usage.input_tokens +
+                step.llm_response.usage.output_tokens,
             })),
           onFinal: (final) =>
             updateTurn(turnId, (t) => {
@@ -227,7 +260,9 @@ export function useChat(initialSessionId?: string) {
                 finalAnswer: final.final_answer,
                 status: failed ? 'failed' : 'completed',
                 failureLabel: failed ? STATUS_LABELS[final.status] : undefined,
-                errorMessage: failed ? specific ?? final.error ?? STATUS_LABELS[final.status] : undefined,
+                errorMessage: failed
+                  ? (specific ?? final.error ?? STATUS_LABELS[final.status])
+                  : undefined,
                 // Snap the counter to the authoritative server total.
                 tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
                 historyTrimmed: final.history_trimmed,
@@ -245,17 +280,26 @@ export function useChat(initialSessionId?: string) {
               // server/transport message is shown.
               errorMessage: writeFailureMessage(code) ?? message,
             })),
-        },
+        }
       );
+
+      // The first message of a fresh session titles it server-side (an async
+      // LLM call that lands shortly after this turn). Refresh the session-list
+      // and detail queries — otherwise frozen — so the refreshed last-activity
+      // appears now; ChatPage polls the detail query separately until the async
+      // title lands and swaps out the "New chat" placeholder.
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      if (sid) void qc.invalidateQueries({ queryKey: ['session', sid] });
 
       setIsSending(false);
     },
-    [sessionId, updateTurn],
+    [sessionId, updateTurn, qc]
   );
 
   const startNewSession = useCallback(() => {
     setSessionId(null);
     setLiveItems([]);
+    setLocallyCreatedId(null);
     void qc.removeQueries({ queryKey: ['messages'] });
   }, [qc]);
 
