@@ -39,17 +39,26 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
   return (
     <div className="flex justify-start">
       <div className="w-full min-w-0 max-w-[80%] space-y-2">
-        {/* Stepwise work: a reasoning line per step, then its tool calls. */}
-        {turn.steps.map((step) => (
-          <div key={step.stepNumber} className="space-y-1">
-            {step.content && (
-              <p className="whitespace-pre-wrap px-1 text-xs italic text-muted-foreground">{step.content}</p>
-            )}
-            {step.toolCalls.map((tc) => (
-              <ToolCallDisplay key={tc.id} toolCall={toToolCall(tc)} />
-            ))}
-          </div>
-        ))}
+        {/* Stepwise work: a reasoning line per step, then its tool calls. The
+            terminal answer-emitting step carries no tool calls and its content
+            IS the final answer (the backend emits a final step event whose
+            content it also returns as final_answer). Rendering that step's line
+            would duplicate the answer bubble below, so suppress it. */}
+        {turn.steps.map((step) => {
+          const isAnswerEcho = step.toolCalls.length === 0 && step.content === turn.finalAnswer;
+          return (
+            <div key={step.stepNumber} className="space-y-1">
+              {step.content && !isAnswerEcho && (
+                <p className="whitespace-pre-wrap px-1 text-xs italic text-muted-foreground">
+                  {step.content}
+                </p>
+              )}
+              {step.toolCalls.map((tc) => (
+                <ToolCallDisplay key={tc.id} toolCall={toToolCall(tc)} />
+              ))}
+            </div>
+          );
+        })}
 
         {/* Live working indicator until the final event lands. */}
         {isStreaming && (
@@ -62,7 +71,10 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
         {/* Unobtrusive notice when earlier messages fell out of context this
             turn (history pruning to fit the model's context budget). */}
         {turn.historyTrimmed && (
-          <p className="px-1 text-xs italic text-muted-foreground" data-testid="history-trimmed-notice">
+          <p
+            className="px-1 text-xs italic text-muted-foreground"
+            data-testid="history-trimmed-notice"
+          >
             Some earlier messages are no longer in context.
           </p>
         )}
@@ -71,7 +83,10 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
             context budget (oversized tool results carry their own inline
             marker, so they need no separate notice). */}
         {turn.userMessageTruncated && (
-          <p className="px-1 text-xs italic text-muted-foreground" data-testid="user-message-truncated-notice">
+          <p
+            className="px-1 text-xs italic text-muted-foreground"
+            data-testid="user-message-truncated-notice"
+          >
             Your message was shortened to fit the context budget.
           </p>
         )}

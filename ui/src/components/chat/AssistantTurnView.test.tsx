@@ -35,3 +35,40 @@ describe('AssistantTurnView write-failure notice', () => {
     expect(screen.queryByTestId('write-failure-notice')).not.toBeInTheDocument();
   });
 });
+
+describe('AssistantTurnView answer-echo de-duplication', () => {
+  it('renders the final answer once when the terminal step echoes it', () => {
+    // The backend emits a final step whose content it also returns as the
+    // final answer (single-step, no-tool turn). The italic step line must be
+    // suppressed so the text shows only in the answer bubble.
+    render(
+      <AssistantTurnView
+        turn={turn({
+          finalAnswer: 'I can help you with a variety of tasks.',
+          steps: [
+            { stepNumber: 1, content: 'I can help you with a variety of tasks.', toolCalls: [] },
+          ],
+        })}
+      />
+    );
+    expect(screen.getAllByText('I can help you with a variety of tasks.')).toHaveLength(1);
+  });
+
+  it('keeps a reasoning line that precedes tool calls', () => {
+    render(
+      <AssistantTurnView
+        turn={turn({
+          finalAnswer: 'Done.',
+          steps: [
+            {
+              stepNumber: 1,
+              content: 'Let me check the logs.',
+              toolCalls: [{ id: 't1', name: 'logs', args: {}, done: true, result: 'ok' }],
+            },
+          ],
+        })}
+      />
+    );
+    expect(screen.getByText('Let me check the logs.')).toBeInTheDocument();
+  });
+});
