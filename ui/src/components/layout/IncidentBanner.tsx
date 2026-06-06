@@ -2,7 +2,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useRegime } from '@/hooks/useRegime';
 
 // IncidentBanner is the app-shell-wide active-incident indicator
-// (OPERATOR_SURFACE_VERIFICATION.md item 8). It polls GET /api/v1/regime via
+// (DECISIONS.md D-0014, incident banner). It polls GET /api/v1/regime via
 // useRegime and renders a top-of-page alert only while the mode is "incident".
 // It is an app-shell concern, not chat content — it never enters the
 // chat-history snapshot.

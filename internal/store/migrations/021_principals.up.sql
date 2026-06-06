@@ -1,7 +1,8 @@
 -- Identity Stage 1: the authoritative identity registry.
 --
 -- Until now there was NO users/principals/identities table anywhere in the
--- schema (verified in IDENTITY_MODEL_INVESTIGATION.md Step 1). The fact that a
+-- schema (verified in the pre-Stage-1 identity audit; see DECISIONS.md D-0016).
+-- The fact that a
 -- user ever signed in was recoverable only as an append-only audit_log
 -- 'auth_login' event; there was no MUTABLE per-user record. A user with zero
 -- grants who logs in once and does nothing left no row in any identity table.

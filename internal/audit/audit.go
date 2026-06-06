@@ -164,7 +164,7 @@ const (
 	// path, distinguished by action. The audit_log.kind CHECK already admits
 	// KindLLMLimitTriggered (migration 017), so no schema change is needed —
 	// the CHECK enumerates kinds, not actions. This closes the parity gap
-	// CONTEXT_MANAGEMENT_VERIFICATION.md Cross-Cutting A(c) flagged: overflow's
+	// flagged in DECISIONS.md D-0015(f): overflow's
 	// sibling failure already audited, overflow did not.
 	ActionLLMContextOverflow = "llm_context_overflow"
 

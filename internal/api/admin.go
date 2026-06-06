@@ -46,8 +46,7 @@ type adminPrincipalLifecycle interface {
 //     settings but not retroactively to this RBAC admin surface; the
 //     resulting privilege escalation (any authenticated principal could
 //     grant itself a policy or a zone with arbitrary allowed-actions) is
-//     documented in ADMIN_SURFACE_AUDIT.md (Launch Blocker 1) and
-//     DECISIONS.md (D-0012). TestAdminRoutes_AllRequireAdminGate
+//     documented in DECISIONS.md (D-0012). TestAdminRoutes_AllRequireAdminGate
 //     (admin_gate_guard_test.go) fails the build if a future admin route is
 //     registered without the gate.
 //

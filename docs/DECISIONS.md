@@ -10,6 +10,81 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0016 — Identity registry (the `principals` table) + full RBAC admin REST/UI surface; the `zone`/`admin` operator CLI removed, REST is the sole RBAC writer
+
+- Date: 2026-06-05
+- Provenance (stated honestly): this body of work ("Identity Stages 1–5") shipped
+  as five commits on `main` without a decision of record. Two read-only audits
+  (`IDENTITY_MODEL_INVESTIGATION.md`, `UI_WIRING_AUDIT.md` — since moved to the
+  private launch archive) had enumerated the exact gaps these stages close; the
+  stages were implemented directly against those findings (migration 021's header
+  cites `IDENTITY_MODEL_INVESTIGATION.md` Step 1). This entry records and ratifies
+  what the shipped code does after the fact; it does not change it.
+
+- Decision: Joe gains an authoritative, mutable identity registry and a complete
+  admin surface over HTTP + UI, and the direct-DB operator CLI is retired so that
+  the audited REST API is the single writer of RBAC/identity state.
+
+  **(a) Identity registry — the `principals` table (Stage 1, commit `ef3d634`).**
+  Migration `021_principals` adds the mutable per-user record the append-only
+  `audit_log` could not provide: `principal` (PK), `created_at`, `status`
+  (`active`|`disabled`, CHECK-constrained), `disabled_at`/`disabled_by`
+  (disable provenance), `display_name`, `last_seen_at`. The read/write surface is
+  a separate `rbac.PrincipalRepository` (`internal/rbac/principals.go`:
+  `UpsertPrincipal`/`GetPrincipal`/`ListPrincipals`/`SetPrincipalStatus`) so
+  existing `rbac.Repository` implementers need not grow identity methods.
+  `SetPrincipalStatus` writes its audit row in the same transaction as the status
+  change. This closes the "there is no users/principals/identities table" finding.
+
+  **(b) Provisioning + disabled-at-mint enforcement (Stage 2, commit `2bc6ecc`).**
+  The OIDC callback upserts the registry row on every login
+  (`internal/auth/handlers.go` `UpsertPrincipal`, refreshing only `display_name`/
+  `last_seen_at`; status/created_at/provenance are owned by `SetPrincipalStatus`).
+  Session mint consults `status` and refuses a `disabled` principal at mint time —
+  a disable takes effect on the next request, not just for new grants.
+
+  **(c) Full admin REST surface (Stage 3, commit `95a4b63`).** All routes
+  admin-gated via `requireAdmin` and audited (`internal/api/admin.go`): zones
+  `GET/POST/PATCH/DELETE`; source-zones `GET/POST/DELETE` (assign + unassign);
+  policies `GET/POST/POST /revoke/DELETE {id}`; **admins `GET` (roster) / `POST`
+  (promote) / `DELETE` (demote)** — previously reachable only via CLI/bootstrap;
+  **principals `GET` (Users page) / `POST {p}/disable` / `POST {p}/enable`**. The
+  structural guard `admin_gate_guard_test.go` fails the build if any `/admin/`
+  route is registered without the gate.
+
+  **(d) The `zone`/`admin` operator CLI is removed; REST is the sole RBAC writer
+  (commit `205448a`, breaking).** `cmd/joe/zone.go` and `cmd/joe/admin.go` — which
+  wrote SQLite directly and so bypassed the HTTP gate + audit — are deleted. The
+  remaining subcommands are `panic`, `unlock`, `review`, `mcp`, `slack`, `skills`,
+  `incident`. Rationale: a single audited writer for RBAC/identity state; the
+  direct-DB CLI was the last gate-and-audit-bypassing writer, and (c) made it
+  redundant. This supersedes the Phase C CLI zone-provisioning of D-0006 and the
+  `CLI_REMOVAL_CHECK.md` finding that the operator CLI persisted.
+
+  **(e) UI admin management surface (Stage 5, commit `07fb2a4`).** `ui/src/pages/
+  UsersPage.tsx`, `PrincipalsTable`, `AdminsTable`, `AdminForm`; the
+  `ui/src/api/security.ts` functions `updateZone`/`deleteZone`/`removeZone`/
+  `fetchPrincipals`/`disablePrincipal`/`fetchAdmins` are real implementations, no
+  longer stubs. Closes the `UI_WIRING_AUDIT.md` gaps (no user discovery, no admin
+  roster, no promote/demote, no zone edit/delete, no source-zone unassign).
+
+- Basis: commits `ef3d634`, `2bc6ecc`, `95a4b63`, `205448a`, `07fb2a4` (all
+  2026-06-05 on `main`); migration `internal/store/migrations/021_principals.up.sql`;
+  `internal/rbac/principals.go`; `internal/auth/handlers.go` +
+  `internal/auth/principal_admin.go`; `internal/api/admin.go` +
+  `admin_gate_guard_test.go`; the `ui/src/pages` / `ui/src/components/admin` /
+  `ui/src/api/security.ts` surface. The pre-state is the two archived audits, which
+  documented every gap above as open.
+- Supersedes: the relevant findings of `IDENTITY_MODEL_INVESTIGATION.md` and
+  `UI_WIRING_AUDIT.md` (now closed); the CLI zone-provisioning path of D-0006; and
+  `CLI_REMOVAL_CHECK.md`'s "the operator CLI is still present" conclusion (true when
+  written, no longer true). Builds on D-0011 (admin as a dynamic capability),
+  D-0012 (the admin gate), and D-0013 (admin-mutation audit) — this entry extends
+  that gated+audited surface to identity and makes REST its sole writer.
+- Status: active. Stages 1–5 committed on `main`.
+
+---
+
 ## D-0015 — Context-management architecture: FIFO pruning, ingestion truncation, conservative model-window registry, and a distinct context-overflow terminal status
 
 - Date: 2026-06-05

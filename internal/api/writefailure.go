@@ -8,8 +8,8 @@ import (
 )
 
 // classifyWriteFailure maps a per-tool execution error to a stable,
-// machine-readable write-failure code the chat UI dispatches on (Item 8 /
-// OPERATOR_SURFACE_VERIFICATION.md item 9). The two distinguishable denials:
+// machine-readable write-failure code the chat UI dispatches on (DECISIONS.md
+// D-0014, write-failure feedback). The two distinguishable denials:
 //
 //   - incident_mode — the captain gate refused a mutation because the system
 //     is in incident regime and the calling session is not the captain

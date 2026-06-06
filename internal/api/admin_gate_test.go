@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Regression tests for ADMIN_SURFACE_AUDIT.md Launch Blocker 1: the RBAC
+// Regression tests for DECISIONS.md D-0012 (privilege escalation): the RBAC
 // admin endpoints in admin.go were not admin-gated, so any authenticated
 // principal — including a brand-new zero-zone OIDC user — could grant
 // itself a policy or create a zone with arbitrary allowed-actions, fully
