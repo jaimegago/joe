@@ -24,7 +24,7 @@ type Coordinator struct {
 	svc     *knowledge.Service
 	syncers map[string]Syncer // keyed by KnowledgeSource.Type
 	logger  *slog.Logger
-	stopCh  chan struct{}
+	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 }
 
@@ -36,19 +36,23 @@ func NewCoordinator(svc *knowledge.Service, syncers map[string]Syncer) *Coordina
 		svc:     svc,
 		syncers: syncers,
 		logger:  slog.Default(),
-		stopCh:  make(chan struct{}),
 	}
 }
 
 // Start launches the background sync loop. It returns immediately.
 func (c *Coordinator) Start(ctx context.Context) {
+	loopCtx, cancel := context.WithCancel(ctx)
+	c.cancel = cancel
 	c.wg.Add(1)
-	go c.loop(ctx)
+	go c.loop(loopCtx)
 }
 
-// Stop signals the coordinator to stop and waits for the loop to exit.
+// Stop signals the coordinator to stop and waits for the loop to exit. A nil
+// cancel means Start was never called, in which case Wait returns immediately.
 func (c *Coordinator) Stop() {
-	close(c.stopCh)
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.wg.Wait()
 }
 
@@ -66,8 +70,6 @@ func (c *Coordinator) loop(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			c.runAll(ctx)
-		case <-c.stopCh:
-			return
 		case <-ctx.Done():
 			return
 		}
