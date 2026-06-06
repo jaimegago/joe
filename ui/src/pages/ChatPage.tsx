@@ -1,4 +1,5 @@
-import { useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -17,20 +18,43 @@ export function ChatPage() {
   const chat = useChat(routeSessionId);
   const { principal, rbacEnabled, isAdmin, zones } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   // The id of the session actually in view — either the one from the URL or
   // the one useChat lazily created on the first message of a fresh chat. The
   // sharing controls key off this, not the route param.
   const activeSessionId = chat.sessionId;
 
-  // Session metadata (visibility + read_only) for the sharing controls and the
-  // read-only viewer. Loaded only once a session exists.
+  // Keep the address bar in sync with the session in view. A fresh /chat mints a
+  // session on the first message; reflect its id in the URL (replace, so the
+  // blank /chat does not linger in history) so a refresh or shared link reopens
+  // the same session. Clearing the session (New Session) returns to /chat.
+  useEffect(() => {
+    const inUrl = routeSessionId ?? null;
+    if (activeSessionId === inUrl) return;
+    navigate(activeSessionId ? `/chat/${activeSessionId}` : '/chat', { replace: true });
+  }, [activeSessionId, routeSessionId, navigate]);
+
+  // Session metadata (visibility + read_only + title) for the header, sharing
+  // controls and read-only viewer. Loaded only once a session exists. The
+  // server titles a fresh session asynchronously from its first message
+  // (claude.ai-style), so while the session is still untitled we poll briefly to
+  // swap the "New chat" placeholder for the real title without a refresh —
+  // stopping as soon as a title lands, and giving up after the backend's title
+  // window (~30s, ~10 polls) so an LLM-less/failed title never polls forever.
   const sessionQ = useQuery({
     queryKey: ['session', activeSessionId],
     queryFn: () => fetchSession(activeSessionId!),
     enabled: activeSessionId != null,
+    refetchInterval: (q) => (q.state.data?.title || q.state.dataUpdateCount > 10 ? false : 3000),
   });
   const session = sessionQ.data;
+
+  // When the async title finally lands, refresh the browse list / dashboard so
+  // their "New chat" entries pick it up live too (the header reads it directly).
+  useEffect(() => {
+    if (session?.title) void qc.invalidateQueries({ queryKey: ['sessions'] });
+  }, [session?.title, qc]);
   const readOnly = session?.read_only === true;
   const isPublic = session?.visibility === 'public';
   const isLinkedToIncident = session?.linked_incident_id != null;
@@ -87,7 +111,11 @@ export function ChatPage() {
   return (
     <div className="flex h-screen flex-col">
       <Header
-        title="Chat with Joe"
+        // claude.ai-style: the page title is the session's own title once it
+        // has one; until then (a fresh chat, or a session awaiting its first
+        // turn's async title) it shows the "New chat" placeholder, swapped for
+        // the real title live via the polling above — no raw-first-words flash.
+        title={session?.title ?? 'New chat'}
         actions={
           <div className="flex items-center gap-2">
             {readOnly && <Badge variant="secondary">Read-only</Badge>}

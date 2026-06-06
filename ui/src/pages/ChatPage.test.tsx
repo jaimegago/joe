@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { createWrapper } from '@/test/utils';
 import { ChatPage } from './ChatPage';
 import { useAuth } from '@/auth/AuthContext';
@@ -171,6 +171,66 @@ describe('ChatPage sharing controls (Phase 3)', () => {
     setChat(null);
     renderPage();
     expect(screen.queryByRole('button', { name: /make public/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatPage URL sync', () => {
+  // LocationSpy surfaces the live router pathname so the test can assert the
+  // navigation ChatPage performs to keep the address bar on the session in view.
+  function LocationSpy() {
+    const loc = useLocation();
+    return <div data-testid="loc">{loc.pathname}</div>;
+  }
+
+  function renderAt(path: string) {
+    const { Wrapper } = createWrapper();
+    render(
+      <Wrapper>
+        <MemoryRouter initialEntries={[path]}>
+          <LocationSpy />
+          <Routes>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat/:sessionId" element={<ChatPage />} />
+          </Routes>
+        </MemoryRouter>
+      </Wrapper>
+    );
+  }
+
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    setRegime('normal');
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    mockFetchSession.mockResolvedValue({
+      id: 's-new',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 0,
+      visibility: 'private',
+    });
+  });
+
+  it('navigates a fresh /chat to /chat/{id} once a session is lazily created', async () => {
+    // The session minted on the first message must appear in the URL so a
+    // refresh or shared link reopens it.
+    setChat('s-new');
+    renderAt('/chat');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-new'));
+  });
+
+  it('returns to /chat when the session is cleared (New Session)', async () => {
+    setChat(null);
+    renderAt('/chat/s1');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
+  });
+
+  it('leaves the URL untouched when it already matches the session in view', async () => {
+    setChat('s-new');
+    renderAt('/chat/s-new');
+    await waitFor(() => expect(mockFetchSession).toHaveBeenCalled());
+    expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-new');
   });
 });
 
