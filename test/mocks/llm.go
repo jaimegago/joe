@@ -71,32 +71,6 @@ func (m *MockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 	return m.DefaultResponse, nil
 }
 
-// ChatStream implements llm.LLMAdapter
-func (m *MockLLM) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	// For the mock, we'll just return a channel with a single chunk
-	ch := make(chan llm.StreamChunk, 1)
-
-	if m.ShouldError {
-		errMsg := m.ErrorMessage
-		if errMsg == "" {
-			errMsg = "mock LLM error"
-		}
-		ch <- llm.StreamChunk{Done: true, Error: errors.New(errMsg)}
-		close(ch)
-		return ch, nil
-	}
-
-	resp, _ := m.Chat(ctx, req)
-	ch <- llm.StreamChunk{
-		Content:   resp.Content,
-		ToolCalls: resp.ToolCalls,
-		Done:      true,
-		Error:     nil,
-	}
-	close(ch)
-	return ch, nil
-}
-
 // Embed implements llm.LLMAdapter
 func (m *MockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
 	if m.ShouldError {

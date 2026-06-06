@@ -198,11 +198,6 @@ func applyMaxOutputTokens(model *genai.GenerativeModel, maxTokens int) {
 	}
 }
 
-// ChatStream is not yet implemented
-func (c *Client) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, fmt.Errorf("streaming not yet implemented")
-}
-
 // Embed is not yet implemented
 func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, fmt.Errorf("embeddings not yet implemented")

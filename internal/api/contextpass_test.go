@@ -36,11 +36,6 @@ func (c *capturingChatLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.Ch
 	c.mu.Unlock()
 	return &llm.ChatResponse{Content: "done", Usage: llm.TokenUsage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
 }
-func (c *capturingChatLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
 func (c *capturingChatLLM) Embed(_ context.Context, _ string) ([]float32, error) { return nil, nil }
 
 func (c *capturingChatLLM) lastReq() llm.ChatRequest {
@@ -143,9 +138,6 @@ func (s *finalScriptLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 	r := s.responses[s.i]
 	s.i++
 	return r, nil
-}
-func (s *finalScriptLLM) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, nil
 }
 func (s *finalScriptLLM) Embed(context.Context, string) ([]float32, error) { return nil, nil }
 

@@ -349,12 +349,6 @@ func (s *seqLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, 
 	return &llm.ChatResponse{Content: "done"}, nil
 }
 
-func (s *seqLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (s *seqLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0}, nil
 }

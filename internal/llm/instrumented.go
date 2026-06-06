@@ -210,55 +210,6 @@ func (i *InstrumentedAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatR
 	return resp, nil
 }
 
-// ChatStream implements LLMAdapter with instrumentation
-func (i *InstrumentedAdapter) ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
-	ctx, span := i.tracer.Start(ctx, "llm.chat_stream",
-		trace.WithAttributes(
-			attribute.String("llm.provider", i.provider),
-			attribute.String("llm.model", i.model),
-			attribute.Int("llm.messages.count", len(req.Messages)),
-			attribute.Int("llm.tools.count", len(req.Tools)),
-		),
-	)
-	defer span.End()
-
-	start := time.Now()
-	i.totalCalls.Add(1)
-
-	attrs := []attribute.KeyValue{
-		attribute.String("llm.provider", i.provider),
-		attribute.String("llm.model", i.model),
-		attribute.String("operation", "chat_stream"),
-	}
-
-	safeAddCounter(ctx, i.requestCounter, 1, attrs...)
-
-	stream, err := i.adapter.ChatStream(ctx, req)
-	duration := time.Since(start)
-
-	latencyAttrs := append(attrs, attribute.Bool("error", err != nil))
-	safeRecordHistogram(ctx, i.latencyHistogram, float64(duration.Milliseconds()), latencyAttrs...)
-
-	if err != nil {
-		i.totalErrors.Add(1)
-		safeAddCounter(ctx, i.errorCounter, 1, attrs...)
-		i.logger.Error("llm_stream_error",
-			"error", err,
-			"provider", i.provider,
-			"model", i.model,
-			"duration_ms", duration.Milliseconds(),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-
-	span.SetAttributes(attribute.Int64("llm.duration_ms", duration.Milliseconds()))
-	span.SetStatus(codes.Ok, "")
-
-	return stream, nil
-}
-
 // Embed implements LLMAdapter with instrumentation
 func (i *InstrumentedAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
 	ctx, span := i.tracer.Start(ctx, "llm.embed",

@@ -40,12 +40,6 @@ func (a recordingTokenAdapter) Chat(context.Context, llm.ChatRequest) (*llm.Chat
 	return &llm.ChatResponse{Usage: llm.TokenUsage{InputTokens: a.in, OutputTokens: a.out}}, nil
 }
 
-func (recordingTokenAdapter) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (recordingTokenAdapter) Embed(context.Context, string) ([]float32, error) { return nil, nil }
 
 // stubSwapFactory points the newModelAdapter seam at a recordingTokenAdapter

@@ -32,12 +32,6 @@ func (r *recordingLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatRe
 	}, nil
 }
 
-func (r *recordingLLM) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (r *recordingLLM) Embed(context.Context, string) ([]float32, error) { return []float32{0.1}, nil }
 
 func (r *recordingLLM) firstRequest(t *testing.T) llm.ChatRequest {

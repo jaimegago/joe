@@ -220,12 +220,6 @@ func (s *taskStubLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	}, nil
 }
 
-func (s *taskStubLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (s *taskStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1}, nil
 }
@@ -251,12 +245,6 @@ func (t *taskToolLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	}, nil
 }
 
-func (t *taskToolLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (t *taskToolLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1}, nil
 }
@@ -271,12 +259,6 @@ func (m *maxIterLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespon
 		},
 		Usage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 	}, nil
-}
-
-func (m *maxIterLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
 }
 
 func (m *maxIterLLM) Embed(_ context.Context, _ string) ([]float32, error) {
@@ -766,12 +748,6 @@ func (z *zoneViolationLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.Chat
 		Content: "I cannot access that resource.",
 		Usage:   llm.TokenUsage{InputTokens: 50, OutputTokens: 20},
 	}, nil
-}
-
-func (z *zoneViolationLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
 }
 
 func (z *zoneViolationLLM) Embed(_ context.Context, _ string) ([]float32, error) {

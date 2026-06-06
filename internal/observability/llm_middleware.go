@@ -156,45 +156,6 @@ func (m *LLMMiddleware) Chat(ctx context.Context, req llm.ChatRequest) (*llm.Cha
 	return resp, nil
 }
 
-// ChatStream implements llm.LLMAdapter with OpenTelemetry instrumentation
-func (m *LLMMiddleware) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	// Start span
-	ctx, span := m.tracer.Start(ctx, "llm.chat_stream",
-		trace.WithAttributes(
-			attribute.String("llm.provider", m.provider),
-			attribute.String("llm.model", m.model),
-			attribute.Int("llm.messages.count", len(req.Messages)),
-			attribute.Int("llm.tools.count", len(req.Tools)),
-		),
-	)
-	defer span.End()
-
-	start := time.Now()
-
-	attrs := metric.WithAttributes(
-		attribute.String("provider", m.provider),
-		attribute.String("model", m.model),
-		attribute.String("operation", "stream"),
-	)
-
-	m.callCounter.Add(ctx, 1, attrs)
-
-	stream, err := m.adapter.ChatStream(ctx, req)
-	duration := time.Since(start)
-
-	m.durationHistogram.Record(ctx, float64(duration.Milliseconds()), attrs)
-
-	if err != nil {
-		m.errorCounter.Add(ctx, 1, attrs)
-		span.SetStatus(codes.Error, err.Error())
-		span.RecordError(err)
-		return nil, err
-	}
-
-	span.SetStatus(codes.Ok, "")
-	return stream, nil
-}
-
 // Embed implements llm.LLMAdapter with OpenTelemetry instrumentation
 func (m *LLMMiddleware) Embed(ctx context.Context, text string) ([]float32, error) {
 	// Start span

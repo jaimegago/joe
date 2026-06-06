@@ -210,10 +210,6 @@ func (f *fixedUsageLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRes
 	}, nil
 }
 
-func (f *fixedUsageLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (f *fixedUsageLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, errors.New("not implemented")
 }
@@ -227,10 +223,6 @@ type finalAnswerLLM struct {
 
 func (f *finalAnswerLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
 	return &llm.ChatResponse{Content: f.response, Usage: f.usage}, nil
-}
-
-func (f *finalAnswerLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
 }
 
 func (f *finalAnswerLLM) Embed(_ context.Context, _ string) ([]float32, error) {
