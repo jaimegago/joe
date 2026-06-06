@@ -81,6 +81,24 @@ func withSQLitePragmas(dsn string) string {
 	return b.String()
 }
 
+// isUnsharedMemoryDSN reports whether dsn names an in-memory SQLite database
+// that is private to a single connection. The two in-memory forms are the bare
+// ":memory:" and a "file:...mode=memory" URI; either is connection-private
+// unless it also opts into "cache=shared", which makes one named in-memory
+// database visible across connections. Such an unshared DB must be pinned to a
+// one-connection pool, since a second connection would open a fresh, empty
+// database. The check runs on the caller-supplied DSN (before pragmas are
+// appended).
+func isUnsharedMemoryDSN(dsn string) bool {
+	isMemory := dsn == ":memory:" ||
+		strings.Contains(dsn, ":memory:") ||
+		strings.Contains(dsn, "mode=memory")
+	if !isMemory {
+		return false
+	}
+	return !strings.Contains(dsn, "cache=shared")
+}
+
 // New opens a database connection and returns a fully wired Store.
 // SQLite-specific PRAGMAs are encoded in the DSN (see withSQLitePragmas) so
 // they apply to EVERY connection the pool opens — not just one.
@@ -112,9 +130,21 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 	}
 
 	if cfg.Driver == DriverSQLite {
-		// WAL mode caps concurrent writers; match the previous behaviour.
-		db.SetMaxOpenConns(10)
-		db.SetMaxIdleConns(2)
+		if isUnsharedMemoryDSN(cfg.DSN) {
+			// An unshared in-memory SQLite database is private to a single
+			// connection: every additional pooled connection opens its own
+			// empty database with none of the migrated tables. A pool larger
+			// than one therefore intermittently serves "no such table" once
+			// any concurrent access (e.g. a background title write) forces a
+			// second connection. Pin in-memory DBs to a single connection so
+			// all access shares the one migrated database.
+			db.SetMaxOpenConns(1)
+			db.SetMaxIdleConns(1)
+		} else {
+			// WAL mode caps concurrent writers; match the previous behaviour.
+			db.SetMaxOpenConns(10)
+			db.SetMaxIdleConns(2)
+		}
 	} else {
 		// PostgreSQL handles concurrency natively; allow a larger pool.
 		db.SetMaxOpenConns(25)

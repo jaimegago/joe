@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jaimegago/joe/internal/graph"
@@ -190,6 +192,7 @@ func (h *webUIHandler) handleGetRelatedNodes(w http.ResponseWriter, r *http.Requ
 type webUISession struct {
 	ID           string `json:"id"`
 	StartedAt    string `json:"started_at"`
+	LastActivity string `json:"last_activity_at,omitempty"`
 	Summary      string `json:"summary,omitempty"`
 	MessageCount int    `json:"message_count"`
 	Title        string `json:"title,omitempty"`
@@ -213,6 +216,7 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 	out := webUISession{
 		ID:           s.ID,
 		StartedAt:    s.CreatedAt.Format(time.RFC3339),
+		LastActivity: s.LastActivityAt.Format(time.RFC3339),
 		MessageCount: messageCount,
 		Visibility:   s.Visibility,
 	}
@@ -346,6 +350,98 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 	})
 }
 
+// updateSessionRequest is the PATCH /sessions/{id} body. Only title is
+// mutable in Phase 2 (visibility is Phase 3). A pointer distinguishes "title
+// omitted" from "title set to empty string".
+type updateSessionRequest struct {
+	Title *string `json:"title"`
+}
+
+// handleUpdateSession renames a session the caller owns (PATCH /sessions/{id}).
+// Owner-checked with the same 404-on-miss posture as the messages endpoint —
+// another user's session must not be distinguishable from a missing one
+// (DESIGN-CHAT-SESSIONS.md §10 access matrix). Phase 2 accepts only `title`.
+func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing session id")
+		return
+	}
+
+	var req updateSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid request body")
+		return
+	}
+	if req.Title == nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title is required")
+		return
+	}
+	title := strings.TrimSpace(*req.Title)
+	if title == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title must not be empty")
+		return
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	if sess == nil || sess.CreatorPrincipal != principal {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
+	if err := h.server.services.SessionModel.UpdateSessionTitle(r.Context(), sessionID, title); err != nil {
+		writeInternalError(w, err, "update session title")
+		return
+	}
+
+	sess.Title = &title
+	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
+}
+
+// handleDeleteSession deletes a session the caller owns (DELETE /sessions/{id}).
+// Owner-checked, 404-on-miss. The chat_messages FK is ON DELETE CASCADE, so the
+// session's messages are expunged with it (migration 022).
+func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing session id")
+		return
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	if sess == nil || sess.CreatorPrincipal != principal {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
+	if err := h.server.services.SessionModel.DeleteSession(r.Context(), sessionID); err != nil {
+		writeInternalError(w, err, "delete session")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleGetAlerts returns an aggregated list of active alerts (stub).
 func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 	// TODO: aggregate from Alertmanager/Grafana sources
@@ -436,6 +532,8 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)
+	mux.HandleFunc(fmt.Sprintf("PATCH %s/sessions/{id}", prefix), h.handleUpdateSession)
+	mux.HandleFunc(fmt.Sprintf("DELETE %s/sessions/{id}", prefix), h.handleDeleteSession)
 
 	// Alerts aggregation
 	mux.HandleFunc(fmt.Sprintf("GET %s/alerts", prefix), h.handleGetAlerts)

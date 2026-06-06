@@ -21,7 +21,7 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
           >
             <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
-              <p className="truncate">{s.summary ?? 'Session'}</p>
+              <p className="truncate">{s.title ?? s.summary ?? 'Session'}</p>
               <p className="text-xs text-muted-foreground">
                 {formatDistanceToNow(new Date(s.started_at), { addSuffix: true })}
                 {' · '}

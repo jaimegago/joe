@@ -519,6 +519,9 @@ func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMs
 		Content:   userMsg,
 		CreatedAt: start,
 	})
+	// Title a freshly-started session from its opening message (heuristic now,
+	// async LLM upgrade after). A no-op once the session already has a title.
+	h.maybeAutoTitle(ctx, sessionID, userMsg)
 	if answer != "" {
 		_, _ = h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
 			ID:        uid.New(),

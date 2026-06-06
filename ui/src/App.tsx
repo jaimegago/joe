@@ -12,6 +12,7 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ de
 const GraphPage = lazy(() => import('@/pages/GraphPage').then(m => ({ default: m.GraphPage })));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage').then(m => ({ default: m.SourcesPage })));
 const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
+const SessionsPage = lazy(() => import('@/pages/SessionsPage').then(m => ({ default: m.SessionsPage })));
 const AdminPage = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
 const UsersPage = lazy(() => import('@/pages/UsersPage').then(m => ({ default: m.UsersPage })));
 const LLMSettingsPage = lazy(() => import('@/pages/LLMSettingsPage').then(m => ({ default: m.LLMSettingsPage })));
@@ -41,6 +42,7 @@ export function App() {
                 <Route path="sources" element={<Suspense fallback={<LoadingPage />}><SourcesPage /></Suspense>} />
                 <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
                 <Route path="chat/:sessionId" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
+                <Route path="sessions" element={<Suspense fallback={<LoadingPage />}><SessionsPage /></Suspense>} />
                 <Route path="admin" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><AdminPage /></Suspense></RequireAdmin>} />
                 <Route path="users" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><UsersPage /></Suspense></RequireAdmin>} />
                 <Route path="llm-settings" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><LLMSettingsPage /></Suspense></RequireAdmin>} />
