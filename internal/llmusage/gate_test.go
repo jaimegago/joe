@@ -98,10 +98,17 @@ func TestGate_HourlyLimit_RefusesBeforeInnerCall(t *testing.T) {
 		},
 	}
 	repo := &fakeRepo{}
-	// Pre-seed a row in the current hour at the limit.
+	// Pre-seed a row in the current hour at the limit. Stamp it at `now`
+	// itself, NOT a backdated offset: the gate computes its hourly window
+	// from time.Now() microseconds later, and any backdated offset (e.g.
+	// -5m) falls in the PREVIOUS hour window when the test runs in the
+	// first minutes of a clock hour — leaving the hourly window empty and
+	// flaking this refusal assertion. `now` is by definition inside the
+	// current hour window regardless of wall-clock position. (Same
+	// rationale as TestGate_MultipleWindowsOver_AllNamedInAuditContext.)
 	now := time.Now().UTC()
 	repo.rows = []llmusage.Row{{
-		Timestamp:         now.Add(-5 * time.Minute),
+		Timestamp:         now,
 		Currency:          "USD",
 		EstimatedCostNano: 1_000,
 	}}
