@@ -6,9 +6,13 @@ interface ChatWindowProps {
   items: DisplayItem[];
   isSending: boolean;
   onSend: (message: string) => void;
+  // readOnly renders the transcript without a composer — used for a non-owner
+  // viewing a public (shared) session, where sending is not permitted
+  // (DESIGN-CHAT-SESSIONS.md §10 access matrix).
+  readOnly?: boolean;
 }
 
-export function ChatWindow({ items, isSending, onSend }: ChatWindowProps) {
+export function ChatWindow({ items, isSending, onSend, readOnly = false }: ChatWindowProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4">
@@ -17,7 +21,13 @@ export function ChatWindow({ items, isSending, onSend }: ChatWindowProps) {
             "thinking" spinner or error banner. */}
         <MessageList items={items} />
       </div>
-      <ChatInput onSend={onSend} disabled={isSending} />
+      {readOnly ? (
+        <div className="border-t px-4 py-3 text-center text-sm text-muted-foreground">
+          You are viewing a shared session in read-only mode.
+        </div>
+      ) : (
+        <ChatInput onSend={onSend} disabled={isSending} />
+      )}
     </div>
   );
 }

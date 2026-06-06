@@ -1,8 +1,9 @@
 # Design: First-Class Chat Sessions (Web UI)
 
 > Status: **decisions locked 2026-06-06** — see §10 for the resolved calls and §11
-> for the phased plan. **Phase 1 (ownership & isolation) and Phase 2 (browse tab +
-> titles) implemented 2026-06-06.** §2–§8 retained as rationale.
+> for the phased plan. **Phase 1 (ownership & isolation), Phase 2 (browse tab +
+> titles), and Phase 3 (binary private/public sharing) implemented 2026-06-06.**
+> §2–§8 retained as rationale.
 
 ## 0. Implementation kickoff (read first in a fresh session)
 
@@ -170,7 +171,8 @@ phase it — security first.
 ## 9. Out of scope (for now)
 
 - Captain transfer UI, incident declare/resolve UI (separate incident-mode work).
-- Sharing a session with another principal.
+- Per-principal sharing ("share with user:bob"). Phase 3 ships binary
+  private/public only; granular sharing remains future (§10).
 - Cross-session search.
 - Postgres-specific concerns.
 
@@ -262,9 +264,36 @@ phase it — security first.
   auto-title heuristic-on-first-message + does-not-overwrite; `heuristicTitle` /
   `sanitizeLLMTitle` units; `SessionsPage` list/empty/rename/delete frontend tests.
 
-**Phase 3 — Sharing.**
-- Visibility toggle (`PATCH /sessions/{id}` visibility, or `POST .../share`); non-owner
-  read path when `public`; UI "Make public/private" + read-only viewer + copy-link.
+**Phase 3 — Sharing. ✅ Implemented.**
+- API (`internal/api/webui.go`): `PATCH /sessions/{id}` now also accepts
+  `visibility` (`private`|`public`); title and visibility are independent
+  optional fields, validated up front so a bad value never half-applies, and a
+  PATCH with neither is a 400. Owner-checked, 404-on-miss (existence not
+  disclosed). New `GET /sessions/{id}` returns a single session's metadata: the
+  owner always (`read_only=false`), a non-owner only when `public`
+  (`read_only=true`); a private session owned by another principal — or a
+  missing one — 404s. `creator_principal` is never projected, so a public
+  viewer never learns the owner's identity. `handleGetSessionMessages` gained
+  the same public read path (owner OR public → 200; else 404). Send/continue
+  stays owner-only (`sessionAccessAllowed`, tasks path) per the §10 matrix.
+- Repository (`internal/sessionmodel`): `UpdateSessionVisibility` — an
+  unconditional write by ID (handler owner-checks first) that, like
+  `UpdateSessionTitle`, does NOT bump `last_activity_at` (visibility is
+  metadata, not chat activity).
+- UI: `ChatPage` fetches session metadata (`GET /sessions/{id}`) keyed on the
+  active session id; owner sees a "Make public/Make private" toggle plus a
+  "Copy link" control when public; a non-owner public viewer sees a "Read-only"
+  badge and a composer-less `ChatWindow` (new `readOnly` prop) and is exempt
+  from the zero-zone access gate (reading shared content needs no zone).
+  `SessionsPage` rows show a "Public" badge. Client: `fetchSession` /
+  `updateSessionVisibility` (`ui/src/api/chat.ts`); `SessionSchema` gains
+  `read_only`.
+- Tests: repo `UpdateSessionVisibility` (persist both directions + no activity
+  bump); webui public-read-path (private→404, public→200 read-only, no
+  creator leak, re-privatize→404) and authorization (non-owner toggle 404,
+  invalid value 400, empty PATCH 400, missing-session GET 404); `ChatPage`
+  sharing controls (make-public toggle, make-private + copy-link, read-only
+  viewer, no controls pre-session).
 
 **Phase 4 — Incident linkage.**
 - `POST /sessions/{id}/link-incident` → set `linked_incident_id` + promote to

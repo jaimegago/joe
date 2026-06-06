@@ -16,8 +16,28 @@ export function fetchSessions(limit = 20): Promise<Session[]> {
 }
 
 export function createSession(): Promise<Session> {
+  return apiClient.post<unknown>('/api/v1/sessions', {}).then((r) => SessionSchema.parse(r));
+}
+
+// fetchSession returns a single session's metadata (GET /sessions/{id}). The
+// owner sees it with read_only=false; a non-owner sees it only when it is
+// public, flagged read_only=true; a private session owned by someone else (or
+// a missing one) yields 404.
+export function fetchSession(id: string): Promise<Session> {
   return apiClient
-    .post<unknown>('/api/v1/sessions', {})
+    .get<unknown>(`/api/v1/sessions/${encodeURIComponent(id)}`)
+    .then((r) => SessionSchema.parse(r));
+}
+
+// updateSessionVisibility flips a session between 'private' and 'public' (PATCH
+// /sessions/{id}). Owner-checked server-side; a non-owner or missing session
+// yields 404.
+export function updateSessionVisibility(
+  id: string,
+  visibility: 'private' | 'public'
+): Promise<Session> {
+  return apiClient
+    .patch<unknown>(`/api/v1/sessions/${encodeURIComponent(id)}`, { visibility })
     .then((r) => SessionSchema.parse(r));
 }
 

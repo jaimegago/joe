@@ -133,6 +133,56 @@ func TestRepository_UpdateSessionTitle(t *testing.T) {
 	}
 }
 
+// TestRepository_UpdateSessionVisibility verifies a visibility flip persists and
+// that it does not bump last_activity_at (visibility is metadata, not chat
+// activity, so it must not reorder the recency-sorted browse list — Phase 3).
+func TestRepository_UpdateSessionVisibility(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	created, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "s1", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: "user:alice@example.com",
+		CreatedAt: at, LastActivityAt: at,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	// Defaults to private.
+	if created.Visibility != sessionmodel.VisibilityPrivate {
+		t.Fatalf("initial visibility = %q, want %q", created.Visibility, sessionmodel.VisibilityPrivate)
+	}
+
+	if err := repo.UpdateSessionVisibility(ctx, "s1", sessionmodel.VisibilityPublic); err != nil {
+		t.Fatalf("UpdateSessionVisibility: %v", err)
+	}
+
+	got, err := repo.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.Visibility != sessionmodel.VisibilityPublic {
+		t.Errorf("visibility = %q, want %q", got.Visibility, sessionmodel.VisibilityPublic)
+	}
+	// last_activity_at must be unchanged by a visibility flip.
+	if !got.LastActivityAt.Equal(at) {
+		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
+	}
+
+	// Flip back to private.
+	if err := repo.UpdateSessionVisibility(ctx, "s1", sessionmodel.VisibilityPrivate); err != nil {
+		t.Fatalf("UpdateSessionVisibility back to private: %v", err)
+	}
+	got, err = repo.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("GetSession after revert: %v", err)
+	}
+	if got.Visibility != sessionmodel.VisibilityPrivate {
+		t.Errorf("visibility after revert = %q, want %q", got.Visibility, sessionmodel.VisibilityPrivate)
+	}
+}
+
 // TestRepository_ChatMessages verifies seq assignment, ordering, and that a
 // session DELETE cascades its messages away (§6-C expunge).
 func TestRepository_ChatMessages(t *testing.T) {
