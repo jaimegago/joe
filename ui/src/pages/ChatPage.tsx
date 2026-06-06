@@ -1,17 +1,23 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
-import { fetchSession, updateSessionVisibility, linkSessionToIncident } from '@/api/chat';
-import { Plus, Globe, Lock, Link as LinkIcon, AlertTriangle } from 'lucide-react';
+import {
+  fetchSession,
+  updateSessionTitle,
+  updateSessionVisibility,
+  linkSessionToIncident,
+} from '@/api/chat';
+import { Plus, Globe, Lock, Link as LinkIcon, AlertTriangle, Pencil, Check, X } from 'lucide-react';
 
 export function ChatPage() {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
@@ -87,6 +93,41 @@ export function ChatPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Inline title editing in the header (the same rename available on the
+  // Sessions list, brought to the chat itself). Owner-only; the draft is local
+  // so the background auto-title poll never clobbers what the user is typing.
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+
+  const renameMut = useMutation({
+    mutationFn: (title: string) => updateSessionTitle(activeSessionId!, title),
+    onSuccess: (updated) => {
+      qc.setQueryData(['session', activeSessionId], updated);
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      setIsEditingTitle(false);
+      toast.success('Session renamed');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const startEditTitle = () => {
+    setDraftTitle(session?.title ?? '');
+    setIsEditingTitle(true);
+  };
+
+  const commitTitle = () => {
+    const title = draftTitle.trim();
+    if (!title) {
+      toast.error('Title must not be empty');
+      return;
+    }
+    if (title === (session?.title ?? '')) {
+      setIsEditingTitle(false);
+      return;
+    }
+    renameMut.mutate(title);
+  };
+
   const copyLink = () => {
     if (!activeSessionId) return;
     const url = `${window.location.origin}/chat/${activeSessionId}`;
@@ -105,17 +146,71 @@ export function ChatPage() {
 
   // Owner sharing controls appear only for an existing session we own (the
   // server returns read_only=false). A non-owner public viewer gets a
-  // read-only badge instead.
+  // read-only badge instead. The same gate guards inline title editing.
   const showOwnerControls = activeSessionId != null && session != null && !readOnly;
+
+  // The header title. claude.ai-style: it shows the session's own title once it
+  // has one, else a "New chat" placeholder (swapped live by the poll above — no
+  // raw-first-words flash). The owner can rename it inline. h1 only accepts
+  // phrasing content, so the editor is spans/input/buttons — no block/form.
+  const titleNode = isEditingTitle ? (
+    <span className="flex items-center gap-2">
+      <Input
+        autoFocus
+        value={draftTitle}
+        onChange={(e) => setDraftTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitTitle();
+          } else if (e.key === 'Escape') {
+            setIsEditingTitle(false);
+          }
+        }}
+        className="h-8 w-72 text-base font-normal"
+        aria-label="Session title"
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 shrink-0"
+        onClick={commitTitle}
+        disabled={renameMut.isPending}
+        aria-label="Save title"
+      >
+        <Check className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 shrink-0"
+        onClick={() => setIsEditingTitle(false)}
+        aria-label="Cancel rename"
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </span>
+  ) : (
+    <span className="flex items-center gap-2">
+      <span className="truncate">{session?.title ?? 'New chat'}</span>
+      {showOwnerControls && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 text-muted-foreground"
+          onClick={startEditTitle}
+          aria-label="Rename session"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </span>
+  );
 
   return (
     <div className="flex h-screen flex-col">
       <Header
-        // claude.ai-style: the page title is the session's own title once it
-        // has one; until then (a fresh chat, or a session awaiting its first
-        // turn's async title) it shows the "New chat" placeholder, swapped for
-        // the real title live via the polling above — no raw-first-words flash.
-        title={session?.title ?? 'New chat'}
+        title={titleNode}
         actions={
           <div className="flex items-center gap-2">
             {readOnly && <Badge variant="secondary">Read-only</Badge>}

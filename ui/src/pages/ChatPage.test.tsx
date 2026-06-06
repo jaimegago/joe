@@ -9,7 +9,12 @@ import type { AuthContextValue } from '@/auth/AuthContext';
 import type { ZoneAccess, Session } from '@/api/types';
 import { useChat } from '@/hooks/useChat';
 import { useRegime } from '@/hooks/useRegime';
-import { fetchSession, updateSessionVisibility, linkSessionToIncident } from '@/api/chat';
+import {
+  fetchSession,
+  updateSessionTitle,
+  updateSessionVisibility,
+  linkSessionToIncident,
+} from '@/api/chat';
 
 // ChatPage renders the access-pending empty state instead of the chat surface
 // for a zero-zone, RBAC-enabled, non-admin user (OPERATOR_SURFACE_-
@@ -20,6 +25,7 @@ vi.mock('@/hooks/useChat', () => ({ useChat: vi.fn() }));
 vi.mock('@/hooks/useRegime', () => ({ useRegime: vi.fn() }));
 vi.mock('@/api/chat', () => ({
   fetchSession: vi.fn(),
+  updateSessionTitle: vi.fn(),
   updateSessionVisibility: vi.fn(),
   linkSessionToIncident: vi.fn(),
 }));
@@ -29,6 +35,7 @@ const mockUseAuth = vi.mocked(useAuth);
 const mockUseChat = vi.mocked(useChat);
 const mockUseRegime = vi.mocked(useRegime);
 const mockFetchSession = vi.mocked(fetchSession);
+const mockUpdateTitle = vi.mocked(updateSessionTitle);
 const mockUpdateVisibility = vi.mocked(updateSessionVisibility);
 const mockLinkIncident = vi.mocked(linkSessionToIncident);
 
@@ -282,5 +289,64 @@ describe('ChatPage incident linkage (Phase 4)', () => {
 
     expect(await screen.findByText(/linked to incident/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatPage inline title rename', () => {
+  const owned: Session = {
+    id: 's1',
+    started_at: '2026-06-06T10:00:00Z',
+    message_count: 2,
+    visibility: 'private',
+    title: 'Old title',
+  };
+
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    mockUpdateTitle.mockReset();
+    setRegime('normal');
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    setChat('s1');
+  });
+
+  it('renames an owned session inline from the header', async () => {
+    mockFetchSession.mockResolvedValue(owned);
+    mockUpdateTitle.mockResolvedValue({ ...owned, title: 'New name' });
+    renderPage();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /rename session/i }));
+
+    const input = screen.getByRole('textbox', { name: /session title/i });
+    await user.clear(input);
+    await user.type(input, 'New name');
+    await user.click(screen.getByRole('button', { name: /save title/i }));
+
+    await waitFor(() => expect(mockUpdateTitle).toHaveBeenCalledWith('s1', 'New name'));
+  });
+
+  it('rejects an empty title without calling the API', async () => {
+    mockFetchSession.mockResolvedValue(owned);
+    renderPage();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /rename session/i }));
+    await user.clear(screen.getByRole('textbox', { name: /session title/i }));
+    await user.click(screen.getByRole('button', { name: /save title/i }));
+
+    expect(mockUpdateTitle).not.toHaveBeenCalled();
+  });
+
+  it('offers no rename affordance to a read-only viewer', async () => {
+    mockFetchSession.mockResolvedValue({ ...owned, read_only: true });
+    renderPage();
+
+    // Wait for the session to load (read-only viewer banner), then assert no
+    // rename pencil for a non-owner.
+    expect(await screen.findByText(/viewing a shared session/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /rename session/i })).not.toBeInTheDocument();
   });
 });
