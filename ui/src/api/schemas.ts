@@ -120,9 +120,13 @@ export const SessionSchema = z.object({
   summary: z.string().optional(),
   message_count: z.number(),
   // title is the human-editable session label (Phase 2); visibility is
-  // 'private' | 'public' (Phase 3, sent now but unused by the UI yet).
+  // 'private' | 'public' (Phase 3).
   title: z.string().optional(),
   visibility: z.string().optional(),
+  // read_only is set only on GET /sessions/{id}: true when the caller is a
+  // non-owner viewing a public session (Phase 3 access matrix). Omitted (false)
+  // for the owner and on the list/create paths.
+  read_only: z.boolean().optional(),
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)

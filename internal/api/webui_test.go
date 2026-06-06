@@ -714,6 +714,108 @@ func TestWebUIDeleteSession_OwnerOnly(t *testing.T) {
 	}
 }
 
+// TestWebUIShareSession_PublicReadPath is the core Phase 3 sharing guard
+// (DESIGN-CHAT-SESSIONS.md §10 access matrix). A private session is invisible to
+// a non-owner (404 on both GET /sessions/{id} and its messages). Once the owner
+// flips it public via PATCH, the non-owner can read it (200) and is told it is
+// read-only; flipping back to private re-hides it.
+func TestWebUIShareSession_PublicReadPath(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	id := createSessionAs(t, mux, alice)
+	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		ID: "pm1", SessionID: id, Role: "user", Content: "is this public?",
+	}); err != nil {
+		t.Fatalf("seed message: %v", err)
+	}
+
+	// While private, bob sees nothing.
+	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, bob, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("private GET session by non-owner: got %d, want 404", w.Code)
+	}
+	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("private GET messages by non-owner: got %d, want 404", w.Code)
+	}
+
+	// Owner flips it public.
+	pub := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "public"})
+	if pub.Code != http.StatusOK {
+		t.Fatalf("owner make-public: got %d, want 200: %s", pub.Code, pub.Body.String())
+	}
+	var pubResp map[string]any
+	json.NewDecoder(pub.Body).Decode(&pubResp)
+	if pubResp["visibility"] != "public" {
+		t.Errorf("visibility after toggle = %v, want public", pubResp["visibility"])
+	}
+
+	// bob can now read the session metadata, flagged read-only, and its messages.
+	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, bob, nil)
+	if got.Code != http.StatusOK {
+		t.Fatalf("public GET session by non-owner: got %d, want 200", got.Code)
+	}
+	var sess map[string]any
+	json.NewDecoder(got.Body).Decode(&sess)
+	if sess["read_only"] != true {
+		t.Errorf("non-owner read_only = %v, want true", sess["read_only"])
+	}
+	if _, leaked := sess["creator_principal"]; leaked {
+		t.Error("public session response leaked creator_principal")
+	}
+	msgs := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil)
+	if msgs.Code != http.StatusOK {
+		t.Fatalf("public GET messages by non-owner: got %d, want 200", msgs.Code)
+	}
+
+	// Owner GET reports read_only=false.
+	ownerGet := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, alice, nil)
+	var ownerSess map[string]any
+	json.NewDecoder(ownerGet.Body).Decode(&ownerSess)
+	if ownerSess["read_only"] == true {
+		t.Error("owner read_only = true, want false (omitted)")
+	}
+
+	// Flipping back to private re-hides it from bob.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "private"}); w.Code != http.StatusOK {
+		t.Fatalf("owner make-private: got %d, want 200", w.Code)
+	}
+	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil); w.Code != http.StatusNotFound {
+		t.Errorf("re-privatized GET messages by non-owner: got %d, want 404", w.Code)
+	}
+}
+
+// TestWebUIShareSession_Authorization covers the write-side rules of the
+// visibility toggle: only the owner may toggle (non-owner 404), an invalid
+// visibility value is rejected (400), and a PATCH with no mutable field is
+// rejected (400).
+func TestWebUIShareSession_Authorization(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	_, mux := setupWebUIServer(t)
+
+	id := createSessionAs(t, mux, alice)
+
+	// Non-owner cannot toggle visibility — 404, not 403.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, bob, map[string]any{"visibility": "public"}); w.Code != http.StatusNotFound {
+		t.Errorf("non-owner toggle: got %d, want 404", w.Code)
+	}
+
+	// Invalid visibility value is rejected.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "world"}); w.Code != http.StatusBadRequest {
+		t.Errorf("invalid visibility: got %d, want 400", w.Code)
+	}
+
+	// A PATCH with neither title nor visibility is rejected.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{}); w.Code != http.StatusBadRequest {
+		t.Errorf("empty PATCH: got %d, want 400", w.Code)
+	}
+
+	// A missing session 404s for GET single.
+	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/does-not-exist", alice, nil); w.Code != http.StatusNotFound {
+		t.Errorf("GET missing session: got %d, want 404", w.Code)
+	}
+}
+
 // TestWebUIChatOwnership_MessagesRoundTrip is the owner happy-path: messages
 // persisted to a session come back in order, in the legacy flat JSON shape the
 // chat UI consumes (numeric id from seq, role, content), and only to the owner.

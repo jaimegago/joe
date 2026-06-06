@@ -38,6 +38,13 @@ type Repository interface {
 	// not bump last_activity_at — a rename is metadata housekeeping, not chat
 	// activity, so it must not reorder the recency-sorted browse list.
 	UpdateSessionTitle(ctx context.Context, id, title string) error
+	// UpdateSessionVisibility flips a session between 'private' and 'public'
+	// (migration 022; DESIGN-CHAT-SESSIONS.md §11 Phase 3). Like
+	// UpdateSessionTitle this is an unconditional write by ID — the Web UI
+	// PATCH handler owner-checks and validates the value first — and it does
+	// not bump last_activity_at (visibility is metadata, not chat activity, so
+	// it must not reorder the recency-sorted browse list).
+	UpdateSessionVisibility(ctx context.Context, id, visibility string) error
 
 	// Chat messages (interim flat store, migration 022)
 
@@ -279,6 +286,19 @@ func (r *SQLRepository) UpdateSessionTitle(ctx context.Context, id, title string
 		UPDATE agent_sessions SET title = ? WHERE id = ?`), title, id)
 	if err != nil {
 		return fmt.Errorf("update session title: %w", err)
+	}
+	return nil
+}
+
+// UpdateSessionVisibility sets the visibility column for one session.
+// last_activity_at is deliberately left untouched (parallel to
+// UpdateSessionTitle) so a visibility flip does not reorder the recency-sorted
+// browse list.
+func (r *SQLRepository) UpdateSessionVisibility(ctx context.Context, id, visibility string) error {
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions SET visibility = ? WHERE id = ?`), visibility, id)
+	if err != nil {
+		return fmt.Errorf("update session visibility: %w", err)
 	}
 	return nil
 }

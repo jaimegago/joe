@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { fetchSessions, updateSessionTitle, deleteSession } from '@/api/chat';
 import type { Session } from '@/api/types';
 import { MessageSquare, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
@@ -140,7 +141,14 @@ export function SessionsPage() {
                       </form>
                     ) : (
                       <Link to={`/chat/${s.id}`} className="block min-w-0">
-                        <p className="truncate font-medium hover:underline">{sessionLabel(s)}</p>
+                        <p className="flex items-center gap-2 truncate font-medium">
+                          <span className="truncate hover:underline">{sessionLabel(s)}</span>
+                          {s.visibility === 'public' && (
+                            <Badge variant="secondary" className="shrink-0">
+                              Public
+                            </Badge>
+                          )}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {formatDistanceToNow(new Date(activity), { addSuffix: true })}
                           {' · '}

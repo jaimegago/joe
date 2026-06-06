@@ -197,6 +197,11 @@ type webUISession struct {
 	MessageCount int    `json:"message_count"`
 	Title        string `json:"title,omitempty"`
 	Visibility   string `json:"visibility,omitempty"`
+	// ReadOnly is true when the caller is not the owner and is viewing the
+	// session only because it is public (DESIGN-CHAT-SESSIONS.md §10 access
+	// matrix: non-owner public = read-only). Set only by handleGetSession; the
+	// owner-scoped list/create/rename paths leave it false (omitted).
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 // webUIMessage is the Web UI representation of a chat message — the legacy flat
@@ -306,10 +311,52 @@ func (h *webUIHandler) handleCreateSession(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, sessionToWebUI(*created, 0))
 }
 
-// handleGetSessionMessages returns messages for a session the caller owns. A
-// session owned by another principal — or one that does not exist — returns 404
-// (not 403): the existence of another user's session is not disclosed
-// (DESIGN-CHAT-SESSIONS.md §10 access matrix).
+// handleGetSession returns a single session's metadata for the caller. The
+// owner sees it (read_only=false); a non-owner sees it only when it is public
+// (read_only=true, DESIGN-CHAT-SESSIONS.md §10 access matrix); a private session
+// owned by someone else — or a missing one — returns 404 (existence not
+// disclosed). creator_principal is never projected, so a public viewer does not
+// learn the owner's identity.
+func (h *webUIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing session id")
+		return
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	isOwner := sess != nil && sess.CreatorPrincipal == principal
+	if sess == nil || (!isOwner && sess.Visibility != sessionmodel.VisibilityPublic) {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
+	messages, err := h.server.services.SessionModel.ListChatMessages(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session messages")
+		return
+	}
+
+	out := sessionToWebUI(*sess, len(messages))
+	out.ReadOnly = !isOwner
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleGetSessionMessages returns messages for a session the caller may read:
+// the owner always, or any authenticated principal when the session is public
+// (read-only, DESIGN-CHAT-SESSIONS.md §10 access matrix). A private session
+// owned by another principal — or one that does not exist — returns 404 (not
+// 403): the existence of another user's private session is not disclosed.
 func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"messages": []any{}, "count": 0})
@@ -328,7 +375,7 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 		writeInternalError(w, err, "get session")
 		return
 	}
-	if sess == nil || sess.CreatorPrincipal != principal {
+	if sess == nil || (sess.CreatorPrincipal != principal && sess.Visibility != sessionmodel.VisibilityPublic) {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
@@ -350,17 +397,21 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 	})
 }
 
-// updateSessionRequest is the PATCH /sessions/{id} body. Only title is
-// mutable in Phase 2 (visibility is Phase 3). A pointer distinguishes "title
-// omitted" from "title set to empty string".
+// updateSessionRequest is the PATCH /sessions/{id} body. Both fields are
+// optional pointers so a caller can send either (title rename — Phase 2; or
+// visibility toggle — Phase 3) without clobbering the other, and so "field
+// omitted" is distinguishable from "field set to empty string".
 type updateSessionRequest struct {
-	Title *string `json:"title"`
+	Title      *string `json:"title"`
+	Visibility *string `json:"visibility"`
 }
 
-// handleUpdateSession renames a session the caller owns (PATCH /sessions/{id}).
-// Owner-checked with the same 404-on-miss posture as the messages endpoint —
-// another user's session must not be distinguishable from a missing one
-// (DESIGN-CHAT-SESSIONS.md §10 access matrix). Phase 2 accepts only `title`.
+// handleUpdateSession mutates a session the caller owns (PATCH /sessions/{id}):
+// rename (Phase 2) and/or visibility toggle (Phase 3). Owner-checked with the
+// same 404-on-miss posture as the messages endpoint — another user's session
+// must not be distinguishable from a missing one (DESIGN-CHAT-SESSIONS.md §10
+// access matrix). Inputs are validated before any write so an invalid request
+// never half-applies.
 func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
@@ -378,14 +429,25 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid request body")
 		return
 	}
-	if req.Title == nil {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title is required")
+	if req.Title == nil && req.Visibility == nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title or visibility is required")
 		return
 	}
-	title := strings.TrimSpace(*req.Title)
-	if title == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title must not be empty")
-		return
+
+	// Validate everything up front so a bad value never leaves a partial write.
+	var title string
+	if req.Title != nil {
+		title = strings.TrimSpace(*req.Title)
+		if title == "" {
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title must not be empty")
+			return
+		}
+	}
+	if req.Visibility != nil {
+		if *req.Visibility != sessionmodel.VisibilityPrivate && *req.Visibility != sessionmodel.VisibilityPublic {
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "visibility must be 'private' or 'public'")
+			return
+		}
 	}
 
 	principal := string(rbac.PrincipalFromContext(r.Context()))
@@ -399,12 +461,21 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.server.services.SessionModel.UpdateSessionTitle(r.Context(), sessionID, title); err != nil {
-		writeInternalError(w, err, "update session title")
-		return
+	if req.Title != nil {
+		if err := h.server.services.SessionModel.UpdateSessionTitle(r.Context(), sessionID, title); err != nil {
+			writeInternalError(w, err, "update session title")
+			return
+		}
+		sess.Title = &title
+	}
+	if req.Visibility != nil {
+		if err := h.server.services.SessionModel.UpdateSessionVisibility(r.Context(), sessionID, *req.Visibility); err != nil {
+			writeInternalError(w, err, "update session visibility")
+			return
+		}
+		sess.Visibility = *req.Visibility
 	}
 
-	sess.Title = &title
 	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
 }
 
@@ -531,6 +602,7 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	// Sessions
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
+	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}", prefix), h.handleGetSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)
 	mux.HandleFunc(fmt.Sprintf("PATCH %s/sessions/{id}", prefix), h.handleUpdateSession)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/sessions/{id}", prefix), h.handleDeleteSession)
