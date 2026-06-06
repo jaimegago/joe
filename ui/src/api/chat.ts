@@ -20,3 +20,16 @@ export function createSession(): Promise<Session> {
     .post<unknown>('/api/v1/sessions', {})
     .then((r) => SessionSchema.parse(r));
 }
+
+// updateSessionTitle renames a session (PATCH /sessions/{id}). Owner-checked
+// server-side; a non-owner or missing session yields 404.
+export function updateSessionTitle(id: string, title: string): Promise<Session> {
+  return apiClient
+    .patch<unknown>(`/api/v1/sessions/${encodeURIComponent(id)}`, { title })
+    .then((r) => SessionSchema.parse(r));
+}
+
+// deleteSession removes a session and (via ON DELETE CASCADE) its messages.
+export function deleteSession(id: string): Promise<void> {
+  return apiClient.delete<void>(`/api/v1/sessions/${encodeURIComponent(id)}`);
+}

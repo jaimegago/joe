@@ -100,6 +100,39 @@ func TestRepository_ListSessionsByCreator(t *testing.T) {
 	}
 }
 
+// TestRepository_UpdateSessionTitle verifies a rename persists and that it does
+// not bump last_activity_at (a rename is metadata, not chat activity, so it must
+// not reorder the recency-sorted browse list).
+func TestRepository_UpdateSessionTitle(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "s1", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: "user:alice@example.com",
+		CreatedAt: at, LastActivityAt: at,
+	}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := repo.UpdateSessionTitle(ctx, "s1", "Postgres Connection Pool"); err != nil {
+		t.Fatalf("UpdateSessionTitle: %v", err)
+	}
+
+	got, err := repo.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.Title == nil || *got.Title != "Postgres Connection Pool" {
+		t.Errorf("title = %v, want %q", got.Title, "Postgres Connection Pool")
+	}
+	// last_activity_at must be unchanged by a rename.
+	if !got.LastActivityAt.Equal(at) {
+		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
+	}
+}
+
 // TestRepository_ChatMessages verifies seq assignment, ordering, and that a
 // session DELETE cascades its messages away (§6-C expunge).
 func TestRepository_ChatMessages(t *testing.T) {

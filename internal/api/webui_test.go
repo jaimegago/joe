@@ -633,6 +633,87 @@ func TestWebUIChatOwnership_ListIsolation(t *testing.T) {
 	}
 }
 
+// TestWebUIRenameSession_OwnerOnly covers PATCH /sessions/{id}: the owner can
+// rename; a non-owner gets 404 (existence not disclosed); an empty/whitespace
+// title is rejected; the rename persists and surfaces in the list.
+func TestWebUIRenameSession_OwnerOnly(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	_, mux := setupWebUIServer(t)
+
+	id := createSessionAs(t, mux, alice)
+
+	// Owner renames.
+	w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"title": "  DB Pool Exhaustion  "})
+	if w.Code != http.StatusOK {
+		t.Fatalf("owner rename: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var renamed map[string]any
+	json.NewDecoder(w.Body).Decode(&renamed)
+	if renamed["title"] != "DB Pool Exhaustion" {
+		t.Errorf("title = %v, want trimmed %q", renamed["title"], "DB Pool Exhaustion")
+	}
+
+	// Empty title is rejected.
+	if bad := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"title": "   "}); bad.Code != http.StatusBadRequest {
+		t.Errorf("empty title: got %d, want 400", bad.Code)
+	}
+
+	// Non-owner is refused with 404, not 403.
+	if other := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, bob, map[string]any{"title": "hijack"}); other.Code != http.StatusNotFound {
+		t.Errorf("cross-user rename: got %d, want 404", other.Code)
+	}
+
+	// The rename is reflected in the owner's list.
+	wl := reqAsPrincipal(mux, "GET", "/api/v1/sessions", alice, nil)
+	var listResp struct {
+		Sessions []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"sessions"`
+	}
+	json.NewDecoder(wl.Body).Decode(&listResp)
+	if len(listResp.Sessions) != 1 || listResp.Sessions[0].Title != "DB Pool Exhaustion" {
+		t.Errorf("list title = %+v, want one session titled %q", listResp.Sessions, "DB Pool Exhaustion")
+	}
+}
+
+// TestWebUIDeleteSession_OwnerOnly covers DELETE /sessions/{id}: a non-owner is
+// refused (404) and the session survives; the owner deletes it (204) and it
+// disappears from the list. The chat_messages FK is ON DELETE CASCADE, so the
+// delete also expunges the session's messages.
+func TestWebUIDeleteSession_OwnerOnly(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	id := createSessionAs(t, mux, alice)
+	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		ID: "dm1", SessionID: id, Role: "user", Content: "hello",
+	}); err != nil {
+		t.Fatalf("seed message: %v", err)
+	}
+
+	// Non-owner cannot delete.
+	if other := reqAsPrincipal(mux, "DELETE", "/api/v1/sessions/"+id, bob, nil); other.Code != http.StatusNotFound {
+		t.Fatalf("cross-user delete: got %d, want 404", other.Code)
+	}
+	if sess, _ := srv.services.SessionModel.GetSession(ctx, id); sess == nil {
+		t.Fatal("session was deleted by a non-owner")
+	}
+
+	// Owner deletes.
+	if w := reqAsPrincipal(mux, "DELETE", "/api/v1/sessions/"+id, alice, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("owner delete: got %d, want 204", w.Code)
+	}
+	if sess, _ := srv.services.SessionModel.GetSession(ctx, id); sess != nil {
+		t.Error("session still present after owner delete")
+	}
+	// Cascade: the message is gone too.
+	if msgs, _ := srv.services.SessionModel.ListChatMessages(ctx, id); len(msgs) != 0 {
+		t.Errorf("messages not cascade-deleted: %d remain", len(msgs))
+	}
+}
+
 // TestWebUIChatOwnership_MessagesRoundTrip is the owner happy-path: messages
 // persisted to a session come back in order, in the legacy flat JSON shape the
 // chat UI consumes (numeric id from seq, role, content), and only to the owner.

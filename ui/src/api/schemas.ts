@@ -113,9 +113,16 @@ export const ChatMessageSchema = z.object({
 export const SessionSchema = z.object({
   id: z.string(),
   started_at: z.string(),
+  // last_activity_at is the recency key the browse list sorts/labels by; the
+  // server omits it only on legacy rows, so it is optional.
+  last_activity_at: z.string().optional(),
   ended_at: z.string().optional(),
   summary: z.string().optional(),
   message_count: z.number(),
+  // title is the human-editable session label (Phase 2); visibility is
+  // 'private' | 'public' (Phase 3, sent now but unused by the UI yet).
+  title: z.string().optional(),
+  visibility: z.string().optional(),
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)

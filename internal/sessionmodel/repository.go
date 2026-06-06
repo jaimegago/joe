@@ -32,6 +32,12 @@ type Repository interface {
 	// Changes 2/3) carry the §5b-5 expunge downward. This is a single SQL
 	// statement (no application-level fan-out).
 	DeleteSession(ctx context.Context, id string) error
+	// UpdateSessionTitle sets a session's human-editable title (migration 022).
+	// The Web UI PATCH handler owner-checks before calling, so this is an
+	// unconditional write by ID (DESIGN-CHAT-SESSIONS.md §11 Phase 2). It does
+	// not bump last_activity_at — a rename is metadata housekeeping, not chat
+	// activity, so it must not reorder the recency-sorted browse list.
+	UpdateSessionTitle(ctx context.Context, id, title string) error
 
 	// Chat messages (interim flat store, migration 022)
 
@@ -261,6 +267,18 @@ func (r *SQLRepository) DeleteSession(ctx context.Context, id string) error {
 		DELETE FROM agent_sessions WHERE id = ?`), id)
 	if err != nil {
 		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
+}
+
+// UpdateSessionTitle sets the title column for one session. last_activity_at is
+// deliberately left untouched so a rename does not jump the session to the top
+// of the recency-ordered browse list.
+func (r *SQLRepository) UpdateSessionTitle(ctx context.Context, id, title string) error {
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions SET title = ? WHERE id = ?`), title, id)
+	if err != nil {
+		return fmt.Errorf("update session title: %w", err)
 	}
 	return nil
 }

@@ -1,8 +1,8 @@
 # Design: First-Class Chat Sessions (Web UI)
 
 > Status: **decisions locked 2026-06-06** — see §10 for the resolved calls and §11
-> for the phased plan. **Phase 1 (ownership & isolation) implemented 2026-06-06.**
-> §2–§8 retained as rationale.
+> for the phased plan. **Phase 1 (ownership & isolation) and Phase 2 (browse tab +
+> titles) implemented 2026-06-06.** §2–§8 retained as rationale.
 
 ## 0. Implementation kickoff (read first in a fresh session)
 
@@ -235,10 +235,32 @@ phase it — security first.
 - Tests: cross-user read returns 404; owner happy-path; list isolation; task-path
   cross-user rejection; `022` migration up/down/up round-trip.
 
-**Phase 2 — Browse tab + titles.**
-- `/sessions` page + sidebar nav item; `PATCH /sessions/{id}` (title); heuristic
-  auto-title + async LLM upgrade; `DELETE /sessions/{id}`; `RecentSessions` labels by
-  title.
+**Phase 2 — Browse tab + titles. ✅ Implemented.**
+- API (`internal/api/webui.go`): `PATCH /sessions/{id}` (rename, owner-checked,
+  404-on-miss, trimmed-non-empty title) and `DELETE /sessions/{id}` (owner-checked,
+  204; `chat_messages` FK CASCADE expunges messages). The session list/get JSON
+  gains `last_activity_at` for the browse list's recency label.
+- Repository (`internal/sessionmodel`): `UpdateSessionTitle` — a rename does NOT
+  bump `last_activity_at` (metadata, not chat activity, so it must not reorder the
+  recency-sorted browse list).
+- Auto-title (`internal/api/sessiontitle.go`, wired in `persistTaskMessages`): on a
+  session's opening turn, a first-words heuristic title is written synchronously,
+  then an async LLM upgrade (`prompts.ChatTitleSystem`, `context.WithoutCancel` +
+  timeout) replaces it — but only while the title is still the heuristic, so a
+  manual rename always wins. A no-op once the session already has a title.
+- UI: `/sessions` browse page (`SessionsPage.tsx`) + sidebar nav item (between Chat
+  and Admin); inline rename, delete-with-confirm, open, "New chat" CTA.
+  `RecentSessions` labels by `title ?? summary`. Client: `updateSessionTitle` /
+  `deleteSession` (`ui/src/api/chat.ts`), `SessionSchema` gains `title` /
+  `visibility` / `last_activity_at`.
+- Store fix (`internal/store/store.go`): an unshared in-memory SQLite DSN is pinned
+  to a single connection — extra pooled connections each open a private empty DB, a
+  latent "no such table" surfaced once the async title write forced concurrent
+  access in tests.
+- Tests: repo `UpdateSessionTitle` (persist + no activity bump); webui PATCH/DELETE
+  owner-only (404 cross-user, empty-title 400, list reflects rename, cascade delete);
+  auto-title heuristic-on-first-message + does-not-overwrite; `heuristicTitle` /
+  `sanitizeLLMTitle` units; `SessionsPage` list/empty/rename/delete frontend tests.
 
 **Phase 3 — Sharing.**
 - Visibility toggle (`PATCH /sessions/{id}` visibility, or `POST .../share`); non-owner

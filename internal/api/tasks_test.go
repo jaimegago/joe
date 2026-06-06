@@ -444,6 +444,60 @@ func TestTaskEndpoint_SessionPersisted(t *testing.T) {
 	}
 }
 
+// TestTaskAutoTitle_HeuristicOnFirstMessage verifies a freshly-started session
+// is given a non-empty title synchronously on its opening turn. (The exact text
+// is either the first-words heuristic or its async LLM upgrade — both non-empty
+// — so this asserts only the synchronous "a title now exists" guarantee.)
+func TestTaskAutoTitle_HeuristicOnFirstMessage(t *testing.T) {
+	const alice = "user:alice@example.com"
+	srv, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	ctx := context.Background()
+
+	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice,
+		map[string]any{"message": "why is the payment service crashlooping in prod"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("task: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
+	if err != nil || sess == nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if sess.Title == nil || *sess.Title == "" {
+		t.Fatalf("session has no title after first message; want an auto-title")
+	}
+}
+
+// TestTaskAutoTitle_DoesNotOverwriteExistingTitle verifies the auto-titler skips
+// a session that already has a title — a later turn, or a user-set name, is left
+// intact. Using a pre-set title makes this deterministic (the skip branch fires
+// before any heuristic/async work).
+func TestTaskAutoTitle_DoesNotOverwriteExistingTitle(t *testing.T) {
+	const alice = "user:alice@example.com"
+	srv, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	ctx := context.Background()
+
+	custom := "User Picked This Name"
+	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "titled", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: alice, Title: &custom,
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice,
+		map[string]any{"message": "completely different topic", "session_id": "titled"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("task: got %d, want 200", w.Code)
+	}
+
+	sess, _ := srv.services.SessionModel.GetSession(ctx, "titled")
+	if sess.Title == nil || *sess.Title != custom {
+		t.Errorf("title = %v, want preserved %q", sess.Title, custom)
+	}
+}
+
 // TestTaskEndpoint_CustomSessionID verifies providing a session_id works.
 func TestTaskEndpoint_CustomSessionID(t *testing.T) {
 	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
