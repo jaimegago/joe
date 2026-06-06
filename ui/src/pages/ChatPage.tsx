@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
+import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSession';
 import {
   fetchSession,
   updateSessionTitle,
@@ -41,6 +42,24 @@ export function ChatPage() {
     navigate(activeSessionId ? `/chat/${activeSessionId}` : '/chat', { replace: true });
   }, [activeSessionId, routeSessionId, navigate]);
 
+  // Reopen the last session viewed this tab when landing on a bare /chat (the
+  // sidebar "Chat" link, or any return to the page without a session in the
+  // URL). Mount-only via the ref: "New Session" deliberately clears to /chat
+  // while the page stays mounted, so it must not be bounced back to the old one.
+  const didRestore = useRef(false);
+  useEffect(() => {
+    if (didRestore.current) return;
+    didRestore.current = true;
+    if (routeSessionId) return;
+    const last = loadLastSession();
+    if (last) navigate(`/chat/${last}`, { replace: true });
+  }, [routeSessionId, navigate]);
+
+  // Remember the session in view so the next return to /chat reopens it.
+  useEffect(() => {
+    if (activeSessionId) saveLastSession(activeSessionId);
+  }, [activeSessionId]);
+
   // Session metadata (visibility + read_only + title) for the header, sharing
   // controls and read-only viewer. Loaded only once a session exists. The
   // server titles a fresh session asynchronously from its first message
@@ -55,6 +74,16 @@ export function ChatPage() {
     refetchInterval: (q) => (q.state.data?.title || q.state.dataUpdateCount > 10 ? false : 3000),
   });
   const session = sessionQ.data;
+
+  // If the session in view cannot be loaded — a remembered id that was since
+  // deleted, or one belonging to a different user in this tab — forget it and
+  // fall back to a blank chat rather than stranding the user in a dead session.
+  useEffect(() => {
+    if (sessionQ.isError && activeSessionId) {
+      clearLastSession();
+      navigate('/chat', { replace: true });
+    }
+  }, [sessionQ.isError, activeSessionId, navigate]);
 
   // When the async title finally lands, refresh the browse list / dashboard so
   // their "New chat" entries pick it up live too (the header reads it directly).
