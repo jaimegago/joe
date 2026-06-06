@@ -18,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmusage"
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
@@ -459,6 +460,65 @@ func TestTaskAutoTitle_GeneratedOnFirstMessage(t *testing.T) {
 	}
 	if title == "" {
 		t.Fatalf("session has no auto-title after first message (waited 2s)")
+	}
+}
+
+// titleStubLLM simulates a reasoning model (e.g. Gemini 2.5): a title request —
+// identified by the ChatTitleSystem prompt — returns empty content unless given
+// enough output budget that the model's "thinking" does not starve the reply.
+// Regular agent-loop calls always answer "ok". Guards the regression where a
+// 32-token title cap produced empty titles (NULL in the DB) on Gemini.
+type titleStubLLM struct {
+	minTitleTokens int
+}
+
+func (s *titleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	if req.SystemPrompt == prompts.ChatTitleSystem {
+		if req.MaxTokens < s.minTitleTokens {
+			return &llm.ChatResponse{Content: ""}, nil // thinking ate the budget
+		}
+		return &llm.ChatResponse{Content: "Payment Service Crash Loop"}, nil
+	}
+	return &llm.ChatResponse{
+		Content: "ok",
+		Usage:   llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+	}, nil
+}
+
+func (s *titleStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// TestTaskAutoTitle_SurvivesReasoningModelThinkingBudget verifies the title call
+// is given enough output budget that a reasoning model still emits a title after
+// its thinking — i.e. the cap is not regressed back to a starving value.
+func TestTaskAutoTitle_SurvivesReasoningModelThinkingBudget(t *testing.T) {
+	const alice = "user:alice@example.com"
+	srv, mux := setupTaskServer(t, &titleStubLLM{minTitleTokens: 256})
+	ctx := context.Background()
+
+	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice,
+		map[string]any{"message": "why is the payment service crashlooping in prod"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("task: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	var title string
+	for range 200 {
+		sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
+		if err != nil || sess == nil {
+			t.Fatalf("GetSession: %v", err)
+		}
+		if sess.Title != nil && *sess.Title != "" {
+			title = *sess.Title
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if title != "Payment Service Crash Loop" {
+		t.Fatalf("title = %q, want the model-generated title (a starving token cap regressed?)", title)
 	}
 }
 

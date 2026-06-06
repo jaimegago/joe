@@ -14,6 +14,15 @@ import (
 // unbounded sidebar/header label.
 const maxTitleLen = 60
 
+// titleMaxTokens is the output-token budget for the title call. It is
+// deliberately generous — far larger than a 3-6 word title needs — because
+// reasoning models (e.g. Gemini 2.5) spend output budget on internal "thinking"
+// before emitting any text. A tight cap (we shipped 32) was entirely consumed by
+// thinking on Gemini, so the reply came back empty and the session stayed
+// untitled. The reply is sanitized and length-capped regardless, so the extra
+// headroom never yields a longer title.
+const titleMaxTokens = 1024
+
 // maybeAutoTitle gives a freshly-started session its first title. It runs on the
 // turn that persists the opening message: if the session still has no title, it
 // kicks off an async LLM call to generate one (claude.ai-style — the session
@@ -60,13 +69,15 @@ func (h *taskHandler) generateTitleAsync(ctx context.Context, sessionID, firstUs
 		resp, err := h.server.services.LLM.Chat(tctx, llm.ChatRequest{
 			SystemPrompt: prompts.ChatTitleSystem,
 			Messages:     []llm.Message{{Role: "user", Content: firstUserMsg}},
-			MaxTokens:    32,
+			MaxTokens:    titleMaxTokens,
 		})
 		if err != nil || resp == nil {
+			slog.Debug("auto-title: llm call failed", "session_id", sessionID, "error", err)
 			return
 		}
 		title := sanitizeLLMTitle(resp.Content)
 		if title == "" {
+			slog.Debug("auto-title: llm returned an empty title", "session_id", sessionID)
 			return
 		}
 
