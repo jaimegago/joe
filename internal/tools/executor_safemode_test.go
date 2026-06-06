@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/llm"
@@ -36,6 +37,12 @@ func TestExecutor_SafeMode_BlocksT2(t *testing.T) {
 	_, err := e.Execute(context.Background(), "graph_add_node", nil)
 	if err == nil {
 		t.Fatal("expected error in safe mode for T2 tool")
+	}
+	// The denial must be the typed sentinel so the api layer's
+	// classifyWriteFailure can emit a stable error_code, distinct from an
+	// ordinary tool failure.
+	if !errors.Is(err, safety.ErrSafeModeActive) {
+		t.Fatalf("expected errors.Is(err, ErrSafeModeActive); got %v", err)
 	}
 }
 

@@ -226,7 +226,7 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	// Safe mode: only T1 (Observe) tools are permitted while joe is in
 	// emergency shutdown recovery mode.
 	if safety.IsSafeModeActive() && classification.Tier > safety.TierObserve {
-		err := fmt.Errorf("safe mode active: only read-only (T1) tools are allowed — run 'joe unlock --reason \"...\"' to resume")
+		err := safety.ErrSafeModeActive
 		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, err
 	}
