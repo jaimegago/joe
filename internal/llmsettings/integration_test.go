@@ -39,10 +39,23 @@ func TestCostGate_ReadsLiveFromStorage(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Compute the current hour window ONCE, up front, and reuse the same
+	// bounds for both the seed and the SumCostNano assertion below so the
+	// two can never disagree. Seed the row at hStart + a 1-minute margin
+	// so it is guaranteed inside [hStart, hEnd) regardless of where the
+	// wall clock sits in the hour.
+	//
+	// The earlier time.Now()-5m placement flaked: in the first 5 minutes
+	// of a clock hour, now-5m falls in the PREVIOUS hour — outside
+	// HourWindow(now) — so SumCostNano returned 0 and the "gate would
+	// refuse" precondition (sum >= threshold) failed. Anchoring to hStart
+	// removes the dependency on the wall-clock minute entirely.
+	hStart, hEnd := llmusage.HourWindow(time.Now().UTC())
+
 	// Pre-seed a usage row inside the current hour summing to 100
 	// nano-units.
 	if err := llmUsage.Insert(ctx, llmusage.Row{
-		Timestamp:         time.Now().UTC().Add(-5 * time.Minute),
+		Timestamp:         hStart.Add(time.Minute),
 		Model:             "claude-sonnet-4-20250514",
 		Currency:          "USD",
 		EstimatedCostNano: 100,
@@ -61,7 +74,6 @@ func TestCostGate_ReadsLiveFromStorage(t *testing.T) {
 	if got := provider.HourlyLimitNano(); got != 50 {
 		t.Fatalf("provider hourly = %d, want 50 (stored value must be read live)", got)
 	}
-	hStart, hEnd := llmusage.HourWindow(time.Now().UTC())
 	sum, err := llmUsage.SumCostNano(ctx, hStart, hEnd, "USD")
 	if err != nil {
 		t.Fatalf("SumCostNano: %v", err)
