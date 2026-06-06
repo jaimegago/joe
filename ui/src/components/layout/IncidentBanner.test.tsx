@@ -4,7 +4,7 @@ import { IncidentBanner } from './IncidentBanner';
 import { useRegime } from '@/hooks/useRegime';
 
 // IncidentBanner renders only while the regime is "incident" and otherwise
-// nothing (OPERATOR_SURFACE_VERIFICATION.md item 8). Mock the polling hook to
+// nothing (DECISIONS.md D-0014, incident banner). Mock the polling hook to
 // drive each state directly.
 vi.mock('@/hooks/useRegime', () => ({ useRegime: vi.fn() }));
 const mockUseRegime = vi.mocked(useRegime);

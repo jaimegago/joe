@@ -473,7 +473,7 @@ func taskStatus(ctx context.Context, runErr error) (status, errMsg string) {
 // the already-failed turn — we route through audit.FailurePosture with FailOpen
 // (loud log, proceed) and discard the error. A nil repository (tests/dev with no
 // audit wired) is tolerated and skips the write silently. This closes the parity
-// gap CONTEXT_MANAGEMENT_VERIFICATION.md Cross-Cutting A(c) flagged.
+// gap flagged in DECISIONS.md D-0015(f).
 func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *preparedTask) {
 	repo := h.server.services.Audit
 	if repo == nil {

@@ -9,8 +9,8 @@ import (
 )
 
 // TestAdminRoutes_AllRequireAdminGate is the structural guard for the
-// security fix in ADMIN_SURFACE_AUDIT.md Launch Blocker 1 (privilege
-// escalation): EVERY handler registered under the /api/v1/admin/ prefix
+// security fix in DECISIONS.md D-0012 (privilege escalation): EVERY handler
+// registered under the /api/v1/admin/ prefix
 // must admin-gate via server.requireAdmin.
 //
 // Style mirrors the identity refactor's single-implementation guards —
@@ -59,7 +59,7 @@ func TestAdminRoutes_AllRequireAdminGate(t *testing.T) {
 	for _, name := range ungated {
 		t.Errorf("admin handler %q is registered under /api/v1/admin/ but its "+
 			"body never calls requireAdmin — this re-opens the privilege "+
-			"escalation fixed per ADMIN_SURFACE_AUDIT.md Blocker 1. Add "+
+			"escalation fixed per DECISIONS.md D-0012. Add "+
 			"`if _, gated := h.server.requireAdmin(w, r); gated { return }` at "+
 			"the top of %s, the same gate every other admin handler uses "+
 			"(admingate.go). Do NOT route an admin endpoint around the gate.",

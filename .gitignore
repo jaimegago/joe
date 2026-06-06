@@ -49,3 +49,6 @@ vendor/
 
 # Claude
 .claude/
+
+# Personal project-knowledge doc (pinned as claude.ai Project knowledge, not for publish)
+/JOE_PROJECT_KNOWLEDGE.md

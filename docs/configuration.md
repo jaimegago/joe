@@ -123,3 +123,14 @@ the first admin.
 
 Provider keys live **only** in the environment that runs `joe` (the daemon). The
 client subcommands never read a provider key.
+
+## Troubleshooting
+
+- **"Failed to load config"** — check the path and that the YAML is valid. YAML is
+  indentation-sensitive: use spaces, not tabs, and quote strings with special
+  characters.
+- **Startup exits asking for a provider key** — set one of `ANTHROPIC_API_KEY` or
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY` in the environment that runs `joe`. With both
+  present, `joe` defaults to Claude; override with `JOE_LLM_PROVIDER`.
+- **No config file** — that's fine. `joe` runs on defaults when one provider key is
+  set; create `~/.joe/config.yaml` only to customize.

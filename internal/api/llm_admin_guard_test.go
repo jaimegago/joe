@@ -15,8 +15,8 @@ import (
 // These are the siblings of admin_gate_guard_test.go and
 // admin_audit_guard_test.go (D-0012 / D-0013), which parse admin.go and pin
 // the gate+audit invariant for the RBAC admin surface under /api/v1/admin/.
-// The Stream G verification (STREAM_G_VERIFICATION.md, Item 7 / cross-cutting
-// C) found the exact regression class those guards close was STILL OPEN for
+// The Stream G structural-guard gap (DECISIONS.md D-0014) was the exact
+// regression class those guards close, STILL OPEN for
 // the LLM admin surface: the settings/usage mutators live on
 // llmSettingsHandler / llmUsageHandler in llmsettings.go / llmusageapi.go,
 // registered under /api/v1/llm/ — outside the parse scope of both admin
@@ -40,8 +40,8 @@ import (
 //     directly in the handler), the Stream G mutators route through
 //     services.LLMSettings (the MutationService), which persists the value AND
 //     writes the audit row in one transaction via audit.Repository.InsertTx
-//     with Kind=KindLLMSettingsMutation (STREAM_G_VERIFICATION.md Item 2/6,
-//     internal/llmsettings/service.go:206-238). So the structural property is:
+//     with Kind=KindLLMSettingsMutation (DECISIONS.md D-0014,
+//     internal/llmsettings/service.go). So the structural property is:
 //     a mutating handler's body must invoke a method on
 //     h.server.services.LLMSettings — the single audited mutation path. A
 //     mutator that writes through any other path (or none) is flagged.
@@ -108,7 +108,7 @@ func TestLLMAdminRoutes_MutatorsRequireAdminGate(t *testing.T) {
 			"mutating (or per-principal) route but its body never calls "+
 			"requireAdmin — this re-opens the privilege-escalation class "+
 			"D-0012 closed for the admin surface, left open for the Stream G "+
-			"surface (STREAM_G_VERIFICATION.md Item 7). Add "+
+			"surface (DECISIONS.md D-0014). Add "+
 			"`if _, gated := h.server.requireAdmin(w, r); gated { return }` at "+
 			"the top of %s, the same gate the admin and existing LLM mutators "+
 			"use (admingate.go). Do NOT route an LLM admin endpoint around the "+
@@ -153,7 +153,7 @@ func TestLLMAdminRoutes_MutatorsAudit(t *testing.T) {
 			"(Kind=KindLLMSettingsMutation) in one transaction "+
 			"(internal/llmsettings/service.go). Routing the mutation around it "+
 			"re-opens the audit gap D-0013 closed for the admin surface, left "+
-			"open for the Stream G surface (STREAM_G_VERIFICATION.md Item 7). "+
+			"open for the Stream G surface (DECISIONS.md D-0014). "+
 			"Persist the change through services.LLMSettings in %s; do NOT "+
 			"write the value directly.", name, name)
 	}
@@ -255,7 +255,7 @@ func isMutatingVerb(verb string) bool {
 // llmRouteRequiresAdmin reports whether a route must admin-gate: every
 // mutating verb, plus the per-principal usage breakdown (a GET that exposes
 // other principals' usage and so is admin-only by Stream G design,
-// STREAM_G_VERIFICATION.md Item 7).
+// DECISIONS.md D-0014).
 func llmRouteRequiresAdmin(rt llmRoute) bool {
 	if isMutatingVerb(rt.verb) {
 		return true
