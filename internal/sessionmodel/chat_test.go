@@ -100,6 +100,68 @@ func TestRepository_ListSessionsByCreator(t *testing.T) {
 	}
 }
 
+// TestRepository_ListPublicSessionsByOthers verifies the "shared with you" list
+// (§10 sharing extension): only public sessions owned by *other* principals are
+// returned, newest activity first, with message counts and the owner attributed
+// on the row. Private sessions and the caller's own public sessions are excluded.
+func TestRepository_ListPublicSessionsByOthers(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	base := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	mk := func(id, principal, visibility string, at time.Time) {
+		if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+			ID: id, Type: sessionmodel.SessionTypeOther, CreatorPrincipal: principal,
+			Visibility: visibility, CreatedAt: at, LastActivityAt: at,
+		}); err != nil {
+			t.Fatalf("CreateSession %s: %v", id, err)
+		}
+	}
+	mk("a_pub", "user:alice@example.com", sessionmodel.VisibilityPublic, base.Add(1*time.Minute))
+	mk("a_priv", "user:alice@example.com", sessionmodel.VisibilityPrivate, base.Add(2*time.Minute))
+	mk("c_pub", "user:carol@example.com", sessionmodel.VisibilityPublic, base.Add(3*time.Minute)) // most recent
+	mk("b_pub", "user:bob@example.com", sessionmodel.VisibilityPublic, base)                      // bob is the caller
+
+	// One message on a_pub so the count projection is exercised.
+	if _, err := repo.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		ID: "m1", SessionID: "a_pub", Role: "user", Content: "hi", CreatedAt: base.Add(30 * time.Second),
+	}); err != nil {
+		t.Fatalf("AddChatMessage: %v", err)
+	}
+
+	got, err := repo.ListPublicSessionsByOthers(ctx, "user:bob@example.com", 0)
+	if err != nil {
+		t.Fatalf("ListPublicSessionsByOthers: %v", err)
+	}
+	// bob sees alice's and carol's public sessions — not his own (b_pub) and not
+	// alice's private one (a_priv). carol's is most recent, so it sorts first.
+	if len(got) != 2 {
+		t.Fatalf("got %d shared sessions, want 2 (a_pub, c_pub)", len(got))
+	}
+	if got[0].ID != "c_pub" {
+		t.Errorf("first shared = %q, want c_pub (most recent activity)", got[0].ID)
+	}
+	if got[1].ID != "a_pub" {
+		t.Errorf("second shared = %q, want a_pub", got[1].ID)
+	}
+	if got[1].CreatorPrincipal != "user:alice@example.com" {
+		t.Errorf("a_pub owner = %q, want alice", got[1].CreatorPrincipal)
+	}
+	if got[1].MessageCount != 1 {
+		t.Errorf("a_pub message_count = %d, want 1", got[1].MessageCount)
+	}
+
+	// Limit is honored.
+	limited, err := repo.ListPublicSessionsByOthers(ctx, "user:bob@example.com", 1)
+	if err != nil {
+		t.Fatalf("ListPublicSessionsByOthers limit: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("limit=1 returned %d sessions", len(limited))
+	}
+}
+
 // TestRepository_UpdateSessionTitle verifies a rename persists and that it does
 // not bump last_activity_at (a rename is metadata, not chat activity, so it must
 // not reorder the recency-sorted browse list).

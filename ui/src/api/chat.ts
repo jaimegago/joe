@@ -15,6 +15,15 @@ export function fetchSessions(limit = 20): Promise<Session[]> {
     .then((r) => z.object({ sessions: z.array(SessionSchema) }).parse(r).sessions);
 }
 
+// fetchSharedSessions returns public sessions shared by *other* users (GET
+// /sessions/shared). Each is read-only and carries shared_by (the owner's
+// principal); the caller's own sessions are excluded server-side.
+export function fetchSharedSessions(limit = 20): Promise<Session[]> {
+  return apiClient
+    .get<unknown>(`/api/v1/sessions/shared?limit=${limit}`)
+    .then((r) => z.object({ sessions: z.array(SessionSchema) }).parse(r).sessions);
+}
+
 export function createSession(): Promise<Session> {
   return apiClient.post<unknown>('/api/v1/sessions', {}).then((r) => SessionSchema.parse(r));
 }

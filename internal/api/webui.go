@@ -206,6 +206,12 @@ type webUISession struct {
 	// attached to (Phase 4 incident linkage), or empty when unlinked. The
 	// browse list and chat header use its presence to show an incident badge.
 	LinkedIncidentID string `json:"linked_incident_id,omitempty"`
+	// SharedBy is the owning principal of a public session surfaced in another
+	// user's "shared with you" list (DESIGN-CHAT-SESSIONS.md §10 sharing
+	// extension). It is the one place the owner identity is intentionally
+	// projected — the owner-scoped list, create/rename, and the per-id GET all
+	// leave it empty. Its presence lets the UI label a row "shared by <owner>".
+	SharedBy string `json:"shared_by,omitempty"`
 }
 
 // webUIMessage is the Web UI representation of a chat message — the legacy flat
@@ -283,6 +289,49 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 	sessions := make([]webUISession, 0, len(rows))
 	for _, row := range rows {
 		sessions = append(sessions, sessionToWebUI(row.AgentSession, row.MessageCount))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sessions": sessions,
+		"count":    len(sessions),
+	})
+}
+
+// handleListSharedSessions returns the "shared with you" list: every public
+// session owned by a principal other than the caller (DESIGN-CHAT-SESSIONS.md
+// §10 sharing extension). Each row is flagged read_only=true and carries
+// shared_by (the owner's principal) so the UI can label it "read-only · shared
+// by <owner>". This is the deliberate exception to the "creator_principal is
+// never projected" rule — a public session's owner is disclosed precisely
+// because the owner chose to share it. The caller's own sessions are excluded
+// (they appear in their own list); send/continue stays owner-only, so these are
+// read-only entry points into the existing public read path.
+func (h *webUIHandler) handleListSharedSessions(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	rows, err := h.server.services.SessionModel.ListPublicSessionsByOthers(r.Context(), principal, limit)
+	if err != nil {
+		writeInternalError(w, err, "list shared sessions")
+		return
+	}
+
+	sessions := make([]webUISession, 0, len(rows))
+	for _, row := range rows {
+		s := sessionToWebUI(row.AgentSession, row.MessageCount)
+		s.ReadOnly = true
+		s.SharedBy = row.CreatorPrincipal
+		sessions = append(sessions, s)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -670,6 +719,9 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 
 	// Sessions
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
+	// Literal "/sessions/shared" is more specific than "/sessions/{id}", so the
+	// Go 1.22 mux routes it here regardless of registration order.
+	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/shared", prefix), h.handleListSharedSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}", prefix), h.handleGetSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)

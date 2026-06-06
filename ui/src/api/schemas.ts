@@ -131,6 +131,11 @@ export const SessionSchema = z.object({
   // (Phase 4 incident linkage), or absent when unlinked. Its presence drives
   // the incident badge on the session row and chat header.
   linked_incident_id: z.string().optional(),
+  // shared_by is the owning principal of a public session surfaced in the
+  // "shared with you" list (GET /sessions/shared). Present only on that list;
+  // the owner's own list and per-id GET never include it. Drives the
+  // "read-only · shared by <owner>" label.
+  shared_by: z.string().optional(),
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)

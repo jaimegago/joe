@@ -816,6 +816,106 @@ func TestWebUIShareSession_Authorization(t *testing.T) {
 	}
 }
 
+// TestWebUISharedSessions covers GET /sessions/shared (DESIGN-CHAT-SESSIONS.md
+// §10 sharing extension): a public session is auto-listed in *other* users'
+// "shared with you" list, flagged read-only and attributed to its owner via
+// shared_by. The owner's own public session is excluded from their shared list,
+// a private session is never listed, and re-privatizing removes it again.
+func TestWebUISharedSessions(t *testing.T) {
+	const alice, bob, carol = "user:alice@example.com", "user:bob@example.com", "user:carol@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	// alice owns a session; bob owns one too.
+	aliceID := createSessionAs(t, mux, alice)
+	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		ID: "sm1", SessionID: aliceID, Role: "user", Content: "shared?",
+	}); err != nil {
+		t.Fatalf("seed message: %v", err)
+	}
+	createSessionAs(t, mux, bob)
+
+	// While alice's session is private, nobody else's shared list shows it.
+	if got := sharedSessionIDs(t, mux, bob); len(got) != 0 {
+		t.Fatalf("private session leaked into shared list: %v", got)
+	}
+
+	// alice makes it public.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+aliceID, alice, map[string]any{"visibility": "public"}); w.Code != http.StatusOK {
+		t.Fatalf("make-public: got %d, want 200", w.Code)
+	}
+
+	// bob's shared list now contains alice's session, read-only and attributed.
+	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/shared", bob, nil)
+	if got.Code != http.StatusOK {
+		t.Fatalf("shared list: got %d, want 200", got.Code)
+	}
+	var resp struct {
+		Sessions []map[string]any `json:"sessions"`
+		Count    int              `json:"count"`
+	}
+	if err := json.NewDecoder(got.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode shared list: %v", err)
+	}
+	if resp.Count != 1 || len(resp.Sessions) != 1 {
+		t.Fatalf("shared list count = %d, want 1", resp.Count)
+	}
+	row := resp.Sessions[0]
+	if row["id"] != aliceID {
+		t.Errorf("shared row id = %v, want %s", row["id"], aliceID)
+	}
+	if row["read_only"] != true {
+		t.Errorf("shared row read_only = %v, want true", row["read_only"])
+	}
+	if row["shared_by"] != alice {
+		t.Errorf("shared row shared_by = %v, want %s", row["shared_by"], alice)
+	}
+	if _, leaked := row["creator_principal"]; leaked {
+		t.Error("shared row leaked creator_principal field")
+	}
+
+	// carol (a third principal) sees it too.
+	if got := sharedSessionIDs(t, mux, carol); len(got) != 1 || got[0] != aliceID {
+		t.Errorf("carol shared list = %v, want [%s]", got, aliceID)
+	}
+
+	// alice's own shared list excludes her own public session.
+	if got := sharedSessionIDs(t, mux, alice); len(got) != 0 {
+		t.Errorf("owner's own public session appeared in their shared list: %v", got)
+	}
+
+	// Re-privatizing removes it from bob's shared list.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+aliceID, alice, map[string]any{"visibility": "private"}); w.Code != http.StatusOK {
+		t.Fatalf("make-private: got %d, want 200", w.Code)
+	}
+	if got := sharedSessionIDs(t, mux, bob); len(got) != 0 {
+		t.Errorf("re-privatized session still in shared list: %v", got)
+	}
+}
+
+// sharedSessionIDs fetches GET /sessions/shared as principal and returns the
+// session ids in the response.
+func sharedSessionIDs(t *testing.T, mux *http.ServeMux, principal string) []string {
+	t.Helper()
+	w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/shared", principal, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("shared list for %s: got %d, want 200", principal, w.Code)
+	}
+	var resp struct {
+		Sessions []struct {
+			ID string `json:"id"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode shared list: %v", err)
+	}
+	ids := make([]string, 0, len(resp.Sessions))
+	for _, s := range resp.Sessions {
+		ids = append(ids, s.ID)
+	}
+	return ids
+}
+
 // TestWebUILinkIncident covers POST /sessions/{id}/link-incident (Phase 4):
 // 409 when no incident is active; owner-only (non-owner 404); the link promotes
 // the session to type='investigation' and records linked_incident_id, surfaced
