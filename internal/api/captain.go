@@ -247,13 +247,17 @@ func (h *captainHandler) transferConfirm(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	principal := rbac.PrincipalFromContext(r.Context())
+	if principal == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
 	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainTransferConfirm,
 		audit.DecisionAllow, "transition_recorded",
 		map[string]string{"session_id": sessionID}); err != nil {
 		writeInternalError(w, err, "captain transfer confirm audit")
 		return
 	}
-	newID, err := h.svc.ConfirmTransfer(r.Context(), sessionID)
+	newID, err := h.svc.ConfirmTransfer(r.Context(), sessionID, string(principal))
 	if err != nil {
 		switch {
 		case errors.Is(err, sessionmodel.ErrNoActiveCaptain):
@@ -261,6 +265,10 @@ func (h *captainHandler) transferConfirm(w http.ResponseWriter, r *http.Request)
 			return
 		case errors.Is(err, sessionmodel.ErrNoTransferInFlight):
 			writeError(w, http.StatusConflict, "conflict", "no transfer in flight")
+			return
+		case errors.Is(err, sessionmodel.ErrNotSolicitedIncoming):
+			writeError(w, http.StatusForbidden, "forbidden",
+				"only the solicited incoming principal may confirm this transfer")
 			return
 		}
 		writeInternalError(w, err, "transfer confirm")
@@ -279,19 +287,27 @@ func (h *captainHandler) transferCancel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	principal := rbac.PrincipalFromContext(r.Context())
+	if principal == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
 	if err := h.writeCaptainAudit(r.Context(), principal, audit.ActionCaptainTransferCancel,
 		audit.DecisionAllow, "transition_recorded",
 		map[string]string{"session_id": sessionID}); err != nil {
 		writeInternalError(w, err, "captain transfer cancel audit")
 		return
 	}
-	if err := h.svc.CancelTransfer(r.Context(), sessionID); err != nil {
+	if err := h.svc.CancelTransfer(r.Context(), sessionID, string(principal)); err != nil {
 		switch {
 		case errors.Is(err, sessionmodel.ErrNoActiveCaptain):
 			writeError(w, http.StatusConflict, "conflict", "no active captain")
 			return
 		case errors.Is(err, sessionmodel.ErrNoTransferInFlight):
 			writeError(w, http.StatusConflict, "conflict", "no transfer in flight")
+			return
+		case errors.Is(err, sessionmodel.ErrNotTransferParty):
+			writeError(w, http.StatusForbidden, "forbidden",
+				"only a party to the transfer may cancel it")
 			return
 		}
 		writeInternalError(w, err, "transfer cancel")

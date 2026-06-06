@@ -10,6 +10,88 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0017 — The captaincy transfer handshake authenticated confirm/cancel but never bound the caller to the transfer; any authenticated principal could complete or abort a transfer it was not part of
+
+- Date: 2026-06-07
+- Decision: This is a defect entry, not a polish entry — an authorization
+  bypass in the captaincy control plane, the same family as D-0012 (a
+  control that authenticated the caller but never checked that the caller
+  was entitled to the specific action). The §B captain transfer handshake
+  (`internal/sessionmodel/captain.go`, exposed over HTTP at
+  `internal/api/captain.go`) is a three-step state machine: `transfer/begin`
+  opens an in-flight solicitation, then `transfer/confirm` completes the
+  captaincy swap or `transfer/cancel` aborts it. EdgeAuth resolves the
+  caller's principal into request context for all three. **`begin` already
+  persisted both parties of the handshake** — the in-flight record lives on
+  the active `session_captains` row (scoped to the active incident session
+  via `detached_at IS NULL`), whose `principal` column is the
+  soliciting/outgoing captain and whose `incoming_principal` column is the
+  solicited incoming principal. But `confirm` and `cancel` **read the
+  caller's principal only to write their audit row and never compared it to
+  either party.** `CaptainService.ConfirmTransfer(ctx, sessionID)` and
+  `CancelTransfer(ctx, sessionID)` took no caller principal at all:
+  - **(a) The gap.** Any authenticated principal — including one who is
+    neither the outgoing captain nor the solicited incoming principal —
+    could `POST .../transfer/confirm` and finalize the swap to the recorded
+    `incoming_principal`, or `POST .../transfer/cancel` and abort a transfer
+    it had no part in. The caller was authenticated; it was never
+    *authorized* against the handshake. (The two handlers also did not even
+    reject the `rbac.Unknown` principal the way `attach`/`heartbeat`/`begin`
+    do.) The binding data existed in the row the whole time — only the check
+    was missing.
+  - **(b) The binding model now enforced.** The caller principal is threaded
+    into both service methods. **Confirm** is authorized to exactly one
+    principal: the solicited `incoming_principal` named in the in-flight
+    record. The outgoing captain cannot confirm in the incoming principal's
+    place; a third principal cannot confirm at all → `ErrNotSolicitedIncoming`.
+    **Cancel** is authorized to *either* party — the soliciting/outgoing
+    captain (`principal`) or the solicited incoming (`incoming_principal`);
+    any third principal → `ErrNotTransferParty`. A confirm/cancel with no
+    matching in-flight solicitation is still rejected first with
+    `ErrNoTransferInFlight` (the binding is checked against a real record, or
+    there is nothing to act on). No new persistence was added — `begin`
+    already recorded both parties; this fix is enforcement, not schema.
+  - **(c) The authorization-failure convention used.** Both new sentinel
+    errors map at the HTTP layer to `403` `"forbidden"`, matching the
+    existing captain-control surface convention — the same shape
+    `heartbeat` uses for `ErrCaptainPrincipalMismatch` (typed sentinel in
+    `sessionmodel`, matched via `errors.Is`, rendered as a stable 403). No
+    new error-code vocabulary was invented.
+  - **(d) The break-tested invariant.** `TestCaptain_ConfirmBoundToSolicitedIncoming`
+    and `TestCaptain_CancelBoundToHandshakeParties`
+    (`internal/sessionmodel/captain_test.go`) assert the negative cases
+    structurally: a non-party confirm/cancel returns the typed forbidden
+    error *and* leaves the in-flight transfer untouched (captain unchanged,
+    state still `transfer_requested`), and confirm by the outgoing captain in
+    the incoming principal's place is rejected. `TestCaptainAPI_TransferConfirmCancelBindToParties`
+    (`internal/api/captain_test.go`) pins the 403 wire mapping. All three
+    were break-tested: neutralizing either binding in `captain.go` turns the
+    rejections into successes and fails the suite (confirm-by-third-party
+    returns nil/200 and swaps the captain; cancel-by-third-party resolves the
+    transfer), confirming the tests fail if the principal binding is removed.
+- Scope held: the transactionality of the captaincy swap itself
+  (`completeTransfer` — two sequential repo writes, no shared tx; call site
+  unchanged at `ConfirmTransfer` and the `begin` shortcut paths) and the
+  resolve-path dangling-row behavior are SEPARATE findings and were not
+  touched here. The non-transactional swap is noted, not fixed.
+- Basis: `internal/sessionmodel/captain.go` (`ConfirmTransfer`/`CancelTransfer`
+  now take and check `callerPrincipal`; `ErrNotSolicitedIncoming`/
+  `ErrNotTransferParty` added) and `internal/api/captain.go` (handlers thread
+  `string(principal)`, reject `rbac.Unknown`, map the typed errors to 403),
+  verified by `go build ./...`, `go vet ./...`, `gofmt -s -w .`, and
+  `go test ./...` green, plus the break-test described in (d). The pre-state
+  is the captain/incident investigation under `docs/investigations/`, read
+  against current code and confirmed.
+- Supersedes: nothing — it closes a defect, it does not revise a prior
+  decision. Same family as D-0012 (authenticate-without-authorize); builds on
+  D-0010 (the shared §C captain gate) and D-0009 (captain-transition audit),
+  neither of which is changed.
+- Status: active. Authorization bypass closed; binding break-tested. The
+  non-transactional `completeTransfer` swap and the resolve-path dangling-row
+  behavior remain open as separate findings.
+
+---
+
 ## D-0016 — Identity registry (the `principals` table) + full RBAC admin REST/UI surface; the `zone`/`admin` operator CLI removed, REST is the sole RBAC writer
 
 - Date: 2026-06-05

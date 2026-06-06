@@ -108,10 +108,12 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 		t.Error("expected solicitation id on outgoing-initiated transfer")
 	}
 
-	// Confirm.
+	// Confirm — authorized only to the solicited incoming principal (bob).
+	// The outgoing captain (alice) cannot confirm the transfer in bob's
+	// place; the binding is enforced at the service layer (D-0017).
 	r4 := doRequest(t, http.MethodPost,
 		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/confirm",
-		"alice", nil)
+		"bob", nil)
 	if r4.StatusCode != http.StatusOK {
 		t.Errorf("transfer/confirm status = %d, want 200", r4.StatusCode)
 	}
@@ -196,6 +198,63 @@ func TestCaptainAPI_TransferUnreachableDirectConfirm(t *testing.T) {
 	p, ok, _ := sessRepo.CurrentCaptainPrincipal(ctx, sessionID)
 	if !ok || p != "bob" {
 		t.Errorf("CurrentCaptainPrincipal = (%q, %v), want (bob, true)", p, ok)
+	}
+}
+
+// TestCaptainAPI_TransferConfirmCancelBindToParties exercises the full
+// wire path of the D-0017 authorization fix: the typed service errors
+// (ErrNotSolicitedIncoming / ErrNotTransferParty) surface as HTTP 403, and
+// a principal that is party to neither side of the handshake can neither
+// confirm nor cancel an in-flight transfer.
+func TestCaptainAPI_TransferConfirmCancelBindToParties(t *testing.T) {
+	ts, sessRepo, runRepo := newCaptainServer(t, 60)
+	ctx := context.Background()
+
+	sessionID, _, err := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
+	if err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+	run, err := runRepo.CreateRun(ctx, runmodel.Run{
+		ID: "run-1", SessionID: sessionID, State: runmodel.RunStateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// alice solicits bob (outgoing-initiated).
+	rb := doRequest(t, http.MethodPost,
+		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/begin",
+		"alice",
+		map[string]any{"initiator": "outgoing", "incoming_principal": "bob", "run_id": run.ID})
+	if rb.StatusCode != http.StatusOK {
+		t.Fatalf("transfer/begin status = %d, want 200", rb.StatusCode)
+	}
+	rb.Body.Close()
+
+	// carol — party to neither side — cannot confirm (403).
+	rc := doRequest(t, http.MethodPost,
+		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/confirm",
+		"carol", nil)
+	if rc.StatusCode != http.StatusForbidden {
+		t.Errorf("non-party confirm status = %d, want 403", rc.StatusCode)
+	}
+	rc.Body.Close()
+
+	// carol cannot cancel either (403).
+	rd := doRequest(t, http.MethodPost,
+		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/cancel",
+		"carol", nil)
+	if rd.StatusCode != http.StatusForbidden {
+		t.Errorf("non-party cancel status = %d, want 403", rd.StatusCode)
+	}
+	rd.Body.Close()
+
+	// The transfer is untouched: alice is still captain with bob in flight.
+	cap, _ := sessRepo.GetActiveCaptain(ctx, sessionID)
+	if cap.Principal != "alice" || cap.TransferState == nil ||
+		*cap.TransferState != sessionmodel.TransferStateTransferRequested {
+		t.Errorf("after non-party calls: captain=%q state=%+v, want alice/transfer_requested",
+			cap.Principal, cap.TransferState)
 	}
 }
 
