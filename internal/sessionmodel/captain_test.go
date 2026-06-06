@@ -266,7 +266,7 @@ func TestCaptain_IncomingInitiatedWhenReachableAsksOutgoing(t *testing.T) {
 	}
 
 	// Cancel returns the state to active (decline-by-current-captain).
-	if err := e.svc.CancelTransfer(e.ctx, sessionID); err != nil {
+	if err := e.svc.CancelTransfer(e.ctx, sessionID, "alice"); err != nil {
 		t.Fatalf("CancelTransfer: %v", err)
 	}
 	cap, _ := e.sess.GetActiveCaptain(e.ctx, sessionID)
@@ -362,8 +362,9 @@ func TestCaptain_B1_PrincipalThreadedAfterConfirm(t *testing.T) {
 		t.Fatalf("BeginTransfer: %v", err)
 	}
 
-	// Confirm transfer (outgoing chose "finish").
-	newID, err := e.svc.ConfirmTransfer(e.ctx, sessionID)
+	// Confirm transfer (outgoing chose "finish"); only the solicited
+	// incoming principal (bob) is authorized to confirm.
+	newID, err := e.svc.ConfirmTransfer(e.ctx, sessionID, "bob")
 	if err != nil {
 		t.Fatalf("ConfirmTransfer: %v", err)
 	}
@@ -389,7 +390,7 @@ func TestCaptain_CancelLeavesStateActive(t *testing.T) {
 		sessionmodel.TransferInitiatorOutgoing, "alice", "bob", runID); err != nil {
 		t.Fatalf("BeginTransfer: %v", err)
 	}
-	if err := e.svc.CancelTransfer(e.ctx, sessionID); err != nil {
+	if err := e.svc.CancelTransfer(e.ctx, sessionID, "alice"); err != nil {
 		t.Fatalf("CancelTransfer: %v", err)
 	}
 
@@ -463,8 +464,110 @@ func TestCaptain_ConfirmWithoutTransferRejected(t *testing.T) {
 	e := newCaptainEnv(t, 60)
 	sessionID := e.declareWithCaptain(t, "alice")
 
-	_, err := e.svc.ConfirmTransfer(e.ctx, sessionID)
+	_, err := e.svc.ConfirmTransfer(e.ctx, sessionID, "alice")
 	if err != sessionmodel.ErrNoTransferInFlight {
 		t.Errorf("ConfirmTransfer err = %v, want ErrNoTransferInFlight", err)
+	}
+}
+
+// --- §B authorization binding: confirm/cancel are bound to the handshake
+//        parties, not merely authenticated. Break test for the D-0017
+//        authorization-bypass fix: it fails if the principal binding on
+//        ConfirmTransfer or CancelTransfer is removed, because a non-party
+//        would then complete/abort a transfer it is not part of. ---
+
+// stillInFlight asserts the active captain row still holds an in-flight
+// transfer to a named incoming principal — i.e. a rejected confirm/cancel
+// did NOT mutate the handshake. If the binding is removed and the rejected
+// call instead succeeds, this assertion fails (state would be active or the
+// captain swapped).
+func (e *captainTestEnv) stillInFlight(t *testing.T, sessionID, wantCaptain, wantIncoming string) {
+	t.Helper()
+	cap, err := e.sess.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetActiveCaptain: %v", err)
+	}
+	if cap.Principal != wantCaptain {
+		t.Fatalf("active captain principal = %q, want %q (a non-party call must not swap the captain)", cap.Principal, wantCaptain)
+	}
+	if cap.TransferState == nil || *cap.TransferState != sessionmodel.TransferStateTransferRequested {
+		t.Fatalf("transfer_state = %+v, want transfer_requested (a non-party call must not resolve the transfer)", cap.TransferState)
+	}
+	if cap.IncomingPrincipal == nil || *cap.IncomingPrincipal != wantIncoming {
+		t.Fatalf("incoming_principal = %+v, want %q", cap.IncomingPrincipal, wantIncoming)
+	}
+}
+
+func TestCaptain_ConfirmBoundToSolicitedIncoming(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+	runID := e.runOn(t, sessionID)
+
+	// Outgoing-initiated: alice solicits bob as the incoming captain.
+	if _, err := e.svc.BeginTransfer(e.ctx, sessionID,
+		sessionmodel.TransferInitiatorOutgoing, "alice", "bob", runID); err != nil {
+		t.Fatalf("BeginTransfer: %v", err)
+	}
+
+	// A third principal (carol), party to neither side, cannot confirm.
+	if _, err := e.svc.ConfirmTransfer(e.ctx, sessionID, "carol"); err != sessionmodel.ErrNotSolicitedIncoming {
+		t.Errorf("confirm by third party err = %v, want ErrNotSolicitedIncoming", err)
+	}
+	e.stillInFlight(t, sessionID, "alice", "bob")
+
+	// The soliciting/outgoing captain cannot confirm in the incoming
+	// principal's place — confirm is reserved to the solicited incoming.
+	if _, err := e.svc.ConfirmTransfer(e.ctx, sessionID, "alice"); err != sessionmodel.ErrNotSolicitedIncoming {
+		t.Errorf("confirm by outgoing captain err = %v, want ErrNotSolicitedIncoming", err)
+	}
+	e.stillInFlight(t, sessionID, "alice", "bob")
+
+	// The solicited incoming principal (bob) is authorized; the swap proceeds.
+	newID, err := e.svc.ConfirmTransfer(e.ctx, sessionID, "bob")
+	if err != nil {
+		t.Fatalf("confirm by solicited incoming: %v", err)
+	}
+	if newID == "" {
+		t.Fatal("new captain id missing after authorized confirm")
+	}
+	p, ok, _ := e.sess.CurrentCaptainPrincipal(e.ctx, sessionID)
+	if !ok || p != "bob" {
+		t.Errorf("active captain after authorized confirm = (%q, %v), want (bob, true)", p, ok)
+	}
+}
+
+func TestCaptain_CancelBoundToHandshakeParties(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+	runID := e.runOn(t, sessionID)
+
+	// Outgoing-initiated: alice → bob.
+	if _, err := e.svc.BeginTransfer(e.ctx, sessionID,
+		sessionmodel.TransferInitiatorOutgoing, "alice", "bob", runID); err != nil {
+		t.Fatalf("BeginTransfer: %v", err)
+	}
+
+	// A third principal (carol) cannot cancel a transfer it is not part of.
+	if err := e.svc.CancelTransfer(e.ctx, sessionID, "carol"); err != sessionmodel.ErrNotTransferParty {
+		t.Errorf("cancel by third party err = %v, want ErrNotTransferParty", err)
+	}
+	e.stillInFlight(t, sessionID, "alice", "bob")
+
+	// The solicited incoming principal (bob) is a party → may cancel.
+	if err := e.svc.CancelTransfer(e.ctx, sessionID, "bob"); err != nil {
+		t.Fatalf("cancel by incoming party (bob): %v", err)
+	}
+	cap, _ := e.sess.GetActiveCaptain(e.ctx, sessionID)
+	if cap.Principal != "alice" || cap.TransferState == nil || *cap.TransferState != sessionmodel.TransferStateActive {
+		t.Errorf("after bob cancel: captain=%q state=%+v, want alice/active", cap.Principal, cap.TransferState)
+	}
+
+	// Re-open, then the soliciting/outgoing captain (alice) is also a party.
+	if _, err := e.svc.BeginTransfer(e.ctx, sessionID,
+		sessionmodel.TransferInitiatorOutgoing, "alice", "bob", runID); err != nil {
+		t.Fatalf("re-BeginTransfer: %v", err)
+	}
+	if err := e.svc.CancelTransfer(e.ctx, sessionID, "alice"); err != nil {
+		t.Fatalf("cancel by outgoing party (alice): %v", err)
 	}
 }

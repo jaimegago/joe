@@ -62,6 +62,17 @@ var (
 	ErrTransferAlreadyInFlight = errors.New("sessionmodel: transfer already in flight on this session")
 	ErrNoTransferInFlight      = errors.New("sessionmodel: no transfer in flight on this session")
 	ErrOnlyHumansInPhase1      = errors.New("sessionmodel: only captain_type=human is implemented in Phase 1; joe is a Change 12 inert seam")
+	// ErrNotSolicitedIncoming is returned when a principal that is not the
+	// solicited incoming principal named in the in-flight record tries to
+	// confirm a transfer. Confirm is reserved to that one principal — the
+	// outgoing captain cannot confirm in their place. Sibling of
+	// ErrCaptainPrincipalMismatch; the HTTP layer maps it to 403.
+	ErrNotSolicitedIncoming = errors.New("sessionmodel: only the solicited incoming principal may confirm this transfer")
+	// ErrNotTransferParty is returned when a principal that is neither party
+	// to the handshake (neither the soliciting/outgoing captain nor the
+	// solicited incoming principal) tries to cancel a transfer. The HTTP
+	// layer maps it to 403.
+	ErrNotTransferParty = errors.New("sessionmodel: only a party to the transfer may cancel it")
 )
 
 // AttachResult describes the outcome of an Attach call. R-CAP{1,2,3}
@@ -313,7 +324,7 @@ func (s *CaptainService) BeginTransfer(
 // Returns the new active captain's ID. §B1 principal-threading: the
 // new captain's row is the canonical source for CurrentCaptainPrincipal
 // from this point forward.
-func (s *CaptainService) ConfirmTransfer(ctx context.Context, sessionID string) (string, error) {
+func (s *CaptainService) ConfirmTransfer(ctx context.Context, sessionID, callerPrincipal string) (string, error) {
 	current, err := s.repo.GetActiveCaptain(ctx, sessionID)
 	if err != nil {
 		return "", err
@@ -327,12 +338,21 @@ func (s *CaptainService) ConfirmTransfer(ctx context.Context, sessionID string) 
 	if current.IncomingPrincipal == nil {
 		return "", fmt.Errorf("confirm transfer: no incoming_principal recorded on active captain")
 	}
+	// §B authorization binding: confirm is reserved to the solicited
+	// incoming principal named in the in-flight record (begin persists it as
+	// incoming_principal on the active captain row, scoped to this session).
+	// The outgoing captain cannot confirm in their place, and an unrelated
+	// authenticated principal cannot confirm at all. Without this check the
+	// caller is authenticated but not bound to the handshake.
+	if callerPrincipal != *current.IncomingPrincipal {
+		return "", ErrNotSolicitedIncoming
+	}
 	return s.completeTransfer(ctx, current, *current.IncomingPrincipal)
 }
 
 // CancelTransfer aborts a transfer in transfer_requested, leaving the
 // current captain active.
-func (s *CaptainService) CancelTransfer(ctx context.Context, sessionID string) error {
+func (s *CaptainService) CancelTransfer(ctx context.Context, sessionID, callerPrincipal string) error {
 	current, err := s.repo.GetActiveCaptain(ctx, sessionID)
 	if err != nil {
 		return err
@@ -342,6 +362,19 @@ func (s *CaptainService) CancelTransfer(ctx context.Context, sessionID string) e
 	}
 	if current.TransferState == nil || *current.TransferState != TransferStateTransferRequested {
 		return ErrNoTransferInFlight
+	}
+	// §B authorization binding: cancel is open to EITHER party to the
+	// handshake — the soliciting/outgoing captain (current.Principal) or the
+	// solicited incoming principal (current.IncomingPrincipal) — but no
+	// third principal may abort a transfer it is not part of. Both parties
+	// are persisted on the active captain row by begin, scoped to this
+	// session.
+	incoming := ""
+	if current.IncomingPrincipal != nil {
+		incoming = *current.IncomingPrincipal
+	}
+	if callerPrincipal != current.Principal && callerPrincipal != incoming {
+		return ErrNotTransferParty
 	}
 	active := TransferStateActive
 	return s.repo.UpdateCaptainTransferState(ctx, current.ID, &active, nil, nil)
