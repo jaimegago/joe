@@ -182,6 +182,27 @@ export const RegimeSchema = z
     declaredKind: r.DeclaredKind ?? null,
   }));
 
+// Panic / safe mode status — GET /api/v1/panic/status.
+//
+// Unlike the regime endpoint, panicStatusResponse carries explicit snake_case
+// JSON tags (internal/api/panic.go), so the wire keys are already lower-cased.
+// The detail fields are omitted (absent) when safe mode is off — the endpoint
+// returns just {safe_mode:false} in that case — so they are optional here and
+// normalize to null. Schema mirrors RegimeSchema's accept-then-transform style.
+export const PanicStatusSchema = z
+  .object({
+    safe_mode: z.boolean(),
+    triggered_at: z.string().nullable().optional(),
+    trigger_source: z.string().nullable().optional(),
+    trigger_reason: z.string().nullable().optional(),
+  })
+  .transform((r) => ({
+    safeMode: r.safe_mode,
+    triggeredAt: r.triggered_at ?? null,
+    triggerSource: r.trigger_source ?? null,
+    triggerReason: r.trigger_reason ?? null,
+  }));
+
 // Public auth config (Stream H2 follow-up — GET /api/v1/auth/config).
 //
 // The single app-wide capability the logged-out shell needs before any

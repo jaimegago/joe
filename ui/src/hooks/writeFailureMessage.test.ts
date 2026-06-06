@@ -17,6 +17,15 @@ describe('writeFailureMessage', () => {
     );
   });
 
+  it('maps safe_mode to a distinct safe-mode message naming the unlock path', () => {
+    const msg = writeFailureMessage('safe_mode');
+    expect(msg).toBe(
+      'System is in safe mode. Only read-only operations are permitted — run `joe unlock` to resume writes.'
+    );
+    // Must be distinguishable from the incident_mode message.
+    expect(msg).not.toBe(writeFailureMessage('incident_mode'));
+  });
+
   it('maps internal_error to the try-again message', () => {
     expect(writeFailureMessage('internal_error')).toBe('Unexpected error. Please try again.');
   });

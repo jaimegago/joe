@@ -51,7 +51,7 @@ export interface AssistantTurn {
   // renders a single unobtrusive notice when it is set.
   userMessageTruncated?: boolean;
   // writeFailureCode is the backend's typed reason a write was denied this
-  // turn ('zone_denial' | 'incident_mode' | 'internal_error'). A denied write
+  // turn ('zone_denial' | 'incident_mode' | 'safe_mode' | 'internal_error'). A denied write
   // does NOT fail the turn (the LLM still answers), so the view renders a
   // dedicated notice — distinct from a generic failure — explaining why.
   writeFailureCode?: string;
@@ -67,6 +67,8 @@ export function writeFailureMessage(code: string | undefined): string | undefine
       return 'Access to this zone has not been granted to you. Ask your administrator.';
     case 'incident_mode':
       return 'System is in incident mode. Writes are temporarily blocked.';
+    case 'safe_mode':
+      return 'System is in safe mode. Only read-only operations are permitted — run `joe unlock` to resume writes.';
     case 'internal_error':
       return 'Unexpected error. Please try again.';
     default:
