@@ -160,18 +160,16 @@ func (t *PortScanTool) Execute(_ context.Context, args map[string]any) (any, err
 		timeout = tm
 	}
 
-	type indexedResult struct {
-		idx int
-		res PortResult
-	}
-
-	ch := make(chan indexedResult, len(portsRaw))
+	// Each goroutine writes to its own disjoint index in results, so no
+	// channel or lock is needed to collect them — only a WaitGroup to know
+	// when every probe has finished.
+	results := make([]PortResult, len(portsRaw))
 	var wg sync.WaitGroup
 
 	for i, p := range portsRaw {
 		portF, ok := p.(float64)
 		if !ok {
-			ch <- indexedResult{idx: i, res: PortResult{Port: 0, Error: "invalid port value"}}
+			results[i] = PortResult{Port: 0, Error: "invalid port value"}
 			continue
 		}
 		port := int(portF)
@@ -191,17 +189,11 @@ func (t *PortScanTool) Execute(_ context.Context, args map[string]any) (any, err
 				r.Open = true
 				r.LatencyMS = latency
 			}
-			ch <- indexedResult{idx: idx, res: r}
+			results[idx] = r
 		}(i, port)
 	}
 
 	wg.Wait()
-	close(ch)
-
-	results := make([]PortResult, len(portsRaw))
-	for r := range ch {
-		results[r.idx] = r.res
-	}
 
 	open := 0
 	for _, r := range results {
