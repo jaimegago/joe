@@ -241,6 +241,83 @@ describe('ChatPage URL sync', () => {
   });
 });
 
+describe('ChatPage last-session restore', () => {
+  // Returning to the Chat tab lands on the bare /chat route; the page must
+  // reopen the last session viewed this tab instead of a blank "New chat".
+  function LocationSpy() {
+    const loc = useLocation();
+    return <div data-testid="loc">{loc.pathname}</div>;
+  }
+
+  function renderAt(path: string) {
+    const { Wrapper } = createWrapper();
+    render(
+      <Wrapper>
+        <MemoryRouter initialEntries={[path]}>
+          <LocationSpy />
+          <Routes>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat/:sessionId" element={<ChatPage />} />
+          </Routes>
+        </MemoryRouter>
+      </Wrapper>
+    );
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    setRegime('normal');
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    // Mirror the real hook: the session in view follows the route param (the
+    // restore effect drives the URL, useChat adopts it). The fixed-value
+    // setChat() helper would peg sessionId regardless of the route and defeat
+    // the activeSessionId↔URL coupling these tests exercise.
+    mockUseChat.mockImplementation((initialSessionId?: string) => ({
+      sessionId: initialSessionId ?? null,
+      messages: [],
+      isLoading: false,
+      isSending: false,
+      send: vi.fn(),
+      startNewSession: vi.fn(),
+    }));
+    mockFetchSession.mockResolvedValue({
+      id: 's-prev',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      visibility: 'private',
+    });
+  });
+
+  it('redirects a bare /chat to the last session viewed this tab', async () => {
+    sessionStorage.setItem('joe.chat.lastSession', 's-prev');
+    renderAt('/chat');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-prev'));
+  });
+
+  it('stays on a blank /chat when no session was remembered', async () => {
+    renderAt('/chat');
+    // Give the restore effect a chance to fire before asserting it did nothing.
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
+  });
+
+  it('remembers the session in view for the next return', async () => {
+    renderAt('/chat/s-prev');
+    await waitFor(() => expect(sessionStorage.getItem('joe.chat.lastSession')).toBe('s-prev'));
+  });
+
+  it('forgets a remembered session that no longer loads and falls back to /chat', async () => {
+    sessionStorage.setItem('joe.chat.lastSession', 's-gone');
+    mockFetchSession.mockRejectedValue(new Error('not found'));
+    renderAt('/chat/s-gone');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
+    expect(sessionStorage.getItem('joe.chat.lastSession')).toBeNull();
+  });
+});
+
 describe('ChatPage incident linkage (Phase 4)', () => {
   const ownedUnlinked: Session = {
     id: 's1',
