@@ -8,8 +8,9 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/auth/AuthContext';
-import { fetchSession, updateSessionVisibility } from '@/api/chat';
-import { Plus, Globe, Lock, Link as LinkIcon } from 'lucide-react';
+import { useRegime } from '@/hooks/useRegime';
+import { fetchSession, updateSessionVisibility, linkSessionToIncident } from '@/api/chat';
+import { Plus, Globe, Lock, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 
 export function ChatPage() {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
@@ -32,6 +33,12 @@ export function ChatPage() {
   const session = sessionQ.data;
   const readOnly = session?.read_only === true;
   const isPublic = session?.visibility === 'public';
+  const isLinkedToIncident = session?.linked_incident_id != null;
+
+  // The app-wide regime drives the "attach to incident" affordance: a chat can
+  // only be linked while an incident is active (the server 409s otherwise).
+  const { data: regime } = useRegime();
+  const incidentActive = regime?.mode === 'incident';
 
   const visibilityMut = useMutation({
     mutationFn: (visibility: 'private' | 'public') =>
@@ -42,6 +49,16 @@ export function ChatPage() {
       toast.success(
         updated.visibility === 'public' ? 'Session is now public' : 'Session is now private'
       );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const linkIncidentMut = useMutation({
+    mutationFn: () => linkSessionToIncident(activeSessionId!),
+    onSuccess: (updated) => {
+      qc.setQueryData(['session', activeSessionId], updated);
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      toast.success('Session linked to the active incident');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -74,8 +91,28 @@ export function ChatPage() {
         actions={
           <div className="flex items-center gap-2">
             {readOnly && <Badge variant="secondary">Read-only</Badge>}
+            {isLinkedToIncident && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+              >
+                <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                Linked to incident
+              </Badge>
+            )}
             {showOwnerControls && (
               <>
+                {incidentActive && !isLinkedToIncident && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => linkIncidentMut.mutate()}
+                    disabled={linkIncidentMut.isPending}
+                  >
+                    <AlertTriangle className="mr-1 h-3 w-3" />
+                    Attach to incident
+                  </Button>
+                )}
                 {isPublic && (
                   <Button variant="outline" size="sm" onClick={copyLink}>
                     <LinkIcon className="mr-1 h-3 w-3" />

@@ -127,6 +127,10 @@ export const SessionSchema = z.object({
   // non-owner viewing a public session (Phase 3 access matrix). Omitted (false)
   // for the owner and on the list/create paths.
   read_only: z.boolean().optional(),
+  // linked_incident_id is the active incident this session is attached to
+  // (Phase 4 incident linkage), or absent when unlinked. Its presence drives
+  // the incident badge on the session row and chat header.
+  linked_incident_id: z.string().optional(),
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)

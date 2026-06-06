@@ -63,6 +63,13 @@ describe('SessionsPage', () => {
     expect(screen.getByText(/1 message$/)).toBeInTheDocument();
   });
 
+  it('shows an incident badge on a session linked to an incident', async () => {
+    mockFetch.mockResolvedValue([{ ...sessions[0], linked_incident_id: 'inc-1' }, sessions[1]]);
+    renderPage();
+
+    expect(await screen.findByText('Incident')).toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no sessions', async () => {
     mockFetch.mockResolvedValue([]);
     renderPage();

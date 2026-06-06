@@ -53,3 +53,14 @@ export function updateSessionTitle(id: string, title: string): Promise<Session> 
 export function deleteSession(id: string): Promise<void> {
   return apiClient.delete<void>(`/api/v1/sessions/${encodeURIComponent(id)}`);
 }
+
+// linkSessionToIncident attaches a session to the currently-active incident
+// (POST /sessions/{id}/link-incident, Phase 4). The server records
+// linked_incident_id and promotes the session to an incident investigation.
+// Owner-checked server-side (non-owner/missing → 404); 409 when no incident is
+// active.
+export function linkSessionToIncident(id: string): Promise<Session> {
+  return apiClient
+    .post<unknown>(`/api/v1/sessions/${encodeURIComponent(id)}/link-incident`, {})
+    .then((r) => SessionSchema.parse(r));
+}

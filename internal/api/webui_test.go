@@ -816,6 +816,62 @@ func TestWebUIShareSession_Authorization(t *testing.T) {
 	}
 }
 
+// TestWebUILinkIncident covers POST /sessions/{id}/link-incident (Phase 4):
+// 409 when no incident is active; owner-only (non-owner 404); the link promotes
+// the session to type='investigation' and records linked_incident_id, surfaced
+// in the response; a missing session 404s.
+func TestWebUILinkIncident(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	chatID := createSessionAs(t, mux, alice)
+
+	// No active incident yet → 409.
+	if w := reqAsPrincipal(mux, "POST", "/api/v1/sessions/"+chatID+"/link-incident", alice, nil); w.Code != http.StatusConflict {
+		t.Fatalf("link with no active incident: got %d, want 409", w.Code)
+	}
+
+	// Seed an active incident (creator is irrelevant to the chat session's owner-check).
+	declared := sessionmodel.IncidentStateDeclared
+	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "inc-1", Type: sessionmodel.SessionTypeIncident, IncidentState: &declared,
+		CreatorPrincipal: bob,
+	}); err != nil {
+		t.Fatalf("seed incident: %v", err)
+	}
+
+	// Non-owner of the chat session cannot link it — 404, not 403.
+	if w := reqAsPrincipal(mux, "POST", "/api/v1/sessions/"+chatID+"/link-incident", bob, nil); w.Code != http.StatusNotFound {
+		t.Errorf("cross-user link: got %d, want 404", w.Code)
+	}
+
+	// Owner links it to the active incident.
+	w := reqAsPrincipal(mux, "POST", "/api/v1/sessions/"+chatID+"/link-incident", alice, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("owner link: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var linked map[string]any
+	json.NewDecoder(w.Body).Decode(&linked)
+	if linked["linked_incident_id"] != "inc-1" {
+		t.Errorf("linked_incident_id = %v, want inc-1", linked["linked_incident_id"])
+	}
+
+	// The promotion + link persisted.
+	sess, _ := srv.services.SessionModel.GetSession(ctx, chatID)
+	if sess == nil || sess.Type != sessionmodel.SessionTypeInvestigation {
+		t.Errorf("type = %v, want investigation", sess)
+	}
+	if sess == nil || sess.LinkedIncidentID == nil || *sess.LinkedIncidentID != "inc-1" {
+		t.Errorf("linked_incident_id not persisted: %v", sess)
+	}
+
+	// A missing session 404s.
+	if w := reqAsPrincipal(mux, "POST", "/api/v1/sessions/does-not-exist/link-incident", alice, nil); w.Code != http.StatusNotFound {
+		t.Errorf("link missing session: got %d, want 404", w.Code)
+	}
+}
+
 // TestWebUIChatOwnership_MessagesRoundTrip is the owner happy-path: messages
 // persisted to a session come back in order, in the legacy flat JSON shape the
 // chat UI consumes (numeric id from seq, role, content), and only to the owner.
