@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, Database, MessageSquare, ShieldCheck, Users, Cpu, LogOut } from 'lucide-react';
+import { LayoutDashboard, Database, MessageSquare, ShieldCheck, Users, Cpu, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuth } from '@/auth/AuthContext';
@@ -13,9 +13,11 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
+// The Graph page (/graph route in App.tsx) is intentionally NOT listed here.
+// The full-graph visualization isn't a daily-use view, but the route is kept
+// reachable by direct URL for demos that explain Joe's dependency graph DB.
 const navItems: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/graph', icon: Network, label: 'Graph', end: false },
   { to: '/sources', icon: Database, label: 'Sources', end: false },
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
   { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false, adminOnly: true },
