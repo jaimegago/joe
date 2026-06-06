@@ -9,6 +9,7 @@ import type { AuthContextValue } from '@/auth/AuthContext';
 import type { ZoneAccess, Session } from '@/api/types';
 import { useChat } from '@/hooks/useChat';
 import { useRegime } from '@/hooks/useRegime';
+import { ApiRequestError } from '@/api/client';
 import {
   fetchSession,
   updateSessionTitle,
@@ -309,12 +310,34 @@ describe('ChatPage last-session restore', () => {
     await waitFor(() => expect(sessionStorage.getItem('joe.chat.lastSession')).toBe('s-prev'));
   });
 
-  it('forgets a remembered session that no longer loads and falls back to /chat', async () => {
+  it('forgets a restored session that 404s and falls back to /chat', async () => {
+    // Restore (bare /chat -> /chat/s-gone) into a session that no longer
+    // exists: the 404 recovery clears it and returns to a blank chat.
     sessionStorage.setItem('joe.chat.lastSession', 's-gone');
-    mockFetchSession.mockRejectedValue(new Error('not found'));
-    renderAt('/chat/s-gone');
+    mockFetchSession.mockRejectedValue(new ApiRequestError(404, 'session not found'));
+    renderAt('/chat');
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
     expect(sessionStorage.getItem('joe.chat.lastSession')).toBeNull();
+  });
+
+  it('does not reset a directly-opened session that errors (no restore)', async () => {
+    // A session error on a URL the user opened directly (not restored) must
+    // never bounce them to a blank "New chat" — this is what regressed the
+    // auto-title: a transient/early error reset the live session.
+    mockFetchSession.mockRejectedValue(new ApiRequestError(404, 'session not found'));
+    renderAt('/chat/s-direct');
+    await waitFor(() => expect(mockFetchSession).toHaveBeenCalled());
+    expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-direct');
+  });
+
+  it('does not reset a restored session on a transient (non-404) error', async () => {
+    // A 5xx/transient blip on the restored session must not nuke it — only a
+    // genuine 404 (gone/forbidden) does.
+    sessionStorage.setItem('joe.chat.lastSession', 's-prev');
+    mockFetchSession.mockRejectedValue(new ApiRequestError(503, 'unavailable'));
+    renderAt('/chat');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-prev'));
+    expect(sessionStorage.getItem('joe.chat.lastSession')).toBe('s-prev');
   });
 });
 

@@ -11,6 +11,7 @@ import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
+import { ApiRequestError } from '@/api/client';
 import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSession';
 import {
   fetchSession,
@@ -46,13 +47,19 @@ export function ChatPage() {
   // sidebar "Chat" link, or any return to the page without a session in the
   // URL). Mount-only via the ref: "New Session" deliberately clears to /chat
   // while the page stays mounted, so it must not be bounced back to the old one.
+  // restoredId remembers what we reopened so the recovery effect below can tell
+  // a dead *restored* id apart from the session the user is actively in.
   const didRestore = useRef(false);
+  const restoredId = useRef<string | null>(null);
   useEffect(() => {
     if (didRestore.current) return;
     didRestore.current = true;
     if (routeSessionId) return;
     const last = loadLastSession();
-    if (last) navigate(`/chat/${last}`, { replace: true });
+    if (last) {
+      restoredId.current = last;
+      navigate(`/chat/${last}`, { replace: true });
+    }
   }, [routeSessionId, navigate]);
 
   // Remember the session in view so the next return to /chat reopens it.
@@ -75,15 +82,26 @@ export function ChatPage() {
   });
   const session = sessionQ.data;
 
-  // If the session in view cannot be loaded — a remembered id that was since
-  // deleted, or one belonging to a different user in this tab — forget it and
-  // fall back to a blank chat rather than stranding the user in a dead session.
+  // If the session we *restored* turns out to be gone (deleted since, or owned
+  // by a different user now in this tab), forget it and fall back to a blank
+  // chat rather than stranding the user in a dead session. Deliberately narrow:
+  // only a 404 on the restored id triggers it — never a freshly-created session,
+  // a directly-opened URL, or a transient/5xx error, any of which would
+  // otherwise wrongly reset a live chat (and its pending auto-title) to "New
+  // chat".
+  const sessionErr = sessionQ.error;
   useEffect(() => {
-    if (sessionQ.isError && activeSessionId) {
+    if (
+      activeSessionId != null &&
+      activeSessionId === restoredId.current &&
+      sessionErr instanceof ApiRequestError &&
+      sessionErr.status === 404
+    ) {
+      restoredId.current = null;
       clearLastSession();
       navigate('/chat', { replace: true });
     }
-  }, [sessionQ.isError, activeSessionId, navigate]);
+  }, [sessionErr, activeSessionId, navigate]);
 
   // When the async title finally lands, refresh the browse list / dashboard so
   // their "New chat" entries pick it up live too (the header reads it directly).
