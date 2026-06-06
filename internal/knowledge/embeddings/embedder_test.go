@@ -18,10 +18,6 @@ func (m *mockAdapter) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	return nil, errors.New("not used")
 }
 
-func (m *mockAdapter) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not used")
-}
-
 func (m *mockAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
 	if m.err != nil {
 		return nil, m.err

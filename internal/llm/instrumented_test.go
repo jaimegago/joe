@@ -21,15 +21,6 @@ func (m *mockLLMForInstrumentation) Chat(ctx context.Context, req ChatRequest) (
 	return m.response, nil
 }
 
-func (m *mockLLMForInstrumentation) ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
-	if m.shouldError {
-		return nil, errors.New("mock error")
-	}
-	ch := make(chan StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (m *mockLLMForInstrumentation) Embed(ctx context.Context, text string) ([]float32, error) {
 	if m.shouldError {
 		return nil, errors.New("mock error")
@@ -168,29 +159,6 @@ func TestInstrumentedAdapter_MultipleCalls(t *testing.T) {
 	}
 }
 
-func TestInstrumentedAdapter_ChatStream_Success(t *testing.T) {
-	mock := &mockLLMForInstrumentation{}
-	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
-	ctx := context.Background()
-	req := ChatRequest{
-		Messages: []Message{{Role: "user", Content: "test"}},
-	}
-
-	stream, err := instrumented.ChatStream(ctx, req)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	if stream == nil {
-		t.Fatal("Expected stream, got nil")
-	}
-
-	stats := instrumented.GetStats()
-	if stats.TotalCalls != 1 {
-		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
-	}
-}
-
 func TestInstrumentedAdapter_Embed_Success(t *testing.T) {
 	mock := &mockLLMForInstrumentation{}
 	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
@@ -230,10 +198,6 @@ func (m *mockLLMReturnsAPIError) Chat(_ context.Context, _ ChatRequest) (*ChatRe
 	return nil, m.err
 }
 
-func (m *mockLLMReturnsAPIError) ChatStream(_ context.Context, _ ChatRequest) (<-chan StreamChunk, error) {
-	return nil, m.err
-}
-
 func (m *mockLLMReturnsAPIError) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, m.err
 }
@@ -247,26 +211,6 @@ func TestInstrumentedAdapter_Chat_WithAPIErrorDetails(t *testing.T) {
 	req := ChatRequest{Messages: []Message{{Role: "user", Content: "test"}}}
 
 	_, err := instrumented.Chat(ctx, req)
-	if err == nil {
-		t.Fatal("Expected error, got nil")
-	}
-
-	stats := instrumented.GetStats()
-	if stats.TotalCalls != 1 {
-		t.Errorf("Expected 1 call, got %d", stats.TotalCalls)
-	}
-	if stats.TotalErrors != 1 {
-		t.Errorf("Expected 1 error, got %d", stats.TotalErrors)
-	}
-}
-
-func TestInstrumentedAdapter_ChatStream_Error(t *testing.T) {
-	mock := &mockLLMForInstrumentation{shouldError: true}
-	instrumented := NewInstrumentedAdapter(mock, nil, "test-provider", "test-model")
-	ctx := context.Background()
-	req := ChatRequest{Messages: []Message{{Role: "user", Content: "test"}}}
-
-	_, err := instrumented.ChatStream(ctx, req)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}

@@ -284,10 +284,6 @@ func (m *MockLLMWithAPIError) Chat(ctx context.Context, req llm.ChatRequest) (*l
 	return nil, APIError{message: "Rate limit exceeded", code: m.errorCode}
 }
 
-func (m *MockLLMWithAPIError) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *MockLLMWithAPIError) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, errors.New("not implemented")
 }

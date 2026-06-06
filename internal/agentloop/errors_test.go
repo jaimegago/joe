@@ -99,10 +99,6 @@ func (alwaysToolCallLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 	}, nil
 }
 
-func (alwaysToolCallLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (alwaysToolCallLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, errors.New("not implemented")
 }

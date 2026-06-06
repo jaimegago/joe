@@ -349,17 +349,6 @@ func TestSuggestedModels(t *testing.T) {
 	}
 }
 
-func TestChatStream_NotImplemented(t *testing.T) {
-	os.Setenv("ANTHROPIC_API_KEY", "test-key")
-	defer os.Unsetenv("ANTHROPIC_API_KEY")
-
-	client, _ := NewClient("")
-	_, err := client.ChatStream(context.Background(), llm.ChatRequest{})
-	if err == nil {
-		t.Fatal("Expected error from unimplemented ChatStream")
-	}
-}
-
 func TestEmbed_NotImplemented(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "test-key")
 	defer os.Unsetenv("ANTHROPIC_API_KEY")

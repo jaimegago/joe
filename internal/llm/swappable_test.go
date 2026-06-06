@@ -16,13 +16,6 @@ func (f *fakeAdapter) Chat(_ context.Context, _ ChatRequest) (*ChatResponse, err
 	return &ChatResponse{Content: f.id}, nil
 }
 
-func (f *fakeAdapter) ChatStream(_ context.Context, _ ChatRequest) (<-chan StreamChunk, error) {
-	ch := make(chan StreamChunk, 1)
-	ch <- StreamChunk{Content: f.id, Done: true}
-	close(ch)
-	return ch, nil
-}
-
 func (f *fakeAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{float32(len(f.id))}, nil
 }
@@ -56,17 +49,8 @@ func TestSwappableAdapter_DelegatesAndSwaps(t *testing.T) {
 	}
 }
 
-func TestSwappableAdapter_ChatStreamAndEmbedDelegate(t *testing.T) {
+func TestSwappableAdapter_EmbedDelegate(t *testing.T) {
 	sw := NewSwappableAdapter(&fakeAdapter{id: "abc"}, "m")
-
-	ch, err := sw.ChatStream(context.Background(), ChatRequest{})
-	if err != nil {
-		t.Fatalf("ChatStream: %v", err)
-	}
-	chunk := <-ch
-	if chunk.Content != "abc" {
-		t.Fatalf("ChatStream delegated to %q, want %q", chunk.Content, "abc")
-	}
 
 	vec, err := sw.Embed(context.Background(), "x")
 	if err != nil {

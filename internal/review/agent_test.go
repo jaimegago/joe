@@ -91,12 +91,6 @@ func (m *mockLLMAdapter) Chat(_ context.Context, req llm.ChatRequest) (*llm.Chat
 	return m.resp, m.err
 }
 
-func (m *mockLLMAdapter) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (m *mockLLMAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, nil
 }

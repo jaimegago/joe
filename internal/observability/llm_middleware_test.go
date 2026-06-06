@@ -9,20 +9,14 @@ import (
 )
 
 type llmStub struct {
-	chatResp   *llm.ChatResponse
-	chatErr    error
-	streamResp <-chan llm.StreamChunk
-	streamErr  error
-	embedResp  []float32
-	embedErr   error
+	chatResp  *llm.ChatResponse
+	chatErr   error
+	embedResp []float32
+	embedErr  error
 }
 
 func (s *llmStub) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	return s.chatResp, s.chatErr
-}
-
-func (s *llmStub) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return s.streamResp, s.streamErr
 }
 
 func (s *llmStub) Embed(ctx context.Context, text string) ([]float32, error) {
@@ -59,35 +53,6 @@ func TestLLMMiddleware_Chat(t *testing.T) {
 
 		_, err := mw.Chat(context.Background(), llm.ChatRequest{})
 		if err == nil || err.Error() != "chat failed" {
-			t.Fatalf("expected adapter error, got %v", err)
-		}
-	})
-}
-
-func TestLLMMiddleware_ChatStream(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		ch := make(chan llm.StreamChunk, 1)
-		ch <- llm.StreamChunk{Content: "hello", Done: true}
-		close(ch)
-
-		stub := &llmStub{streamResp: ch}
-		mw, _ := NewLLMMiddleware(stub, "claude", "sonnet")
-
-		stream, err := mw.ChatStream(context.Background(), llm.ChatRequest{})
-		if err != nil {
-			t.Fatalf("ChatStream error: %v", err)
-		}
-		if stream == nil {
-			t.Fatal("expected non-nil stream")
-		}
-	})
-
-	t.Run("error", func(t *testing.T) {
-		stub := &llmStub{streamErr: errors.New("stream failed")}
-		mw, _ := NewLLMMiddleware(stub, "claude", "sonnet")
-
-		_, err := mw.ChatStream(context.Background(), llm.ChatRequest{})
-		if err == nil || err.Error() != "stream failed" {
 			t.Fatalf("expected adapter error, got %v", err)
 		}
 	})

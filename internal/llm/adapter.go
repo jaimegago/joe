@@ -8,9 +8,6 @@ type LLMAdapter interface {
 	// Chat sends a chat request and returns a response
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 
-	// ChatStream sends a chat request and returns a channel for streaming chunks
-	ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error)
-
 	// Embed generates an embedding vector for the given text
 	Embed(ctx context.Context, text string) ([]float32, error)
 }
@@ -28,14 +25,6 @@ type ChatResponse struct {
 	Content   string
 	ToolCalls []ToolCall
 	Usage     TokenUsage
-}
-
-// StreamChunk represents a chunk of streaming response
-type StreamChunk struct {
-	Content   string
-	ToolCalls []ToolCall
-	Done      bool
-	Error     error
 }
 
 // Message represents a message in the conversation

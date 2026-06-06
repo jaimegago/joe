@@ -30,12 +30,6 @@ func (m *sequentialMockLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.Cha
 	return &llm.ChatResponse{Content: "Done."}, nil
 }
 
-func (m *sequentialMockLLM) ChatStream(_ context.Context, _ llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func (m *sequentialMockLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 	return []float32{0.1}, nil
 }

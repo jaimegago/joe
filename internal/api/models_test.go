@@ -27,11 +27,6 @@ type stubAdapter struct{}
 func (stubAdapter) Chat(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
 	return &llm.ChatResponse{}, nil
 }
-func (stubAdapter) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	ch := make(chan llm.StreamChunk)
-	close(ch)
-	return ch, nil
-}
 func (stubAdapter) Embed(context.Context, string) ([]float32, error) { return nil, nil }
 
 func setupModelServer(t *testing.T) (*Server, *llm.SwappableAdapter) {

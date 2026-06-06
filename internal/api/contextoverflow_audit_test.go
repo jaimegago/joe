@@ -28,10 +28,6 @@ func (o *overflowLLM) Chat(context.Context, llm.ChatRequest) (*llm.ChatResponse,
 	return nil, fmt.Errorf("provider rejected: prompt is too long: %w", llm.ErrContextOverflow)
 }
 
-func (o *overflowLLM) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (o *overflowLLM) Embed(context.Context, string) ([]float32, error) { return nil, nil }
 
 // recordingAudit records every Insert/InsertTx for later inspection. Thread-safe

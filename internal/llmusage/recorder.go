@@ -204,16 +204,6 @@ func (r *RecorderAdapter) Chat(ctx context.Context, req llm.ChatRequest) (*llm.C
 	return resp, nil
 }
 
-// ChatStream calls through to the inner adapter and records nothing.
-// Streaming is currently stubbed in both production provider clients,
-// so there is no token usage to record; this method exists to satisfy
-// the adapter interface transparently. When streaming lands, the
-// per-chunk token tracking belongs in the inner adapter and the
-// recorder reads the final Usage block from a terminal stream event.
-func (r *RecorderAdapter) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return r.inner.ChatStream(ctx, req)
-}
-
 // Embed calls through to the inner adapter and records nothing. Embed
 // is stubbed in both production provider clients and currently returns
 // a not-implemented error; the recorder must NOT crash on that error

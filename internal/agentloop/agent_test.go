@@ -28,10 +28,6 @@ func (m *mockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 	return resp, nil
 }
 
-func (m *mockLLM) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *mockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, errors.New("not implemented")
 }

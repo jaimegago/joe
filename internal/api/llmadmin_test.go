@@ -191,9 +191,6 @@ type silentLLMAdapter struct{}
 func (silentLLMAdapter) Chat(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (silentLLMAdapter) ChatStream(context.Context, llm.ChatRequest) (<-chan llm.StreamChunk, error) {
-	return nil, fmt.Errorf("not implemented")
-}
 func (silentLLMAdapter) Embed(context.Context, string) ([]float32, error) {
 	return nil, fmt.Errorf("not implemented")
 }
