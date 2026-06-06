@@ -20,8 +20,8 @@ import (
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
-	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 	"github.com/jaimegago/joe/internal/uid"
 )
@@ -145,6 +145,12 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Owner-scope a continued session before doing any work (§11 Phase 1).
+	if !h.sessionAccessAllowed(r.Context(), req.SessionID, string(rbac.PrincipalFromContext(r.Context()))) {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
 	// Parse timeout
 	timeout := 5 * time.Minute
 	if req.Config != nil && req.Config.Timeout != "" {
@@ -238,12 +244,18 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	if sessionID == "" {
 		sessionID = uid.New()
 	}
-	if h.server.services.Store != nil {
-		sess, _ := h.server.services.Store.Sessions.Get(ctx, sessionID)
-		if sess == nil {
-			_ = h.server.services.Store.Sessions.Create(ctx, &store.Session{
-				ID:        sessionID,
-				StartedAt: time.Now().UTC(),
+	// Ensure an agent_sessions row exists for this turn, owned by the caller
+	// (DESIGN-CHAT-SESSIONS.md §11 Phase 1). chat_messages FK to agent_sessions,
+	// so the parent row must exist before persistTaskMessages runs. An existing
+	// session is left untouched (its owner is not overwritten); cross-owner reuse
+	// is refused upstream by the handler's session-access check.
+	if h.server.services.SessionModel != nil {
+		if existing, _ := h.server.services.SessionModel.GetSession(ctx, sessionID); existing == nil {
+			_, _ = h.server.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+				ID:               sessionID,
+				Type:             sessionmodel.SessionTypeOther,
+				CreatorPrincipal: string(rbac.PrincipalFromContext(ctx)),
+				Visibility:       sessionmodel.VisibilityPrivate,
 			})
 		}
 	}
@@ -497,23 +509,44 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 // assistant answer to the session store. The answer is persisted un-redacted;
 // response redaction happens separately in finalizeTaskResponse.
 func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer string, start time.Time) {
-	if h.server.services.Store == nil {
+	if h.server.services.SessionModel == nil {
 		return
 	}
-	_ = h.server.services.Store.Sessions.AddMessage(ctx, &store.SessionMessage{
+	_, _ = h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		ID:        uid.New(),
 		SessionID: sessionID,
 		Role:      "user",
 		Content:   userMsg,
 		CreatedAt: start,
 	})
 	if answer != "" {
-		_ = h.server.services.Store.Sessions.AddMessage(ctx, &store.SessionMessage{
+		_, _ = h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+			ID:        uid.New(),
 			SessionID: sessionID,
 			Role:      "assistant",
 			Content:   answer,
 			CreatedAt: time.Now().UTC(),
 		})
 	}
+}
+
+// sessionAccessAllowed reports whether the caller may use sessionID for a task
+// turn. A not-yet-existing session is allowed — buildTaskRun creates it owned by
+// the caller. An existing session owned by a different principal is refused:
+// this closes the cross-user leak on the task path, where seedHistory would
+// otherwise load another user's prior messages into the model context
+// (DESIGN-CHAT-SESSIONS.md §10 — send/continue is owner-only). When SessionModel
+// is unwired (auth-disabled/dev harnesses) there is no persistence and no owner
+// to honor, so the check passes.
+func (h *taskHandler) sessionAccessAllowed(ctx context.Context, sessionID, principal string) bool {
+	if h.server.services.SessionModel == nil || sessionID == "" {
+		return true
+	}
+	sess, err := h.server.services.SessionModel.GetSession(ctx, sessionID)
+	if err != nil || sess == nil {
+		return true
+	}
+	return sess.CreatorPrincipal == principal
 }
 
 // taskStepFromRecord maps an agent loop StepRecord to the wire taskStep shape.
@@ -623,10 +656,10 @@ func firstWriteFailureCode(steps []taskStep) string {
 // continuity (the non-streaming /tasks endpoint does not seed, preserving its
 // single-turn contract).
 func (h *taskHandler) seedHistory(ctx context.Context, session *agentloop.Session, sessionID string) {
-	if h.server.services.Store == nil {
+	if h.server.services.SessionModel == nil {
 		return
 	}
-	msgs, err := h.server.services.Store.Sessions.GetMessages(ctx, sessionID)
+	msgs, err := h.server.services.SessionModel.ListChatMessages(ctx, sessionID)
 	if err != nil || len(msgs) == 0 {
 		return
 	}

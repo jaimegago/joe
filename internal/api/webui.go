@@ -9,7 +9,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
-	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/uid"
 )
 
@@ -182,9 +182,70 @@ func (h *webUIHandler) handleGetRelatedNodes(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "edges": edges})
 }
 
-// handleListSessions returns recent sessions.
+// webUISession is the Web UI representation of a chat session. It is the legacy
+// (migration-001) JSON shape the chat UI already consumes, projected from an
+// agent_sessions row so the model swap (DESIGN-CHAT-SESSIONS.md §11 Phase 1) is
+// invisible to the frontend. title/visibility are additive — the frontend
+// ignores them until the Phase 2/3 UI work.
+type webUISession struct {
+	ID           string `json:"id"`
+	StartedAt    string `json:"started_at"`
+	Summary      string `json:"summary,omitempty"`
+	MessageCount int    `json:"message_count"`
+	Title        string `json:"title,omitempty"`
+	Visibility   string `json:"visibility,omitempty"`
+}
+
+// webUIMessage is the Web UI representation of a chat message — the legacy flat
+// shape. id carries the per-session seq (a number, matching the frontend's
+// numeric id field). tool_args is intentionally omitted: Phase 1 only persists
+// user/assistant turns, and the frontend expects a structured object there.
+type webUIMessage struct {
+	ID        int    `json:"id"`
+	SessionID string `json:"session_id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	ToolName  string `json:"tool_name,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession {
+	out := webUISession{
+		ID:           s.ID,
+		StartedAt:    s.CreatedAt.Format(time.RFC3339),
+		MessageCount: messageCount,
+		Visibility:   s.Visibility,
+	}
+	if s.Title != nil {
+		out.Title = *s.Title
+		// summary is the field the existing dashboard RecentSessions labels by;
+		// mirror title into it so a Phase 2 auto-title surfaces with no frontend
+		// change.
+		out.Summary = *s.Title
+	}
+	return out
+}
+
+func messageToWebUI(m sessionmodel.ChatMessage) webUIMessage {
+	out := webUIMessage{
+		ID:        m.Seq,
+		SessionID: m.SessionID,
+		Role:      m.Role,
+		Content:   m.Content,
+		CreatedAt: m.CreatedAt.Format(time.RFC3339),
+	}
+	if m.ToolName != nil {
+		out.ToolName = *m.ToolName
+	}
+	return out
+}
+
+// handleListSessions returns the caller's own sessions (owner-scoped). This is
+// the §11 Phase 1 isolation fix: the legacy handler called ListRecent with no
+// principal filter, so any logged-in user could enumerate every user's chat
+// history. Now it filters by the caller's principal.
 func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.Store == nil {
+	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
 		return
 	}
@@ -196,13 +257,16 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	sessions, err := h.server.services.Store.Sessions.ListRecent(r.Context(), limit)
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	rows, err := h.server.services.SessionModel.ListSessionsByCreator(r.Context(), principal, limit)
 	if err != nil {
 		writeInternalError(w, err, "list sessions")
 		return
 	}
-	if sessions == nil {
-		sessions = []*store.Session{}
+
+	sessions := make([]webUISession, 0, len(rows))
+	for _, row := range rows {
+		sessions = append(sessions, sessionToWebUI(row.AgentSession, row.MessageCount))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -211,29 +275,39 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleCreateSession creates a new session.
+// handleCreateSession creates a new chat session owned by the caller. The owner
+// (creator_principal) is recorded from the request context — the legacy handler
+// recorded no owner at all, which is what made cross-user reads possible.
 func (h *webUIHandler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.Store == nil {
-		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "store not available")
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
 		return
 	}
 
-	session := &store.Session{
-		ID:        uid.New(),
-		StartedAt: time.Now().UTC(),
-	}
-
-	if err := h.server.services.Store.Sessions.Create(r.Context(), session); err != nil {
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	now := time.Now().UTC()
+	created, err := h.server.services.SessionModel.CreateSession(r.Context(), sessionmodel.AgentSession{
+		ID:               uid.New(),
+		Type:             sessionmodel.SessionTypeOther,
+		CreatedAt:        now,
+		LastActivityAt:   now,
+		CreatorPrincipal: principal,
+		Visibility:       sessionmodel.VisibilityPrivate,
+	})
+	if err != nil {
 		writeInternalError(w, err, "create session")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, session)
+	writeJSON(w, http.StatusCreated, sessionToWebUI(*created, 0))
 }
 
-// handleGetSessionMessages returns messages for a session.
+// handleGetSessionMessages returns messages for a session the caller owns. A
+// session owned by another principal — or one that does not exist — returns 404
+// (not 403): the existence of another user's session is not disclosed
+// (DESIGN-CHAT-SESSIONS.md §10 access matrix).
 func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.Store == nil {
+	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"messages": []any{}, "count": 0})
 		return
 	}
@@ -244,18 +318,31 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	messages, err := h.server.services.Store.Sessions.GetMessages(r.Context(), sessionID)
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	if sess == nil || sess.CreatorPrincipal != principal {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
+	messages, err := h.server.services.SessionModel.ListChatMessages(r.Context(), sessionID)
 	if err != nil {
 		writeInternalError(w, err, "get session messages")
 		return
 	}
-	if messages == nil {
-		messages = []*store.SessionMessage{}
+
+	out := make([]webUIMessage, 0, len(messages))
+	for _, m := range messages {
+		out = append(out, messageToWebUI(m))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"messages": messages,
-		"count":    len(messages),
+		"messages": out,
+		"count":    len(out),
 	})
 }
 

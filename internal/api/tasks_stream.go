@@ -13,6 +13,7 @@ import (
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/uid"
 )
 
@@ -85,6 +86,13 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Message == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "message is required")
+		return
+	}
+
+	// Owner-scope a continued session before committing to the SSE stream
+	// (§11 Phase 1): a non-owner must not seed/read another user's history.
+	if !h.sessionAccessAllowed(r.Context(), req.SessionID, string(rbac.PrincipalFromContext(r.Context()))) {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
 

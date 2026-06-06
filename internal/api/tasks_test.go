@@ -18,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -300,10 +301,11 @@ func setupTaskServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.Se
 				Address: "localhost:7777",
 			},
 		},
-		Graph:    graph.NewSQLiteStore(sqlStore.DB(), nil),
-		Store:    sqlStore,
-		Adapters: adapters.NewRegistry(),
-		LLM:      llmAdapter,
+		Graph:        graph.NewSQLiteStore(sqlStore.DB(), nil),
+		Store:        sqlStore,
+		SessionModel: sessionmodel.NewRepository(sqlStore.DB(), store.DriverSQLite),
+		Adapters:     adapters.NewRegistry(),
+		LLM:          llmAdapter,
 	}
 
 	srv := New(services)
@@ -318,6 +320,33 @@ func TestTaskEndpoint_RouteRegistered(t *testing.T) {
 	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hello"})
 	if w.Code == http.StatusNotFound {
 		t.Error("POST /api/v1/tasks returned 404 — route not registered")
+	}
+}
+
+// TestTaskOwnership_CrossUserSessionRejected guards the §11 Phase 1 send/continue
+// isolation rule on the task path: a turn that targets another user's session is
+// refused with 404 (not run, not persisted, no history seeded). Without the
+// guard, seedHistory would load alice's prior messages into bob's model context.
+func TestTaskOwnership_CrossUserSessionRejected(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupTaskServer(t, &recordingLLM{answer: "ok"})
+
+	if _, err := srv.services.SessionModel.CreateSession(context.Background(), sessionmodel.AgentSession{
+		ID: "owned-by-alice", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: alice,
+	}); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", bob,
+		map[string]any{"message": "hi", "session_id": "owned-by-alice"})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("cross-user task: got %d, want 404", w.Code)
+	}
+
+	// alice may continue her own session.
+	if ok := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice,
+		map[string]any{"message": "hi", "session_id": "owned-by-alice"}); ok.Code != http.StatusOK {
+		t.Errorf("owner task: got %d, want 200", ok.Code)
 	}
 }
 
