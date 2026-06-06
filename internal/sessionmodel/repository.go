@@ -45,6 +45,23 @@ type Repository interface {
 	// not bump last_activity_at (visibility is metadata, not chat activity, so
 	// it must not reorder the recency-sorted browse list).
 	UpdateSessionVisibility(ctx context.Context, id, visibility string) error
+	// LinkSessionToIncident attaches a plain chat session to the active
+	// incident (DESIGN-CHAT-SESSIONS.md §11 Phase 4): it sets
+	// linked_incident_id and promotes the session's type to 'investigation'
+	// so the session participates in the incident (reference + participation,
+	// §10 — captaincy is out of scope). The Web UI handler owner-checks the
+	// session and resolves the active incident first, so this is an
+	// unconditional write by ID. Like the title/visibility mutators it does
+	// not bump last_activity_at (linkage is metadata, not chat activity, so it
+	// must not reorder the recency-sorted browse list).
+	LinkSessionToIncident(ctx context.Context, sessionID, incidentID string) error
+	// ActiveIncidentSession returns the currently-active incident session
+	// (type='incident', incident_state NOT IN ('resolved','reviewed')), or nil
+	// when none is active. Phase 1 has at most one active incident by
+	// construction (declare creates exactly one; resolve clears it), so the
+	// most recently created is returned. The Web UI link-incident handler uses
+	// it to resolve the link target.
+	ActiveIncidentSession(ctx context.Context) (*AgentSession, error)
 
 	// Chat messages (interim flat store, migration 022)
 
@@ -301,6 +318,36 @@ func (r *SQLRepository) UpdateSessionVisibility(ctx context.Context, id, visibil
 		return fmt.Errorf("update session visibility: %w", err)
 	}
 	return nil
+}
+
+// LinkSessionToIncident sets linked_incident_id and promotes the session to
+// type='investigation' in one write. last_activity_at is deliberately left
+// untouched (parallel to UpdateSessionTitle/Visibility) so a link does not
+// reorder the recency-sorted browse list. The migration-009 CHECK permits
+// linked_incident_id on any non-incident type, so promoting 'other' ->
+// 'investigation' here keeps the row valid.
+func (r *SQLRepository) LinkSessionToIncident(ctx context.Context, sessionID, incidentID string) error {
+	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions SET linked_incident_id = ?, type = ? WHERE id = ?`),
+		incidentID, string(SessionTypeInvestigation), sessionID)
+	if err != nil {
+		return fmt.Errorf("link session to incident: %w", err)
+	}
+	return nil
+}
+
+// ActiveIncidentSession returns the active incident session, or nil if none.
+// "Active" excludes resolved/reviewed (the §C/sessiongate definition). The
+// query mirrors ResolveIncidentRegime's active-incident lookup.
+func (r *SQLRepository) ActiveIncidentSession(ctx context.Context) (*AgentSession, error) {
+	row := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
+		SELECT id, type, incident_state, created_at, last_activity_at,
+		       creator_principal, linked_incident_id, retention_class, title, visibility
+		FROM agent_sessions
+		WHERE type = 'incident' AND incident_state NOT IN ('resolved', 'reviewed')
+		ORDER BY created_at DESC
+		LIMIT 1`))
+	return scanSession(row.Scan)
 }
 
 func (r *SQLRepository) UpdateIncidentState(ctx context.Context, sessionID string, state IncidentState) error {

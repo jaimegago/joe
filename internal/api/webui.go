@@ -202,6 +202,10 @@ type webUISession struct {
 	// matrix: non-owner public = read-only). Set only by handleGetSession; the
 	// owner-scoped list/create/rename paths leave it false (omitted).
 	ReadOnly bool `json:"read_only,omitempty"`
+	// LinkedIncidentID is the id of the active incident this session has been
+	// attached to (Phase 4 incident linkage), or empty when unlinked. The
+	// browse list and chat header use its presence to show an incident badge.
+	LinkedIncidentID string `json:"linked_incident_id,omitempty"`
 }
 
 // webUIMessage is the Web UI representation of a chat message — the legacy flat
@@ -224,6 +228,9 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 		LastActivity: s.LastActivityAt.Format(time.RFC3339),
 		MessageCount: messageCount,
 		Visibility:   s.Visibility,
+	}
+	if s.LinkedIncidentID != nil {
+		out.LinkedIncidentID = *s.LinkedIncidentID
 	}
 	if s.Title != nil {
 		out.Title = *s.Title
@@ -513,6 +520,68 @@ func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleLinkIncident attaches the caller's chat session to the currently-active
+// incident (POST /sessions/{id}/link-incident, DESIGN-CHAT-SESSIONS.md §11
+// Phase 4). Per the §10 incident-link decision (reference + participation) it
+// records linked_incident_id and promotes the session to type='investigation'
+// so it participates in the incident — captaincy is out of scope. Owner-checked
+// with the same 404-on-miss posture as the other mutators (another user's
+// session is indistinguishable from a missing one). Returns 409 when there is
+// no active incident to link to. Linking is idempotent: re-linking to the same
+// active incident returns 200 with the unchanged linkage.
+func (h *webUIHandler) handleLinkIncident(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing session id")
+		return
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	if sess == nil || sess.CreatorPrincipal != principal {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+	// An incident session itself cannot carry linked_incident_id (migration-009
+	// CHECK), so refuse rather than emit a write the DB would reject.
+	if sess.Type == sessionmodel.SessionTypeIncident {
+		writeError(w, http.StatusConflict, errorCodeConflict, "an incident session cannot be linked to an incident")
+		return
+	}
+
+	incident, err := h.server.services.SessionModel.ActiveIncidentSession(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "find active incident")
+		return
+	}
+	if incident == nil {
+		writeError(w, http.StatusConflict, errorCodeConflict, "no active incident to link to")
+		return
+	}
+	if incident.ID == sessionID {
+		writeError(w, http.StatusConflict, errorCodeConflict, "a session cannot be linked to itself")
+		return
+	}
+
+	if err := h.server.services.SessionModel.LinkSessionToIncident(r.Context(), sessionID, incident.ID); err != nil {
+		writeInternalError(w, err, "link session to incident")
+		return
+	}
+	sess.LinkedIncidentID = &incident.ID
+	sess.Type = sessionmodel.SessionTypeInvestigation
+
+	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
+}
+
 // handleGetAlerts returns an aggregated list of active alerts (stub).
 func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 	// TODO: aggregate from Alertmanager/Grafana sources
@@ -606,6 +675,7 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)
 	mux.HandleFunc(fmt.Sprintf("PATCH %s/sessions/{id}", prefix), h.handleUpdateSession)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/sessions/{id}", prefix), h.handleDeleteSession)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/link-incident", prefix), h.handleLinkIncident)
 
 	// Alerts aggregation
 	mux.HandleFunc(fmt.Sprintf("GET %s/alerts", prefix), h.handleGetAlerts)

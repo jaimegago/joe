@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { fetchSessions, updateSessionTitle, deleteSession } from '@/api/chat';
 import type { Session } from '@/api/types';
-import { MessageSquare, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
+import { MessageSquare, Plus, Pencil, Trash2, Check, X, AlertTriangle } from 'lucide-react';
 
 // Browse limit for the sessions list — generous enough to show a working
 // history without paging, which is a later nicety.
@@ -143,6 +143,15 @@ export function SessionsPage() {
                       <Link to={`/chat/${s.id}`} className="block min-w-0">
                         <p className="flex items-center gap-2 truncate font-medium">
                           <span className="truncate hover:underline">{sessionLabel(s)}</span>
+                          {s.linked_incident_id != null && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                            >
+                              <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                              Incident
+                            </Badge>
+                          )}
                           {s.visibility === 'public' && (
                             <Badge variant="secondary" className="shrink-0">
                               Public

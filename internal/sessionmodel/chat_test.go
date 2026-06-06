@@ -183,6 +183,68 @@ func TestRepository_UpdateSessionVisibility(t *testing.T) {
 	}
 }
 
+// TestRepository_LinkSessionToIncident verifies that linking a plain chat
+// session to the active incident sets linked_incident_id, promotes the type to
+// 'investigation', and does not bump last_activity_at (linkage is metadata).
+// ActiveIncidentSession finds the active incident and goes nil once it resolves.
+func TestRepository_LinkSessionToIncident(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	declared := sessionmodel.IncidentStateDeclared
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "inc", Type: sessionmodel.SessionTypeIncident, IncidentState: &declared,
+		CreatorPrincipal: "user:alice@example.com", CreatedAt: at, LastActivityAt: at,
+	}); err != nil {
+		t.Fatalf("create incident: %v", err)
+	}
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "chat", Type: sessionmodel.SessionTypeOther,
+		CreatorPrincipal: "user:alice@example.com", CreatedAt: at, LastActivityAt: at,
+	}); err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+
+	active, err := repo.ActiveIncidentSession(ctx)
+	if err != nil {
+		t.Fatalf("ActiveIncidentSession: %v", err)
+	}
+	if active == nil || active.ID != "inc" {
+		t.Fatalf("active = %v, want inc", active)
+	}
+
+	if err := repo.LinkSessionToIncident(ctx, "chat", "inc"); err != nil {
+		t.Fatalf("LinkSessionToIncident: %v", err)
+	}
+	got, err := repo.GetSession(ctx, "chat")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.LinkedIncidentID == nil || *got.LinkedIncidentID != "inc" {
+		t.Errorf("linked_incident_id = %v, want inc", got.LinkedIncidentID)
+	}
+	if got.Type != sessionmodel.SessionTypeInvestigation {
+		t.Errorf("type = %q, want investigation", got.Type)
+	}
+	if !got.LastActivityAt.Equal(at) {
+		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
+	}
+
+	// Resolving the incident clears the active lookup.
+	if err := repo.UpdateIncidentState(ctx, "inc", sessionmodel.IncidentStateResolved); err != nil {
+		t.Fatalf("UpdateIncidentState: %v", err)
+	}
+	active, err = repo.ActiveIncidentSession(ctx)
+	if err != nil {
+		t.Fatalf("ActiveIncidentSession after resolve: %v", err)
+	}
+	if active != nil {
+		t.Errorf("active after resolve = %v, want nil", active)
+	}
+}
+
 // TestRepository_ChatMessages verifies seq assignment, ordering, and that a
 // session DELETE cascades its messages away (§6-C expunge).
 func TestRepository_ChatMessages(t *testing.T) {

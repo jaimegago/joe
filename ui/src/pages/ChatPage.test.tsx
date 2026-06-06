@@ -8,7 +8,8 @@ import { useAuth } from '@/auth/AuthContext';
 import type { AuthContextValue } from '@/auth/AuthContext';
 import type { ZoneAccess, Session } from '@/api/types';
 import { useChat } from '@/hooks/useChat';
-import { fetchSession, updateSessionVisibility } from '@/api/chat';
+import { useRegime } from '@/hooks/useRegime';
+import { fetchSession, updateSessionVisibility, linkSessionToIncident } from '@/api/chat';
 
 // ChatPage renders the access-pending empty state instead of the chat surface
 // for a zero-zone, RBAC-enabled, non-admin user (OPERATOR_SURFACE_-
@@ -16,16 +17,27 @@ import { fetchSession, updateSessionVisibility } from '@/api/chat';
 // session ownership/visibility. These tests pin both.
 vi.mock('@/auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('@/hooks/useChat', () => ({ useChat: vi.fn() }));
+vi.mock('@/hooks/useRegime', () => ({ useRegime: vi.fn() }));
 vi.mock('@/api/chat', () => ({
   fetchSession: vi.fn(),
   updateSessionVisibility: vi.fn(),
+  linkSessionToIncident: vi.fn(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const mockUseAuth = vi.mocked(useAuth);
 const mockUseChat = vi.mocked(useChat);
+const mockUseRegime = vi.mocked(useRegime);
 const mockFetchSession = vi.mocked(fetchSession);
 const mockUpdateVisibility = vi.mocked(updateSessionVisibility);
+const mockLinkIncident = vi.mocked(linkSessionToIncident);
+
+// setRegime stubs useRegime; only the `mode` field of `data` is read by ChatPage.
+function setRegime(mode: 'normal' | 'incident') {
+  mockUseRegime.mockReturnValue({
+    data: { mode, declaredAt: null, declaredByPrincipal: null, declaredKind: null },
+  } as ReturnType<typeof useRegime>);
+}
 
 function setAuth(opts: { rbacEnabled: boolean; isAdmin: boolean; zones: ZoneAccess[] }) {
   mockUseAuth.mockReturnValue({
@@ -67,6 +79,8 @@ describe('ChatPage access-pending empty state', () => {
   beforeEach(() => {
     mockUseAuth.mockReset();
     mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    setRegime('normal');
     setChat(null);
   });
 
@@ -112,8 +126,10 @@ describe('ChatPage sharing controls (Phase 3)', () => {
   beforeEach(() => {
     mockUseAuth.mockReset();
     mockUseChat.mockReset();
+    mockUseRegime.mockReset();
     mockFetchSession.mockReset();
     mockUpdateVisibility.mockReset();
+    setRegime('normal');
     setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
   });
 
@@ -155,5 +171,56 @@ describe('ChatPage sharing controls (Phase 3)', () => {
     setChat(null);
     renderPage();
     expect(screen.queryByRole('button', { name: /make public/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatPage incident linkage (Phase 4)', () => {
+  const ownedUnlinked: Session = {
+    id: 's1',
+    started_at: '2026-06-06T10:00:00Z',
+    message_count: 2,
+    visibility: 'private',
+  };
+
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    mockLinkIncident.mockReset();
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    setChat('s1');
+  });
+
+  it('shows "Attach to incident" for an owned unlinked session during an incident', async () => {
+    setRegime('incident');
+    mockFetchSession.mockResolvedValue(ownedUnlinked);
+    mockLinkIncident.mockResolvedValue({ ...ownedUnlinked, linked_incident_id: 'inc-1' });
+    renderPage();
+
+    const attach = await screen.findByRole('button', { name: /attach to incident/i });
+    const user = userEvent.setup();
+    await user.click(attach);
+
+    await waitFor(() => expect(mockLinkIncident).toHaveBeenCalledWith('s1'));
+  });
+
+  it('hides "Attach to incident" when no incident is active', async () => {
+    setRegime('normal');
+    mockFetchSession.mockResolvedValue(ownedUnlinked);
+    renderPage();
+
+    // The sharing control renders, so the session has loaded; the attach button must not.
+    expect(await screen.findByRole('button', { name: /make public/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a "Linked to incident" badge and no attach button once linked', async () => {
+    setRegime('incident');
+    mockFetchSession.mockResolvedValue({ ...ownedUnlinked, linked_incident_id: 'inc-1' });
+    renderPage();
+
+    expect(await screen.findByText(/linked to incident/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
   });
 });

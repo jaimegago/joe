@@ -2,8 +2,8 @@
 
 > Status: **decisions locked 2026-06-06** — see §10 for the resolved calls and §11
 > for the phased plan. **Phase 1 (ownership & isolation), Phase 2 (browse tab +
-> titles), and Phase 3 (binary private/public sharing) implemented 2026-06-06.**
-> §2–§8 retained as rationale.
+> titles), Phase 3 (binary private/public sharing), and Phase 4 (incident linkage)
+> implemented 2026-06-06.** §2–§8 retained as rationale.
 
 ## 0. Implementation kickoff (read first in a fresh session)
 
@@ -295,10 +295,41 @@ phase it — security first.
   sharing controls (make-public toggle, make-private + copy-link, read-only
   viewer, no controls pre-session).
 
-**Phase 4 — Incident linkage.**
-- `POST /sessions/{id}/link-incident` → set `linked_incident_id` + promote to
-  `type='investigation'`; findings participation; surface link in `IncidentBanner` and
-  the session row.
+**Phase 4 — Incident linkage. ✅ Implemented.**
+- API (`internal/api/webui.go`): `POST /sessions/{id}/link-incident` attaches the
+  caller's chat session to the currently-active incident. Owner-checked with the
+  same 404-on-miss posture as the other mutators (a non-owner or missing session
+  is indistinguishable). Resolves the active incident via the new
+  `ActiveIncidentSession`; returns 409 when none is active (no incident regime),
+  when the session is itself an incident, or when it would self-link. The session
+  list/get JSON gains `linked_incident_id` so the browse list and chat header can
+  show an incident badge (`creator_principal` is still never projected).
+- Repository (`internal/sessionmodel`): `LinkSessionToIncident` sets
+  `linked_incident_id` **and** promotes `type` to `'investigation'` in one write
+  (reference **+** participation, §10) — the migration-009 CHECK permits
+  `linked_incident_id` on any non-incident type. Like the title/visibility
+  mutators it does NOT bump `last_activity_at` (linkage is metadata, not chat
+  activity, so it must not reorder the recency-sorted browse list).
+  `ActiveIncidentSession` returns the active incident (`type='incident'`,
+  `incident_state ∉ {resolved, reviewed}`), mirroring `ResolveIncidentRegime`'s
+  active-incident lookup. **Participation**: once promoted to `investigation` and
+  linked, the session posts to the incident via the existing `findings` table
+  (`POST /agent-sessions/{id}/findings`) — no new findings code; captaincy stays
+  out of scope.
+- UI: `ChatPage` gains an "Attach to incident" control (owner-only, shown only
+  while `useRegime().mode === 'incident'` and the session is unlinked) and a
+  "Linked to incident" badge once linked; `SessionsPage` rows show an "Incident"
+  badge for linked sessions. The app-shell `IncidentBanner` stays session-
+  agnostic by design (its own comment: "an app-shell concern, not chat content"),
+  so per-session linkage surfaces on the chat header/row rather than in the global
+  banner. Client: `linkSessionToIncident` (`ui/src/api/chat.ts`); `SessionSchema`
+  gains `linked_incident_id`.
+- Tests: repo `LinkSessionToIncident`/`ActiveIncidentSession` (link persists +
+  type promotion + no activity bump + active lookup goes nil on resolve); webui
+  link endpoint (409 with no active incident, non-owner 404, owner-link promotes +
+  records linkage, missing-session 404); `ChatPage` incident-link control
+  (attach-during-incident, hidden when normal, linked badge) and `SessionsPage`
+  incident badge.
 
 **Later — convergence & extensions.**
 - Chat through the run model (durable tool-call trace in history) → retire flat table.
