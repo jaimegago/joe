@@ -11,9 +11,9 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { fetchSessions, updateSessionTitle, deleteSession } from '@/api/chat';
+import { fetchSessions, fetchSharedSessions, updateSessionTitle, deleteSession } from '@/api/chat';
 import type { Session } from '@/api/types';
-import { MessageSquare, Plus, Pencil, Trash2, Check, X, AlertTriangle } from 'lucide-react';
+import { MessageSquare, Plus, Pencil, Trash2, Check, X, AlertTriangle, Eye } from 'lucide-react';
 
 // Browse limit for the sessions list — generous enough to show a working
 // history without paging, which is a later nicety.
@@ -21,6 +21,13 @@ const SESSIONS_LIMIT = 50;
 
 function sessionLabel(s: Session): string {
   return s.title ?? s.summary ?? 'Untitled session';
+}
+
+// formatOwner renders a principal ("user:alice@example.com") as the bare
+// identity for the "shared by" label. Falls back when the owner is absent.
+function formatOwner(principal?: string): string {
+  if (!principal) return 'another user';
+  return principal.replace(/^user:/, '');
 }
 
 export function SessionsPage() {
@@ -33,6 +40,12 @@ export function SessionsPage() {
   const sessionsQ = useQuery({
     queryKey: ['sessions', SESSIONS_LIMIT],
     queryFn: () => fetchSessions(SESSIONS_LIMIT),
+  });
+
+  // Public sessions shared by other users — read-only, owner-attributed.
+  const sharedQ = useQuery({
+    queryKey: ['sessions', 'shared', SESSIONS_LIMIT],
+    queryFn: () => fetchSharedSessions(SESSIONS_LIMIT),
   });
 
   const renameMut = useMutation({
@@ -70,6 +83,7 @@ export function SessionsPage() {
   };
 
   const sessions = sessionsQ.data ?? [];
+  const shared = sharedQ.data ?? [];
 
   if (sessionsQ.isLoading) return <LoadingPage />;
 
@@ -85,113 +99,168 @@ export function SessionsPage() {
         }
       />
       <PageContainer>
-        {sessions.length === 0 ? (
+        {sessions.length === 0 && shared.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
             title="No sessions yet"
             description="Your chat sessions with Joe will appear here."
           />
         ) : (
-          <ul className="divide-y rounded-md border">
-            {sessions.map((s) => {
-              const isEditing = editingId === s.id;
-              const activity = s.last_activity_at ?? s.started_at;
-              return (
-                <li key={s.id} className="flex items-center gap-3 px-4 py-3">
-                  <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    {isEditing ? (
-                      <form
-                        className="flex items-center gap-2"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          commitEdit(s.id);
-                        }}
-                      >
-                        <Input
-                          autoFocus
-                          value={draftTitle}
-                          onChange={(e) => setDraftTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                          className="h-8"
-                          aria-label="Session title"
-                        />
-                        <Button
-                          type="submit"
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 shrink-0"
-                          disabled={renameMut.isPending}
-                          aria-label="Save title"
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 shrink-0"
-                          onClick={() => setEditingId(null)}
-                          aria-label="Cancel rename"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </form>
-                    ) : (
-                      <Link to={`/chat/${s.id}`} className="block min-w-0">
-                        <p className="flex items-center gap-2 truncate font-medium">
-                          <span className="truncate hover:underline">{sessionLabel(s)}</span>
-                          {s.linked_incident_id != null && (
-                            <Badge
-                              variant="outline"
-                              className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+          <div className="space-y-8">
+            {sessions.length > 0 && (
+              <section>
+                {shared.length > 0 && (
+                  <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                    Your sessions
+                  </h2>
+                )}
+                <ul className="divide-y rounded-md border">
+                  {sessions.map((s) => {
+                    const isEditing = editingId === s.id;
+                    const activity = s.last_activity_at ?? s.started_at;
+                    return (
+                      <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          {isEditing ? (
+                            <form
+                              className="flex items-center gap-2"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                commitEdit(s.id);
+                              }}
                             >
-                              <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
-                              Incident
-                            </Badge>
+                              <Input
+                                autoFocus
+                                value={draftTitle}
+                                onChange={(e) => setDraftTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setEditingId(null);
+                                }}
+                                className="h-8"
+                                aria-label="Session title"
+                              />
+                              <Button
+                                type="submit"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0"
+                                disabled={renameMut.isPending}
+                                aria-label="Save title"
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => setEditingId(null)}
+                                aria-label="Cancel rename"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </form>
+                          ) : (
+                            <Link to={`/chat/${s.id}`} className="block min-w-0">
+                              <p className="flex items-center gap-2 truncate font-medium">
+                                <span className="truncate hover:underline">{sessionLabel(s)}</span>
+                                {s.linked_incident_id != null && (
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                                  >
+                                    <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                                    Incident
+                                  </Badge>
+                                )}
+                                {s.visibility === 'public' && (
+                                  <Badge variant="secondary" className="shrink-0">
+                                    Public
+                                  </Badge>
+                                )}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(activity), { addSuffix: true })}
+                                {' · '}
+                                {s.message_count} {s.message_count === 1 ? 'message' : 'messages'}
+                              </p>
+                            </Link>
                           )}
-                          {s.visibility === 'public' && (
-                            <Badge variant="secondary" className="shrink-0">
-                              Public
-                            </Badge>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(activity), { addSuffix: true })}
-                          {' · '}
-                          {s.message_count} {s.message_count === 1 ? 'message' : 'messages'}
-                        </p>
-                      </Link>
-                    )}
-                  </div>
-                  {!isEditing && (
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => startEdit(s)}
-                        aria-label="Rename session"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => setPendingDelete(s)}
-                        aria-label="Delete session"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                        </div>
+                        {!isEditing && (
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => startEdit(s)}
+                              aria-label="Rename session"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => setPendingDelete(s)}
+                              aria-label="Delete session"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+            {shared.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                  Shared with you
+                </h2>
+                <ul className="divide-y rounded-md border">
+                  {shared.map((s) => {
+                    const activity = s.last_activity_at ?? s.started_at;
+                    return (
+                      <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <Link to={`/chat/${s.id}`} className="block min-w-0">
+                            <p className="flex items-center gap-2 truncate font-medium">
+                              <span className="truncate hover:underline">{sessionLabel(s)}</span>
+                              <Badge variant="outline" className="shrink-0">
+                                <Eye className="mr-1 h-3 w-3" aria-hidden="true" />
+                                Read-only
+                              </Badge>
+                              {s.linked_incident_id != null && (
+                                <Badge
+                                  variant="outline"
+                                  className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                                >
+                                  <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                                  Incident
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              shared by {formatOwner(s.shared_by)}
+                              {' · '}
+                              {formatDistanceToNow(new Date(activity), { addSuffix: true })}
+                              {' · '}
+                              {s.message_count} {s.message_count === 1 ? 'message' : 'messages'}
+                            </p>
+                          </Link>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+          </div>
         )}
 
         <ConfirmDialog

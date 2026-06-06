@@ -4,17 +4,19 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { createWrapper } from '@/test/utils';
 import { SessionsPage } from './SessionsPage';
-import { fetchSessions, updateSessionTitle, deleteSession } from '@/api/chat';
+import { fetchSessions, fetchSharedSessions, updateSessionTitle, deleteSession } from '@/api/chat';
 import type { Session } from '@/api/types';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/api/chat', () => ({
   fetchSessions: vi.fn(),
+  fetchSharedSessions: vi.fn(),
   updateSessionTitle: vi.fn(),
   deleteSession: vi.fn(),
 }));
 
 const mockFetch = vi.mocked(fetchSessions);
+const mockFetchShared = vi.mocked(fetchSharedSessions);
 const mockRename = vi.mocked(updateSessionTitle);
 const mockDelete = vi.mocked(deleteSession);
 
@@ -48,8 +50,11 @@ function renderPage() {
 describe('SessionsPage', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    mockFetchShared.mockReset();
     mockRename.mockReset();
     mockDelete.mockReset();
+    // Most tests only exercise the owner's list; default the shared list empty.
+    mockFetchShared.mockResolvedValue([]);
   });
 
   it('lists sessions labelled by title with a fallback for untitled ones', async () => {
@@ -74,6 +79,31 @@ describe('SessionsPage', () => {
     mockFetch.mockResolvedValue([]);
     renderPage();
     expect(await screen.findByText('No sessions yet')).toBeInTheDocument();
+  });
+
+  it('lists sessions shared by other users, read-only and owner-attributed', async () => {
+    mockFetch.mockResolvedValue([]);
+    mockFetchShared.mockResolvedValue([
+      {
+        id: 'shared-1',
+        started_at: '2026-06-06T08:00:00Z',
+        last_activity_at: '2026-06-06T08:30:00Z',
+        title: 'Cluster upgrade runbook',
+        message_count: 7,
+        read_only: true,
+        shared_by: 'user:alice@example.com',
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Shared with you')).toBeInTheDocument();
+    expect(screen.getByText('Cluster upgrade runbook')).toBeInTheDocument();
+    expect(screen.getByText('Read-only')).toBeInTheDocument();
+    // Owner is attributed with the bare identity (no "user:" prefix).
+    expect(screen.getByText(/shared by alice@example\.com/)).toBeInTheDocument();
+    // A shared (read-only) row exposes no owner-only mutators.
+    expect(screen.queryByLabelText('Rename session')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Delete session')).not.toBeInTheDocument();
   });
 
   it('renames a session through the inline editor', async () => {

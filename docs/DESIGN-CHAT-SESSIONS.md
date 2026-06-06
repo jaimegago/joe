@@ -2,8 +2,9 @@
 
 > Status: **decisions locked 2026-06-06** — see §10 for the resolved calls and §11
 > for the phased plan. **Phase 1 (ownership & isolation), Phase 2 (browse tab +
-> titles), Phase 3 (binary private/public sharing), and Phase 4 (incident linkage)
-> implemented 2026-06-06.** §2–§8 retained as rationale.
+> titles), Phase 3 (binary private/public sharing), Phase 4 (incident linkage), and
+> Phase 5 (shared-sessions discovery) implemented 2026-06-06.** §2–§8 retained as
+> rationale.
 
 ## 0. Implementation kickoff (read first in a fresh session)
 
@@ -197,7 +198,7 @@ phase it — security first.
 
 | Action | Owner | Non-owner, private | Non-owner, public | Notes |
 |---|---|---|---|---|
-| Appears in *my* list | ✅ (own) | — | — (not in their list) | public = link/id reachable, not auto-listed |
+| Appears in *my* list | ✅ (own) | — | ✅ "Shared with you" | auto-listed + owner-attributed (Phase 5; supersedes the original "link/id only" call) |
 | Read messages | ✅ | 404 | ✅ read-only | |
 | Send / continue | ✅ | ❌ | ❌ | fork-to-continue = future |
 | Rename / delete | ✅ | ❌ | ❌ | |
@@ -207,9 +208,13 @@ phase it — security first.
 
 - **"Public" = any authenticated Joe principal** (OIDC session or service account), not
   unauthenticated / internet. This is an OIDC-gated internal tool.
-- **Discoverability:** a public session is reachable by id/link (read-only), **not**
-  auto-listed in other users' browse. An opt-in "public sessions" gallery is a later
-  nicety.
+- **Discoverability:** ~~a public session is reachable by id/link (read-only), **not**
+  auto-listed in other users' browse.~~ **Superseded by Phase 5:** public sessions
+  *are* auto-listed in every other authenticated user's "Shared with you" section,
+  read-only and attributed to their owner. This also relaxes the "`creator_principal`
+  is never projected" rule for this one list: a public session's owner is disclosed
+  precisely because the owner chose to share it (the per-id GET still does not project
+  it).
 - **Granularity:** v1 is binary private/public. Per-principal sharing ("share with
   user:bob") is future.
 
@@ -334,6 +339,34 @@ phase it — security first.
   records linkage, missing-session 404); `ChatPage` incident-link control
   (attach-during-incident, hidden when normal, linked badge) and `SessionsPage`
   incident badge.
+
+**Phase 5 — Shared-sessions discovery. ✅ Implemented.**
+- Supersedes the §10 "public = link/id reachable, not auto-listed" call: a public
+  session is now auto-listed in every *other* authenticated principal's browse,
+  read-only and attributed to its owner ("read-only · shared by <owner>").
+- Repository (`internal/sessionmodel`): `ListPublicSessionsByOthers` — mirrors
+  `ListSessionsByCreator` (same LEFT JOIN message count, recency order) but filters
+  to `visibility='public' AND creator_principal != caller`, so a user's own public
+  sessions are not duplicated across the two lists. It carries `creator_principal`
+  on each row — the one read path that intentionally projects the owner.
+- API (`internal/api/webui.go`): `GET /sessions/shared` (`handleListSharedSessions`)
+  flags every row `read_only=true` and sets `shared_by` (the owner's principal).
+  This is the deliberate exception to "creator_principal is never projected"; the
+  owner-scoped list, create/rename, and the per-id GET still never project it.
+  Send/continue stays owner-only, so these are read-only entry points into the
+  existing Phase 3 public read path (clicking a shared row opens the read-only
+  `ChatPage`). Route note: literal `/sessions/shared` outranks `/sessions/{id}` in
+  the Go 1.22 mux, so order is irrelevant.
+- UI: `SessionsPage` gains a "Shared with you" section below the owner's own
+  sessions (headings appear only when both lists are non-empty); each shared row is
+  a read-only link with a "Read-only" badge and a "shared by <owner>" sub-label,
+  and exposes no rename/delete. Client: `fetchSharedSessions` (`ui/src/api/chat.ts`);
+  `SessionSchema` gains `shared_by`.
+- Tests: repo `ListPublicSessionsByOthers` (excludes private + own, recency order,
+  owner + count projection, limit); webui `GET /sessions/shared` (private excluded,
+  public listed read-only + `shared_by`, no `creator_principal` leak, owner's own
+  excluded, re-privatize removes); `SessionsPage` shared-section render (read-only
+  badge, owner attribution, no mutators).
 
 **Later — convergence & extensions.**
 - Chat through the run model (durable tool-call trace in history) → retire flat table.
