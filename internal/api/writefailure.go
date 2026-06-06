@@ -5,6 +5,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/captaingate"
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 // classifyWriteFailure maps a per-tool execution error to a stable,
@@ -17,6 +18,10 @@ import (
 //   - zone_denial — the RBAC accessor refused because the caller lacks access
 //     to the target zone (access.ErrPermissionDenied, possibly wrapped by the
 //     inproc client's mapAccessError).
+//   - safe_mode — the executor refused a T2/T3 tool because the system is in
+//     safe mode (panic recovery), where only read-only (T1) tools are allowed
+//     (safety.ErrSafeModeActive). Distinct from incident_mode: safe mode is the
+//     panic axis, incident_mode is the captain-gate axis; both can be active.
 //
 // Anything else returns "" — NOT every tool error is a write denial (a
 // malformed-args or upstream-timeout error is an ordinary tool failure the LLM
@@ -38,6 +43,8 @@ func classifyWriteFailure(err error) string {
 		return errorCodeIncidentMode
 	case errors.Is(err, access.ErrPermissionDenied):
 		return errorCodeZoneDenial
+	case errors.Is(err, safety.ErrSafeModeActive):
+		return errorCodeSafeMode
 	default:
 		return ""
 	}

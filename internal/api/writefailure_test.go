@@ -7,6 +7,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/captaingate"
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 // TestClassifyWriteFailure covers each typed write-failure branch the chat UI
@@ -38,6 +39,16 @@ func TestClassifyWriteFailure(t *testing.T) {
 			name: "RBAC permission denied wrapped (inproc mapAccessError shape) → zone_denial",
 			err:  fmt.Errorf("access denied for source %q: %w", "prod-db", access.ErrPermissionDenied),
 			want: errorCodeZoneDenial,
+		},
+		{
+			name: "safe mode active → safe_mode",
+			err:  safety.ErrSafeModeActive,
+			want: errorCodeSafeMode,
+		},
+		{
+			name: "safe mode active wrapped → safe_mode",
+			err:  fmt.Errorf("tool failed: %w", safety.ErrSafeModeActive),
+			want: errorCodeSafeMode,
 		},
 		{
 			name: "ordinary tool error → no code",

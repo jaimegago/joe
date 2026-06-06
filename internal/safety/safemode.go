@@ -1,6 +1,19 @@
 package safety
 
-import "sync/atomic"
+import (
+	"errors"
+	"sync/atomic"
+)
+
+// ErrSafeModeActive is the sentinel returned by the tool executor when a T2/T3
+// tool is attempted while safe mode is active. It is a typed signal the api
+// layer's write-failure classifier matches on (errors.Is) to emit a stable
+// error_code, the same way captaingate.GateRefusalError and
+// access.ErrPermissionDenied are recognized. The message preserves the
+// human-readable unlock hint for anyone reading the raw tool error.
+var ErrSafeModeActive = errors.New(
+	"safe mode active: only read-only (T1) tools are allowed — run 'joe unlock --reason \"...\"' to resume",
+)
 
 var safeModeActive atomic.Bool
 
