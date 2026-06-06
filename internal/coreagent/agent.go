@@ -36,7 +36,6 @@ type Agent struct {
 	discovery *Engine
 	logger    *slog.Logger
 	metrics   *observability.Metrics
-	stopCh    chan struct{}
 }
 
 // SetToolExecutor swaps the underlying tool executor. cmd/joe/server.go
@@ -77,7 +76,6 @@ func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observabil
 		discovery: NewEngine(services, llmAdapter, logger, metrics),
 		logger:    logger,
 		metrics:   metrics,
-		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -97,8 +95,6 @@ func (a *Agent) Start(ctx context.Context) error {
 // Stop gracefully shuts down the agent
 func (a *Agent) Stop(ctx context.Context) error {
 	a.logger.Info("stopping core agent")
-
-	close(a.stopCh)
 
 	// Stop background refresh
 	if err := a.refresher.Stop(ctx); err != nil {
