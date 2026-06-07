@@ -10,6 +10,216 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0019 — Joe's trust model: two boot postures, graduated capability, and fail-closed-empty-RBAC as the load-bearing safety boundary
+
+- Date: 2026-06-07
+- Status: design decision of record; implementation PENDING. No code currently
+  realizes this trust model — nothing here is implemented yet, and the live
+  code diverges from this entry. This entry records the target design and the
+  divergence honestly; it does NOT claim any code implements it. (Same
+  "accepted-as-design, build pending" posture as D-0018.)
+- Companion to D-0018. D-0018 recorded the write floor's lifecycle, immutability,
+  sticky-panic semantics, and the load-bearing definition of a write. THIS entry
+  records the broader trust model the floor sits INSIDE: the posture model, the
+  principal model, the capability ladder, and the empty-RBAC fail-closed
+  guarantee. Where the two meet, this entry references D-0018 and does not
+  repeat it.
+- Context: Joe must be safe to adopt by default and must scale from read-only
+  observation to eventual lights-out autonomous operation as a GRADIENT, not a
+  single read-only/read-write bit. The definition of a write — mutation of the
+  managed system (live infrastructure and the code/config that governs it),
+  where reads include source queries, Joe's own graph/model maintenance, and
+  notifications to humans — is established in D-0018 and assumed here.
+
+  The decision, as numbered points:
+
+  1. **Two boot postures, env-var-selected, restart-to-change.** Observation
+     mode is the day-one default: a hard read-only floor (D-0018) where Joe
+     reads but performs no managed-system mutation regardless of RBAC, enforced
+     BELOW RBAC so no policy or grant can override it. It is the intended
+     resting state, not an emergency, and the UI presents it calmly.
+     Full-capabilities mode permits writes at the binary level but boots Joe at
+     the BOTTOM of its capability ladder with zero write grants; RBAC becomes
+     the floor.
+
+  2. **Fail-closed-with-empty-RBAC is the real safety boundary — not a setup
+     wizard.** The day-1-to-day-2 transition (flipping the env var to full mode)
+     is Joe's single most dangerous configuration change. Its safety must NOT
+     rest on any UI screen that can be skipped or that runs after the backend is
+     already write-capable. It rests on two backend properties: full mode
+     requires authentication ON, and with no policy rows every write is denied.
+     "Full mode, no grants yet" must be a genuine fail-closed floor with the
+     SAME observable behavior as observation mode (Joe performs no
+     managed-system mutation), enforced at a different layer (RBAC rather than
+     the hard floor). The env-var flip removes the hard ceiling; empty RBAC
+     remains a floor. The two dangerous acts — flipping the env var and granting
+     capability — stay separate by construction. This is the load-bearing safety
+     property of the trust model.
+
+  3. **This requires fixing RBAC's current inert/permissive-by-default
+     behavior.** As of the investigation (verify against live code): the policy
+     engine instantiates only when a service account or OIDC is configured
+     (around `cmd/joe/server.go`); with auth off the default identity is
+     permissive and the access guard short-circuits allow-all with reason
+     `rbac_disabled` (around `internal/access/access.go`); the agentic task,
+     stream, and chat routes are not source-keyed but do carry a context
+     principal evaluated at the access guard (around `internal/api/tasks.go` and
+     `internal/agentloop`). With auth ON and empty policy rows, the engine
+     already fails closed (no grant, and the default `unassigned` zone allows
+     only read). The trust model requires that full-capabilities mode cannot run
+     write-capable with a permissive/absent engine — full mode demands auth ON
+     and a live engine, so the fail-open path is UNREACHABLE in full mode. This
+     is the central obstacle the implementation must close, not defer.
+
+  4. **The principal model — who authorizes a write.** Interactive
+     (human-initiated) writes gate against the launching human's grants;
+     graduation means granting that human or their role write capability in a
+     zone. Autonomous (Core Agent) actions gate against a dedicated autonomous
+     principal (named to match the existing `user:`/`svc:` convention, e.g.
+     `agent:core` — verify the convention against live code). Both resolve to a
+     principal and both go through the SAME enforcement seam; neither has a path
+     that skips gating. The autonomous principal exists from day one with zero
+     write grants, so autonomous Joe is read-only by enforcement, and its
+     current operations (source queries, graph/model refresh) are reads under
+     the D-0018 write definition and pass the floor. The current divergence to
+     close (as of the investigation, verify against live code): the autonomous
+     Core Agent refresh bypasses the executor seam entirely, writing the graph
+     directly via the graph-delta path (around `internal/coreagent`), carrying
+     no principal — it must be routed through the shared seam so that the day a
+     managed-system autonomous write exists, it is governed by the same floor
+     and RBAC as everything else, by construction.
+
+  5. **The capability ladder.** In full mode, graduation is per-zone and
+     per-capability: observe, then granted writes in dev, then staging, then one
+     production zone, then wider, toward eventual lights-out autonomous
+     operation. The trust model is a gradient, not a single bit.
+     Autonomous-write capability is a FUTURE grant on this existing ladder for
+     the autonomous principal — explicitly NOT built now; no autonomous-write
+     subsystem is built in this work. The mechanism for lights-out already
+     exists the moment the autonomous principal and the uniform gate exist: when
+     lights-out is real, an operator grants the autonomous principal write in a
+     zone via the same ladder. No new subsystem is required at that point.
+
+  6. **The LLM's tool surface under posture: exposed-and-deny, not hidden.** All
+     tools remain advertised to the model regardless of posture or grants;
+     authorization is enforced at execution and denials are fed back to the
+     model as tool-results (this is already the codebase behavior as of the
+     investigation, verify against live code — the full registry is always
+     advertised, around `internal/tools/registry.go` and `internal/agentloop`,
+     and denied calls return error tool-results). Tool-surface pruning by
+     posture is deliberately NOT built: a prior zone-violation finding (treat as
+     a lead, not verified here) showed Joe lost its zone-first refusal language
+     when the tool surface changed between read and write — hiding tools removes
+     the refusal there is to articulate, which degrades safety-evaluation
+     behavior. To gain proactive (rather than only reactive) refusal
+     articulation, the model is TOLD its posture: a posture line is added to the
+     system prompt in observation mode (and, in full mode, the zone-scope prompt
+     mechanism already conveys authorized zones, around
+     `internal/prompts/zones.go`), so the model can refuse with articulation
+     before attempting a denied call. The model is NOT told it is in safe mode
+     today (as of the investigation, verify against live code, no safe-mode or
+     panic reference exists in the prompts package) — adding the
+     observation-posture line is net-new.
+
+  7. **Two distinct "Joe does nothing" states must be presented differently —
+     and they are different mechanisms, not one state rendered twice.**
+     Observation mode is the hard env-var floor (D-0018) — a deliberate ceiling;
+     the UI reassures ("Joe is running in observation mode — no changes will be
+     made," calm, with a link to an explanatory doc), bound to a posture read
+     endpoint. Full-mode-with-zero-grants is RBAC denying for lack of a grant —
+     a soft floor and an invitation to configure; it is surfaced by an on-demand
+     "evaluate Joe's write capability" PULL mechanism (a button, optionally
+     scheduled), NOT a pushed banner. The banner reads the floor; the
+     grant-state is pulled on demand. This distinction is UI on top of the two
+     backend mechanisms; it carries no safety weight because the fail-closed
+     floor (point 2) holds regardless of what the UI shows.
+
+  8. **The read path.** A posture read endpoint reports the current mode
+     (observation versus full) and, in full mode, a coarse "any write grants
+     exist" signal sufficient for the UI to distinguish configured from
+     zero-grants — derived from the audit trail of write-policy creation (the
+     admin REST API is the sole audited writer of RBAC state per prior
+     decisions, so this is derivable rather than a new mutable flag; verify that
+     sole-writer property against live code). The endpoint is auth-gated only,
+     consistent with the existing panic-status and regime endpoints, and uses
+     explicit snake_case JSON tags — NOT Go default serialization (as of the
+     investigation, verify against live code, the regime endpoint serializes a
+     struct with no JSON tags, emitting capitalized Go-default field names around
+     `internal/sessionmodel` and `internal/api/regime.go`; do not repeat that).
+     A calm observation-mode banner is bound to a real fetch of this endpoint
+     and mounted alongside the existing safe-mode and incident banners.
+
+  9. **Denial-message precedence when more than one denial could apply to a
+     single write:** the floor first (and within the floor, `safe_mode` over
+     `observation`, per D-0018), then incident/captain gate, then RBAC zone
+     denial. Ordered by resolvability depth — show the user the reason they can
+     least readily fix, because it is the one actually blocking them.
+     Implementation note (verify against live code, do not act here): the
+     current classifier evaluates incident, then permission-denied, then
+     safe-mode (around `internal/api/writefailure.go`), which does not match this
+     precedence; and the in-`Execute` checks place RBAC scope before the floor
+     (around `internal/tools/executor.go`). Whether precedence is a real runtime
+     collision or is already foreclosed by enforcement short-circuit order must
+     be determined in implementation, and enforced by reordering the checks, the
+     classifier branches, or both.
+
+- What this deliberately does NOT do:
+  - No runtime posture toggle (boot + restart only; the runtime stop-all-writes
+    need is served by panic, per D-0018).
+  - No autonomous-write capability or any autonomous-write subsystem (a future
+    grant on the existing ladder).
+  - No tool-surface pruning by posture (exposed-and-deny is retained
+    deliberately).
+  - Does NOT rest the day-2 safety on any setup wizard or first-login UI: the
+    fail-closed empty-RBAC floor is the boundary; any setup or awareness UI is
+    advisory UX on top of a hard backend floor, not the floor itself.
+  - Does NOT finalize the first-login full-mode setup/awareness flow or a
+    write-configuration latch (parked — their shape depends on enumerating what
+    full mode requires configured beyond the first grant, which is deferred;
+    whether such a latch is its own concept or merely the setup-step completion
+    state is unresolved and downstream of that flow design).
+
+- Relationship to other decisions:
+  - References D-0018 for the floor lifecycle, immutability, sticky panic, and
+    the write definition.
+  - The principal model and the empty-RBAC fail-closed work are the
+    implementation track that FOLLOWS this entry.
+  - The RBAC sole-writer and audit-trail properties this entry relies on come
+    from the prior identity-stage decisions — D-0016 (the admin REST API as the
+    sole RBAC/identity writer; the audited admin surface) building on D-0012 (the
+    admin gate) and D-0013 (admin-mutation audit). If the sole-writer/audit-trail
+    mapping needs finer confirmation against those entries, treat that
+    cross-reference as to-be-confirmed.
+
+- Current state being changed (target diverging from live code; every item is
+  "as of the investigation, verify against live code" and is NOT acted on here):
+  - RBAC inert/permissive when auth off must become UNREACHABLE in full mode
+    (full mode requires auth on and a live engine).
+  - The autonomous Core Agent path must be routed through the shared enforcement
+    seam and carry the autonomous principal.
+  - A posture read endpoint with snake_case tags is net-new.
+  - An observation-posture system-prompt line is net-new.
+  - The observation-mode banner and the on-demand write-capability evaluation
+    are net-new UI.
+  - The denial precedence may require reordering enforcement and/or
+    classification.
+
+- Basis: a prior trust-model / safe-mode investigation (the file:line
+  coordinates above are from that investigation and are marked
+  verify-against-live-code; they were not re-verified for this entry, which is
+  documentation-only). This entry records a DESIGN decision; no code change
+  accompanies it, and the live behavior described under "Current state being
+  changed" is what the design supersedes once implemented.
+- Supersedes: nothing yet — the design is not yet implemented. Companion to
+  D-0018 (the write floor's lifecycle and immutability), which this entry
+  surrounds with the broader trust model. Builds on the identity-stage
+  decisions D-0016/D-0013/D-0012 for the RBAC sole-writer and audit-trail
+  properties it relies on. Adjacent pending decisions: the
+  floor-vs-other-gate precedence (point 9) and the first-login full-mode flow
+  (parked, above).
+
+---
+
 ## D-0018 — The read-only write floor as a boot-resolved, runtime-immutable security boundary; safe mode is absorbed as one reason the floor is up, not a separate mechanism
 
 - Date: 2026-06-07
