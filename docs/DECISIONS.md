@@ -141,9 +141,13 @@ Format per entry: ID, date, decision, basis, supersedes, status.
     save_onboarding_fact, save_knowledge_entry, generate_doc_draft.
   - No longer wrapped (were wrapped solely for being Mutate): write_file,
     run_command, publish_doc_update, publish_doc_update_confluence,
-    publish_doc_update_notion, publish_doc_update_git. Each is idempotent or
-    data-layer-guarded — no operation that needs replay-safety silently lost
-    it.
+    publish_doc_update_notion, publish_doc_update_git. Two distinct reasons,
+    not one: write_file, the graph upserts, and the publish_doc_update variants
+    are idempotent or data-layer-guarded (re-running converges / fails closed);
+    run_command is non-idempotent but durability CANNOT protect it — replaying
+    cached output would be wrong, so crash-resume re-executes by design and the
+    command's own side-effect safety is out of durability's scope. Either way,
+    no operation that needs (and can use) replay-safety silently lost it.
   - Unchanged-wrapped (Mutate, still declared): github_comment, gitlab_comment,
     github_request_changes.
 
