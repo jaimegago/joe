@@ -10,7 +10,7 @@
 // import internal/rbac, directly or transitively.
 //
 // §C4 positional, not semantic: the Check function takes
-// (ctx, repo, sessionID, principal, tier). It must not grow parameters
+// (ctx, repo, sessionID, principal, class). It must not grow parameters
 // named sourceID, tool, blast, or radius — those would make the gate
 // semantic (computing on what the mutation touches) rather than
 // positional (which session it arrives from). The signature-pin guard
@@ -54,7 +54,7 @@ type Decision struct {
 //
 // Decision rules (in order):
 //
-//  1. tier == TierObserve (T1) → Allow. Reads/discovery unaffected per
+//  1. class == ActionRead → Allow. Reads/discovery unaffected per
 //     §A1 and §C1.
 //  2. regime is normal → Allow. No captain outside incident regime
 //     (§B4 / §R1).
@@ -78,10 +78,10 @@ func Check(
 	repo sessionmodel.Repository,
 	sessionID string,
 	principal string,
-	tier safety.ActionTier,
+	class safety.ActionClass,
 ) (Decision, error) {
-	// 1. T1 reads/discovery always permitted.
-	if tier == safety.TierObserve {
+	// 1. Reads/discovery always permitted.
+	if class == safety.ActionRead {
 		return Decision{Allow: true}, nil
 	}
 

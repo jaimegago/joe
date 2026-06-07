@@ -10,7 +10,7 @@ import (
 func TestActionInfo_FormatBefore(t *testing.T) {
 	info := ActionInfo{
 		ToolName:    "write_file",
-		Tier:        TierAct,
+		Class:       ActionMutate,
 		Description: "Write file to local filesystem",
 	}
 	msg := info.FormatBefore()
@@ -41,7 +41,7 @@ func TestActionInfo_FormatAfter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := ActionInfo{ToolName: "run_command", Tier: TierAct, Description: "Run shell command"}
+			info := ActionInfo{ToolName: "run_command", Class: ActionMutate, Description: "Run shell command"}
 			msg := info.FormatAfter(tt.err)
 			if !strings.Contains(msg, tt.wantContains) {
 				t.Errorf("FormatAfter() = %q, want to contain %q", msg, tt.wantContains)
@@ -58,7 +58,7 @@ func TestActionInfo_FormatAfter(t *testing.T) {
 
 func TestNoopNotifier(t *testing.T) {
 	n := &NoopNotifier{}
-	info := ActionInfo{ToolName: "test", Tier: TierAct}
+	info := ActionInfo{ToolName: "test", Class: ActionMutate}
 
 	if err := n.NotifyBefore(context.Background(), info); err != nil {
 		t.Errorf("NotifyBefore() = %v, want nil", err)
@@ -71,7 +71,7 @@ func TestNoopNotifier(t *testing.T) {
 func TestLogNotifier(t *testing.T) {
 	info := ActionInfo{
 		ToolName:    "graph_add_node",
-		Tier:        TierRecord,
+		Class:       ActionMutate,
 		Description: "Add node to knowledge graph",
 	}
 

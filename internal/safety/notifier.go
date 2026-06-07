@@ -5,22 +5,22 @@ import (
 	"fmt"
 )
 
-// ActionNotifier receives notifications before and after T2/T3 tool executions.
-// Implementations control how the human is informed (REPL output, logging, etc.).
+// ActionNotifier receives notifications before and after mutating tool
+// executions. Implementations control how the human is informed (REPL output,
+// logging, etc.).
 //
-// The notification contract from security-in-layers.md:
+// The notification contract (post tier-collapse, D-0018/D-0019):
 //
-//	T3 (Act):    BEFORE + AFTER (BEFORE is blocking — human can cancel)
-//	T2 (Record): AFTER only (post-execution log)
-//	T1 (Observe): no notification
+//	Mutate: BEFORE + AFTER (BEFORE is blocking — human can cancel)
+//	Read:   no notification
 type ActionNotifier interface {
-	// NotifyBefore is called before a T3 action executes. For interactive
+	// NotifyBefore is called before a mutating action executes. For interactive
 	// sessions (REPL), this should display a countdown and block for a
 	// cancellation window. The implementation should respect ctx cancellation.
 	// Returns an error if the action should be aborted (e.g., user cancelled).
 	NotifyBefore(ctx context.Context, info ActionInfo) error
 
-	// NotifyAfter is called after a T2 or T3 action executes, regardless of
+	// NotifyAfter is called after a mutating action executes, regardless of
 	// whether it succeeded or failed. This is informational — the return
 	// value is ignored by the executor.
 	NotifyAfter(ctx context.Context, info ActionInfo, result any, execErr error)
@@ -29,7 +29,7 @@ type ActionNotifier interface {
 // ActionInfo describes a tool execution for notification purposes.
 type ActionInfo struct {
 	ToolName    string
-	Tier        ActionTier
+	Class       ActionClass
 	Description string         // human-readable, from ToolClassification
 	Args        map[string]any // the arguments passed to the tool
 }
@@ -54,7 +54,7 @@ func (n *NoopNotifier) NotifyBefore(_ context.Context, _ ActionInfo) error { ret
 func (n *NoopNotifier) NotifyAfter(_ context.Context, _ ActionInfo, _ any, _ error) {
 }
 
-// LogNotifier logs T2/T3 actions to a callback function. Useful for the Core
+// LogNotifier logs mutating actions to a callback function. Useful for the Core
 // Agent (joecored) where there's no REPL but we still want audit logging.
 type LogNotifier struct {
 	LogFunc func(msg string)

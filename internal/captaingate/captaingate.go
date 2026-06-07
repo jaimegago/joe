@@ -118,9 +118,9 @@ func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit
 // 10 enforced for the Core Agent path, now applied to ALL agentic
 // paths via this shared wrapper):
 //
-//  1. classify tool tier (safety.ClassifyTool).
-//  2. T1 → bypass the gate entirely (reads/discovery are §A1/§C1-free).
-//  3. T2/T3:
+//  1. classify tool action (safety.ClassifyTool).
+//  2. Read → bypass the gate entirely (reads/discovery are §A1/§C1-free).
+//  3. Mutate:
 //     a. §C gate (sessiongate.Check) — UPSTREAM of the inner executor's
 //     safety check AND of the accessor's RBAC check. Refusal returns
 //     *GateRefusalError; no inner.Execute call, no accessor call.
@@ -148,8 +148,8 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 
 	classification := safety.ClassifyTool(name)
 
-	// 1. T1 reads/discovery skip the gate.
-	if classification.Tier == safety.TierObserve {
+	// 1. Reads/discovery skip the gate.
+	if classification.Class == safety.ActionRead {
 		return w.inner.Execute(ctx, name, args)
 	}
 
@@ -157,7 +157,7 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 	callerPrincipal := string(rbac.PrincipalFromContext(ctx))
 
 	// 2. §C gate.
-	decision, err := sessiongate.Check(ctx, w.sessRepo, sessionID, callerPrincipal, classification.Tier)
+	decision, err := sessiongate.Check(ctx, w.sessRepo, sessionID, callerPrincipal, classification.Class)
 	if err != nil {
 		return nil, fmt.Errorf("captaingate: §C gate: %w", err)
 	}

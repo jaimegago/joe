@@ -10,6 +10,102 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0020 — Collapse the three-tier action classification (Observe/Record/Act) into a binary Read/Mutate axis
+
+- Date: 2026-06-07
+- Status: IMPLEMENTED. Unlike D-0018/D-0019 (design-pending), this entry records
+  a code change that is in the tree as of this date. Refines D-0018/D-0019 — it
+  realizes their "write = mutation of the managed system" definition as the
+  single decidable axis the classifier carries.
+- Decision: the action classification is now binary. `safety.ActionTier`
+  (`TierObserve`/`TierRecord`/`TierAct`, the old T1/T2/T3) is replaced by
+  `safety.ActionClass` with exactly two states: `ActionRead` (does not mutate
+  the managed system) and `ActionMutate` (mutates the managed system). The
+  classifier `ClassifyTool` returns one of the two; the struct field
+  `ToolClassification.Tier`/`ActionInfo.Tier`/`AccessDeniedError.Tier` is
+  renamed `Class`. `ActionClass.String()` returns `"read"`/`"mutate"`.
+
+  Rationale: severity-of-mutation is DELIBERATELY NOT a classification tier. A
+  static blast-radius taxonomy is hard to get right and hard to evaluate on a
+  non-deterministic LLM. The classification answers one decidable question —
+  does this operation mutate the managed system. Blast-radius safety lives in
+  tools, skills, OASIS testing, and the per-zone/per-capability graduation
+  ladder (D-0019), not in a tier.
+
+  **Mapping (old → new).** Former Observe → Read; former Act → Mutate. The
+  middle tier (Record) was already vacant after the prior reclassification
+  (commit d3c34d3 / D-0018/D-0019): no registered tool was Record. It is
+  DELETED from the type, not merged as a live value. Every tool carries forward
+  its already-decided read/write nature unchanged (Joe's own graph/model
+  maintenance — graph_add_*, register_source, save_onboarding_fact,
+  save_knowledge_entry, generate_doc_draft — stays Read; external/managed-system
+  writes — write_file, run_command, publish_doc_update_*, github/gitlab_comment,
+  github_request_changes — are Mutate). The unknown-tool default is `ActionMutate`
+  (deny-by-default, unchanged conservatism).
+
+  **Consumer map (every layer that keyed off the tier; the binary question each
+  now asks).** All behavior is preserved exactly; only the type changed.
+  - Write floor — executor safe-mode check (`internal/tools/executor.go`): was
+    `IsSafeModeActive() && tier > TierObserve`, now `&& class == ActionMutate`.
+    Question: "is this Mutate" (deny Mutate). Equivalent set: with Record gone,
+    "tier > Observe" and "is Mutate" denote the identical tool set. (The
+    boot-resolved D-0018 floor proper is still design-pending; this safe-mode
+    check is the live floor today.)
+  - Pre-execution blocking notification (executor): was `== TierAct`, now
+    `== ActionMutate`. Same set (Act == Mutate, Record vacant).
+  - Post-execution audit notification (executor): was `>= TierRecord`, now
+    `== ActionMutate`. Same set (Record vacant ⇒ fired only for Act before).
+  - Captain/incident gate (`internal/captaingate`, `internal/sessiongate`):
+    Read bypasses the gate; Mutate runs the §C captain-session check. Question:
+    "is this Mutate". `sessiongate.Check`'s 5th param renamed `tier`→`class`
+    (§C4 signature-pin guard unaffected — `class` is not a forbidden name).
+  - Policy gate (`internal/safety/policy.go`): `IsT3Allowed` still gates Mutate
+    by per-action grant. Question: "is this Mutate" + which capability is
+    granted.
+  - DurableExecutor (`internal/coreagent/executor_durable.go`): Read bypasses
+    idempotency persistence; Mutate gets the §D5 RecordToolIntent → execute →
+    MarkToolCompleted crash-resume protocol. Keyed off `ActionRead` now — the
+    IDENTICAL operation set as before (former Observe bypassed; former Act
+    persisted).
+
+  **DurableExecutor coupling — temporary preservation, not the final design.**
+  Keying crash-resume durability off the action class is a behavior-preserving
+  stopgap. "Does this operation need crash-resume idempotency" is NOT the same
+  question as "does this mutate the managed system." Joe's own model-maintenance
+  creates are now Read and therefore bypass durability, losing idempotency on
+  crash-resume — named casualties: register_source, save_onboarding_fact (and
+  the graph_add_* family). This is a KNOWN, OUTSTANDING gap, intentionally NOT
+  fixed here. The follow-up idempotency/durability-decoupling task will replace
+  the binary key with a durability-specific predicate so durability tracks
+  "needs crash-resume," independent of the Read/Mutate axis.
+
+  **Backward-compat shim retained.** Existing `~/.joe/safety-policy.yaml` files
+  may carry a `record:` block. The `SafetyPolicy.Record`/`RecordPolicy` struct
+  and `IsT2Allowed` are RETAINED in `internal/safety/policy.go` purely so those
+  files still deserialize; `CheckAccess` no longer calls `IsT2Allowed` (no tool
+  is Record). Separately, `internal/runmodel` has its OWN `Tier` type
+  (`TierT1/T2/T3` = 1/2/3) persisted to the `action_ledger.tier` column. It is a
+  DISTINCT type, never converted from the safety classification, and
+  `AppendLedger` has no production caller (test-only). It is out of scope for
+  this collapse and left untouched; flagged here so the next task knows the
+  ledger still encodes 1/2/3 by number.
+- Basis: re-derived against the live tree — `internal/safety/tier.go` (type,
+  classifier, registry, `CheckAccess`), `policy.go` (retained shim),
+  `internal/tools/executor.go`, `internal/captaingate/captaingate.go`,
+  `internal/sessiongate/sessiongate.go`, `internal/coreagent/executor_durable.go`,
+  `internal/safety/notifier.go`. Break-tests added: `TestActionClass_IsBinary`
+  (exactly two states, middle gone), `TestClassifyTool_UnknownDefaultIsMutate`,
+  `TestCheckAccess_ModelMaintenanceAlwaysAllowed` (a graph/model read passes the
+  floor), `TestClassifyTool_ExternalCommentsAreMutate`,
+  `TestClassifyTool_GraphMutationFamilyIsRead`. Captain-gate, policy-gate, and
+  durability behavior-preservation are covered by the existing
+  captaingate/policy/durable tests, which exercise the real classifier
+  (write_file = Mutate, read_file = Read) and pass unchanged.
+- Supersedes: nothing — refines D-0018/D-0019. Outstanding follow-up: the
+  idempotency/durability decoupling (named casualties above) remains UNRESOLVED.
+
+---
+
 ## D-0019 — Joe's trust model: two boot postures, graduated capability, and fail-closed-empty-RBAC as the load-bearing safety boundary
 
 - Date: 2026-06-07
