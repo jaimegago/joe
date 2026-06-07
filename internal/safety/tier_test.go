@@ -136,6 +136,53 @@ func TestClassifyTool_ExternalCommentsAreMutate(t *testing.T) {
 	}
 }
 
+// TestClassifyTool_NonIdempotentCreatesNeedDurability pins the known
+// non-idempotent creates/appends as NeedsDurability. Durability is opt-in and
+// default OFF (D-0020 follow-up), so a regression that silently drops the
+// declaration from one of these would re-open the casualty — an in-run retry
+// or crash-resume would duplicate the row/comment. This fails loudly if any of
+// them loses the property.
+func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
+	needs := []string{
+		// Read-class creates with server-generated identity outside the args.
+		"register_source", "save_onboarding_fact", "save_knowledge_entry",
+		"generate_doc_draft",
+		// Mutate-class non-idempotent external appends.
+		"github_comment", "gitlab_comment", "github_request_changes",
+	}
+	for _, tool := range needs {
+		if !ClassifyTool(tool).NeedsDurability {
+			t.Errorf("ClassifyTool(%q).NeedsDurability = false, want true — this is a non-idempotent create/append; dropping durability re-opens the per-run duplicate casualty", tool)
+		}
+	}
+}
+
+// TestClassifyTool_IdempotentToolsAreNotDurable pins that naturally
+// idempotent operations do NOT carry NeedsDurability — durability on them is a
+// wasted fsync/storage tax and risks serving a stale same-key result. Reads,
+// graph upserts, and status-guarded publishes must stay OFF.
+func TestClassifyTool_IdempotentToolsAreNotDurable(t *testing.T) {
+	notDurable := []string{
+		"read_file", "graph_query", "list_sources", // reads
+		"graph_add_node", "graph_add_edge", "graph_update_node", // arg-keyed upserts
+		"write_file", "run_command", // idempotent / no Joe-side record
+		"publish_doc_update", "publish_doc_update_git", // data-layer status guard
+	}
+	for _, tool := range notDurable {
+		if ClassifyTool(tool).NeedsDurability {
+			t.Errorf("ClassifyTool(%q).NeedsDurability = true, want false — this operation is naturally idempotent and must not pay the durability tax", tool)
+		}
+	}
+}
+
+// TestClassifyTool_UnknownToolNotDurable pins the default-OFF posture: an
+// unregistered tool must not be wrapped for durability.
+func TestClassifyTool_UnknownToolNotDurable(t *testing.T) {
+	if ClassifyTool("does_not_exist").NeedsDurability {
+		t.Error("unknown tool defaults to NeedsDurability=true, want false (durability is opt-in, default OFF)")
+	}
+}
+
 func TestCheckAccess_ReadAlwaysAllowed(t *testing.T) {
 	// Read tools should be allowed even with the most restrictive policy
 	policy := &SafetyPolicy{Version: 1} // zero-value = all disabled

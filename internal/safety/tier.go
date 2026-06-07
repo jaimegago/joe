@@ -43,6 +43,27 @@ type ToolClassification struct {
 	Class       ActionClass
 	PolicyKey   string // key used for IsT3Allowed lookup (mutating tools)
 	Description string // human-readable description of what this tool can mutate
+
+	// NeedsDurability declares that this tool performs a non-idempotent
+	// operation — a create/append with a server-generated identity (random
+	// ID, autoincrement, timestamp-keyed) and no natural idempotency — for
+	// which an in-run retry or crash-resume would produce a DUPLICATE. When
+	// set, the DurableExecutor persists an idempotency key (§D5
+	// RecordToolIntent → execute → MarkToolCompleted) and short-circuits a
+	// same-key replay so the operation runs at most once per run.
+	//
+	// This is INDEPENDENT of the Read/Mutate action class (D-0020 follow-up):
+	// "does this need crash-resume" is a different question than "does this
+	// mutate the managed system". Durability is opt-in per tool and defaults
+	// to OFF — applying it to naturally re-runnable reads costs two fsyncs and
+	// an unbounded result-bearing row per call and risks serving a stale
+	// same-key result. Only the few genuinely non-idempotent operations set
+	// this; an undeclared tool is never wrapped.
+	//
+	// SCOPE: per-run replay-safety only (dedup is keyed by runID + tool +
+	// args-hash). It does NOT provide cross-run uniqueness — see DECISIONS
+	// D-0020 follow-up for the still-open get-or-create work.
+	NeedsDurability bool
 }
 
 // toolRegistry is the hardcoded classification of every known tool.
@@ -165,25 +186,46 @@ var toolRegistry = map[string]ToolClassification{
 	// write definition they are reads, not writes. Keeping them read-class
 	// also means Joe never freezes its own model in safe mode or while an
 	// incident captain gate is engaged.
-	"graph_add_node":       {Class: ActionRead, Description: "Add node to Joe's knowledge graph"},
-	"graph_add_edge":       {Class: ActionRead, Description: "Add edge to Joe's knowledge graph"},
-	"graph_update_node":    {Class: ActionRead, Description: "Update node in Joe's knowledge graph"},
-	"register_source":      {Class: ActionRead, Description: "Record an infrastructure source in Joe's store"},
-	"save_onboarding_fact": {Class: ActionRead, Description: "Save an onboarding fact to Joe's store"},
-	"save_knowledge_entry": {Class: ActionRead, Description: "Save a derived knowledge entry to Joe's knowledge store"},
+	// graph_add_*/update are UPSERTs keyed on caller-supplied args (node_id,
+	// or the (from,to,relation) edge key) — naturally idempotent on retry, so
+	// no durability needed.
+	"graph_add_node":    {Class: ActionRead, Description: "Add node to Joe's knowledge graph"},
+	"graph_add_edge":    {Class: ActionRead, Description: "Add edge to Joe's knowledge graph"},
+	"graph_update_node": {Class: ActionRead, Description: "Update node in Joe's knowledge graph"},
+	// register_source / save_onboarding_fact / save_knowledge_entry are
+	// plain INSERTs whose row identity is generated server-side OUTSIDE the
+	// args (register_source: crypto-random ID; save_onboarding_fact:
+	// autoincrement; save_knowledge_entry: uid.New()), with no natural unique
+	// key — an in-run retry or crash-resume would create a second row. They
+	// declare NeedsDurability so the §D5 key dedups them per run (D-0020).
+	"register_source":      {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
+	"save_onboarding_fact": {Class: ActionRead, Description: "Save an onboarding fact to Joe's store", NeedsDurability: true},
+	"save_knowledge_entry": {Class: ActionRead, Description: "Save a derived knowledge entry to Joe's knowledge store", NeedsDurability: true},
 
 	// Phase 8: doc draft generation — creates a proposal in Joe's own state.
 	// The proposal must be human-approved before publish_doc_update (mutate)
 	// can push it to any external system, so drafting itself mutates nothing
-	// outside Joe.
-	"generate_doc_draft": {Class: ActionRead, Description: "Generate a documentation draft proposal in Joe's store"},
+	// outside Joe. The proposal ID is uid.New() (server-side, outside args)
+	// and the insert has no natural unique key, so a retry would create a
+	// second proposal — declares NeedsDurability (D-0020).
+	"generate_doc_draft": {Class: ActionRead, Description: "Generate a documentation draft proposal in Joe's store", NeedsDurability: true},
 
 	// === Mutate (managed-system mutations) ===
 
+	// write_file overwrites a path (the path is the natural key — rewriting it
+	// is idempotent); run_command runs an arbitrary command that creates no
+	// Joe-side record and whose result must NOT be served from a stale cache on
+	// re-run (replay-safety of its side effects is the command's own concern).
+	// Neither declares NeedsDurability — they are no longer wrapped just for
+	// being Mutate (D-0020).
 	"write_file":  {Class: ActionMutate, PolicyKey: "write_file", Description: "Write file to local filesystem"},
 	"run_command": {Class: ActionMutate, PolicyKey: "run_command", Description: "Run shell command"},
 
-	// Phase 8: doc publish (writes to external systems)
+	// Phase 8: doc publish (writes to external systems). publish_doc_update*
+	// is guarded at the data layer: PublishProposal requires status==approved
+	// and flips it to published, so a re-publish of the same proposal fails
+	// closed rather than duplicating — a natural idempotency key. No
+	// NeedsDurability (D-0020).
 	"publish_doc_update_confluence": {Class: ActionMutate, PolicyKey: "confluence_publish", Description: "Publish doc proposal to Confluence page"},
 	"publish_doc_update_notion":     {Class: ActionMutate, PolicyKey: "notion_publish", Description: "Publish doc proposal to Notion page"},
 	"publish_doc_update_git":        {Class: ActionMutate, PolicyKey: "git_push", Description: "Commit and push doc proposal to Git repo"},
@@ -202,12 +244,18 @@ var toolRegistry = map[string]ToolClassification{
 
 	// Mutate — posting a comment/note mutates an external system (the
 	// GitHub/GitLab PR thread). It persists outside Joe and is not idempotent
-	// on retry, so it is a managed-system write, not a Joe-internal record.
-	"github_comment": {Class: ActionMutate, PolicyKey: "github_comment", Description: "Post a review comment on a GitHub pull request"},
-	"gitlab_comment": {Class: ActionMutate, PolicyKey: "gitlab_comment", Description: "Post a note on a GitLab merge request"},
+	// on retry (each post appends a new comment with a server-assigned ID, no
+	// natural idempotency), so a retry/crash-resume would double-post. They
+	// declare NeedsDurability so the §D5 key dedups them per run — this
+	// preserves the protection the old Mutate-always-wrapped scheme gave them
+	// (D-0020).
+	"github_comment": {Class: ActionMutate, PolicyKey: "github_comment", Description: "Post a review comment on a GitHub pull request", NeedsDurability: true},
+	"gitlab_comment": {Class: ActionMutate, PolicyKey: "gitlab_comment", Description: "Post a note on a GitLab merge request", NeedsDurability: true},
 
-	// Mutate — requests changes (gates merging, high-impact external action)
-	"github_request_changes": {Class: ActionMutate, PolicyKey: "github_request_changes", Description: "Submit a GitHub review requesting changes on a pull request"},
+	// Mutate — requests changes (gates merging, high-impact external action).
+	// Submitting a review is a non-idempotent append; keeps NeedsDurability so
+	// a retry does not file a duplicate review (D-0020).
+	"github_request_changes": {Class: ActionMutate, PolicyKey: "github_request_changes", Description: "Submit a GitHub review requesting changes on a pull request", NeedsDurability: true},
 	// NOTE: github_approve (mutate) is intentionally not registered as a tool in this phase.
 	// To enable, add PolicyKey "github_approve" to safety policy and register the tool manually.
 }

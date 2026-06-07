@@ -79,6 +79,92 @@ Format per entry: ID, date, decision, basis, supersedes, status.
   the binary key with a durability-specific predicate so durability tracks
   "needs crash-resume," independent of the Read/Mutate axis.
 
+  **DurableExecutor decoupling — IMPLEMENTED (follow-up to the coupling note
+  above; durability is now opt-in per tool, default OFF).** The
+  DurableExecutor's wrap decision no longer reads the action class. A new
+  per-tool boolean `ToolClassification.NeedsDurability` (in
+  `internal/safety/tier.go`, declared alongside `Class`/`PolicyKey`) drives it:
+  `executor_durable.go` wraps an op IFF `ClassifyTool(name).NeedsDurability` is
+  set, else it bypasses (no key, no persistence). The §D5 protocol
+  (RecordToolIntent → execute → MarkToolCompleted, replay short-circuit,
+  crash-resume on 'issued') is unchanged — only what selects INTO it changed.
+
+  Rationale for default-OFF (fail toward declare-the-few, not default-on): each
+  wrapped op costs two synchronous fsyncs (persist 'issued', then the terminal
+  status) plus an unbounded, never-pruned `tool_idempotency_keys` row carrying
+  the full serialized result. Negligible for the handful of genuine creates;
+  a material I/O and storage tax on the high-frequency read path. Worse,
+  durability on a naturally re-runnable read risks serving a STALE cached
+  result on a same-key replay (e.g. a metrics query that should re-run). So
+  reads stay OFF and only non-idempotent operations opt in.
+
+  Per-tool accounting (the audit; re-derived from each tool's actual
+  create/append site and the underlying store method):
+  - DECLARE NeedsDurability (wrapped):
+    - `register_source` — `Source.Create` is a plain INSERT; the row ID is a
+      crypto-random `type-<rand>` generated server-side OUTSIDE the args, so a
+      retry creates a second source. (Casualty fixed.)
+    - `save_onboarding_fact` — `Facts.Create` is a plain INSERT with an
+      autoincrement `RETURNING id`, no natural key. (Casualty fixed.)
+    - `save_knowledge_entry` — `knowledge.Service.Create` sets `id = uid.New()`
+      server-side, plain INSERT, no unique key. (Additional casualty found by
+      the audit, beyond the two named in the task.)
+    - `generate_doc_draft` — `proposals.Create` sets `id = uid.New()`, plain
+      INSERT; also wraps an expensive LLM draft generation. (Additional
+      casualty found by the audit.)
+    - `github_comment`, `gitlab_comment` — each posts a NEW comment/note to the
+      PR/MR thread (server-assigned comment ID, no natural idempotency); a
+      retry double-posts. Kept durable.
+    - `github_request_changes` — files a NEW review; a retry duplicates it.
+      Kept durable.
+  - DO NOT declare (intentionally non-durable; idempotent / no duplicate risk):
+    - `graph_add_node`, `graph_add_edge`, `graph_update_node` — UPSERTs keyed on
+      caller-supplied args (node_id, or the `(from,to,relation)` edge key via
+      `ON CONFLICT … DO UPDATE`). Re-running converges; no duplicate. (Note:
+      the coupling note above loosely listed `graph_add_*` as casualties — the
+      audit corrects that: they are idempotent and correctly NOT declared.)
+    - `write_file` — overwrites a path (the path IS the natural key); rewriting
+      with the same content is idempotent.
+    - `run_command` — creates no Joe-side record; caching a command's output by
+      args and replaying it would be WRONG (a fresh run must re-execute), and
+      side-effect replay-safety is the command's own concern.
+    - `publish_doc_update`, `publish_doc_update_{confluence,notion,git}` —
+      guarded at the data layer: `PublishProposal` requires `status==approved`
+      and flips it to `published`, so a re-publish of the same proposal fails
+      closed rather than duplicating (a natural idempotency key). The
+      crash-after-target-write/before-MarkPublished window is unprotected by
+      durability either (an 'issued' key re-runs), so no protection is lost by
+      dropping it.
+
+  Wrapping-status changes vs. the old Mutate-only set:
+  - Newly wrapped (were bypassed as Read): register_source,
+    save_onboarding_fact, save_knowledge_entry, generate_doc_draft.
+  - No longer wrapped (were wrapped solely for being Mutate): write_file,
+    run_command, publish_doc_update, publish_doc_update_confluence,
+    publish_doc_update_notion, publish_doc_update_git. Each is idempotent or
+    data-layer-guarded — no operation that needs replay-safety silently lost
+    it.
+  - Unchanged-wrapped (Mutate, still declared): github_comment, gitlab_comment,
+    github_request_changes.
+
+  Casualty fix: register_source and save_onboarding_fact are durable again — an
+  in-run duplicate call or crash-resume with identical args short-circuits to
+  the cached result and creates no second row (the §D5 key is stable because
+  their IDs are generated server-side, outside the args-hash).
+
+  STILL OPEN (named explicitly, NOT built here):
+  1. Dedup is PER-RUN only, not cross-run. The idempotency key is
+     `SHA256(runID + tool + sorted-args-hash)`, so it deduplicates within a
+     single run; it does NOT guarantee cross-run uniqueness (two separate runs
+     each registering "prod-cluster" still create two rows). True "never two
+     rows for the same logical source/fact" needs a natural unique key or a
+     get-or-create at the data layer (`sources`/`onboarding_facts`), not
+     durability. Separate, unaddressed follow-up.
+  2. The `tool_idempotency_keys` table has no pruning/TTL — rows live for the
+     run/session lifetime, reclaimed only via FK cascade when the run/session
+     is deleted. Acceptable for the small declared-durable set, but should be
+     noted; a high-volume durable tool would grow it unbounded.
+
   **Backward-compat shim retained.** Existing `~/.joe/safety-policy.yaml` files
   may carry a `record:` block. The `SafetyPolicy.Record`/`RecordPolicy` struct
   and `IsT2Allowed` are RETAINED in `internal/safety/policy.go` purely so those
@@ -97,12 +183,38 @@ Format per entry: ID, date, decision, basis, supersedes, status.
   (exactly two states, middle gone), `TestClassifyTool_UnknownDefaultIsMutate`,
   `TestCheckAccess_ModelMaintenanceAlwaysAllowed` (a graph/model read passes the
   floor), `TestClassifyTool_ExternalCommentsAreMutate`,
-  `TestClassifyTool_GraphMutationFamilyIsRead`. Captain-gate, policy-gate, and
-  durability behavior-preservation are covered by the existing
-  captaingate/policy/durable tests, which exercise the real classifier
-  (write_file = Mutate, read_file = Read) and pass unchanged.
-- Supersedes: nothing — refines D-0018/D-0019. Outstanding follow-up: the
-  idempotency/durability decoupling (named casualties above) remains UNRESOLVED.
+  `TestClassifyTool_GraphMutationFamilyIsRead`. Captain-gate and policy-gate
+  behavior-preservation are covered by the existing captaingate/policy tests,
+  which exercise the real classifier (write_file = Mutate, read_file = Read) and
+  pass unchanged.
+
+  Durability decoupling (implementation note above) basis: re-derived the wrap
+  site (`internal/coreagent/executor_durable.go`, formerly the
+  `classification.Class == ActionRead` bypass, now `!NeedsDurability`), the key
+  derivation (`computeIdempotencyKey` = SHA256(runID|tool|argsHash)), and each
+  tool's create/append site against its store method (`store.sources.go`,
+  `store.facts.go`, `knowledge/{service,repository}.go`,
+  `knowledge/proposals/service.go`, `graph/sqlite.go AddEdge` ON CONFLICT,
+  `api/inproc_client.go PublishProposal` status guard). Break-tests added:
+  `safety.TestClassifyTool_NonIdempotentCreatesNeedDurability` (pins the seven
+  declared tools — guards the default-OFF silent-gap risk),
+  `TestClassifyTool_IdempotentToolsAreNotDurable`,
+  `TestClassifyTool_UnknownToolNotDurable` (default OFF), and in coreagent
+  `TestDurableExecutor_DrivenByProperty` (Read+declared wrapped, Mutate+
+  undeclared bypassed — durability no longer reads the class),
+  `TestDurableExecutor_UndeclaredBypass`,
+  `TestDurableExecutor_InRunReplayDedupsCreate` (computed runID+args key
+  short-circuit on a declared create). The pre-existing durable tests
+  (D5Ordering, ReplayShortCircuit, CrashResume, NoGoroutineFanOut) were
+  repointed from `write_file` (no longer wrapped) to `register_source` (now
+  declared durable); their intent — ordering, replay short-circuit,
+  crash-resume re-run, no goroutine fan-out — is unchanged.
+- Supersedes: nothing — refines D-0018/D-0019. Follow-up status: the
+  idempotency/durability decoupling (named casualties above) is now RESOLVED
+  (see "DurableExecutor decoupling — IMPLEMENTED"). Two items remain open and
+  are NOT this change: cross-run uniqueness for sources/facts (needs a natural
+  unique key or get-or-create at the data layer), and pruning/TTL for the
+  `tool_idempotency_keys` table.
 - Known cleanup debt — persisted three-valued tier (deferred, NOT blocking).
   Discovered after the collapse: a three-valued tier concept survives in the
   run-model persistence layer. It is INERT but contradicts the binary model.
