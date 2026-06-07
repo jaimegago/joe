@@ -103,6 +103,45 @@ Format per entry: ID, date, decision, basis, supersedes, status.
   (write_file = Mutate, read_file = Read) and pass unchanged.
 - Supersedes: nothing — refines D-0018/D-0019. Outstanding follow-up: the
   idempotency/durability decoupling (named casualties above) remains UNRESOLVED.
+- Known cleanup debt — persisted three-valued tier (deferred, NOT blocking).
+  Discovered after the collapse: a three-valued tier concept survives in the
+  run-model persistence layer. It is INERT but contradicts the binary model.
+  - What survives: the `runmodel.Tier` type with constants
+    `TierT1`/`TierT2`/`TierT3` (= 1/2/3) in `internal/runmodel/types.go`, used
+    as the `Tier` field of `LedgerEntry`; and the `action_ledger.tier` column,
+    `tier INTEGER NOT NULL CHECK (tier IN (1, 2, 3))`, from
+    `internal/store/migrations/010_run_model.up.sql`. (This is the `runmodel`
+    `Tier` flagged out-of-scope under "Backward-compat shim retained" above,
+    now fully characterized.)
+  - Current status (honest): there is NO production writer of the action
+    ledger — `AppendLedger` is called only from tests, and the production
+    `DurableExecutor` path persists idempotency keys, not ledger rows — so the
+    column is unpopulated in real deployments. There IS one production reader,
+    `getSITREP` (the `GET /api/v1/runs/{id}` handler, `internal/api/runs.go`,
+    via `ListLedgerForRun`), but it does NOT interpret the tier: it passes the
+    raw int straight through to JSON. So the concept is inert, not actively
+    buggy — no production path reads-and-interprets a stale three-valued
+    semantics.
+  - The landmine: the `CHECK (tier IN (1, 2, 3))` constraint actively
+    contradicts the binary model. If any writer is reintroduced under the
+    Read/Mutate classification, it has no natural 1/2/3 value to write; a
+    zero-value `Tier` (0) would VIOLATE the CHECK and fail the insert. The
+    schema must not be left constrained this way indefinitely — this is why the
+    cleanup eventually has to happen, rather than being purely cosmetic.
+  - Cleanup scope (when done, not now): a new migration dropping the `tier`
+    column and its CHECK; remove the `Tier` field from `LedgerEntry`; delete the
+    `Tier` type and its `TierT1/T2/T3` constants; remove `tier` from the
+    INSERT/SELECT and the `Tier(tier)` mapping in the `internal/runmodel`
+    repository (`repository.go`); update the three test files that reference the
+    old tier constants (`internal/runmodel/schema_test.go`,
+    `internal/runmodel/cascade_schema_test.go`,
+    `internal/api/cascade_delete_test.go`).
+  - Adjacent item, same cleanup: `LedgerEntry` has NO JSON tags, so its fields
+    (including `Tier`) serialize with capitalized Go-default names through the
+    `GET /runs/{id}` response — the same no-JSON-tags issue D-0019 flagged for
+    the regime endpoint. Fix when the ledger is cleaned.
+  - Deferred, not blocking: it is inert today (no writer), and the trust-model
+    floor work (D-0018/D-0019) takes priority.
 
 ---
 
