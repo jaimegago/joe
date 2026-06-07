@@ -46,6 +46,11 @@ type Handlers struct {
 	// nil when no audit store is wired (dev/local, tests) — the login
 	// proceeds exactly as before in that case.
 	audit audit.Repository
+	// secureCookies is the Secure attribute applied to the OIDC state cookie.
+	// True by default (HandlerConfig.AllowInsecureCookies defaults false); set
+	// false only for local HTTP dev so Safari/Firefox store the state cookie and
+	// the callback's CSRF check can find it.
+	secureCookies bool
 }
 
 // HandlerConfig wires the dependencies for Handlers.
@@ -64,6 +69,10 @@ type HandlerConfig struct {
 	// Audit is the append-only audit trail. nil-safe: a nil repository
 	// disables the auth_login write and leaves the login flow unchanged.
 	Audit audit.Repository
+	// AllowInsecureCookies drops the Secure attribute from the OIDC state cookie
+	// for local HTTP dev. Defaults false (Secure) so the zero value — and every
+	// existing caller — stays secure. See ServerConfig.InsecureCookies.
+	AllowInsecureCookies bool
 }
 
 // NewHandlers builds the auth Handlers. PostLoginRedirect defaults to "/".
@@ -82,6 +91,7 @@ func NewHandlers(cfg HandlerConfig) *Handlers {
 		postLoginRedirect: redirect,
 		now:               time.Now,
 		audit:             cfg.Audit,
+		secureCookies:     !cfg.AllowInsecureCookies,
 	}
 }
 
@@ -396,7 +406,7 @@ func (h *Handlers) setStateCookie(w http.ResponseWriter, state string) {
 		Path:     stateCookiePath,
 		MaxAge:   int(flowTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.secureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -408,7 +418,7 @@ func (h *Handlers) clearStateCookie(w http.ResponseWriter) {
 		Path:     stateCookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.secureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

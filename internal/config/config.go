@@ -163,6 +163,16 @@ type ServerConfig struct {
 	TLSEnabled      bool             `yaml:"tls_enabled"`      // joe client: connect over HTTPS (must match server TLS setting)
 	RateLimitRPS    float64          `yaml:"rate_limit_rps"`   // Requests per second per IP (0 = disabled)
 	RateLimitBurst  int              `yaml:"rate_limit_burst"` // Burst size for rate limiter (default 10)
+	// InsecureCookies drops the Secure attribute from the auth cookies (session
+	// + OIDC state). DEV-ONLY: it lets browsers that refuse Secure cookies over
+	// plain HTTP (Safari, Firefox) complete the OIDC login against an http://
+	// origin, where Chrome's localhost special-case otherwise hides the problem.
+	// Default false (Secure). NEVER enable in production — a non-Secure session
+	// cookie can leak over plaintext. It is deliberately an explicit opt-in
+	// rather than auto-derived from TLSConfigured(), because a TLS-terminating
+	// reverse proxy serves joe over HTTP while the browser is on HTTPS; there the
+	// cookies must stay Secure.
+	InsecureCookies bool `yaml:"insecure_cookies"`
 }
 
 // TLSConfigured reports whether TLS has been configured for the server side.

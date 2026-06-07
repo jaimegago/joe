@@ -738,19 +738,29 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	authRepo := authSessions
 	sessionMgr := auth.NewSessionManager(authRepo, cfg.Auth.SessionTTL)
 
+	// Auth cookies are Secure by default. server.insecure_cookies drops Secure
+	// for local HTTP dev only — Safari/Firefox refuse to store Secure cookies
+	// delivered over plain http://, so OIDC login fails with a state mismatch
+	// there (Chrome's localhost special-case hides it). Never enable in prod.
+	if cfg.Server.InsecureCookies {
+		sessionMgr.SetSecureCookies(false)
+		slog.Warn("auth: insecure cookies enabled — session and OIDC state cookies are NOT marked Secure; for local HTTP dev only, never production")
+	}
+
 	// Register the OIDC login/callback/logout endpoints when an issuer is
 	// configured. Discovery is lazy, so a missing/unreachable IdP at startup is
 	// not fatal — only new logins fail (design §4).
 	if oidcConfigured {
 		authHandlers := auth.NewHandlers(auth.HandlerConfig{
-			Provider:          auth.NewOIDCProvider(cfg.Auth.OIDC),
-			Sessions:          sessionMgr,
-			Repo:              authRepo,
-			RBAC:              rbacRepo,
-			Principals:        rbacRepo,
-			AdminEmail:        cfg.Auth.AdminEmail,
-			PostLoginRedirect: cfg.Auth.PostLoginRedirect,
-			Audit:             services.Audit,
+			Provider:             auth.NewOIDCProvider(cfg.Auth.OIDC),
+			Sessions:             sessionMgr,
+			Repo:                 authRepo,
+			RBAC:                 rbacRepo,
+			Principals:           rbacRepo,
+			AdminEmail:           cfg.Auth.AdminEmail,
+			PostLoginRedirect:    cfg.Auth.PostLoginRedirect,
+			Audit:                services.Audit,
+			AllowInsecureCookies: cfg.Server.InsecureCookies,
 		})
 		authHandlers.RegisterRoutes(mux, "/api/v1")
 		slog.Info("OIDC login enabled", "issuer", cfg.Auth.OIDC.Issuer, "admin_email", cfg.Auth.AdminEmail != "")

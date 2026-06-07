@@ -32,24 +32,34 @@ const (
 // SessionManager mints, resolves, and revokes server-side sessions and sets the
 // session cookie. The cookie is HttpOnly, Secure, SameSite=Lax (design §2.3):
 //   - HttpOnly: not readable by JS, so XSS cannot exfiltrate it.
-//   - Secure: only sent over TLS.
+//   - Secure: only sent over TLS. Defaults on; SetSecureCookies(false) drops it
+//     for local HTTP dev (see ServerConfig.InsecureCookies).
 //   - SameSite=Lax (NOT Strict): Strict would break the OIDC callback, because
 //     the browser would not send the session cookie on the cross-site
 //     navigation returning from the IdP. Lax sends it on top-level GET
 //     navigations while still blocking cross-site POSTs.
 type SessionManager struct {
-	repo Repository
-	ttl  time.Duration
-	now  func() time.Time
+	repo   Repository
+	ttl    time.Duration
+	now    func() time.Time
+	secure bool
 }
 
 // NewSessionManager builds a SessionManager. A non-positive ttl falls back to
-// defaultSessionTTL so a session lifetime is always bounded.
+// defaultSessionTTL so a session lifetime is always bounded. Cookies are Secure
+// by default; call SetSecureCookies(false) for local HTTP dev only.
 func NewSessionManager(repo Repository, ttl time.Duration) *SessionManager {
 	if ttl <= 0 {
 		ttl = defaultSessionTTL
 	}
-	return &SessionManager{repo: repo, ttl: ttl, now: time.Now}
+	return &SessionManager{repo: repo, ttl: ttl, now: time.Now, secure: true}
+}
+
+// SetSecureCookies toggles the Secure attribute on the session cookie. It is
+// true by default; pass false ONLY for local HTTP dev (ServerConfig.
+// InsecureCookies), never in production.
+func (m *SessionManager) SetSecureCookies(secure bool) {
+	m.secure = secure
 }
 
 // Mint creates and persists a new session for principal and returns it.
@@ -107,7 +117,7 @@ func (m *SessionManager) SetCookie(w http.ResponseWriter, s *Session) {
 		Expires:  s.ExpiresAt,
 		MaxAge:   int(time.Until(s.ExpiresAt).Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   m.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -120,7 +130,7 @@ func (m *SessionManager) ClearCookie(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   m.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
