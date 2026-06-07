@@ -115,8 +115,8 @@ func countAuditRows(t *testing.T, s *store.Store, action string) int {
 //     now the shared captaingate.Wrapper instead of DurableExecutor. ---
 
 // TestCaptainGate_EndToEnd: declare → captain write allowed → non-captain
-// write refused → resolve → both allowed. The gate keys on tier > observe;
-// write_file (T3) is the representative managed-system mutation.
+// write refused → resolve → both allowed. The gate keys on ActionMutate;
+// write_file (mutate) is the representative managed-system mutation.
 func TestCaptainGate_EndToEnd(t *testing.T) {
 	e := newGateEnv(t)
 	captainSess := e.declareWithCaptain(t, "alice")

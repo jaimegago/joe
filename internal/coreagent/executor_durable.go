@@ -25,10 +25,10 @@ import (
 // Production composition is now `captaingate.Wrap(durable.Wrap(inner))`
 // so the gate runs UPSTREAM of §D5 (a refused mutation is never
 // persisted as an issued intent — nothing happened to record).
-// DurableExecutor is now pure idempotency: classify tier, T1 bypass,
+// DurableExecutor is now pure idempotency: classify action, read bypass,
 // then RecordToolIntent → inner.Execute → MarkToolCompleted.
 //
-// Sequence per T2/T3 tool call (the named structural ordering, asserted
+// Sequence per mutating tool call (the named structural ordering, asserted
 // by TestDurableExecutor_D5Ordering):
 //
 //  1. RecordToolIntent — persists the key as 'issued' BEFORE the tool runs.
@@ -49,7 +49,7 @@ import (
 // returns the existing row; the wrapper falls through to inner.Execute
 // and lands the terminal status this time.
 //
-// T1 bypass: read-only tools (TierObserve) skip the wrapper entirely.
+// Read bypass: read-class tools (ActionRead) skip the wrapper entirely.
 // No key derived, no repo calls. Reads/discovery are §A1/§C1-free.
 //
 // No-run fallback: if the request context carries no run ID, the
@@ -80,9 +80,9 @@ func NewDurableExecutor(inner ToolExecutor, repo runmodel.Repository) *DurableEx
 //
 // Pipeline order (Phase 1 Change 9, post-Phase-G):
 //
-//  1. classify tool tier (safety.ClassifyTool).
-//  2. T1 → bypass entirely (no persistence).
-//  3. T2/T3: §D5 RecordToolIntent → inner.Execute → MarkToolCompleted.
+//  1. classify tool action (safety.ClassifyTool).
+//  2. Read → bypass entirely (no persistence).
+//  3. Mutate: §D5 RecordToolIntent → inner.Execute → MarkToolCompleted.
 //
 // The §C gate that used to live here is now in
 // internal/captaingate.Wrapper, composed OUTSIDE this wrapper by
@@ -92,9 +92,21 @@ func NewDurableExecutor(inner ToolExecutor, repo runmodel.Repository) *DurableEx
 func (d *DurableExecutor) Execute(ctx context.Context, name string, args map[string]any) (any, error) {
 	classification := safety.ClassifyTool(name)
 
-	// T1 reads/discovery bypass the wrapper entirely — no key, no
-	// persistence, no overhead. Asserted by TestDurableExecutor_T1Bypass.
-	if classification.Tier == safety.TierObserve {
+	// Reads/discovery bypass the wrapper entirely — no key, no persistence,
+	// no overhead. Asserted by TestDurableExecutor_T1Bypass.
+	//
+	// COUPLING (D-0018/D-0019, flagged for the idempotency-decoupling task):
+	// this keys crash-resume durability off the action class purely to
+	// PRESERVE the pre-collapse behavior — "read" here is the former
+	// TierObserve set, "not read" the former Act set, the exact same operations
+	// that got durability before. But "does this need crash-resume" is NOT the
+	// same question as "does this mutate the managed system". Joe's own
+	// model-maintenance creates (register_source, save_onboarding_fact,
+	// graph_add_*) are reads under the write definition, so they now bypass
+	// durability and LOSE idempotency on crash-resume. That is a known
+	// casualty, intentionally unfixed here; the next task replaces this binary
+	// key with a durability-specific predicate.
+	if classification.Class == safety.ActionRead {
 		return d.inner.Execute(ctx, name, args)
 	}
 

@@ -41,7 +41,7 @@ func newGateEnv(t *testing.T) *gateEnv {
 
 // --- Normal regime: §R1/§B4 — gate always allows ---
 
-func TestCheck_NormalRegime_AllowsAllTiers(t *testing.T) {
+func TestCheck_NormalRegime_AllowsAllClasses(t *testing.T) {
 	e := newGateEnv(t)
 	// Make a plain investigation session (any non-incident kind works).
 	sess := sessionmodel.AgentSession{
@@ -52,15 +52,15 @@ func TestCheck_NormalRegime_AllowsAllTiers(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	for _, tier := range []safety.ActionTier{safety.TierObserve, safety.TierRecord, safety.TierAct} {
+	for _, class := range []safety.ActionClass{safety.ActionRead, safety.ActionMutate} {
 		for _, principal := range []string{"alice", "bob"} {
-			t.Run(tier.String()+"/"+principal, func(t *testing.T) {
-				d, err := sessiongate.Check(e.ctx, e.repo, sess.ID, principal, tier)
+			t.Run(class.String()+"/"+principal, func(t *testing.T) {
+				d, err := sessiongate.Check(e.ctx, e.repo, sess.ID, principal, class)
 				if err != nil {
 					t.Fatalf("Check: %v", err)
 				}
 				if !d.Allow {
-					t.Errorf("normal regime should Allow all tiers/principals; got refuse with redirect=%q", d.CaptainSessionID)
+					t.Errorf("normal regime should Allow all classes/principals; got refuse with redirect=%q", d.CaptainSessionID)
 				}
 			})
 		}
@@ -92,39 +92,36 @@ func TestCheck_IncidentRegime_Matrix(t *testing.T) {
 		name         string
 		sessionID    string
 		principal    string
-		tier         safety.ActionTier
+		class        safety.ActionClass
 		wantAllow    bool
 		wantRedirect string // expected CaptainSessionID; "" means empty redirect
 	}{
-		// T1 reads bypass the gate regardless of session/principal — §A1/§C1.
-		{"T1 captain-session captain-principal", captainSessionID, "alice", safety.TierObserve, true, ""},
-		{"T1 captain-session other-principal", captainSessionID, "bob", safety.TierObserve, true, ""},
-		{"T1 non-captain-session captain-principal", investigationID, "alice", safety.TierObserve, true, ""},
-		{"T1 non-captain-session other-principal", investigationID, "bob", safety.TierObserve, true, ""},
+		// Reads bypass the gate regardless of session/principal — §A1/§C1.
+		{"read captain-session captain-principal", captainSessionID, "alice", safety.ActionRead, true, ""},
+		{"read captain-session other-principal", captainSessionID, "bob", safety.ActionRead, true, ""},
+		{"read non-captain-session captain-principal", investigationID, "alice", safety.ActionRead, true, ""},
+		{"read non-captain-session other-principal", investigationID, "bob", safety.ActionRead, true, ""},
 
-		// T2 from captain session with captain principal → Allow.
-		{"T2 captain-session captain-principal", captainSessionID, "alice", safety.TierRecord, true, ""},
-		// T3 same → Allow.
-		{"T3 captain-session captain-principal", captainSessionID, "alice", safety.TierAct, true, ""},
+		// Mutate from captain session with captain principal → Allow.
+		// (Former T2 and T3 rows collapse to one Mutate row; the gate
+		// treated them identically pre-collapse.)
+		{"mutate captain-session captain-principal", captainSessionID, "alice", safety.ActionMutate, true, ""},
 
-		// T2/T3 from captain session by non-captain principal → refuse,
+		// Mutate from captain session by non-captain principal → refuse,
 		// redirect to captain session (observer trying to mutate).
-		{"T2 captain-session other-principal", captainSessionID, "bob", safety.TierRecord, false, captainSessionID},
-		{"T3 captain-session other-principal", captainSessionID, "bob", safety.TierAct, false, captainSessionID},
+		{"mutate captain-session other-principal", captainSessionID, "bob", safety.ActionMutate, false, captainSessionID},
 
-		// T2/T3 from non-captain session, even by captain's principal →
+		// Mutate from non-captain session, even by captain's principal →
 		// refuse with redirect (positional gate per §C4: it doesn't
 		// matter who you are if you're not in the captain session).
-		{"T2 non-captain-session captain-principal", investigationID, "alice", safety.TierRecord, false, captainSessionID},
-		{"T3 non-captain-session captain-principal", investigationID, "alice", safety.TierAct, false, captainSessionID},
+		{"mutate non-captain-session captain-principal", investigationID, "alice", safety.ActionMutate, false, captainSessionID},
 
-		// T2/T3 from non-captain session by other principal → refuse with redirect.
-		{"T2 non-captain-session other-principal", investigationID, "bob", safety.TierRecord, false, captainSessionID},
-		{"T3 non-captain-session other-principal", investigationID, "bob", safety.TierAct, false, captainSessionID},
+		// Mutate from non-captain session by other principal → refuse with redirect.
+		{"mutate non-captain-session other-principal", investigationID, "bob", safety.ActionMutate, false, captainSessionID},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			d, err := sessiongate.Check(e.ctx, e.repo, tc.sessionID, tc.principal, tc.tier)
+			d, err := sessiongate.Check(e.ctx, e.repo, tc.sessionID, tc.principal, tc.class)
 			if err != nil {
 				t.Fatalf("Check: %v", err)
 			}
@@ -161,17 +158,17 @@ func TestCheck_IncidentRegime_PendingCaptain_EmptyRedirect(t *testing.T) {
 		t.Fatalf("set regime: %v", err)
 	}
 
-	// Any T2/T3 mutation must refuse with empty CaptainSessionID, even
+	// Any mutation must refuse with empty CaptainSessionID, even
 	// if the mutating session IS the incident session — the captain
 	// doesn't exist yet.
-	for _, tier := range []safety.ActionTier{safety.TierRecord, safety.TierAct} {
-		t.Run(tier.String(), func(t *testing.T) {
-			d, err := sessiongate.Check(e.ctx, e.repo, incident.ID, "alice", tier)
+	for _, class := range []safety.ActionClass{safety.ActionMutate} {
+		t.Run(class.String(), func(t *testing.T) {
+			d, err := sessiongate.Check(e.ctx, e.repo, incident.ID, "alice", class)
 			if err != nil {
 				t.Fatalf("Check: %v", err)
 			}
 			if d.Allow {
-				t.Error("pending_captain should refuse all T2/T3 mutations (§B2 null authority)")
+				t.Error("pending_captain should refuse all mutations (§B2 null authority)")
 			}
 			if d.CaptainSessionID != "" {
 				t.Errorf("pending_captain refusal must have empty CaptainSessionID, got %q", d.CaptainSessionID)
@@ -179,13 +176,13 @@ func TestCheck_IncidentRegime_PendingCaptain_EmptyRedirect(t *testing.T) {
 		})
 	}
 
-	// T1 still allowed even in pending_captain (reads/discovery unaffected per §A1/§C1).
-	d, err := sessiongate.Check(e.ctx, e.repo, incident.ID, "alice", safety.TierObserve)
+	// Reads still allowed even in pending_captain (reads/discovery unaffected per §A1/§C1).
+	d, err := sessiongate.Check(e.ctx, e.repo, incident.ID, "alice", safety.ActionRead)
 	if err != nil {
-		t.Fatalf("Check T1: %v", err)
+		t.Fatalf("Check read: %v", err)
 	}
 	if !d.Allow {
-		t.Error("T1 must be allowed even in pending_captain (§A1/§C1)")
+		t.Error("reads must be allowed even in pending_captain (§A1/§C1)")
 	}
 }
 
@@ -198,7 +195,7 @@ func TestCheck_IncidentRegime_NoActiveIncident_Refuses(t *testing.T) {
 		t.Fatalf("set regime: %v", err)
 	}
 
-	d, err := sessiongate.Check(e.ctx, e.repo, "any-session", "alice", safety.TierRecord)
+	d, err := sessiongate.Check(e.ctx, e.repo, "any-session", "alice", safety.ActionMutate)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -218,7 +215,7 @@ func TestCheck_IncidentRegime_AfterCaptainTransfer_NewPrincipalAllowed(t *testin
 	}
 
 	// alice can mutate.
-	d, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "alice", safety.TierRecord)
+	d, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "alice", safety.ActionMutate)
 	if !d.Allow {
 		t.Fatal("precondition: alice should be allowed to mutate as captain")
 	}
@@ -240,7 +237,7 @@ func TestCheck_IncidentRegime_AfterCaptainTransfer_NewPrincipalAllowed(t *testin
 	}
 
 	// alice (former captain) is now refused; bob is allowed.
-	dAlice, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "alice", safety.TierRecord)
+	dAlice, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "alice", safety.ActionMutate)
 	if dAlice.Allow {
 		t.Error("after transfer, alice should NOT be allowed (§B1 principal binding moved to bob)")
 	}
@@ -248,7 +245,7 @@ func TestCheck_IncidentRegime_AfterCaptainTransfer_NewPrincipalAllowed(t *testin
 		t.Errorf("refusal redirect = %q, want %q", dAlice.CaptainSessionID, captainSessionID)
 	}
 
-	dBob, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "bob", safety.TierRecord)
+	dBob, _ := sessiongate.Check(e.ctx, e.repo, captainSessionID, "bob", safety.ActionMutate)
 	if !dBob.Allow {
 		t.Error("after transfer, bob should be allowed (§B1 principal binding)")
 	}

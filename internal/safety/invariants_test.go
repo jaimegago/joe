@@ -241,7 +241,7 @@ func TestInvariantViolationError(t *testing.T) {
 func TestIsInvariantViolation_NotInvariantError(t *testing.T) {
 	err := &AccessDeniedError{
 		ToolName: "test",
-		Tier:     TierAct,
+		Class:    ActionMutate,
 		Reason:   "disabled",
 	}
 

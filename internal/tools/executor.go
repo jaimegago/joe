@@ -223,9 +223,11 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	// Step 3: Classify and check safety policy
 	classification := safety.ClassifyTool(name)
 
-	// Safe mode: only T1 (Observe) tools are permitted while joe is in
-	// emergency shutdown recovery mode.
-	if safety.IsSafeModeActive() && classification.Tier > safety.TierObserve {
+	// Safe mode: only read tools are permitted while joe is in emergency
+	// shutdown recovery mode. This is the live write floor — it denies exactly
+	// the mutating set (formerly "tier > Observe"; with the Record band gone,
+	// "is Mutate" is the identical set of tools).
+	if safety.IsSafeModeActive() && classification.Class == safety.ActionMutate {
 		err := safety.ErrSafeModeActive
 		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, err
@@ -236,11 +238,11 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		return nil, err
 	}
 
-	// Step 4: Pre-execution notification (T3 only — blocking, cancellable)
-	if classification.Tier == safety.TierAct {
+	// Step 4: Pre-execution notification (mutate only — blocking, cancellable)
+	if classification.Class == safety.ActionMutate {
 		info := safety.ActionInfo{
 			ToolName:    name,
-			Tier:        classification.Tier,
+			Class:       classification.Class,
 			Description: classification.Description,
 			Args:        args,
 		}
@@ -253,11 +255,12 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	// Step 5: Execute the tool
 	result, err := tool.Execute(ctx, args)
 
-	// Step 6: Post-execution notification (T2 and T3)
-	if classification.Tier >= safety.TierRecord {
+	// Step 6: Post-execution notification (mutate only — the former "tier >=
+	// Record" set; with the Record band vacant this is the identical set).
+	if classification.Class == safety.ActionMutate {
 		info := safety.ActionInfo{
 			ToolName:    name,
-			Tier:        classification.Tier,
+			Class:       classification.Class,
 			Description: classification.Description,
 			Args:        args,
 		}
