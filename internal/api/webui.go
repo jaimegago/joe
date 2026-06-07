@@ -196,12 +196,26 @@ type webUISession struct {
 	Summary      string `json:"summary,omitempty"`
 	MessageCount int    `json:"message_count"`
 	Title        string `json:"title,omitempty"`
-	Visibility   string `json:"visibility,omitempty"`
+	// Visibility ('private' | 'public') is always present — NOT omitempty. The
+	// server always sets a non-empty value (the store defaults "" -> "private"),
+	// so omitempty never actually fired; making it explicit keeps the rule
+	// uniform with read_only ("security-relevant response fields are always
+	// present") so a future negative client check (e.g. !public) can't read an
+	// absent field as a meaningful, fail-open value.
+	Visibility string `json:"visibility"`
 	// ReadOnly is true when the caller is not the owner and is viewing the
 	// session only because it is public (DESIGN-CHAT-SESSIONS.md §10 access
-	// matrix: non-owner public = read-only). Set only by handleGetSession; the
-	// owner-scoped list/create/rename paths leave it false (omitted).
-	ReadOnly bool `json:"read_only,omitempty"`
+	// matrix: non-owner public = read-only). The owner-scoped list/create/
+	// rename/visibility paths leave it false — i.e. the caller owns the session.
+	//
+	// NOT omitempty on purpose: read_only must ALWAYS be present so the client can
+	// gate owner-only controls (the visibility toggle, rename) on a POSITIVE owner
+	// signal (read_only === false) and fail CLOSED when the field is absent. With
+	// omitempty, an owner's response (read_only=false) omitted the field, which a
+	// "!read_only" client check read as "owner" — but so did a stale/partial cache
+	// entry with no field at all, letting a non-owner's view briefly present the
+	// toggle and fire a PATCH that the backend then 404s ("session not found").
+	ReadOnly bool `json:"read_only"`
 	// LinkedIncidentID is the id of the active incident this session has been
 	// attached to (Phase 4 incident linkage), or empty when unlinked. The
 	// browse list and chat header use its presence to show an incident badge.
@@ -297,15 +311,12 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleListSharedSessions returns the "shared with you" list: every public
-// session owned by a principal other than the caller (DESIGN-CHAT-SESSIONS.md
-// §10 sharing extension). Each row is flagged read_only=true and carries
-// shared_by (the owner's principal) so the UI can label it "read-only · shared
-// by <owner>". This is the deliberate exception to the "creator_principal is
-// never projected" rule — a public session's owner is disclosed precisely
-// because the owner chose to share it. The caller's own sessions are excluded
-// (they appear in their own list); send/continue stays owner-only, so these are
-// read-only entry points into the existing public read path.
+// handleListSharedSessions returns the "shared with you" list: every session
+// owned by a principal other than the caller (org-wide read model — all sessions
+// are readable). Each row is flagged read_only=true and carries shared_by (the
+// owner's principal) so the UI can label it "read-only · shared by <owner>".
+// The caller's own sessions are excluded (they appear in their own list); writes
+// stay owner-only, so these are read-only entry points into another user's chat.
 func (h *webUIHandler) handleListSharedSessions(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
@@ -320,7 +331,7 @@ func (h *webUIHandler) handleListSharedSessions(w http.ResponseWriter, r *http.R
 	}
 
 	principal := string(rbac.PrincipalFromContext(r.Context()))
-	rows, err := h.server.services.SessionModel.ListPublicSessionsByOthers(r.Context(), principal, limit)
+	rows, err := h.server.services.SessionModel.ListSessionsByOthers(r.Context(), principal, limit)
 	if err != nil {
 		writeInternalError(w, err, "list shared sessions")
 		return
@@ -367,12 +378,11 @@ func (h *webUIHandler) handleCreateSession(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, sessionToWebUI(*created, 0))
 }
 
-// handleGetSession returns a single session's metadata for the caller. The
-// owner sees it (read_only=false); a non-owner sees it only when it is public
-// (read_only=true, DESIGN-CHAT-SESSIONS.md §10 access matrix); a private session
-// owned by someone else — or a missing one — returns 404 (existence not
-// disclosed). creator_principal is never projected, so a public viewer does not
-// learn the owner's identity.
+// handleGetSession returns a single session's metadata. Any authenticated user
+// may read any session that exists (the org-wide read model); only the creator
+// may write to it. read_only=false marks the caller as the owner, read_only=true
+// a non-owner reader — the client gates write affordances (composer, rename,
+// share-link) on that. A missing session returns 404.
 func (h *webUIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
@@ -391,8 +401,7 @@ func (h *webUIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) 
 		writeInternalError(w, err, "get session")
 		return
 	}
-	isOwner := sess != nil && sess.CreatorPrincipal == principal
-	if sess == nil || (!isOwner && sess.Visibility != sessionmodel.VisibilityPublic) {
+	if sess == nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
@@ -404,15 +413,13 @@ func (h *webUIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	out := sessionToWebUI(*sess, len(messages))
-	out.ReadOnly = !isOwner
+	out.ReadOnly = sess.CreatorPrincipal != principal
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleGetSessionMessages returns messages for a session the caller may read:
-// the owner always, or any authenticated principal when the session is public
-// (read-only, DESIGN-CHAT-SESSIONS.md §10 access matrix). A private session
-// owned by another principal — or one that does not exist — returns 404 (not
-// 403): the existence of another user's private session is not disclosed.
+// handleGetSessionMessages returns a session's messages. Any authenticated user
+// may read any session that exists (org-wide read model); writes stay owner-only
+// on the task path. A missing session returns 404.
 func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"messages": []any{}, "count": 0})
@@ -425,13 +432,12 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	principal := string(rbac.PrincipalFromContext(r.Context()))
 	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
 	if err != nil {
 		writeInternalError(w, err, "get session")
 		return
 	}
-	if sess == nil || (sess.CreatorPrincipal != principal && sess.Visibility != sessionmodel.VisibilityPublic) {
+	if sess == nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
@@ -453,21 +459,17 @@ func (h *webUIHandler) handleGetSessionMessages(w http.ResponseWriter, r *http.R
 	})
 }
 
-// updateSessionRequest is the PATCH /sessions/{id} body. Both fields are
-// optional pointers so a caller can send either (title rename — Phase 2; or
-// visibility toggle — Phase 3) without clobbering the other, and so "field
-// omitted" is distinguishable from "field set to empty string".
+// updateSessionRequest is the PATCH /sessions/{id} body. Only the title is
+// mutable (rename). Sharing has no toggle in the org-wide read model — every
+// session is readable by any authenticated user; only the owner may write.
 type updateSessionRequest struct {
-	Title      *string `json:"title"`
-	Visibility *string `json:"visibility"`
+	Title *string `json:"title"`
 }
 
-// handleUpdateSession mutates a session the caller owns (PATCH /sessions/{id}):
-// rename (Phase 2) and/or visibility toggle (Phase 3). Owner-checked with the
-// same 404-on-miss posture as the messages endpoint — another user's session
-// must not be distinguishable from a missing one (DESIGN-CHAT-SESSIONS.md §10
-// access matrix). Inputs are validated before any write so an invalid request
-// never half-applies.
+// handleUpdateSession renames a session the caller owns (PATCH /sessions/{id}).
+// Owner-checked: a non-owner (or a missing session) gets 404 — writes are
+// owner-only even though reads are open. The diagnostic distinguishes a missing
+// session from an ownership mismatch so a stray rename is self-explaining.
 func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
@@ -485,25 +487,14 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid request body")
 		return
 	}
-	if req.Title == nil && req.Visibility == nil {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title or visibility is required")
+	if req.Title == nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title is required")
 		return
 	}
-
-	// Validate everything up front so a bad value never leaves a partial write.
-	var title string
-	if req.Title != nil {
-		title = strings.TrimSpace(*req.Title)
-		if title == "" {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title must not be empty")
-			return
-		}
-	}
-	if req.Visibility != nil {
-		if *req.Visibility != sessionmodel.VisibilityPrivate && *req.Visibility != sessionmodel.VisibilityPublic {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "visibility must be 'private' or 'public'")
-			return
-		}
+	title := strings.TrimSpace(*req.Title)
+	if title == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title must not be empty")
+		return
 	}
 
 	principal := string(rbac.PrincipalFromContext(r.Context()))
@@ -513,24 +504,26 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if sess == nil || sess.CreatorPrincipal != principal {
+		reason := "session_missing"
+		var ownerField string
+		if sess != nil {
+			reason = "owner_mismatch"
+			ownerField = sess.CreatorPrincipal
+		}
+		slog.Warn("update session: 404",
+			"reason", reason,
+			"session_id", sessionID,
+			"request_principal", principal,
+			"session_owner", ownerField)
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
 
-	if req.Title != nil {
-		if err := h.server.services.SessionModel.UpdateSessionTitle(r.Context(), sessionID, title); err != nil {
-			writeInternalError(w, err, "update session title")
-			return
-		}
-		sess.Title = &title
+	if err := h.server.services.SessionModel.UpdateSessionTitle(r.Context(), sessionID, title); err != nil {
+		writeInternalError(w, err, "update session title")
+		return
 	}
-	if req.Visibility != nil {
-		if err := h.server.services.SessionModel.UpdateSessionVisibility(r.Context(), sessionID, *req.Visibility); err != nil {
-			writeInternalError(w, err, "update session visibility")
-			return
-		}
-		sess.Visibility = *req.Visibility
-	}
+	sess.Title = &title
 
 	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
 }

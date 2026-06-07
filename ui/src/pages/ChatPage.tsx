@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
@@ -8,24 +8,27 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
+import { EmptyState } from '@/components/common/EmptyState';
 import { useChat } from '@/hooks/useChat';
+import { useSession } from '@/hooks/useSession';
 import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
-import { ApiRequestError } from '@/api/client';
 import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSession';
+import { updateSessionTitle, linkSessionToIncident } from '@/api/chat';
 import {
-  fetchSession,
-  updateSessionTitle,
-  updateSessionVisibility,
-  linkSessionToIncident,
-} from '@/api/chat';
-import { Plus, Globe, Lock, Link as LinkIcon, AlertTriangle, Pencil, Check, X } from 'lucide-react';
+  Plus,
+  Link as LinkIcon,
+  AlertTriangle,
+  Pencil,
+  Check,
+  X,
+  FileQuestion,
+} from 'lucide-react';
 
 export function ChatPage() {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const chat = useChat(routeSessionId);
   const { principal, rbacEnabled, isAdmin, zones } = useAuth();
-  const qc = useQueryClient();
   const navigate = useNavigate();
 
   // The id of the session actually in view — either the one from the URL or
@@ -43,98 +46,81 @@ export function ChatPage() {
     navigate(activeSessionId ? `/chat/${activeSessionId}` : '/chat', { replace: true });
   }, [activeSessionId, routeSessionId, navigate]);
 
-  // Reopen the last session viewed this tab when landing on a bare /chat (the
-  // sidebar "Chat" link, or any return to the page without a session in the
-  // URL). Mount-only via the ref: "New Session" deliberately clears to /chat
-  // while the page stays mounted, so it must not be bounced back to the old one.
-  // restoredId remembers what we reopened so the recovery effect below can tell
-  // a dead *restored* id apart from the session the user is actively in.
-  const didRestore = useRef(false);
+  // Reopen the last session viewed this tab whenever we land on a bare /chat —
+  // the sidebar "Chat" link, a refresh, or any return without a session in the
+  // URL. This is reactive, NOT mount-only: navigating /chat/{id} → /chat reuses
+  // this component (no remount), and the user expects "Chat" to bring them back
+  // to their session, not a blank one. "New Session" is the one intentional
+  // blank: it sets suppressRestore so this effect doesn't bounce it back.
+  // restoredId remembers what we reopened so the recovery effect can tell a dead
+  // *restored* id apart from a session the user actively opened.
   const restoredId = useRef<string | null>(null);
+  const suppressRestore = useRef(false);
   useEffect(() => {
-    if (didRestore.current) return;
-    didRestore.current = true;
-    if (routeSessionId) return;
+    if (routeSessionId != null) return; // already on a session URL
+    if (activeSessionId != null) return; // a session is in view (or being created)
+    if (suppressRestore.current) {
+      suppressRestore.current = false; // honor one explicit "New Session", then resume
+      return;
+    }
     const last = loadLastSession();
     if (last) {
       restoredId.current = last;
       navigate(`/chat/${last}`, { replace: true });
     }
-  }, [routeSessionId, navigate]);
+  }, [routeSessionId, activeSessionId, navigate]);
+
+  // Start a fresh chat: suppress the next restore so we stay on a blank /chat
+  // instead of immediately reopening the last session.
+  const handleNewSession = () => {
+    suppressRestore.current = true;
+    chat.startNewSession();
+  };
 
   // Remember the session in view so the next return to /chat reopens it.
   useEffect(() => {
     if (activeSessionId) saveLastSession(activeSessionId);
   }, [activeSessionId]);
 
-  // Session metadata (visibility + read_only + title) for the header, sharing
-  // controls and read-only viewer. Loaded only once a session exists. The
-  // server titles a fresh session asynchronously from its first message
-  // (claude.ai-style), so while the session is still untitled we poll briefly to
-  // swap the "New chat" placeholder for the real title without a refresh —
-  // stopping as soon as a title lands, and giving up after the backend's title
-  // window (~30s, ~10 polls) so an LLM-less/failed title never polls forever.
-  const sessionQ = useQuery({
-    queryKey: ['session', activeSessionId],
-    queryFn: () => fetchSession(activeSessionId!),
-    enabled: activeSessionId != null,
-    refetchInterval: (q) => (q.state.data?.title || q.state.dataUpdateCount > 10 ? false : 3000),
-  });
-  const session = sessionQ.data;
+  // Session metadata + explicit lifecycle status, owned by useSession (header,
+  // sharing controls, read-only viewer, and the title auto-update all derive
+  // from this one seam). locallyCreated marks an id this tab just minted so a
+  // transient read-after-write 404 on it is treated as benign, never a dead
+  // state. Ownership is a POSITIVE signal (status === 'owner', i.e. the server
+  // returned read_only=false) so anything unconfirmed fails CLOSED.
+  const { status, session, isOwner, isReader, isLinkedToIncident, applyUpdate } = useSession(
+    activeSessionId,
+    { locallyCreated: activeSessionId != null && activeSessionId === chat.locallyCreatedId }
+  );
+  const readOnly = isReader;
+  const sessionGone = status === 'gone';
 
-  // If the session we *restored* turns out to be gone (deleted since, or owned
-  // by a different user now in this tab), forget it and fall back to a blank
-  // chat rather than stranding the user in a dead session. Deliberately narrow:
-  // only a 404 on the restored id triggers it — never a freshly-created session,
-  // a directly-opened URL, or a transient/5xx error, any of which would
-  // otherwise wrongly reset a live chat (and its pending auto-title) to "New
-  // chat".
-  const sessionErr = sessionQ.error;
+  // If a session we *restored* turns out to be gone (deleted since), forget it
+  // and fall back to a blank chat rather than stranding the user on a dead URL.
+  // Driven by the explicit status, and the locallyCreated exemption keeps it
+  // from tripping on a freshly-created session.
   useEffect(() => {
-    if (
-      activeSessionId != null &&
-      activeSessionId === restoredId.current &&
-      sessionErr instanceof ApiRequestError &&
-      sessionErr.status === 404
-    ) {
+    if (activeSessionId != null && activeSessionId === restoredId.current && status === 'gone') {
       restoredId.current = null;
       clearLastSession();
       navigate('/chat', { replace: true });
     }
-  }, [sessionErr, activeSessionId, navigate]);
-
-  // When the async title finally lands, refresh the browse list / dashboard so
-  // their "New chat" entries pick it up live too (the header reads it directly).
-  useEffect(() => {
-    if (session?.title) void qc.invalidateQueries({ queryKey: ['sessions'] });
-  }, [session?.title, qc]);
-  const readOnly = session?.read_only === true;
-  const isPublic = session?.visibility === 'public';
-  const isLinkedToIncident = session?.linked_incident_id != null;
+  }, [status, activeSessionId, navigate]);
 
   // The app-wide regime drives the "attach to incident" affordance: a chat can
   // only be linked while an incident is active (the server 409s otherwise).
   const { data: regime } = useRegime();
   const incidentActive = regime?.mode === 'incident';
 
-  const visibilityMut = useMutation({
-    mutationFn: (visibility: 'private' | 'public') =>
-      updateSessionVisibility(activeSessionId!, visibility),
-    onSuccess: (updated) => {
-      qc.setQueryData(['session', activeSessionId], updated);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
-      toast.success(
-        updated.visibility === 'public' ? 'Session is now public' : 'Session is now private'
-      );
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
+  // Each mutation takes the id to act on as a variable (captured at click time)
+  // and, on success, hands the full response to applyUpdate, which writes it to
+  // the cache for the session it ACTUALLY changed (updated.id), not the session
+  // currently in view — so a rename that resolves after the user navigated away
+  // never stamps its result onto a different session.
   const linkIncidentMut = useMutation({
-    mutationFn: () => linkSessionToIncident(activeSessionId!),
+    mutationFn: (id: string) => linkSessionToIncident(id),
     onSuccess: (updated) => {
-      qc.setQueryData(['session', activeSessionId], updated);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      applyUpdate(updated);
       toast.success('Session linked to the active incident');
     },
     onError: (e: Error) => toast.error(e.message),
@@ -147,10 +133,9 @@ export function ChatPage() {
   const [draftTitle, setDraftTitle] = useState('');
 
   const renameMut = useMutation({
-    mutationFn: (title: string) => updateSessionTitle(activeSessionId!, title),
+    mutationFn: ({ id, title }: { id: string; title: string }) => updateSessionTitle(id, title),
     onSuccess: (updated) => {
-      qc.setQueryData(['session', activeSessionId], updated);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      applyUpdate(updated);
       setIsEditingTitle(false);
       toast.success('Session renamed');
     },
@@ -172,7 +157,8 @@ export function ChatPage() {
       setIsEditingTitle(false);
       return;
     }
-    renameMut.mutate(title);
+    if (!activeSessionId) return;
+    renameMut.mutate({ id: activeSessionId, title });
   };
 
   const copyLink = () => {
@@ -191,15 +177,16 @@ export function ChatPage() {
   // read-only public viewer is exempt — reading shared content needs no zone.
   const accessPending = rbacEnabled && !isAdmin && zones.length === 0 && !readOnly;
 
-  // Owner sharing controls appear only for an existing session we own (the
-  // server returns read_only=false). A non-owner public viewer gets a
-  // read-only badge instead. The same gate guards inline title editing.
-  const showOwnerControls = activeSessionId != null && session != null && !readOnly;
+  // Owner sharing controls appear only for a session we own (status === 'owner',
+  // i.e. the server returned read_only=false). A non-owner public viewer gets a
+  // read-only badge instead. The same gate guards inline title editing — it fails
+  // closed for a non-owner or any session whose ownership is not yet confirmed.
+  const showOwnerControls = isOwner;
 
   // The header title. claude.ai-style: it shows the session's own title once it
-  // has one, else a "New chat" placeholder (swapped live by the poll above — no
-  // raw-first-words flash). The owner can rename it inline. h1 only accepts
-  // phrasing content, so the editor is spans/input/buttons — no block/form.
+  // has one, else a "New chat" placeholder (swapped live by useSession's bounded
+  // title-await — no raw-first-words flash). The owner can rename it inline. h1
+  // only accepts phrasing content, so the editor is spans/input/buttons.
   const titleNode = isEditingTitle ? (
     <span className="flex items-center gap-2">
       <Input
@@ -276,40 +263,22 @@ export function ChatPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => linkIncidentMut.mutate()}
+                    onClick={() => activeSessionId && linkIncidentMut.mutate(activeSessionId)}
                     disabled={linkIncidentMut.isPending}
                   >
                     <AlertTriangle className="mr-1 h-3 w-3" />
                     Attach to incident
                   </Button>
                 )}
-                {isPublic && (
-                  <Button variant="outline" size="sm" onClick={copyLink}>
-                    <LinkIcon className="mr-1 h-3 w-3" />
-                    Copy link
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => visibilityMut.mutate(isPublic ? 'private' : 'public')}
-                  disabled={visibilityMut.isPending}
-                >
-                  {isPublic ? (
-                    <>
-                      <Lock className="mr-1 h-3 w-3" />
-                      Make private
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="mr-1 h-3 w-3" />
-                      Make public
-                    </>
-                  )}
+                {/* Every session is readable by anyone in the org, so the owner
+                    can always share its link. */}
+                <Button variant="outline" size="sm" onClick={copyLink}>
+                  <LinkIcon className="mr-1 h-3 w-3" />
+                  Copy link
                 </Button>
               </>
             )}
-            <Button variant="outline" size="sm" onClick={chat.startNewSession}>
+            <Button variant="outline" size="sm" onClick={handleNewSession}>
               <Plus className="mr-1 h-3 w-3" />
               New Session
             </Button>
@@ -319,6 +288,13 @@ export function ChatPage() {
       <div className="flex-1 overflow-hidden">
         {accessPending ? (
           <ZeroZoneEmptyState principal={principal} />
+        ) : sessionGone ? (
+          <EmptyState
+            icon={FileQuestion}
+            title="Session not found"
+            description="This chat doesn’t exist anymore — it may have been deleted by its owner."
+            action={{ label: 'Start a new chat', onClick: handleNewSession }}
+          />
         ) : (
           <ChatWindow
             items={chat.messages}

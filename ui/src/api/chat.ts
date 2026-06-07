@@ -38,18 +38,6 @@ export function fetchSession(id: string): Promise<Session> {
     .then((r) => SessionSchema.parse(r));
 }
 
-// updateSessionVisibility flips a session between 'private' and 'public' (PATCH
-// /sessions/{id}). Owner-checked server-side; a non-owner or missing session
-// yields 404.
-export function updateSessionVisibility(
-  id: string,
-  visibility: 'private' | 'public'
-): Promise<Session> {
-  return apiClient
-    .patch<unknown>(`/api/v1/sessions/${encodeURIComponent(id)}`, { visibility })
-    .then((r) => SessionSchema.parse(r));
-}
-
 // updateSessionTitle renames a session (PATCH /sessions/{id}). Owner-checked
 // server-side; a non-owner or missing session yields 404.
 export function updateSessionTitle(id: string, title: string): Promise<Session> {
