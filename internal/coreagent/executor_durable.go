@@ -25,8 +25,9 @@ import (
 // Production composition is now `captaingate.Wrap(durable.Wrap(inner))`
 // so the gate runs UPSTREAM of §D5 (a refused mutation is never
 // persisted as an issued intent — nothing happened to record).
-// DurableExecutor is now pure idempotency: classify action, read bypass,
-// then RecordToolIntent → inner.Execute → MarkToolCompleted.
+// DurableExecutor is now pure idempotency: look up the tool's
+// NeedsDurability declaration, bypass if unset, else RecordToolIntent →
+// inner.Execute → MarkToolCompleted.
 //
 // Sequence per mutating tool call (the named structural ordering, asserted
 // by TestDurableExecutor_D5Ordering):
@@ -49,8 +50,14 @@ import (
 // returns the existing row; the wrapper falls through to inner.Execute
 // and lands the terminal status this time.
 //
-// Read bypass: read-class tools (ActionRead) skip the wrapper entirely.
-// No key derived, no repo calls. Reads/discovery are §A1/§C1-free.
+// Opt-in durability (D-0020 follow-up): the wrapper engages ONLY for tools
+// whose classification declares NeedsDurability — i.e. non-idempotent
+// creates/appends that a retry or crash-resume would duplicate. Every other
+// tool (default OFF) bypasses the wrapper entirely: no key derived, no repo
+// calls. This decision is INDEPENDENT of the Read/Mutate action class — "does
+// this need crash-resume" is not "does this mutate the managed system". A
+// Read create like register_source IS wrapped; a Mutate like write_file is
+// NOT, because it is idempotent.
 //
 // No-run fallback: if the request context carries no run ID, the
 // wrapper passes through to the inner executor without persisting.
@@ -78,11 +85,11 @@ func NewDurableExecutor(inner ToolExecutor, repo runmodel.Repository) *DurableEx
 
 // Execute satisfies ToolExecutor.
 //
-// Pipeline order (Phase 1 Change 9, post-Phase-G):
+// Pipeline order (Phase 1 Change 9, post-Phase-G, D-0020 follow-up):
 //
-//  1. classify tool action (safety.ClassifyTool).
-//  2. Read → bypass entirely (no persistence).
-//  3. Mutate: §D5 RecordToolIntent → inner.Execute → MarkToolCompleted.
+//  1. look up the tool's NeedsDurability declaration (safety.ClassifyTool).
+//  2. not declared → bypass entirely (no persistence). Default OFF.
+//  3. declared: §D5 RecordToolIntent → inner.Execute → MarkToolCompleted.
 //
 // The §C gate that used to live here is now in
 // internal/captaingate.Wrapper, composed OUTSIDE this wrapper by
@@ -92,21 +99,14 @@ func NewDurableExecutor(inner ToolExecutor, repo runmodel.Repository) *DurableEx
 func (d *DurableExecutor) Execute(ctx context.Context, name string, args map[string]any) (any, error) {
 	classification := safety.ClassifyTool(name)
 
-	// Reads/discovery bypass the wrapper entirely — no key, no persistence,
-	// no overhead. Asserted by TestDurableExecutor_T1Bypass.
-	//
-	// COUPLING (D-0018/D-0019, flagged for the idempotency-decoupling task):
-	// this keys crash-resume durability off the action class purely to
-	// PRESERVE the pre-collapse behavior — "read" here is the former
-	// TierObserve set, "not read" the former Act set, the exact same operations
-	// that got durability before. But "does this need crash-resume" is NOT the
-	// same question as "does this mutate the managed system". Joe's own
-	// model-maintenance creates (register_source, save_onboarding_fact,
-	// graph_add_*) are reads under the write definition, so they now bypass
-	// durability and LOSE idempotency on crash-resume. That is a known
-	// casualty, intentionally unfixed here; the next task replaces this binary
-	// key with a durability-specific predicate.
-	if classification.Class == safety.ActionRead {
+	// Opt-in durability (D-0020 follow-up): only tools that DECLARE
+	// NeedsDurability are wrapped. Everything else — the high-frequency read
+	// path and idempotent mutations alike — bypasses with no key, no
+	// persistence, no overhead. This no longer consumes the Read/Mutate action
+	// class: durability tracks "needs crash-resume" (a per-tool property), not
+	// "mutates the managed system". Asserted by
+	// TestDurableExecutor_UndeclaredBypass and TestDurableExecutor_DrivenByProperty.
+	if !classification.NeedsDurability {
 		return d.inner.Execute(ctx, name, args)
 	}
 
