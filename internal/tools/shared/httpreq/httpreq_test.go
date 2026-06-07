@@ -89,15 +89,37 @@ func TestHTTPRequestTool_Execute_CustomMethod(t *testing.T) {
 
 	result, err := tool.Execute(context.Background(), map[string]any{
 		"url":    "http://example.com/api",
-		"method": "post",
+		"method": "head", // read-only method, lower-cased to exercise normalization
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	r := result.(httpreq.HTTPRequestResult)
-	if r.Method != "POST" {
-		t.Errorf("Method = %q, want POST (uppercased)", r.Method)
+	if r.Method != "HEAD" {
+		t.Errorf("Method = %q, want HEAD (uppercased)", r.Method)
+	}
+}
+
+// TestHTTPRequestTool_Execute_RejectsMutatingMethod locks in the read-only
+// floor: http_request is a T1 (observe) tool, so mutating HTTP verbs must be
+// rejected before any request is made. Without this, a T1 tool could mutate
+// external systems via POST/PUT/DELETE — a hole in the write floor
+// (D-0018/D-0019).
+func TestHTTPRequestTool_Execute_RejectsMutatingMethod(t *testing.T) {
+	for _, method := range []string{"POST", "put", "PATCH", "delete"} {
+		t.Run(method, func(t *testing.T) {
+			tool := &httpreq.HTTPRequestTool{
+				Client: &mockHTTPClient{resp: okResponse("")},
+			}
+			_, err := tool.Execute(context.Background(), map[string]any{
+				"url":    "http://example.com/api",
+				"method": method,
+			})
+			if err == nil {
+				t.Fatalf("Execute(method=%q) = nil error, want rejection (read-only tool)", method)
+			}
+		})
 	}
 }
 
@@ -223,7 +245,7 @@ func TestHTTPRequestTool_Execute_WithBody(t *testing.T) {
 	}
 	result, err := tool.Execute(context.Background(), map[string]any{
 		"url":    "http://example.com/api",
-		"method": "POST",
+		"method": "GET",
 		"body":   `{"key":"value"}`,
 	})
 	if err != nil {

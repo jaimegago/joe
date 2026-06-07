@@ -117,6 +117,11 @@ var toolRegistry = map[string]ToolClassification{
 	"dynatrace_query": {Tier: TierObserve, Description: "Query Dynatrace metrics and events"},
 	"newrelic_query":  {Tier: TierObserve, Description: "Execute New Relic NRQL queries"},
 
+	// Container registry tools — read-only metadata queries, T1
+	"registry_query":    {Tier: TierObserve, Description: "Query an OCI-compatible container registry"},
+	"artifactory_query": {Tier: TierObserve, Description: "Query a JFrog Artifactory instance"},
+	"ecr_query":         {Tier: TierObserve, Description: "Query AWS Elastic Container Registry (ECR)"},
+
 	// K8s CRD-based tools (Phase 6.10) — read-only queries, T1
 	"certmanager_certs":    {Tier: TierObserve, Description: "List cert-manager Certificate resources with expiry and readiness"},
 	"certmanager_issuers":  {Tier: TierObserve, Description: "List cert-manager Issuer and ClusterIssuer resources with status"},
@@ -143,19 +148,38 @@ var toolRegistry = map[string]ToolClassification{
 	// Knowledge store drift detection (Phase 8) — read-only, T1
 	"detect_doc_drift": {Tier: TierObserve, Description: "Detect documentation drift between knowledge store and external sources"},
 
-	// === T2: Record (internal state mutations) ===
+	// === T1: Observe — Joe's own model maintenance ===
+	//
+	// Per D-0018/D-0019, a "write" is an operation that mutates the *managed
+	// system* (live infrastructure + the code/config that governs it). These
+	// tools only record observed state into Joe's own graph/store/knowledge —
+	// the managed system is in the same state after they run — so by the
+	// write definition they are reads, not writes. Keeping them at observe
+	// also means Joe never freezes its own model in safe mode or while an
+	// incident captain gate is engaged.
+	"graph_add_node":       {Tier: TierObserve, Description: "Add node to Joe's knowledge graph"},
+	"graph_add_edge":       {Tier: TierObserve, Description: "Add edge to Joe's knowledge graph"},
+	"graph_update_node":    {Tier: TierObserve, Description: "Update node in Joe's knowledge graph"},
+	"register_source":      {Tier: TierObserve, Description: "Record an infrastructure source in Joe's store"},
+	"save_onboarding_fact": {Tier: TierObserve, Description: "Save an onboarding fact to Joe's store"},
+	"save_knowledge_entry": {Tier: TierObserve, Description: "Save a derived knowledge entry to Joe's knowledge store"},
 
-	// Core Agent tools (joecored — graph/fact mutations)
-	"graph_add_node":       {Tier: TierRecord, PolicyKey: "graph_mutations", Description: "Add node to knowledge graph"},
-	"graph_add_edge":       {Tier: TierRecord, PolicyKey: "graph_mutations", Description: "Add edge to knowledge graph"},
-	"graph_update_node":    {Tier: TierRecord, PolicyKey: "graph_mutations", Description: "Update node in knowledge graph"},
-	"register_source":      {Tier: TierRecord, PolicyKey: "source_registration", Description: "Register infrastructure source"},
-	"save_onboarding_fact": {Tier: TierRecord, PolicyKey: "onboarding_facts", Description: "Save onboarding fact"},
+	// Phase 8: doc draft generation — creates a proposal in Joe's own state.
+	// The proposal must be human-approved before publish_doc_update (T3) can
+	// push it to any external system, so drafting itself mutates nothing
+	// outside Joe.
+	"generate_doc_draft": {Tier: TierObserve, Description: "Generate a documentation draft proposal in Joe's store"},
 
-	// Phase 8: doc draft generation (creates proposal in internal state, not external)
-	"generate_doc_draft": {Tier: TierRecord, PolicyKey: "draft_generation", Description: "Generate a documentation draft proposal from knowledge store"},
+	// === T2: Record ===
+	//
+	// Currently vacant. Under the D-0018/D-0019 write definition every
+	// operation that mutates only Joe's own state is observe-tier (above),
+	// and every operation that mutates the managed system is act-tier
+	// (below). No registered tool occupies the middle "record" band. The
+	// tier and its policy/enforcement plumbing are retained for forward
+	// compatibility.
 
-	// === T3: Act (external system mutations) ===
+	// === T3: Act (managed-system mutations) ===
 
 	"write_file":  {Tier: TierAct, PolicyKey: "write_file", Description: "Write file to local filesystem"},
 	"run_command": {Tier: TierAct, PolicyKey: "run_command", Description: "Run shell command"},
@@ -177,9 +201,11 @@ var toolRegistry = map[string]ToolClassification{
 	"gitlab_mr_diff":  {Tier: TierObserve, Description: "Get GitLab merge request unified diff"},
 	"gitlab_list_mrs": {Tier: TierObserve, Description: "List GitLab merge requests for a project"},
 
-	// T2: Record — posts a comment (external write, low blast radius, informational)
-	"github_comment": {Tier: TierRecord, PolicyKey: "github_comment", Description: "Post a review comment on a GitHub pull request"},
-	"gitlab_comment": {Tier: TierRecord, PolicyKey: "gitlab_comment", Description: "Post a note on a GitLab merge request"},
+	// T3: Act — posting a comment/note mutates an external system (the
+	// GitHub/GitLab PR thread). It persists outside Joe and is not idempotent
+	// on retry, so it is a managed-system write, not a Joe-internal record.
+	"github_comment": {Tier: TierAct, PolicyKey: "github_comment", Description: "Post a review comment on a GitHub pull request"},
+	"gitlab_comment": {Tier: TierAct, PolicyKey: "gitlab_comment", Description: "Post a note on a GitLab merge request"},
 
 	// T3: Act — requests changes (gates merging, high-impact external action)
 	"github_request_changes": {Tier: TierAct, PolicyKey: "github_request_changes", Description: "Submit a GitHub review requesting changes on a pull request"},

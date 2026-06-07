@@ -21,7 +21,7 @@ func (f *safemodeTestTool) Execute(_ context.Context, _ map[string]any) (any, er
 	return "ok", nil
 }
 
-func TestExecutor_SafeMode_BlocksT2(t *testing.T) {
+func TestExecutor_SafeMode_BlocksWriteTier(t *testing.T) {
 	safety.ActivateSafeMode()
 	safety.Trigger(safety.PanicSourceAPI, "test")
 	t.Cleanup(func() {
@@ -30,13 +30,14 @@ func TestExecutor_SafeMode_BlocksT2(t *testing.T) {
 	})
 
 	reg := NewRegistry()
-	// graph_add_node is T2 — should be blocked in safe mode
-	reg.Register(&safemodeTestTool{name: "graph_add_node"})
+	// write_file is a write-tier (T3) tool — should be blocked in safe mode.
+	// (graph_add_node is no longer a write tier: it is T1 model maintenance.)
+	reg.Register(&safemodeTestTool{name: "write_file"})
 
 	e := NewExecutor(reg, nil)
-	_, err := e.Execute(context.Background(), "graph_add_node", nil)
+	_, err := e.Execute(context.Background(), "write_file", nil)
 	if err == nil {
-		t.Fatal("expected error in safe mode for T2 tool")
+		t.Fatal("expected error in safe mode for write-tier tool")
 	}
 	// The denial must be the typed sentinel so the api layer's
 	// classifyWriteFailure can emit a stable error_code, distinct from an
@@ -65,7 +66,7 @@ func TestExecutor_SafeMode_AllowsT1(t *testing.T) {
 	}
 }
 
-func TestExecutor_NormalMode_AllowsT2(t *testing.T) {
+func TestExecutor_NormalMode_AllowsModelMaintenance(t *testing.T) {
 	safety.DeactivateSafeMode()
 	safety.Reset()
 	t.Cleanup(func() {
@@ -78,9 +79,9 @@ func TestExecutor_NormalMode_AllowsT2(t *testing.T) {
 
 	policy := safety.DefaultPolicy()
 	e := NewExecutor(reg, nil, WithPolicy(policy))
-	// T2 should pass the safe mode check (policy allows graph_mutations by default)
+	// graph_add_node is now T1 (Joe's own model maintenance) — always allowed.
 	_, err := e.Execute(context.Background(), "graph_add_node", nil)
 	if err != nil {
-		t.Fatalf("expected T2 tool to succeed in normal mode: %v", err)
+		t.Fatalf("expected model-maintenance tool to succeed in normal mode: %v", err)
 	}
 }

@@ -114,8 +114,9 @@ func countAuditRows(t *testing.T, s *store.Store, action string) int {
 //     Behaviour is unchanged; what changed is WHERE the gate lives —
 //     now the shared captaingate.Wrapper instead of DurableExecutor. ---
 
-// TestCaptainGate_EndToEnd: declare → captain T2 allowed → non-captain
-// T2 refused → resolve → both allowed.
+// TestCaptainGate_EndToEnd: declare → captain write allowed → non-captain
+// write refused → resolve → both allowed. The gate keys on tier > observe;
+// write_file (T3) is the representative managed-system mutation.
 func TestCaptainGate_EndToEnd(t *testing.T) {
 	e := newGateEnv(t)
 	captainSess := e.declareWithCaptain(t, "alice")
@@ -130,15 +131,15 @@ func TestCaptainGate_EndToEnd(t *testing.T) {
 		t.Fatalf("create investigation: %v", err)
 	}
 
-	// 1. T2 from captain session BY captain principal → ALLOWED.
+	// 1. Write from captain session BY captain principal → ALLOWED.
 	ctx := withCtx(e.ctx, captainSess, "alice")
-	if _, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "x"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x"}); err != nil {
 		t.Errorf("captain mutation should be allowed: %v", err)
 	}
 
-	// 2. SAME T2 from non-captain session → REFUSED with redirect.
+	// 2. SAME write from non-captain session → REFUSED with redirect.
 	ctx2 := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx2, "graph_add_node", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx2, "write_file", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("non-captain mutation should be refused by the §C gate")
 	}
@@ -152,10 +153,10 @@ func TestCaptainGate_EndToEnd(t *testing.T) {
 
 	// 3. Resolve → regime returns to normal → both can mutate.
 	e.resolveIncident(t, "alice", captainSess)
-	if _, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "x2"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x2"}); err != nil {
 		t.Errorf("captain mutation after resolve: %v", err)
 	}
-	if _, err := e.wrapper.Execute(ctx2, "graph_add_node", map[string]any{"id": "y2"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx2, "write_file", map[string]any{"id": "y2"}); err != nil {
 		t.Errorf("non-captain mutation after resolve: %v", err)
 	}
 }
@@ -176,7 +177,7 @@ func TestCaptainGate_RefusalNeverCallsInner(t *testing.T) {
 	}
 
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected refusal")
 	}
@@ -194,7 +195,7 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 
 	ctx := withCtx(e.ctx, captainSess, "alice")
-	if _, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "x"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x"}); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "alice" {
@@ -214,11 +215,11 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("attach bob: %v", err)
 	}
-	if _, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "x2"}); err == nil {
+	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x2"}); err == nil {
 		t.Fatal("alice should be refused after captaincy transfers to bob")
 	}
 	ctxBob := withCtx(e.ctx, captainSess, "bob")
-	if _, err := e.wrapper.Execute(ctxBob, "graph_add_node", map[string]any{"id": "x3"}); err != nil {
+	if _, err := e.wrapper.Execute(ctxBob, "write_file", map[string]any{"id": "x3"}); err != nil {
 		t.Fatalf("bob mutation: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "bob" {
@@ -228,7 +229,7 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	// Resolve → normal regime: no substitution; carol seen as carol.
 	e.resolveIncident(t, "bob", captainSess)
 	carolCtx := withCtx(e.ctx, captainSess, "carol")
-	if _, err := e.wrapper.Execute(carolCtx, "graph_add_node", map[string]any{"id": "x4"}); err != nil {
+	if _, err := e.wrapper.Execute(carolCtx, "write_file", map[string]any{"id": "x4"}); err != nil {
 		t.Fatalf("carol mutation in normal regime: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "carol" {
@@ -286,7 +287,7 @@ func TestPhaseG_LoopPathNonCaptainMutationRefused(t *testing.T) {
 
 	// 1. Captain session, captain principal: mutation proceeds.
 	captainCtx := withCtx(e.ctx, captainSess, "alice")
-	calls := []tools.ToolCallRequest{{ID: "ok-1", Name: "graph_add_node", Args: map[string]any{"id": "x"}}}
+	calls := []tools.ToolCallRequest{{ID: "ok-1", Name: "write_file", Args: map[string]any{"id": "x"}}}
 	results, err := e.wrapper.ExecuteBatch(captainCtx, calls)
 	if err != nil {
 		t.Fatalf("captain batch: %v", err)
@@ -298,7 +299,7 @@ func TestPhaseG_LoopPathNonCaptainMutationRefused(t *testing.T) {
 	// 2. Non-captain session: mutation refused, no inner.Execute.
 	innerBefore := e.spy.calls.Load()
 	investigationCtx := withCtx(e.ctx, investigation.ID, "bob")
-	calls = []tools.ToolCallRequest{{ID: "block-1", Name: "graph_add_node", Args: map[string]any{"id": "y"}}}
+	calls = []tools.ToolCallRequest{{ID: "block-1", Name: "write_file", Args: map[string]any{"id": "y"}}}
 	results, err = e.wrapper.ExecuteBatch(investigationCtx, calls)
 	// ExecuteBatch returns ErrAllToolsFailed when every call errored.
 	if err == nil {
@@ -365,7 +366,7 @@ func TestPhaseG_GateRefusalRecordedInAuditTrail(t *testing.T) {
 
 	before := countAuditRows(t, e.store, audit.ActionCaptainGateRefused)
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "graph_add_node", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected refusal")
 	}
