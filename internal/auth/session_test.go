@@ -103,3 +103,45 @@ func TestSessionManager_CookieAttributes(t *testing.T) {
 		t.Errorf("cookie carries %q, want the opaque session id %q", c.Value, s.ID)
 	}
 }
+
+// TestSessionManager_InsecureCookies proves SetSecureCookies(false) drops the
+// Secure attribute on both the set and the clear cookie — the local HTTP dev
+// escape hatch (ServerConfig.InsecureCookies) so Safari/Firefox, which refuse
+// Secure cookies over plain http://, can store the session. HttpOnly and
+// SameSite are unaffected.
+func TestSessionManager_InsecureCookies(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	mgr := NewSessionManager(repo, time.Hour)
+	mgr.SetSecureCookies(false)
+
+	s, err := mgr.Mint(context.Background(), "user:dave@example.com")
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+
+	setRec := httptest.NewRecorder()
+	mgr.SetCookie(setRec, s)
+	set := cookieByName(setRec.Result(), SessionCookieName)
+	if set == nil {
+		t.Fatal("session cookie not set")
+	}
+	if set.Secure {
+		t.Error("with insecure cookies enabled the session cookie must NOT be Secure")
+	}
+	if !set.HttpOnly {
+		t.Error("HttpOnly must be unaffected by the insecure-cookie toggle")
+	}
+	if set.SameSite != http.SameSiteLaxMode {
+		t.Errorf("SameSite must stay Lax, got %v", set.SameSite)
+	}
+
+	clearRec := httptest.NewRecorder()
+	mgr.ClearCookie(clearRec)
+	cleared := cookieByName(clearRec.Result(), SessionCookieName)
+	if cleared == nil {
+		t.Fatal("clear cookie not set")
+	}
+	if cleared.Secure {
+		t.Error("the clear cookie must match the set cookie's Secure=false, or the browser keeps the stale cookie")
+	}
+}

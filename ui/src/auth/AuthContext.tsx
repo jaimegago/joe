@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE } from '@/api/client';
 import { loadToken, saveToken, clearStoredToken } from '@/api/tokenStorage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -72,7 +73,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // query in a loop. Cleared on a successful login.
   const [sessionExpired, setSessionExpired] = useState(false);
 
+  const queryClient = useQueryClient();
   const meQ = useCurrentUser();
+
+  // Purge every per-identity cache entry when the authenticated principal
+  // changes underneath us. The session is cookie-authenticated and that cookie
+  // is shared across all tabs/windows of the browser profile (and across all of
+  // Chrome's incognito windows), so logging in as a different user in another
+  // tab silently rebinds THIS tab's identity. Once useCurrentUser's focus
+  // refetch surfaces the new principal, drop every query scoped to the previous
+  // one — the session lists (['sessions', …]), transcripts (['messages', …]),
+  // per-session metadata (['session', id]), dashboard, graph, etc. — so the
+  // prior user's data can never paint under the new user's name. ['current-user']
+  // (it holds the identity we just resolved) and ['auth-config'] (public,
+  // identity-independent) are deliberately kept. The first observation seeds the
+  // ref without purging; logout handles its own clear (it does not refetch /me).
+  const lastPrincipalRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const principal = meQ.data?.principal ?? null;
+    const prev = lastPrincipalRef.current;
+    lastPrincipalRef.current = principal;
+    if (prev === undefined || prev === principal) return;
+    queryClient.removeQueries({
+      predicate: (q) => {
+        const root = q.queryKey[0];
+        return root !== 'current-user' && root !== 'auth-config';
+      },
+    });
+  }, [meQ.data?.principal, queryClient]);
   // The OIDC-button signal comes from the public auth-config endpoint, fetched
   // unauthed on load so it is available on the cold logged-out shell before
   // any /me result. /me drives the authed state below; only this login-style
@@ -127,8 +155,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiClient.clearToken();
       clearStoredToken();
       setSessionExpired(true);
+      // Drop the whole query cache so the next user (or the cold logged-out
+      // shell) never reads a single byte cached under the user who just left.
+      // Active observers (current-user, auth-config) refetch from a clean slate.
+      queryClient.clear();
     })();
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(() => {
     const data = meQ.data;

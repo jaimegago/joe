@@ -47,6 +47,47 @@ func runLogin(t *testing.T, h *Handlers) string {
 	return c.Value
 }
 
+// TestLogin_StateCookieSecureByDefault asserts the OIDC state cookie is Secure
+// out of the box, and that AllowInsecureCookies (the local HTTP dev escape
+// hatch) drops Secure so Safari/Firefox can store it over plain http://. Without
+// the state cookie the callback's CSRF check fails with a state mismatch — the
+// exact symptom this flag fixes.
+func TestLogin_StateCookieSecureByDefault(t *testing.T) {
+	prov := &fakeProvider{claims: Claims{Email: "alice@example.com", EmailVerified: true}}
+
+	secure := NewHandlers(HandlerConfig{Provider: prov, Sessions: nil, Repo: mustRepo(t)})
+	if c := loginStateCookie(t, secure); !c.Secure {
+		t.Error("state cookie must be Secure by default")
+	}
+
+	insecure := NewHandlers(HandlerConfig{Provider: prov, Sessions: nil, Repo: mustRepo(t), AllowInsecureCookies: true})
+	c := loginStateCookie(t, insecure)
+	if c.Secure {
+		t.Error("with AllowInsecureCookies the state cookie must NOT be Secure")
+	}
+	if !c.HttpOnly {
+		t.Error("HttpOnly must be unaffected by the insecure-cookie toggle")
+	}
+}
+
+func mustRepo(t *testing.T) *SQLRepository {
+	t.Helper()
+	repo, _ := newTestRepo(t)
+	return repo
+}
+
+func loginStateCookie(t *testing.T, h *Handlers) *http.Cookie {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/auth/login", nil)
+	w := httptest.NewRecorder()
+	h.Login(w, r)
+	c := cookieByName(w.Result(), stateCookieName)
+	if c == nil {
+		t.Fatal("login must set a state cookie")
+	}
+	return c
+}
+
 // runCallback drives GET /auth/callback with the given state and a matching
 // state cookie.
 func runCallback(t *testing.T, h *Handlers, state string) *http.Response {
