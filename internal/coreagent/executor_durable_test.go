@@ -245,8 +245,10 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
-	// graph_add_node is a T2 (TierRecord) tool in the registry.
-	_, err := dur.Execute(f.withRunCtx(""), "graph_add_node", map[string]any{"id": "x"})
+	// write_file is a write-tier (TierAct) tool — the durability wrapper
+	// engages for it. (graph_add_node is now T1 model maintenance and would
+	// bypass the wrapper; see TestDurableExecutor_T1Bypass.)
+	_, err := dur.Execute(f.withRunCtx(""), "write_file", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -272,11 +274,11 @@ func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 	key := "fixed-key"
 	ctx := f.withRunCtx(key)
 
-	first, err := dur.Execute(ctx, "graph_add_node", map[string]any{"id": "x"})
+	first, err := dur.Execute(ctx, "write_file", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	second, err := dur.Execute(ctx, "graph_add_node", map[string]any{"id": "x"})
+	second, err := dur.Execute(ctx, "write_file", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("second (replay): %v", err)
 	}
@@ -311,7 +313,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	f.repo.beforeMarkCompleted = func() error { return fakeMarkErr }
 
 	key := "resume-key"
-	_, _ = dur.Execute(f.withRunCtx(key), "graph_add_node", map[string]any{"id": "x"})
+	_, _ = dur.Execute(f.withRunCtx(key), "write_file", map[string]any{"id": "x"})
 	if spyExec.executions.Load() != 1 {
 		t.Fatalf("first execution count = %d, want 1", spyExec.executions.Load())
 	}
@@ -330,7 +332,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	// inner executor should run AGAIN (because the prior call never
 	// reached 'completed'), and MarkToolCompleted should land this time.
 	f.repo.beforeMarkCompleted = nil
-	_, err = dur.Execute(f.withRunCtx(key), "graph_add_node", map[string]any{"id": "x"})
+	_, err = dur.Execute(f.withRunCtx(key), "write_file", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("resume Execute: %v", err)
 	}
@@ -381,7 +383,7 @@ func TestDurableExecutor_NoGoroutineFanOut(t *testing.T) {
 	if callerGoID < 0 {
 		t.Skip("could not extract goroutine ID — runtime.Stack format changed?")
 	}
-	_, err := dur.Execute(f.withRunCtx(""), "graph_add_node", map[string]any{"id": "x"})
+	_, err := dur.Execute(f.withRunCtx(""), "write_file", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

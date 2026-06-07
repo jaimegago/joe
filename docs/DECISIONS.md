@@ -413,6 +413,67 @@ Format per entry: ID, date, decision, basis, supersedes, status.
   here): full-mode graduation, empty-RBAC fail-closed, and floor-vs-other-gate
   precedence.
 
+- Implementation note (2026-06-07) — tier-map reclassification landed. This
+  note records the partial implementation of the write definition above
+  (D-0018) and its trust-model application (D-0019) in the tool tier
+  classification only. The floor's lifecycle/immutability (points 1–8) remains
+  PENDING; only the classifier in `internal/safety/tier.go` was changed.
+  - Classifier confirmed: `ClassifyTool` + `toolRegistry` in
+    `internal/safety/tier.go`; tiers `TierObserve`=1 < `TierRecord`=2 <
+    `TierAct`=3; unknown tools default to `TierAct` (the most conservative
+    tier) — left unchanged, now guarded by a test.
+  - Reclassified Joe-own-model maintenance from T2 (Record) to T1 (Observe),
+    per the write definition (these mutate Joe's model, not the managed
+    system): `graph_add_node`, `graph_add_edge`, `graph_update_node`,
+    `register_source`, `save_onboarding_fact`, `generate_doc_draft`. This
+    realizes the "graph-mutation operations are read-tier (T1), NOT T2"
+    consequence stated above.
+  - Added four registered tools that were MISSING from the tier map and so
+    fell through to the unknown→TierAct default (permanently denied — a
+    safe-direction but functionally broken state): `save_knowledge_entry`
+    (Joe-own knowledge store) and the read-only `registry_query`,
+    `artifactory_query`, `ecr_query`. All added at T1 (Observe).
+  - `github_comment` / `gitlab_comment` were T2 (Record). Per a deliberate
+    decision (posting to a PR/MR mutates an external system and is not
+    idempotent on retry), they are reclassified UP to T3 (Act) as
+    managed-system writes — not down to observe. They were already
+    deny-by-default (their policy keys are unrecognized by `IsT3Allowed`/
+    `IsT2Allowed`, same pre-existing gap as `github_request_changes` and
+    `publish_doc_update*`); the change corrects the label and routes them
+    through the T3 blocking pre-execution notification.
+  - Latent floor hole found and closed (the dangerous under-classified
+    direction this audit was meant to catch): `http_request` was T1 but
+    accepted POST/PUT/PATCH/DELETE with a body to any URL — a write-capable
+    tool classified read-only, always allowed and ungated. It is a live
+    registered tool. Resolved by restricting the tool to GET/HEAD in
+    `internal/tools/shared/httpreq/httpreq.go` (mutating verbs now rejected
+    before any request), making its T1 classification correct rather than
+    bumping it to T3 (which would have broken legitimate probing and, lacking
+    a policy key, denied it permanently).
+  - No entries were left unclear: every tool's managed-system effect was
+    determinable from its implementation. The two genuinely consequential
+    judgments (comment-tool direction; http_request remediation) were taken as
+    explicit human decisions rather than guessed.
+  - Consequence on the Record tier: T2 is now VACANT — no registered tool is
+    record-tier. The tier constant and its policy/enforcement plumbing
+    (`RecordPolicy`, `IsT2Allowed`) are retained for forward compatibility but
+    are currently vestigial.
+  - Enforcement-behavior changes surfaced (the demotions un-gate where the
+    T1 bypass applies; conscious, consistent with the intent that Joe's model
+    stays live in safe mode / incident regimes): the reclassified
+    model-maintenance tools no longer consult the safety policy, no longer fire
+    the after-action audit notification, and bypass the safe-mode block, the
+    captain/session incident gates, and the DurableExecutor crash-resume
+    idempotency wrapper. The last point means `register_source` (random-ID
+    create) and `save_onboarding_fact` lose retry de-duplication — flagged for
+    a conscious follow-up if idempotency is desired for Joe-own writes; not
+    changed here.
+  - Break-tests added/updated (`internal/safety/tier_test.go`): graph-mutation
+    family asserted T1; unknown-tool default asserted most-conservative;
+    comment tools asserted T3. Gate/executor/durability tests that used
+    `graph_add_node` as their representative write were repointed to a real
+    managed-system write (`write_file`).
+
 ---
 
 ## D-0017 — The captaincy transfer handshake authenticated confirm/cancel but never bound the caller to the transfer; any authenticated principal could complete or abort a transfer it was not part of

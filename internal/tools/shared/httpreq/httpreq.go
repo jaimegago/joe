@@ -77,7 +77,7 @@ func NewHTTPRequestTool() *HTTPRequestTool {
 func (t *HTTPRequestTool) Name() string { return "http_request" }
 
 func (t *HTTPRequestTool) Description() string {
-	return "Probe an HTTP/HTTPS endpoint and return status code, response headers, body snippet, and latency. Replaces curl for endpoint health checks and debugging. Requests to cloud metadata endpoints (169.254.169.254) are blocked for safety."
+	return "Probe an HTTP/HTTPS endpoint and return status code, response headers, body snippet, and latency. Read-only: only the safe methods GET and HEAD are permitted. Replaces curl for endpoint health checks and debugging. Requests to cloud metadata endpoints (169.254.169.254) are blocked for safety."
 }
 
 func (t *HTTPRequestTool) Parameters() llm.ParameterSchema {
@@ -90,15 +90,11 @@ func (t *HTTPRequestTool) Parameters() llm.ParameterSchema {
 			},
 			"method": {
 				Type:        "string",
-				Description: "HTTP method: GET, POST, HEAD, PUT, DELETE. Default: GET.",
+				Description: "Read-only HTTP method: GET or HEAD. Default: GET. Mutating methods (POST, PUT, PATCH, DELETE) are rejected — this is a diagnostic probe, not a write tool.",
 			},
 			"headers": {
 				Type:        "object",
 				Description: "Optional map of request headers (string → string).",
-			},
-			"body": {
-				Type:        "string",
-				Description: "Optional request body for POST/PUT.",
 			},
 			"timeout_ms": {
 				Type:        "integer",
@@ -107,6 +103,15 @@ func (t *HTTPRequestTool) Parameters() llm.ParameterSchema {
 		},
 		Required: []string{"url"},
 	}
+}
+
+// allowedMethods is the set of read-only HTTP methods this probe permits.
+// Restricting to GET/HEAD keeps http_request a true T1 (observe) tool: it
+// cannot mutate the state of any external system. See D-0018/D-0019 and the
+// tier classification in internal/safety/tier.go.
+var allowedMethods = map[string]bool{
+	http.MethodGet:  true,
+	http.MethodHead: true,
 }
 
 func (t *HTTPRequestTool) Execute(ctx context.Context, args map[string]any) (any, error) {
@@ -119,9 +124,12 @@ func (t *HTTPRequestTool) Execute(ctx context.Context, args map[string]any) (any
 		return nil, err
 	}
 
-	method := "GET"
+	method := http.MethodGet
 	if m, ok := args["method"].(string); ok && m != "" {
 		method = strings.ToUpper(m)
+	}
+	if !allowedMethods[method] {
+		return nil, fmt.Errorf("http_request is read-only: method %q is not permitted (allowed: GET, HEAD)", method)
 	}
 
 	timeout := 10000.0

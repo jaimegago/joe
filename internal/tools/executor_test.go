@@ -599,7 +599,11 @@ func TestExecutor_Notifier_T3_CancelledDuringBefore(t *testing.T) {
 	}
 }
 
-func TestExecutor_Notifier_T2_OnlyAfter(t *testing.T) {
+// TestExecutor_Notifier_ModelMaintenance_NoNotification verifies that Joe's
+// own model maintenance (graph_add_node), now observe-tier per D-0018/D-0019,
+// fires no notifications — the same as any other read. (The former T2 "after
+// only" notification path is now vacant: no registered tool is record-tier.)
+func TestExecutor_Notifier_ModelMaintenance_NoNotification(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
 		name: "graph_add_node",
@@ -608,24 +612,19 @@ func TestExecutor_Notifier_T2_OnlyAfter(t *testing.T) {
 		},
 	})
 
-	policy := safety.DefaultPolicy()
-	// graph_mutations is enabled by default
-
 	notifier := &trackingNotifier{}
-	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
+	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()), WithNotifier(notifier))
 
 	_, err := executor.Execute(context.Background(), "graph_add_node", map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// T2 should NOT get NotifyBefore (only T3 does)
 	if notifier.beforeCalled {
-		t.Error("NotifyBefore should NOT be called for T2 action")
+		t.Error("NotifyBefore should NOT be called for observe-tier model maintenance")
 	}
-	// T2 SHOULD get NotifyAfter
-	if !notifier.afterCalled {
-		t.Error("NotifyAfter should be called for T2 action")
+	if notifier.afterCalled {
+		t.Error("NotifyAfter should NOT be called for observe-tier model maintenance")
 	}
 }
 

@@ -39,16 +39,26 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"pagerduty_incidents", TierObserve},
 		{"grafana_dashboards", TierObserve},
 
-		// T2: Record
-		{"graph_add_node", TierRecord},
-		{"graph_add_edge", TierRecord},
-		{"graph_update_node", TierRecord},
-		{"register_source", TierRecord},
-		{"save_onboarding_fact", TierRecord},
+		// Joe's own model maintenance — observe-tier per D-0018/D-0019.
+		// These record observed state into Joe's own graph/store; the
+		// managed system is unchanged, so they are reads, not writes.
+		{"graph_add_node", TierObserve},
+		{"graph_add_edge", TierObserve},
+		{"graph_update_node", TierObserve},
+		{"register_source", TierObserve},
+		{"save_onboarding_fact", TierObserve},
+		{"save_knowledge_entry", TierObserve},
+		{"generate_doc_draft", TierObserve},
+		{"registry_query", TierObserve},
+		{"artifactory_query", TierObserve},
+		{"ecr_query", TierObserve},
 
-		// T3: Act
+		// T3: Act — managed-system mutations
 		{"write_file", TierAct},
 		{"run_command", TierAct},
+		{"github_comment", TierAct},
+		{"gitlab_comment", TierAct},
+		{"github_request_changes", TierAct},
 	}
 
 	for _, tt := range tests {
@@ -68,6 +78,49 @@ func TestClassifyTool_UnknownTool(t *testing.T) {
 	}
 }
 
+// TestClassifyTool_UnknownDefaultIsMostConservative guards the deny-by-default
+// floor: an unregistered tool must classify at the highest (most restrictive)
+// tier so a prompt-injected or newly-added tool can never run unclassified.
+// If a tier higher than TierAct is ever added, this fails until the default
+// is bumped to match.
+func TestClassifyTool_UnknownDefaultIsMostConservative(t *testing.T) {
+	def := ClassifyTool("definitely_not_a_registered_tool").Tier
+
+	for _, known := range []ActionTier{TierObserve, TierRecord, TierAct} {
+		if def < known {
+			t.Errorf("unknown-tool default tier %v is less conservative than %v; default must be the most conservative tier", def, known)
+		}
+	}
+	if def != TierAct {
+		t.Errorf("unknown-tool default = %v, want TierAct", def)
+	}
+}
+
+// TestClassifyTool_GraphMutationFamilyIsObserve is the break-test for the
+// D-0018/D-0019 reclassification: Joe's graph-mutation family maintains Joe's
+// OWN model and must stay observe-tier. Re-promoting them to a write tier
+// would freeze Joe's model whenever safe mode or an incident captain gate is
+// engaged. If someone bumps these back to Record/Act, this fails loudly.
+func TestClassifyTool_GraphMutationFamilyIsObserve(t *testing.T) {
+	for _, tool := range []string{"graph_add_node", "graph_add_edge", "graph_update_node"} {
+		if got := ClassifyTool(tool).Tier; got != TierObserve {
+			t.Errorf("ClassifyTool(%q).Tier = %v, want TierObserve (Joe's own model maintenance)", tool, got)
+		}
+	}
+}
+
+// TestClassifyTool_ExternalCommentsAreAct locks the comment tools at the write
+// floor. Posting to a PR/MR mutates an external system, so it must not silently
+// regress to a sub-Act tier (which would skip the act-policy gate and the
+// blocking pre-execution notification).
+func TestClassifyTool_ExternalCommentsAreAct(t *testing.T) {
+	for _, tool := range []string{"github_comment", "gitlab_comment"} {
+		if got := ClassifyTool(tool).Tier; got != TierAct {
+			t.Errorf("ClassifyTool(%q).Tier = %v, want TierAct (external system write)", tool, got)
+		}
+	}
+}
+
 func TestCheckAccess_T1AlwaysAllowed(t *testing.T) {
 	// T1 tools should be allowed even with the most restrictive policy
 	policy := &SafetyPolicy{Version: 1} // zero-value = all disabled
@@ -83,27 +136,42 @@ func TestCheckAccess_T1AlwaysAllowed(t *testing.T) {
 	}
 }
 
-func TestCheckAccess_T2WithPolicy(t *testing.T) {
-	policy := DefaultPolicy()
-	policy.Record.GraphMutations = false // disable graph mutations
+// TestCheckAccess_ModelMaintenanceAlwaysAllowed replaces the former
+// TestCheckAccess_T2WithPolicy. Under D-0018/D-0019, Joe's own graph/model
+// maintenance is observe-tier, so it is always allowed regardless of policy —
+// even with the most restrictive (all-disabled) policy. This guards against a
+// regression that would gate Joe's model behind a write policy and freeze it
+// in safe mode / incident regimes.
+func TestCheckAccess_ModelMaintenanceAlwaysAllowed(t *testing.T) {
+	policy := &SafetyPolicy{Version: 1} // zero-value = every gated category disabled
 
-	// graph_add_node should be denied
-	err := CheckAccess("graph_add_node", policy)
+	for _, tool := range []string{
+		"graph_add_node", "graph_add_edge", "graph_update_node",
+		"register_source", "save_onboarding_fact", "save_knowledge_entry",
+		"generate_doc_draft",
+	} {
+		if err := CheckAccess(tool, policy); err != nil {
+			t.Errorf("CheckAccess(%q) = %v, want nil (observe-tier, always allowed)", tool, err)
+		}
+	}
+}
+
+// TestCheckAccess_ExternalCommentDeniedByDefault confirms the comment tools,
+// now act-tier external writes, are denied under the default policy (their
+// policy keys are not enabled), preserving deny-by-default for external writes.
+func TestCheckAccess_ExternalCommentDeniedByDefault(t *testing.T) {
+	policy := DefaultPolicy()
+
+	err := CheckAccess("github_comment", policy)
 	if err == nil {
-		t.Fatal("expected error for disabled graph_mutations, got nil")
+		t.Fatal("expected github_comment to be denied by default (act-tier external write)")
 	}
 	var denied *AccessDeniedError
 	if !errors.As(err, &denied) {
 		t.Fatalf("error type = %T, want *AccessDeniedError", err)
 	}
-	if denied.Tier != TierRecord {
-		t.Errorf("denied.Tier = %v, want TierRecord", denied.Tier)
-	}
-
-	// save_onboarding_fact should still be allowed
-	err = CheckAccess("save_onboarding_fact", policy)
-	if err != nil {
-		t.Errorf("CheckAccess(save_onboarding_fact) = %v, want nil", err)
+	if denied.Tier != TierAct {
+		t.Errorf("denied.Tier = %v, want TierAct", denied.Tier)
 	}
 }
 
