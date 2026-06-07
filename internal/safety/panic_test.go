@@ -38,20 +38,10 @@ func TestTrigger_Idempotent(t *testing.T) {
 	}
 }
 
-func TestReset(t *testing.T) {
-	panicked.Store(false)
-	t.Cleanup(func() { panicked.Store(false) })
-
-	Trigger(PanicSourceREPL, "test")
-	if !IsPanicked() {
-		t.Fatal("panic should be set")
-	}
-
-	Reset()
-	if IsPanicked() {
-		t.Error("expected IsPanicked() == false after Reset")
-	}
-}
+// Note: there is no production Reset of the panic flag. The former Reset() (the
+// in-process down-transition the old unlock path called) is deleted — recovery
+// is process restart, which re-reads the persisted state at boot (D-0018). Tests
+// that need a clean panic flag store directly into the unexported atomic.
 
 func TestPanicSources(t *testing.T) {
 	sources := []PanicSource{PanicSourceREPL, PanicSourceCLI, PanicSourceAPI, PanicSourceSignal}

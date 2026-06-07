@@ -22,6 +22,7 @@ import (
 	"github.com/jaimegago/joe/internal/mcp"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/review"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
 )
@@ -107,12 +108,17 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	return 0
 }
 
-// runUnlockCommand exits the joe server's safe mode.
-func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+// runUnlockCommand clears the persisted panic state as a LOCAL-FILE-ONLY host
+// operation (D-0018 point 4). It does NOT contact or signal any running process,
+// does NOT lower any live write floor, and does NOT reference the floor value —
+// it edits the panic.state file only. Clearing takes effect on restart: Joe
+// remains read-only until restarted because the floor was sealed at boot and is
+// never re-derived from disk mid-process. Recovery is: clear panic state (this
+// command) + set JOE_MODE to the intended posture + restart.
+func runUnlockCommand(_ context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
-	reason := fs.String("reason", "", "reason for unlocking (required)")
+	reason := fs.String("reason", "", "acknowledgment reason recorded to the audit log (required)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -123,29 +129,18 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 1
 	}
 
-	cfg, err := deps.loadConfig(*configPath)
+	joeDir, err := deps.joeDirPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		fmt.Fprintf(stderr, "Error: failed to resolve joe directory: %v\n", err)
 		return 1
 	}
 
-	scheme := "http"
-	if cfg.Server.TLSEnabled {
-		scheme = "https"
-	}
-	joecoreURL := scheme + "://" + cfg.Server.Address
-	var clientOpts []client.ClientOption
-	if key := cfg.Server.LoopbackKey(); key != "" {
-		clientOpts = append(clientOpts, client.WithAPIKey(key))
-	}
-	c := deps.newClient(joecoreURL, clientOpts...)
-
-	if err := c.Unlock(ctx, *reason); err != nil {
-		fmt.Fprintf(stderr, "Error: failed to unlock: %v\n", err)
+	if err := safety.AcknowledgePanic(joeDir, *reason); err != nil {
+		fmt.Fprintf(stderr, "Error: failed to clear panic state: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintln(stdout, "Safe mode lifted. Normal operation resumed.")
+	fmt.Fprintln(stdout, "Panic state cleared — restart joe to resume writes. Joe remains read-only until restarted.")
 	return 0
 }
 
@@ -682,7 +677,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
-	fmt.Fprintln(w, "  unlock   Lift the joe server's safe mode")
+	fmt.Fprintln(w, "  unlock   Clear the persisted panic state (local file op; takes effect on restart)")
 }
 
 func main() {

@@ -25,7 +25,8 @@ const (
 	// ("internal_error") above doubles as the fallback bucket.
 	errorCodeZoneDenial   = "zone_denial"   // RBAC: caller lacks access to the target zone
 	errorCodeIncidentMode = "incident_mode" // captain gate refused: system in incident mode
-	errorCodeSafeMode     = "safe_mode"     // executor refused: system in safe mode (T1-only)
+	errorCodeSafeMode     = "safe_mode"     // write floor up, reason safe_mode: panic recovery (T1-only)
+	errorCodeObservation  = "observation"   // write floor up, reason observation: intended read-only posture
 
 	internalErrorMessage = "internal server error"
 )

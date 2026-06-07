@@ -11,7 +11,6 @@ import (
 const (
 	apiPanicPath       = "/api/v1/panic"
 	apiPanicStatusPath = "/api/v1/panic/status"
-	apiUnlockPath      = "/api/v1/unlock"
 )
 
 // PanicStatus represents the response from GET /api/v1/panic/status.
@@ -36,10 +35,4 @@ func (c *Client) GetPanicStatus(ctx context.Context) (*PanicStatus, error) {
 		return nil, err
 	}
 	return &status, nil
-}
-
-// Unlock exits safe mode. The reason is mandatory for the audit log.
-func (c *Client) Unlock(ctx context.Context, reason string) error {
-	body, _ := json.Marshal(map[string]string{"reason": reason})
-	return c.doJSON(ctx, "POST", c.baseURL+apiUnlockPath, bytes.NewReader(body), http.StatusOK, nil, "unlock")
 }

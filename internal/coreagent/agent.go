@@ -65,7 +65,12 @@ func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observabil
 	toolRegistry := tools.NewRegistry()
 	registerCoreAgentTools(toolRegistry, services, logger)
 
-	executor := tools.NewExecutor(toolRegistry, metrics)
+	// Inject the boot-resolved write floor (D-0018) so the Core Agent's own tool
+	// executor denies managed-system mutations whenever the floor is up. Routing
+	// the autonomous graph-refresh path through this executor seam is deferred to
+	// a separate task; the floor still governs the LLM tool calls this executor
+	// runs today.
+	executor := tools.NewExecutor(toolRegistry, metrics, tools.WithWriteFloor(services.WriteFloor))
 
 	return &Agent{
 		services:  services,
