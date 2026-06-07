@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 func panicServer(t *testing.T) *httptest.Server {
@@ -20,9 +22,6 @@ func panicServer(t *testing.T) *httptest.Server {
 		case "/api/v1/panic":
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"acknowledged":true,"message":"emergency shutdown initiated"}`)
-		case "/api/v1/unlock":
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"status":"ok","message":"safe mode lifted"}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,32 +57,40 @@ func TestRunPanicCommand_BadConfig(t *testing.T) {
 	}
 }
 
+// TestRunUnlockCommand_Success confirms unlock is a LOCAL-FILE-ONLY op: it clears
+// the persisted panic state and reports restart-required, WITHOUT contacting any
+// server (the deps.newClient stub would never be reached).
 func TestRunUnlockCommand_Success(t *testing.T) {
-	server := panicServer(t)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
+	joeDir := t.TempDir()
+	if err := safety.WritePanicState(joeDir, safety.PanicState{TriggerSource: safety.PanicSourceCLI}); err != nil {
+		t.Fatalf("seed panic state: %v", err)
+	}
 
-	deps := testDeps(t.TempDir())
+	deps := testDeps(joeDir)
 
 	var stdout, stderr bytes.Buffer
-	code := runWithDeps(context.Background(), []string{"unlock", "-config", cfgPath, "-reason", "incident resolved"}, &stdout, &stderr, deps)
+	code := runWithDeps(context.Background(), []string{"unlock", "-reason", "incident resolved"}, &stdout, &stderr, deps)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Safe mode lifted") {
-		t.Errorf("expected unlock message, got %q", stdout.String())
+	if !strings.Contains(stdout.String(), "restart joe to resume writes") {
+		t.Errorf("expected restart-required message, got %q", stdout.String())
+	}
+	// The panic state file must be gone.
+	state, err := safety.ReadPanicState(joeDir)
+	if err != nil {
+		t.Fatalf("read panic state: %v", err)
+	}
+	if state != nil {
+		t.Error("expected panic state cleared after unlock")
 	}
 }
 
 func TestRunUnlockCommand_MissingReason(t *testing.T) {
-	server := panicServer(t)
-	addr := strings.TrimPrefix(server.URL, "http://")
-	cfgPath := writeConfig(t, addr, "info")
-
 	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
-	code := runWithDeps(context.Background(), []string{"unlock", "-config", cfgPath}, &stdout, &stderr, deps)
+	code := runWithDeps(context.Background(), []string{"unlock"}, &stdout, &stderr, deps)
 	if code != 1 {
 		t.Fatalf("expected exit code 1 for missing reason, got %d", code)
 	}
@@ -92,12 +99,14 @@ func TestRunUnlockCommand_MissingReason(t *testing.T) {
 	}
 }
 
-func TestRunUnlockCommand_BadConfig(t *testing.T) {
+// TestRunUnlockCommand_NoPanicState confirms clearing is idempotent — clearing a
+// non-existent panic state still succeeds (recovery is safe to re-run).
+func TestRunUnlockCommand_NoPanicState(t *testing.T) {
 	deps := testDeps(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
-	code := runWithDeps(context.Background(), []string{"unlock", "-config", "/nonexistent/config.yaml", "-reason", "test"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("expected exit code 1, got %d", code)
+	code := runWithDeps(context.Background(), []string{"unlock", "-reason", "no-op"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 clearing absent state, got %d (stderr: %s)", code, stderr.String())
 	}
 }

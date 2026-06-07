@@ -14,17 +14,27 @@ import (
 
 type panicHandler struct {
 	joeDirFn func() (string, error)
+	// floor is the boot-resolved write floor (D-0018), threaded from the
+	// Services. The status endpoint reports safe mode from the floor's reason —
+	// it does NOT re-derive the floor from disk. There is deliberately no unlock
+	// endpoint: the floor cannot be lowered via the API (the surface is
+	// eliminated, not protected); recovery is the local `joe unlock` CLI plus a
+	// restart.
+	floor safety.WriteFloor
 }
 
-func newPanicHandler() *panicHandler {
-	return &panicHandler{joeDirFn: paths.JoeDirPath}
+func newPanicHandler(floor safety.WriteFloor) *panicHandler {
+	return &panicHandler{joeDirFn: paths.JoeDirPath, floor: floor}
 }
 
 func (s *Server) registerPanicRoutes(mux *http.ServeMux, prefix string) {
-	h := newPanicHandler()
+	var floor safety.WriteFloor
+	if s.services != nil {
+		floor = s.services.WriteFloor
+	}
+	h := newPanicHandler(floor)
 	mux.HandleFunc(fmt.Sprintf("POST %s/panic", prefix), h.handleTriggerPanic)
 	mux.HandleFunc(fmt.Sprintf("GET %s/panic/status", prefix), h.handlePanicStatus)
-	mux.HandleFunc(fmt.Sprintf("POST %s/unlock", prefix), h.handleUnlock)
 }
 
 type panicRequest struct {
@@ -41,10 +51,6 @@ type panicStatusResponse struct {
 	TriggeredAt   time.Time `json:"triggered_at,omitempty"`
 	TriggerSource string    `json:"trigger_source,omitempty"`
 	TriggerReason string    `json:"trigger_reason,omitempty"`
-}
-
-type unlockRequest struct {
-	Reason string `json:"reason"`
 }
 
 // handleTriggerPanic sets the global panic flag, persists panic.state, and
@@ -94,9 +100,12 @@ func (h *panicHandler) handleTriggerPanic(w http.ResponseWriter, r *http.Request
 	}()
 }
 
-// handlePanicStatus returns the current safe mode status.
+// handlePanicStatus returns the current safe mode status. Safe mode is the
+// floor's safe_mode reason (panic recovery) — the calm observation posture is
+// NOT reported as safe mode here. Reads the boot-resolved floor, never disk.
 func (h *panicHandler) handlePanicStatus(w http.ResponseWriter, r *http.Request) {
-	if !safety.IsSafeModeActive() && !safety.IsPanicked() {
+	inSafeMode := h.floor.Reason() == safety.FloorReasonSafeMode
+	if !inSafeMode && !safety.IsPanicked() {
 		writeJSON(w, http.StatusOK, panicStatusResponse{SafeMode: false})
 		return
 	}
@@ -118,35 +127,5 @@ func (h *panicHandler) handlePanicStatus(w http.ResponseWriter, r *http.Request)
 		TriggeredAt:   state.TriggeredAt,
 		TriggerSource: string(state.TriggerSource),
 		TriggerReason: state.TriggerReason,
-	})
-}
-
-// handleUnlock exits safe mode. The reason field is mandatory for the audit log.
-func (h *panicHandler) handleUnlock(w http.ResponseWriter, r *http.Request) {
-	var req unlockRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeBadRequest(w, err, "unlock", "failed to parse request body")
-		return
-	}
-
-	if req.Reason == "" {
-		writeBadRequest(w, nil, "unlock", "reason is required")
-		return
-	}
-
-	joeDir, err := h.joeDirFn()
-	if err != nil {
-		writeInternalError(w, err, "unlock: resolve joe dir")
-		return
-	}
-
-	if err := safety.Unlock(joeDir, req.Reason); err != nil {
-		writeBadRequest(w, err, "unlock", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
-		"message": "safe mode lifted — normal operation resumed",
 	})
 }

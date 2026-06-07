@@ -21,6 +21,7 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/runmodel"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
@@ -37,11 +38,18 @@ type CoreAgent interface {
 // Services provides access to all core functionality.
 // Used by both the API handlers and the Core Agent.
 type Services struct {
-	Config         *config.Config
-	LLM            llm.LLMAdapter
-	Graph          graph.GraphStore
-	Store          *store.Store
-	Agent          CoreAgent // Core Agent instance for control endpoints
+	Config *config.Config
+	LLM    llm.LLMAdapter
+	Graph  graph.GraphStore
+	Store  *store.Store
+	Agent  CoreAgent // Core Agent instance for control endpoints
+	// WriteFloor is the boot-resolved, runtime-immutable write floor (D-0018).
+	// Resolved exactly once in cmd/joe/server.go from the panic state (sticky)
+	// and the JOE_MODE=observation env var, then stored here as the single
+	// process-wide source. Read by the tool executors — which deny Mutate when
+	// it is up — and by the panic status handler. The zero value is "down".
+	// There is no setter that lowers it; recovery is restart.
+	WriteFloor     safety.WriteFloor
 	Adapters       *adapters.Registry
 	Metrics        *observability.Metrics
 	Clarifications *ClarificationService

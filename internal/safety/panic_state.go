@@ -3,6 +3,7 @@ package safety
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -57,5 +58,28 @@ func ClearPanicState(joeDir string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("clear panic state: %w", err)
 	}
+	return nil
+}
+
+// AcknowledgePanic clears the persisted panic.state file as a deliberate
+// operator acknowledgment (D-0018 point 4). It is a LOCAL-FILE-ONLY host
+// operation: it does NOT contact or signal any running process, does NOT touch
+// any live write floor, and does NOT reference the floor value at all — it edits
+// the persisted state file only. The cleared floor takes effect on the next
+// restart; until then a running Joe stays read-only because the floor was sealed
+// at boot and is never re-derived from disk mid-process. The reason is mandatory
+// and recorded to the audit log as the acknowledgment trail.
+func AcknowledgePanic(joeDir, reason string) error {
+	if reason == "" {
+		return fmt.Errorf("acknowledgment requires a non-empty reason for the audit log")
+	}
+	if err := ClearPanicState(joeDir); err != nil {
+		return err
+	}
+	slog.Info("panic state acknowledged and cleared",
+		"reason", reason,
+		"timestamp", time.Now().UTC().Format(time.RFC3339),
+		"note", "takes effect on restart; Joe stays read-only until restarted",
+	)
 	return nil
 }

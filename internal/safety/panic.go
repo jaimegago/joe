@@ -20,7 +20,9 @@ const (
 // ClusterPanicStore persists panic state to a shared store (e.g. SQLite) that
 // is visible to all joecored instances pointing at the same database.
 // Implement this interface in the store package and register it via
-// SetClusterStore so that Trigger / Unlock propagate cluster-wide.
+// SetClusterStore so that Trigger propagates cluster-wide and boot reads the
+// shared panicked state. There is no live cluster-wide clear: recovery is a
+// local panic-state clear plus restart (D-0018).
 type ClusterPanicStore interface {
 	SetPanicked(ctx context.Context) error
 	ClearPanicked(ctx context.Context) error
@@ -63,11 +65,4 @@ func Trigger(source PanicSource, reason string) bool {
 // IsPanicked reports whether an emergency shutdown has been triggered.
 func IsPanicked() bool {
 	return panicked.Load()
-}
-
-// Reset clears the panic flag. This is used after a successful unlock — the
-// process must be in a known-good state before calling Reset.
-// In production this happens via process restart; Reset exists for testing.
-func Reset() {
-	panicked.Store(false)
 }

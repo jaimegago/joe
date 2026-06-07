@@ -26,6 +26,17 @@ describe('writeFailureMessage', () => {
     expect(msg).not.toBe(writeFailureMessage('incident_mode'));
   });
 
+  it('maps observation to a calm read-only message distinct from safe mode (no unlock hint)', () => {
+    const msg = writeFailureMessage('observation');
+    expect(msg).toBe(
+      'Joe is in observation mode — it can read and explain but will not make changes. This is the intended read-only posture.'
+    );
+    // The calm resting posture must NOT present as safe mode and must NOT tell
+    // the operator to run unlock (D-0018).
+    expect(msg).not.toBe(writeFailureMessage('safe_mode'));
+    expect(msg).not.toContain('unlock');
+  });
+
   it('maps internal_error to the try-again message', () => {
     expect(writeFailureMessage('internal_error')).toBe('Unexpected error. Please try again.');
   });

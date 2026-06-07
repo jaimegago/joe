@@ -127,42 +127,9 @@ func TestGetPanicStatus_Error(t *testing.T) {
 	}
 }
 
-func TestUnlock_Success(t *testing.T) {
-	var capturedBody map[string]string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("Unlock: expected POST, got %s", r.Method)
-		}
-		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unlocked"})
-	}))
-	defer ts.Close()
-
-	c := New(ts.URL)
-	err := c.Unlock(context.Background(), "incident resolved")
-	if err != nil {
-		t.Fatalf("Unlock() error: %v", err)
-	}
-	if capturedBody["reason"] != "incident resolved" {
-		t.Errorf("Unlock(): unexpected reason %q", capturedBody["reason"])
-	}
-}
-
-func TestUnlock_Error(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "internal", "message": "unlock failed"})
-	}))
-	defer ts.Close()
-
-	c := New(ts.URL)
-	err := c.Unlock(context.Background(), "reason")
-	if err == nil {
-		t.Fatal("Unlock(): expected error for 500 response")
-	}
-}
+// Note: the client has no Unlock method anymore — panic recovery is a
+// local-file-only host CLI (D-0018 point 4), not an HTTP-client call. There is
+// deliberately no /api/v1/unlock endpoint for the client to reach.
 
 func TestPanicURLPaths(t *testing.T) {
 	var paths []string
@@ -176,9 +143,7 @@ func TestPanicURLPaths(t *testing.T) {
 	c := New(ts.URL)
 	_ = c.TriggerPanic(context.Background(), "test")
 	_, _ = c.GetPanicStatus(context.Background())
-	_ = c.Unlock(context.Background(), "test")
 
 	assertContains(t, paths[0], "/api/v1/panic")
 	assertContains(t, paths[1], "/api/v1/panic/status")
-	assertContains(t, paths[2], "/api/v1/unlock")
 }

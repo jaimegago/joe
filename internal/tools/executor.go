@@ -35,6 +35,7 @@ type Executor struct {
 	scopeZoneNames    string              // human-readable zone names for error messages (e.g. "zone-a (frontend)")
 	sourceZoneMap     map[string]string   // source_id → zone name (all zones, for identifying target zone in violations)
 	namespaceZoneMap  map[string]string   // namespace → zone name (all zones, for identifying target zone in violations)
+	floor             safety.WriteFloor   // boot-resolved write floor; zero value (down) = unrestricted
 }
 
 // NewExecutor creates a new tool executor. If policy is nil, DefaultPolicy is
@@ -99,6 +100,18 @@ func WithAllowedNamespaces(namespaces []string) ExecutorOption {
 			m[ns] = struct{}{}
 		}
 		e.allowedNamespaces = m
+	}
+}
+
+// WithWriteFloor injects the boot-resolved write floor (D-0018). When the floor
+// is up, the executor denies every Mutate with a single reason-carrying error.
+// The zero value (down) is the default, so executors with no floor injected run
+// unrestricted; production wires the resolved floor at both construction sites
+// (the Core Agent and the per-request chat executor). The floor is a read-only
+// value copied into the executor — there is no setter to lower it at runtime.
+func WithWriteFloor(f safety.WriteFloor) ExecutorOption {
+	return func(e *Executor) {
+		e.floor = f
 	}
 }
 
@@ -223,12 +236,13 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	// Step 3: Classify and check safety policy
 	classification := safety.ClassifyTool(name)
 
-	// Safe mode: only read tools are permitted while joe is in emergency
-	// shutdown recovery mode. This is the live write floor — it denies exactly
-	// the mutating set (formerly "tier > Observe"; with the Record band gone,
-	// "is Mutate" is the identical set of tools).
-	if safety.IsSafeModeActive() && classification.Class == safety.ActionMutate {
-		err := safety.ErrSafeModeActive
+	// Write floor (D-0018): a boot-resolved, runtime-immutable floor denies every
+	// managed-system mutation (the Mutate set; with the Record band gone this is
+	// exactly "is Mutate"). One branch, one error — the reason (observation or
+	// safe_mode) rides out as data for the api layer to present distinctly. The
+	// floor value was sealed at boot and is never re-derived from disk here.
+	if e.floor.Up() && classification.Class == safety.ActionMutate {
+		err := &safety.WriteFloorError{Reason: e.floor.Reason()}
 		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 		return nil, err
 	}

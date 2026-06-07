@@ -41,14 +41,24 @@ func TestClassifyWriteFailure(t *testing.T) {
 			want: errorCodeZoneDenial,
 		},
 		{
-			name: "safe mode active → safe_mode",
-			err:  safety.ErrSafeModeActive,
+			name: "write floor safe_mode → safe_mode",
+			err:  &safety.WriteFloorError{Reason: safety.FloorReasonSafeMode},
 			want: errorCodeSafeMode,
 		},
 		{
-			name: "safe mode active wrapped → safe_mode",
-			err:  fmt.Errorf("tool failed: %w", safety.ErrSafeModeActive),
+			name: "write floor safe_mode wrapped → safe_mode",
+			err:  fmt.Errorf("tool failed: %w", &safety.WriteFloorError{Reason: safety.FloorReasonSafeMode}),
 			want: errorCodeSafeMode,
+		},
+		{
+			name: "write floor observation → observation",
+			err:  &safety.WriteFloorError{Reason: safety.FloorReasonObservation},
+			want: errorCodeObservation,
+		},
+		{
+			name: "write floor observation wrapped → observation",
+			err:  fmt.Errorf("tool failed: %w", &safety.WriteFloorError{Reason: safety.FloorReasonObservation}),
+			want: errorCodeObservation,
 		},
 		{
 			name: "ordinary tool error → no code",

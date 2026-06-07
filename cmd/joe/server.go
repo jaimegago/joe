@@ -34,6 +34,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/coreagent"
 	"github.com/jaimegago/joe/internal/crypto"
+	"github.com/jaimegago/joe/internal/env"
 	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/knowledge/drafts"
@@ -410,8 +411,13 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	clusterPanicStore := sqlStore.PanicStore()
 	safety.SetClusterStore(clusterPanicStore)
 
-	// Boot in safe mode if either the local panic.state file or the shared
-	// cluster_panic_state row indicates a previous emergency shutdown.
+	// Resolve the write floor exactly once at boot (D-0018). Its two inputs are
+	// the sticky panic state (the local panic.state file OR the shared
+	// cluster_panic_state row from a previous emergency shutdown) and the
+	// JOE_MODE=observation env var. Precedence: panic wins over observation, so a
+	// panicked Joe boots into safe mode regardless of the env var. The resolved
+	// value is sealed into Services below and never re-derived from disk during
+	// the process lifetime — recovery is restart, never a live transition.
 	panicState, err := safety.ReadPanicState(joeDir)
 	if err != nil {
 		slog.Warn("failed to read panic state file on startup", "error", err)
@@ -420,9 +426,12 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	if dbPanicErr != nil {
 		slog.Warn("failed to read cluster panic state on startup", "error", dbPanicErr)
 	}
-	if panicState != nil || dbPanicked {
-		safety.ActivateSafeMode()
-		slog.Warn("SAFE MODE ACTIVE — previous run triggered emergency shutdown")
+	panicPresent := panicState != nil || dbPanicked
+	observationMode := os.Getenv(env.Mode) == env.ModeObservation
+	writeFloor := safety.ResolveWriteFloor(panicPresent, observationMode)
+	switch writeFloor.Reason() {
+	case safety.FloorReasonSafeMode:
+		slog.Warn("WRITE FLOOR UP (safe_mode) — previous run triggered emergency shutdown; Joe is read-only")
 		if panicState != nil {
 			slog.Warn("panic state (file)",
 				"triggered_at", panicState.TriggeredAt,
@@ -430,7 +439,9 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 				"trigger_reason", panicState.TriggerReason,
 			)
 		}
-		slog.Warn("use 'joe unlock --reason \"...\"' to exit safe mode and resume normal operation")
+		slog.Warn("clear the panic state with 'joe unlock --reason \"...\"' (local file op), then restart to resume writes")
+	case safety.FloorReasonObservation:
+		slog.Info("WRITE FLOOR UP (observation) — Joe is in read-only observation mode by configuration (JOE_MODE=observation)")
 	}
 
 	// Load or create encryption key for source configs.
@@ -458,6 +469,9 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 
 	// Initialize core services (graph store uses same SQLite DB)
 	services := deps.newServices(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, metrics)
+	// Seal the boot-resolved write floor into Services — the single process-wide
+	// source the tool executors and the panic status handler read (D-0018).
+	services.WriteFloor = writeFloor
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
 	// Identity Stage 3: the admin REST surface (internal/api/admin.go) manages

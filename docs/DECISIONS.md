@@ -474,12 +474,13 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 ## D-0018 — The read-only write floor as a boot-resolved, runtime-immutable security boundary; safe mode is absorbed as one reason the floor is up, not a separate mechanism
 
 - Date: 2026-06-07
-- Status: design decision of record; implementation PENDING. The live code
-  diverges from this entry — nothing here is implemented yet, and no code
-  currently realizes the floor as described. This entry records the target
-  design and the divergence honestly; it does NOT claim any code implements it.
-  (Closest match in this log's "active" vocabulary for a not-yet-built
-  decision: accepted-as-design, build pending.)
+- Status: design decision of record; the floor proper (points 1–5, 8) is now
+  IMPLEMENTED — see the dated "boot-resolved, runtime-immutable write floor
+  landed" implementation note at the end of this entry. The design narrative
+  below was written before the build and is preserved as-is; where it says
+  "PENDING"/"diverges from live code", read it against that note, which records
+  what landed and what remains deferred (autonomous-path seam routing, the
+  posture read endpoint/observation banner, and floor-vs-other-gate precedence).
 - Decision: Joe's trust model has two boot postures — observation mode (a hard
   read-only floor, the day-one default) and full-capabilities mode (RBAC is the
   floor) — which, together with the pre-existing panic/safe mode, are unified
@@ -724,6 +725,91 @@ Format per entry: ID, date, decision, basis, supersedes, status.
     comment tools asserted T3. Gate/executor/durability tests that used
     `graph_add_node` as their representative write were repointed to a real
     managed-system write (`write_file`).
+
+- Implementation note (2026-06-07) — IMPLEMENTED: the boot-resolved,
+  runtime-immutable write floor (points 1–5, 8) landed. This realizes the
+  floor's lifecycle and immutability; the items in "What this deliberately does
+  NOT do" that are out of THIS task's scope are enumerated as deferred below.
+  Phase 1 re-verified the divergence coordinates against the live tree before
+  any change; all matched as described.
+  - Sentinel subsumed into a reason-carrying floor error. The former plain
+    safe-mode sentinel (`var ErrSafeModeActive` in the now-deleted
+    `internal/safety/safemode.go`) is replaced by `*safety.WriteFloorError`
+    (`internal/safety/floor.go`) carrying a `Reason` of `observation` or
+    `safe_mode`. errors.Is compatibility is preserved by a new floor-identity
+    sentinel `safety.ErrWriteFloor` plus a `WriteFloorError.Is` method that
+    matches it, so the FOUR pre-existing dependents (verified: the classifier in
+    `internal/api/writefailure.go`; the executor floor test; and two assertions
+    in `internal/api/writefailure_test.go`) keep matching via
+    `errors.Is(err, ErrWriteFloor)`. The executor's single write-denial branch
+    (`internal/tools/executor.go`) now returns this error.
+  - Mutable boolean + public setter replaced by a resolve-once read-only value.
+    The process-global `atomic.Bool` and `ActivateSafeMode/DeactivateSafeMode/
+    IsSafeModeActive` are deleted. The floor is `safety.WriteFloor`, a value type
+    exposing only `Up()/Reason()`. It is computed once at boot by the PURE
+    `safety.ResolveWriteFloor(panicStatePresent, observationEnvSet)` and sealed
+    into `core.Services.WriteFloor` — the single process-wide source, injected
+    into both tool executors via `tools.WithWriteFloor` and read by the panic
+    status handler. It is never re-derived from disk mid-process.
+  - Live deactivate removed from the production binary (THE immutability
+    guarantee). `internal/safety/unlock.go` (which called the in-process
+    `DeactivateSafeMode()` + panic-flag `Reset()`) and `Reset()` itself are
+    deleted. No production code transitions the floor up→down at runtime; the
+    lowering operation does not exist in the running program. Enforced
+    structurally by a repo-walk guard (`internal/safety/floor_guard_test.go`,
+    `TestWriteFloor_NoRuntimeLoweringPath`) that fails if any of `safeModeActive
+    / ActivateSafeMode / DeactivateSafeMode / IsSafeModeActive / ErrSafeModeActive
+    / func Reset( / safety.Reset(` reappears in production code.
+  - Observation env var added as a boot input with its own code/message distinct
+    from safe mode. `JOE_MODE=observation` (`internal/env/keys.go`,
+    read once in `cmd/joe/server.go` consistent with the other `JOE_*` boot env
+    vars) raises the floor with reason `observation`. New write-failure code
+    `errorCodeObservation` ("observation") with its own classifier branch and a
+    CALM frontend message in `ui/src/hooks/useChat.ts` ("…intended read-only
+    posture") that does NOT mention unlock or safe mode. Note: per this task's
+    contract the floor is DOWN when neither input is set (writable, RBAC
+    governs); D-0019's "observation is the day-one default" posture is a
+    separate graduation decision, not implemented here.
+  - Panic made sticky with `safe_mode`-wins precedence. `ResolveWriteFloor`
+    resolves panic-present → `safe_mode` REGARDLESS of the observation env var;
+    observation-only → `observation`; neither → down. All four combinations are
+    pinned by `TestResolveWriteFloor_Precedence`
+    (`internal/safety/floor_test.go`).
+  - Unlock endpoint/CLI replaced by a local-file-only clear with restart-required
+    semantics. The `POST /api/v1/unlock` endpoint, its `*client.Client.Unlock`
+    HTTP-client method, and `safety.Unlock` are deleted. `joe unlock --reason`
+    now calls `safety.AcknowledgePanic(joeDir, reason)` — clears the persisted
+    `panic.state` file locally (recording the reason to the audit log), contacts
+    no process, references no floor, and prints "panic state cleared — restart
+    joe to resume writes." Recovery is now: clear panic state (this CLI) + set
+    `JOE_MODE` to the intended posture + restart.
+  - Break-tests (all passing): precedence over all four input combinations incl.
+    both-set; `WriteFloorError` satisfies `errors.Is(ErrWriteFloor)` and carries
+    the right reason incl. when wrapped; the no-runtime-lowering repo-walk guard;
+    floor-not-re-derived-from-disk (an executor with an up floor still denies
+    after `ClearPanicState` removes the file mid-process) plus a guard asserting
+    `executor.go` references neither `ReadPanicState` nor the panic-state file;
+    distinct presentation (a denied Mutate under observation → `observation`
+    code/message, under safe mode → `safe_mode`, single enforcement branch),
+    asserted in Go (`writefailure_test.go`) and TS (`writeFailureMessage.test.ts`).
+  - Sticky-panic recovery rests on the panic→exit→restart mechanism, which Phase
+    1 re-verified holds: all three trigger paths exit the process via
+    `os.Exit(2)` (API handler in `internal/api/panic.go`; SIGUSR1 handler and the
+    panic CLI's server-side trigger in `cmd/joe/server.go`) and never flip the
+    floor in-process; boot re-reads the persisted panic state in
+    `cmd/joe/server.go`. No path was found that lowers the floor in-process
+    without exiting, so the guarantee holds (no prerequisite gap).
+  - DEFERRED to following tasks (explicitly NOT in this change): routing the
+    autonomous Core Agent graph-refresh path through the executor seam (the Core
+    Agent's LLM-tool executor IS floor-governed here, but its direct graph-delta
+    writes still bypass the seam); the posture read endpoint and the observation
+    banner (only the write-failure code/message landed so a denied write surfaces
+    correctly); and denial precedence between the floor and other denial sources
+    (incident/captain gate, RBAC zone denial) — the classifier ordering is left
+    unchanged. Cluster note: the local-file-only `joe unlock` clears only the
+    local `panic.state`; in a clustered deployment where boot also reads the
+    shared `cluster_panic_state` row, that row must be cleared separately — the
+    former live cluster-clear rode on the now-deleted `safety.Unlock`.
 
 ---
 

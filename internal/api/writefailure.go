@@ -18,10 +18,13 @@ import (
 //   - zone_denial — the RBAC accessor refused because the caller lacks access
 //     to the target zone (access.ErrPermissionDenied, possibly wrapped by the
 //     inproc client's mapAccessError).
-//   - safe_mode — the executor refused a T2/T3 tool because the system is in
-//     safe mode (panic recovery), where only read-only (T1) tools are allowed
-//     (safety.ErrSafeModeActive). Distinct from incident_mode: safe mode is the
-//     panic axis, incident_mode is the captain-gate axis; both can be active.
+//   - safe_mode / observation — the executor refused a Mutate because the
+//     boot-resolved write floor is up (D-0018). The single *safety.WriteFloorError
+//     carries a reason: safe_mode (panic recovery) or observation (the intended
+//     read-only resting posture set via JOE_MODE=observation). Both surface a
+//     distinct calm/recovery message; enforcement is one branch. Distinct from
+//     incident_mode: the floor is the panic/observation axis, incident_mode is
+//     the captain-gate axis; both can be active.
 //
 // Anything else returns "" — NOT every tool error is a write denial (a
 // malformed-args or upstream-timeout error is an ordinary tool failure the LLM
@@ -38,12 +41,18 @@ func classifyWriteFailure(err error) string {
 		return ""
 	}
 	var refusal *captaingate.GateRefusalError
+	var floorErr *safety.WriteFloorError
 	switch {
 	case errors.As(err, &refusal):
 		return errorCodeIncidentMode
 	case errors.Is(err, access.ErrPermissionDenied):
 		return errorCodeZoneDenial
-	case errors.Is(err, safety.ErrSafeModeActive):
+	case errors.As(err, &floorErr):
+		// The write floor is one enforcement branch but two presentations: the
+		// reason rides out of the error as data (D-0018 point 1).
+		if floorErr.Reason == safety.FloorReasonObservation {
+			return errorCodeObservation
+		}
 		return errorCodeSafeMode
 	default:
 		return ""
