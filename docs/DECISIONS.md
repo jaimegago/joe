@@ -10,6 +10,201 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0018 — The read-only write floor as a boot-resolved, runtime-immutable security boundary; safe mode is absorbed as one reason the floor is up, not a separate mechanism
+
+- Date: 2026-06-07
+- Status: design decision of record; implementation PENDING. The live code
+  diverges from this entry — nothing here is implemented yet, and no code
+  currently realizes the floor as described. This entry records the target
+  design and the divergence honestly; it does NOT claim any code implements it.
+  (Closest match in this log's "active" vocabulary for a not-yet-built
+  decision: accepted-as-design, build pending.)
+- Decision: Joe's trust model has two boot postures — observation mode (a hard
+  read-only floor, the day-one default) and full-capabilities mode (RBAC is the
+  floor) — which, together with the pre-existing panic/safe mode, are unified
+  into a single notion: "Joe cannot mutate the managed system right now." This
+  entry covers only the floor's lifecycle and security guarantees. It does NOT
+  cover full-mode graduation or empty-RBAC fail-closed behavior; those are
+  separate pending decisions. The floor is treated as a SECURITY BOUNDARY, not
+  a feature flag.
+
+  **Threat model (what the floor must withstand).** (i) A fully compromised or
+  erratic LLM emitting arbitrary tool calls. (ii) A human attacker reaching
+  Joe's API as an authenticated caller. It explicitly does NOT defend against
+  an attacker who controls the deployment substrate — host, environment, state
+  file, supervisor — because such an attacker owns Joe regardless. That is the
+  boundary's honest edge.
+
+  **Definition of a write (load-bearing).** A write is an operation that
+  mutates the state of the MANAGED SYSTEM — the live infrastructure Joe
+  operates and the code/config that governs it (the sources). The test is
+  whether the managed system is in a different state after the operation.
+  Everything else is a read, even when it mutates local storage or emits
+  something a human receives:
+  - querying sources is a read;
+  - recording observed state into Joe's own graph DB (the Core Agent refresh)
+    is a read, because the graph is Joe's MODEL of the system, not the system;
+  - emitting notifications or alerts to humans is a read, because it changes
+    what humans know and Joe's own state, not the managed system.
+  Consequence: graph-mutation operations are read-tier (T1) under this
+  definition, NOT T2, and the floor governs only managed-system mutations.
+
+  The decision, as numbered points:
+
+  1. **One floor, two reasons, one error.** A single write floor denies all
+     managed-system mutations (T2/T3) for every principal, including the
+     autonomous one. It is up at boot if EITHER the observation env var is set
+     OR a sticky panic state file is present. The reason rides out of the
+     single denial as data — one write-floor error carrying a `reason` field,
+     `reason` being either `observation` or `safe_mode` — not two code paths.
+     Presentation differs per reason; enforcement is identical and singular.
+
+  2. **Boot-resolved, runtime-immutable.** The floor is resolved exactly once
+     at boot from its inputs into a sealed read-only value and is never
+     re-derived from disk during the process lifetime. Within a process
+     lifetime it is immutable — no endpoint, tool, LLM output, or operator
+     action short of a restart can lower it. The live binary contains no
+     down-transition capability; any deactivate or reset is removed from
+     production and is test-only at most. Immutability is guaranteed by the
+     lowering operation NOT EXISTING in the running program, not by permission
+     guards.
+
+  3. **One way down: change boot inputs and restart.** No live-clear path
+     exists. Leaving observation mode and recovering from panic are the same
+     operation: set the writable env var, ensure no sticky panic, restart.
+
+  4. **The unlock HTTP endpoint and the unlock HTTP client command are
+     deleted.** Panic recovery is a deploy-access operation, not an API
+     operation. Clearing the sticky panic reason is done by a purely local
+     host CLI that edits the panic state file while Joe is down, records an
+     acknowledgment reason for audit, and never contacts or signals a live
+     process. There is NO authorized API surface for clearing the floor.
+
+  5. **Panic is sticky and wins over the env var.** When boot inputs disagree
+     — env var writable but panic state present — the floor stays up. A panic
+     must be explicitly acknowledged by clearing the panic state; flipping the
+     env var alone is insufficient. This keeps acknowledging-the-panic and
+     arming-writes as distinct deliberate steps, neither sufficient alone.
+
+  6. **Protection A — no self-API reach.** No tool may call Joe's own
+     control-plane endpoints or issue arbitrary HTTP to Joe's own API. If
+     nothing in the tool registry routes to a floor, panic, or admin control,
+     the LLM cannot reach the floor. Asserted by break-test over the registry.
+
+  7. **Protection B — no self-restart influence.** Joe can stop itself (panic
+     via process exit) but cannot start itself or influence the terms of its
+     own restart. Restart authority is external — a supervisor with a restart
+     policy, or a human. Panic uses process exit, never self-re-exec, because
+     re-exec would place restart authority inside Joe and let a compromised Joe
+     choose to return writable. Joe must have no ability to modify its own boot
+     inputs (env var, panic state file location, supervisor config); those live
+     outside Joe's writable surface.
+
+  8. **Within-floor reason precedence.** `safe_mode` outranks `observation`
+     when surfacing the reason. Precedence between the floor and OTHER denial
+     sources (incident/captain gate, RBAC zone denial) is deferred to a
+     separate precedence decision.
+
+- Recovery process (the focused human work, ordered): the human triggers
+  panic; Joe exits and writes the panic state; Joe is down. The human
+  investigates by hand. A naive supervised restart brings Joe back read-only
+  because the panic state is sticky, with a startup message stating the panic
+  was not cleared and how to resume — Joe observes but cannot write. When the
+  human decides it is safe, they clear the panic state via the local host CLI
+  (recording a reason), set the env var to the intended posture, and restart.
+  On boot: panic cleared + env writable yields a writable Joe; panic cleared +
+  env read-only yields observation mode. All failure modes are safe-by-default:
+  doing nothing leaves Joe down (most inert); restarting without clearing panic
+  yields a read-only Joe; clearing panic but leaving the read-only env var
+  yields an observation Joe. No careless path yields a writable Joe.
+
+- What this deliberately does NOT do:
+  - No runtime toggle into or out of observation mode (boot + restart only; a
+    runtime stop-all-writes need is served by panic, not a second control).
+  - No API path to clear panic or lower the floor (the surface is ELIMINATED,
+    not protected).
+  - No defense against a deployment-substrate attacker (whoever controls env
+    vars, the panic state file, and restart authority controls the floor —
+    this is the boundary's honest edge).
+  - Panic-recovery semantics REQUIRE a supervisor: bare Joe with no restart
+    policy means panic equals halt and Joe stays down (a safe fail). So "panic
+    puts Joe in safe mode" precisely means "panic stops Joe; a supervised Joe
+    reboots into safe mode" — running under a supervisor with a restart policy
+    is a documented deployment requirement.
+  - No autonomous-write capability: the Core Agent path is routed through the
+    shared seam and classified read-tier, with managed-system write capability
+    deferred to a future graduation step.
+
+- Current state being changed (target diverging from live code). Every
+  coordinate below is from a prior investigation, may be STALE, and is NOT to
+  be acted on as part of recording this decision — each is "as of the
+  investigation, verify against live code":
+  - Safe mode is currently boot-set but live-clearable, with the unlock path
+    calling an in-process deactivate with no restart (as of the investigation,
+    around `internal/safety/unlock.go` and `internal/api/panic.go` — verify
+    against live code). The live down-transition must be removed and
+    reset/deactivate become test-only. Note the reset function's own comment
+    already claims it is restart-only for testing, which the live call
+    contradicts.
+  - The floor is currently a mutable process-global atomic boolean with a
+    public setter (as of the investigation, around
+    `internal/safety/safemode.go` — verify against live code) and becomes a
+    resolve-once read-only value.
+  - The single denial branch currently keys on a plain safe-mode sentinel
+    error with no reason field (as of the investigation, around
+    `internal/tools/executor.go` and `internal/safety/safemode.go` — verify
+    against live code) and is subsumed into the write-floor error with a
+    `reason` field. The break-set that must continue to satisfy `errors.Is`
+    against the floor sentinel: the classifier in
+    `internal/api/writefailure.go`, the executor safe-mode test, and two
+    assertions in the writefailure test.
+  - The autonomous Core Agent refresh currently bypasses the executor seam
+    entirely, writing the graph directly via the graph-delta path (as of the
+    investigation, around `internal/coreagent` — verify against live code),
+    carrying no principal and no tier check. It must be routed through the
+    shared seam so future managed-system writes are governed by construction,
+    while its current graph mutations classify as read-tier and pass the floor
+    so observation Joe's graph stays live.
+  - Graph-mutation tools are currently classified T2 (as of the investigation,
+    around `internal/safety/tier.go` — verify against live code) and must be
+    reclassified to T1 per the write definition. The full tier map must be
+    audited against the managed-system-mutation test, with the dangerous
+    direction being any UNDER-classified real infrastructure mutation rather
+    than the over-classified graph ops.
+  - The unlock CLI command is currently an HTTP client call (as of the
+    investigation, around `cmd/joe/main.go` — verify against live code) and is
+    replaced by a local file-only operation, with the endpoint and HTTP-client
+    paths deleted.
+
+- Invariants to assert (the break-tests the implementation must add):
+  - The production binary contains no runtime down-transition of the floor (no
+    production caller of any deactivate or reset).
+  - The floor value is read from a single boot-resolved source and never
+    re-derived from disk mid-process.
+  - No registered tool at any tier routes to a floor, panic, or admin control,
+    or can issue HTTP to Joe's own control plane.
+  - A write-floor error satisfies `errors.Is` against the floor sentinel
+    (preserving the existing dependents).
+  - With the panic state present, the floor boots up regardless of the env var.
+  - Panic uses process exit rather than self-re-exec, with no production path
+    letting Joe alter its own boot inputs.
+
+- Basis: a prior trust-model / safe-mode investigation (the file:line
+  coordinates above are from that investigation and are marked
+  verify-against-live-code; they were not re-verified for this entry, which is
+  documentation-only). This entry records a DESIGN decision; no code change
+  accompanies it, and the live behavior described under "Current state being
+  changed" is what the design supersedes once implemented.
+- Supersedes: nothing yet — the previous standalone safe-mode lifecycle is
+  absorbed into the unified floor by this design, but that supersession takes
+  effect only when the implementation lands. Relates to the existing
+  panic/safe-mode mechanism (`internal/safety/`), which this design unifies
+  with the observation-mode floor. Adjacent pending decisions (NOT covered
+  here): full-mode graduation, empty-RBAC fail-closed, and floor-vs-other-gate
+  precedence.
+
+---
+
 ## D-0017 — The captaincy transfer handshake authenticated confirm/cancel but never bound the caller to the transfer; any authenticated principal could complete or abort a transfer it was not part of
 
 - Date: 2026-06-07
