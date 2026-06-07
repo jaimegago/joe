@@ -309,12 +309,10 @@ export function ChatPage() {
                 </Button>
               </>
             )}
-            {!readOnly && (
-              <Button variant="outline" size="sm" onClick={chat.startNewSession}>
-                <Plus className="mr-1 h-3 w-3" />
-                New Session
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={chat.startNewSession}>
+              <Plus className="mr-1 h-3 w-3" />
+              New Session
+            </Button>
           </div>
         }
       />

@@ -171,8 +171,9 @@ describe('ChatPage sharing controls (Phase 3)', () => {
     expect(await screen.findByText(/read-only mode/i)).toBeInTheDocument();
     // No share controls, no composer for a non-owner.
     expect(screen.queryByRole('button', { name: /make/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /new session/i })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/message/i)).not.toBeInTheDocument();
+    // New Session is a global action, available even while viewing a read-only session.
+    expect(screen.getByRole('button', { name: /new session/i })).toBeInTheDocument();
   });
 
   it('shows no sharing controls before a session exists', () => {
