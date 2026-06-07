@@ -312,6 +312,10 @@ export function useChat(initialSessionId?: string) {
 
   return {
     sessionId,
+    // The id this mount minted via createSession (null otherwise). Exposed so the
+    // session-metadata layer can treat a transient read-after-write 404 on a
+    // just-created session as benign rather than a dead/inaccessible session.
+    locallyCreatedId,
     messages,
     isLoading: messagesQ.isLoading,
     isSending,

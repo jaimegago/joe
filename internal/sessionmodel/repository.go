@@ -27,14 +27,13 @@ type Repository interface {
 	// with a per-session message count. Distinct from ListSessions, which is
 	// team-global and backs the /agent-sessions route.
 	ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
-	// ListPublicSessionsByOthers is the "shared with you" list
-	// (DESIGN-CHAT-SESSIONS.md §10 sharing extension): every public session
-	// owned by a principal *other* than the caller, newest activity first, with
-	// a per-session message count. Unlike ListSessionsByCreator the owner
-	// (creator_principal) is carried on the returned rows so the UI can label
-	// each one "shared by <owner>" — this is the one read path that intentionally
-	// projects the owner identity (the per-id GET still does not).
-	ListPublicSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
+	// ListSessionsByOthers is the "shared with you" list: every session owned by
+	// a principal *other* than the caller, newest activity first, with a
+	// per-session message count. In the org-wide read model every session is
+	// readable by any authenticated user, so this lists all of them (no
+	// visibility filter). The owner (creator_principal) is carried on each row so
+	// the UI can label it "shared by <owner>".
+	ListSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
 	// DeleteSession removes one session by ID. The schema's ON DELETE CASCADE
 	// FKs (linked investigations via the self-FK, plus child tables landed in
 	// Changes 2/3) carry the §5b-5 expunge downward. This is a single SQL
@@ -422,24 +421,22 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 	return out, rows.Err()
 }
 
-// ListPublicSessionsByOthers returns every public session owned by a principal
-// other than the caller, newest activity first, capped at limit (<=0 means no
-// cap). This backs the "shared with you" browse list (DESIGN-CHAT-SESSIONS.md
-// §10 sharing extension): public sessions are auto-listed to other authenticated
-// principals, labelled read-only and attributed to their owner. It mirrors
-// ListSessionsByCreator (same LEFT JOIN message count, same recency order) but
-// inverts the principal predicate and filters to visibility='public'. The
-// caller's own sessions are excluded so they are not duplicated across the two
-// lists. creator_principal is carried on each row so the UI can show "shared by
-// <owner>".
-func (r *SQLRepository) ListPublicSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
+// ListSessionsByOthers returns every session owned by a principal other than
+// the caller, newest activity first, capped at limit (<=0 means no cap). This
+// backs the "shared with you" browse list: in the org-wide read model every
+// session is readable by any authenticated user, so all of them are listed (no
+// visibility filter). It mirrors ListSessionsByCreator (same LEFT JOIN message
+// count, same recency order) but inverts the principal predicate. The caller's
+// own sessions are excluded so they are not duplicated across the two lists.
+// creator_principal is carried on each row so the UI can show "shared by <owner>".
+func (r *SQLRepository) ListSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
 	query := `
 		SELECT s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
 		       s.creator_principal, s.linked_incident_id, s.retention_class, s.title, s.visibility,
 		       COUNT(m.id) AS message_count
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
-		WHERE s.visibility = ? AND s.creator_principal != ?
+		WHERE s.creator_principal != ?
 		GROUP BY s.id
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
@@ -451,12 +448,12 @@ func (r *SQLRepository) ListPublicSessionsByOthers(ctx context.Context, principa
 		err  error
 	)
 	if limit > 0 {
-		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), VisibilityPublic, principal, limit)
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), principal, limit)
 	} else {
-		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), VisibilityPublic, principal)
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), principal)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list public sessions by others: %w", err)
+		return nil, fmt.Errorf("list sessions by others: %w", err)
 	}
 	defer rows.Close()
 

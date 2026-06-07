@@ -100,11 +100,11 @@ func TestRepository_ListSessionsByCreator(t *testing.T) {
 	}
 }
 
-// TestRepository_ListPublicSessionsByOthers verifies the "shared with you" list
-// (§10 sharing extension): only public sessions owned by *other* principals are
-// returned, newest activity first, with message counts and the owner attributed
-// on the row. Private sessions and the caller's own public sessions are excluded.
-func TestRepository_ListPublicSessionsByOthers(t *testing.T) {
+// TestRepository_ListSessionsByOthers verifies the "shared with you" list in the
+// org-wide read model: ALL sessions owned by *other* principals are returned
+// (regardless of visibility), newest activity first, with message counts and the
+// owner attributed on the row. Only the caller's own sessions are excluded.
+func TestRepository_ListSessionsByOthers(t *testing.T) {
 	s := newTestStore(t)
 	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 	ctx := context.Background()
@@ -118,10 +118,11 @@ func TestRepository_ListPublicSessionsByOthers(t *testing.T) {
 			t.Fatalf("CreateSession %s: %v", id, err)
 		}
 	}
+	// Visibility is set to varied values to prove it no longer filters the list.
 	mk("a_pub", "user:alice@example.com", sessionmodel.VisibilityPublic, base.Add(1*time.Minute))
 	mk("a_priv", "user:alice@example.com", sessionmodel.VisibilityPrivate, base.Add(2*time.Minute))
 	mk("c_pub", "user:carol@example.com", sessionmodel.VisibilityPublic, base.Add(3*time.Minute)) // most recent
-	mk("b_pub", "user:bob@example.com", sessionmodel.VisibilityPublic, base)                      // bob is the caller
+	mk("b_own", "user:bob@example.com", sessionmodel.VisibilityPrivate, base)                     // bob is the caller
 
 	// One message on a_pub so the count projection is exercised.
 	if _, err := repo.AddChatMessage(ctx, sessionmodel.ChatMessage{
@@ -130,32 +131,29 @@ func TestRepository_ListPublicSessionsByOthers(t *testing.T) {
 		t.Fatalf("AddChatMessage: %v", err)
 	}
 
-	got, err := repo.ListPublicSessionsByOthers(ctx, "user:bob@example.com", 0)
+	got, err := repo.ListSessionsByOthers(ctx, "user:bob@example.com", 0)
 	if err != nil {
-		t.Fatalf("ListPublicSessionsByOthers: %v", err)
+		t.Fatalf("ListSessionsByOthers: %v", err)
 	}
-	// bob sees alice's and carol's public sessions — not his own (b_pub) and not
-	// alice's private one (a_priv). carol's is most recent, so it sorts first.
-	if len(got) != 2 {
-		t.Fatalf("got %d shared sessions, want 2 (a_pub, c_pub)", len(got))
+	// bob sees ALL of alice's and carol's sessions (public AND private) — but not
+	// his own (b_own). Order by activity desc: c_pub, a_priv, a_pub.
+	if len(got) != 3 {
+		t.Fatalf("got %d sessions, want 3 (c_pub, a_priv, a_pub)", len(got))
 	}
-	if got[0].ID != "c_pub" {
-		t.Errorf("first shared = %q, want c_pub (most recent activity)", got[0].ID)
+	if got[0].ID != "c_pub" || got[1].ID != "a_priv" || got[2].ID != "a_pub" {
+		t.Errorf("order = [%s, %s, %s], want [c_pub, a_priv, a_pub]", got[0].ID, got[1].ID, got[2].ID)
 	}
-	if got[1].ID != "a_pub" {
-		t.Errorf("second shared = %q, want a_pub", got[1].ID)
+	if got[2].CreatorPrincipal != "user:alice@example.com" {
+		t.Errorf("a_pub owner = %q, want alice", got[2].CreatorPrincipal)
 	}
-	if got[1].CreatorPrincipal != "user:alice@example.com" {
-		t.Errorf("a_pub owner = %q, want alice", got[1].CreatorPrincipal)
-	}
-	if got[1].MessageCount != 1 {
-		t.Errorf("a_pub message_count = %d, want 1", got[1].MessageCount)
+	if got[2].MessageCount != 1 {
+		t.Errorf("a_pub message_count = %d, want 1", got[2].MessageCount)
 	}
 
 	// Limit is honored.
-	limited, err := repo.ListPublicSessionsByOthers(ctx, "user:bob@example.com", 1)
+	limited, err := repo.ListSessionsByOthers(ctx, "user:bob@example.com", 1)
 	if err != nil {
-		t.Fatalf("ListPublicSessionsByOthers limit: %v", err)
+		t.Fatalf("ListSessionsByOthers limit: %v", err)
 	}
 	if len(limited) != 1 {
 		t.Errorf("limit=1 returned %d sessions", len(limited))

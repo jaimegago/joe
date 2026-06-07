@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters"
@@ -584,10 +585,11 @@ func createSessionAs(t *testing.T, mux *http.ServeMux, principal string) string 
 	return id
 }
 
-// TestWebUIChatOwnership_CrossUserReadIs404 is the core §11 Phase 1 leak guard:
-// a session created by alice is invisible to bob, who gets 404 (not 403 —
-// existence is not disclosed) on its messages, while alice reads it fine.
-func TestWebUIChatOwnership_CrossUserReadIs404(t *testing.T) {
+// TestWebUIChatOwnership_CrossUserReadIsOpen pins the org-wide read model: a
+// session created by alice is READABLE by bob (200) — both its metadata and its
+// messages — while writes stay owner-only (covered elsewhere). A non-owner read
+// is flagged read_only=true.
+func TestWebUIChatOwnership_CrossUserReadIsOpen(t *testing.T) {
 	const alice, bob = "user:alice@example.com", "user:bob@example.com"
 	_, mux := setupWebUIServer(t)
 
@@ -598,9 +600,34 @@ func TestWebUIChatOwnership_CrossUserReadIs404(t *testing.T) {
 		t.Errorf("owner read: got %d, want 200", owner.Code)
 	}
 
+	// Cross-user read is now allowed.
 	other := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil)
-	if other.Code != http.StatusNotFound {
-		t.Errorf("cross-user read: got %d, want 404 (not %d=403)", other.Code, http.StatusForbidden)
+	if other.Code != http.StatusOK {
+		t.Errorf("cross-user messages read: got %d, want 200", other.Code)
+	}
+
+	// Metadata read by the non-owner is allowed and flagged read_only=true.
+	meta := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, bob, nil)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("cross-user metadata read: got %d, want 200", meta.Code)
+	}
+	var sess map[string]any
+	json.NewDecoder(meta.Body).Decode(&sess)
+	if sess["read_only"] != true {
+		t.Errorf("non-owner read_only = %v, want true", sess["read_only"])
+	}
+
+	// The owner's own read is read_only=false.
+	ownerMeta := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, alice, nil)
+	var ownerSess map[string]any
+	json.NewDecoder(ownerMeta.Body).Decode(&ownerSess)
+	if ownerSess["read_only"] != false {
+		t.Errorf("owner read_only = %v, want false", ownerSess["read_only"])
+	}
+
+	// A genuinely missing session still 404s.
+	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/does-not-exist", bob, nil); w.Code != http.StatusNotFound {
+		t.Errorf("missing session: got %d, want 404", w.Code)
 	}
 }
 
@@ -714,46 +741,26 @@ func TestWebUIDeleteSession_OwnerOnly(t *testing.T) {
 	}
 }
 
-// TestWebUIShareSession_PublicReadPath is the core Phase 3 sharing guard
-// (DESIGN-CHAT-SESSIONS.md §10 access matrix). A private session is invisible to
-// a non-owner (404 on both GET /sessions/{id} and its messages). Once the owner
-// flips it public via PATCH, the non-owner can read it (200) and is told it is
-// read-only; flipping back to private re-hides it.
-func TestWebUIShareSession_PublicReadPath(t *testing.T) {
+// TestWebUIShareSession_ReadOpenWriteOwnerOnly pins the org-wide model: any
+// authenticated user can READ any session (metadata + messages), flagged
+// read_only=true for a non-owner and without leaking creator_principal; but
+// WRITES (rename) stay owner-only.
+func TestWebUIShareSession_ReadOpenWriteOwnerOnly(t *testing.T) {
 	const alice, bob = "user:alice@example.com", "user:bob@example.com"
 	srv, mux := setupWebUIServer(t)
 	ctx := context.Background()
 
 	id := createSessionAs(t, mux, alice)
 	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
-		ID: "pm1", SessionID: id, Role: "user", Content: "is this public?",
+		ID: "pm1", SessionID: id, Role: "user", Content: "anyone can read this",
 	}); err != nil {
 		t.Fatalf("seed message: %v", err)
 	}
 
-	// While private, bob sees nothing.
-	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, bob, nil); w.Code != http.StatusNotFound {
-		t.Fatalf("private GET session by non-owner: got %d, want 404", w.Code)
-	}
-	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil); w.Code != http.StatusNotFound {
-		t.Fatalf("private GET messages by non-owner: got %d, want 404", w.Code)
-	}
-
-	// Owner flips it public.
-	pub := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "public"})
-	if pub.Code != http.StatusOK {
-		t.Fatalf("owner make-public: got %d, want 200: %s", pub.Code, pub.Body.String())
-	}
-	var pubResp map[string]any
-	json.NewDecoder(pub.Body).Decode(&pubResp)
-	if pubResp["visibility"] != "public" {
-		t.Errorf("visibility after toggle = %v, want public", pubResp["visibility"])
-	}
-
-	// bob can now read the session metadata, flagged read-only, and its messages.
+	// bob (a non-owner) can read the metadata, flagged read-only, no owner leak.
 	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, bob, nil)
 	if got.Code != http.StatusOK {
-		t.Fatalf("public GET session by non-owner: got %d, want 200", got.Code)
+		t.Fatalf("cross-user GET session: got %d, want 200", got.Code)
 	}
 	var sess map[string]any
 	json.NewDecoder(got.Body).Decode(&sess)
@@ -761,91 +768,72 @@ func TestWebUIShareSession_PublicReadPath(t *testing.T) {
 		t.Errorf("non-owner read_only = %v, want true", sess["read_only"])
 	}
 	if _, leaked := sess["creator_principal"]; leaked {
-		t.Error("public session response leaked creator_principal")
+		t.Error("session response leaked creator_principal")
 	}
-	msgs := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil)
-	if msgs.Code != http.StatusOK {
-		t.Fatalf("public GET messages by non-owner: got %d, want 200", msgs.Code)
+	if msgs := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil); msgs.Code != http.StatusOK {
+		t.Fatalf("cross-user GET messages: got %d, want 200", msgs.Code)
 	}
 
-	// Owner GET reports read_only=false.
+	// Owner GET reports read_only=false explicitly (present, not omitted) — the
+	// client gates owner-only controls on this positive signal.
 	ownerGet := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id, alice, nil)
 	var ownerSess map[string]any
 	json.NewDecoder(ownerGet.Body).Decode(&ownerSess)
-	if ownerSess["read_only"] == true {
-		t.Error("owner read_only = true, want false (omitted)")
+	if ro, present := ownerSess["read_only"]; !present || ro != false {
+		t.Errorf("owner read_only present=%v value=%v, want present=true value=false", present, ro)
 	}
 
-	// Flipping back to private re-hides it from bob.
-	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "private"}); w.Code != http.StatusOK {
-		t.Fatalf("owner make-private: got %d, want 200", w.Code)
+	// Writes stay owner-only: bob cannot rename alice's session (404), alice can.
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, bob, map[string]any{"title": "hijack"}); w.Code != http.StatusNotFound {
+		t.Errorf("non-owner rename: got %d, want 404", w.Code)
 	}
-	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+id+"/messages", bob, nil); w.Code != http.StatusNotFound {
-		t.Errorf("re-privatized GET messages by non-owner: got %d, want 404", w.Code)
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"title": "Alice's title"}); w.Code != http.StatusOK {
+		t.Errorf("owner rename: got %d, want 200", w.Code)
 	}
 }
 
-// TestWebUIShareSession_Authorization covers the write-side rules of the
-// visibility toggle: only the owner may toggle (non-owner 404), an invalid
-// visibility value is rejected (400), and a PATCH with no mutable field is
-// rejected (400).
-func TestWebUIShareSession_Authorization(t *testing.T) {
+// TestWebUIUpdateSession_Validation covers PATCH validation now that title is
+// the only mutable field: a non-owner is refused (404), an empty/absent title is
+// rejected (400), and a missing session 404s.
+func TestWebUIUpdateSession_Validation(t *testing.T) {
 	const alice, bob = "user:alice@example.com", "user:bob@example.com"
 	_, mux := setupWebUIServer(t)
 
 	id := createSessionAs(t, mux, alice)
 
-	// Non-owner cannot toggle visibility — 404, not 403.
-	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, bob, map[string]any{"visibility": "public"}); w.Code != http.StatusNotFound {
-		t.Errorf("non-owner toggle: got %d, want 404", w.Code)
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, bob, map[string]any{"title": "x"}); w.Code != http.StatusNotFound {
+		t.Errorf("non-owner rename: got %d, want 404", w.Code)
 	}
-
-	// Invalid visibility value is rejected.
-	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"visibility": "world"}); w.Code != http.StatusBadRequest {
-		t.Errorf("invalid visibility: got %d, want 400", w.Code)
+	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{"title": "   "}); w.Code != http.StatusBadRequest {
+		t.Errorf("empty title: got %d, want 400", w.Code)
 	}
-
-	// A PATCH with neither title nor visibility is rejected.
 	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+id, alice, map[string]any{}); w.Code != http.StatusBadRequest {
-		t.Errorf("empty PATCH: got %d, want 400", w.Code)
+		t.Errorf("PATCH with no title: got %d, want 400", w.Code)
 	}
-
-	// A missing session 404s for GET single.
 	if w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/does-not-exist", alice, nil); w.Code != http.StatusNotFound {
 		t.Errorf("GET missing session: got %d, want 404", w.Code)
 	}
 }
 
-// TestWebUISharedSessions covers GET /sessions/shared (DESIGN-CHAT-SESSIONS.md
-// §10 sharing extension): a public session is auto-listed in *other* users'
-// "shared with you" list, flagged read-only and attributed to its owner via
-// shared_by. The owner's own public session is excluded from their shared list,
-// a private session is never listed, and re-privatizing removes it again.
+// TestWebUISharedSessions covers GET /sessions/shared in the org-wide read
+// model: every session owned by *another* user is listed (regardless of
+// visibility), flagged read-only and attributed via shared_by, without leaking
+// creator_principal. The caller's own sessions are excluded.
 func TestWebUISharedSessions(t *testing.T) {
 	const alice, bob, carol = "user:alice@example.com", "user:bob@example.com", "user:carol@example.com"
 	srv, mux := setupWebUIServer(t)
 	ctx := context.Background()
 
-	// alice owns a session; bob owns one too.
 	aliceID := createSessionAs(t, mux, alice)
 	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
 		ID: "sm1", SessionID: aliceID, Role: "user", Content: "shared?",
 	}); err != nil {
 		t.Fatalf("seed message: %v", err)
 	}
-	createSessionAs(t, mux, bob)
+	bobID := createSessionAs(t, mux, bob)
 
-	// While alice's session is private, nobody else's shared list shows it.
-	if got := sharedSessionIDs(t, mux, bob); len(got) != 0 {
-		t.Fatalf("private session leaked into shared list: %v", got)
-	}
-
-	// alice makes it public.
-	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+aliceID, alice, map[string]any{"visibility": "public"}); w.Code != http.StatusOK {
-		t.Fatalf("make-public: got %d, want 200", w.Code)
-	}
-
-	// bob's shared list now contains alice's session, read-only and attributed.
+	// bob's shared list contains alice's session (no toggle needed — all sessions
+	// are readable), read-only and attributed.
 	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/shared", bob, nil)
 	if got.Code != http.StatusOK {
 		t.Fatalf("shared list: got %d, want 200", got.Code)
@@ -857,8 +845,9 @@ func TestWebUISharedSessions(t *testing.T) {
 	if err := json.NewDecoder(got.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode shared list: %v", err)
 	}
+	// bob sees only alice's session (his own is excluded).
 	if resp.Count != 1 || len(resp.Sessions) != 1 {
-		t.Fatalf("shared list count = %d, want 1", resp.Count)
+		t.Fatalf("bob shared list count = %d, want 1 (alice's)", resp.Count)
 	}
 	row := resp.Sessions[0]
 	if row["id"] != aliceID {
@@ -874,22 +863,16 @@ func TestWebUISharedSessions(t *testing.T) {
 		t.Error("shared row leaked creator_principal field")
 	}
 
-	// carol (a third principal) sees it too.
-	if got := sharedSessionIDs(t, mux, carol); len(got) != 1 || got[0] != aliceID {
-		t.Errorf("carol shared list = %v, want [%s]", got, aliceID)
+	// carol (a third principal) sees BOTH alice's and bob's sessions.
+	carolIDs := sharedSessionIDs(t, mux, carol)
+	if !slices.Contains(carolIDs, aliceID) || !slices.Contains(carolIDs, bobID) || len(carolIDs) != 2 {
+		t.Errorf("carol shared list = %v, want both %s and %s", carolIDs, aliceID, bobID)
 	}
 
-	// alice's own shared list excludes her own public session.
-	if got := sharedSessionIDs(t, mux, alice); len(got) != 0 {
-		t.Errorf("owner's own public session appeared in their shared list: %v", got)
-	}
-
-	// Re-privatizing removes it from bob's shared list.
-	if w := reqAsPrincipal(mux, "PATCH", "/api/v1/sessions/"+aliceID, alice, map[string]any{"visibility": "private"}); w.Code != http.StatusOK {
-		t.Fatalf("make-private: got %d, want 200", w.Code)
-	}
-	if got := sharedSessionIDs(t, mux, bob); len(got) != 0 {
-		t.Errorf("re-privatized session still in shared list: %v", got)
+	// alice's shared list excludes her OWN session but includes bob's.
+	aliceIDs := sharedSessionIDs(t, mux, alice)
+	if len(aliceIDs) != 1 || aliceIDs[0] != bobID {
+		t.Errorf("alice shared list = %v, want [%s] (bob's, not her own)", aliceIDs, bobID)
 	}
 }
 
@@ -1023,8 +1006,8 @@ func TestWebUIChatOwnership_MessagesRoundTrip(t *testing.T) {
 		t.Errorf("message ids = %d,%d, want 1,2 (seq)", resp.Messages[0].ID, resp.Messages[1].ID)
 	}
 
-	// bob is refused even though the session has content.
-	if other := reqAsPrincipal(mux, "GET", "/api/v1/sessions/s-rt/messages", bob, nil); other.Code != http.StatusNotFound {
-		t.Errorf("cross-user read of populated session: got %d, want 404", other.Code)
+	// bob (a non-owner) can read the populated session too (org-wide read model).
+	if other := reqAsPrincipal(mux, "GET", "/api/v1/sessions/s-rt/messages", bob, nil); other.Code != http.StatusOK {
+		t.Errorf("cross-user read of populated session: got %d, want 200", other.Code)
 	}
 }

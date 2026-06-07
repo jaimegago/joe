@@ -14,6 +14,16 @@ import (
 // unbounded sidebar/header label.
 const maxTitleLen = 60
 
+// untitledSentinel is the reply the title prompt (prompts.ChatTitleSystem)
+// instructs the model to return for an empty or meaningless opening message. It
+// is intentionally identical to the UI's "New chat" placeholder, so it must NOT
+// be persisted as a real title: doing so freezes the session at "New chat"
+// (maybeAutoTitle only runs while the title is nil, so a later substantive
+// message could never re-title it) and is indistinguishable from a genuinely
+// untitled session. Treating it as "no title" leaves the row nil so the
+// placeholder shows and the next turn gets another chance to title the session.
+const untitledSentinel = "New chat"
+
 // titleMaxTokens is the output-token budget for the title call. It is
 // deliberately generous — far larger than a 3-6 word title needs — because
 // reasoning models (e.g. Gemini 2.5) spend output budget on internal "thinking"
@@ -78,6 +88,15 @@ func (h *taskHandler) generateTitleAsync(ctx context.Context, sessionID, firstUs
 		title := sanitizeLLMTitle(resp.Content)
 		if title == "" {
 			slog.Debug("auto-title: llm returned an empty title", "session_id", sessionID)
+			return
+		}
+		// The model emits the "New chat" sentinel for a meaningless opening
+		// message. Persisting it would collide with the UI placeholder and
+		// permanently freeze the session at "New chat" (the title would no longer
+		// be nil, so no later turn could re-title it). Leave the session untitled
+		// instead — the placeholder renders and the next turn retries.
+		if strings.EqualFold(title, untitledSentinel) {
+			slog.Debug("auto-title: llm returned the untitled sentinel; leaving untitled", "session_id", sessionID)
 			return
 		}
 

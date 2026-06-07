@@ -123,9 +123,11 @@ export const SessionSchema = z.object({
   // 'private' | 'public' (Phase 3).
   title: z.string().optional(),
   visibility: z.string().optional(),
-  // read_only is set only on GET /sessions/{id}: true when the caller is a
-  // non-owner viewing a public session (Phase 3 access matrix). Omitted (false)
-  // for the owner and on the list/create paths.
+  // read_only: true when the caller is a non-owner viewing a public session
+  // (Phase 3 access matrix), false when the caller owns it. The server always
+  // sends it explicitly, so owner-only controls can gate on the positive signal
+  // (read_only === false) and fail closed if it is ever absent. Kept optional
+  // here only for backward/defensive parsing — absent is treated as "not owner".
   read_only: z.boolean().optional(),
   // linked_incident_id is the active incident this session is attached to
   // (Phase 4 incident linkage), or absent when unlinked. Its presence drives

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { createWrapper } from '@/test/utils';
 import { ChatPage } from './ChatPage';
 import { useAuth } from '@/auth/AuthContext';
@@ -10,24 +10,18 @@ import type { ZoneAccess, Session } from '@/api/types';
 import { useChat } from '@/hooks/useChat';
 import { useRegime } from '@/hooks/useRegime';
 import { ApiRequestError } from '@/api/client';
-import {
-  fetchSession,
-  updateSessionTitle,
-  updateSessionVisibility,
-  linkSessionToIncident,
-} from '@/api/chat';
+import { fetchSession, updateSessionTitle, linkSessionToIncident } from '@/api/chat';
 
 // ChatPage renders the access-pending empty state instead of the chat surface
-// for a zero-zone, RBAC-enabled, non-admin user (OPERATOR_SURFACE_-
-// VERIFICATION.md items 9/11), and gates the Phase 3 sharing controls on
-// session ownership/visibility. These tests pin both.
+// for a zero-zone, RBAC-enabled, non-admin user, and gates owner-only controls
+// (rename, copy-link, incident-link) on ownership in the org-wide read model
+// (every session readable; only the owner writes). These tests pin both.
 vi.mock('@/auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('@/hooks/useChat', () => ({ useChat: vi.fn() }));
 vi.mock('@/hooks/useRegime', () => ({ useRegime: vi.fn() }));
 vi.mock('@/api/chat', () => ({
   fetchSession: vi.fn(),
   updateSessionTitle: vi.fn(),
-  updateSessionVisibility: vi.fn(),
   linkSessionToIncident: vi.fn(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -37,7 +31,6 @@ const mockUseChat = vi.mocked(useChat);
 const mockUseRegime = vi.mocked(useRegime);
 const mockFetchSession = vi.mocked(fetchSession);
 const mockUpdateTitle = vi.mocked(updateSessionTitle);
-const mockUpdateVisibility = vi.mocked(updateSessionVisibility);
 const mockLinkIncident = vi.mocked(linkSessionToIncident);
 
 // setRegime stubs useRegime; only the `mode` field of `data` is read by ChatPage.
@@ -61,9 +54,10 @@ function setAuth(opts: { rbacEnabled: boolean; isAdmin: boolean; zones: ZoneAcce
   } satisfies AuthContextValue);
 }
 
-function setChat(sessionId: string | null) {
+function setChat(sessionId: string | null, locallyCreatedId: string | null = null) {
   mockUseChat.mockReturnValue({
     sessionId,
+    locallyCreatedId,
     messages: [],
     isLoading: false,
     isSending: false,
@@ -82,6 +76,15 @@ function renderPage() {
     </Wrapper>
   );
 }
+
+// Reset the tab-scoped last-session store before EVERY test. Several describes
+// render at a bare /chat with a fixed useChat mock; a lastSession left by an
+// earlier test would trigger an unintended restore (and, with the fixed mock,
+// a restore↔url-sync navigation loop). Tests that exercise restore set it
+// explicitly in their own body after this runs.
+beforeEach(() => {
+  sessionStorage.clear();
+});
 
 describe('ChatPage access-pending empty state', () => {
   beforeEach(() => {
@@ -123,12 +126,14 @@ describe('ChatPage access-pending empty state', () => {
   });
 });
 
-describe('ChatPage sharing controls (Phase 3)', () => {
-  const ownedPrivate: Session = {
+describe('ChatPage owner controls (org-wide read model)', () => {
+  const owned: Session = {
     id: 's1',
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
-    visibility: 'private',
+    // The server marks an owned session read_only=false explicitly; owner
+    // controls gate on this positive signal.
+    read_only: false,
   };
 
   beforeEach(() => {
@@ -136,50 +141,67 @@ describe('ChatPage sharing controls (Phase 3)', () => {
     mockUseChat.mockReset();
     mockUseRegime.mockReset();
     mockFetchSession.mockReset();
-    mockUpdateVisibility.mockReset();
     setRegime('normal');
     setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
   });
 
-  it('shows "Make public" for an owned private session and toggles it', async () => {
+  it('shows owner controls (rename + copy link) for an owned session', async () => {
     setChat('s1');
-    mockFetchSession.mockResolvedValue(ownedPrivate);
-    mockUpdateVisibility.mockResolvedValue({ ...ownedPrivate, visibility: 'public' });
+    mockFetchSession.mockResolvedValue(owned);
     renderPage();
 
-    const makePublic = await screen.findByRole('button', { name: /make public/i });
-    const user = userEvent.setup();
-    await user.click(makePublic);
-
-    await waitFor(() => expect(mockUpdateVisibility).toHaveBeenCalledWith('s1', 'public'));
+    expect(await screen.findByRole('button', { name: /copy link/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /rename session/i })).toBeInTheDocument();
+    // The visibility toggle no longer exists.
+    expect(
+      screen.queryByRole('button', { name: /make (public|private)/i })
+    ).not.toBeInTheDocument();
   });
 
-  it('shows "Make private" and a copy-link control for an owned public session', async () => {
+  it('renders a read-only viewer (no composer, no owner controls) for a non-owner session', async () => {
     setChat('s1');
-    mockFetchSession.mockResolvedValue({ ...ownedPrivate, visibility: 'public' });
-    renderPage();
-
-    expect(await screen.findByRole('button', { name: /make private/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /copy link/i })).toBeInTheDocument();
-  });
-
-  it('renders a read-only viewer with no composer for a non-owner public session', async () => {
-    setChat('s1');
-    mockFetchSession.mockResolvedValue({ ...ownedPrivate, visibility: 'public', read_only: true });
+    mockFetchSession.mockResolvedValue({ ...owned, read_only: true });
     renderPage();
 
     expect(await screen.findByText(/read-only mode/i)).toBeInTheDocument();
-    // No share controls, no composer for a non-owner.
-    expect(screen.queryByRole('button', { name: /make/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy link/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /rename session/i })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/message/i)).not.toBeInTheDocument();
-    // New Session is a global action, available even while viewing a read-only session.
+    // New Session stays available even while reading someone else's session.
     expect(screen.getByRole('button', { name: /new session/i })).toBeInTheDocument();
   });
 
-  it('shows no sharing controls before a session exists', () => {
+  it('shows no owner controls before a session exists', () => {
     setChat(null);
     renderPage();
-    expect(screen.queryByRole('button', { name: /make public/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy link/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /rename session/i })).not.toBeInTheDocument();
+  });
+
+  it('fails closed: no owner controls when read_only is absent (unconfirmed ownership)', async () => {
+    // Ownership requires read_only===false; an object missing the field (a
+    // stale/partial cache entry) is treated as NOT owned, so no owner controls.
+    setChat('s1');
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      // read_only deliberately omitted
+    });
+    renderPage();
+
+    await waitFor(() => expect(mockFetchSession).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /copy link/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /rename session/i })).not.toBeInTheDocument();
+  });
+
+  it('shows "Session not found" when the session is gone (deleted)', async () => {
+    setChat('s1');
+    mockFetchSession.mockRejectedValue(new ApiRequestError(404, 'session not found'));
+    renderPage();
+
+    expect(await screen.findByText(/session not found/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start a new chat/i })).toBeInTheDocument();
   });
 });
 
@@ -218,6 +240,7 @@ describe('ChatPage URL sync', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 0,
       visibility: 'private',
+      read_only: false,
     });
   });
 
@@ -280,6 +303,7 @@ describe('ChatPage last-session restore', () => {
     // the activeSessionId↔URL coupling these tests exercise.
     mockUseChat.mockImplementation((initialSessionId?: string) => ({
       sessionId: initialSessionId ?? null,
+      locallyCreatedId: null,
       messages: [],
       isLoading: false,
       isSending: false,
@@ -291,6 +315,7 @@ describe('ChatPage last-session restore', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 2,
       visibility: 'private',
+      read_only: false,
     });
   });
 
@@ -340,6 +365,36 @@ describe('ChatPage last-session restore', () => {
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-prev'));
     expect(sessionStorage.getItem('joe.chat.lastSession')).toBe('s-prev');
   });
+
+  it('reopens the last session on an in-place /chat link (reused component, not remount)', async () => {
+    // The empty-page regression: navigating /chat/{id} → /chat (sidebar "Chat")
+    // reuses ChatPage rather than remounting it, so a mount-only restore never
+    // re-fired and the user was stranded on a blank "New chat". Restore is now
+    // reactive, so an in-place return to bare /chat reopens the last session.
+    sessionStorage.setItem('joe.chat.lastSession', 's-prev');
+    function GoChat() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/chat')}>go chat</button>;
+    }
+    const { Wrapper } = createWrapper();
+    render(
+      <Wrapper>
+        <MemoryRouter initialEntries={['/chat/s-prev']}>
+          <LocationSpy />
+          <GoChat />
+          <Routes>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat/:sessionId" element={<ChatPage />} />
+          </Routes>
+        </MemoryRouter>
+      </Wrapper>
+    );
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-prev'));
+
+    // Navigate to bare /chat in place; reactive restore must bounce back.
+    await userEvent.click(screen.getByRole('button', { name: /go chat/i }));
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-prev'));
+  });
 });
 
 describe('ChatPage incident linkage (Phase 4)', () => {
@@ -348,6 +403,7 @@ describe('ChatPage incident linkage (Phase 4)', () => {
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
     visibility: 'private',
+    read_only: false,
   };
 
   beforeEach(() => {
@@ -378,8 +434,8 @@ describe('ChatPage incident linkage (Phase 4)', () => {
     mockFetchSession.mockResolvedValue(ownedUnlinked);
     renderPage();
 
-    // The sharing control renders, so the session has loaded; the attach button must not.
-    expect(await screen.findByRole('button', { name: /make public/i })).toBeInTheDocument();
+    // An owner control renders, so the session has loaded; the attach button must not.
+    expect(await screen.findByRole('button', { name: /copy link/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
   });
 
@@ -400,6 +456,7 @@ describe('ChatPage inline title rename', () => {
     message_count: 2,
     visibility: 'private',
     title: 'Old title',
+    read_only: false,
   };
 
   beforeEach(() => {

@@ -550,6 +550,54 @@ func TestTaskAutoTitle_DoesNotOverwriteExistingTitle(t *testing.T) {
 	}
 }
 
+// sentinelTitleStubLLM returns the "New chat" sentinel for a title request — the
+// reply the prompt mandates for a meaningless opening message. Regular agent-loop
+// calls answer "ok".
+type sentinelTitleStubLLM struct{}
+
+func (s *sentinelTitleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	if req.SystemPrompt == prompts.ChatTitleSystem {
+		return &llm.ChatResponse{Content: "New chat"}, nil
+	}
+	return &llm.ChatResponse{
+		Content: "ok",
+		Usage:   llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+	}, nil
+}
+
+func (s *sentinelTitleStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// TestTaskAutoTitle_SentinelLeavesSessionUntitled verifies that when the title
+// model returns the "New chat" sentinel (meaningless opening message), it is NOT
+// persisted as the title. Persisting it would freeze the session at "New chat"
+// forever (maybeAutoTitle only runs while the title is nil), so the row must stay
+// nil — letting the placeholder show and a later turn re-title the session.
+func TestTaskAutoTitle_SentinelLeavesSessionUntitled(t *testing.T) {
+	const alice = "user:alice@example.com"
+	srv, mux := setupTaskServer(t, &sentinelTitleStubLLM{})
+	ctx := context.Background()
+
+	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice, map[string]any{"message": "hi"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("task: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp taskResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	// The title write is async; give the background goroutine ample time to run
+	// (and skip), then assert the session is still untitled.
+	time.Sleep(300 * time.Millisecond)
+	sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
+	if err != nil || sess == nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if sess.Title != nil {
+		t.Errorf("title = %q, want nil (the 'New chat' sentinel must not be persisted)", *sess.Title)
+	}
+}
+
 // TestTaskEndpoint_CustomSessionID verifies providing a session_id works.
 func TestTaskEndpoint_CustomSessionID(t *testing.T) {
 	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})

@@ -174,11 +174,6 @@ export function SessionsPage() {
                                     Incident
                                   </Badge>
                                 )}
-                                {s.visibility === 'public' && (
-                                  <Badge variant="secondary" className="shrink-0">
-                                    Public
-                                  </Badge>
-                                )}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {formatDistanceToNow(new Date(activity), { addSuffix: true })}
