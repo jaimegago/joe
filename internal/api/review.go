@@ -30,19 +30,19 @@ func (s *Server) registerReviewRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/reviews/{id}", h.handleGetReview)
 
 	// GitHub PR operations (T1: observe).
-	mux.HandleFunc("GET "+prefix+"/github/{sourceID}/pulls/{number}", h.handleGitHubGetPR)
-	mux.HandleFunc("GET "+prefix+"/github/{sourceID}/pulls/{number}/diff", h.handleGitHubGetPRDiff)
-	mux.HandleFunc("GET "+prefix+"/github/{sourceID}/pulls", h.handleGitHubListPRs)
+	mux.HandleFunc("GET "+prefix+"/github/{componentID}/pulls/{number}", h.handleGitHubGetPR)
+	mux.HandleFunc("GET "+prefix+"/github/{componentID}/pulls/{number}/diff", h.handleGitHubGetPRDiff)
+	mux.HandleFunc("GET "+prefix+"/github/{componentID}/pulls", h.handleGitHubListPRs)
 	// GitHub PR mutations (T2/T3 via tool executor — guarded by safety policy).
-	mux.HandleFunc("POST "+prefix+"/github/{sourceID}/pulls/{number}/comments", h.handleGitHubPostComment)
-	mux.HandleFunc("POST "+prefix+"/github/{sourceID}/pulls/{number}/reviews", h.handleGitHubRequestChanges)
+	mux.HandleFunc("POST "+prefix+"/github/{componentID}/pulls/{number}/comments", h.handleGitHubPostComment)
+	mux.HandleFunc("POST "+prefix+"/github/{componentID}/pulls/{number}/reviews", h.handleGitHubRequestChanges)
 
 	// GitLab MR operations (T1: observe).
-	mux.HandleFunc("GET "+prefix+"/gitlab/{sourceID}/projects/{projectID}/mrs/{iid}", h.handleGitLabGetMR)
-	mux.HandleFunc("GET "+prefix+"/gitlab/{sourceID}/projects/{projectID}/mrs/{iid}/diff", h.handleGitLabGetMRDiff)
-	mux.HandleFunc("GET "+prefix+"/gitlab/{sourceID}/projects/{projectID}/mrs", h.handleGitLabListMRs)
+	mux.HandleFunc("GET "+prefix+"/gitlab/{componentID}/projects/{projectID}/mrs/{iid}", h.handleGitLabGetMR)
+	mux.HandleFunc("GET "+prefix+"/gitlab/{componentID}/projects/{projectID}/mrs/{iid}/diff", h.handleGitLabGetMRDiff)
+	mux.HandleFunc("GET "+prefix+"/gitlab/{componentID}/projects/{projectID}/mrs", h.handleGitLabListMRs)
 	// GitLab MR mutations (T2 — guarded by safety policy).
-	mux.HandleFunc("POST "+prefix+"/gitlab/{sourceID}/projects/{projectID}/mrs/{iid}/notes", h.handleGitLabPostNote)
+	mux.HandleFunc("POST "+prefix+"/gitlab/{componentID}/projects/{projectID}/mrs/{iid}/notes", h.handleGitLabPostNote)
 }
 
 type reviewHandler struct{ server *Server }
@@ -61,8 +61,8 @@ func (h *reviewHandler) handleGitHubWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// The source_id can be passed as a query param or X-Joe-Source-Id header.
-	sourceID := r.URL.Query().Get("source_id")
+	// The component_id can be passed as a query param or X-Joe-Source-Id header.
+	sourceID := r.URL.Query().Get("component_id")
 	if sourceID == "" {
 		sourceID = r.Header.Get("X-Joe-Source-Id")
 	}
@@ -117,18 +117,18 @@ func (h *reviewHandler) handleGitHubWebhook(w http.ResponseWriter, r *http.Reque
 
 	if owner == "" || repo == "" || prNumber == 0 || headSHA == "" || sourceID == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
-			"source_id, owner, repo, pr_number, and head_sha are required")
+			"component_id, owner, repo, pr_number, and head_sha are required")
 		return
 	}
 
 	job := &review.ReviewJob{
-		Platform: review.PlatformGitHub,
-		SourceID: sourceID,
-		Owner:    owner,
-		Repo:     repo,
-		PRNumber: prNumber,
-		HeadSHA:  headSHA,
-		EventID:  review.BuildEventID(review.PlatformGitHub, owner, repo, prNumber, headSHA),
+		Platform:    review.PlatformGitHub,
+		ComponentID: sourceID,
+		Owner:       owner,
+		Repo:        repo,
+		PRNumber:    prNumber,
+		HeadSHA:     headSHA,
+		EventID:     review.BuildEventID(review.PlatformGitHub, owner, repo, prNumber, headSHA),
 	}
 
 	created, err := h.server.services.Review.Enqueue(r.Context(), job)
@@ -167,7 +167,7 @@ func (h *reviewHandler) handleGitLabWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	sourceID := r.URL.Query().Get("source_id")
+	sourceID := r.URL.Query().Get("component_id")
 	if sourceID == "" {
 		sourceID = r.Header.Get("X-Joe-Source-Id")
 	}
@@ -221,18 +221,18 @@ func (h *reviewHandler) handleGitLabWebhook(w http.ResponseWriter, r *http.Reque
 
 	if projectID == "0" || iid == 0 || headSHA == "" || sourceID == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
-			"source_id, project_id, mr_iid, and head_sha are required")
+			"component_id, project_id, mr_iid, and head_sha are required")
 		return
 	}
 
 	job := &review.ReviewJob{
-		Platform: review.PlatformGitLab,
-		SourceID: sourceID,
-		Owner:    projectID, // GitLab uses projectID in the owner field
-		Repo:     payload.Project.Name,
-		PRNumber: iid,
-		HeadSHA:  headSHA,
-		EventID:  review.BuildEventID(review.PlatformGitLab, projectID, payload.Project.Name, iid, headSHA),
+		Platform:    review.PlatformGitLab,
+		ComponentID: sourceID,
+		Owner:       projectID, // GitLab uses projectID in the owner field
+		Repo:        payload.Project.Name,
+		PRNumber:    iid,
+		HeadSHA:     headSHA,
+		EventID:     review.BuildEventID(review.PlatformGitLab, projectID, payload.Project.Name, iid, headSHA),
 	}
 
 	created, err := h.server.services.Review.Enqueue(r.Context(), job)
@@ -268,9 +268,9 @@ func (h *reviewHandler) handleEnqueueReview(w http.ResponseWriter, r *http.Reque
 		writeBadRequest(w, err, "parse review job", "invalid JSON body")
 		return
 	}
-	if job.SourceID == "" || job.Owner == "" || job.Repo == "" || job.PRNumber == 0 || job.HeadSHA == "" {
+	if job.ComponentID == "" || job.Owner == "" || job.Repo == "" || job.PRNumber == 0 || job.HeadSHA == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
-			"source_id, owner, repo, pr_number, and head_sha are required")
+			"component_id, owner, repo, pr_number, and head_sha are required")
 		return
 	}
 	if job.Platform == "" {
@@ -349,7 +349,7 @@ func (h *reviewHandler) handleGetReview(w http.ResponseWriter, r *http.Request) 
 // --- GitHub PR operations ---
 
 func (h *reviewHandler) handleGitHubGetPR(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	number, err := strconv.Atoi(r.PathValue("number"))
 	if err != nil || number <= 0 {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "pr number must be a positive integer")
@@ -375,7 +375,7 @@ func (h *reviewHandler) handleGitHubGetPR(w http.ResponseWriter, r *http.Request
 }
 
 func (h *reviewHandler) handleGitHubGetPRDiff(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	number, err := strconv.Atoi(r.PathValue("number"))
 	if err != nil || number <= 0 {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "pr number must be a positive integer")
@@ -401,7 +401,7 @@ func (h *reviewHandler) handleGitHubGetPRDiff(w http.ResponseWriter, r *http.Req
 }
 
 func (h *reviewHandler) handleGitHubListPRs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	owner := r.URL.Query().Get("owner")
 	repo := r.URL.Query().Get("repo")
 	if owner == "" || repo == "" {
@@ -426,7 +426,7 @@ func (h *reviewHandler) handleGitHubListPRs(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *reviewHandler) handleGitHubPostComment(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	number, err := strconv.Atoi(r.PathValue("number"))
 	if err != nil || number <= 0 {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "pr number must be a positive integer")
@@ -459,7 +459,7 @@ func (h *reviewHandler) handleGitHubPostComment(w http.ResponseWriter, r *http.R
 }
 
 func (h *reviewHandler) handleGitHubRequestChanges(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	number, err := strconv.Atoi(r.PathValue("number"))
 	if err != nil || number <= 0 {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "pr number must be a positive integer")
@@ -494,7 +494,7 @@ func (h *reviewHandler) handleGitHubRequestChanges(w http.ResponseWriter, r *htt
 // --- GitLab MR operations ---
 
 func (h *reviewHandler) handleGitLabGetMR(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	projectID := r.PathValue("projectID")
 	iid, err := strconv.Atoi(r.PathValue("iid"))
 	if err != nil || iid <= 0 {
@@ -515,7 +515,7 @@ func (h *reviewHandler) handleGitLabGetMR(w http.ResponseWriter, r *http.Request
 }
 
 func (h *reviewHandler) handleGitLabGetMRDiff(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	projectID := r.PathValue("projectID")
 	iid, err := strconv.Atoi(r.PathValue("iid"))
 	if err != nil || iid <= 0 {
@@ -536,7 +536,7 @@ func (h *reviewHandler) handleGitLabGetMRDiff(w http.ResponseWriter, r *http.Req
 }
 
 func (h *reviewHandler) handleGitLabListMRs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	projectID := r.PathValue("projectID")
 	state := r.URL.Query().Get("state")
 
@@ -556,7 +556,7 @@ func (h *reviewHandler) handleGitLabListMRs(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *reviewHandler) handleGitLabPostNote(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	projectID := r.PathValue("projectID")
 	iid, err := strconv.Atoi(r.PathValue("iid"))
 	if err != nil || iid <= 0 {

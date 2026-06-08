@@ -10,7 +10,7 @@ import (
 type Adapter interface {
 	// Connect establishes a connection to the source.
 	// The context should carry deadlines, cancellation, and tracing from the caller.
-	Connect(ctx context.Context, source store.Source) error
+	Connect(ctx context.Context, source store.Component) error
 
 	// Disconnect closes the connection
 	Disconnect() error

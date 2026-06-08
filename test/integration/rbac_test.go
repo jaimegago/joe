@@ -75,8 +75,8 @@ func TestIntegration_RBAC_NoAuth_SourceReadPassthrough(t *testing.T) {
 	env := newRBACEnv(t) // no service accounts ⇒ engine nil ⇒ accessor permits
 
 	ctx := context.Background()
-	if err := env.store.Sources.Create(ctx, &store.Source{
-		ID: "local-k8s", Type: store.SourceTypeKubernetes, Name: "Local Kind",
+	if err := env.store.Components.Create(ctx, &store.Component{
+		ID: "local-k8s", Type: store.ComponentTypeKubernetes, Name: "Local Kind",
 		Config: []byte(`{}`),
 	}); err != nil {
 		t.Fatalf("create source: %v", err)
@@ -103,16 +103,16 @@ func TestIntegration_RBAC_Auth_AllowsReadWithPolicy(t *testing.T) {
 	env := newRBACEnv(t, account)
 	ctx := context.Background()
 
-	if err := env.store.Sources.Create(ctx, &store.Source{
-		ID: "local-k8s", Type: store.SourceTypeKubernetes, Name: "Local Kind",
+	if err := env.store.Components.Create(ctx, &store.Component{
+		ID: "local-k8s", Type: store.ComponentTypeKubernetes, Name: "Local Kind",
 		Config: []byte(`{}`),
 	}); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
 
 	// Seed: local-k8s → prod-readonly; svc:ops → prod-readonly.
-	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := env.repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
@@ -143,16 +143,16 @@ func TestIntegration_RBAC_Auth_DeniesReadWithoutPolicy(t *testing.T) {
 	env := newRBACEnv(t, account)
 	ctx := context.Background()
 
-	if err := env.store.Sources.Create(ctx, &store.Source{
-		ID: "local-k8s", Type: store.SourceTypeKubernetes, Name: "Local Kind",
+	if err := env.store.Components.Create(ctx, &store.Component{
+		ID: "local-k8s", Type: store.ComponentTypeKubernetes, Name: "Local Kind",
 		Config: []byte(`{}`),
 	}); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
 
 	// Assign source to a zone but grant no policy to svc:nobody.
-	if err := env.repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := env.repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "local-k8s", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}

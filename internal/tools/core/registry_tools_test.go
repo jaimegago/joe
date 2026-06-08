@@ -56,14 +56,14 @@ func TestRegistryQueryTool_Execute(t *testing.T) {
 		wantOp  string
 	}{
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockOCIClient{},
 			wantErr: true,
 		},
 		{
 			name: "list repos (no repo param)",
-			args: map[string]any{"source_id": "reg-1"},
+			args: map[string]any{"component_id": "reg-1"},
 			mock: &mockOCIClient{
 				listReposFn: func(_ context.Context, _ string) ([]string, error) {
 					return []string{"myorg/app", "myorg/worker"}, nil
@@ -73,7 +73,7 @@ func TestRegistryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "list tags (repo set, no reference)",
-			args: map[string]any{"source_id": "reg-1", "repo": "myorg/app"},
+			args: map[string]any{"component_id": "reg-1", "repo": "myorg/app"},
 			mock: &mockOCIClient{
 				listTagsFn: func(_ context.Context, _, _ string) ([]string, error) {
 					return []string{"latest", "v1.0"}, nil
@@ -83,7 +83,7 @@ func TestRegistryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "get manifest (repo + reference)",
-			args: map[string]any{"source_id": "reg-1", "repo": "myorg/app", "reference": "latest"},
+			args: map[string]any{"component_id": "reg-1", "repo": "myorg/app", "reference": "latest"},
 			mock: &mockOCIClient{
 				getManifestFn: func(_ context.Context, _, _, _ string) (*ociadapter.Manifest, error) {
 					return &ociadapter.Manifest{Digest: "sha256:abc"}, nil
@@ -93,7 +93,7 @@ func TestRegistryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "list repos error propagated",
-			args: map[string]any{"source_id": "reg-1"},
+			args: map[string]any{"component_id": "reg-1"},
 			mock: &mockOCIClient{
 				listReposFn: func(_ context.Context, _ string) ([]string, error) {
 					return nil, fmt.Errorf("connection refused")
@@ -169,14 +169,14 @@ func TestArtifactoryQueryTool_Execute(t *testing.T) {
 		wantOp  string
 	}{
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockArtifactoryClient{},
 			wantErr: true,
 		},
 		{
 			name: "list repos",
-			args: map[string]any{"source_id": "art-1"},
+			args: map[string]any{"component_id": "art-1"},
 			mock: &mockArtifactoryClient{
 				listReposFn: func(_ context.Context, _ string) ([]artifactoryadapter.Repository, error) {
 					return []artifactoryadapter.Repository{{Key: "docker-local"}}, nil
@@ -186,7 +186,7 @@ func TestArtifactoryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "list docker tags",
-			args: map[string]any{"source_id": "art-1", "repo": "docker-local", "image": "myapp"},
+			args: map[string]any{"component_id": "art-1", "repo": "docker-local", "image": "myapp"},
 			mock: &mockArtifactoryClient{
 				listTagsFn: func(_ context.Context, _, _, _ string) ([]string, error) {
 					return []string{"latest"}, nil
@@ -196,7 +196,7 @@ func TestArtifactoryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "get artifact info",
-			args: map[string]any{"source_id": "art-1", "repo": "docker-local", "path": "myapp/latest/manifest.json"},
+			args: map[string]any{"component_id": "art-1", "repo": "docker-local", "path": "myapp/latest/manifest.json"},
 			mock: &mockArtifactoryClient{
 				getArtifactFn: func(_ context.Context, _, _, _ string) (*artifactoryadapter.ArtifactInfo, error) {
 					return &artifactoryadapter.ArtifactInfo{Repo: "docker-local"}, nil
@@ -206,7 +206,7 @@ func TestArtifactoryQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name:    "repo set without image or path",
-			args:    map[string]any{"source_id": "art-1", "repo": "docker-local"},
+			args:    map[string]any{"component_id": "art-1", "repo": "docker-local"},
 			mock:    &mockArtifactoryClient{},
 			wantErr: true,
 		},
@@ -278,14 +278,14 @@ func TestECRQueryTool_Execute(t *testing.T) {
 		wantOp  string
 	}{
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockECRQueryClient{},
 			wantErr: true,
 		},
 		{
 			name: "list repos",
-			args: map[string]any{"source_id": "ecr-1"},
+			args: map[string]any{"component_id": "ecr-1"},
 			mock: &mockECRQueryClient{
 				listReposFn: func(_ context.Context, _ string) ([]ecradapter.Repository, error) {
 					return []ecradapter.Repository{{Name: "my-app"}}, nil
@@ -295,7 +295,7 @@ func TestECRQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "list images (repo, no tag)",
-			args: map[string]any{"source_id": "ecr-1", "repo": "my-app"},
+			args: map[string]any{"component_id": "ecr-1", "repo": "my-app"},
 			mock: &mockECRQueryClient{
 				listImagesFn: func(_ context.Context, _, _ string) ([]ecradapter.ImageDetail, error) {
 					return []ecradapter.ImageDetail{{Digest: "sha256:abc", Tags: []string{"latest"}}}, nil
@@ -305,7 +305,7 @@ func TestECRQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "get image (repo + tag)",
-			args: map[string]any{"source_id": "ecr-1", "repo": "my-app", "tag": "v1.0"},
+			args: map[string]any{"component_id": "ecr-1", "repo": "my-app", "tag": "v1.0"},
 			mock: &mockECRQueryClient{
 				getImageFn: func(_ context.Context, _, _, _ string) (*ecradapter.ImageDetail, error) {
 					return &ecradapter.ImageDetail{Digest: "sha256:abc", Tags: []string{"v1.0"}}, nil
@@ -315,7 +315,7 @@ func TestECRQueryTool_Execute(t *testing.T) {
 		},
 		{
 			name: "list repos error propagated",
-			args: map[string]any{"source_id": "ecr-1"},
+			args: map[string]any{"component_id": "ecr-1"},
 			mock: &mockECRQueryClient{
 				listReposFn: func(_ context.Context, _ string) ([]ecradapter.Repository, error) {
 					return nil, fmt.Errorf("credentials expired")

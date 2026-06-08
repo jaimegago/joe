@@ -64,7 +64,7 @@ func TestRegisterBusinessMetrics(t *testing.T) {
 	m := NewMetrics()
 
 	unregister, err := m.RegisterBusinessMetrics(BusinessMetricsProvider{
-		SourcesByType: func(ctx context.Context) (map[string]int, error) {
+		ComponentsByType: func(ctx context.Context) (map[string]int, error) {
 			return map[string]int{"k8s": 2}, nil
 		},
 		GraphSummary: func(ctx context.Context) (GraphMetricsSummary, error) {
@@ -104,7 +104,7 @@ func TestRegisterBusinessMetrics_ProviderErrors(t *testing.T) {
 
 	// Providers return errors — callback should swallow them gracefully
 	unregister, err := m.RegisterBusinessMetrics(BusinessMetricsProvider{
-		SourcesByType: func(ctx context.Context) (map[string]int, error) {
+		ComponentsByType: func(ctx context.Context) (map[string]int, error) {
 			return nil, errStub
 		},
 		GraphSummary: func(ctx context.Context) (GraphMetricsSummary, error) {

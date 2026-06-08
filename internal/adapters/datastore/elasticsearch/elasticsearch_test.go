@@ -84,7 +84,7 @@ func TestConnect_Success(t *testing.T) {
 	defer srv.Close()
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestConnect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for 401, got nil")
 	}
@@ -108,7 +108,7 @@ func TestConnect_Failure(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{})} // missing url
+	src := store.Component{Config: mustMarshal(t, map[string]any{})} // missing url
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for missing url, got nil")
 	}
@@ -116,7 +116,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := elasticsearch.New()
-	src := store.Source{Config: []byte(`{bad`)}
+	src := store.Component{Config: []byte(`{bad`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -235,7 +235,7 @@ func TestListIndices_WithPattern(t *testing.T) {
 
 	// Connect first with the test server.
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -272,7 +272,7 @@ func TestConnect_DoError(t *testing.T) {
 	srv.Close() // close before connect to trigger do error
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for closed server, got nil")
 	}
@@ -285,7 +285,7 @@ func TestClusterHealth_DoError(t *testing.T) {
 	}))
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -305,7 +305,7 @@ func TestListIndices_DoError(t *testing.T) {
 	}))
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -328,7 +328,7 @@ func TestConnect_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL, "api_key": "myapikey"})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL, "api_key": "myapikey"})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -347,7 +347,7 @@ func TestConnect_WithBasicAuth(t *testing.T) {
 	defer srv.Close()
 
 	a := elasticsearch.New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{
+	src := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":      srv.URL,
 		"username": "elastic",
 		"password": "changeme",

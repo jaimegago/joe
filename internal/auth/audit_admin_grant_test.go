@@ -101,8 +101,8 @@ func TestCallback_FirstAdminLoginWritesAdminGrantedRow(t *testing.T) {
 	if grant.Kind != audit.KindAuthLogin {
 		t.Errorf("admin_granted kind = %q, want %q", grant.Kind, audit.KindAuthLogin)
 	}
-	if grant.Source != auditSourceAdminBootstrap {
-		t.Errorf("admin_granted source = %q, want %q", grant.Source, auditSourceAdminBootstrap)
+	if grant.ComponentID != auditSourceAdminBootstrap {
+		t.Errorf("admin_granted source = %q, want %q", grant.ComponentID, auditSourceAdminBootstrap)
 	}
 	if grant.Decision != audit.DecisionAllow {
 		t.Errorf("admin_granted decision = %q, want allow", grant.Decision)

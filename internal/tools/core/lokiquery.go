@@ -28,14 +28,14 @@ func NewLokiQueryTool(c LokiClient) *LokiQueryTool {
 func (t *LokiQueryTool) Name() string { return "loki_query" }
 
 func (t *LokiQueryTool) Description() string {
-	return "Query Loki logs using LogQL. Supports instant queries (tail from now) and range queries over a time window. Use this to search for errors, trace request flows, or correlate logs with incidents. If you don't know the source_id, call list_sources first."
+	return "Query Loki logs using LogQL. Supports instant queries (tail from now) and range queries over a time window. Use this to search for errors, trace request flows, or correlate logs with incidents. If you don't know the component_id, call list_components first."
 }
 
 func (t *LokiQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Loki source to query.",
 			},
@@ -64,14 +64,14 @@ func (t *LokiQueryTool) Parameters() llm.ParameterSchema {
 				Description: "For 'query_range': end Unix timestamp. Defaults to now.",
 			},
 		},
-		Required: []string{"source_id", "query"},
+		Required: []string{"component_id", "query"},
 	}
 }
 
 func (t *LokiQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	query, ok := args["query"].(string)
@@ -107,9 +107,9 @@ func (t *LokiQueryTool) Execute(ctx context.Context, args map[string]any) (any, 
 			return nil, fmt.Errorf("loki query_range failed: %w", err)
 		}
 		return map[string]any{
-			"result":    result,
-			"source_id": sourceID,
-			"query":     query,
+			"result":       result,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 
 	default: // "query"
@@ -123,9 +123,9 @@ func (t *LokiQueryTool) Execute(ctx context.Context, args map[string]any) (any, 
 			return nil, fmt.Errorf("loki query failed: %w", err)
 		}
 		return map[string]any{
-			"result":    result,
-			"source_id": sourceID,
-			"query":     query,
+			"result":       result,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 	}
 }

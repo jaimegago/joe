@@ -12,22 +12,22 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// refreshNginxSource refreshes an NGINX Ingress Controller source.
+// refreshNginxComponent refreshes an NGINX Ingress Controller source.
 // Creates ingress nodes from K8s Ingress resources and builds ingress_for
 // edges linking each ingress to the backend service it routes to.
-func (r *Refresher) refreshNginxSource(ctx context.Context, source *store.Source, adapter nginxadapter.NginxAdapter) error {
-	r.logger.Info("refreshing nginx source", "source_id", source.ID)
+func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Component, adapter nginxadapter.NginxAdapter) error {
+	r.logger.Info("refreshing nginx source", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := networkingNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       sourceNodeID,
-			Type:     "nginx_source",
-			SourceID: source.ID,
-			Metadata: networkingMetadata(source),
-			LastSeen: now,
+			ID:          sourceNodeID,
+			Type:        "nginx_component",
+			ComponentID: source.ID,
+			Metadata:    networkingMetadata(source),
+			LastSeen:    now,
 		},
 	}
 	desiredEdges := make([]graph.Edge, 0)
@@ -35,14 +35,14 @@ func (r *Refresher) refreshNginxSource(ctx context.Context, source *store.Source
 	// List all ingresses across all namespaces.
 	ingresses, err := adapter.ListIngresses(ctx, "")
 	if err != nil {
-		r.logger.Warn("failed to list nginx ingresses (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list nginx ingresses (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, ing := range ingresses {
 			ingNodeID := fmt.Sprintf("nginx/%s/%s/%s", source.ID, ing.Namespace, ing.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
-				ID:       ingNodeID,
-				Type:     "nginx_ingress",
-				SourceID: source.ID,
+				ID:          ingNodeID,
+				Type:        "nginx_ingress",
+				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":      ing.Name,
 					"namespace": ing.Namespace,
@@ -64,7 +64,7 @@ func (r *Refresher) refreshNginxSource(ctx context.Context, source *store.Source
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for nginx source %s: %w", source.ID, err)
 	}
@@ -75,7 +75,7 @@ func (r *Refresher) refreshNginxSource(ctx context.Context, source *store.Source
 	}
 
 	r.logger.Info("nginx refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"ingresses", len(ingresses),
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -83,29 +83,29 @@ func (r *Refresher) refreshNginxSource(ctx context.Context, source *store.Source
 	return nil
 }
 
-// refreshEnvoySource refreshes an Envoy proxy source.
+// refreshEnvoyComponent refreshes an Envoy proxy source.
 // Creates a source node and builds proxies edges from the Envoy instance to
 // service nodes matching its upstream cluster names.
-func (r *Refresher) refreshEnvoySource(ctx context.Context, source *store.Source, adapter envoypadapter.EnvoyAdapter) error {
-	r.logger.Info("refreshing envoy source", "source_id", source.ID)
+func (r *Refresher) refreshEnvoyComponent(ctx context.Context, source *store.Component, adapter envoypadapter.EnvoyAdapter) error {
+	r.logger.Info("refreshing envoy source", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := networkingNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       sourceNodeID,
-			Type:     "envoy_source",
-			SourceID: source.ID,
-			Metadata: networkingMetadata(source),
-			LastSeen: now,
+			ID:          sourceNodeID,
+			Type:        "envoy_component",
+			ComponentID: source.ID,
+			Metadata:    networkingMetadata(source),
+			LastSeen:    now,
 		},
 	}
 	desiredEdges := make([]graph.Edge, 0)
 
 	clusters, err := adapter.Clusters(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list envoy clusters (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list envoy clusters (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, cluster := range clusters {
 			// Cluster names often encode the service name (e.g. "outbound|80||payment.default.svc.cluster.local").
@@ -118,7 +118,7 @@ func (r *Refresher) refreshEnvoySource(ctx context.Context, source *store.Source
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for envoy source %s: %w", source.ID, err)
 	}
@@ -129,7 +129,7 @@ func (r *Refresher) refreshEnvoySource(ctx context.Context, source *store.Source
 	}
 
 	r.logger.Info("envoy refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"clusters", len(clusters),
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -139,7 +139,7 @@ func (r *Refresher) refreshEnvoySource(ctx context.Context, source *store.Source
 
 // buildIngressForEdges finds K8s service/deployment nodes matching backendSvc
 // and creates ingress_for edges from the ingress node to those service nodes.
-func (r *Refresher) buildIngressForEdges(ctx context.Context, source *store.Source, ingNodeID, backendSvc, namespace, host string, now time.Time) []graph.Edge {
+func (r *Refresher) buildIngressForEdges(ctx context.Context, source *store.Component, ingNodeID, backendSvc, namespace, host string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 
 	matchingNodes, err := r.services.Graph.Query(ctx, backendSvc)
@@ -164,14 +164,14 @@ func (r *Refresher) buildIngressForEdges(ctx context.Context, source *store.Sour
 			ctx += ",host=" + host
 		}
 		edges = append(edges, graph.Edge{
-			From:       ingNodeID,
-			To:         node.ID,
-			Relation:   graph.RelationIngressFor,
-			Confidence: graph.Explicit,
-			Source:     "nginx_ingress_rules",
-			SourceID:   source.ID,
-			Context:    ctx,
-			CreatedAt:  now,
+			From:        ingNodeID,
+			To:          node.ID,
+			Relation:    graph.RelationIngressFor,
+			Confidence:  graph.Explicit,
+			Source:      "nginx_ingress_rules",
+			ComponentID: source.ID,
+			Context:     ctx,
+			CreatedAt:   now,
 		})
 	}
 
@@ -180,7 +180,7 @@ func (r *Refresher) buildIngressForEdges(ctx context.Context, source *store.Sour
 
 // buildProxiesEdges finds service/deployment nodes matching svcName and creates
 // proxies edges from the Envoy node to those service nodes.
-func (r *Refresher) buildProxiesEdges(ctx context.Context, source *store.Source, envoyNodeID, svcName, clusterName string, now time.Time) []graph.Edge {
+func (r *Refresher) buildProxiesEdges(ctx context.Context, source *store.Component, envoyNodeID, svcName, clusterName string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 
 	matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -194,14 +194,14 @@ func (r *Refresher) buildProxiesEdges(ctx context.Context, source *store.Source,
 			continue
 		}
 		edges = append(edges, graph.Edge{
-			From:       envoyNodeID,
-			To:         node.ID,
-			Relation:   graph.RelationProxies,
-			Confidence: graph.Inferred,
-			Source:     "envoy_clusters",
-			SourceID:   source.ID,
-			Context:    "cluster=" + clusterName,
-			CreatedAt:  now,
+			From:        envoyNodeID,
+			To:          node.ID,
+			Relation:    graph.RelationProxies,
+			Confidence:  graph.Inferred,
+			Source:      "envoy_clusters",
+			ComponentID: source.ID,
+			Context:     "cluster=" + clusterName,
+			CreatedAt:   now,
 		})
 	}
 
@@ -259,10 +259,10 @@ func networkingNodeID(sourceID, sourceType string) string {
 }
 
 // networkingMetadata builds the standard metadata map for a networking source node.
-func networkingMetadata(source *store.Source) map[string]any {
+func networkingMetadata(source *store.Component) map[string]any {
 	return map[string]any{
-		"source_id":   source.ID,
-		"source_type": source.Type,
-		"name":        source.Name,
+		"component_id":   source.ID,
+		"component_type": source.Type,
+		"name":           source.Name,
 	}
 }

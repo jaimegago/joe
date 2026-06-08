@@ -14,7 +14,7 @@ const (
 	errorCodeInternal           = "internal_error"
 	errorCodeInvalidRequest     = "invalid_request"
 	errorCodeNotFound           = "not_found"
-	errorCodeInvalidSource      = "invalid_source"
+	errorCodeInvalidComponent   = "invalid_component"
 	errorCodeServiceUnavailable = "service_unavailable"
 	errorCodeForbidden          = "forbidden"
 	errorCodeConflict           = "conflict"

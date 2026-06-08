@@ -55,23 +55,23 @@ func TestDatadogQueryTool(t *testing.T) {
 		if params.Type != "object" {
 			t.Errorf("Parameters().Type = %q, want object", params.Type)
 		}
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 		if _, ok := params.Properties["query"]; !ok {
 			t.Error("Parameters() missing query")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"query": "avg:system.cpu.user{*}"})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing query", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "dd-prod"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "dd-prod"})
 		if err == nil {
 			t.Error("expected error for missing query")
 		}
@@ -79,22 +79,22 @@ func TestDatadogQueryTool(t *testing.T) {
 
 	t.Run("metrics success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dd-prod",
-			"query":     "avg:system.cpu.user{*}",
+			"component_id": "dd-prod",
+			"query":        "avg:system.cpu.user{*}",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		m := res.(map[string]any)
-		if m["source_id"] != "dd-prod" {
-			t.Errorf("source_id = %v, want dd-prod", m["source_id"])
+		if m["component_id"] != "dd-prod" {
+			t.Errorf("component_id = %v, want dd-prod", m["component_id"])
 		}
 	})
 
 	t.Run("metrics client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"query":     "avg:system.cpu.user{*}",
+			"component_id": "bad-source",
+			"query":        "avg:system.cpu.user{*}",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -103,9 +103,9 @@ func TestDatadogQueryTool(t *testing.T) {
 
 	t.Run("logs success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dd-prod",
-			"query":     "service:payment status:error",
-			"action":    "logs",
+			"component_id": "dd-prod",
+			"query":        "service:payment status:error",
+			"action":       "logs",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -118,10 +118,10 @@ func TestDatadogQueryTool(t *testing.T) {
 
 	t.Run("logs with limit", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dd-prod",
-			"query":     "service:payment",
-			"action":    "logs",
-			"limit":     float64(50),
+			"component_id": "dd-prod",
+			"query":        "service:payment",
+			"action":       "logs",
+			"limit":        float64(50),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -133,9 +133,9 @@ func TestDatadogQueryTool(t *testing.T) {
 
 	t.Run("logs client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"query":     "service:payment",
-			"action":    "logs",
+			"component_id": "bad-source",
+			"query":        "service:payment",
+			"action":       "logs",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -144,10 +144,10 @@ func TestDatadogQueryTool(t *testing.T) {
 
 	t.Run("metrics with custom time range", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dd-prod",
-			"query":     "avg:system.cpu.user{*}",
-			"from":      float64(1700000000),
-			"to":        float64(1700003600),
+			"component_id": "dd-prod",
+			"query":        "avg:system.cpu.user{*}",
+			"from":         float64(1700000000),
+			"to":           float64(1700003600),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -190,20 +190,20 @@ func TestSplunkQueryTool(t *testing.T) {
 		if params.Type != "object" {
 			t.Errorf("Parameters().Type = %q, want object", params.Type)
 		}
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"query": "index=main error"})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing query", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "splunk-1"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "splunk-1"})
 		if err == nil {
 			t.Error("expected error for missing query")
 		}
@@ -211,8 +211,8 @@ func TestSplunkQueryTool(t *testing.T) {
 
 	t.Run("success with defaults", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "splunk-1",
-			"query":     "index=main error",
+			"component_id": "splunk-1",
+			"query":        "index=main error",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -221,18 +221,18 @@ func TestSplunkQueryTool(t *testing.T) {
 		if m["count"].(int) != 1 {
 			t.Errorf("count = %v, want 1", m["count"])
 		}
-		if m["source_id"] != "splunk-1" {
-			t.Errorf("source_id = %v, want splunk-1", m["source_id"])
+		if m["component_id"] != "splunk-1" {
+			t.Errorf("component_id = %v, want splunk-1", m["component_id"])
 		}
 	})
 
 	t.Run("success with custom params", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "splunk-1",
-			"query":     "index=main error",
-			"earliest":  "-24h",
-			"latest":    "now",
-			"limit":     float64(50),
+			"component_id": "splunk-1",
+			"query":        "index=main error",
+			"earliest":     "-24h",
+			"latest":       "now",
+			"limit":        float64(50),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -244,8 +244,8 @@ func TestSplunkQueryTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"query":     "index=main error",
+			"component_id": "bad-source",
+			"query":        "index=main error",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -296,22 +296,22 @@ func TestDynatraceQueryTool(t *testing.T) {
 		if params.Type != "object" {
 			t.Errorf("Parameters().Type = %q, want object", params.Type)
 		}
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("metrics missing query", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dt-1",
-			"action":    "metrics",
+			"component_id": "dt-1",
+			"action":       "metrics",
 		})
 		if err == nil {
 			t.Error("expected error for missing query in metrics action")
@@ -320,22 +320,22 @@ func TestDynatraceQueryTool(t *testing.T) {
 
 	t.Run("metrics success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dt-1",
-			"query":     "builtin:host.cpu.usage:avg",
+			"component_id": "dt-1",
+			"query":        "builtin:host.cpu.usage:avg",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		m := res.(map[string]any)
-		if m["source_id"] != "dt-1" {
-			t.Errorf("source_id = %v, want dt-1", m["source_id"])
+		if m["component_id"] != "dt-1" {
+			t.Errorf("component_id = %v, want dt-1", m["component_id"])
 		}
 	})
 
 	t.Run("metrics client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad",
-			"query":     "builtin:host.cpu.usage:avg",
+			"component_id": "bad",
+			"query":        "builtin:host.cpu.usage:avg",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -344,8 +344,8 @@ func TestDynatraceQueryTool(t *testing.T) {
 
 	t.Run("events success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dt-1",
-			"action":    "events",
+			"component_id": "dt-1",
+			"action":       "events",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -358,11 +358,11 @@ func TestDynatraceQueryTool(t *testing.T) {
 
 	t.Run("events with custom params", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "dt-1",
-			"action":    "events",
-			"limit":     float64(20),
-			"from":      float64(1700000000000),
-			"to":        float64(1700003600000),
+			"component_id": "dt-1",
+			"action":       "events",
+			"limit":        float64(20),
+			"from":         float64(1700000000000),
+			"to":           float64(1700003600000),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -374,8 +374,8 @@ func TestDynatraceQueryTool(t *testing.T) {
 
 	t.Run("events client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad",
-			"action":    "events",
+			"component_id": "bad",
+			"action":       "events",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -418,20 +418,20 @@ func TestNewRelicQueryTool(t *testing.T) {
 		if params.Type != "object" {
 			t.Errorf("Parameters().Type = %q, want object", params.Type)
 		}
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"query": "SELECT count(*) FROM Transaction"})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing query", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "nr-1"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "nr-1"})
 		if err == nil {
 			t.Error("expected error for missing query")
 		}
@@ -439,8 +439,8 @@ func TestNewRelicQueryTool(t *testing.T) {
 
 	t.Run("success with default account_id", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "nr-1",
-			"query":     "SELECT count(*) FROM Transaction SINCE 1 hour ago",
+			"component_id": "nr-1",
+			"query":        "SELECT count(*) FROM Transaction SINCE 1 hour ago",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -449,16 +449,16 @@ func TestNewRelicQueryTool(t *testing.T) {
 		if m["count"].(int) != 1 {
 			t.Errorf("count = %v, want 1", m["count"])
 		}
-		if m["source_id"] != "nr-1" {
-			t.Errorf("source_id = %v, want nr-1", m["source_id"])
+		if m["component_id"] != "nr-1" {
+			t.Errorf("component_id = %v, want nr-1", m["component_id"])
 		}
 	})
 
 	t.Run("success with explicit account_id", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "nr-1",
-			"query":      "SELECT count(*) FROM Transaction",
-			"account_id": float64(12345),
+			"component_id": "nr-1",
+			"query":        "SELECT count(*) FROM Transaction",
+			"account_id":   float64(12345),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -470,8 +470,8 @@ func TestNewRelicQueryTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"query":     "SELECT count(*) FROM Transaction",
+			"component_id": "bad-source",
+			"query":        "SELECT count(*) FROM Transaction",
 		})
 		if err == nil {
 			t.Error("expected error from client")

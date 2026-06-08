@@ -112,7 +112,7 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 	assignment, err := e.repo.GetAssignment(ctx, sourceID)
 	if err != nil {
 		slog.Warn("rbac: failed to get zone assignment, defaulting to unassigned",
-			"source_id", sourceID, "error", err)
+			"component_id", sourceID, "error", err)
 	} else if assignment != nil {
 		zoneID = assignment.ZoneID
 	}
@@ -171,7 +171,7 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 // zoneID?" — the sourceless variant of IsAllowed (additive / allow-only,
 // same union-of-grants semantics). Used by sourceless capabilities like
 // regime declare/resolve where there is no infrastructure source to
-// gate on. Does NOT consult source_zone_assignments.
+// gate on. Does NOT consult component_zone_assignments.
 //
 // Phase G (D-0010, joe-identity-design.md §2.7 + §2.10): the function
 // became set-shaped — mirroring IsAllowed/Decide — so incident
@@ -185,7 +185,7 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 // Encoding rationale: see the §6-B finding in
 // internal/store/migrations/012_regime_rbac.up.sql. Grafting sourceless
 // capabilities onto the IsAllowed path would either require sentinel
-// rows in `sources` (creates incidental coupling) or onto the
+// rows in `components` (creates incidental coupling) or onto the
 // 'unassigned' zone (creates incidental over-privilege across every
 // unassigned source). HasZoneAccess reuses the existing zone+policy
 // data unchanged and adds no new tables.

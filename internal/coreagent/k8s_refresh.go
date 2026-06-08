@@ -45,9 +45,9 @@ type serviceInfo struct {
 	Selector  map[string]string
 }
 
-func (r *Refresher) refreshK8sSource(ctx context.Context, source *store.Source, adapter k8s.KubernetesAdapter) error {
+func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing k8s source", "source_id", source.ID)
+	r.logger.Info("refreshing k8s source", "component_id", source.ID)
 
 	desiredNodes := make([]graph.Node, 0)
 	desiredEdges := make([]graph.Edge, 0)
@@ -76,11 +76,11 @@ func (r *Refresher) refreshK8sSource(ctx context.Context, source *store.Source, 
 			metadata := buildK8sMetadata(&obj, spec.NodeType, namespace)
 
 			node := graph.Node{
-				ID:       nodeID,
-				Type:     spec.NodeType,
-				SourceID: source.ID,
-				Metadata: metadata,
-				LastSeen: now,
+				ID:          nodeID,
+				Type:        spec.NodeType,
+				ComponentID: source.ID,
+				Metadata:    metadata,
+				LastSeen:    now,
 			}
 			desiredNodes = append(desiredNodes, node)
 			nodeIndex[node.ID] = node
@@ -188,7 +188,7 @@ func (r *Refresher) refreshK8sSource(ctx context.Context, source *store.Source, 
 	desiredNodes = append(desiredNodes, crdNodes...)
 	desiredEdges = append(desiredEdges, crdEdges...)
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (r *Refresher) refreshK8sSource(ctx context.Context, source *store.Source, 
 		return err
 	}
 
-	r.logger.Info("k8s refresh completed", "source_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
+	r.logger.Info("k8s refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
 	return nil
 }
 

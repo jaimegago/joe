@@ -29,17 +29,17 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-allow") // will be granted
-	mustCreateSource(t, sqlStore, "s-other") // never granted
+	mustCreateComponent(t, sqlStore, "s-allow") // will be granted
+	mustCreateComponent(t, sqlStore, "s-other") // never granted
 
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "s-other", ZoneID: "prod-write", AssignedBy: "test",
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "s-other", ZoneID: "prod-write", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign s-other: %v", err)
 	}

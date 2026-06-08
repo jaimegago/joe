@@ -106,7 +106,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -123,7 +123,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("Connect() expected error, got nil")
@@ -137,7 +137,7 @@ func TestAdapter_Connect_ClosedServer(t *testing.T) {
 	srv.Close() // close before connecting
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for closed server, got nil")
@@ -146,7 +146,7 @@ func TestAdapter_Connect_ClosedServer(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := falco.New()
-	source := store.Source{Config: []byte(`not valid json`)}
+	source := store.Component{Config: []byte(`not valid json`)}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
@@ -163,7 +163,7 @@ func TestAdapter_Connect_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "my-token",
 	})}
@@ -192,7 +192,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestAdapter_ListEvents(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestAdapter_ListEvents_WithFilters(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -292,7 +292,7 @@ func TestAdapter_ListEvents_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListEvents(context.Background(), "", "", "", 50)
@@ -325,7 +325,7 @@ func TestAdapter_ListRules(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -384,7 +384,7 @@ func (m *mockDoer) Do(_ *http.Request) (*http.Response, error) {
 func TestAdapter_Connect_BadURL(t *testing.T) {
 	// A URL with an invalid scheme triggers http.NewRequestWithContext to error.
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": "://bad url"})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": "://bad url"})}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad URL, got nil")
 	}
@@ -406,7 +406,7 @@ func TestAdapter_ListEvents_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -432,7 +432,7 @@ func TestAdapter_ListRules_FetchError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -452,7 +452,7 @@ func TestAdapter_ListEvents_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := falco.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	// health check consumes first call
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)

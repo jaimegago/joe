@@ -115,7 +115,7 @@ func NewWithClient(client httpDoer, cfg Config) *Adapter {
 }
 
 // Connect establishes and verifies connectivity to Argo CD.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

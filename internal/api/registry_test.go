@@ -26,9 +26,9 @@ type mockOCIAdapter struct {
 	err      error
 }
 
-func (m *mockOCIAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockOCIAdapter) Disconnect() error                               { return nil }
-func (m *mockOCIAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockOCIAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockOCIAdapter) Disconnect() error                                  { return nil }
+func (m *mockOCIAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockOCIAdapter) ListRepositories(_ context.Context) ([]string, error) {
 	return m.repos, m.err
 }
@@ -48,9 +48,9 @@ type mockECRAdapter struct {
 	err    error
 }
 
-func (m *mockECRAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockECRAdapter) Disconnect() error                               { return nil }
-func (m *mockECRAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockECRAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockECRAdapter) Disconnect() error                                  { return nil }
+func (m *mockECRAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockECRAdapter) ListRepositories(_ context.Context) ([]ecradapter.Repository, error) {
 	return m.repos, m.err
 }
@@ -70,9 +70,9 @@ type mockArtifactoryAdapter struct {
 	err      error
 }
 
-func (m *mockArtifactoryAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockArtifactoryAdapter) Disconnect() error                               { return nil }
-func (m *mockArtifactoryAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockArtifactoryAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockArtifactoryAdapter) Disconnect() error                                  { return nil }
+func (m *mockArtifactoryAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockArtifactoryAdapter) ListRepositories(_ context.Context) ([]artifactoryadapter.Repository, error) {
 	return m.repos, m.err
 }

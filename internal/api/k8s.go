@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
@@ -41,14 +41,14 @@ func (s *Server) handleK8sListResources(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"resources": resources,
-		"count":     len(resources),
-		"source_id": sourceID,
+		"resources":    resources,
+		"count":        len(resources),
+		"component_id": sourceID,
 	})
 }
 
 func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	resource := r.PathValue("resource")
 	namespace := r.PathValue("namespace")
@@ -67,13 +67,13 @@ func (s *Server) handleK8sGetResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"resource":  obj.Object,
-		"source_id": sourceID,
+		"resource":     obj.Object,
+		"component_id": sourceID,
 	})
 }
 
 func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	namespace := r.PathValue("namespace")
 	pod := r.PathValue("pod")
@@ -105,9 +105,9 @@ func (s *Server) handleK8sGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"logs":      logs,
-		"pod":       pod,
-		"namespace": namespace,
-		"source_id": sourceID,
+		"logs":         logs,
+		"pod":          pod,
+		"namespace":    namespace,
+		"component_id": sourceID,
 	})
 }

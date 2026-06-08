@@ -31,7 +31,7 @@ type Server struct {
 	// registry uses (Identity Phase E, design §3). It implements every
 	// coretools.CoreToolsClient method by reading the caller principal from
 	// ctx and dispatching to the accessor (for adapter/graph operations) or
-	// directly to in-process services (for list_sources, search_knowledge,
+	// directly to in-process services (for list_components, search_knowledge,
 	// doc tools — none of which touch an adapter). It replaces the loopback
 	// *client.Client; no HTTP self-call remains for in-process tool
 	// execution.
@@ -92,7 +92,7 @@ func (s *Server) SetVersion(v string) {
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerStatusRoutes(mux, apiPrefix)
 	s.registerGraphRoutes(mux, apiPrefix)
-	s.registerSourceRoutes(mux, apiPrefix)
+	s.registerComponentRoutes(mux, apiPrefix)
 	s.registerK8sRoutes(mux, apiPrefix)
 	s.registerGitRoutes(mux, apiPrefix)
 	s.registerAWSRoutes(mux, apiPrefix)
@@ -157,72 +157,72 @@ func (s *Server) registerGraphRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/summary", prefix), handler.handleSummary)
 }
 
-// registerSourceRoutes registers source management routes
-func (s *Server) registerSourceRoutes(mux *http.ServeMux, prefix string) {
+// registerComponentRoutes registers source management routes
+func (s *Server) registerComponentRoutes(mux *http.ServeMux, prefix string) {
 	handler := &sourceHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/sources", prefix), handler.handleList)
-	mux.HandleFunc(fmt.Sprintf("POST %s/sources", prefix), handler.handleCreate)
-	mux.HandleFunc(fmt.Sprintf("GET %s/sources/{id}", prefix), handler.handleGet)
-	mux.HandleFunc(fmt.Sprintf("DELETE %s/sources/{id}", prefix), handler.handleDelete)
+	mux.HandleFunc(fmt.Sprintf("GET %s/components", prefix), handler.handleList)
+	mux.HandleFunc(fmt.Sprintf("POST %s/components", prefix), handler.handleCreate)
+	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}", prefix), handler.handleGet)
+	mux.HandleFunc(fmt.Sprintf("DELETE %s/components/{id}", prefix), handler.handleDelete)
 }
 
 // registerK8sRoutes registers Kubernetes resource routes
 func (s *Server) registerK8sRoutes(mux *http.ServeMux, prefix string) {
 	handler := &k8sHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/resources", prefix), handler.handleListResources)
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/resources/{resource}/{namespace}/{name}", prefix), handler.handleGetResource)
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{sourceID}/logs/{namespace}/{pod}", prefix), handler.handleGetLogs)
+	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/resources", prefix), handler.handleListResources)
+	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/resources/{resource}/{namespace}/{name}", prefix), handler.handleGetResource)
+	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/logs/{namespace}/{pod}", prefix), handler.handleGetLogs)
 }
 
 // registerGitRoutes registers Git repository routes
 func (s *Server) registerGitRoutes(mux *http.ServeMux, prefix string) {
 	handler := &gitHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/file", prefix), handler.handleReadFile)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/files", prefix), handler.handleListFiles)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/log", prefix), handler.handleLog)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{sourceID}/diff", prefix), handler.handleDiff)
+	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/file", prefix), handler.handleReadFile)
+	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/files", prefix), handler.handleListFiles)
+	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/log", prefix), handler.handleLog)
+	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/diff", prefix), handler.handleDiff)
 }
 
 // registerAWSRoutes registers AWS resource routes
 func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string) {
 	handler := &awsHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/ec2/instances", prefix), handler.handleEC2ListInstances)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/ec2/instances/{instanceID}", prefix), handler.handleEC2GetInstance)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/eks/clusters", prefix), handler.handleEKSListClusters)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/eks/clusters/{clusterName}", prefix), handler.handleEKSGetCluster)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/rds/instances", prefix), handler.handleRDSListInstances)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/rds/instances/{dbInstanceID}", prefix), handler.handleRDSGetInstance)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs", prefix), handler.handleVPCListVPCs)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{sourceID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/ec2/instances", prefix), handler.handleEC2ListInstances)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/ec2/instances/{instanceID}", prefix), handler.handleEC2GetInstance)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/eks/clusters", prefix), handler.handleEKSListClusters)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/eks/clusters/{clusterName}", prefix), handler.handleEKSGetCluster)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/rds/instances", prefix), handler.handleRDSListInstances)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/rds/instances/{dbInstanceID}", prefix), handler.handleRDSGetInstance)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/vpc/vpcs", prefix), handler.handleVPCListVPCs)
+	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
 }
 
 // registerObservabilityRoutes registers observability query routes (Prometheus, Loki, Tempo, Jaeger, and proprietary vendors).
 func (s *Server) registerObservabilityRoutes(mux *http.ServeMux, prefix string) {
 	h := &observabilityHandler{server: s}
 	// Prometheus / Mimir
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/query", prefix), h.handlePrometheusQuery)
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/query_range", prefix), h.handlePrometheusQueryRange)
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{sourceID}/targets", prefix), h.handlePrometheusTargets)
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/query", prefix), h.handlePrometheusQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/query_range", prefix), h.handlePrometheusQueryRange)
+	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/targets", prefix), h.handlePrometheusTargets)
 	// Loki
-	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{sourceID}/query", prefix), h.handleLokiQuery)
-	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{sourceID}/query_range", prefix), h.handleLokiQueryRange)
+	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{componentID}/query", prefix), h.handleLokiQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{componentID}/query_range", prefix), h.handleLokiQueryRange)
 	// Tempo
-	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{sourceID}/search", prefix), h.handleTempoSearch)
-	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{sourceID}/traces/{traceID}", prefix), h.handleTempoGetTrace)
+	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{componentID}/search", prefix), h.handleTempoSearch)
+	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{componentID}/traces/{traceID}", prefix), h.handleTempoGetTrace)
 	// Jaeger
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/services", prefix), h.handleJaegerServices)
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces", prefix), h.handleJaegerTraces)
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{sourceID}/traces/{traceID}", prefix), h.handleJaegerGetTrace)
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/services", prefix), h.handleJaegerServices)
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/traces", prefix), h.handleJaegerTraces)
+	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/traces/{traceID}", prefix), h.handleJaegerGetTrace)
 	// Datadog (Phase 6, Step 12)
-	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{sourceID}/metrics", prefix), h.handleDatadogMetrics)
-	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{sourceID}/logs", prefix), h.handleDatadogLogs)
+	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{componentID}/metrics", prefix), h.handleDatadogMetrics)
+	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{componentID}/logs", prefix), h.handleDatadogLogs)
 	// Splunk
-	mux.HandleFunc(fmt.Sprintf("GET %s/splunk/{sourceID}/search", prefix), h.handleSplunkSearch)
+	mux.HandleFunc(fmt.Sprintf("GET %s/splunk/{componentID}/search", prefix), h.handleSplunkSearch)
 	// Dynatrace
-	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{sourceID}/metrics", prefix), h.handleDynatraceMetrics)
-	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{sourceID}/events", prefix), h.handleDynatraceEvents)
+	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{componentID}/metrics", prefix), h.handleDynatraceMetrics)
+	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{componentID}/events", prefix), h.handleDynatraceEvents)
 	// New Relic
-	mux.HandleFunc(fmt.Sprintf("GET %s/newrelic/{sourceID}/nrql", prefix), h.handleNewRelicNRQL)
+	mux.HandleFunc(fmt.Sprintf("GET %s/newrelic/{componentID}/nrql", prefix), h.handleNewRelicNRQL)
 }
 
 // observabilityHandler delegates to Server observability methods.
@@ -281,14 +281,14 @@ func (h *observabilityHandler) handleNewRelicNRQL(w http.ResponseWriter, r *http
 func (s *Server) registerAlertingRoutes(mux *http.ServeMux, prefix string) {
 	h := &alertingHandler{server: s}
 	// Alertmanager
-	mux.HandleFunc(fmt.Sprintf("GET %s/alertmanager/{sourceID}/alerts", prefix), h.handleAlertmanagerAlerts)
+	mux.HandleFunc(fmt.Sprintf("GET %s/alertmanager/{componentID}/alerts", prefix), h.handleAlertmanagerAlerts)
 	// PagerDuty
-	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{sourceID}/incidents", prefix), h.handlePagerDutyIncidents)
-	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{sourceID}/services", prefix), h.handlePagerDutyServices)
+	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{componentID}/incidents", prefix), h.handlePagerDutyIncidents)
+	mux.HandleFunc(fmt.Sprintf("GET %s/pagerduty/{componentID}/services", prefix), h.handlePagerDutyServices)
 	// Grafana
-	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/dashboards", prefix), h.handleGrafanaDashboards)
-	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/dashboards/{uid}", prefix), h.handleGrafanaGetDashboard)
-	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{sourceID}/alerts", prefix), h.handleGrafanaAlerts)
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{componentID}/dashboards", prefix), h.handleGrafanaDashboards)
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{componentID}/dashboards/{uid}", prefix), h.handleGrafanaGetDashboard)
+	mux.HandleFunc(fmt.Sprintf("GET %s/grafana/{componentID}/alerts", prefix), h.handleGrafanaAlerts)
 }
 
 // alertingHandler delegates to Server alerting methods.
@@ -431,19 +431,19 @@ type sourceHandler struct {
 }
 
 func (h *sourceHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	h.server.handleListSources(w, r)
+	h.server.handleListComponents(w, r)
 }
 
 func (h *sourceHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	h.server.handleCreateSource(w, r)
+	h.server.handleCreateComponent(w, r)
 }
 
 func (h *sourceHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	h.server.handleGetSource(w, r)
+	h.server.handleGetComponent(w, r)
 }
 
 func (h *sourceHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	h.server.handleDeleteSource(w, r)
+	h.server.handleDeleteComponent(w, r)
 }
 
 // k8sHandler handles Kubernetes resource requests
@@ -569,7 +569,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SourceID string `json:"source_id,omitempty"`
+		ComponentID string `json:"component_id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -583,16 +583,16 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var err error
-	if req.SourceID != "" {
-		err = s.services.Agent.TriggerRefreshSource(r.Context(), req.SourceID)
+	if req.ComponentID != "" {
+		err = s.services.Agent.TriggerRefreshComponent(r.Context(), req.ComponentID)
 	} else {
 		err = s.services.Agent.TriggerRefresh(r.Context())
 	}
 
 	if err != nil {
 		// Check if source not found
-		if req.SourceID != "" && errors.Is(err, store.ErrSourceNotFound) {
-			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source '%s' not found", req.SourceID))
+		if req.ComponentID != "" && errors.Is(err, store.ErrComponentNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source '%s' not found", req.ComponentID))
 			return
 		}
 		writeInternalError(w, err, "refresh")

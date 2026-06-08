@@ -27,9 +27,9 @@ func (c *Client) FalcoEvents(ctx context.Context, sourceID, priority, source, ru
 	}
 
 	var result struct {
-		Events   []falcoadapter.Event `json:"events"`
-		Count    int                  `json:"count"`
-		SourceID string               `json:"source_id"`
+		Events      []falcoadapter.Event `json:"events"`
+		Count       int                  `json:"count"`
+		ComponentID string               `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "falco events"); err != nil {
 		return nil, err
@@ -44,9 +44,9 @@ func (c *Client) FalcoRules(ctx context.Context, sourceID string) ([]falcoadapte
 		c.baseURL, apiFalcoBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Rules    []falcoadapter.Rule `json:"rules"`
-		Count    int                 `json:"count"`
-		SourceID string              `json:"source_id"`
+		Rules       []falcoadapter.Rule `json:"rules"`
+		Count       int                 `json:"count"`
+		ComponentID string              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "falco rules"); err != nil {
 		return nil, err

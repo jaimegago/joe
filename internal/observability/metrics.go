@@ -602,15 +602,15 @@ type GraphMetricsSummary struct {
 
 // BusinessMetricsProvider supplies data for business metrics gauges.
 type BusinessMetricsProvider struct {
-	SourcesByType func(ctx context.Context) (map[string]int, error)
-	GraphSummary  func(ctx context.Context) (GraphMetricsSummary, error)
-	AdapterCount  func() int
+	ComponentsByType func(ctx context.Context) (map[string]int, error)
+	GraphSummary     func(ctx context.Context) (GraphMetricsSummary, error)
+	AdapterCount     func() int
 }
 
 func (m *Metrics) RegisterBusinessMetrics(provider BusinessMetricsProvider) (func() error, error) {
 	sourcesGauge, err := m.meter.Int64ObservableGauge(
 		MetricSourcesTotal,
-		metric.WithDescription("Sources by type"),
+		metric.WithDescription("Components by type"),
 		metric.WithUnit(metricUnitCount),
 	)
 	if err != nil {
@@ -645,8 +645,8 @@ func (m *Metrics) RegisterBusinessMetrics(provider BusinessMetricsProvider) (fun
 	}
 
 	registration, err := m.meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
-		if provider.SourcesByType != nil {
-			counts, srcErr := provider.SourcesByType(ctx)
+		if provider.ComponentsByType != nil {
+			counts, srcErr := provider.ComponentsByType(ctx)
 			if srcErr == nil {
 				for sourceType, count := range counts {
 					observer.ObserveInt64(sourcesGauge, int64(count), metric.WithAttributes(attribute.String(AttrSourceType, sourceType)))

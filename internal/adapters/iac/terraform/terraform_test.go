@@ -289,7 +289,7 @@ func TestConnect_Success(t *testing.T) {
 		files: map[string]string{"/state/tfstate": stateJSON},
 	}
 	a := &Adapter{reader: reader}
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"state_path":"/state/tfstate"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -302,7 +302,7 @@ func TestConnect_Success(t *testing.T) {
 
 func TestConnect_BadConfig(t *testing.T) {
 	a := &Adapter{reader: &mockReader{}}
-	src := store.Source{Config: []byte(`{}`)} // missing state_path
+	src := store.Component{Config: []byte(`{}`)} // missing state_path
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing state_path")
 	}
@@ -311,7 +311,7 @@ func TestConnect_BadConfig(t *testing.T) {
 func TestConnect_ResolvePathError(t *testing.T) {
 	reader := &mockReader{err: errors.New("path not found")}
 	a := &Adapter{reader: reader}
-	src := store.Source{Config: []byte(`{"state_path":"/state/tfstate"}`)}
+	src := store.Component{Config: []byte(`{"state_path":"/state/tfstate"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for resolve path failure")
 	}
@@ -322,7 +322,7 @@ func TestConnect_InvalidStateFile(t *testing.T) {
 		files: map[string]string{"/state/tfstate": `{not valid json`},
 	}
 	a := &Adapter{reader: reader}
-	src := store.Source{Config: []byte(`{"state_path":"/state/tfstate"}`)}
+	src := store.Component{Config: []byte(`{"state_path":"/state/tfstate"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for invalid state JSON")
 	}
@@ -471,7 +471,7 @@ func TestConnect_ReadFileError(t *testing.T) {
 		resolvedPath: "/state/tfstate",
 	}
 	a := &Adapter{reader: reader}
-	src := store.Source{Config: []byte(`{"state_path":"/state/tfstate"}`)}
+	src := store.Component{Config: []byte(`{"state_path":"/state/tfstate"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error when readFile fails during Connect")
 	}

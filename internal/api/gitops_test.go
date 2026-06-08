@@ -27,9 +27,9 @@ type mockArgoCDAdapter struct {
 	history []argocdadapter.SyncOperation
 }
 
-func (m *mockArgoCDAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockArgoCDAdapter) Disconnect() error                               { return nil }
-func (m *mockArgoCDAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockArgoCDAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockArgoCDAdapter) Disconnect() error                                  { return nil }
+func (m *mockArgoCDAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockArgoCDAdapter) Apps(_ context.Context, _ string) ([]argocdadapter.App, error) {
 	return m.apps, m.appErr
 }
@@ -52,9 +52,9 @@ type mockTerraformAdapter struct {
 	err       error
 }
 
-func (m *mockTerraformAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockTerraformAdapter) Disconnect() error                               { return nil }
-func (m *mockTerraformAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockTerraformAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockTerraformAdapter) Disconnect() error                                  { return nil }
+func (m *mockTerraformAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockTerraformAdapter) Resources(_ context.Context, _ string) ([]terraformadapter.Resource, error) {
 	return m.resources, m.err
 }
@@ -74,9 +74,9 @@ type mockHelmAdapter struct {
 	err      error
 }
 
-func (m *mockHelmAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockHelmAdapter) Disconnect() error                               { return nil }
-func (m *mockHelmAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockHelmAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockHelmAdapter) Disconnect() error                                  { return nil }
+func (m *mockHelmAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockHelmAdapter) Releases(_ context.Context, _ string) ([]helmadapter.Release, error) {
 	return m.releases, m.err
 }

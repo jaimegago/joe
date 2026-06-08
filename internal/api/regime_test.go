@@ -457,7 +457,7 @@ func TestRegime_6B_NoIncidentalSourceWidening(t *testing.T) {
 	// is left unassigned to a zone (defaults to 'unassigned').
 	ctx := context.Background()
 	if _, err := s.DB().ExecContext(ctx, store.Rebind(store.DriverSQLite, `
-		INSERT INTO sources (id, type, name, config, status, created_at, updated_at)
+		INSERT INTO components (id, type, name, config, status, created_at, updated_at)
 		VALUES (?, 'kubernetes', 'sample', '{}', 'active', ?, ?)`),
 		"sample-src", time.Now().UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339)); err != nil {
 		t.Fatalf("insert sample source: %v", err)

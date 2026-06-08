@@ -312,7 +312,7 @@ func (r *sqlRepository) DeleteSource(ctx context.Context, id string) (err error)
 
 func (r *sqlRepository) listSources(ctx context.Context, where string, args ...any) (sources []*KnowledgeSource, err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "knowledge.list_sources", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "knowledge.list_components", time.Since(start), err) }()
 
 	query := sqlutil.Rebind(r.driver, `SELECT id, type, name, config, status, sync_interval_minutes,
 		last_sync_at, last_error, created_at

@@ -13,27 +13,27 @@ import (
 // registerRegistryRoutes registers artifact registry API routes.
 func (s *Server) registerRegistryRoutes(mux *http.ServeMux, prefix string) {
 	// OCI registry routes (DockerHub, GHCR, Harbor, Quay).
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{sourceID}/repos", prefix), s.handleOCIListRepos)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{sourceID}/repos/{repo}/tags", prefix), s.handleOCIListTags)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{sourceID}/repos/{repo}/manifest", prefix), s.handleOCIGetManifest)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{componentID}/repos", prefix), s.handleOCIListRepos)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{componentID}/repos/{repo}/tags", prefix), s.handleOCIListTags)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/oci/{componentID}/repos/{repo}/manifest", prefix), s.handleOCIGetManifest)
 
 	// JFrog Artifactory routes.
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{sourceID}/repos", prefix), s.handleArtifactoryListRepos)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{sourceID}/repos/{repo}/tags", prefix), s.handleArtifactoryListTags)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{sourceID}/repos/{repo}/artifact", prefix), s.handleArtifactoryGetArtifact)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{componentID}/repos", prefix), s.handleArtifactoryListRepos)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{componentID}/repos/{repo}/tags", prefix), s.handleArtifactoryListTags)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/artifactory/{componentID}/repos/{repo}/artifact", prefix), s.handleArtifactoryGetArtifact)
 
 	// AWS ECR routes.
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{sourceID}/repos", prefix), s.handleECRListRepos)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{sourceID}/repos/{repo}/images", prefix), s.handleECRListImages)
-	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{sourceID}/repos/{repo}/images/{tag}", prefix), s.handleECRGetImage)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{componentID}/repos", prefix), s.handleECRListRepos)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{componentID}/repos/{repo}/images", prefix), s.handleECRListImages)
+	mux.HandleFunc(fmt.Sprintf("GET %s/registry/ecr/{componentID}/repos/{repo}/images/{tag}", prefix), s.handleECRGetImage)
 }
 
 // --- OCI handlers ---
 
 // handleOCIListRepos lists all repositories in an OCI-compatible registry.
-// GET /api/v1/registry/oci/{sourceID}/repos
+// GET /api/v1/registry/oci/{componentID}/repos
 func (s *Server) handleOCIListRepos(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -53,14 +53,14 @@ func (s *Server) handleOCIListRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"repositories": repos,
 		"count":        len(repos),
-		"source_id":    sourceID,
+		"component_id": sourceID,
 	})
 }
 
 // handleOCIListTags lists tags for a repository in an OCI-compatible registry.
-// GET /api/v1/registry/oci/{sourceID}/repos/{repo}/tags
+// GET /api/v1/registry/oci/{componentID}/repos/{repo}/tags
 func (s *Server) handleOCIListTags(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -79,17 +79,17 @@ func (s *Server) handleOCIListTags(w http.ResponseWriter, r *http.Request) {
 		tags = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tags":      tags,
-		"count":     len(tags),
-		"repo":      repo,
-		"source_id": sourceID,
+		"tags":         tags,
+		"count":        len(tags),
+		"repo":         repo,
+		"component_id": sourceID,
 	})
 }
 
 // handleOCIGetManifest retrieves an image manifest from an OCI-compatible registry.
-// GET /api/v1/registry/oci/{sourceID}/repos/{repo}/manifest?reference=<tag|digest>
+// GET /api/v1/registry/oci/{componentID}/repos/{repo}/manifest?reference=<tag|digest>
 func (s *Server) handleOCIGetManifest(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 	reference := r.URL.Query().Get("reference")
 
@@ -113,19 +113,19 @@ func (s *Server) handleOCIGetManifest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"manifest":  manifest,
-		"repo":      repo,
-		"reference": reference,
-		"source_id": sourceID,
+		"manifest":     manifest,
+		"repo":         repo,
+		"reference":    reference,
+		"component_id": sourceID,
 	})
 }
 
 // --- Artifactory handlers ---
 
 // handleArtifactoryListRepos lists Docker/Helm repositories in Artifactory.
-// GET /api/v1/registry/artifactory/{sourceID}/repos
+// GET /api/v1/registry/artifactory/{componentID}/repos
 func (s *Server) handleArtifactoryListRepos(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -145,14 +145,14 @@ func (s *Server) handleArtifactoryListRepos(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{
 		"repositories": repos,
 		"count":        len(repos),
-		"source_id":    sourceID,
+		"component_id": sourceID,
 	})
 }
 
 // handleArtifactoryListTags lists Docker image tags in an Artifactory repository.
-// GET /api/v1/registry/artifactory/{sourceID}/repos/{repo}/tags?image=<name>
+// GET /api/v1/registry/artifactory/{componentID}/repos/{repo}/tags?image=<name>
 func (s *Server) handleArtifactoryListTags(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 	image := r.URL.Query().Get("image")
 
@@ -179,18 +179,18 @@ func (s *Server) handleArtifactoryListTags(w http.ResponseWriter, r *http.Reques
 		tags = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tags":      tags,
-		"count":     len(tags),
-		"repo":      repo,
-		"image":     image,
-		"source_id": sourceID,
+		"tags":         tags,
+		"count":        len(tags),
+		"repo":         repo,
+		"image":        image,
+		"component_id": sourceID,
 	})
 }
 
 // handleArtifactoryGetArtifact retrieves artifact metadata from Artifactory.
-// GET /api/v1/registry/artifactory/{sourceID}/repos/{repo}/artifact?path=<path>
+// GET /api/v1/registry/artifactory/{componentID}/repos/{repo}/artifact?path=<path>
 func (s *Server) handleArtifactoryGetArtifact(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 	path := r.URL.Query().Get("path")
 
@@ -214,19 +214,19 @@ func (s *Server) handleArtifactoryGetArtifact(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"artifact":  info,
-		"repo":      repo,
-		"path":      path,
-		"source_id": sourceID,
+		"artifact":     info,
+		"repo":         repo,
+		"path":         path,
+		"component_id": sourceID,
 	})
 }
 
 // --- ECR handlers ---
 
 // handleECRListRepos lists ECR repositories.
-// GET /api/v1/registry/ecr/{sourceID}/repos
+// GET /api/v1/registry/ecr/{componentID}/repos
 func (s *Server) handleECRListRepos(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -246,14 +246,14 @@ func (s *Server) handleECRListRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"repositories": repos,
 		"count":        len(repos),
-		"source_id":    sourceID,
+		"component_id": sourceID,
 	})
 }
 
 // handleECRListImages lists images in an ECR repository.
-// GET /api/v1/registry/ecr/{sourceID}/repos/{repo}/images
+// GET /api/v1/registry/ecr/{componentID}/repos/{repo}/images
 func (s *Server) handleECRListImages(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -272,17 +272,17 @@ func (s *Server) handleECRListImages(w http.ResponseWriter, r *http.Request) {
 		images = []ecradapter.ImageDetail{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"images":    images,
-		"count":     len(images),
-		"repo":      repo,
-		"source_id": sourceID,
+		"images":       images,
+		"count":        len(images),
+		"repo":         repo,
+		"component_id": sourceID,
 	})
 }
 
 // handleECRGetImage retrieves details for a specific tagged ECR image.
-// GET /api/v1/registry/ecr/{sourceID}/repos/{repo}/images/{tag}
+// GET /api/v1/registry/ecr/{componentID}/repos/{repo}/images/{tag}
 func (s *Server) handleECRGetImage(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	repo := r.PathValue("repo")
 	tag := r.PathValue("tag")
 
@@ -299,9 +299,9 @@ func (s *Server) handleECRGetImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"image":     image,
-		"repo":      repo,
-		"tag":       tag,
-		"source_id": sourceID,
+		"image":        image,
+		"repo":         repo,
+		"tag":          tag,
+		"component_id": sourceID,
 	})
 }

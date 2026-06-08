@@ -15,13 +15,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fetchSources, testSource, deleteSource } from '@/api/sources';
+import { fetchComponents, testComponent, deleteComponent } from '@/api/components';
 import { fetchZones } from '@/api/security';
 import { STATUS_CONFIG } from '@/lib/constants';
-import type { Source } from '@/api/types';
+import type { Component } from '@/api/types';
 import { Database, RefreshCw } from 'lucide-react';
 
-function StatusDot({ status }: { status: Source['status'] }) {
+function StatusDot({ status }: { status: Component['status'] }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
   return (
     <span className="flex items-center gap-1.5 text-sm" style={{ color: cfg.color }}>
@@ -30,25 +30,25 @@ function StatusDot({ status }: { status: Source['status'] }) {
   );
 }
 
-export function SourcesPage() {
+export function ComponentsPage() {
   const qc = useQueryClient();
   const [filterType, setFilterType] = useState('all');
   const [filterZone, setFilterZone] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [selected, setSelected] = useState<Source | null>(null);
+  const [selected, setSelected] = useState<Component | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const sourcesQ = useQuery({ queryKey: ['sources'], queryFn: fetchSources });
+  const componentsQ = useQuery({ queryKey: ['components'], queryFn: fetchComponents });
   const zonesQ = useQuery({ queryKey: ['zones'], queryFn: fetchZones });
 
   const testMut = useMutation({
-    mutationFn: (id: string) => testSource(id),
+    mutationFn: (id: string) => testComponent(id),
     onSuccess: (res) => {
       if (res.ok) {
         toast.success(res.message ?? 'Connection successful');
         // The test (re)connects and clears the source's error status server-side,
         // so refresh the list to reflect the recovered status.
-        void qc.invalidateQueries({ queryKey: ['sources'] });
+        void qc.invalidateQueries({ queryKey: ['components'] });
       } else {
         toast.error(res.message ?? 'Connection failed');
       }
@@ -57,41 +57,41 @@ export function SourcesPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => deleteSource(id),
+    mutationFn: (id: string) => deleteComponent(id),
     onSuccess: () => {
-      toast.success('Source removed');
+      toast.success('Component removed');
       setSelected(null);
-      void qc.invalidateQueries({ queryKey: ['sources'] });
+      void qc.invalidateQueries({ queryKey: ['components'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const sources = sourcesQ.data ?? [];
+  const components = componentsQ.data ?? [];
   const zones = zonesQ.data ?? [];
 
   // Render the detail card from the live list so status/last_error stay in sync
   // after a Test Connection refreshes the data (the selected copy is stale).
   const selectedLive = selected
-    ? (sources.find((s) => s.id === selected.id) ?? selected)
+    ? (components.find((s) => s.id === selected.id) ?? selected)
     : null;
 
-  const types = [...new Set(sources.map((s) => s.type))];
+  const types = [...new Set(components.map((s) => s.type))];
 
-  const filtered = sources.filter((s) => {
+  const filtered = components.filter((s) => {
     if (filterType !== 'all' && s.type !== filterType) return false;
     if (filterZone !== 'all' && s.zone !== filterZone) return false;
     if (filterStatus !== 'all' && s.status !== filterStatus) return false;
     return true;
   });
 
-  if (sourcesQ.isLoading) return <LoadingPage />;
+  if (componentsQ.isLoading) return <LoadingPage />;
 
   return (
     <>
       <Header
-        title="Sources"
+        title="Components"
         actions={
-          <Button variant="outline" size="sm" onClick={() => void sourcesQ.refetch()}>
+          <Button variant="outline" size="sm" onClick={() => void componentsQ.refetch()}>
             <RefreshCw className="mr-1 h-3 w-3" />
             Refresh
           </Button>
@@ -132,12 +132,12 @@ export function SourcesPage() {
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyState icon={Database} title="No sources" description="No sources match the current filters." />
+          <EmptyState icon={Database} title="No components" description="No components match the current filters." />
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Source</TableHead>
+                <TableHead>Component</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Zone</TableHead>
                 <TableHead>Status</TableHead>

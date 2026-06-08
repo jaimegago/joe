@@ -10,9 +10,9 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source, adapter azureadapter.AzureAdapter) error {
+func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Component, adapter azureadapter.AzureAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing azure source", "source_id", source.ID)
+	r.logger.Info("refreshing azure source", "component_id", source.ID)
 
 	now := time.Now()
 	desiredNodes := make([]graph.Node, 0)
@@ -36,11 +36,11 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 			metadata["tags"] = vnet.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "vnet",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "vnet",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 		vnetIndex[vnetID] = nodeID
 	}
@@ -65,11 +65,11 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 			metadata["tags"] = vm.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "vm",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "vm",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 
 		if vm.VNetID != "" {
@@ -106,11 +106,11 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 			metadata["tags"] = cluster.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "aks_cluster",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "aks_cluster",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 
 		if cluster.VNetID != "" {
@@ -147,11 +147,11 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 			metadata["tags"] = db.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "sql_database",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "sql_database",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 
 		if db.VNetID != "" {
@@ -171,7 +171,7 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 	// Cross-source: match Azure VMs to K8s nodes by VM name → is_k8s_node edges.
 	desiredEdges = append(desiredEdges, r.buildIsK8sNodeEdgesFromVMs(ctx, source, vms, now)...)
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err
 	}
@@ -181,14 +181,14 @@ func (r *Refresher) refreshAzureSource(ctx context.Context, source *store.Source
 		return err
 	}
 
-	r.logger.Info("azure refresh completed", "source_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
+	r.logger.Info("azure refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
 	return nil
 }
 
 // buildIsK8sNodeEdgesFromVMs creates is_k8s_node edges by matching Azure VM names
 // against K8s node names or hostnames already in the graph. AKS node names typically
 // match the VM name.
-func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *store.Source, vms []azureadapter.VM, now time.Time) []graph.Edge {
+func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *store.Component, vms []azureadapter.VM, now time.Time) []graph.Edge {
 	// Build a lookup index: node name (and hostname) → K8s node graph ID.
 	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
 	if err != nil || len(k8sNodes) == 0 {
@@ -215,14 +215,14 @@ func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *stor
 		}
 		vmID := azureResourceID(vm.ID, vm.Name)
 		edges = append(edges, graph.Edge{
-			From:       azureNodeID(source.ID, "vm", vmID),
-			To:         k8sNodeID,
-			Relation:   graph.RelationIsK8sNode,
-			Confidence: graph.Inferred,
-			Source:     "azure_k8s_name_match",
-			SourceID:   source.ID,
-			Context:    "vm_name=" + vm.Name,
-			CreatedAt:  now,
+			From:        azureNodeID(source.ID, "vm", vmID),
+			To:          k8sNodeID,
+			Relation:    graph.RelationIsK8sNode,
+			Confidence:  graph.Inferred,
+			Source:      "azure_k8s_name_match",
+			ComponentID: source.ID,
+			Context:     "vm_name=" + vm.Name,
+			CreatedAt:   now,
 		})
 	}
 	return edges

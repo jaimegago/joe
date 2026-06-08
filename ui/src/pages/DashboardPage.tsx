@@ -4,26 +4,26 @@ import { PageContainer } from '@/components/layout/PageContainer';
 import { MetricsCard } from '@/components/dashboard/MetricsCard';
 import { AlertsList } from '@/components/dashboard/AlertsList';
 import { RecentSessions } from '@/components/dashboard/RecentSessions';
-import { SourcesHealth } from '@/components/dashboard/SourcesHealth';
+import { ComponentsHealth } from '@/components/dashboard/ComponentsHealth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { fetchSources } from '@/api/sources';
+import { fetchComponents } from '@/api/components';
 import { fetchAlerts } from '@/api/alerts';
 import { fetchSessions } from '@/api/chat';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 
 export function DashboardPage() {
-  const sourcesQ = useQuery({ queryKey: ['sources'], queryFn: fetchSources, refetchInterval: 30_000 });
+  const componentsQ = useQuery({ queryKey: ['components'], queryFn: fetchComponents, refetchInterval: 30_000 });
   const alertsQ = useQuery({ queryKey: ['alerts'], queryFn: fetchAlerts, refetchInterval: 30_000 });
   const sessionsQ = useQuery({ queryKey: ['sessions', 5], queryFn: () => fetchSessions(5), refetchInterval: 30_000 });
 
-  const sources = sourcesQ.data ?? [];
+  const components = componentsQ.data ?? [];
   const alerts = alertsQ.data ?? [];
   const sessions = sessionsQ.data ?? [];
 
-  const connectedCount = sources.filter((s) => s.status === 'connected').length;
-  const errorCount = sources.filter((s) => s.status === 'error').length;
+  const connectedCount = components.filter((s) => s.status === 'connected').length;
+  const errorCount = components.filter((s) => s.status === 'error').length;
   const criticalAlerts = alerts.filter((a) => a.severity === 'critical').length;
 
   return (
@@ -35,7 +35,7 @@ export function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              void sourcesQ.refetch();
+              void componentsQ.refetch();
               void alertsQ.refetch();
               void sessionsQ.refetch();
             }}
@@ -49,9 +49,9 @@ export function DashboardPage() {
         {/* Metrics row */}
         <div className="mb-6 grid grid-cols-3 gap-4">
           <MetricsCard
-            title="Sources"
-            value={sourcesQ.isLoading ? '…' : connectedCount}
-            subLabel={sourcesQ.isLoading ? 'loading' : errorCount > 0 ? `${errorCount} error${errorCount > 1 ? 's' : ''}` : 'All healthy'}
+            title="Components"
+            value={componentsQ.isLoading ? '…' : connectedCount}
+            subLabel={componentsQ.isLoading ? 'loading' : errorCount > 0 ? `${errorCount} error${errorCount > 1 ? 's' : ''}` : 'All healthy'}
             colorClass={errorCount > 0 ? 'text-destructive' : 'text-green-600'}
           />
           <MetricsCard
@@ -87,18 +87,18 @@ export function DashboardPage() {
           </Card>
         </div>
 
-        {/* Sources health */}
+        {/* Components health */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Sources Health</CardTitle>
+            <CardTitle className="text-sm font-medium">Components Health</CardTitle>
           </CardHeader>
           <CardContent>
-            {sourcesQ.isLoading ? (
+            {componentsQ.isLoading ? (
               <LoadingSpinner size="sm" />
-            ) : sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No sources configured</p>
+            ) : components.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No components configured</p>
             ) : (
-              <SourcesHealth sources={sources} />
+              <ComponentsHealth components={components} />
             )}
           </CardContent>
         </Card>

@@ -534,13 +534,13 @@ func TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance(t *testing.T) {
 	engine := rbac.NewPolicyEngine(rbacRepo)
 
 	// Seed a source/zone/policy combo so we have a non-trivial allow.
-	if err := e.store.Sources.Create(e.ctx, &store.Source{
+	if err := e.store.Components.Create(e.ctx, &store.Component{
 		ID: "src-prod", Type: "k8s", Name: "prod cluster", Config: []byte(`{}`),
 	}); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	if err := rbacRepo.UpsertAssignment(e.ctx, rbac.SourceZoneAssignment{
-		SourceID: "src-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := rbacRepo.UpsertAssignment(e.ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "src-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign zone: %v", err)
 	}

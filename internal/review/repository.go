@@ -64,11 +64,11 @@ func NewRepository(db *sql.DB, driver string) Repository {
 func (r *sqlRepository) Enqueue(ctx context.Context, job *ReviewJob) error {
 	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO review_jobs
-		  (id, event_id, platform, source_id, owner, repo, pr_number, head_sha,
+		  (id, event_id, platform, component_id, owner, repo, pr_number, head_sha,
 		   status, created_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id) DO NOTHING`),
-		job.ID, job.EventID, string(job.Platform), job.SourceID,
+		job.ID, job.EventID, string(job.Platform), job.ComponentID,
 		job.Owner, job.Repo, job.PRNumber, job.HeadSHA,
 		string(JobStatusPending), job.CreatedAt.UTC().Format(time.RFC3339),
 	)
@@ -168,7 +168,7 @@ func (r *sqlRepository) UpdateStatus(ctx context.Context, id string, status JobS
 }
 
 func (r *sqlRepository) query(ctx context.Context, where string, args ...any) ([]*ReviewJob, error) {
-	q := `SELECT id, event_id, platform, source_id, owner, repo, pr_number, head_sha,
+	q := `SELECT id, event_id, platform, component_id, owner, repo, pr_number, head_sha,
 		status, review_body, error, created_at, started_at, finished_at
 		FROM review_jobs ` + where
 
@@ -198,7 +198,7 @@ func scanJob(rows *sql.Rows) (*ReviewJob, error) {
 		startedAtStr, finishedAtStr sql.NullString
 	)
 	if err := rows.Scan(
-		&j.ID, &j.EventID, &platform, &j.SourceID,
+		&j.ID, &j.EventID, &platform, &j.ComponentID,
 		&j.Owner, &j.Repo, &j.PRNumber, &j.HeadSHA,
 		&status, &reviewBody, &errStr,
 		&createdAtStr, &startedAtStr, &finishedAtStr,

@@ -129,8 +129,8 @@ func TestCallback_WritesExactlyOneAuthLoginRow(t *testing.T) {
 	if e.Action != audit.ActionOIDCLogin {
 		t.Errorf("action = %q, want %q", e.Action, audit.ActionOIDCLogin)
 	}
-	if e.Source != auditSourceOIDC {
-		t.Errorf("source = %q, want %q", e.Source, auditSourceOIDC)
+	if e.ComponentID != auditSourceOIDC {
+		t.Errorf("source = %q, want %q", e.ComponentID, auditSourceOIDC)
 	}
 	if e.Decision != audit.DecisionAllow {
 		t.Errorf("decision = %q, want allow", e.Decision)
@@ -230,8 +230,8 @@ func TestEdgeAuth_BreakGlassAuditOncePerWindow(t *testing.T) {
 	if e.Kind != audit.KindAuthLogin || e.Action != audit.ActionBreakGlassUse {
 		t.Errorf("row kind/action = %q/%q, want %q/%q", e.Kind, e.Action, audit.KindAuthLogin, audit.ActionBreakGlassUse)
 	}
-	if e.Source != auditSourceBreakGlass {
-		t.Errorf("source = %q, want %q", e.Source, auditSourceBreakGlass)
+	if e.ComponentID != auditSourceBreakGlass {
+		t.Errorf("source = %q, want %q", e.ComponentID, auditSourceBreakGlass)
 	}
 	if e.Principal != "svc:ci" {
 		t.Errorf("principal = %q, want svc:ci", e.Principal)

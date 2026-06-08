@@ -111,7 +111,7 @@ func NewWithReader(reader stateReader, cfg Config, resolvedPath string) *Adapter
 }
 
 // Connect parses config and verifies the state file is readable.
-func (a *Adapter) Connect(_ context.Context, source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

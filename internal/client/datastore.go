@@ -22,8 +22,8 @@ func (c *Client) PostgresStat(ctx context.Context, sourceID string) (*postgresad
 		c.baseURL, apiPostgresBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Stat     *postgresadapter.Stat `json:"stat"`
-		SourceID string                `json:"source_id"`
+		Stat        *postgresadapter.Stat `json:"stat"`
+		ComponentID string                `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "postgres stat"); err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func (c *Client) PostgresQuery(ctx context.Context, sourceID, query string) ([]m
 		url.PathEscape(sourceID), url.QueryEscape(query))
 
 	var result struct {
-		Rows     []map[string]any `json:"rows"`
-		SourceID string           `json:"source_id"`
+		Rows        []map[string]any `json:"rows"`
+		ComponentID string           `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "postgres query"); err != nil {
 		return nil, err
@@ -57,8 +57,8 @@ func (c *Client) MySQLStat(ctx context.Context, sourceID string) (*mysqladapter.
 		c.baseURL, apiMySQLBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Stat     *mysqladapter.Stat `json:"stat"`
-		SourceID string             `json:"source_id"`
+		Stat        *mysqladapter.Stat `json:"stat"`
+		ComponentID string             `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "mysql stat"); err != nil {
 		return nil, err
@@ -74,8 +74,8 @@ func (c *Client) MySQLQuery(ctx context.Context, sourceID, query string) ([]map[
 		url.PathEscape(sourceID), url.QueryEscape(query))
 
 	var result struct {
-		Rows     []map[string]any `json:"rows"`
-		SourceID string           `json:"source_id"`
+		Rows        []map[string]any `json:"rows"`
+		ComponentID string           `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "mysql query"); err != nil {
 		return nil, err
@@ -96,8 +96,8 @@ func (c *Client) RedisInfo(ctx context.Context, sourceID, section string) (map[s
 	}
 
 	var result struct {
-		Info     map[string]string `json:"info"`
-		SourceID string            `json:"source_id"`
+		Info        map[string]string `json:"info"`
+		ComponentID string            `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "redis info"); err != nil {
 		return nil, err
@@ -113,8 +113,8 @@ func (c *Client) RedisSlowLog(ctx context.Context, sourceID string, count int64)
 		url.PathEscape(sourceID), strconv.FormatInt(count, 10))
 
 	var result struct {
-		Entries  []redisadapter.SlowLogEntry `json:"entries"`
-		SourceID string                      `json:"source_id"`
+		Entries     []redisadapter.SlowLogEntry `json:"entries"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "redis slowlog"); err != nil {
 		return nil, err
@@ -129,8 +129,8 @@ func (c *Client) RedisDBSize(ctx context.Context, sourceID string) (int64, error
 		c.baseURL, apiRedisBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		DBSize   int64  `json:"db_size"`
-		SourceID string `json:"source_id"`
+		DBSize      int64  `json:"db_size"`
+		ComponentID string `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "redis dbsize"); err != nil {
 		return 0, err
@@ -147,8 +147,8 @@ func (c *Client) MongoDBServerStatus(ctx context.Context, sourceID string) (map[
 		c.baseURL, apiMongoDBBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Status   map[string]any `json:"status"`
-		SourceID string         `json:"source_id"`
+		Status      map[string]any `json:"status"`
+		ComponentID string         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "mongodb server status"); err != nil {
 		return nil, err
@@ -163,8 +163,8 @@ func (c *Client) MongoDBReplicaStatus(ctx context.Context, sourceID string) (map
 		c.baseURL, apiMongoDBBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Status   map[string]any `json:"status"`
-		SourceID string         `json:"source_id"`
+		Status      map[string]any `json:"status"`
+		ComponentID string         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "mongodb replica status"); err != nil {
 		return nil, err
@@ -179,8 +179,8 @@ func (c *Client) MongoDBCurrentOp(ctx context.Context, sourceID string) (map[str
 		c.baseURL, apiMongoDBBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Op       map[string]any `json:"op"`
-		SourceID string         `json:"source_id"`
+		Op          map[string]any `json:"op"`
+		ComponentID string         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "mongodb current op"); err != nil {
 		return nil, err
@@ -197,9 +197,9 @@ func (c *Client) KafkaTopics(ctx context.Context, sourceID string) ([]kafkaadapt
 		c.baseURL, apiKafkaBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Topics   []kafkaadapter.TopicInfo `json:"topics"`
-		Count    int                      `json:"count"`
-		SourceID string                   `json:"source_id"`
+		Topics      []kafkaadapter.TopicInfo `json:"topics"`
+		Count       int                      `json:"count"`
+		ComponentID string                   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "kafka topics"); err != nil {
 		return nil, err
@@ -214,9 +214,9 @@ func (c *Client) KafkaBrokers(ctx context.Context, sourceID string) ([]kafkaadap
 		c.baseURL, apiKafkaBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Brokers  []kafkaadapter.BrokerInfo `json:"brokers"`
-		Count    int                       `json:"count"`
-		SourceID string                    `json:"source_id"`
+		Brokers     []kafkaadapter.BrokerInfo `json:"brokers"`
+		Count       int                       `json:"count"`
+		ComponentID string                    `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "kafka brokers"); err != nil {
 		return nil, err
@@ -231,9 +231,9 @@ func (c *Client) KafkaConsumerGroups(ctx context.Context, sourceID string) ([]ka
 		c.baseURL, apiKafkaBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Groups   []kafkaadapter.ConsumerGroupInfo `json:"groups"`
-		Count    int                              `json:"count"`
-		SourceID string                           `json:"source_id"`
+		Groups      []kafkaadapter.ConsumerGroupInfo `json:"groups"`
+		Count       int                              `json:"count"`
+		ComponentID string                           `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "kafka consumer groups"); err != nil {
 		return nil, err
@@ -250,8 +250,8 @@ func (c *Client) ElasticsearchHealth(ctx context.Context, sourceID string) (*ela
 		c.baseURL, apiElasticsearchBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Health   *elasticsearchadapter.ClusterHealth `json:"health"`
-		SourceID string                              `json:"source_id"`
+		Health      *elasticsearchadapter.ClusterHealth `json:"health"`
+		ComponentID string                              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "elasticsearch health"); err != nil {
 		return nil, err
@@ -269,9 +269,9 @@ func (c *Client) ElasticsearchIndices(ctx context.Context, sourceID, pattern str
 	}
 
 	var result struct {
-		Indices  []elasticsearchadapter.IndexInfo `json:"indices"`
-		Count    int                              `json:"count"`
-		SourceID string                           `json:"source_id"`
+		Indices     []elasticsearchadapter.IndexInfo `json:"indices"`
+		Count       int                              `json:"count"`
+		ComponentID string                           `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "elasticsearch indices"); err != nil {
 		return nil, err

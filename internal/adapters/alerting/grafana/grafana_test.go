@@ -62,7 +62,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "test-key",
 	})}
@@ -83,7 +83,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "bad-key",
 	})}
@@ -126,7 +126,7 @@ func TestAdapter_ListDashboards(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "test-key",
 	})}
@@ -185,7 +185,7 @@ func TestAdapter_GetDashboard(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "test-key",
 	})}
@@ -234,7 +234,7 @@ func TestAdapter_ListAlerts(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "test-key",
 	})}
@@ -288,7 +288,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -309,7 +309,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := grafana.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -320,7 +320,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -339,7 +339,7 @@ func TestAdapter_Connect_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "glsa_mysecret",
 	})}
@@ -365,7 +365,7 @@ func TestAdapter_ListDashboards_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -399,7 +399,7 @@ func TestAdapter_GetDashboard_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -433,7 +433,7 @@ func TestAdapter_ListAlerts_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -461,7 +461,7 @@ func TestAdapter_ListDashboards_WithQuery(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -479,7 +479,7 @@ func TestAdapter_ListDashboards_WithQuery(t *testing.T) {
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := grafana.New()
 	// Empty config — no URL, no api_key — should fail ParseConfig.
-	source := store.Source{}
+	source := store.Component{}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}
@@ -501,7 +501,7 @@ func TestAdapter_ListDashboards_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -534,7 +534,7 @@ func TestAdapter_ListDashboards_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -561,7 +561,7 @@ func TestAdapter_ListDashboards_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -591,7 +591,7 @@ func TestAdapter_GetDashboard_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -618,7 +618,7 @@ func TestAdapter_GetDashboard_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -645,7 +645,7 @@ func TestAdapter_GetDashboard_OtherServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -675,7 +675,7 @@ func TestAdapter_ListAlerts_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}
@@ -702,7 +702,7 @@ func TestAdapter_ListAlerts_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := grafana.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "key",
 	})}

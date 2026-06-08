@@ -15,9 +15,9 @@ import (
 // =========================
 
 // handleNginxIngresses lists Ingress resources.
-// GET /api/v1/nginx/{sourceID}/ingresses?namespace=
+// GET /api/v1/nginx/{componentID}/ingresses?namespace=
 func (s *Server) handleNginxIngresses(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	namespace := r.URL.Query().Get("namespace")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -36,17 +36,17 @@ func (s *Server) handleNginxIngresses(w http.ResponseWriter, r *http.Request) {
 		ingresses = []nginxadapter.Ingress{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ingresses": ingresses,
-		"count":     len(ingresses),
-		"source_id": sourceID,
-		"namespace": namespace,
+		"ingresses":    ingresses,
+		"count":        len(ingresses),
+		"component_id": sourceID,
+		"namespace":    namespace,
 	})
 }
 
 // handleNginxStatus returns NGINX connection statistics.
-// GET /api/v1/nginx/{sourceID}/status
+// GET /api/v1/nginx/{componentID}/status
 func (s *Server) handleNginxStatus(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -61,15 +61,15 @@ func (s *Server) handleNginxStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    status,
-		"source_id": sourceID,
+		"status":       status,
+		"component_id": sourceID,
 	})
 }
 
 // handleNginxConfigMaps lists NGINX controller ConfigMaps.
-// GET /api/v1/nginx/{sourceID}/config?namespace=
+// GET /api/v1/nginx/{componentID}/config?namespace=
 func (s *Server) handleNginxConfigMaps(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	namespace := r.URL.Query().Get("namespace")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -88,10 +88,10 @@ func (s *Server) handleNginxConfigMaps(w http.ResponseWriter, r *http.Request) {
 		cms = []nginxadapter.ConfigMapSummary{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"config_maps": cms,
-		"count":       len(cms),
-		"source_id":   sourceID,
-		"namespace":   namespace,
+		"config_maps":  cms,
+		"count":        len(cms),
+		"component_id": sourceID,
+		"namespace":    namespace,
 	})
 }
 
@@ -100,9 +100,9 @@ func (s *Server) handleNginxConfigMaps(w http.ResponseWriter, r *http.Request) {
 // =========================
 
 // handleEnvoyClusters returns Envoy cluster health summaries.
-// GET /api/v1/envoy/{sourceID}/clusters
+// GET /api/v1/envoy/{componentID}/clusters
 func (s *Server) handleEnvoyClusters(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -120,16 +120,16 @@ func (s *Server) handleEnvoyClusters(w http.ResponseWriter, r *http.Request) {
 		clusters = []envoyadapter.ClusterStatus{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"clusters":  clusters,
-		"count":     len(clusters),
-		"source_id": sourceID,
+		"clusters":     clusters,
+		"count":        len(clusters),
+		"component_id": sourceID,
 	})
 }
 
 // handleEnvoyConfigDump returns Envoy config dump, optionally filtered by section.
-// GET /api/v1/envoy/{sourceID}/config?section=
+// GET /api/v1/envoy/{componentID}/config?section=
 func (s *Server) handleEnvoyConfigDump(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	section := r.URL.Query().Get("section")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -145,16 +145,16 @@ func (s *Server) handleEnvoyConfigDump(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"config":    dump,
-		"section":   section,
-		"source_id": sourceID,
+		"config":       dump,
+		"section":      section,
+		"component_id": sourceID,
 	})
 }
 
 // handleEnvoyStats returns Envoy statistics.
-// GET /api/v1/envoy/{sourceID}/stats?filter=
+// GET /api/v1/envoy/{componentID}/stats?filter=
 func (s *Server) handleEnvoyStats(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	filter := r.URL.Query().Get("filter")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -173,21 +173,21 @@ func (s *Server) handleEnvoyStats(w http.ResponseWriter, r *http.Request) {
 		stats = []envoyadapter.Stat{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"stats":     stats,
-		"count":     len(stats),
-		"filter":    filter,
-		"source_id": sourceID,
+		"stats":        stats,
+		"count":        len(stats),
+		"filter":       filter,
+		"component_id": sourceID,
 	})
 }
 
 // registerNetworkingRoutes registers NGINX and Envoy routes.
 func (s *Server) registerNetworkingRoutes(mux *http.ServeMux, prefix string) {
 	// NGINX Ingress Controller routes.
-	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{sourceID}/ingresses", prefix), s.handleNginxIngresses)
-	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{sourceID}/status", prefix), s.handleNginxStatus)
-	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{sourceID}/config", prefix), s.handleNginxConfigMaps)
+	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{componentID}/ingresses", prefix), s.handleNginxIngresses)
+	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{componentID}/status", prefix), s.handleNginxStatus)
+	mux.HandleFunc(fmt.Sprintf("GET %s/nginx/{componentID}/config", prefix), s.handleNginxConfigMaps)
 	// Envoy admin API routes.
-	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{sourceID}/clusters", prefix), s.handleEnvoyClusters)
-	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{sourceID}/config", prefix), s.handleEnvoyConfigDump)
-	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{sourceID}/stats", prefix), s.handleEnvoyStats)
+	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{componentID}/clusters", prefix), s.handleEnvoyClusters)
+	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{componentID}/config", prefix), s.handleEnvoyConfigDump)
+	mux.HandleFunc(fmt.Sprintf("GET %s/envoy/{componentID}/stats", prefix), s.handleEnvoyStats)
 }

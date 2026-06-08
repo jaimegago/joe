@@ -17,24 +17,24 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// refreshPrometheusSource refreshes a Prometheus/Mimir source.
+// refreshPrometheusComponent refreshes a Prometheus/Mimir source.
 // It creates a graph node for the source and attempts to discover metrics_in
 // edges by matching Prometheus scrape targets to existing service nodes.
-func (r *Refresher) refreshPrometheusSource(ctx context.Context, source *store.Source, adapter prometheusadapter.PrometheusAdapter) error {
-	r.logger.Info("refreshing prometheus source", "source_id", source.ID, "type", source.Type)
+func (r *Refresher) refreshPrometheusComponent(ctx context.Context, source *store.Component, adapter prometheusadapter.PrometheusAdapter) error {
+	r.logger.Info("refreshing prometheus source", "component_id", source.ID, "type", source.Type)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     source.Type + "_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        source.Type + "_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -45,17 +45,17 @@ func (r *Refresher) refreshPrometheusSource(ctx context.Context, source *store.S
 	// Discover targets and create metrics_in edges to matching service nodes.
 	targets, err := adapter.Targets(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list prometheus targets (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list prometheus targets (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		edges, edgeErr := r.buildMetricsInEdges(ctx, source, nodeID, targets, now)
 		if edgeErr != nil {
-			r.logger.Warn("failed to build metrics_in edges", "source_id", source.ID, "error", edgeErr)
+			r.logger.Warn("failed to build metrics_in edges", "component_id", source.ID, "error", edgeErr)
 		} else {
 			desiredEdges = append(desiredEdges, edges...)
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for prometheus source %s: %w", source.ID, err)
 	}
@@ -66,7 +66,7 @@ func (r *Refresher) refreshPrometheusSource(ctx context.Context, source *store.S
 	}
 
 	r.logger.Info("prometheus refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
@@ -75,7 +75,7 @@ func (r *Refresher) refreshPrometheusSource(ctx context.Context, source *store.S
 
 // buildMetricsInEdges attempts to match Prometheus targets to existing service
 // nodes using the "job" label, creating metrics_in edges.
-func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Source, promNodeID string, targets []prometheusadapter.Target, now time.Time) ([]graph.Edge, error) {
+func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Component, promNodeID string, targets []prometheusadapter.Target, now time.Time) ([]graph.Edge, error) {
 	var edges []graph.Edge
 
 	for _, target := range targets {
@@ -100,14 +100,14 @@ func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Sourc
 				continue
 			}
 			edges = append(edges, graph.Edge{
-				From:       svcNode.ID,
-				To:         promNodeID,
-				Relation:   graph.RelationMetricsIn,
-				Confidence: graph.Inferred,
-				Source:     "prometheus_targets",
-				SourceID:   source.ID,
-				Context:    "job=" + jobName,
-				CreatedAt:  now,
+				From:        svcNode.ID,
+				To:          promNodeID,
+				Relation:    graph.RelationMetricsIn,
+				Confidence:  graph.Inferred,
+				Source:      "prometheus_targets",
+				ComponentID: source.ID,
+				Context:     "job=" + jobName,
+				CreatedAt:   now,
 			})
 		}
 	}
@@ -115,23 +115,23 @@ func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Sourc
 	return edges, nil
 }
 
-// refreshLokiSource refreshes a Loki source.
+// refreshLokiComponent refreshes a Loki source.
 // Discovers services sending logs to Loki via the label values API and emits logs_in edges.
-func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source, adapter lokiadapter.LokiAdapter) error {
-	r.logger.Info("refreshing loki source", "source_id", source.ID)
+func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Component, adapter lokiadapter.LokiAdapter) error {
+	r.logger.Info("refreshing loki source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "loki_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "loki_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -142,7 +142,7 @@ func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source,
 	// Discover services shipping logs to Loki and create logs_in edges.
 	services, err := adapter.ListServices(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list loki services (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list loki services (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, svcName := range services {
 			matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -154,20 +154,20 @@ func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source,
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       svcNode.ID,
-					To:         nodeID,
-					Relation:   graph.RelationLogsIn,
-					Confidence: graph.Inferred,
-					Source:     "loki_labels",
-					SourceID:   source.ID,
-					Context:    "app=" + svcName,
-					CreatedAt:  now,
+					From:        svcNode.ID,
+					To:          nodeID,
+					Relation:    graph.RelationLogsIn,
+					Confidence:  graph.Inferred,
+					Source:      "loki_labels",
+					ComponentID: source.ID,
+					Context:     "app=" + svcName,
+					CreatedAt:   now,
 				})
 			}
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for loki source %s: %w", source.ID, err)
 	}
@@ -178,30 +178,30 @@ func (r *Refresher) refreshLokiSource(ctx context.Context, source *store.Source,
 	}
 
 	r.logger.Info("loki refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
 	return nil
 }
 
-// refreshTempoSource refreshes a Tempo source.
+// refreshTempoComponent refreshes a Tempo source.
 // Discovers services sending traces to Tempo via the tag values API and emits traces_in edges.
-func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source, adapter tempoadapter.TempoAdapter) error {
-	r.logger.Info("refreshing tempo source", "source_id", source.ID)
+func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Component, adapter tempoadapter.TempoAdapter) error {
+	r.logger.Info("refreshing tempo source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "tempo_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "tempo_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -212,7 +212,7 @@ func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source
 	// Discover services sending traces to Tempo and create traces_in edges.
 	services, err := adapter.ListServices(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list tempo services (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list tempo services (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, svcName := range services {
 			matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -224,20 +224,20 @@ func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       svcNode.ID,
-					To:         nodeID,
-					Relation:   graph.RelationTracesIn,
-					Confidence: graph.Inferred,
-					Source:     "tempo_tags",
-					SourceID:   source.ID,
-					Context:    "service.name=" + svcName,
-					CreatedAt:  now,
+					From:        svcNode.ID,
+					To:          nodeID,
+					Relation:    graph.RelationTracesIn,
+					Confidence:  graph.Inferred,
+					Source:      "tempo_tags",
+					ComponentID: source.ID,
+					Context:     "service.name=" + svcName,
+					CreatedAt:   now,
 				})
 			}
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for tempo source %s: %w", source.ID, err)
 	}
@@ -248,30 +248,30 @@ func (r *Refresher) refreshTempoSource(ctx context.Context, source *store.Source
 	}
 
 	r.logger.Info("tempo refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
 	return nil
 }
 
-// refreshJaegerSource refreshes a Jaeger source and creates traces_in edges
+// refreshJaegerComponent refreshes a Jaeger source and creates traces_in edges
 // for any services Jaeger has seen.
-func (r *Refresher) refreshJaegerSource(ctx context.Context, source *store.Source, adapter jaegeradapter.JaegerAdapter) error {
-	r.logger.Info("refreshing jaeger source", "source_id", source.ID)
+func (r *Refresher) refreshJaegerComponent(ctx context.Context, source *store.Component, adapter jaegeradapter.JaegerAdapter) error {
+	r.logger.Info("refreshing jaeger source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "jaeger_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "jaeger_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -282,7 +282,7 @@ func (r *Refresher) refreshJaegerSource(ctx context.Context, source *store.Sourc
 	// Discover services and create traces_in edges.
 	services, err := adapter.ListServices(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list jaeger services (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list jaeger services (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, svcName := range services {
 			matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -294,20 +294,20 @@ func (r *Refresher) refreshJaegerSource(ctx context.Context, source *store.Sourc
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       svcNode.ID,
-					To:         nodeID,
-					Relation:   graph.RelationTracesIn,
-					Confidence: graph.Inferred,
-					Source:     "jaeger_services",
-					SourceID:   source.ID,
-					Context:    "service=" + svcName,
-					CreatedAt:  now,
+					From:        svcNode.ID,
+					To:          nodeID,
+					Relation:    graph.RelationTracesIn,
+					Confidence:  graph.Inferred,
+					Source:      "jaeger_services",
+					ComponentID: source.ID,
+					Context:     "service=" + svcName,
+					CreatedAt:   now,
 				})
 			}
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for jaeger source %s: %w", source.ID, err)
 	}
@@ -318,7 +318,7 @@ func (r *Refresher) refreshJaegerSource(ctx context.Context, source *store.Sourc
 	}
 
 	r.logger.Info("jaeger refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
@@ -330,23 +330,23 @@ func obsNodeID(sourceID, sourceType string) string {
 	return fmt.Sprintf("obs/%s/%s", sourceType, sourceID)
 }
 
-// refreshDatadogSource refreshes a Datadog source and discovers metrics_in and logs_in
+// refreshDatadogComponent refreshes a Datadog source and discovers metrics_in and logs_in
 // edges by querying the Datadog API for active hosts and recent log events.
-func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Source, adapter datadogadapter.DatadogAdapter) error {
-	r.logger.Info("refreshing datadog source", "source_id", source.ID)
+func (r *Refresher) refreshDatadogComponent(ctx context.Context, source *store.Component, adapter datadogadapter.DatadogAdapter) error {
+	r.logger.Info("refreshing datadog source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "datadog_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "datadog_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -357,11 +357,11 @@ func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Sour
 	// Discover metrics_in edges from active Datadog hosts.
 	metricServices, err := adapter.ListActiveServices(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list datadog metric services (skipping metrics_in discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list datadog metric services (skipping metrics_in discovery)", "component_id", source.ID, "error", err)
 	} else {
 		edges, edgeErr := r.buildDDMetricsInEdges(ctx, source, nodeID, metricServices, now)
 		if edgeErr != nil {
-			r.logger.Warn("failed to build datadog metrics_in edges", "source_id", source.ID, "error", edgeErr)
+			r.logger.Warn("failed to build datadog metrics_in edges", "component_id", source.ID, "error", edgeErr)
 		} else {
 			desiredEdges = append(desiredEdges, edges...)
 		}
@@ -370,17 +370,17 @@ func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Sour
 	// Discover logs_in edges from recent Datadog log events.
 	logServices, err := adapter.ListLogServices(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list datadog log services (skipping logs_in discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list datadog log services (skipping logs_in discovery)", "component_id", source.ID, "error", err)
 	} else {
 		edges, edgeErr := r.buildDDLogsInEdges(ctx, source, nodeID, logServices, now)
 		if edgeErr != nil {
-			r.logger.Warn("failed to build datadog logs_in edges", "source_id", source.ID, "error", edgeErr)
+			r.logger.Warn("failed to build datadog logs_in edges", "component_id", source.ID, "error", edgeErr)
 		} else {
 			desiredEdges = append(desiredEdges, edges...)
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for datadog source %s: %w", source.ID, err)
 	}
@@ -391,7 +391,7 @@ func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Sour
 	}
 
 	r.logger.Info("datadog refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
@@ -400,7 +400,7 @@ func (r *Refresher) refreshDatadogSource(ctx context.Context, source *store.Sour
 
 // buildDDMetricsInEdges creates metrics_in edges by matching Datadog metric service names
 // (from active hosts) to existing service/deployment nodes in the graph.
-func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Source, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
+func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Component, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
 	var edges []graph.Edge
 	for _, svcName := range services {
 		matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -413,14 +413,14 @@ func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Sou
 				continue
 			}
 			edges = append(edges, graph.Edge{
-				From:       svcNode.ID,
-				To:         ddNodeID,
-				Relation:   graph.RelationMetricsIn,
-				Confidence: graph.Inferred,
-				Source:     "datadog_hosts",
-				SourceID:   source.ID,
-				Context:    "service=" + svcName,
-				CreatedAt:  now,
+				From:        svcNode.ID,
+				To:          ddNodeID,
+				Relation:    graph.RelationMetricsIn,
+				Confidence:  graph.Inferred,
+				Source:      "datadog_hosts",
+				ComponentID: source.ID,
+				Context:     "service=" + svcName,
+				CreatedAt:   now,
 			})
 		}
 	}
@@ -429,7 +429,7 @@ func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Sou
 
 // buildDDLogsInEdges creates logs_in edges by matching Datadog log service names
 // (from recent log events) to existing service/deployment nodes in the graph.
-func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Source, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
+func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Component, ddNodeID string, services []string, now time.Time) ([]graph.Edge, error) {
 	var edges []graph.Edge
 	for _, svcName := range services {
 		matchingNodes, err := r.services.Graph.Query(ctx, svcName)
@@ -442,42 +442,42 @@ func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Source
 				continue
 			}
 			edges = append(edges, graph.Edge{
-				From:       svcNode.ID,
-				To:         ddNodeID,
-				Relation:   graph.RelationLogsIn,
-				Confidence: graph.Inferred,
-				Source:     "datadog_logs",
-				SourceID:   source.ID,
-				Context:    "service=" + svcName,
-				CreatedAt:  now,
+				From:        svcNode.ID,
+				To:          ddNodeID,
+				Relation:    graph.RelationLogsIn,
+				Confidence:  graph.Inferred,
+				Source:      "datadog_logs",
+				ComponentID: source.ID,
+				Context:     "service=" + svcName,
+				CreatedAt:   now,
 			})
 		}
 	}
 	return edges, nil
 }
 
-// refreshSplunkSource creates a graph node for a Splunk source.
-func (r *Refresher) refreshSplunkSource(ctx context.Context, source *store.Source, _ splunkadapter.SplunkAdapter) error {
-	r.logger.Info("refreshing splunk source", "source_id", source.ID)
+// refreshSplunkComponent creates a graph node for a Splunk source.
+func (r *Refresher) refreshSplunkComponent(ctx context.Context, source *store.Component, _ splunkadapter.SplunkAdapter) error {
+	r.logger.Info("refreshing splunk source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "splunk_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "splunk_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for splunk source %s: %w", source.ID, err)
 	}
@@ -488,32 +488,32 @@ func (r *Refresher) refreshSplunkSource(ctx context.Context, source *store.Sourc
 	}
 
 	_ = existingEdges
-	r.logger.Info("splunk refresh completed", "source_id", source.ID)
+	r.logger.Info("splunk refresh completed", "component_id", source.ID)
 	return nil
 }
 
-// refreshDynatraceSource creates a graph node for a Dynatrace source.
-func (r *Refresher) refreshDynatraceSource(ctx context.Context, source *store.Source, _ dynatraceadapter.DynatraceAdapter) error {
-	r.logger.Info("refreshing dynatrace source", "source_id", source.ID)
+// refreshDynatraceComponent creates a graph node for a Dynatrace source.
+func (r *Refresher) refreshDynatraceComponent(ctx context.Context, source *store.Component, _ dynatraceadapter.DynatraceAdapter) error {
+	r.logger.Info("refreshing dynatrace source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "dynatrace_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "dynatrace_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for dynatrace source %s: %w", source.ID, err)
 	}
@@ -524,32 +524,32 @@ func (r *Refresher) refreshDynatraceSource(ctx context.Context, source *store.So
 	}
 
 	_ = existingEdges
-	r.logger.Info("dynatrace refresh completed", "source_id", source.ID)
+	r.logger.Info("dynatrace refresh completed", "component_id", source.ID)
 	return nil
 }
 
-// refreshNewRelicSource creates a graph node for a New Relic source.
-func (r *Refresher) refreshNewRelicSource(ctx context.Context, source *store.Source, _ newrelicadapter.NewRelicAdapter) error {
-	r.logger.Info("refreshing newrelic source", "source_id", source.ID)
+// refreshNewRelicComponent creates a graph node for a New Relic source.
+func (r *Refresher) refreshNewRelicComponent(ctx context.Context, source *store.Component, _ newrelicadapter.NewRelicAdapter) error {
+	r.logger.Info("refreshing newrelic source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "newrelic_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "newrelic_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for newrelic source %s: %w", source.ID, err)
 	}
@@ -560,6 +560,6 @@ func (r *Refresher) refreshNewRelicSource(ctx context.Context, source *store.Sou
 	}
 
 	_ = existingEdges
-	r.logger.Info("newrelic refresh completed", "source_id", source.ID)
+	r.logger.Info("newrelic refresh completed", "component_id", source.ID)
 	return nil
 }

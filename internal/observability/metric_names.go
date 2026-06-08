@@ -41,7 +41,7 @@ const (
 	MetricSessionMessages       = "session.messages"
 	MetricSessionTokens         = "session.tokens"
 	MetricSessionActive         = "session.active"
-	MetricSourcesTotal          = "sources.total"
+	MetricSourcesTotal          = "components.total"
 	MetricGraphNodesTotal       = "graph.nodes.total"
 	MetricGraphEdgesTotal       = "graph.edges.total"
 	MetricAdaptersConnected     = "adapters.connected"

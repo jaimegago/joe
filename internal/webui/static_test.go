@@ -73,7 +73,7 @@ func TestRootLevelStaticServesFile(t *testing.T) {
 
 func TestUnknownNavigationServesIndex(t *testing.T) {
 	h := newStaticHandler(testFS())
-	for _, p := range []string{"/graph", "/admin", "/sources/deep/link"} {
+	for _, p := range []string{"/graph", "/admin", "/components/deep/link"} {
 		rec := get(t, h, p)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d, want 200", p, rec.Code)
@@ -177,7 +177,7 @@ func TestFallbackServedWhenUINotBuilt(t *testing.T) {
 // TestMountEndToEndRoutesAPIAndStatic exercises the REAL Mount over the real
 // embedded FS: the production isAPIPath routing and the real staticHandler,
 // composed exactly as cmd/joe/server.go assembles them. Only the API chain is a
-// stand-in — the real one needs a DB, auth, and sources — so this is the
+// stand-in — the real one needs a DB, auth, and components — so this is the
 // highest layer that still drives Mount + isAPIPath + staticHandler unmocked.
 func TestMountEndToEndRoutesAPIAndStatic(t *testing.T) {
 	var apiHits []string

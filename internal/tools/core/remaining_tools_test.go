@@ -138,15 +138,15 @@ func TestGitReadTool(t *testing.T) {
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"path": "README.md"})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing path", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "src"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "src"})
 		if err == nil {
 			t.Error("expected error for missing path")
 		}
@@ -154,8 +154,8 @@ func TestGitReadTool(t *testing.T) {
 
 	t.Run("read file success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "src",
-			"path":      "README.md",
+			"component_id": "src",
+			"path":         "README.md",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -164,16 +164,16 @@ func TestGitReadTool(t *testing.T) {
 		if m["content"] != "# readme" {
 			t.Errorf("content = %v, want '# readme'", m["content"])
 		}
-		if m["source_id"] != "src" {
-			t.Errorf("source_id = %v, want src", m["source_id"])
+		if m["component_id"] != "src" {
+			t.Errorf("component_id = %v, want src", m["component_id"])
 		}
 	})
 
 	t.Run("list files success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "src",
-			"path":      "/",
-			"list":      true,
+			"component_id": "src",
+			"path":         "/",
+			"list":         true,
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -190,8 +190,8 @@ func TestGitReadTool(t *testing.T) {
 
 	t.Run("read file error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "src",
-			"path":      "missing.go",
+			"component_id": "src",
+			"path":         "missing.go",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -200,9 +200,9 @@ func TestGitReadTool(t *testing.T) {
 
 	t.Run("list files error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "src",
-			"path":      "/bad",
-			"list":      true,
+			"component_id": "src",
+			"path":         "/bad",
+			"list":         true,
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -244,15 +244,15 @@ func TestGitLogTool(t *testing.T) {
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("success default limit", func(t *testing.T) {
-		res, err := tool.Execute(context.Background(), map[string]any{"source_id": "src"})
+		res, err := tool.Execute(context.Background(), map[string]any{"component_id": "src"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -261,15 +261,15 @@ func TestGitLogTool(t *testing.T) {
 		if len(commits) != 20 {
 			t.Errorf("expected 20 commits (default), got %d", len(commits))
 		}
-		if m["source_id"] != "src" {
-			t.Errorf("source_id = %v, want src", m["source_id"])
+		if m["component_id"] != "src" {
+			t.Errorf("component_id = %v, want src", m["component_id"])
 		}
 	})
 
 	t.Run("success custom limit", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "src",
-			"limit":     float64(5),
+			"component_id": "src",
+			"limit":        float64(5),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -282,45 +282,45 @@ func TestGitLogTool(t *testing.T) {
 	})
 
 	t.Run("client error", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "bad"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "bad"})
 		if err == nil {
 			t.Error("expected error from client")
 		}
 	})
 }
 
-// ---- ListSourcesTool ----
+// ---- ListComponentsTool ----
 
-type fakeListSourcesClient struct {
-	fn func(ctx context.Context) ([]*store.Source, error)
+type fakeListComponentsClient struct {
+	fn func(ctx context.Context) ([]*store.Component, error)
 }
 
-func (f *fakeListSourcesClient) ListSources(ctx context.Context) ([]*store.Source, error) {
+func (f *fakeListComponentsClient) ListComponents(ctx context.Context) ([]*store.Component, error) {
 	return f.fn(ctx)
 }
 
-func TestListSourcesTool(t *testing.T) {
-	fake := &fakeListSourcesClient{
-		fn: func(_ context.Context) ([]*store.Source, error) {
-			return []*store.Source{
+func TestListComponentsTool(t *testing.T) {
+	fake := &fakeListComponentsClient{
+		fn: func(_ context.Context) ([]*store.Component, error) {
+			return []*store.Component{
 				{ID: "k8s-1", Type: "kubernetes", Name: "prod"},
 				{ID: "git-1", Type: "git", Name: "repo"},
 				{ID: "k8s-2", Type: "kubernetes", Name: "staging"},
 			}, nil
 		},
 	}
-	tool := core.NewListSourcesTool(fake)
+	tool := core.NewListComponentsTool(fake)
 
 	t.Run("name and metadata", func(t *testing.T) {
-		if tool.Name() != "list_sources" {
-			t.Errorf("Name() = %q, want list_sources", tool.Name())
+		if tool.Name() != "list_components" {
+			t.Errorf("Name() = %q, want list_components", tool.Name())
 		}
 		if tool.Description() == "" {
 			t.Error("Description() should not be empty")
 		}
 	})
 
-	t.Run("list all sources", func(t *testing.T) {
+	t.Run("list all components", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -338,7 +338,7 @@ func TestListSourcesTool(t *testing.T) {
 		}
 		m := res.(map[string]any)
 		if m["count"].(int) != 2 {
-			t.Errorf("count = %v, want 2 kubernetes sources", m["count"])
+			t.Errorf("count = %v, want 2 kubernetes components", m["count"])
 		}
 		if m["type"] != "kubernetes" {
 			t.Errorf("type = %v, want kubernetes", m["type"])
@@ -357,8 +357,8 @@ func TestListSourcesTool(t *testing.T) {
 	})
 
 	t.Run("client error", func(t *testing.T) {
-		errTool := core.NewListSourcesTool(&fakeListSourcesClient{
-			fn: func(_ context.Context) ([]*store.Source, error) {
+		errTool := core.NewListComponentsTool(&fakeListComponentsClient{
+			fn: func(_ context.Context) ([]*store.Component, error) {
 				return nil, errors.New("connection refused")
 			},
 		})
@@ -411,23 +411,23 @@ func TestK8sGetTool(t *testing.T) {
 			t.Error("Description() should not be empty")
 		}
 		params := tool.Parameters()
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 		if _, ok := params.Properties["resource"]; !ok {
 			t.Error("Parameters() missing resource")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"resource": "pods"})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing resource", func(t *testing.T) {
-		_, err := tool.Execute(context.Background(), map[string]any{"source_id": "k8s-1"})
+		_, err := tool.Execute(context.Background(), map[string]any{"component_id": "k8s-1"})
 		if err == nil {
 			t.Error("expected error for missing resource")
 		}
@@ -435,8 +435,8 @@ func TestK8sGetTool(t *testing.T) {
 
 	t.Run("list resources success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"resource":  "pods",
+			"component_id": "k8s-1",
+			"resource":     "pods",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -449,9 +449,9 @@ func TestK8sGetTool(t *testing.T) {
 
 	t.Run("get single resource success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"resource":  "pods",
-			"name":      "pod-1",
+			"component_id": "k8s-1",
+			"resource":     "pods",
+			"name":         "pod-1",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -465,8 +465,8 @@ func TestK8sGetTool(t *testing.T) {
 
 	t.Run("list resources error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad",
-			"resource":  "pods",
+			"component_id": "bad",
+			"resource":     "pods",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -475,9 +475,9 @@ func TestK8sGetTool(t *testing.T) {
 
 	t.Run("get resource error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"resource":  "pods",
-			"name":      "missing",
+			"component_id": "k8s-1",
+			"resource":     "pods",
+			"name":         "missing",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -515,25 +515,25 @@ func TestK8sLogsTool(t *testing.T) {
 			t.Error("Description() should not be empty")
 		}
 		params := tool.Parameters()
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 	})
 
-	t.Run("missing source_id", func(t *testing.T) {
+	t.Run("missing component_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
 			"namespace": "default",
 			"pod":       "pod-1",
 		})
 		if err == nil {
-			t.Error("expected error for missing source_id")
+			t.Error("expected error for missing component_id")
 		}
 	})
 
 	t.Run("missing namespace", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"pod":       "pod-1",
+			"component_id": "k8s-1",
+			"pod":          "pod-1",
 		})
 		if err == nil {
 			t.Error("expected error for missing namespace")
@@ -542,8 +542,8 @@ func TestK8sLogsTool(t *testing.T) {
 
 	t.Run("missing pod", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"namespace": "default",
+			"component_id": "k8s-1",
+			"namespace":    "default",
 		})
 		if err == nil {
 			t.Error("expected error for missing pod")
@@ -552,9 +552,9 @@ func TestK8sLogsTool(t *testing.T) {
 
 	t.Run("success with defaults", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"namespace": "default",
-			"pod":       "pod-1",
+			"component_id": "k8s-1",
+			"namespace":    "default",
+			"pod":          "pod-1",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -570,10 +570,10 @@ func TestK8sLogsTool(t *testing.T) {
 
 	t.Run("success with custom tail", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"namespace": "default",
-			"pod":       "pod-1",
-			"tail":      float64(50),
+			"component_id": "k8s-1",
+			"namespace":    "default",
+			"pod":          "pod-1",
+			"tail":         float64(50),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -582,10 +582,10 @@ func TestK8sLogsTool(t *testing.T) {
 
 	t.Run("success with container", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"namespace": "default",
-			"pod":       "pod-1",
-			"container": "sidecar",
+			"component_id": "k8s-1",
+			"namespace":    "default",
+			"pod":          "pod-1",
+			"container":    "sidecar",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -594,9 +594,9 @@ func TestK8sLogsTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "k8s-1",
-			"namespace": "default",
-			"pod":       "missing",
+			"component_id": "k8s-1",
+			"namespace":    "default",
+			"pod":          "missing",
 		})
 		if err == nil {
 			t.Error("expected error from client")

@@ -85,7 +85,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := splunk.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "testtoken",
 	})}
@@ -105,7 +105,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := splunk.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "bad",
 	})}
@@ -116,7 +116,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := splunk.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -127,7 +127,7 @@ func TestAdapter_Connect_NetworkError(t *testing.T) {
 	srv.Close()
 
 	adapter := splunk.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "tok",
 	})}
@@ -214,7 +214,7 @@ func TestAdapter_Search_PrependsSPL(t *testing.T) {
 	defer srv.Close()
 
 	adapter := splunk.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "tok",
 	})}

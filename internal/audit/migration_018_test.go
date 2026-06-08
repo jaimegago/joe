@@ -26,13 +26,13 @@ func TestMigration018_AuditLogRebuild_PreservesAppendOnly(t *testing.T) {
 
 	// (3) The new kind inserts successfully against the widened CHECK.
 	if err := repo.Insert(ctx, audit.Event{
-		Principal: "user:alice@example.com",
-		Action:    audit.ActionOIDCLogin,
-		Source:    "oidc",
-		Decision:  audit.DecisionAllow,
-		Reason:    "oidc_login",
-		Kind:      audit.KindAuthLogin,
-		Context:   `{"email":"alice@example.com"}`,
+		Principal:   "user:alice@example.com",
+		Action:      audit.ActionOIDCLogin,
+		ComponentID: "oidc",
+		Decision:    audit.DecisionAllow,
+		Reason:      "oidc_login",
+		Kind:        audit.KindAuthLogin,
+		Context:     `{"email":"alice@example.com"}`,
 	}); err != nil {
 		t.Fatalf("Insert auth_login: %v (migration 018 CHECK widening missing?)", err)
 	}
@@ -83,13 +83,13 @@ func TestMigration018_AuditLog_AuthLoginKindRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Insert(ctx, audit.Event{
-		Principal: "svc:ci",
-		Action:    audit.ActionBreakGlassUse,
-		Source:    "break-glass",
-		Decision:  audit.DecisionAllow,
-		Reason:    "break_glass_credential_used",
-		Kind:      audit.KindAuthLogin,
-		Context:   `{"remote":"10.0.0.1:1234"}`,
+		Principal:   "svc:ci",
+		Action:      audit.ActionBreakGlassUse,
+		ComponentID: "break-glass",
+		Decision:    audit.DecisionAllow,
+		Reason:      "break_glass_credential_used",
+		Kind:        audit.KindAuthLogin,
+		Context:     `{"remote":"10.0.0.1:1234"}`,
 	}); err != nil {
 		t.Fatalf("Insert break-glass auth_login: %v", err)
 	}

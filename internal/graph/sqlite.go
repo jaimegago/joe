@@ -37,7 +37,7 @@ func NewSQLiteStore(db *sql.DB, metrics *observability.Metrics) *sqlGraphStore {
 }
 
 // AddNode performs an upsert: inserts a new node or updates an existing one.
-// On conflict (same ID), it updates type, source_id, metadata, and last_seen
+// On conflict (same ID), it updates type, component_id, metadata, and last_seen
 // while preserving the original first_seen timestamp.
 func (s *sqlGraphStore) AddNode(ctx context.Context, node Node) (err error) {
 	start := time.Now()
@@ -60,16 +60,16 @@ func (s *sqlGraphStore) AddNode(ctx context.Context, node Node) (err error) {
 	}
 
 	query := store.Rebind(s.driver, `
-		INSERT INTO graph_nodes (id, type, source_id, metadata, first_seen, last_seen)
+		INSERT INTO graph_nodes (id, type, component_id, metadata, first_seen, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			type = excluded.type,
-			source_id = excluded.source_id,
+			component_id = excluded.component_id,
 			metadata = excluded.metadata,
 			last_seen = excluded.last_seen
 	`)
 	_, err = s.db.ExecContext(ctx, query,
-		node.ID, node.Type, node.SourceID, string(metadata),
+		node.ID, node.Type, node.ComponentID, string(metadata),
 		node.FirstSeen, node.LastSeen,
 	)
 	if err != nil {
@@ -109,7 +109,7 @@ func (s *sqlGraphStore) GetNode(ctx context.Context, id string) (node *Node, err
 	defer func() { s.metrics.RecordGraphOperation(ctx, "get_node", time.Since(start), err) }()
 
 	query := store.Rebind(s.driver, `
-		SELECT id, type, source_id, metadata, first_seen, last_seen
+		SELECT id, type, component_id, metadata, first_seen, last_seen
 		FROM graph_nodes WHERE id = ?
 	`)
 	var result Node
@@ -128,7 +128,7 @@ func (s *sqlGraphStore) GetNode(ctx context.Context, id string) (node *Node, err
 	}
 
 	if sourceID.Valid {
-		result.SourceID = sourceID.String
+		result.ComponentID = sourceID.String
 	}
 
 	if err := json.Unmarshal([]byte(metadataStr), &result.Metadata); err != nil {
@@ -155,7 +155,7 @@ func (s *sqlGraphStore) Query(ctx context.Context, query string) (nodes []Node, 
 	if strings.HasPrefix(query, "type:") {
 		nodeType := strings.TrimPrefix(query, "type:")
 		sqlQuery = store.Rebind(s.driver, `
-			SELECT id, type, source_id, metadata, first_seen, last_seen
+			SELECT id, type, component_id, metadata, first_seen, last_seen
 			FROM graph_nodes WHERE type = ? ORDER BY id
 		`)
 		args = []any{nodeType}
@@ -163,7 +163,7 @@ func (s *sqlGraphStore) Query(ctx context.Context, query string) (nodes []Node, 
 		// Search by ID pattern or metadata content
 		pattern := "%" + query + "%"
 		sqlQuery = store.Rebind(s.driver, `
-			SELECT id, type, source_id, metadata, first_seen, last_seen
+			SELECT id, type, component_id, metadata, first_seen, last_seen
 			FROM graph_nodes
 			WHERE id LIKE ? OR type LIKE ? OR metadata LIKE ?
 			ORDER BY id
@@ -206,7 +206,7 @@ func (s *sqlGraphStore) Related(ctx context.Context, nodeID string, depth int) (
 			JOIN connected c ON (e.from_node = c.node_id OR e.to_node = c.node_id)
 			WHERE c.d < ?
 		)
-		SELECT DISTINCT n.id, n.type, n.source_id, n.metadata, n.first_seen, n.last_seen
+		SELECT DISTINCT n.id, n.type, n.component_id, n.metadata, n.first_seen, n.last_seen
 		FROM graph_nodes n
 		JOIN connected c ON n.id = c.node_id
 		ORDER BY n.id
@@ -364,7 +364,7 @@ func (s *sqlGraphStore) Summary(ctx context.Context) (summary GraphSummary, err 
 
 	// Recently added (by first_seen, last 10)
 	recentRows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, source_id, metadata, first_seen, last_seen
+		SELECT id, type, component_id, metadata, first_seen, last_seen
 		FROM graph_nodes ORDER BY first_seen DESC LIMIT 10
 	`)
 	if err != nil {
@@ -379,7 +379,7 @@ func (s *sqlGraphStore) Summary(ctx context.Context) (summary GraphSummary, err 
 
 	// Recently updated (by last_seen, last 10)
 	updatedRows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, source_id, metadata, first_seen, last_seen
+		SELECT id, type, component_id, metadata, first_seen, last_seen
 		FROM graph_nodes ORDER BY last_seen DESC LIMIT 10
 	`)
 	if err != nil {
@@ -395,14 +395,14 @@ func (s *sqlGraphStore) Summary(ctx context.Context) (summary GraphSummary, err 
 	return summary, nil
 }
 
-// ListNodesBySource returns all nodes for a given source_id.
-func (s *sqlGraphStore) ListNodesBySource(ctx context.Context, sourceID string) (nodes []Node, err error) {
+// ListNodesByComponent returns all nodes for a given component_id.
+func (s *sqlGraphStore) ListNodesByComponent(ctx context.Context, sourceID string) (nodes []Node, err error) {
 	start := time.Now()
-	defer func() { s.metrics.RecordGraphOperation(ctx, "list_nodes_by_source", time.Since(start), err) }()
+	defer func() { s.metrics.RecordGraphOperation(ctx, "list_nodes_by_component", time.Since(start), err) }()
 
 	query := store.Rebind(s.driver, `
-		SELECT id, type, source_id, metadata, first_seen, last_seen
-		FROM graph_nodes WHERE source_id = ? ORDER BY id
+		SELECT id, type, component_id, metadata, first_seen, last_seen
+		FROM graph_nodes WHERE component_id = ? ORDER BY id
 	`)
 	rows, err := s.db.QueryContext(ctx, query, sourceID)
 	if err != nil {
@@ -495,7 +495,7 @@ func (s *sqlGraphStore) ListAll(ctx context.Context) (result *Subgraph, err erro
 	defer func() { s.metrics.RecordGraphOperation(ctx, "list_all", time.Since(start), err) }()
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, source_id, metadata, first_seen, last_seen
+		SELECT id, type, component_id, metadata, first_seen, last_seen
 		FROM graph_nodes
 		ORDER BY id
 		LIMIT 5000
@@ -545,7 +545,7 @@ func scanNodes(rows *sql.Rows) ([]Node, error) {
 		}
 
 		if sourceID.Valid {
-			node.SourceID = sourceID.String
+			node.ComponentID = sourceID.String
 		}
 
 		if err := json.Unmarshal([]byte(metadataStr), &node.Metadata); err != nil {

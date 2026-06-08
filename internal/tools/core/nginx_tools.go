@@ -32,14 +32,14 @@ func (t *NginxIngressesTool) Description() string {
 	return "List Kubernetes Ingress resources from an NGINX Ingress Controller source. " +
 		"Shows hosts, paths, backend services, TLS settings, and load balancer addresses. " +
 		"Use to answer 'what is exposed?', 'which service handles /api?', or 'which ingress uses TLS?'. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *NginxIngressesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the nginx-ingress source.",
 			},
@@ -48,14 +48,14 @@ func (t *NginxIngressesTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter by. Omit to list from all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *NginxIngressesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -67,10 +67,10 @@ func (t *NginxIngressesTool) Execute(ctx context.Context, args map[string]any) (
 		ingresses = []nginxadapter.Ingress{}
 	}
 	return map[string]any{
-		"ingresses": ingresses,
-		"count":     len(ingresses),
-		"source_id": sourceID,
-		"namespace": namespace,
+		"ingresses":    ingresses,
+		"count":        len(ingresses),
+		"component_id": sourceID,
+		"namespace":    namespace,
 	}, nil
 }
 
@@ -92,26 +92,26 @@ func (t *NginxStatusTool) Description() string {
 		"(active connections, reading/writing/waiting workers, total accepts/requests). " +
 		"Requires status_url to be configured in the source. " +
 		"Use to check if NGINX is under load or has connection issues. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *NginxStatusTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the nginx-ingress source.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *NginxStatusTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	status, err := t.Client.NginxStatus(ctx, sourceID)
@@ -119,8 +119,8 @@ func (t *NginxStatusTool) Execute(ctx context.Context, args map[string]any) (any
 		return nil, fmt.Errorf("nginx status: %w", err)
 	}
 	return map[string]any{
-		"status":    status,
-		"source_id": sourceID,
+		"status":       status,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -141,14 +141,14 @@ func (t *NginxConfigTool) Description() string {
 	return "List ConfigMaps containing NGINX Ingress Controller configuration. " +
 		"Shows proxy settings, rate limiting, and custom NGINX directives. " +
 		"Typical namespace is 'ingress-nginx'. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *NginxConfigTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the nginx-ingress source.",
 			},
@@ -157,14 +157,14 @@ func (t *NginxConfigTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to search for ConfigMaps. Defaults to all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *NginxConfigTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -176,9 +176,9 @@ func (t *NginxConfigTool) Execute(ctx context.Context, args map[string]any) (any
 		cms = []nginxadapter.ConfigMapSummary{}
 	}
 	return map[string]any{
-		"config_maps": cms,
-		"count":       len(cms),
-		"source_id":   sourceID,
-		"namespace":   namespace,
+		"config_maps":  cms,
+		"count":        len(cms),
+		"component_id": sourceID,
+		"namespace":    namespace,
 	}, nil
 }

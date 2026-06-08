@@ -29,7 +29,7 @@ func NewMockGitAdapter() *MockGitAdapter {
 	return &MockGitAdapter{connected: true}
 }
 
-func (m *MockGitAdapter) Connect(_ context.Context, _ store.Source) error {
+func (m *MockGitAdapter) Connect(_ context.Context, _ store.Component) error {
 	m.connected = true
 	return nil
 }

@@ -25,9 +25,9 @@ type mockNginxAdapter struct {
 	err        error
 }
 
-func (m *mockNginxAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockNginxAdapter) Disconnect() error                               { return nil }
-func (m *mockNginxAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockNginxAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockNginxAdapter) Disconnect() error                                  { return nil }
+func (m *mockNginxAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockNginxAdapter) ListIngresses(_ context.Context, _ string) ([]nginxadapter.Ingress, error) {
 	return m.ingresses, m.err
 }
@@ -47,9 +47,9 @@ type mockEnvoyAdapter struct {
 	err      error
 }
 
-func (m *mockEnvoyAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockEnvoyAdapter) Disconnect() error                               { return nil }
-func (m *mockEnvoyAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockEnvoyAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockEnvoyAdapter) Disconnect() error                                  { return nil }
+func (m *mockEnvoyAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockEnvoyAdapter) Clusters(_ context.Context) ([]envoyidapter.ClusterStatus, error) {
 	return m.clusters, m.err
 }

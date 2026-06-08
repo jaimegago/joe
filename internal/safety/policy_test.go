@@ -20,8 +20,8 @@ func TestDefaultPolicy(t *testing.T) {
 	if !p.Record.GraphMutations {
 		t.Error("Record.GraphMutations should be true by default")
 	}
-	if !p.Record.SourceRegistration {
-		t.Error("Record.SourceRegistration should be true by default")
+	if !p.Record.ComponentRegistration {
+		t.Error("Record.ComponentRegistration should be true by default")
 	}
 	if !p.Record.OnboardingFacts {
 		t.Error("Record.OnboardingFacts should be true by default")
@@ -119,8 +119,8 @@ act:
 	if !p.Record.GraphMutations {
 		t.Error("Record.GraphMutations should be true")
 	}
-	if p.Record.SourceRegistration {
-		t.Error("Record.SourceRegistration should be false")
+	if p.Record.ComponentRegistration {
+		t.Error("Record.ComponentRegistration should be false")
 	}
 	if !p.Record.OnboardingFacts {
 		t.Error("Record.OnboardingFacts should be true")
@@ -243,7 +243,7 @@ act:
 
 func TestIsT2Allowed(t *testing.T) {
 	p := DefaultPolicy()
-	p.Record.SourceRegistration = false
+	p.Record.ComponentRegistration = false
 
 	tests := []struct {
 		category string

@@ -92,13 +92,13 @@ func TestService_Enqueue(t *testing.T) {
 	ctx := context.Background()
 
 	job, err := svc.Enqueue(ctx, &ReviewJob{
-		EventID:  "github:org/repo#1:abc",
-		Platform: PlatformGitHub,
-		SourceID: "src-1",
-		Owner:    "org",
-		Repo:     "repo",
-		PRNumber: 1,
-		HeadSHA:  "abc",
+		EventID:     "github:org/repo#1:abc",
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "repo",
+		PRNumber:    1,
+		HeadSHA:     "abc",
 	})
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -112,13 +112,13 @@ func TestService_Enqueue(t *testing.T) {
 
 	// Duplicate should return ErrDuplicateEvent.
 	_, err = svc.Enqueue(ctx, &ReviewJob{
-		EventID:  "github:org/repo#1:abc",
-		Platform: PlatformGitHub,
-		SourceID: "src-1",
-		Owner:    "org",
-		Repo:     "repo",
-		PRNumber: 1,
-		HeadSHA:  "abc",
+		EventID:     "github:org/repo#1:abc",
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "repo",
+		PRNumber:    1,
+		HeadSHA:     "abc",
 	})
 	if !errors.Is(err, ErrDuplicateEvent) {
 		t.Errorf("expected ErrDuplicateEvent, got %v", err)
@@ -131,13 +131,13 @@ func TestService_MarkRunning(t *testing.T) {
 	ctx := context.Background()
 
 	job, _ := svc.Enqueue(ctx, &ReviewJob{
-		EventID:  "github:org/repo#2:def",
-		Platform: PlatformGitHub,
-		SourceID: "src-1",
-		Owner:    "org",
-		Repo:     "repo",
-		PRNumber: 2,
-		HeadSHA:  "def",
+		EventID:     "github:org/repo#2:def",
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "repo",
+		PRNumber:    2,
+		HeadSHA:     "def",
 	})
 
 	if err := svc.MarkRunning(ctx, job.ID); err != nil {
@@ -163,13 +163,13 @@ func TestService_MarkDone(t *testing.T) {
 	ctx := context.Background()
 
 	job, _ := svc.Enqueue(ctx, &ReviewJob{
-		EventID:  "github:org/repo#3:ghi",
-		Platform: PlatformGitHub,
-		SourceID: "src-1",
-		Owner:    "org",
-		Repo:     "repo",
-		PRNumber: 3,
-		HeadSHA:  "ghi",
+		EventID:     "github:org/repo#3:ghi",
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "repo",
+		PRNumber:    3,
+		HeadSHA:     "ghi",
 	})
 	_ = svc.MarkRunning(ctx, job.ID)
 
@@ -194,13 +194,13 @@ func TestService_MarkFailed(t *testing.T) {
 	ctx := context.Background()
 
 	job, _ := svc.Enqueue(ctx, &ReviewJob{
-		EventID:  "github:org/repo#4:jkl",
-		Platform: PlatformGitHub,
-		SourceID: "src-1",
-		Owner:    "org",
-		Repo:     "repo",
-		PRNumber: 4,
-		HeadSHA:  "jkl",
+		EventID:     "github:org/repo#4:jkl",
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "repo",
+		PRNumber:    4,
+		HeadSHA:     "jkl",
 	})
 
 	if err := svc.MarkFailed(ctx, job.ID, "LLM timeout"); err != nil {
@@ -226,13 +226,13 @@ func TestService_List(t *testing.T) {
 			platform = PlatformGitLab
 		}
 		_, _ = svc.Enqueue(ctx, &ReviewJob{
-			EventID:  BuildEventID(platform, "org", "r", i+1, sha),
-			Platform: platform,
-			SourceID: "src-1",
-			Owner:    "org",
-			Repo:     "r",
-			PRNumber: i + 1,
-			HeadSHA:  sha,
+			EventID:     BuildEventID(platform, "org", "r", i+1, sha),
+			Platform:    platform,
+			ComponentID: "src-1",
+			Owner:       "org",
+			Repo:        "r",
+			PRNumber:    i + 1,
+			HeadSHA:     sha,
 		})
 	}
 

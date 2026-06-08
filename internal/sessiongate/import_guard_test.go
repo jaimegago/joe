@@ -109,7 +109,7 @@ func TestC4_PositionalNotSemantic(t *testing.T) {
 	}
 
 	forbidden := map[string]bool{
-		"sourceID": true, "sourceId": true, "source_id": true, "SourceID": true,
+		"sourceID": true, "sourceId": true, "component_id": true, "ComponentID": true,
 		"tool": true, "toolName": true,
 		"blast": true, "blastRadius": true,
 		"radius": true,

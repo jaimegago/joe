@@ -78,7 +78,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := newrelic.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -316,7 +316,7 @@ func TestAdapter_Connect_WithTestServer(t *testing.T) {
 func TestAdapter_Connect_MissingAPIKey(t *testing.T) {
 	adapter := newrelic.New()
 	// Valid JSON but no api_key → ParseConfig returns error before any network call.
-	source := store.Source{Config: []byte(`{"account_id": 12345}`)}
+	source := store.Component{Config: []byte(`{"account_id": 12345}`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for missing api_key, got nil")
 	}
@@ -325,7 +325,7 @@ func TestAdapter_Connect_MissingAPIKey(t *testing.T) {
 func TestAdapter_Connect_MissingAccountID(t *testing.T) {
 	adapter := newrelic.New()
 	// Valid JSON but no account_id → ParseConfig returns error before any network call.
-	source := store.Source{Config: []byte(`{"api_key": "NRAK-abc"}`)}
+	source := store.Component{Config: []byte(`{"api_key": "NRAK-abc"}`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for missing account_id, got nil")
 	}
@@ -334,7 +334,7 @@ func TestAdapter_Connect_MissingAccountID(t *testing.T) {
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := newrelic.New()
 	// Nil config bytes → empty configMap → ParseConfig fails on missing api_key.
-	source := store.Source{Config: nil}
+	source := store.Component{Config: nil}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}

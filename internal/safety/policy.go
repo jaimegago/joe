@@ -23,10 +23,10 @@ type SafetyPolicy struct {
 
 // RecordPolicy controls T2 (internal state mutation) permissions.
 type RecordPolicy struct {
-	GraphMutations     bool `yaml:"graph_mutations"`
-	SourceRegistration bool `yaml:"source_registration"`
-	OnboardingFacts    bool `yaml:"onboarding_facts"`
-	AutonomousRefresh  bool `yaml:"autonomous_refresh"`
+	GraphMutations        bool `yaml:"graph_mutations"`
+	ComponentRegistration bool `yaml:"source_registration"`
+	OnboardingFacts       bool `yaml:"onboarding_facts"`
+	AutonomousRefresh     bool `yaml:"autonomous_refresh"`
 }
 
 // ActPolicy controls T3 (external system mutation) permissions.
@@ -64,10 +64,10 @@ func DefaultPolicy() *SafetyPolicy {
 	return &SafetyPolicy{
 		Version: 1,
 		Record: RecordPolicy{
-			GraphMutations:     true,
-			SourceRegistration: true,
-			OnboardingFacts:    true,
-			AutonomousRefresh:  true,
+			GraphMutations:        true,
+			ComponentRegistration: true,
+			OnboardingFacts:       true,
+			AutonomousRefresh:     true,
 		},
 		Act: ActPolicy{
 			WriteFile: WriteFilePolicy{
@@ -131,7 +131,7 @@ func (p *SafetyPolicy) IsT2Allowed(category string) bool {
 	case "graph_mutations":
 		return p.Record.GraphMutations
 	case "source_registration":
-		return p.Record.SourceRegistration
+		return p.Record.ComponentRegistration
 	case "onboarding_facts":
 		return p.Record.OnboardingFacts
 	case "autonomous_refresh":

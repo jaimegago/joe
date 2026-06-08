@@ -32,17 +32,17 @@ func newClosedStore(t *testing.T) *store.Store {
 	return sqlStore
 }
 
-// TestHandleListSources_StoreError triggers the error path in handleListSources
+// TestHandleListComponents_StoreError triggers the error path in handleListComponents
 // by using a closed store (all DB queries fail with "database is closed").
-func TestHandleListSources_StoreError(t *testing.T) {
+func TestHandleListComponents_StoreError(t *testing.T) {
 	s := New(&core.Services{
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
 	})
-	req := httptest.NewRequest("GET", "/api/v1/sources", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components", nil)
 	w := httptest.NewRecorder()
-	s.handleListSources(w, req)
+	s.handleListComponents(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 with closed store, got %d", w.Code)
 	}
@@ -93,18 +93,18 @@ func TestHandleGetFullGraph_GraphError(t *testing.T) {
 	}
 }
 
-// TestHandleTestSource_StoreError covers the Sources.Get error path in handleTestSource.
-func TestHandleTestSource_StoreError(t *testing.T) {
+// TestHandleTestComponent_StoreError covers the Components.Get error path in handleTestComponent.
+func TestHandleTestComponent_StoreError(t *testing.T) {
 	s := New(&core.Services{
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
 	})
 	h := &webUIHandler{server: s}
-	req := httptest.NewRequest("POST", "/api/v1/sources/some-id/test", nil)
+	req := httptest.NewRequest("POST", "/api/v1/components/some-id/test", nil)
 	req.SetPathValue("id", "some-id")
 	w := httptest.NewRecorder()
-	h.handleTestSource(w, req)
+	h.handleTestComponent(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 with closed store, got %d", w.Code)
 	}
@@ -167,57 +167,57 @@ func TestHandleGetSessionMessages_StoreError(t *testing.T) {
 	}
 }
 
-// TestHandleDeleteSource_StoreError covers the Sources.Get error path in handleDeleteSource.
-func TestHandleDeleteSource_StoreError(t *testing.T) {
+// TestHandleDeleteComponent_StoreError covers the Components.Get error path in handleDeleteComponent.
+func TestHandleDeleteComponent_StoreError(t *testing.T) {
 	s := New(&core.Services{
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
 	})
-	req := httptest.NewRequest("DELETE", "/api/v1/sources/some-id", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/components/some-id", nil)
 	req.SetPathValue("id", "some-id")
 	w := httptest.NewRecorder()
-	s.handleDeleteSource(w, req)
+	s.handleDeleteComponent(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 with closed store, got %d", w.Code)
 	}
 }
 
-// TestHandleGetSource_StoreError covers the Sources.Get error path in handleGetSource.
-func TestHandleGetSource_StoreError(t *testing.T) {
+// TestHandleGetComponent_StoreError covers the Components.Get error path in handleGetComponent.
+func TestHandleGetComponent_StoreError(t *testing.T) {
 	s := New(&core.Services{
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
 	})
-	req := httptest.NewRequest("GET", "/api/v1/sources/some-id", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components/some-id", nil)
 	req.SetPathValue("id", "some-id")
 	w := httptest.NewRecorder()
-	s.handleGetSource(w, req)
+	s.handleGetComponent(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 with closed store, got %d", w.Code)
 	}
 }
 
-// TestHandleGetSource_EmptyID covers the id=="" guard by calling the handler
+// TestHandleGetComponent_EmptyID covers the id=="" guard by calling the handler
 // directly without setting a path value (defaults to "").
-func TestHandleGetSource_EmptyID(t *testing.T) {
+func TestHandleGetComponent_EmptyID(t *testing.T) {
 	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
-	req := httptest.NewRequest("GET", "/api/v1/sources/", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components/", nil)
 	// Do NOT call req.SetPathValue — PathValue("id") returns "".
 	w := httptest.NewRecorder()
-	s.handleGetSource(w, req)
+	s.handleGetComponent(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for empty id, got %d", w.Code)
 	}
 }
 
-// TestHandleDeleteSource_EmptyID covers the id=="" guard in handleDeleteSource.
-func TestHandleDeleteSource_EmptyID(t *testing.T) {
+// TestHandleDeleteComponent_EmptyID covers the id=="" guard in handleDeleteComponent.
+func TestHandleDeleteComponent_EmptyID(t *testing.T) {
 	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
-	req := httptest.NewRequest("DELETE", "/api/v1/sources/", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/components/", nil)
 	w := httptest.NewRecorder()
-	s.handleDeleteSource(w, req)
+	s.handleDeleteComponent(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for empty id, got %d", w.Code)
 	}
@@ -271,7 +271,7 @@ func TestHandleAccessError_PermissionDenied(t *testing.T) {
 
 func TestHandleAccessError_SourceNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
-	err := fmt.Errorf("%w: src-1", access.ErrSourceNotFound)
+	err := fmt.Errorf("%w: src-1", access.ErrComponentNotFound)
 	if !handleAccessError(w, err, "src-1", "k8s") {
 		t.Fatal("expected handleAccessError to handle source-not-found error")
 	}

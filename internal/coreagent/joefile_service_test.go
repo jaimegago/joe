@@ -75,8 +75,8 @@ type fakeGitAdapterWithContent struct {
 	fileContent map[string]string
 }
 
-func (f *fakeGitAdapterWithContent) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeGitAdapterWithContent) Disconnect() error                               { return nil }
+func (f *fakeGitAdapterWithContent) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeGitAdapterWithContent) Disconnect() error                                  { return nil }
 func (f *fakeGitAdapterWithContent) Status() adapters.Status {
 	return adapters.Status{Connected: true, Message: "connected"}
 }
@@ -314,16 +314,16 @@ func TestJoeFileService_MultipleFiles(t *testing.T) {
 	service := NewJoeFileService(cache, fakeLLM, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil)
 
 	manifestContent := "joe_version: \"1.0\"\nrepo:\n  name: payment-service"
-	sourcesContent := "sources:\n  - type: postgresql\n    reference: main-db"
+	sourcesContent := "components:\n  - type: postgresql\n    reference: main-db"
 
 	gitAdapter := &fakeGitAdapterWithContent{
 		files: []git.FileInfo{
 			{Path: ".joe/manifest.yaml", IsDir: false},
-			{Path: ".joe/sources.yaml", IsDir: false},
+			{Path: ".joe/components.yaml", IsDir: false},
 		},
 		fileContent: map[string]string{
-			".joe/manifest.yaml": manifestContent,
-			".joe/sources.yaml":  sourcesContent,
+			".joe/manifest.yaml":   manifestContent,
+			".joe/components.yaml": sourcesContent,
 		},
 	}
 
@@ -345,7 +345,7 @@ func TestJoeFileService_MultipleFiles(t *testing.T) {
 
 	// Verify both files cached
 	cached1, _ := cache.Get(context.Background(), ".joe/manifest.yaml")
-	cached2, _ := cache.Get(context.Background(), ".joe/sources.yaml")
+	cached2, _ := cache.Get(context.Background(), ".joe/components.yaml")
 
 	if cached1 == nil || cached2 == nil {
 		t.Errorf("both files should be in cache")

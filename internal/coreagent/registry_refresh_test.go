@@ -23,9 +23,9 @@ type fakeOCIAdapter struct {
 	err   error
 }
 
-func (f *fakeOCIAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeOCIAdapter) Disconnect() error                               { return nil }
-func (f *fakeOCIAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeOCIAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeOCIAdapter) Disconnect() error                                  { return nil }
+func (f *fakeOCIAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeOCIAdapter) ListRepositories(_ context.Context) ([]string, error) {
 	return f.repos, f.err
 }
@@ -43,8 +43,8 @@ type fakeArtifactoryAdapter struct {
 	err   error
 }
 
-func (f *fakeArtifactoryAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeArtifactoryAdapter) Disconnect() error                               { return nil }
+func (f *fakeArtifactoryAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeArtifactoryAdapter) Disconnect() error                                  { return nil }
 func (f *fakeArtifactoryAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -65,9 +65,9 @@ type fakeECRAdapter struct {
 	err   error
 }
 
-func (f *fakeECRAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeECRAdapter) Disconnect() error                               { return nil }
-func (f *fakeECRAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeECRAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeECRAdapter) Disconnect() error                                  { return nil }
+func (f *fakeECRAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeECRAdapter) ListRepositories(_ context.Context) ([]ecradapter.Repository, error) {
 	return f.repos, f.err
 }
@@ -91,46 +91,46 @@ func setupRegistryRefresher(t *testing.T) *Refresher {
 
 // ---- OCI ----
 
-func TestRefreshOCISource_NoRepos(t *testing.T) {
+func TestRefreshOCIComponent_NoRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-oci-1", Type: store.SourceTypeOCIRegistry, Name: "my-registry"}
+	src := &store.Component{ID: "src-oci-1", Type: store.ComponentTypeOCIRegistry, Name: "my-registry"}
 
-	if err := r.refreshOCISource(context.Background(), src, &fakeOCIAdapter{}); err != nil {
-		t.Fatalf("refreshOCISource: %v", err)
+	if err := r.refreshOCIComponent(context.Background(), src, &fakeOCIAdapter{}); err != nil {
+		t.Fatalf("refreshOCIComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(nodes) != 1 || nodes[0].Type != "artifact_registry" {
 		t.Errorf("want 1 artifact_registry node, got %v", nodes)
 	}
 }
 
-func TestRefreshOCISource_ReposError(t *testing.T) {
+func TestRefreshOCIComponent_ReposError(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-oci-2", Type: store.SourceTypeOCIRegistry, Name: "my-registry"}
+	src := &store.Component{ID: "src-oci-2", Type: store.ComponentTypeOCIRegistry, Name: "my-registry"}
 	adapter := &fakeOCIAdapter{err: errors.New("registry unreachable")}
 
 	// Should succeed — error listing repos is non-fatal.
-	if err := r.refreshOCISource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshOCISource should not error on ListRepositories failure, got: %v", err)
+	if err := r.refreshOCIComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshOCIComponent should not error on ListRepositories failure, got: %v", err)
 	}
 }
 
-func TestRefreshOCISource_WithRepos(t *testing.T) {
+func TestRefreshOCIComponent_WithRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-oci-3", Type: store.SourceTypeOCIRegistry, Name: "my-registry"}
+	src := &store.Component{ID: "src-oci-3", Type: store.ComponentTypeOCIRegistry, Name: "my-registry"}
 	adapter := &fakeOCIAdapter{repos: []string{"payment", "api-gateway", "auth"}}
 
-	if err := r.refreshOCISource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshOCISource: %v", err)
+	if err := r.refreshOCIComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshOCIComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source node + 3 repo nodes.
 	if len(nodes) != 4 {
@@ -140,35 +140,35 @@ func TestRefreshOCISource_WithRepos(t *testing.T) {
 
 // ---- DockerHub ----
 
-func TestRefreshDockerHubSource_NoRepos(t *testing.T) {
+func TestRefreshDockerHubComponent_NoRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-dh-1", Type: store.SourceTypeDockerHub, Name: "dockerhub"}
+	src := &store.Component{ID: "src-dh-1", Type: store.ComponentTypeDockerHub, Name: "dockerhub"}
 
-	if err := r.refreshDockerHubSource(context.Background(), src, &fakeOCIAdapter{}); err != nil {
-		t.Fatalf("refreshDockerHubSource: %v", err)
+	if err := r.refreshDockerHubComponent(context.Background(), src, &fakeOCIAdapter{}); err != nil {
+		t.Fatalf("refreshDockerHubComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(nodes) != 1 || nodes[0].Type != "artifact_registry" {
 		t.Errorf("want 1 artifact_registry node, got %v", nodes)
 	}
 }
 
-func TestRefreshDockerHubSource_WithRepos(t *testing.T) {
+func TestRefreshDockerHubComponent_WithRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-dh-2", Type: store.SourceTypeDockerHub, Name: "dockerhub"}
+	src := &store.Component{ID: "src-dh-2", Type: store.ComponentTypeDockerHub, Name: "dockerhub"}
 	adapter := &fakeOCIAdapter{repos: []string{"myorg/app", "myorg/worker"}}
 
-	if err := r.refreshDockerHubSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshDockerHubSource: %v", err)
+	if err := r.refreshDockerHubComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshDockerHubComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source + 2 repo nodes.
 	if len(nodes) != 3 {
@@ -178,36 +178,36 @@ func TestRefreshDockerHubSource_WithRepos(t *testing.T) {
 
 // ---- Artifactory ----
 
-func TestRefreshArtifactorySource_NoRepos(t *testing.T) {
+func TestRefreshArtifactoryComponent_NoRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-art-1", Type: store.SourceTypeArtifactory, Name: "artifactory"}
+	src := &store.Component{ID: "src-art-1", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
 
-	if err := r.refreshArtifactorySource(context.Background(), src, &fakeArtifactoryAdapter{}); err != nil {
-		t.Fatalf("refreshArtifactorySource: %v", err)
+	if err := r.refreshArtifactoryComponent(context.Background(), src, &fakeArtifactoryAdapter{}); err != nil {
+		t.Fatalf("refreshArtifactoryComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(nodes) != 1 || nodes[0].Type != "artifact_registry" {
 		t.Errorf("want 1 artifact_registry node, got %v", nodes)
 	}
 }
 
-func TestRefreshArtifactorySource_ReposError(t *testing.T) {
+func TestRefreshArtifactoryComponent_ReposError(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-art-2", Type: store.SourceTypeArtifactory, Name: "artifactory"}
+	src := &store.Component{ID: "src-art-2", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
 	adapter := &fakeArtifactoryAdapter{err: errors.New("auth failure")}
 
-	if err := r.refreshArtifactorySource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshArtifactorySource should not error on ListRepositories failure, got: %v", err)
+	if err := r.refreshArtifactoryComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshArtifactoryComponent should not error on ListRepositories failure, got: %v", err)
 	}
 }
 
-func TestRefreshArtifactorySource_WithRepos(t *testing.T) {
+func TestRefreshArtifactoryComponent_WithRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-art-3", Type: store.SourceTypeArtifactory, Name: "artifactory"}
+	src := &store.Component{ID: "src-art-3", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
 	adapter := &fakeArtifactoryAdapter{
 		repos: []artifactoryadapter.Repository{
 			{Key: "docker-local", PackageType: "Docker", Description: "Local Docker repo"},
@@ -215,13 +215,13 @@ func TestRefreshArtifactorySource_WithRepos(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshArtifactorySource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshArtifactorySource: %v", err)
+	if err := r.refreshArtifactoryComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshArtifactoryComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source + 2 repo nodes.
 	if len(nodes) != 3 {
@@ -231,36 +231,36 @@ func TestRefreshArtifactorySource_WithRepos(t *testing.T) {
 
 // ---- ECR ----
 
-func TestRefreshECRSource_NoRepos(t *testing.T) {
+func TestRefreshECRComponent_NoRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-ecr-1", Type: store.SourceTypeECR, Name: "ecr"}
+	src := &store.Component{ID: "src-ecr-1", Type: store.ComponentTypeECR, Name: "ecr"}
 
-	if err := r.refreshECRSource(context.Background(), src, &fakeECRAdapter{}); err != nil {
-		t.Fatalf("refreshECRSource: %v", err)
+	if err := r.refreshECRComponent(context.Background(), src, &fakeECRAdapter{}); err != nil {
+		t.Fatalf("refreshECRComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(nodes) != 1 || nodes[0].Type != "artifact_registry" {
 		t.Errorf("want 1 artifact_registry node, got %v", nodes)
 	}
 }
 
-func TestRefreshECRSource_ReposError(t *testing.T) {
+func TestRefreshECRComponent_ReposError(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-ecr-2", Type: store.SourceTypeECR, Name: "ecr"}
+	src := &store.Component{ID: "src-ecr-2", Type: store.ComponentTypeECR, Name: "ecr"}
 	adapter := &fakeECRAdapter{err: errors.New("aws credentials error")}
 
-	if err := r.refreshECRSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshECRSource should not error on ListRepositories failure, got: %v", err)
+	if err := r.refreshECRComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshECRComponent should not error on ListRepositories failure, got: %v", err)
 	}
 }
 
-func TestRefreshECRSource_WithRepos(t *testing.T) {
+func TestRefreshECRComponent_WithRepos(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-ecr-3", Type: store.SourceTypeECR, Name: "ecr"}
+	src := &store.Component{ID: "src-ecr-3", Type: store.ComponentTypeECR, Name: "ecr"}
 	adapter := &fakeECRAdapter{
 		repos: []ecradapter.Repository{
 			{Name: "payment", URI: "123456789.dkr.ecr.us-east-1.amazonaws.com/payment", CreatedAt: "2024-01-01T00:00:00Z"},
@@ -268,13 +268,13 @@ func TestRefreshECRSource_WithRepos(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshECRSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshECRSource: %v", err)
+	if err := r.refreshECRComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshECRComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source + 2 repo nodes.
 	if len(nodes) != 3 {
@@ -301,9 +301,9 @@ func TestRepoNodeID(t *testing.T) {
 }
 
 func TestRegistryMetadata(t *testing.T) {
-	src := &store.Source{ID: "src1", Type: "oci_registry", Name: "my-reg"}
+	src := &store.Component{ID: "src1", Type: "oci_registry", Name: "my-reg"}
 	meta := registryMetadata(src)
-	if meta["source_id"] != "src1" || meta["source_type"] != "oci_registry" || meta["name"] != "my-reg" {
+	if meta["component_id"] != "src1" || meta["component_type"] != "oci_registry" || meta["name"] != "my-reg" {
 		t.Errorf("registryMetadata = %v, unexpected values", meta)
 	}
 }
@@ -312,7 +312,7 @@ func TestRegistryMetadata(t *testing.T) {
 
 func TestBuildImageStoredInEdges_EmptyRepoName(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-img-1", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-img-1", Type: store.ComponentTypeOCIRegistry}
 	edges := r.buildImageStoredInEdges(context.Background(), src, "repo-node-id", "", time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for empty repoName, got %d", len(edges))
@@ -321,7 +321,7 @@ func TestBuildImageStoredInEdges_EmptyRepoName(t *testing.T) {
 
 func TestBuildImageStoredInEdges_NoMatchingNodes(t *testing.T) {
 	r := setupRegistryRefresher(t)
-	src := &store.Source{ID: "src-img-2", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-img-2", Type: store.ComponentTypeOCIRegistry}
 	edges := r.buildImageStoredInEdges(context.Background(), src, "repo-node-id", "payment", time.Now())
 	// No matching nodes in graph → no edges.
 	if len(edges) != 0 {
@@ -332,14 +332,14 @@ func TestBuildImageStoredInEdges_NoMatchingNodes(t *testing.T) {
 func TestBuildImageStoredInEdges_WithMatchingDeployment(t *testing.T) {
 	r := setupRegistryRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-img-3", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-img-3", Type: store.ComponentTypeOCIRegistry}
 
 	// Add a deployment node that matches the repo name.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "deploy/payment",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment"},
+		ID:          "deploy/payment",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment"},
 	})
 
 	edges := r.buildImageStoredInEdges(ctx, src, "registry/src-img-3/repo/payment", "payment", time.Now())
@@ -354,14 +354,14 @@ func TestBuildImageStoredInEdges_WithMatchingDeployment(t *testing.T) {
 func TestBuildImageStoredInEdges_SkipsNonDeploymentNodes(t *testing.T) {
 	r := setupRegistryRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-img-4", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-img-4", Type: store.ComponentTypeOCIRegistry}
 
 	// Add a k8s_node — should NOT produce an image_stored_in edge.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8snode/my-payment-node",
-		Type:     "k8s_node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "my-payment-node"},
+		ID:          "k8snode/my-payment-node",
+		Type:        "k8s_node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "my-payment-node"},
 	})
 
 	edges := r.buildImageStoredInEdges(ctx, src, "repo-node", "my-payment-node", time.Now())
@@ -370,82 +370,82 @@ func TestBuildImageStoredInEdges_SkipsNonDeploymentNodes(t *testing.T) {
 	}
 }
 
-// ---- refreshSource switch cases for registry types ----
+// ---- refreshComponent switch cases for registry types ----
 
-func TestRefreshSource_OCIType(t *testing.T) {
+func TestRefreshComponent_OCIType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-oci", &fakeOCIAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-oci", Type: store.SourceTypeOCIRegistry, Name: "oci"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(oci_registry) error: %v", err)
+	src := &store.Component{ID: "src-oci", Type: store.ComponentTypeOCIRegistry, Name: "oci"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(oci_registry) error: %v", err)
 	}
 }
 
-func TestRefreshSource_DockerHubType(t *testing.T) {
+func TestRefreshComponent_DockerHubType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dh", &fakeOCIAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-dh", Type: store.SourceTypeDockerHub, Name: "dockerhub"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(dockerhub) error: %v", err)
+	src := &store.Component{ID: "src-dh", Type: store.ComponentTypeDockerHub, Name: "dockerhub"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(dockerhub) error: %v", err)
 	}
 }
 
-func TestRefreshSource_ArtifactoryType(t *testing.T) {
+func TestRefreshComponent_ArtifactoryType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-art", &fakeArtifactoryAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-art", Type: store.SourceTypeArtifactory, Name: "artifactory"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(artifactory) error: %v", err)
+	src := &store.Component{ID: "src-art", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(artifactory) error: %v", err)
 	}
 }
 
-func TestRefreshSource_ECRType(t *testing.T) {
+func TestRefreshComponent_ECRType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-ecr", &fakeECRAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-ecr", Type: store.SourceTypeECR, Name: "ecr"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(ecr) error: %v", err)
+	src := &store.Component{ID: "src-ecr", Type: store.ComponentTypeECR, Name: "ecr"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(ecr) error: %v", err)
 	}
 }
 
-func TestRefreshSource_OCIWrongType(t *testing.T) {
+func TestRefreshComponent_OCIWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	// Register wrong adapter type — adapter is ECR but source is OCI.
 	reg.Register("src-oci-bad", &fakeECRAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-oci-bad", Type: store.SourceTypeOCIRegistry, Name: "oci"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-oci-bad", Type: store.ComponentTypeOCIRegistry, Name: "oci"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
-func TestRefreshSource_ArtifactoryWrongType(t *testing.T) {
+func TestRefreshComponent_ArtifactoryWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-art-bad", &fakeOCIAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-art-bad", Type: store.SourceTypeArtifactory, Name: "artifactory"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-art-bad", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
-func TestRefreshSource_ECRWrongType(t *testing.T) {
+func TestRefreshComponent_ECRWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-ecr-bad", &fakeOCIAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-ecr-bad", Type: store.SourceTypeECR, Name: "ecr"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-ecr-bad", Type: store.ComponentTypeECR, Name: "ecr"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }

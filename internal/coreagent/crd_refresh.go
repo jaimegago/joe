@@ -28,7 +28,7 @@ type crdRefreshSpec struct {
 	TargetTypes []string
 }
 
-// crdRefreshSpecs is the list of CRD resource types refreshed from K8s sources.
+// crdRefreshSpecs is the list of CRD resource types refreshed from K8s components.
 var crdRefreshSpecs = []crdRefreshSpec{
 	{
 		// KEDA ScaledObjects: scaled_by from ScaledObject → workload.
@@ -81,12 +81,12 @@ var crdRefreshSpecs = []crdRefreshSpec{
 }
 
 // refreshK8sCRDs discovers CRD-based resources from a K8s source and returns
-// the nodes and edges to add to the graph. It is called by refreshK8sSource
+// the nodes and edges to add to the graph. It is called by refreshK8sComponent
 // after the core resource refresh completes.
 //
 // Errors from individual CRD list calls are logged and skipped — missing CRDs
 // are expected in clusters that don't have those operators installed.
-func (r *Refresher) refreshK8sCRDs(ctx context.Context, source *store.Source, adapter k8s.KubernetesAdapter) ([]graph.Node, []graph.Edge) {
+func (r *Refresher) refreshK8sCRDs(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) ([]graph.Node, []graph.Edge) {
 	now := time.Now()
 	var nodes []graph.Node
 	var edges []graph.Edge
@@ -102,11 +102,11 @@ func (r *Refresher) refreshK8sCRDs(ctx context.Context, source *store.Source, ad
 
 // refreshCRDSpec discovers one CRD resource type, creates graph nodes, and
 // attempts to build edges to matching workload/service nodes.
-func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Source, adapter k8s.KubernetesAdapter, spec crdRefreshSpec, now time.Time) ([]graph.Node, []graph.Edge) {
+func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter, spec crdRefreshSpec, now time.Time) ([]graph.Node, []graph.Edge) {
 	items, err := adapter.ListResources(ctx, spec.Resource, "")
 	if err != nil {
 		// CRD not installed in this cluster — not an error condition.
-		r.logger.Debug("crd not available (skipping)", "resource", spec.Resource, "source_id", source.ID, "error", err)
+		r.logger.Debug("crd not available (skipping)", "resource", spec.Resource, "component_id", source.ID, "error", err)
 		return nil, nil
 	}
 
@@ -120,9 +120,9 @@ func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Source, ad
 
 		nodeID := fmt.Sprintf("crd/%s/%s/%s/%s", source.ID, crdShortName(spec.Resource), namespace, name)
 		node := graph.Node{
-			ID:       nodeID,
-			Type:     spec.NodeType,
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        spec.NodeType,
+			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"name":      name,
 				"namespace": namespace,
@@ -156,14 +156,14 @@ func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Source, ad
 				}
 			}
 			edges = append(edges, graph.Edge{
-				From:       nodeID,
-				To:         target.ID,
-				Relation:   spec.Relation,
-				Confidence: graph.Inferred,
-				Source:     "k8s_crd",
-				SourceID:   source.ID,
-				Context:    crdShortName(spec.Resource) + "=" + name,
-				CreatedAt:  now,
+				From:        nodeID,
+				To:          target.ID,
+				Relation:    spec.Relation,
+				Confidence:  graph.Inferred,
+				Source:      "k8s_crd",
+				ComponentID: source.ID,
+				Context:     crdShortName(spec.Resource) + "=" + name,
+				CreatedAt:   now,
 			})
 		}
 	}

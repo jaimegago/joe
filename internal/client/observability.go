@@ -30,8 +30,8 @@ func (c *Client) PrometheusQuery(ctx context.Context, sourceID, query string, qu
 	}
 
 	var result struct {
-		Result   *prometheusadapter.QueryResult `json:"result"`
-		SourceID string                         `json:"source_id"`
+		Result      *prometheusadapter.QueryResult `json:"result"`
+		ComponentID string                         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "prometheus query"); err != nil {
 		return nil, err
@@ -54,8 +54,8 @@ func (c *Client) PrometheusQueryRange(ctx context.Context, sourceID, query strin
 		start.Unix(), end.Unix(), stepSec)
 
 	var result struct {
-		Result   *prometheusadapter.QueryResult `json:"result"`
-		SourceID string                         `json:"source_id"`
+		Result      *prometheusadapter.QueryResult `json:"result"`
+		ComponentID string                         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "prometheus query_range"); err != nil {
 		return nil, err
@@ -70,9 +70,9 @@ func (c *Client) PrometheusTargets(ctx context.Context, sourceID string) ([]prom
 		c.baseURL, apiPrometheusBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Targets  []prometheusadapter.Target `json:"targets"`
-		Count    int                        `json:"count"`
-		SourceID string                     `json:"source_id"`
+		Targets     []prometheusadapter.Target `json:"targets"`
+		Count       int                        `json:"count"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "prometheus targets"); err != nil {
 		return nil, err
@@ -93,8 +93,8 @@ func (c *Client) LokiQuery(ctx context.Context, sourceID, query string, limit in
 		limit, sinceSec)
 
 	var result struct {
-		Result   *lokiadapter.QueryResult `json:"result"`
-		SourceID string                   `json:"source_id"`
+		Result      *lokiadapter.QueryResult `json:"result"`
+		ComponentID string                   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "loki query"); err != nil {
 		return nil, err
@@ -112,8 +112,8 @@ func (c *Client) LokiQueryRange(ctx context.Context, sourceID, query string, sta
 		start.Unix(), end.Unix(), limit)
 
 	var result struct {
-		Result   *lokiadapter.QueryResult `json:"result"`
-		SourceID string                   `json:"source_id"`
+		Result      *lokiadapter.QueryResult `json:"result"`
+		ComponentID string                   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "loki query_range"); err != nil {
 		return nil, err
@@ -142,9 +142,9 @@ func (c *Client) TempoSearch(ctx context.Context, sourceID, service, tags string
 	}
 
 	var result struct {
-		Traces   []tempoadapter.TraceSearchResult `json:"traces"`
-		Count    int                              `json:"count"`
-		SourceID string                           `json:"source_id"`
+		Traces      []tempoadapter.TraceSearchResult `json:"traces"`
+		Count       int                              `json:"count"`
+		ComponentID string                           `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "tempo search"); err != nil {
 		return nil, err
@@ -160,8 +160,8 @@ func (c *Client) TempoGetTrace(ctx context.Context, sourceID, traceID string) (*
 		url.PathEscape(sourceID), url.PathEscape(traceID))
 
 	var result struct {
-		Trace    *tempoadapter.Trace `json:"trace"`
-		SourceID string              `json:"source_id"`
+		Trace       *tempoadapter.Trace `json:"trace"`
+		ComponentID string              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "tempo get trace"); err != nil {
 		return nil, err
@@ -178,9 +178,9 @@ func (c *Client) JaegerServices(ctx context.Context, sourceID string) ([]string,
 		c.baseURL, apiJaegerBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Services []string `json:"services"`
-		Count    int      `json:"count"`
-		SourceID string   `json:"source_id"`
+		Services    []string `json:"services"`
+		Count       int      `json:"count"`
+		ComponentID string   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "jaeger services"); err != nil {
 		return nil, err
@@ -200,9 +200,9 @@ func (c *Client) JaegerTraces(ctx context.Context, sourceID, service, operation 
 	}
 
 	var result struct {
-		Traces   []jaegeradapter.TraceSearchResult `json:"traces"`
-		Count    int                               `json:"count"`
-		SourceID string                            `json:"source_id"`
+		Traces      []jaegeradapter.TraceSearchResult `json:"traces"`
+		Count       int                               `json:"count"`
+		ComponentID string                            `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "jaeger traces"); err != nil {
 		return nil, err
@@ -222,8 +222,8 @@ func (c *Client) DatadogMetricsQuery(ctx context.Context, sourceID, query string
 		from, to)
 
 	var result struct {
-		Result   *datadogadapter.MetricsResult `json:"result"`
-		SourceID string                        `json:"source_id"`
+		Result      *datadogadapter.MetricsResult `json:"result"`
+		ComponentID string                        `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "datadog metrics query"); err != nil {
 		return nil, err
@@ -240,8 +240,8 @@ func (c *Client) DatadogLogsSearch(ctx context.Context, sourceID, query string, 
 		from, to, limit)
 
 	var result struct {
-		Result   *datadogadapter.LogsResult `json:"result"`
-		SourceID string                     `json:"source_id"`
+		Result      *datadogadapter.LogsResult `json:"result"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "datadog logs search"); err != nil {
 		return nil, err
@@ -266,8 +266,8 @@ func (c *Client) SplunkSearch(ctx context.Context, sourceID, query, earliest, la
 	}
 
 	var result struct {
-		Result   *splunkadapter.SearchResult `json:"result"`
-		SourceID string                      `json:"source_id"`
+		Result      *splunkadapter.SearchResult `json:"result"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "splunk search"); err != nil {
 		return nil, err
@@ -286,8 +286,8 @@ func (c *Client) DynatraceMetricsQuery(ctx context.Context, sourceID, query stri
 		from, to)
 
 	var result struct {
-		Result   *dynatraceadapter.MetricsResult `json:"result"`
-		SourceID string                          `json:"source_id"`
+		Result      *dynatraceadapter.MetricsResult `json:"result"`
+		ComponentID string                          `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "dynatrace metrics query"); err != nil {
 		return nil, err
@@ -303,8 +303,8 @@ func (c *Client) DynatraceEvents(ctx context.Context, sourceID string, from, to 
 		from, to, limit)
 
 	var result struct {
-		Result   *dynatraceadapter.EventsResult `json:"result"`
-		SourceID string                         `json:"source_id"`
+		Result      *dynatraceadapter.EventsResult `json:"result"`
+		ComponentID string                         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "dynatrace events"); err != nil {
 		return nil, err
@@ -323,8 +323,8 @@ func (c *Client) NewRelicNRQLQuery(ctx context.Context, sourceID string, account
 		strconv.Itoa(accountID))
 
 	var result struct {
-		Result   *newrelicadapter.NRQLResult `json:"result"`
-		SourceID string                      `json:"source_id"`
+		Result      *newrelicadapter.NRQLResult `json:"result"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "newrelic nrql query"); err != nil {
 		return nil, err

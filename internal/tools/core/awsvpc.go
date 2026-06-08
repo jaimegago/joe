@@ -27,14 +27,14 @@ func NewAWSVPCTool(c AWSVPCClient) *AWSVPCTool {
 func (t *AWSVPCTool) Name() string { return "aws_vpc" }
 
 func (t *AWSVPCTool) Description() string {
-	return "Query AWS VPC (Virtual Private Cloud) networks from a connected AWS account. Lists all VPCs in the region with their subnets, or gets a specific VPC by ID. Provides CIDR blocks, subnets, availability zones, and more. If you don't know the source_id, call list_sources first to discover available AWS connections."
+	return "Query AWS VPC (Virtual Private Cloud) networks from a connected AWS account. Lists all VPCs in the region with their subnets, or gets a specific VPC by ID. Provides CIDR blocks, subnets, availability zones, and more. If you don't know the component_id, call list_components first to discover available AWS connections."
 }
 
 func (t *AWSVPCTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the AWS source to query.",
 			},
@@ -43,14 +43,14 @@ func (t *AWSVPCTool) Parameters() llm.ParameterSchema {
 				Description: "VPC ID to get (e.g., vpc-1234567890abcdef0). Omit to list all VPCs.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *AWSVPCTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	vpcID, _ := args["vpc_id"].(string)
@@ -62,8 +62,8 @@ func (t *AWSVPCTool) Execute(ctx context.Context, args map[string]any) (any, err
 			return nil, fmt.Errorf("aws vpc get vpc failed: %w", err)
 		}
 		return map[string]any{
-			"vpc":       vpc,
-			"source_id": sourceID,
+			"vpc":          vpc,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -74,8 +74,8 @@ func (t *AWSVPCTool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	return map[string]any{
-		"vpcs":      vpcs,
-		"count":     len(vpcs),
-		"source_id": sourceID,
+		"vpcs":         vpcs,
+		"count":        len(vpcs),
+		"component_id": sourceID,
 	}, nil
 }

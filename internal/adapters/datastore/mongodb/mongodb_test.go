@@ -88,7 +88,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{})} // missing uri
+	src := store.Component{Config: mustMarshal(t, map[string]any{})} // missing uri
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for missing uri, got nil")
 	}
@@ -96,7 +96,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{bad json`)}
+	src := store.Component{Config: []byte(`{bad json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -280,7 +280,7 @@ func TestServerStatus_MultipleCallsSequential(t *testing.T) {
 func TestConnect_EmptyConfig(t *testing.T) {
 	// Connect with no config at all (nil Config) — missing URI → error
 	a := New()
-	src := store.Source{} // empty Config bytes
+	src := store.Component{} // empty Config bytes
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for empty source config (missing URI), got nil")
 	}
@@ -293,7 +293,7 @@ func TestConnect_PingFailure(t *testing.T) {
 	defer cancel()
 
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: mustMarshal(t, map[string]any{
 			"uri":      "mongodb://127.0.0.1:27099",
 			"database": "testdb",

@@ -41,27 +41,27 @@ func (t *CrossplaneProvidersTool) Description() string {
 	return "List Crossplane Provider resources with their installation and health status. " +
 		"Shows provider package (e.g. provider-aws, provider-gcp), installed revision, " +
 		"and whether the provider is Healthy and ready to provision resources. " +
-		"Use source_id of a Kubernetes source where Crossplane is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Crossplane is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CrossplaneProvidersTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Crossplane is installed).",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CrossplaneProvidersTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	providers, err := t.Client.K8sListResources(ctx, sourceID, CrossplaneProviderCRDTypes["Provider"], "")
@@ -73,9 +73,9 @@ func (t *CrossplaneProvidersTool) Execute(ctx context.Context, args map[string]a
 	}
 
 	return map[string]any{
-		"providers": extractCrossplaneProviderSummaries(providers),
-		"count":     len(providers),
-		"source_id": sourceID,
+		"providers":    extractCrossplaneProviderSummaries(providers),
+		"count":        len(providers),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -129,15 +129,15 @@ func (t *CrossplaneResourcesTool) Description() string {
 	return "List Crossplane CompositeResourceDefinitions (XRDs) and Compositions. " +
 		"XRDs define the API for composite resources; Compositions define how they are provisioned. " +
 		"Use to understand what composite resource types are available and how they map to cloud resources. " +
-		"Use source_id of a Kubernetes source where Crossplane is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Crossplane is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CrossplaneResourcesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Crossplane is installed).",
 			},
@@ -146,14 +146,14 @@ func (t *CrossplaneResourcesTool) Parameters() llm.ParameterSchema {
 				Description: "Optional kind filter: CompositeResourceDefinition or Composition. Omit for both.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CrossplaneResourcesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	kind, _ := args["kind"].(string)
 
@@ -170,10 +170,10 @@ func (t *CrossplaneResourcesTool) Execute(ctx context.Context, args map[string]a
 			resources = []map[string]any{}
 		}
 		return map[string]any{
-			"kind":      kind,
-			"resources": extractCrossplaneResourceSummaries(resources),
-			"count":     len(resources),
-			"source_id": sourceID,
+			"kind":         kind,
+			"resources":    extractCrossplaneResourceSummaries(resources),
+			"count":        len(resources),
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -186,9 +186,9 @@ func (t *CrossplaneResourcesTool) Execute(ctx context.Context, args map[string]a
 
 	total := len(result["CompositeResourceDefinition"]) + len(result["Composition"])
 	return map[string]any{
-		"resources": result,
-		"count":     total,
-		"source_id": sourceID,
+		"resources":    result,
+		"count":        total,
+		"component_id": sourceID,
 	}, nil
 }
 

@@ -603,7 +603,7 @@ func TestAdapter_History_NotFound(t *testing.T) {
 func TestConnect_InvalidConfig(t *testing.T) {
 	// Connect with invalid JSON config — should fail at ParseConfig.
 	a := New()
-	src := store.Source{Config: []byte(`{invalid json`)}
+	src := store.Component{Config: []byte(`{invalid json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for invalid JSON config, got nil")
 	}
@@ -613,7 +613,7 @@ func TestConnect_BadKubeconfigPath(t *testing.T) {
 	// Connect succeeds (lazy init); the bad path surfaces on first operation.
 	a := New()
 	cfgJSON, _ := json.Marshal(Config{KubeconfigPath: "/nonexistent/path/kubeconfig"})
-	src := store.Source{Config: cfgJSON}
+	src := store.Component{Config: cfgJSON}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() unexpected error: %v", err)
 	}
@@ -875,7 +875,7 @@ users:
 
 	a := New()
 	cfgJSON, _ := json.Marshal(Config{KubeconfigPath: f.Name()})
-	src := store.Source{Config: cfgJSON}
+	src := store.Component{Config: cfgJSON}
 
 	// Connect should succeed (kubernetes.NewForConfig only builds the client,
 	// it does not dial the server yet).

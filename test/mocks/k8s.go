@@ -27,7 +27,7 @@ func NewMockK8sAdapter() *MockK8sAdapter {
 	return &MockK8sAdapter{connected: true}
 }
 
-func (m *MockK8sAdapter) Connect(_ context.Context, _ store.Source) error {
+func (m *MockK8sAdapter) Connect(_ context.Context, _ store.Component) error {
 	m.connected = true
 	return nil
 }

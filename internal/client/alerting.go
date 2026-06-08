@@ -24,9 +24,9 @@ func (c *Client) AlertmanagerAlerts(ctx context.Context, sourceID, filter string
 	}
 
 	var result struct {
-		Alerts   []alertmanageradapter.Alert `json:"alerts"`
-		Count    int                         `json:"count"`
-		SourceID string                      `json:"source_id"`
+		Alerts      []alertmanageradapter.Alert `json:"alerts"`
+		Count       int                         `json:"count"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "alertmanager alerts"); err != nil {
 		return nil, err
@@ -50,9 +50,9 @@ func (c *Client) PagerDutyIncidents(ctx context.Context, sourceID, serviceID, st
 	}
 
 	var result struct {
-		Incidents []pagerdutyadapter.Incident `json:"incidents"`
-		Count     int                         `json:"count"`
-		SourceID  string                      `json:"source_id"`
+		Incidents   []pagerdutyadapter.Incident `json:"incidents"`
+		Count       int                         `json:"count"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "pagerduty incidents"); err != nil {
 		return nil, err
@@ -67,9 +67,9 @@ func (c *Client) PagerDutyServices(ctx context.Context, sourceID string) ([]page
 		c.baseURL, apiPagerDutyBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Services []pagerdutyadapter.Service `json:"services"`
-		Count    int                        `json:"count"`
-		SourceID string                     `json:"source_id"`
+		Services    []pagerdutyadapter.Service `json:"services"`
+		Count       int                        `json:"count"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "pagerduty services"); err != nil {
 		return nil, err
@@ -90,9 +90,9 @@ func (c *Client) GrafanaDashboards(ctx context.Context, sourceID, query string, 
 	}
 
 	var result struct {
-		Dashboards []grafanaadapter.Dashboard `json:"dashboards"`
-		Count      int                        `json:"count"`
-		SourceID   string                     `json:"source_id"`
+		Dashboards  []grafanaadapter.Dashboard `json:"dashboards"`
+		Count       int                        `json:"count"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "grafana dashboards"); err != nil {
 		return nil, err
@@ -108,8 +108,8 @@ func (c *Client) GrafanaDashboard(ctx context.Context, sourceID, uid string) (*g
 		url.PathEscape(sourceID), url.PathEscape(uid))
 
 	var result struct {
-		Dashboard *grafanaadapter.DashboardDetail `json:"dashboard"`
-		SourceID  string                          `json:"source_id"`
+		Dashboard   *grafanaadapter.DashboardDetail `json:"dashboard"`
+		ComponentID string                          `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "grafana dashboard"); err != nil {
 		return nil, err
@@ -124,9 +124,9 @@ func (c *Client) GrafanaAlerts(ctx context.Context, sourceID string) ([]grafanaa
 		c.baseURL, apiGrafanaBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Alerts   []grafanaadapter.GrafanaAlert `json:"alerts"`
-		Count    int                           `json:"count"`
-		SourceID string                        `json:"source_id"`
+		Alerts      []grafanaadapter.GrafanaAlert `json:"alerts"`
+		Count       int                           `json:"count"`
+		ComponentID string                        `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "grafana alerts"); err != nil {
 		return nil, err

@@ -310,13 +310,13 @@ func (h *Handlers) recordLoginAudit(ctx context.Context, principal rbac.Principa
 		"user_agent": r.UserAgent(),
 	})
 	err := h.audit.Insert(ctx, audit.Event{
-		Principal: string(principal),
-		Action:    audit.ActionOIDCLogin,
-		Source:    auditSourceOIDC,
-		Decision:  audit.DecisionAllow,
-		Reason:    "oidc_login",
-		Kind:      audit.KindAuthLogin,
-		Context:   string(blob),
+		Principal:   string(principal),
+		Action:      audit.ActionOIDCLogin,
+		ComponentID: auditSourceOIDC,
+		Decision:    audit.DecisionAllow,
+		Reason:      "oidc_login",
+		Kind:        audit.KindAuthLogin,
+		Context:     string(blob),
 	})
 	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
 	// outcome (the login PROCEEDED) rather than claiming a fail-closed abort,
@@ -342,13 +342,13 @@ func (h *Handlers) recordDisabledLoginAudit(ctx context.Context, principal rbac.
 		"user_agent": r.UserAgent(),
 	})
 	err := h.audit.Insert(ctx, audit.Event{
-		Principal: string(principal),
-		Action:    audit.ActionOIDCLogin,
-		Source:    auditSourceOIDC,
-		Decision:  audit.DecisionDeny,
-		Reason:    "principal_disabled",
-		Kind:      audit.KindAuthLogin,
-		Context:   string(blob),
+		Principal:   string(principal),
+		Action:      audit.ActionOIDCLogin,
+		ComponentID: auditSourceOIDC,
+		Decision:    audit.DecisionDeny,
+		Reason:      "principal_disabled",
+		Kind:        audit.KindAuthLogin,
+		Context:     string(blob),
 	})
 	_ = audit.FailurePosture(ctx, audit.ActionOIDCLogin, err, "auth:oidc_login_disabled", audit.FailOpen)
 }
@@ -371,13 +371,13 @@ func (h *Handlers) recordAdminGrantAudit(ctx context.Context, principal rbac.Pri
 		"user_agent": r.UserAgent(),
 	})
 	err := h.audit.Insert(ctx, audit.Event{
-		Principal: string(principal),
-		Action:    audit.ActionAdminGranted,
-		Source:    auditSourceAdminBootstrap,
-		Decision:  audit.DecisionAllow,
-		Reason:    "admin_granted",
-		Kind:      audit.KindAuthLogin,
-		Context:   string(blob),
+		Principal:   string(principal),
+		Action:      audit.ActionAdminGranted,
+		ComponentID: auditSourceAdminBootstrap,
+		Decision:    audit.DecisionAllow,
+		Reason:      "admin_granted",
+		Kind:        audit.KindAuthLogin,
+		Context:     string(blob),
 	})
 	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
 	// outcome (the login PROCEEDED) rather than claiming a fail-closed abort,

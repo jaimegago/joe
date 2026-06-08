@@ -40,15 +40,15 @@ func (t *FluxStatusTool) Name() string { return "flux_status" }
 func (t *FluxStatusTool) Description() string {
 	return "List all Flux CD resources (GitRepository, Kustomization, HelmRelease, HelmRepository) " +
 		"with their reconciliation status. Shows ready condition, last applied revision, " +
-		"and any error messages. Use source_id of a Kubernetes source. " +
-		"If you don't know the source_id, call list_sources first."
+		"and any error messages. Use component_id of a Kubernetes source. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *FluxStatusTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Flux is installed).",
 			},
@@ -57,14 +57,14 @@ func (t *FluxStatusTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to list Flux resources from. Omit to list across all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *FluxStatusTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -83,7 +83,7 @@ func (t *FluxStatusTool) Execute(ctx context.Context, args map[string]any) (any,
 
 	return map[string]any{
 		"flux_resources": result,
-		"source_id":      sourceID,
+		"component_id":   sourceID,
 		"namespace":      namespace,
 	}, nil
 }
@@ -106,14 +106,14 @@ func (t *FluxResourceTool) Description() string {
 		"Supported kinds: GitRepository, Kustomization, HelmRelease, HelmRepository, " +
 		"HelmChart, OCIRepository, Bucket. " +
 		"Returns full status including conditions, last applied revision, and error messages. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *FluxResourceTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Flux is installed).",
 			},
@@ -130,14 +130,14 @@ func (t *FluxResourceTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the Flux resource.",
 			},
 		},
-		Required: []string{"source_id", "kind", "namespace", "name"},
+		Required: []string{"component_id", "kind", "namespace", "name"},
 	}
 }
 
 func (t *FluxResourceTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	kind, ok := args["kind"].(string)
 	if !ok || kind == "" {
@@ -163,11 +163,11 @@ func (t *FluxResourceTool) Execute(ctx context.Context, args map[string]any) (an
 	}
 
 	return map[string]any{
-		"resource":  resource,
-		"kind":      kind,
-		"namespace": namespace,
-		"name":      name,
-		"source_id": sourceID,
+		"resource":     resource,
+		"kind":         kind,
+		"namespace":    namespace,
+		"name":         name,
+		"component_id": sourceID,
 	}, nil
 }
 

@@ -33,9 +33,9 @@ func mustResolver(t *testing.T, accounts ...config.ServiceAccount) *auth.Service
 // real adapter and return 200 on the happy path.
 type apiFakeK8s struct{}
 
-func (apiFakeK8s) Connect(context.Context, store.Source) error { return nil }
-func (apiFakeK8s) Disconnect() error                           { return nil }
-func (apiFakeK8s) Status() adapters.Status                     { return adapters.Status{Connected: true} }
+func (apiFakeK8s) Connect(context.Context, store.Component) error { return nil }
+func (apiFakeK8s) Disconnect() error                              { return nil }
+func (apiFakeK8s) Status() adapters.Status                        { return adapters.Status{Connected: true} }
 func (apiFakeK8s) ListResources(context.Context, string, string) ([]unstructured.Unstructured, error) {
 	return []unstructured.Unstructured{}, nil
 }
@@ -59,10 +59,10 @@ func mustRegStore(t *testing.T) *store.Store {
 	return s
 }
 
-func mustCreateSource(t *testing.T, s *store.Store, id string) {
+func mustCreateComponent(t *testing.T, s *store.Store, id string) {
 	t.Helper()
 	now := time.Now().UTC()
-	if err := s.Sources.Create(context.Background(), &store.Source{
+	if err := s.Components.Create(context.Background(), &store.Component{
 		ID: id, Type: "k8s", Name: id, Config: json.RawMessage(`{}`),
 		Status: "connected", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
@@ -80,14 +80,14 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-allow")
-	mustCreateSource(t, sqlStore, "s-deny")
+	mustCreateComponent(t, sqlStore, "s-allow")
+	mustCreateComponent(t, sqlStore, "s-deny")
 
 	repo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-deny: %v", err)
 	}
 	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:operator", ZoneID: "prod-readonly"}, "test"); err != nil {
@@ -151,7 +151,7 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 // exactly as before Phase A.
 func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 	sqlStore := mustRegStore(t)
-	mustCreateSource(t, sqlStore, "s-1")
+	mustCreateComponent(t, sqlStore, "s-1")
 
 	registry := adapters.NewRegistry()
 	registry.Register("s-1", apiFakeK8s{})

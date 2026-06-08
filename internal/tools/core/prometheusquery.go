@@ -29,14 +29,14 @@ func NewPrometheusQueryTool(c PrometheusClient) *PrometheusQueryTool {
 func (t *PrometheusQueryTool) Name() string { return "prometheus_query" }
 
 func (t *PrometheusQueryTool) Description() string {
-	return "Query Prometheus or Mimir metrics using PromQL. Supports instant queries (current value) and range queries (over a time window). Also lists scrape targets to discover what services are being monitored. If you don't know the source_id, call list_sources first."
+	return "Query Prometheus or Mimir metrics using PromQL. Supports instant queries (current value) and range queries (over a time window). Also lists scrape targets to discover what services are being monitored. If you don't know the component_id, call list_components first."
 }
 
 func (t *PrometheusQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Prometheus or Mimir source to query.",
 			},
@@ -61,14 +61,14 @@ func (t *PrometheusQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Step interval in seconds for query_range. Defaults to 15.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *PrometheusQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -83,9 +83,9 @@ func (t *PrometheusQueryTool) Execute(ctx context.Context, args map[string]any) 
 			return nil, fmt.Errorf("prometheus targets failed: %w", err)
 		}
 		return map[string]any{
-			"targets":   targets,
-			"count":     len(targets),
-			"source_id": sourceID,
+			"targets":      targets,
+			"count":        len(targets),
+			"component_id": sourceID,
 		}, nil
 
 	case "query_range":
@@ -114,9 +114,9 @@ func (t *PrometheusQueryTool) Execute(ctx context.Context, args map[string]any) 
 			return nil, fmt.Errorf("prometheus query_range failed: %w", err)
 		}
 		return map[string]any{
-			"result":    result,
-			"source_id": sourceID,
-			"query":     query,
+			"result":       result,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 
 	default: // "query"
@@ -130,9 +130,9 @@ func (t *PrometheusQueryTool) Execute(ctx context.Context, args map[string]any) 
 			return nil, fmt.Errorf("prometheus query failed: %w", err)
 		}
 		return map[string]any{
-			"result":    result,
-			"source_id": sourceID,
-			"query":     query,
+			"result":       result,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 	}
 }

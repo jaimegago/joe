@@ -318,7 +318,7 @@ func TestAdapter_Status_Connected(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource(t *testing.T) {
+func TestConnect_ViaComponent(t *testing.T) {
 	// Test Connect via httptest server.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/server_info", func(w http.ResponseWriter, _ *http.Request) {
@@ -329,7 +329,7 @@ func TestConnect_ViaSource(t *testing.T) {
 	defer srv.Close()
 
 	a := envoy.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"url":"` + srv.URL + `"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -349,7 +349,7 @@ func TestConnect_BadStatus(t *testing.T) {
 	defer srv.Close()
 
 	a := envoy.New()
-	src := store.Source{Config: []byte(`{"url":"` + srv.URL + `"}`)}
+	src := store.Component{Config: []byte(`{"url":"` + srv.URL + `"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for 503 ping response")
 	}
@@ -357,7 +357,7 @@ func TestConnect_BadStatus(t *testing.T) {
 
 func TestConnect_BadConfig(t *testing.T) {
 	a := envoy.New()
-	src := store.Source{Config: []byte(`{}`)}
+	src := store.Component{Config: []byte(`{}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing url")
 	}

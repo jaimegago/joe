@@ -19,13 +19,13 @@ import (
 
 // mockCoreAgent is a test double for the CoreAgent interface
 type mockCoreAgent struct {
-	onboardingErr    error
-	refreshErr       error
-	refreshSourceErr error
-	onboardingCalled bool
-	refreshCalled    bool
-	refreshSourceID  string
-	onboardingInput  string
+	onboardingErr       error
+	refreshErr          error
+	refreshComponentErr error
+	onboardingCalled    bool
+	refreshCalled       bool
+	refreshComponentID  string
+	onboardingInput     string
 }
 
 func (m *mockCoreAgent) ProcessOnboarding(ctx context.Context, input string) error {
@@ -39,9 +39,9 @@ func (m *mockCoreAgent) TriggerRefresh(ctx context.Context) error {
 	return m.refreshErr
 }
 
-func (m *mockCoreAgent) TriggerRefreshSource(ctx context.Context, sourceID string) error {
-	m.refreshSourceID = sourceID
-	return m.refreshSourceErr
+func (m *mockCoreAgent) TriggerRefreshComponent(ctx context.Context, sourceID string) error {
+	m.refreshComponentID = sourceID
+	return m.refreshComponentErr
 }
 
 func setupControlTestServer(t *testing.T, agent core.CoreAgent) *Server {
@@ -154,12 +154,12 @@ func TestHandleOnboarding(t *testing.T) {
 
 func TestHandleRefresh(t *testing.T) {
 	tests := []struct {
-		name           string
-		payload        map[string]string
-		agent          core.CoreAgent
-		expectedStatus int
-		expectedError  string
-		checkSourceID  string
+		name             string
+		payload          map[string]string
+		agent            core.CoreAgent
+		expectedStatus   int
+		expectedError    string
+		checkComponentID string
 	}{
 		{
 			name:           "full refresh success",
@@ -168,11 +168,11 @@ func TestHandleRefresh(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "source refresh success",
-			payload:        map[string]string{"source_id": "src-123"},
-			agent:          &mockCoreAgent{},
-			expectedStatus: http.StatusOK,
-			checkSourceID:  "src-123",
+			name:             "source refresh success",
+			payload:          map[string]string{"component_id": "src-123"},
+			agent:            &mockCoreAgent{},
+			expectedStatus:   http.StatusOK,
+			checkComponentID: "src-123",
 		},
 		{
 			name:           "refresh error",
@@ -183,8 +183,8 @@ func TestHandleRefresh(t *testing.T) {
 		},
 		{
 			name:           "source not found",
-			payload:        map[string]string{"source_id": "nonexistent"},
-			agent:          &mockCoreAgent{refreshSourceErr: fmt.Errorf("%w: nonexistent", store.ErrSourceNotFound)},
+			payload:        map[string]string{"component_id": "nonexistent"},
+			agent:          &mockCoreAgent{refreshComponentErr: fmt.Errorf("%w: nonexistent", store.ErrComponentNotFound)},
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "source 'nonexistent' not found",
 		},
@@ -226,9 +226,9 @@ func TestHandleRefresh(t *testing.T) {
 
 			if tt.expectedStatus == http.StatusOK && tt.agent != nil {
 				mock := tt.agent.(*mockCoreAgent)
-				if tt.checkSourceID != "" {
-					if mock.refreshSourceID != tt.checkSourceID {
-						t.Errorf("refreshSourceID = %q, want %q", mock.refreshSourceID, tt.checkSourceID)
+				if tt.checkComponentID != "" {
+					if mock.refreshComponentID != tt.checkComponentID {
+						t.Errorf("refreshComponentID = %q, want %q", mock.refreshComponentID, tt.checkComponentID)
 					}
 				} else {
 					if !mock.refreshCalled {

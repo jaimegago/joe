@@ -36,7 +36,7 @@ func TestCertManagerCertsTool(t *testing.T) {
 	}{
 		{
 			name: "lists certificates",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -59,19 +59,19 @@ func TestCertManagerCertsTool(t *testing.T) {
 		},
 		{
 			name:      "empty list",
-			args:      map[string]any{"source_id": "k8s-dev"},
+			args:      map[string]any{"component_id": "k8s-dev"},
 			client:    &mockCRDK8sClient{resources: []map[string]any{}},
 			wantCount: 0,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "k8s-prod"},
+			args:    map[string]any{"component_id": "k8s-prod"},
 			client:  &mockCRDK8sClient{err: errors.New("k8s error")},
 			wantErr: true,
 		},
@@ -107,7 +107,7 @@ func TestCertManagerIssuersTool(t *testing.T) {
 	}{
 		{
 			name: "lists issuers",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -123,7 +123,7 @@ func TestCertManagerIssuersTool(t *testing.T) {
 			},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
@@ -157,7 +157,7 @@ func TestKEDAScaledObjectsTool(t *testing.T) {
 	}{
 		{
 			name: "lists scaled objects",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -181,7 +181,7 @@ func TestKEDAScaledObjectsTool(t *testing.T) {
 			},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
@@ -215,7 +215,7 @@ func TestOPAConstraintsTool(t *testing.T) {
 	}{
 		{
 			name: "lists all templates",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -233,7 +233,7 @@ func TestOPAConstraintsTool(t *testing.T) {
 		},
 		{
 			name: "lists constraints for specific template",
-			args: map[string]any{"source_id": "k8s-prod", "template": "K8sRequiredLabels"},
+			args: map[string]any{"component_id": "k8s-prod", "template": "K8sRequiredLabels"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -245,18 +245,18 @@ func TestOPAConstraintsTool(t *testing.T) {
 		},
 		{
 			name:    "client error listing templates",
-			args:    map[string]any{"source_id": "k8s-prod"},
+			args:    map[string]any{"component_id": "k8s-prod"},
 			client:  &mockCRDK8sClient{err: errors.New("k8s unavailable")},
 			wantErr: true,
 		},
 		{
 			name:    "client error listing specific template constraints",
-			args:    map[string]any{"source_id": "k8s-prod", "template": "K8sRequired"},
+			args:    map[string]any{"component_id": "k8s-prod", "template": "K8sRequired"},
 			client:  &mockCRDK8sClient{err: errors.New("k8s unavailable")},
 			wantErr: true,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
@@ -287,7 +287,7 @@ func TestOPAViolationsTool(t *testing.T) {
 		{
 			name: "returns violations",
 			args: map[string]any{
-				"source_id": "k8s-prod", "template_kind": "K8sRequiredLabels", "name": "prod-labels",
+				"component_id": "k8s-prod", "template_kind": "K8sRequiredLabels", "name": "prod-labels",
 			},
 			client: &mockCRDK8sClient{
 				resource: map[string]any{
@@ -303,27 +303,27 @@ func TestOPAViolationsTool(t *testing.T) {
 			},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{"template_kind": "K8sRequired", "name": "test"},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
 			name:    "missing template_kind",
-			args:    map[string]any{"source_id": "k8s-prod", "name": "test"},
+			args:    map[string]any{"component_id": "k8s-prod", "name": "test"},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
 			name:    "missing name",
-			args:    map[string]any{"source_id": "k8s-prod", "template_kind": "K8sRequired"},
+			args:    map[string]any{"component_id": "k8s-prod", "template_kind": "K8sRequired"},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
 			name: "client error",
 			args: map[string]any{
-				"source_id": "k8s-prod", "template_kind": "K8sRequiredLabels", "name": "prod-labels",
+				"component_id": "k8s-prod", "template_kind": "K8sRequiredLabels", "name": "prod-labels",
 			},
 			client:  &mockCRDK8sClient{err: errors.New("constraint not found")},
 			wantErr: true,
@@ -358,7 +358,7 @@ func TestCrossplaneProvidersTool(t *testing.T) {
 	}{
 		{
 			name: "lists providers",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -382,14 +382,14 @@ func TestCrossplaneProvidersTool(t *testing.T) {
 			wantCount: 2,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "k8s-prod"},
+			args:    map[string]any{"component_id": "k8s-prod"},
 			client:  &mockCRDK8sClient{err: errors.New("crossplane not installed")},
 			wantErr: true,
 		},
@@ -425,7 +425,7 @@ func TestCrossplaneResourcesTool(t *testing.T) {
 	}{
 		{
 			name: "lists all resources",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{
 					{
@@ -445,19 +445,19 @@ func TestCrossplaneResourcesTool(t *testing.T) {
 		},
 		{
 			name: "filters by kind",
-			args: map[string]any{"source_id": "k8s-prod", "kind": "Composition"},
+			args: map[string]any{"component_id": "k8s-prod", "kind": "Composition"},
 			client: &mockCRDK8sClient{
 				resources: []map[string]any{},
 			},
 		},
 		{
 			name:    "invalid kind",
-			args:    map[string]any{"source_id": "k8s-prod", "kind": "Provider"},
+			args:    map[string]any{"component_id": "k8s-prod", "kind": "Provider"},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockCRDK8sClient{},
 			wantErr: true,

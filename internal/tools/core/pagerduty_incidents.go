@@ -27,14 +27,14 @@ func NewPagerDutyIncidentsTool(c PagerDutyClient) *PagerDutyIncidentsTool {
 func (t *PagerDutyIncidentsTool) Name() string { return "pagerduty_incidents" }
 
 func (t *PagerDutyIncidentsTool) Description() string {
-	return "Query PagerDuty incidents and services. List active incidents (triggered or acknowledged), filter by service or status, or list all services. Useful for understanding what's currently paging and who is on-call. If you don't know the source_id, call list_sources first."
+	return "Query PagerDuty incidents and services. List active incidents (triggered or acknowledged), filter by service or status, or list all services. Useful for understanding what's currently paging and who is on-call. If you don't know the component_id, call list_components first."
 }
 
 func (t *PagerDutyIncidentsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the PagerDuty source to query.",
 			},
@@ -55,14 +55,14 @@ func (t *PagerDutyIncidentsTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of incidents to return. Defaults to 25.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *PagerDutyIncidentsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -77,9 +77,9 @@ func (t *PagerDutyIncidentsTool) Execute(ctx context.Context, args map[string]an
 			return nil, fmt.Errorf("pagerduty list services failed: %w", err)
 		}
 		return map[string]any{
-			"services":  services,
-			"count":     len(services),
-			"source_id": sourceID,
+			"services":     services,
+			"count":        len(services),
+			"component_id": sourceID,
 		}, nil
 
 	default: // "incidents"
@@ -96,9 +96,9 @@ func (t *PagerDutyIncidentsTool) Execute(ctx context.Context, args map[string]an
 			return nil, fmt.Errorf("pagerduty list incidents failed: %w", err)
 		}
 		return map[string]any{
-			"incidents": incidents,
-			"count":     len(incidents),
-			"source_id": sourceID,
+			"incidents":    incidents,
+			"count":        len(incidents),
+			"component_id": sourceID,
 		}, nil
 	}
 }

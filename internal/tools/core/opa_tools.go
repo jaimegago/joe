@@ -44,15 +44,15 @@ func (t *OPAConstraintsTool) Description() string {
 		"Without a template filter, lists all ConstraintTemplates to show what policies are defined. " +
 		"With a template filter (e.g. K8sRequiredLabels), lists constraint instances of that type " +
 		"and shows how many violations each has from the last audit. " +
-		"Use source_id of a Kubernetes source where Gatekeeper is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Gatekeeper is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *OPAConstraintsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Gatekeeper is installed).",
 			},
@@ -61,14 +61,14 @@ func (t *OPAConstraintsTool) Parameters() llm.ParameterSchema {
 				Description: "Optional ConstraintTemplate kind name (e.g. K8sRequiredLabels). When provided, lists constraint instances of this type with violation counts.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *OPAConstraintsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	template, _ := args["template"].(string)
 
@@ -83,10 +83,10 @@ func (t *OPAConstraintsTool) Execute(ctx context.Context, args map[string]any) (
 			constraints = []map[string]any{}
 		}
 		return map[string]any{
-			"template":    template,
-			"constraints": extractConstraintSummaries(constraints),
-			"count":       len(constraints),
-			"source_id":   sourceID,
+			"template":     template,
+			"constraints":  extractConstraintSummaries(constraints),
+			"count":        len(constraints),
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -101,7 +101,7 @@ func (t *OPAConstraintsTool) Execute(ctx context.Context, args map[string]any) (
 	return map[string]any{
 		"constraint_templates": extractConstraintTemplateSummaries(templates),
 		"count":                len(templates),
-		"source_id":            sourceID,
+		"component_id":         sourceID,
 	}, nil
 }
 
@@ -165,15 +165,15 @@ func (t *OPAViolationsTool) Description() string {
 		"Requires the ConstraintTemplate kind (e.g. K8sRequiredLabels) and the constraint name. " +
 		"Returns the full list of audit violations: which resources are violating the policy and why. " +
 		"Use opa_constraints first to discover template kinds and constraint names. " +
-		"Use source_id of a Kubernetes source where Gatekeeper is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Gatekeeper is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *OPAViolationsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Gatekeeper is installed).",
 			},
@@ -186,14 +186,14 @@ func (t *OPAViolationsTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the specific constraint instance to inspect.",
 			},
 		},
-		Required: []string{"source_id", "template_kind", "name"},
+		Required: []string{"component_id", "template_kind", "name"},
 	}
 }
 
 func (t *OPAViolationsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	templateKind, ok := args["template_kind"].(string)
 	if !ok || templateKind == "" {
@@ -213,7 +213,7 @@ func (t *OPAViolationsTool) Execute(ctx context.Context, args map[string]any) (a
 	result := map[string]any{
 		"constraint":    name,
 		"template_kind": templateKind,
-		"source_id":     sourceID,
+		"component_id":  sourceID,
 	}
 
 	if status, ok := constraint["status"].(map[string]any); ok {

@@ -10,23 +10,23 @@ import (
 	"github.com/jaimegago/joe/internal/crypto"
 )
 
-// mockSourceRepo is a simple in-memory SourceRepository for testing.
-type mockSourceRepo struct {
-	sources map[string]*Source
+// mockComponentRepo is a simple in-memory ComponentRepository for testing.
+type mockComponentRepo struct {
+	components map[string]*Component
 }
 
-func newMockRepo() *mockSourceRepo {
-	return &mockSourceRepo{sources: make(map[string]*Source)}
+func newMockRepo() *mockComponentRepo {
+	return &mockComponentRepo{components: make(map[string]*Component)}
 }
 
-func (m *mockSourceRepo) Create(_ context.Context, s *Source) error {
+func (m *mockComponentRepo) Create(_ context.Context, s *Component) error {
 	cp := *s
-	m.sources[s.ID] = &cp
+	m.components[s.ID] = &cp
 	return nil
 }
 
-func (m *mockSourceRepo) Get(_ context.Context, id string) (*Source, error) {
-	s, ok := m.sources[id]
+func (m *mockComponentRepo) Get(_ context.Context, id string) (*Component, error) {
+	s, ok := m.components[id]
 	if !ok {
 		return nil, nil
 	}
@@ -34,18 +34,18 @@ func (m *mockSourceRepo) Get(_ context.Context, id string) (*Source, error) {
 	return &cp, nil
 }
 
-func (m *mockSourceRepo) List(_ context.Context) ([]*Source, error) {
-	out := make([]*Source, 0, len(m.sources))
-	for _, s := range m.sources {
+func (m *mockComponentRepo) List(_ context.Context) ([]*Component, error) {
+	out := make([]*Component, 0, len(m.components))
+	for _, s := range m.components {
 		cp := *s
 		out = append(out, &cp)
 	}
 	return out, nil
 }
 
-func (m *mockSourceRepo) ListByType(_ context.Context, sourceType string) ([]*Source, error) {
-	var out []*Source
-	for _, s := range m.sources {
+func (m *mockComponentRepo) ListByType(_ context.Context, sourceType string) ([]*Component, error) {
+	var out []*Component
+	for _, s := range m.components {
 		if s.Type == sourceType {
 			cp := *s
 			out = append(out, &cp)
@@ -54,22 +54,22 @@ func (m *mockSourceRepo) ListByType(_ context.Context, sourceType string) ([]*So
 	return out, nil
 }
 
-func (m *mockSourceRepo) Update(_ context.Context, s *Source) error {
+func (m *mockComponentRepo) Update(_ context.Context, s *Component) error {
 	cp := *s
-	m.sources[s.ID] = &cp
+	m.components[s.ID] = &cp
 	return nil
 }
 
-func (m *mockSourceRepo) UpdateSyncStatus(_ context.Context, id string, syncedAt time.Time, lastError string) error {
-	if s, ok := m.sources[id]; ok {
+func (m *mockComponentRepo) UpdateSyncStatus(_ context.Context, id string, syncedAt time.Time, lastError string) error {
+	if s, ok := m.components[id]; ok {
 		s.LastSyncAt = &syncedAt
 		s.LastError = lastError
 	}
 	return nil
 }
 
-func (m *mockSourceRepo) Delete(_ context.Context, id string) error {
-	delete(m.sources, id)
+func (m *mockComponentRepo) Delete(_ context.Context, id string) error {
+	delete(m.components, id)
 	return nil
 }
 
@@ -81,15 +81,15 @@ func testKey() []byte {
 	return key
 }
 
-func TestEncryptedSourceRepository_RoundTrip(t *testing.T) {
+func TestEncryptedComponentRepository_RoundTrip(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := json.RawMessage(`{"url":"http://prometheus:9090","api_key":"super-secret"}`)
-	src := &Source{
+	src := &Component{
 		ID:     "src-1",
 		Type:   "prometheus",
 		Name:   "prod-prometheus",
@@ -114,16 +114,16 @@ func TestEncryptedSourceRepository_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_StoredValueIsEncrypted(t *testing.T) {
+func TestEncryptedComponentRepository_StoredValueIsEncrypted(t *testing.T) {
 	key := testKey()
 	inner := newMockRepo()
-	repo, err := NewEncryptedSourceRepository(inner, key)
+	repo, err := NewEncryptedComponentRepository(inner, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := json.RawMessage(`{"api_key":"super-secret"}`)
-	src := &Source{ID: "src-2", Type: "prometheus", Name: "test", Config: config}
+	src := &Component{ID: "src-2", Type: "prometheus", Name: "test", Config: config}
 
 	ctx := context.Background()
 	if err := repo.Create(ctx, src); err != nil {
@@ -148,20 +148,20 @@ func TestEncryptedSourceRepository_StoredValueIsEncrypted(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_BackwardCompatPlaintext(t *testing.T) {
+func TestEncryptedComponentRepository_BackwardCompatPlaintext(t *testing.T) {
 	key := testKey()
 	inner := newMockRepo()
 
 	// Write a plaintext source directly to the inner repo (simulates old data).
 	plainCfg := json.RawMessage(`{"url":"http://prometheus:9090"}`)
-	inner.sources["legacy"] = &Source{
+	inner.components["legacy"] = &Component{
 		ID:     "legacy",
 		Type:   "prometheus",
 		Name:   "legacy",
 		Config: plainCfg,
 	}
 
-	repo, err := NewEncryptedSourceRepository(inner, key)
+	repo, err := NewEncryptedComponentRepository(inner, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,22 +180,22 @@ func TestEncryptedSourceRepository_BackwardCompatPlaintext(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_InvalidKey(t *testing.T) {
-	_, err := NewEncryptedSourceRepository(newMockRepo(), []byte("tooshort"))
+func TestEncryptedComponentRepository_InvalidKey(t *testing.T) {
+	_, err := NewEncryptedComponentRepository(newMockRepo(), []byte("tooshort"))
 	if err == nil {
 		t.Error("expected error for short key, got nil")
 	}
 }
 
-func TestEncryptedSourceRepository_List(t *testing.T) {
+func TestEncryptedComponentRepository_List(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		s := &Source{
+		s := &Component{
 			ID:     string(rune('a' + i)),
 			Type:   "prometheus",
 			Name:   "source",
@@ -205,29 +205,29 @@ func TestEncryptedSourceRepository_List(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sources, err := repo.List(ctx)
+	components, err := repo.List(ctx)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(sources) != 3 {
-		t.Errorf("List() count = %d, want 3", len(sources))
+	if len(components) != 3 {
+		t.Errorf("List() count = %d, want 3", len(components))
 	}
-	for _, s := range sources {
+	for _, s := range components {
 		if string(s.Config) != `{"api_key":"secret"}` {
 			t.Errorf("decrypted config = %s, want plaintext", s.Config)
 		}
 	}
 }
 
-func TestEncryptedSourceRepository_Update(t *testing.T) {
+func TestEncryptedComponentRepository_Update(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	src := &Source{ID: "s1", Type: "prometheus", Name: "p", Config: json.RawMessage(`{"url":"old"}`)}
+	src := &Component{ID: "s1", Type: "prometheus", Name: "p", Config: json.RawMessage(`{"url":"old"}`)}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatal(err)
 	}
@@ -246,33 +246,33 @@ func TestEncryptedSourceRepository_Update(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_ListByType(t *testing.T) {
+func TestEncryptedComponentRepository_ListByType(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	sources := []*Source{
+	components := []*Component{
 		{ID: "pg-1", Type: "postgresql", Name: "pg primary", Config: json.RawMessage(`{"host":"db1"}`)},
 		{ID: "pg-2", Type: "postgresql", Name: "pg replica", Config: json.RawMessage(`{"host":"db2"}`)},
 		{ID: "k8s-1", Type: "kubernetes", Name: "prod cluster", Config: json.RawMessage(`{"context":"prod"}`)},
 	}
-	for _, s := range sources {
+	for _, s := range components {
 		if err := repo.Create(ctx, s); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	pgSources, err := repo.ListByType(ctx, "postgresql")
+	pgComponents, err := repo.ListByType(ctx, "postgresql")
 	if err != nil {
 		t.Fatalf("ListByType() error = %v", err)
 	}
-	if len(pgSources) != 2 {
-		t.Errorf("ListByType(postgresql) = %d, want 2", len(pgSources))
+	if len(pgComponents) != 2 {
+		t.Errorf("ListByType(postgresql) = %d, want 2", len(pgComponents))
 	}
-	for _, s := range pgSources {
+	for _, s := range pgComponents {
 		if s.Type != "postgresql" {
 			t.Errorf("unexpected type %q in ListByType(postgresql)", s.Type)
 		}
@@ -291,25 +291,25 @@ func TestEncryptedSourceRepository_ListByType(t *testing.T) {
 		t.Errorf("ListByType(kubernetes) = %d, want 1", len(k8sSources))
 	}
 
-	noneSources, err := repo.ListByType(ctx, "nonexistent")
+	noneComponents, err := repo.ListByType(ctx, "nonexistent")
 	if err != nil {
 		t.Fatalf("ListByType(nonexistent) error = %v", err)
 	}
-	if len(noneSources) != 0 {
-		t.Errorf("ListByType(nonexistent) = %d, want 0", len(noneSources))
+	if len(noneComponents) != 0 {
+		t.Errorf("ListByType(nonexistent) = %d, want 0", len(noneComponents))
 	}
 }
 
-func TestEncryptedSourceRepository_UpdateSyncStatus(t *testing.T) {
+func TestEncryptedComponentRepository_UpdateSyncStatus(t *testing.T) {
 	key := testKey()
 	inner := newMockRepo()
-	repo, err := NewEncryptedSourceRepository(inner, key)
+	repo, err := NewEncryptedComponentRepository(inner, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	src := &Source{ID: "sync-1", Type: "prometheus", Name: "prom", Config: json.RawMessage(`{"url":"http://prom:9090"}`)}
+	src := &Component{ID: "sync-1", Type: "prometheus", Name: "prom", Config: json.RawMessage(`{"url":"http://prom:9090"}`)}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatal(err)
 	}
@@ -341,16 +341,16 @@ func TestEncryptedSourceRepository_UpdateSyncStatus(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_Delete(t *testing.T) {
+func TestEncryptedComponentRepository_Delete(t *testing.T) {
 	key := testKey()
 	inner := newMockRepo()
-	repo, err := NewEncryptedSourceRepository(inner, key)
+	repo, err := NewEncryptedComponentRepository(inner, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	src := &Source{ID: "del-1", Type: "git", Name: "myrepo", Config: json.RawMessage(`{"url":"https://github.com/org/repo"}`)}
+	src := &Component{ID: "del-1", Type: "git", Name: "myrepo", Config: json.RawMessage(`{"url":"https://github.com/org/repo"}`)}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatal(err)
 	}
@@ -376,16 +376,16 @@ func TestEncryptedSourceRepository_Delete(t *testing.T) {
 	}
 }
 
-func TestEncryptedSourceRepository_EncryptEmptyConfig(t *testing.T) {
+func TestEncryptedComponentRepository_EncryptEmptyConfig(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
 	// Source with no config — should pass through without encryption errors.
-	src := &Source{ID: "no-cfg", Type: "git", Name: "bare", Config: nil}
+	src := &Component{ID: "no-cfg", Type: "git", Name: "bare", Config: nil}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatalf("Create() with nil Config error = %v", err)
 	}
@@ -399,42 +399,42 @@ func TestEncryptedSourceRepository_EncryptEmptyConfig(t *testing.T) {
 	}
 }
 
-// errorSourceRepo is a SourceRepository whose write/read operations always fail.
-type errorSourceRepo struct{}
+// errorComponentRepo is a ComponentRepository whose write/read operations always fail.
+type errorComponentRepo struct{}
 
-func (e *errorSourceRepo) Create(_ context.Context, _ *Source) error {
+func (e *errorComponentRepo) Create(_ context.Context, _ *Component) error {
 	return fmt.Errorf("inner create error")
 }
-func (e *errorSourceRepo) Get(_ context.Context, _ string) (*Source, error) {
+func (e *errorComponentRepo) Get(_ context.Context, _ string) (*Component, error) {
 	return nil, fmt.Errorf("inner get error")
 }
-func (e *errorSourceRepo) List(_ context.Context) ([]*Source, error) {
+func (e *errorComponentRepo) List(_ context.Context) ([]*Component, error) {
 	return nil, fmt.Errorf("inner list error")
 }
-func (e *errorSourceRepo) ListByType(_ context.Context, _ string) ([]*Source, error) {
+func (e *errorComponentRepo) ListByType(_ context.Context, _ string) ([]*Component, error) {
 	return nil, fmt.Errorf("inner list-by-type error")
 }
-func (e *errorSourceRepo) Update(_ context.Context, _ *Source) error {
+func (e *errorComponentRepo) Update(_ context.Context, _ *Component) error {
 	return fmt.Errorf("inner update error")
 }
-func (e *errorSourceRepo) UpdateSyncStatus(_ context.Context, _ string, _ time.Time, _ string) error {
+func (e *errorComponentRepo) UpdateSyncStatus(_ context.Context, _ string, _ time.Time, _ string) error {
 	return fmt.Errorf("inner update-sync error")
 }
-func (e *errorSourceRepo) Delete(_ context.Context, _ string) error {
+func (e *errorComponentRepo) Delete(_ context.Context, _ string) error {
 	return fmt.Errorf("inner delete error")
 }
 
-// TestEncryptedSourceRepository_InnerErrors verifies that errors from the inner
+// TestEncryptedComponentRepository_InnerErrors verifies that errors from the inner
 // repository are propagated by Create, Get, List, ListByType, and Update.
-func TestEncryptedSourceRepository_InnerErrors(t *testing.T) {
+func TestEncryptedComponentRepository_InnerErrors(t *testing.T) {
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(&errorSourceRepo{}, key)
+	repo, err := NewEncryptedComponentRepository(&errorComponentRepo{}, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	src := &Source{ID: "x", Type: "git", Name: "x", Config: json.RawMessage(`{"url":"http://x"}`)}
+	src := &Component{ID: "x", Type: "git", Name: "x", Config: json.RawMessage(`{"url":"http://x"}`)}
 
 	if err := repo.Create(ctx, src); err == nil {
 		t.Error("Create() with failing inner: expected error, got nil")
@@ -453,10 +453,10 @@ func TestEncryptedSourceRepository_InnerErrors(t *testing.T) {
 	}
 }
 
-// TestEncryptedSourceRepository_DecryptError exercises the error paths in
+// TestEncryptedComponentRepository_DecryptError exercises the error paths in
 // Get, List, ListByType, and decryptAll when stored data cannot be decrypted
 // (ciphertext encrypted with a different key).
-func TestEncryptedSourceRepository_DecryptError(t *testing.T) {
+func TestEncryptedComponentRepository_DecryptError(t *testing.T) {
 	keyA := testKey() // used to encrypt
 	keyB := make([]byte, 32)
 	for i := range keyB {
@@ -464,20 +464,20 @@ func TestEncryptedSourceRepository_DecryptError(t *testing.T) {
 	}
 
 	inner := newMockRepo()
-	repoA, err := NewEncryptedSourceRepository(inner, keyA)
+	repoA, err := NewEncryptedComponentRepository(inner, keyA)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
 	// Write a source encrypted with keyA.
-	src := &Source{ID: "enc-err", Type: "prometheus", Name: "test", Config: json.RawMessage(`{"token":"secret"}`)}
+	src := &Component{ID: "enc-err", Type: "prometheus", Name: "test", Config: json.RawMessage(`{"token":"secret"}`)}
 	if err := repoA.Create(ctx, src); err != nil {
 		t.Fatal(err)
 	}
 
 	// Wrap the same inner repo with keyB — decryption must fail.
-	repoB, err := NewEncryptedSourceRepository(inner, keyB)
+	repoB, err := NewEncryptedComponentRepository(inner, keyB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,21 +498,21 @@ func TestEncryptedSourceRepository_DecryptError(t *testing.T) {
 	}
 }
 
-// TestEncryptedSourceRepository_UpdateEncryptError verifies the error path in
-// Update when encryptSource fails (by storing a tampered, un-decryptable value
+// TestEncryptedComponentRepository_UpdateEncryptError verifies the error path in
+// Update when encryptComponent fails (by storing a tampered, un-decryptable value
 // and then calling Update via a mismatched-key repo).
-func TestEncryptedSourceRepository_CreateAndUpdateErrorPath(t *testing.T) {
+func TestEncryptedComponentRepository_CreateAndUpdateErrorPath(t *testing.T) {
 	// We can't directly make crypto.Encrypt fail without a bad key length
 	// (already rejected by the constructor). Instead we verify the 75% path via
 	// a second write that succeeds, confirming the non-error branch is exercised.
 	key := testKey()
-	repo, err := NewEncryptedSourceRepository(newMockRepo(), key)
+	repo, err := NewEncryptedComponentRepository(newMockRepo(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	src := &Source{ID: "upd-1", Type: "loki", Name: "loki", Config: json.RawMessage(`{"url":"http://loki:3100"}`)}
+	src := &Component{ID: "upd-1", Type: "loki", Name: "loki", Config: json.RawMessage(`{"url":"http://loki:3100"}`)}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}

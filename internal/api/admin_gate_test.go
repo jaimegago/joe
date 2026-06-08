@@ -73,7 +73,7 @@ func TestAdminZones_NonAdminForbidden(t *testing.T) {
 	}
 }
 
-// Non-admin POST /api/v1/admin/source-zones → 403, assignment not created.
+// Non-admin POST /api/v1/admin/component-zones → 403, assignment not created.
 func TestAdminSourceZones_NonAdminForbidden(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 
@@ -81,8 +81,8 @@ func TestAdminSourceZones_NonAdminForbidden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAssignments: %v", err)
 	}
-	w := f.do(http.MethodPost, "/api/v1/admin/source-zones",
-		`{"source_id":"src-1","zone_id":"prod-write","assigned_by":"user:bob"}`, "user:bob")
+	w := f.do(http.MethodPost, "/api/v1/admin/component-zones",
+		`{"component_id":"src-1","zone_id":"prod-write","assigned_by":"user:bob"}`, "user:bob")
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("non-admin assign source-zone: status=%d body=%s; want 403", w.Code, w.Body.String())

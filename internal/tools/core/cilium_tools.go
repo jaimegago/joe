@@ -37,15 +37,15 @@ func (t *CiliumPoliciesTool) Description() string {
 		"from a Kubernetes source. " +
 		"Shows policy rules, selectors, and enforcement status. " +
 		"Use to understand what network traffic is allowed or denied between workloads. " +
-		"Use source_id of a Kubernetes source where Cilium is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Cilium is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CiliumPoliciesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Cilium is installed).",
 			},
@@ -54,14 +54,14 @@ func (t *CiliumPoliciesTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter namespaced policies. Omit for all namespaces. Clusterwide policies are always included.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CiliumPoliciesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -79,10 +79,10 @@ func (t *CiliumPoliciesTool) Execute(ctx context.Context, args map[string]any) (
 
 	total := len(result["CiliumNetworkPolicy"]) + len(result["CiliumClusterwideNetworkPolicy"])
 	return map[string]any{
-		"policies":  result,
-		"count":     total,
-		"namespace": namespace,
-		"source_id": sourceID,
+		"policies":     result,
+		"count":        total,
+		"namespace":    namespace,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -103,15 +103,15 @@ func (t *CiliumEndpointsTool) Description() string {
 	return "List Cilium endpoints with their identity labels and health status. " +
 		"Each endpoint corresponds to a pod managed by Cilium. " +
 		"Use to check endpoint health, identity, and policy enforcement state. " +
-		"Use source_id of a Kubernetes source where Cilium is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where Cilium is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CiliumEndpointsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Cilium is installed).",
 			},
@@ -120,14 +120,14 @@ func (t *CiliumEndpointsTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter endpoints. Omit for all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CiliumEndpointsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -140,10 +140,10 @@ func (t *CiliumEndpointsTool) Execute(ctx context.Context, args map[string]any) 
 	}
 
 	return map[string]any{
-		"endpoints": extractCiliumEndpointSummaries(endpoints),
-		"count":     len(endpoints),
-		"namespace": namespace,
-		"source_id": sourceID,
+		"endpoints":    extractCiliumEndpointSummaries(endpoints),
+		"count":        len(endpoints),
+		"namespace":    namespace,
+		"component_id": sourceID,
 	}, nil
 }
 

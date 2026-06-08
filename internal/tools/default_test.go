@@ -60,7 +60,7 @@ func TestNewCoreRegistry(t *testing.T) {
 		"system_info":  true,
 		"trace_route":  true,
 		// Core tools (call joecored API)
-		"list_sources":        true,
+		"list_components":     true,
 		"graph_query":         true,
 		"graph_related":       true,
 		"k8s_get":             true,

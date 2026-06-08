@@ -32,18 +32,18 @@ func (t *GitDiffTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {Type: "string", Description: "ID of the Git source."},
-			"from":      {Type: "string", Description: "Starting ref (branch, tag, or commit hash)."},
-			"to":        {Type: "string", Description: "Ending ref (branch, tag, or commit hash)."},
+			"component_id": {Type: "string", Description: "ID of the Git source."},
+			"from":         {Type: "string", Description: "Starting ref (branch, tag, or commit hash)."},
+			"to":           {Type: "string", Description: "Ending ref (branch, tag, or commit hash)."},
 		},
-		Required: []string{"source_id", "from", "to"},
+		Required: []string{"component_id", "from", "to"},
 	}
 }
 
 func (t *GitDiffTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	from, ok := args["from"].(string)
@@ -62,9 +62,9 @@ func (t *GitDiffTool) Execute(ctx context.Context, args map[string]any) (any, er
 	}
 
 	return map[string]any{
-		"diff":      diff,
-		"from":      from,
-		"to":        to,
-		"source_id": sourceID,
+		"diff":         diff,
+		"from":         from,
+		"to":           to,
+		"component_id": sourceID,
 	}, nil
 }

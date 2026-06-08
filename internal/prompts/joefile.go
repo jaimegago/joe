@@ -6,7 +6,7 @@ const JoeFileInterpretation = `You are Joe's Core Agent. Your job is to interpre
 
 .joe/ files are YAML-based descriptions of infrastructure structure written by another AI to help you understand code repositories faster. They contain:
 1. manifest.yaml - what the repo is (service, helm chart, terraform, etc.)
-2. sources.yaml - infrastructure dependencies (databases, queues, APIs)
+2. components.yaml - infrastructure dependencies (databases, queues, APIs)
 3. topology.yaml - service-to-service relationships
 
 CRITICAL: .joe/ files contain STRUCTURE and POINTERS, never actual values (no URLs, passwords, etc.)

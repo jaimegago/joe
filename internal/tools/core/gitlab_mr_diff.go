@@ -32,19 +32,19 @@ func (t *GitLabMRDiffTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id":  {Type: "string", Description: "GitLab source ID registered in Joe"},
-			"project_id": {Type: "string", Description: "GitLab project ID or URL-encoded path"},
-			"mr_iid":     {Type: "number", Description: "Merge request internal ID (iid)"},
+			"component_id": {Type: "string", Description: "GitLab source ID registered in Joe"},
+			"project_id":   {Type: "string", Description: "GitLab project ID or URL-encoded path"},
+			"mr_iid":       {Type: "number", Description: "Merge request internal ID (iid)"},
 		},
-		Required: []string{"source_id", "project_id", "mr_iid"},
+		Required: []string{"component_id", "project_id", "mr_iid"},
 	}
 }
 
 func (t *GitLabMRDiffTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, _ := args["source_id"].(string)
+	sourceID, _ := args["component_id"].(string)
 	projectID, _ := args["project_id"].(string)
 	if sourceID == "" || projectID == "" {
-		return nil, fmt.Errorf("source_id and project_id are required")
+		return nil, fmt.Errorf("component_id and project_id are required")
 	}
 	mrIID, ok := args["mr_iid"].(float64)
 	if !ok || mrIID <= 0 {

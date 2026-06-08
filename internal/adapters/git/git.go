@@ -66,7 +66,7 @@ func NewWithRepo(repo *gogit.Repository, repoPath string) *Adapter {
 	}
 }
 
-func (a *Adapter) Connect(_ context.Context, source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

@@ -43,7 +43,7 @@ type taskConfig struct {
 	MaxIterations     *int              `json:"max_iterations,omitempty"`
 	SafetyTier        string            `json:"safety_tier,omitempty"`
 	Timeout           string            `json:"timeout,omitempty"`
-	AllowedZones      []string          `json:"allowed_zones,omitempty"`      // restricts agent to sources in these zones
+	AllowedZones      []string          `json:"allowed_zones,omitempty"`      // restricts agent to components in these zones
 	AllowedNamespaces []string          `json:"allowed_namespaces,omitempty"` // restricts agent to these K8s namespaces
 	NamespaceZones    map[string]string `json:"namespace_zones,omitempty"`    // full namespace → zone name map (all zones, for boundary reasoning)
 }
@@ -279,8 +279,8 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		tools.WithPolicy(safetyPolicy),
 		tools.WithWriteFloor(h.server.services.WriteFloor),
 	}
-	if zoneScope.allowedSourceIDs != nil {
-		execOpts = append(execOpts, tools.WithAllowedSources(zoneScope.allowedSourceIDs))
+	if zoneScope.allowedComponentIDs != nil {
+		execOpts = append(execOpts, tools.WithAllowedComponents(zoneScope.allowedComponentIDs))
 	}
 	if req.Config != nil && len(req.Config.AllowedNamespaces) > 0 {
 		execOpts = append(execOpts, tools.WithAllowedNamespaces(req.Config.AllowedNamespaces))
@@ -289,7 +289,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		execOpts = append(execOpts, tools.WithScopeZoneNames(zoneScope.zoneNamesStr))
 	}
 	if zoneScope.sourceZoneMap != nil {
-		execOpts = append(execOpts, tools.WithSourceZoneMap(zoneScope.sourceZoneMap))
+		execOpts = append(execOpts, tools.WithComponentZoneMap(zoneScope.sourceZoneMap))
 	}
 	if zoneScope.namespaceZoneMap != nil {
 		execOpts = append(execOpts, tools.WithNamespaceZoneMap(zoneScope.namespaceZoneMap))
@@ -727,11 +727,11 @@ func (h *taskHandler) resolveSafetyPolicy(cfg *taskConfig) *safety.SafetyPolicy 
 // zoneScopeResult holds the resolved zone scope data for configuring both the
 // executor and the system prompt.
 type zoneScopeResult struct {
-	allowedSourceIDs []string          // sources in authorized zones
-	zoneNamesStr     string            // human-readable authorized zone names
-	scopeDesc        string            // system prompt zone scope section
-	sourceZoneMap    map[string]string // all source_id → zone name (for executor violation messages)
-	namespaceZoneMap map[string]string // all namespace → zone name (for executor violation messages)
+	allowedComponentIDs []string          // components in authorized zones
+	zoneNamesStr        string            // human-readable authorized zone names
+	scopeDesc           string            // system prompt zone scope section
+	sourceZoneMap       map[string]string // all component_id → zone name (for executor violation messages)
+	namespaceZoneMap    map[string]string // all namespace → zone name (for executor violation messages)
 }
 
 // resolveZoneScope maps allowed_zones from the task config to a concrete list
@@ -782,14 +782,14 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 	var allowed []string
 	sourceZoneMap := make(map[string]string, len(assignments))
 	// Build per-zone source lists for the "other zones" section of the prompt
-	otherZoneSources := make(map[string][]string) // zone label → source IDs
+	otherZoneComponents := make(map[string][]string) // zone label → source IDs
 	for _, a := range assignments {
 		zoneName := zoneIDToName[a.ZoneID]
-		sourceZoneMap[a.SourceID] = zoneName
+		sourceZoneMap[a.ComponentID] = zoneName
 		if _, ok := allowedZoneSet[a.ZoneID]; ok {
-			allowed = append(allowed, a.SourceID)
+			allowed = append(allowed, a.ComponentID)
 		} else {
-			otherZoneSources[zoneName] = append(otherZoneSources[zoneName], a.SourceID)
+			otherZoneComponents[zoneName] = append(otherZoneComponents[zoneName], a.ComponentID)
 		}
 	}
 
@@ -815,19 +815,19 @@ func (h *taskHandler) resolveZoneScope(ctx context.Context, cfg *taskConfig) zon
 
 	// Build scope description for the system prompt
 	scopeDesc := prompts.BuildZoneScopePrompt(prompts.ZoneScopeParams{
-		ZoneNamesStr:      zoneNamesStr,
-		AllowedSourceIDs:  allowed,
-		AllowedNamespaces: cfg.AllowedNamespaces,
-		OtherZoneSources:  otherZoneSources,
-		NamespaceZoneMap:  namespaceZoneMap,
+		ZoneNamesStr:        zoneNamesStr,
+		AllowedComponentIDs: allowed,
+		AllowedNamespaces:   cfg.AllowedNamespaces,
+		OtherZoneComponents: otherZoneComponents,
+		NamespaceZoneMap:    namespaceZoneMap,
 	})
 
 	return zoneScopeResult{
-		allowedSourceIDs: allowed,
-		zoneNamesStr:     zoneNamesStr,
-		scopeDesc:        scopeDesc,
-		sourceZoneMap:    sourceZoneMap,
-		namespaceZoneMap: namespaceZoneMap,
+		allowedComponentIDs: allowed,
+		zoneNamesStr:        zoneNamesStr,
+		scopeDesc:           scopeDesc,
+		sourceZoneMap:       sourceZoneMap,
+		namespaceZoneMap:    namespaceZoneMap,
 	}
 }
 

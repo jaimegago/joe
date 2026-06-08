@@ -22,13 +22,13 @@ func setupGraphStore(t *testing.T) graph.GraphStore {
 		CREATE TABLE graph_nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			source_id TEXT,
+			component_id TEXT,
 			metadata TEXT DEFAULT '{}',
 			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(component_id);
 
 		CREATE TABLE graph_edges (
 			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -52,14 +52,14 @@ func setupGraphStore(t *testing.T) graph.GraphStore {
 	return graph.NewSQLiteStore(db, nil)
 }
 
-func TestLoadGraphStateForSource(t *testing.T) {
+func TestLoadGraphStateForComponent(t *testing.T) {
 	store := setupGraphStore(t)
 	ctx := context.Background()
 
 	nodes := []graph.Node{
-		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", SourceID: "src-1", Metadata: map[string]any{}},
-		{ID: "k8s/src-1/service/default/api", Type: "service", SourceID: "src-1", Metadata: map[string]any{}},
-		{ID: "k8s/src-2/deployment/default/other", Type: "deployment", SourceID: "src-2", Metadata: map[string]any{}},
+		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", ComponentID: "src-1", Metadata: map[string]any{}},
+		{ID: "k8s/src-1/service/default/api", Type: "service", ComponentID: "src-1", Metadata: map[string]any{}},
+		{ID: "k8s/src-2/deployment/default/other", Type: "deployment", ComponentID: "src-2", Metadata: map[string]any{}},
 	}
 	for _, node := range nodes {
 		if err := store.AddNode(ctx, node); err != nil {
@@ -68,8 +68,8 @@ func TestLoadGraphStateForSource(t *testing.T) {
 	}
 
 	edges := []graph.Edge{
-		{From: nodes[0].ID, To: nodes[1].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
-		{From: nodes[0].ID, To: nodes[2].ID, Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
+		{From: nodes[0].ID, To: nodes[1].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: ""},
+		{From: nodes[0].ID, To: nodes[2].ID, Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: ""},
 	}
 	for _, edge := range edges {
 		if err := store.AddEdge(ctx, edge); err != nil {
@@ -77,9 +77,9 @@ func TestLoadGraphStateForSource(t *testing.T) {
 		}
 	}
 
-	sourceNodes, sourceEdges, err := LoadGraphStateForSource(ctx, store, "src-1")
+	sourceNodes, sourceEdges, err := LoadGraphStateForComponent(ctx, store, "src-1")
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(sourceNodes) != 2 {
@@ -98,15 +98,15 @@ func TestBuildGraphDelta(t *testing.T) {
 	now := time.Now()
 	firstSeen := now.Add(-2 * time.Hour)
 	existingNodes := []graph.Node{
-		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", SourceID: "src-1", Metadata: map[string]any{}, FirstSeen: firstSeen, LastSeen: now},
-		{ID: "k8s/src-1/service/default/api", Type: "service", SourceID: "src-1", Metadata: map[string]any{}, LastSeen: now},
+		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", ComponentID: "src-1", Metadata: map[string]any{}, FirstSeen: firstSeen, LastSeen: now},
+		{ID: "k8s/src-1/service/default/api", Type: "service", ComponentID: "src-1", Metadata: map[string]any{}, LastSeen: now},
 	}
 	existingEdges := []graph.Edge{
-		{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""},
+		{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: ""},
 	}
 
 	desiredNodes := []graph.Node{
-		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", SourceID: "src-1", Metadata: map[string]any{"replicas": float64(2)}, LastSeen: now},
+		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", ComponentID: "src-1", Metadata: map[string]any{"replicas": float64(2)}, LastSeen: now},
 	}
 	desiredEdges := []graph.Edge{}
 
@@ -132,12 +132,12 @@ func TestBuildGraphDelta(t *testing.T) {
 
 func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 	existingEdges := []graph.Edge{
-		{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
+		{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: "", Context: "selector"},
 	}
 
 	t.Run("no change", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: "", Context: "selector"},
 		}
 
 		delta := BuildGraphDelta(nil, existingEdges, nil, desiredEdges)
@@ -148,7 +148,7 @@ func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 
 	t.Run("context changed", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "label_match"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: "", Context: "label_match"},
 		}
 
 		delta := BuildGraphDelta(nil, existingEdges, nil, desiredEdges)
@@ -159,8 +159,8 @@ func TestBuildGraphDelta_EdgeUpsertChanges(t *testing.T) {
 
 	t.Run("dedupe desired", func(t *testing.T) {
 		desiredEdges := []graph.Edge{
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
-			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", SourceID: "", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: "", Context: "selector"},
+			{From: "a", To: "b", Relation: "calls", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: "", Context: "selector"},
 		}
 
 		delta := BuildGraphDelta(nil, nil, nil, desiredEdges)
@@ -175,8 +175,8 @@ func TestApplyGraphDelta_EdgeDeletePath(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
-	nodeA := graph.Node{ID: "a", Type: "test", SourceID: "src", Metadata: map[string]any{}}
-	nodeB := graph.Node{ID: "b", Type: "test", SourceID: "src", Metadata: map[string]any{}}
+	nodeA := graph.Node{ID: "a", Type: "test", ComponentID: "src", Metadata: map[string]any{}}
+	nodeB := graph.Node{ID: "b", Type: "test", ComponentID: "src", Metadata: map[string]any{}}
 	for _, n := range []graph.Node{nodeA, nodeB} {
 		if err := gs.AddNode(ctx, n); err != nil {
 			t.Fatalf("AddNode(%s): %v", n.ID, err)
@@ -216,8 +216,8 @@ func TestApplyGraphDelta(t *testing.T) {
 	ctx := context.Background()
 
 	existingNodes := []graph.Node{
-		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", SourceID: "src-1", Metadata: map[string]any{}},
-		{ID: "k8s/src-1/service/default/api", Type: "service", SourceID: "src-1", Metadata: map[string]any{}},
+		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", ComponentID: "src-1", Metadata: map[string]any{}},
+		{ID: "k8s/src-1/service/default/api", Type: "service", ComponentID: "src-1", Metadata: map[string]any{}},
 	}
 	for _, node := range existingNodes {
 		if err := store.AddNode(ctx, node); err != nil {
@@ -225,14 +225,14 @@ func TestApplyGraphDelta(t *testing.T) {
 		}
 	}
 
-	existingEdge := graph.Edge{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", SourceID: ""}
+	existingEdge := graph.Edge{From: existingNodes[1].ID, To: existingNodes[0].ID, Relation: "routes_to", Confidence: graph.Explicit, Source: "k8s_api", ComponentID: ""}
 	if err := store.AddEdge(ctx, existingEdge); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
 	desiredNodes := []graph.Node{
-		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", SourceID: "src-1", Metadata: map[string]any{"replicas": float64(3)}},
-		{ID: "k8s/src-1/configmap/default/api-config", Type: "configmap", SourceID: "src-1", Metadata: map[string]any{"data_keys": []string{"FOO"}}},
+		{ID: "k8s/src-1/deployment/default/api", Type: "deployment", ComponentID: "src-1", Metadata: map[string]any{"replicas": float64(3)}},
+		{ID: "k8s/src-1/configmap/default/api-config", Type: "configmap", ComponentID: "src-1", Metadata: map[string]any{"data_keys": []string{"FOO"}}},
 	}
 	desiredEdges := []graph.Edge{
 		{From: desiredNodes[0].ID, To: desiredNodes[1].ID, Relation: "references", Confidence: graph.Explicit, Source: "k8s_api", Context: "envFrom"},
@@ -243,9 +243,9 @@ func TestApplyGraphDelta(t *testing.T) {
 		t.Fatalf("ApplyGraphDelta error: %v", err)
 	}
 
-	gotNodes, gotEdges, err := LoadGraphStateForSource(ctx, store, "src-1")
+	gotNodes, gotEdges, err := LoadGraphStateForComponent(ctx, store, "src-1")
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(gotNodes) != 2 {

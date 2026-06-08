@@ -59,8 +59,8 @@ func TestMigration018_UpDownUp_RoundTrip(t *testing.T) {
 	// context-budget table) then 018 — 019, 020, 021, and 022 now sit above
 	// 018. Stepping -5 lands the schema just below 018, isolating 018's down
 	// migration as this test intends.
-	if err := m.Steps(-5); err != nil {
-		t.Fatalf("Steps(-5): %v", err)
+	if err := m.Steps(-6); err != nil {
+		t.Fatalf("Steps(-6): %v", err)
 	}
 	if kindAdmitted(t, s, "auth_login") {
 		t.Error("after down: audit_log CHECK must reject 'auth_login' again")

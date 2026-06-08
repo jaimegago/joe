@@ -27,9 +27,9 @@ type observeCategoryRequest struct {
 	Question string `json:"question"`
 }
 
-// resolveSourceForService finds the first source for a service via the given graph edge relation.
+// resolveComponentForService finds the first source for a service via the given graph edge relation.
 // Returns (sourceID, sourceType, error).
-func (s *Server) resolveSourceForService(r *http.Request, service, relation string) (string, string, error) {
+func (s *Server) resolveComponentForService(r *http.Request, service, relation string) (string, string, error) {
 	ctx := r.Context()
 	principal := rbac.PrincipalFromContext(ctx)
 
@@ -58,8 +58,8 @@ func (s *Server) resolveSourceForService(r *http.Request, service, relation stri
 	for _, edge := range subgraph.Edges {
 		if edge.Relation == relation && edge.From == serviceNodeID {
 			for _, node := range subgraph.Nodes {
-				if node.ID == edge.To && node.SourceID != "" {
-					return node.SourceID, node.Type, nil
+				if node.ID == edge.To && node.ComponentID != "" {
+					return node.ComponentID, node.Type, nil
 				}
 			}
 		}
@@ -91,7 +91,7 @@ func (s *Server) handleObserveMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceID, sourceType, err := s.resolveSourceForService(r, req.Service, graph.RelationMetricsIn)
+	sourceID, sourceType, err := s.resolveComponentForService(r, req.Service, graph.RelationMetricsIn)
 	if err != nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, err.Error())
 		return
@@ -104,8 +104,8 @@ func (s *Server) handleObserveMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := &observe.ObservabilityResult{
-		Source:      sourceType,
-		SourceID:    sourceID,
+		Component:   sourceType,
+		ComponentID: sourceID,
 		NativeQuery: nativeQuery,
 		Data:        []observe.DataPoint{},
 	}
@@ -124,7 +124,7 @@ func (s *Server) handleObserveMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !supported {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
 			fmt.Sprintf("source %q (type %q) does not support metrics queries via the observe API", sourceID, sourceType))
 		return
 	}
@@ -145,7 +145,7 @@ func (s *Server) handleObserveLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceID, sourceType, err := s.resolveSourceForService(r, req.Service, graph.RelationLogsIn)
+	sourceID, sourceType, err := s.resolveComponentForService(r, req.Service, graph.RelationLogsIn)
 	if err != nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, err.Error())
 		return
@@ -158,8 +158,8 @@ func (s *Server) handleObserveLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := &observe.ObservabilityResult{
-		Source:      sourceType,
-		SourceID:    sourceID,
+		Component:   sourceType,
+		ComponentID: sourceID,
 		NativeQuery: nativeQuery,
 		Data:        []observe.DataPoint{},
 	}
@@ -178,7 +178,7 @@ func (s *Server) handleObserveLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !supported {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
 			fmt.Sprintf("source %q (type %q) does not support logs queries via the observe API", sourceID, sourceType))
 		return
 	}
@@ -199,15 +199,15 @@ func (s *Server) handleObserveTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceID, sourceType, err := s.resolveSourceForService(r, req.Service, graph.RelationTracesIn)
+	sourceID, sourceType, err := s.resolveComponentForService(r, req.Service, graph.RelationTracesIn)
 	if err != nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, err.Error())
 		return
 	}
 
 	result := &observe.ObservabilityResult{
-		Source:      sourceType,
-		SourceID:    sourceID,
+		Component:   sourceType,
+		ComponentID: sourceID,
 		NativeQuery: fmt.Sprintf("service=%s", req.Service),
 		Data:        []observe.DataPoint{},
 	}
@@ -222,7 +222,7 @@ func (s *Server) handleObserveTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !supported {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
 			fmt.Sprintf("source %q (type %q) does not support traces queries via the observe API", sourceID, sourceType))
 		return
 	}
@@ -248,10 +248,10 @@ func (s *Server) handleObserveAlerts(w http.ResponseWriter, r *http.Request) {
 	var resolveErr error
 
 	if req.Service != "" {
-		sourceID, sourceType, resolveErr = s.resolveSourceForService(r, req.Service, graph.RelationAlertsIn)
+		sourceID, sourceType, resolveErr = s.resolveComponentForService(r, req.Service, graph.RelationAlertsIn)
 		if resolveErr != nil {
 			// Also try paged_via (PagerDuty)
-			sourceID, sourceType, resolveErr = s.resolveSourceForService(r, req.Service, graph.RelationPagedVia)
+			sourceID, sourceType, resolveErr = s.resolveComponentForService(r, req.Service, graph.RelationPagedVia)
 		}
 	}
 
@@ -264,8 +264,8 @@ func (s *Server) handleObserveAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result.Source = sourceType
-	result.SourceID = sourceID
+	result.Component = sourceType
+	result.ComponentID = sourceID
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	alerts, supported, qErr := s.accessor.ObserveAlerts(r.Context(), principal, sourceID, req.Question)
@@ -277,7 +277,7 @@ func (s *Server) handleObserveAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !supported {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource,
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
 			fmt.Sprintf("source %q (type %q) does not support alerts queries via the observe API", sourceID, sourceType))
 		return
 	}
@@ -300,7 +300,7 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve k8s source: look for k8s-type nodes related to the service in the graph.
-	sourceID, err := s.resolveK8sSourceForService(r, req.Service)
+	sourceID, err := s.resolveK8sComponentForService(r, req.Service)
 	if err != nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, err.Error())
 		return
@@ -309,8 +309,8 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 	principal := rbac.PrincipalFromContext(r.Context())
 
 	result := &observe.K8sResult{
-		Source:      "kubernetes",
-		SourceID:    sourceID,
+		Component:   "kubernetes",
+		ComponentID: sourceID,
 		NativeQuery: fmt.Sprintf("service=%s", req.Service),
 	}
 
@@ -387,9 +387,9 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// resolveK8sSourceForService finds a k8s source for a service by locating k8s-type nodes
+// resolveK8sComponentForService finds a k8s source for a service by locating k8s-type nodes
 // in the graph that are related to the service.
-func (s *Server) resolveK8sSourceForService(r *http.Request, service string) (string, error) {
+func (s *Server) resolveK8sComponentForService(r *http.Request, service string) (string, error) {
 	ctx := r.Context()
 	principal := rbac.PrincipalFromContext(ctx)
 
@@ -413,8 +413,8 @@ func (s *Server) resolveK8sSourceForService(r *http.Request, service string) (st
 	}
 
 	for _, node := range subgraph.Nodes {
-		if strings.HasPrefix(node.Type, "k8s_") && node.SourceID != "" {
-			return node.SourceID, nil
+		if strings.HasPrefix(node.Type, "k8s_") && node.ComponentID != "" {
+			return node.ComponentID, nil
 		}
 	}
 

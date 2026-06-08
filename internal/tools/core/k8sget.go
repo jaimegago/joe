@@ -27,14 +27,14 @@ func NewK8sGetTool(c K8sGetClient) *K8sGetTool {
 func (t *K8sGetTool) Name() string { return "k8s_get" }
 
 func (t *K8sGetTool) Description() string {
-	return "Query Kubernetes resources from a connected cluster. Lists resources by type, or gets a single resource by name. Supports pods, deployments, services, configmaps, secrets, namespaces, nodes, ingresses, statefulsets, daemonsets, replicasets, jobs, cronjobs, and events. If you don't know the source_id, call list_sources first to discover available Kubernetes clusters."
+	return "Query Kubernetes resources from a connected cluster. Lists resources by type, or gets a single resource by name. Supports pods, deployments, services, configmaps, secrets, namespaces, nodes, ingresses, statefulsets, daemonsets, replicasets, jobs, cronjobs, and events. If you don't know the component_id, call list_components first to discover available Kubernetes clusters."
 }
 
 func (t *K8sGetTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source/cluster to query.",
 			},
@@ -51,14 +51,14 @@ func (t *K8sGetTool) Parameters() llm.ParameterSchema {
 				Description: "Name of a specific resource to get. Omit to list all resources of the type.",
 			},
 		},
-		Required: []string{"source_id", "resource"},
+		Required: []string{"component_id", "resource"},
 	}
 }
 
 func (t *K8sGetTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	resource, ok := args["resource"].(string)
@@ -77,8 +77,8 @@ func (t *K8sGetTool) Execute(ctx context.Context, args map[string]any) (any, err
 		}
 		redactSecretData(obj)
 		return map[string]any{
-			"resource":  obj,
-			"source_id": sourceID,
+			"resource":     obj,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -93,9 +93,9 @@ func (t *K8sGetTool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	return map[string]any{
-		"resources": items,
-		"count":     len(items),
-		"source_id": sourceID,
+		"resources":    items,
+		"count":        len(items),
+		"component_id": sourceID,
 	}, nil
 }
 

@@ -32,14 +32,14 @@ func (t *MongoDBStatTool) Description() string {
 		"'server_status' (default) returns db.serverStatus() with connection counts, operation rates, and memory usage; " +
 		"'replica_status' returns rs.status() with replica set member health and replication lag; " +
 		"'current_op' returns db.currentOp() showing in-progress operations. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *MongoDBStatTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the MongoDB source to query.",
 			},
@@ -48,14 +48,14 @@ func (t *MongoDBStatTool) Parameters() llm.ParameterSchema {
 				Description: "Action to perform: 'server_status' (default), 'replica_status', or 'current_op'.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *MongoDBStatTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -70,9 +70,9 @@ func (t *MongoDBStatTool) Execute(ctx context.Context, args map[string]any) (any
 			return nil, fmt.Errorf("mongodb server_status: %w", err)
 		}
 		return map[string]any{
-			"status":    status,
-			"action":    action,
-			"source_id": sourceID,
+			"status":       status,
+			"action":       action,
+			"component_id": sourceID,
 		}, nil
 
 	case "replica_status":
@@ -81,9 +81,9 @@ func (t *MongoDBStatTool) Execute(ctx context.Context, args map[string]any) (any
 			return nil, fmt.Errorf("mongodb replica_status: %w", err)
 		}
 		return map[string]any{
-			"status":    status,
-			"action":    action,
-			"source_id": sourceID,
+			"status":       status,
+			"action":       action,
+			"component_id": sourceID,
 		}, nil
 
 	case "current_op":
@@ -92,9 +92,9 @@ func (t *MongoDBStatTool) Execute(ctx context.Context, args map[string]any) (any
 			return nil, fmt.Errorf("mongodb current_op: %w", err)
 		}
 		return map[string]any{
-			"op":        op,
-			"action":    action,
-			"source_id": sourceID,
+			"op":           op,
+			"action":       action,
+			"component_id": sourceID,
 		}, nil
 
 	default:

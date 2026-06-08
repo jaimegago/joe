@@ -26,14 +26,14 @@ func openRBACTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { db.Close() })
 
 	_, err = db.Exec(`
-		CREATE TABLE sources (id TEXT PRIMARY KEY, name TEXT);
+		CREATE TABLE components (id TEXT PRIMARY KEY, name TEXT);
 		CREATE TABLE security_zones (
 			id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
 			allowed_actions TEXT NOT NULL DEFAULT '["read"]', created_at TEXT NOT NULL
 		);
-		CREATE TABLE source_zone_assignments (
-			source_id TEXT NOT NULL, zone_id TEXT NOT NULL, assigned_by TEXT NOT NULL,
-			reason TEXT, assigned_at TEXT NOT NULL, PRIMARY KEY (source_id)
+		CREATE TABLE component_zone_assignments (
+			component_id TEXT NOT NULL, zone_id TEXT NOT NULL, assigned_by TEXT NOT NULL,
+			reason TEXT, assigned_at TEXT NOT NULL, PRIMARY KEY (component_id)
 		);
 		CREATE TABLE rbac_policies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, principal TEXT NOT NULL,
@@ -41,7 +41,7 @@ func openRBACTestDB(t *testing.T) *sql.DB {
 		);
 		INSERT INTO security_zones VALUES ('prod-readonly','Production Read-Only','','["read","query"]','2026-01-01T00:00:00Z');
 		INSERT INTO security_zones VALUES ('unassigned','Unassigned','','["read"]','2026-01-01T00:00:00Z');
-		INSERT INTO sources VALUES ('src-1','test source');
+		INSERT INTO components VALUES ('src-1','test source');
 	`)
 	if err != nil {
 		t.Fatalf("seed schema: %v", err)
@@ -126,11 +126,11 @@ func TestAdminListAssignments(t *testing.T) {
 	ts, repo := newAdminServer(t)
 
 	// Add one assignment first.
-	_ = repo.UpsertAssignment(context.Background(), rbac.SourceZoneAssignment{
-		SourceID: "src-1", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(context.Background(), rbac.ComponentZoneAssignment{
+		ComponentID: "src-1", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 
-	resp, err := http.Get(ts.URL + "/api/v1/admin/source-zones")
+	resp, err := http.Get(ts.URL + "/api/v1/admin/component-zones")
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -148,17 +148,17 @@ func TestAdminListAssignments(t *testing.T) {
 	}
 }
 
-func TestAdminAssignSourceZone(t *testing.T) {
+func TestAdminAssignComponentZone(t *testing.T) {
 	ts, _ := newAdminServer(t)
 
 	body, _ := json.Marshal(map[string]any{
-		"source_id":   "src-1",
-		"zone_id":     "prod-readonly",
-		"assigned_by": "admin",
-		"reason":      "initial assignment",
+		"component_id": "src-1",
+		"zone_id":      "prod-readonly",
+		"assigned_by":  "admin",
+		"reason":       "initial assignment",
 	})
 
-	resp, err := http.Post(ts.URL+"/api/v1/admin/source-zones", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(ts.URL+"/api/v1/admin/component-zones", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -264,12 +264,12 @@ func TestAdminCreateZone_MissingName(t *testing.T) {
 	}
 }
 
-func TestAdminAssignSourceZone_MissingFields(t *testing.T) {
+func TestAdminAssignComponentZone_MissingFields(t *testing.T) {
 	ts, _ := newAdminServer(t)
 
 	// assigned_by is missing — should 400.
-	body, _ := json.Marshal(map[string]any{"source_id": "src-1", "zone_id": "prod-readonly"})
-	resp, err := http.Post(ts.URL+"/api/v1/admin/source-zones", "application/json", bytes.NewReader(body))
+	body, _ := json.Marshal(map[string]any{"component_id": "src-1", "zone_id": "prod-readonly"})
+	resp, err := http.Post(ts.URL+"/api/v1/admin/component-zones", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -344,10 +344,10 @@ func TestAdminCreateZone_NoAllowedActions(t *testing.T) {
 	}
 }
 
-func TestAdminAssignSourceZone_InvalidJSON(t *testing.T) {
+func TestAdminAssignComponentZone_InvalidJSON(t *testing.T) {
 	ts, _ := newAdminServer(t)
 
-	resp, err := http.Post(ts.URL+"/api/v1/admin/source-zones", "application/json", bytes.NewReader([]byte("{bad json")))
+	resp, err := http.Post(ts.URL+"/api/v1/admin/component-zones", "application/json", bytes.NewReader([]byte("{bad json")))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}

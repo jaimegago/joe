@@ -66,7 +66,7 @@ func (m *mockGraphStore) Summary(ctx context.Context) (graph.GraphSummary, error
 	return graph.GraphSummary{}, nil
 }
 
-func (m *mockGraphStore) ListNodesBySource(ctx context.Context, sourceID string) ([]graph.Node, error) {
+func (m *mockGraphStore) ListNodesByComponent(ctx context.Context, sourceID string) ([]graph.Node, error) {
 	return nil, nil
 }
 
@@ -149,8 +149,8 @@ func TestApplyAnswer_OperationErrors_Aggregated(t *testing.T) {
 
 	ops := GraphOperations{
 		Operations: []GraphOperation{
-			{Type: "add_node", Node: &graph.Node{ID: "n1", Type: "svc", SourceID: "s1"}},
-			{Type: "add_node", Node: &graph.Node{ID: "n2", Type: "svc", SourceID: "s1"}},
+			{Type: "add_node", Node: &graph.Node{ID: "n1", Type: "svc", ComponentID: "s1"}},
+			{Type: "add_node", Node: &graph.Node{ID: "n2", Type: "svc", ComponentID: "s1"}},
 		},
 	}
 	opsJSON, _ := json.Marshal(ops)
@@ -179,9 +179,9 @@ func TestClarificationService_ApplyAnswer(t *testing.T) {
 		nodeOp := GraphOperation{
 			Type: "add_node",
 			Node: &graph.Node{
-				ID:       "deployment/prod/api",
-				Type:     "deployment",
-				SourceID: "k8s-1",
+				ID:          "deployment/prod/api",
+				Type:        "deployment",
+				ComponentID: "k8s-1",
 			},
 		}
 
@@ -299,7 +299,7 @@ func TestApplyOperation_Branches(t *testing.T) {
 			name: "add_node success",
 			op: GraphOperation{
 				Type: "add_node",
-				Node: &graph.Node{ID: "x", Type: "svc", SourceID: "s"},
+				Node: &graph.Node{ID: "x", Type: "svc", ComponentID: "s"},
 			},
 			wantErr: false,
 		},

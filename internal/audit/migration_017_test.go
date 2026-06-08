@@ -35,13 +35,13 @@ func TestMigration017_AuditLogRebuild_PreservesAppendOnly(t *testing.T) {
 	// confirm the rebuilt audit_log still accepts the kinds defined by
 	// migration 015.
 	if err := repo.Insert(ctx, audit.Event{
-		Principal: "user:alice",
-		Action:    "read",
-		Zone:      "prod-readonly",
-		Source:    "k8s-prod",
-		Decision:  audit.DecisionAllow,
-		Reason:    "policy_allow",
-		Kind:      audit.KindInfraAccess,
+		Principal:   "user:alice",
+		Action:      "read",
+		Zone:        "prod-readonly",
+		ComponentID: "k8s-prod",
+		Decision:    audit.DecisionAllow,
+		Reason:      "policy_allow",
+		Kind:        audit.KindInfraAccess,
 	}); err != nil {
 		t.Fatalf("Insert infra_access: %v", err)
 	}

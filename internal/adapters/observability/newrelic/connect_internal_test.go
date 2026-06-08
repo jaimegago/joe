@@ -38,7 +38,7 @@ func TestConnect_HappyPath(t *testing.T) {
 		client: &internalMockDoer{resp: httpResp(http.StatusOK, healthBody)},
 	}
 
-	source := store.Source{
+	source := store.Component{
 		Config: []byte(`{"api_key":"NRAK-abc123","account_id":99999}`),
 	}
 
@@ -61,7 +61,7 @@ func TestConnect_HappyPath_EURegion(t *testing.T) {
 		client: &internalMockDoer{resp: httpResp(http.StatusOK, healthBody)},
 	}
 
-	source := store.Source{
+	source := store.Component{
 		Config: []byte(`{"api_key":"NRAK-eu","account_id":11111,"region":"EU"}`),
 	}
 
@@ -79,7 +79,7 @@ func TestConnect_NetworkFailure(t *testing.T) {
 		client: &internalMockDoer{err: errors.New("dial tcp: connection refused")},
 	}
 
-	source := store.Source{
+	source := store.Component{
 		Config: []byte(`{"api_key":"NRAK-abc","account_id":12345}`),
 	}
 
@@ -99,7 +99,7 @@ func TestConnect_ServerError(t *testing.T) {
 		},
 	}
 
-	source := store.Source{
+	source := store.Component{
 		Config: []byte(`{"api_key":"NRAK-bad","account_id":12345}`),
 	}
 

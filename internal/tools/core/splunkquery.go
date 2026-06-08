@@ -26,14 +26,14 @@ func NewSplunkQueryTool(c SplunkClient) *SplunkQueryTool {
 func (t *SplunkQueryTool) Name() string { return "splunk_query" }
 
 func (t *SplunkQueryTool) Description() string {
-	return "Search Splunk logs using SPL (Splunk Processing Language). Returns log events matching the query within the specified time range. If you don't know the source_id, call list_sources first."
+	return "Search Splunk logs using SPL (Splunk Processing Language). Returns log events matching the query within the specified time range. If you don't know the component_id, call list_components first."
 }
 
 func (t *SplunkQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Splunk source to query.",
 			},
@@ -54,14 +54,14 @@ func (t *SplunkQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of events to return (default 100).",
 			},
 		},
-		Required: []string{"source_id", "query"},
+		Required: []string{"component_id", "query"},
 	}
 }
 
 func (t *SplunkQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	query, ok := args["query"].(string)
@@ -90,9 +90,9 @@ func (t *SplunkQueryTool) Execute(ctx context.Context, args map[string]any) (any
 	}
 
 	return map[string]any{
-		"events":    result.Events,
-		"count":     result.Count,
-		"source_id": sourceID,
-		"query":     query,
+		"events":       result.Events,
+		"count":        result.Count,
+		"component_id": sourceID,
+		"query":        query,
 	}, nil
 }

@@ -15,54 +15,54 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// refreshPostgreSQLSource refreshes a PostgreSQL source.
+// refreshPostgreSQLComponent refreshes a PostgreSQL source.
 // Creates a graph node and attempts stores_in edge discovery by matching the
 // source name to existing service/deployment nodes.
-func (r *Refresher) refreshPostgreSQLSource(ctx context.Context, source *store.Source, _ postgresadapter.PostgreSQLAdapter) error {
-	r.logger.Info("refreshing postgresql source", "source_id", source.ID)
-	return r.refreshDataStoreSource(ctx, source, "postgresql_source", graph.RelationStoresIn, "postgresql")
+func (r *Refresher) refreshPostgreSQLComponent(ctx context.Context, source *store.Component, _ postgresadapter.PostgreSQLAdapter) error {
+	r.logger.Info("refreshing postgresql source", "component_id", source.ID)
+	return r.refreshDataStoreComponent(ctx, source, "postgresql_component", graph.RelationStoresIn, "postgresql")
 }
 
-// refreshMySQLSource refreshes a MySQL source.
-func (r *Refresher) refreshMySQLSource(ctx context.Context, source *store.Source, _ mysqladapter.MySQLAdapter) error {
-	r.logger.Info("refreshing mysql source", "source_id", source.ID)
-	return r.refreshDataStoreSource(ctx, source, "mysql_source", graph.RelationStoresIn, "mysql")
+// refreshMySQLComponent refreshes a MySQL source.
+func (r *Refresher) refreshMySQLComponent(ctx context.Context, source *store.Component, _ mysqladapter.MySQLAdapter) error {
+	r.logger.Info("refreshing mysql source", "component_id", source.ID)
+	return r.refreshDataStoreComponent(ctx, source, "mysql_component", graph.RelationStoresIn, "mysql")
 }
 
-// refreshRedisSource refreshes a Redis source.
-func (r *Refresher) refreshRedisSource(ctx context.Context, source *store.Source, _ redisadapter.RedisAdapter) error {
-	r.logger.Info("refreshing redis source", "source_id", source.ID)
-	return r.refreshDataStoreSource(ctx, source, "redis_source", graph.RelationStoresIn, "redis")
+// refreshRedisComponent refreshes a Redis source.
+func (r *Refresher) refreshRedisComponent(ctx context.Context, source *store.Component, _ redisadapter.RedisAdapter) error {
+	r.logger.Info("refreshing redis source", "component_id", source.ID)
+	return r.refreshDataStoreComponent(ctx, source, "redis_component", graph.RelationStoresIn, "redis")
 }
 
-// refreshMongoDBSource refreshes a MongoDB source.
-func (r *Refresher) refreshMongoDBSource(ctx context.Context, source *store.Source, _ mongodbadapter.MongoDBAdapter) error {
-	r.logger.Info("refreshing mongodb source", "source_id", source.ID)
-	return r.refreshDataStoreSource(ctx, source, "mongodb_source", graph.RelationStoresIn, "mongodb")
+// refreshMongoDBComponent refreshes a MongoDB source.
+func (r *Refresher) refreshMongoDBComponent(ctx context.Context, source *store.Component, _ mongodbadapter.MongoDBAdapter) error {
+	r.logger.Info("refreshing mongodb source", "component_id", source.ID)
+	return r.refreshDataStoreComponent(ctx, source, "mongodb_component", graph.RelationStoresIn, "mongodb")
 }
 
-// refreshElasticsearchSource refreshes an Elasticsearch source.
-func (r *Refresher) refreshElasticsearchSource(ctx context.Context, source *store.Source, _ elasticsearchadapter.ElasticsearchAdapter) error {
-	r.logger.Info("refreshing elasticsearch source", "source_id", source.ID)
-	return r.refreshDataStoreSource(ctx, source, "elasticsearch_source", graph.RelationStoresIn, "elasticsearch")
+// refreshElasticsearchComponent refreshes an Elasticsearch source.
+func (r *Refresher) refreshElasticsearchComponent(ctx context.Context, source *store.Component, _ elasticsearchadapter.ElasticsearchAdapter) error {
+	r.logger.Info("refreshing elasticsearch source", "component_id", source.ID)
+	return r.refreshDataStoreComponent(ctx, source, "elasticsearch_component", graph.RelationStoresIn, "elasticsearch")
 }
 
-// refreshKafkaSource refreshes a Kafka source.
+// refreshKafkaComponent refreshes a Kafka source.
 // Creates a graph node and attempts queues_in edge discovery by matching
 // topic names to existing service/deployment nodes.
-func (r *Refresher) refreshKafkaSource(ctx context.Context, source *store.Source, adapter kafkaadapter.KafkaAdapter) error {
-	r.logger.Info("refreshing kafka source", "source_id", source.ID)
+func (r *Refresher) refreshKafkaComponent(ctx context.Context, source *store.Component, adapter kafkaadapter.KafkaAdapter) error {
+	r.logger.Info("refreshing kafka source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := datastoreNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "kafka_source",
-			SourceID: source.ID,
-			Metadata: datastoreMetadata(source),
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "kafka_component",
+			ComponentID: source.ID,
+			Metadata:    datastoreMetadata(source),
+			LastSeen:    now,
 		},
 	}
 
@@ -71,13 +71,13 @@ func (r *Refresher) refreshKafkaSource(ctx context.Context, source *store.Source
 	// Discover topic names and attempt to match to service nodes via queues_in edges.
 	topics, err := adapter.Topics(ctx)
 	if err != nil {
-		r.logger.Warn("failed to list kafka topics (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list kafka topics (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		edges := r.buildQueuesInEdges(ctx, source, nodeID, topicNames(topics), now)
 		desiredEdges = append(desiredEdges, edges...)
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for kafka source %s: %w", source.ID, err)
 	}
@@ -88,26 +88,26 @@ func (r *Refresher) refreshKafkaSource(ctx context.Context, source *store.Source
 	}
 
 	r.logger.Info("kafka refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
 	return nil
 }
 
-// refreshDataStoreSource is the common refresh path for SQL/NoSQL data stores.
+// refreshDataStoreComponent is the common refresh path for SQL/NoSQL data stores.
 // It creates a source node and attempts name-based service matching for stores_in edges.
-func (r *Refresher) refreshDataStoreSource(ctx context.Context, source *store.Source, nodeType, relation, tag string) error {
+func (r *Refresher) refreshDataStoreComponent(ctx context.Context, source *store.Component, nodeType, relation, tag string) error {
 	now := time.Now()
 	nodeID := datastoreNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     nodeType,
-			SourceID: source.ID,
-			Metadata: datastoreMetadata(source),
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        nodeType,
+			ComponentID: source.ID,
+			Metadata:    datastoreMetadata(source),
+			LastSeen:    now,
 		},
 	}
 
@@ -115,7 +115,7 @@ func (r *Refresher) refreshDataStoreSource(ctx context.Context, source *store.So
 	// (or vice versa) are considered candidates for a stores_in edge.
 	desiredEdges := r.buildStoresInEdgesByName(ctx, source, nodeID, relation, tag, now)
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for %s source %s: %w", tag, source.ID, err)
 	}
@@ -126,7 +126,7 @@ func (r *Refresher) refreshDataStoreSource(ctx context.Context, source *store.So
 	}
 
 	r.logger.Info("datastore refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"type", tag,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -137,7 +137,7 @@ func (r *Refresher) refreshDataStoreSource(ctx context.Context, source *store.So
 // buildStoresInEdgesByName queries the graph for service/deployment nodes whose
 // name matches the source name, creating stores_in edges (low-confidence, inferred).
 // Explicit edges are expected to come from .joe/ file processing.
-func (r *Refresher) buildStoresInEdgesByName(ctx context.Context, source *store.Source, dsNodeID, relation, tag string, now time.Time) []graph.Edge {
+func (r *Refresher) buildStoresInEdgesByName(ctx context.Context, source *store.Component, dsNodeID, relation, tag string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 
 	if source.Name == "" {
@@ -155,14 +155,14 @@ func (r *Refresher) buildStoresInEdgesByName(ctx context.Context, source *store.
 			continue
 		}
 		edges = append(edges, graph.Edge{
-			From:       svcNode.ID,
-			To:         dsNodeID,
-			Relation:   relation,
-			Confidence: graph.Inferred,
-			Source:     tag + "_name_match",
-			SourceID:   source.ID,
-			Context:    "name=" + source.Name,
-			CreatedAt:  now,
+			From:        svcNode.ID,
+			To:          dsNodeID,
+			Relation:    relation,
+			Confidence:  graph.Inferred,
+			Source:      tag + "_name_match",
+			ComponentID: source.ID,
+			Context:     "name=" + source.Name,
+			CreatedAt:   now,
 		})
 	}
 
@@ -171,7 +171,7 @@ func (r *Refresher) buildStoresInEdgesByName(ctx context.Context, source *store.
 
 // buildQueuesInEdges creates queues_in edges by matching Kafka topic names to
 // existing service/deployment nodes.
-func (r *Refresher) buildQueuesInEdges(ctx context.Context, source *store.Source, kafkaNodeID string, names []string, now time.Time) []graph.Edge {
+func (r *Refresher) buildQueuesInEdges(ctx context.Context, source *store.Component, kafkaNodeID string, names []string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 	seen := make(map[string]bool)
 
@@ -192,14 +192,14 @@ func (r *Refresher) buildQueuesInEdges(ctx context.Context, source *store.Source
 				continue
 			}
 			edges = append(edges, graph.Edge{
-				From:       svcNode.ID,
-				To:         kafkaNodeID,
-				Relation:   graph.RelationQueuesIn,
-				Confidence: graph.Inferred,
-				Source:     "kafka_topics",
-				SourceID:   source.ID,
-				Context:    "topic=" + name,
-				CreatedAt:  now,
+				From:        svcNode.ID,
+				To:          kafkaNodeID,
+				Relation:    graph.RelationQueuesIn,
+				Confidence:  graph.Inferred,
+				Source:      "kafka_topics",
+				ComponentID: source.ID,
+				Context:     "topic=" + name,
+				CreatedAt:   now,
 			})
 		}
 	}
@@ -213,11 +213,11 @@ func datastoreNodeID(sourceID, sourceType string) string {
 }
 
 // datastoreMetadata builds the standard metadata map for a data store node.
-func datastoreMetadata(source *store.Source) map[string]any {
+func datastoreMetadata(source *store.Component) map[string]any {
 	return map[string]any{
-		"source_id":   source.ID,
-		"source_type": source.Type,
-		"name":        source.Name,
+		"component_id":   source.ID,
+		"component_type": source.Type,
+		"name":           source.Name,
 	}
 }
 

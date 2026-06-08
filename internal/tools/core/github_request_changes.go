@@ -33,23 +33,23 @@ func (t *GitHubRequestChangesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {Type: "string", Description: "GitHub source ID registered in Joe"},
-			"owner":     {Type: "string", Description: "Repository owner"},
-			"repo":      {Type: "string", Description: "Repository name"},
-			"pr_number": {Type: "number", Description: "Pull request number"},
-			"body":      {Type: "string", Description: "Review body explaining what needs to be changed"},
+			"component_id": {Type: "string", Description: "GitHub source ID registered in Joe"},
+			"owner":        {Type: "string", Description: "Repository owner"},
+			"repo":         {Type: "string", Description: "Repository name"},
+			"pr_number":    {Type: "number", Description: "Pull request number"},
+			"body":         {Type: "string", Description: "Review body explaining what needs to be changed"},
 		},
-		Required: []string{"source_id", "owner", "repo", "pr_number", "body"},
+		Required: []string{"component_id", "owner", "repo", "pr_number", "body"},
 	}
 }
 
 func (t *GitHubRequestChangesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, _ := args["source_id"].(string)
+	sourceID, _ := args["component_id"].(string)
 	owner, _ := args["owner"].(string)
 	repo, _ := args["repo"].(string)
 	body, _ := args["body"].(string)
 	if sourceID == "" || owner == "" || repo == "" || body == "" {
-		return nil, fmt.Errorf("source_id, owner, repo, and body are required")
+		return nil, fmt.Errorf("component_id, owner, repo, and body are required")
 	}
 	prNum, ok := args["pr_number"].(float64)
 	if !ok || prNum <= 0 {

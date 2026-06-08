@@ -66,7 +66,7 @@ describe('ApiClient', () => {
       })
     );
 
-    const result = await client.delete<void>('/api/v1/sources/some-id');
+    const result = await client.delete<void>('/api/v1/components/some-id');
     expect(result).toBeUndefined();
     expect(json).not.toHaveBeenCalled();
   });

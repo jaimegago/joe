@@ -34,14 +34,14 @@ func (t *ArgoCDAppsTool) Description() string {
 		"Optionally filter by project. Shows name, project, namespace, sync_status " +
 		"(Synced/OutOfSync/Unknown), health (Healthy/Degraded/Progressing/Suspended), " +
 		"and current revision. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ArgoCDAppsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Argo CD source.",
 			},
@@ -50,14 +50,14 @@ func (t *ArgoCDAppsTool) Parameters() llm.ParameterSchema {
 				Description: "Filter by Argo CD project name. Omit to list all projects.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *ArgoCDAppsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	project, _ := args["project"].(string)
 
@@ -70,9 +70,9 @@ func (t *ArgoCDAppsTool) Execute(ctx context.Context, args map[string]any) (any,
 		apps = []argocd.App{}
 	}
 	return map[string]any{
-		"apps":      apps,
-		"count":     len(apps),
-		"source_id": sourceID,
+		"apps":         apps,
+		"count":        len(apps),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -93,14 +93,14 @@ func (t *ArgoCDGetAppTool) Description() string {
 	return "Get detailed information for a specific Argo CD application: managed resources " +
 		"(kind, namespace, sync status, health), and any status conditions. " +
 		"Use this after argocd_apps to dig into a specific app. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ArgoCDGetAppTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Argo CD source.",
 			},
@@ -109,14 +109,14 @@ func (t *ArgoCDGetAppTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the Argo CD application.",
 			},
 		},
-		Required: []string{"source_id", "name"},
+		Required: []string{"component_id", "name"},
 	}
 }
 
 func (t *ArgoCDGetAppTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	name, ok := args["name"].(string)
 	if !ok || name == "" {
@@ -128,8 +128,8 @@ func (t *ArgoCDGetAppTool) Execute(ctx context.Context, args map[string]any) (an
 		return nil, fmt.Errorf("argocd get app: %w", err)
 	}
 	return map[string]any{
-		"detail":    detail,
-		"source_id": sourceID,
+		"detail":       detail,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -150,14 +150,14 @@ func (t *ArgoCDDiffTool) Description() string {
 	return "Get the sync diff status for an Argo CD application: whether it is Synced or OutOfSync, " +
 		"the current revision, and any operation state message. " +
 		"Use this to determine if an app has drifted from its desired state. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ArgoCDDiffTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Argo CD source.",
 			},
@@ -166,14 +166,14 @@ func (t *ArgoCDDiffTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the Argo CD application.",
 			},
 		},
-		Required: []string{"source_id", "name"},
+		Required: []string{"component_id", "name"},
 	}
 }
 
 func (t *ArgoCDDiffTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	name, ok := args["name"].(string)
 	if !ok || name == "" {
@@ -185,8 +185,8 @@ func (t *ArgoCDDiffTool) Execute(ctx context.Context, args map[string]any) (any,
 		return nil, fmt.Errorf("argocd diff: %w", err)
 	}
 	return map[string]any{
-		"diff":      diff,
-		"source_id": sourceID,
+		"diff":         diff,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -207,14 +207,14 @@ func (t *ArgoCDHistoryTool) Description() string {
 	return "Get the sync operation history for an Argo CD application. " +
 		"Returns recent sync operations with revision, phase (Succeeded/Failed/Running), " +
 		"start time, and finish time. Ordered newest first. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ArgoCDHistoryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Argo CD source.",
 			},
@@ -227,14 +227,14 @@ func (t *ArgoCDHistoryTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of history entries to return. Defaults to 10.",
 			},
 		},
-		Required: []string{"source_id", "name"},
+		Required: []string{"component_id", "name"},
 	}
 }
 
 func (t *ArgoCDHistoryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	name, ok := args["name"].(string)
 	if !ok || name == "" {
@@ -254,8 +254,8 @@ func (t *ArgoCDHistoryTool) Execute(ctx context.Context, args map[string]any) (a
 		history = []argocd.SyncOperation{}
 	}
 	return map[string]any{
-		"history":   history,
-		"count":     len(history),
-		"source_id": sourceID,
+		"history":      history,
+		"count":        len(history),
+		"component_id": sourceID,
 	}, nil
 }

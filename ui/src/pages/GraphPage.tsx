@@ -66,7 +66,7 @@ export function GraphPage() {
         <EmptyState
           icon={Network}
           title="No infrastructure nodes"
-          description="Connect some sources to populate the graph."
+          description="Connect some components to populate the graph."
         />
       </>
     );

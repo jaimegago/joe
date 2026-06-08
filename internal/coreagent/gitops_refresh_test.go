@@ -21,9 +21,9 @@ type fakeArgoCDAdapter struct {
 	err  error
 }
 
-func (f *fakeArgoCDAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeArgoCDAdapter) Disconnect() error                               { return nil }
-func (f *fakeArgoCDAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeArgoCDAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeArgoCDAdapter) Disconnect() error                                  { return nil }
+func (f *fakeArgoCDAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeArgoCDAdapter) Apps(_ context.Context, _ string) ([]argocdadapter.App, error) {
 	return f.apps, f.err
 }
@@ -42,9 +42,9 @@ type fakeHelmAdapter struct {
 	err      error
 }
 
-func (f *fakeHelmAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeHelmAdapter) Disconnect() error                               { return nil }
-func (f *fakeHelmAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeHelmAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeHelmAdapter) Disconnect() error                                  { return nil }
+func (f *fakeHelmAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeHelmAdapter) Releases(_ context.Context, _ string) ([]helmadapter.Release, error) {
 	return f.releases, f.err
 }
@@ -60,9 +60,9 @@ type fakeTerraformAdapter struct {
 	err       error
 }
 
-func (f *fakeTerraformAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeTerraformAdapter) Disconnect() error                               { return nil }
-func (f *fakeTerraformAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeTerraformAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeTerraformAdapter) Disconnect() error                                  { return nil }
+func (f *fakeTerraformAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeTerraformAdapter) Resources(_ context.Context, _ string) ([]terraformadapter.Resource, error) {
 	return f.resources, f.err
 }
@@ -86,41 +86,41 @@ func setupGitOpsRefresher(t *testing.T) *Refresher {
 
 // ---- Argo CD ----
 
-func TestRefreshArgoCDSource_NoApps(t *testing.T) {
+func TestRefreshArgoCDComponent_NoApps(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-argocd-1", Type: store.SourceTypeArgoCd, Name: "argo"}
+	src := &store.Component{ID: "src-argocd-1", Type: store.ComponentTypeArgoCd, Name: "argo"}
 
-	if err := r.refreshArgoCDSource(context.Background(), src, &fakeArgoCDAdapter{}); err != nil {
-		t.Fatalf("refreshArgoCDSource: %v", err)
+	if err := r.refreshArgoCDComponent(context.Background(), src, &fakeArgoCDAdapter{}); err != nil {
+		t.Fatalf("refreshArgoCDComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// Expect 1 source node, no app nodes.
 	if len(nodes) != 1 {
 		t.Fatalf("want 1 node, got %d", len(nodes))
 	}
-	if nodes[0].Type != "argocd_source" {
-		t.Errorf("node type = %q, want argocd_source", nodes[0].Type)
+	if nodes[0].Type != "argocd_component" {
+		t.Errorf("node type = %q, want argocd_component", nodes[0].Type)
 	}
 }
 
-func TestRefreshArgoCDSource_AppsError(t *testing.T) {
+func TestRefreshArgoCDComponent_AppsError(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-argocd-2", Type: store.SourceTypeArgoCd, Name: "argo"}
+	src := &store.Component{ID: "src-argocd-2", Type: store.ComponentTypeArgoCd, Name: "argo"}
 	adapter := &fakeArgoCDAdapter{err: errors.New("connection refused")}
 
 	// Should still succeed (skips edge discovery).
-	if err := r.refreshArgoCDSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshArgoCDSource should not error on Apps failure, got: %v", err)
+	if err := r.refreshArgoCDComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshArgoCDComponent should not error on Apps failure, got: %v", err)
 	}
 }
 
-func TestRefreshArgoCDSource_WithApps(t *testing.T) {
+func TestRefreshArgoCDComponent_WithApps(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-argocd-3", Type: store.SourceTypeArgoCd, Name: "argo"}
+	src := &store.Component{ID: "src-argocd-3", Type: store.ComponentTypeArgoCd, Name: "argo"}
 	adapter := &fakeArgoCDAdapter{
 		apps: []argocdadapter.App{
 			{Name: "payment", Namespace: "default", SyncStatus: "Synced", Health: "Healthy"},
@@ -128,13 +128,13 @@ func TestRefreshArgoCDSource_WithApps(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshArgoCDSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshArgoCDSource: %v", err)
+	if err := r.refreshArgoCDComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshArgoCDComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source node + 2 app nodes.
 	if len(nodes) != 3 {
@@ -144,49 +144,49 @@ func TestRefreshArgoCDSource_WithApps(t *testing.T) {
 
 // ---- Helm ----
 
-func TestRefreshHelmSource_NoReleases(t *testing.T) {
+func TestRefreshHelmComponent_NoReleases(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-helm-1", Type: store.SourceTypeHelm, Name: "prod-helm"}
+	src := &store.Component{ID: "src-helm-1", Type: store.ComponentTypeHelm, Name: "prod-helm"}
 
-	if err := r.refreshHelmSource(context.Background(), src, &fakeHelmAdapter{}); err != nil {
-		t.Fatalf("refreshHelmSource: %v", err)
+	if err := r.refreshHelmComponent(context.Background(), src, &fakeHelmAdapter{}); err != nil {
+		t.Fatalf("refreshHelmComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "helm_source" {
+	if len(nodes) != 1 || nodes[0].Type != "helm_component" {
 		t.Errorf("want 1 helm_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshHelmSource_ReleasesError(t *testing.T) {
+func TestRefreshHelmComponent_ReleasesError(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-helm-2", Type: store.SourceTypeHelm, Name: "helm"}
+	src := &store.Component{ID: "src-helm-2", Type: store.ComponentTypeHelm, Name: "helm"}
 	adapter := &fakeHelmAdapter{err: errors.New("not connected")}
 
-	if err := r.refreshHelmSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshHelmSource should not error on Releases failure, got: %v", err)
+	if err := r.refreshHelmComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshHelmComponent should not error on Releases failure, got: %v", err)
 	}
 }
 
-func TestRefreshHelmSource_WithReleases(t *testing.T) {
+func TestRefreshHelmComponent_WithReleases(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-helm-3", Type: store.SourceTypeHelm, Name: "helm"}
+	src := &store.Component{ID: "src-helm-3", Type: store.ComponentTypeHelm, Name: "helm"}
 	adapter := &fakeHelmAdapter{
 		releases: []helmadapter.Release{
 			{Name: "payment", Namespace: "default", Status: "deployed", Revision: 5},
 		},
 	}
 
-	if err := r.refreshHelmSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshHelmSource: %v", err)
+	if err := r.refreshHelmComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshHelmComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source node + 1 release node.
 	if len(nodes) != 2 {
@@ -196,36 +196,36 @@ func TestRefreshHelmSource_WithReleases(t *testing.T) {
 
 // ---- Terraform ----
 
-func TestRefreshTerraformSource_NoResources(t *testing.T) {
+func TestRefreshTerraformComponent_NoResources(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-tf-1", Type: store.SourceTypeTerraform, Name: "infra-tf"}
+	src := &store.Component{ID: "src-tf-1", Type: store.ComponentTypeTerraform, Name: "infra-tf"}
 
-	if err := r.refreshTerraformSource(context.Background(), src, &fakeTerraformAdapter{}); err != nil {
-		t.Fatalf("refreshTerraformSource: %v", err)
+	if err := r.refreshTerraformComponent(context.Background(), src, &fakeTerraformAdapter{}); err != nil {
+		t.Fatalf("refreshTerraformComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "terraform_source" {
+	if len(nodes) != 1 || nodes[0].Type != "terraform_component" {
 		t.Errorf("want 1 terraform_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshTerraformSource_ResourcesError(t *testing.T) {
+func TestRefreshTerraformComponent_ResourcesError(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-tf-2", Type: store.SourceTypeTerraform, Name: "tf"}
+	src := &store.Component{ID: "src-tf-2", Type: store.ComponentTypeTerraform, Name: "tf"}
 	adapter := &fakeTerraformAdapter{err: errors.New("state file not found")}
 
-	if err := r.refreshTerraformSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshTerraformSource should not error on Resources failure, got: %v", err)
+	if err := r.refreshTerraformComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshTerraformComponent should not error on Resources failure, got: %v", err)
 	}
 }
 
-func TestRefreshTerraformSource_WithManagedResources(t *testing.T) {
+func TestRefreshTerraformComponent_WithManagedResources(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-tf-3", Type: store.SourceTypeTerraform, Name: "tf"}
+	src := &store.Component{ID: "src-tf-3", Type: store.ComponentTypeTerraform, Name: "tf"}
 	adapter := &fakeTerraformAdapter{
 		resources: []terraformadapter.Resource{
 			{Address: "aws_instance.web", Type: "aws_instance", Name: "web", Provider: "aws", Mode: "managed"},
@@ -233,13 +233,13 @@ func TestRefreshTerraformSource_WithManagedResources(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshTerraformSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshTerraformSource: %v", err)
+	if err := r.refreshTerraformComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshTerraformComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source + 1 managed resource (data source skipped).
 	if len(nodes) != 2 {
@@ -257,48 +257,48 @@ func TestGitopsNodeID(t *testing.T) {
 	}
 }
 
-// ---- refreshSource switch cases for GitOps types ----
+// ---- refreshComponent switch cases for GitOps types ----
 
-func TestRefreshSource_ArgoCDType(t *testing.T) {
+func TestRefreshComponent_ArgoCDType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-argocd", &fakeArgoCDAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-argocd", Type: store.SourceTypeArgoCd, Name: "argo"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(argocd) error: %v", err)
+	src := &store.Component{ID: "src-argocd", Type: store.ComponentTypeArgoCd, Name: "argo"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(argocd) error: %v", err)
 	}
 }
 
-func TestRefreshSource_HelmType(t *testing.T) {
+func TestRefreshComponent_HelmType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-helm", &fakeHelmAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-helm", Type: store.SourceTypeHelm, Name: "helm"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(helm) error: %v", err)
+	src := &store.Component{ID: "src-helm", Type: store.ComponentTypeHelm, Name: "helm"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(helm) error: %v", err)
 	}
 }
 
-func TestRefreshSource_TerraformType(t *testing.T) {
+func TestRefreshComponent_TerraformType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tf", &fakeTerraformAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-tf", Type: store.SourceTypeTerraform, Name: "tf"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(terraform) error: %v", err)
+	src := &store.Component{ID: "src-tf", Type: store.ComponentTypeTerraform, Name: "tf"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(terraform) error: %v", err)
 	}
 }
 
-func TestRefreshSource_ArgoCDWrongType(t *testing.T) {
+func TestRefreshComponent_ArgoCDWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-argocd-bad", &fakeHelmAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-argocd-bad", Type: store.SourceTypeArgoCd, Name: "argo"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-argocd-bad", Type: store.ComponentTypeArgoCd, Name: "argo"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }

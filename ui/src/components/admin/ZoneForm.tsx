@@ -76,7 +76,7 @@ export function ZoneForm({ open, onOpenChange, initial, onSubmit, isLoading }: Z
               id="zone-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Read-only access to production sources"
+              placeholder="Read-only access to production components"
             />
           </div>
           <div className="space-y-2">

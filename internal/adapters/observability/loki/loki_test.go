@@ -58,7 +58,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -76,7 +76,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("Connect() expected error, got nil")
@@ -116,7 +116,7 @@ func TestAdapter_Query(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestAdapter_QueryRange(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -235,7 +235,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := loki.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -246,7 +246,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for closed server, got nil")
 	}
@@ -263,7 +263,7 @@ func TestAdapter_Connect_WithHeaders(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "my-key",
 		"org_id":  "tenant1",
@@ -294,7 +294,7 @@ func TestAdapter_Query_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	// limit=0 triggers default, since=0 skips start param
@@ -322,7 +322,7 @@ func TestAdapter_QueryRange_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	now := time.Now()
@@ -358,7 +358,7 @@ func TestAdapter_Query_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Query(context.Background(), `{app="test"}`, 10, time.Hour)
@@ -384,7 +384,7 @@ func TestAdapter_Query_LokiErrorStatus(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Query(context.Background(), `{app="test"}`, 10, time.Hour)
@@ -410,7 +410,7 @@ func TestAdapter_ListServices(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -448,7 +448,7 @@ func TestAdapter_ListServices_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListServices(context.Background())
@@ -473,7 +473,7 @@ func TestAdapter_ListServices_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListServices(context.Background())
@@ -489,7 +489,7 @@ func TestAdapter_ListServices_DoError(t *testing.T) {
 	}))
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	// Close the server to cause a request error on subsequent calls.
@@ -515,7 +515,7 @@ func TestAdapter_Query_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := loki.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Query(context.Background(), `{app="test"}`, 10, time.Hour)
@@ -528,7 +528,7 @@ func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := loki.New()
 	// Empty config bytes triggers the else branch (configMap = make(map[string]any))
 	// then ParseConfig returns error because url is missing.
-	source := store.Source{Config: nil}
+	source := store.Component{Config: nil}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}

@@ -42,17 +42,17 @@ func (t *IstioConfigTool) Description() string {
 	return "List Istio service mesh resources (VirtualService, DestinationRule, Gateway, " +
 		"ServiceEntry, PeerAuthentication, AuthorizationPolicy) from a Kubernetes source. " +
 		"Shows traffic policies, mTLS settings, routing rules, and auth policies. " +
-		"Use source_id of a Kubernetes source where Istio is installed. " +
+		"Use component_id of a Kubernetes source where Istio is installed. " +
 		"Supported kinds: VirtualService, DestinationRule, Gateway, ServiceEntry, " +
 		"PeerAuthentication, AuthorizationPolicy, RequestAuthentication. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *IstioConfigTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Istio is installed).",
 			},
@@ -65,14 +65,14 @@ func (t *IstioConfigTool) Parameters() llm.ParameterSchema {
 				Description: "Optional Istio resource kind to filter by: VirtualService, DestinationRule, Gateway, etc. Omit for all kinds.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *IstioConfigTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 	kind, _ := args["kind"].(string)
@@ -92,10 +92,10 @@ func (t *IstioConfigTool) Execute(ctx context.Context, args map[string]any) (any
 			return nil, fmt.Errorf("list istio %s: %w", kind, err)
 		}
 		return map[string]any{
-			"resources": resources,
-			"kind":      kind,
-			"namespace": namespace,
-			"source_id": sourceID,
+			"resources":    resources,
+			"kind":         kind,
+			"namespace":    namespace,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -111,9 +111,9 @@ func (t *IstioConfigTool) Execute(ctx context.Context, args map[string]any) (any
 		}
 	}
 	return map[string]any{
-		"resources": result,
-		"namespace": namespace,
-		"source_id": sourceID,
+		"resources":    result,
+		"namespace":    namespace,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -136,14 +136,14 @@ func (t *IstioResourceTool) Description() string {
 		"mTLS settings, and conditions. " +
 		"Supported kinds: VirtualService, DestinationRule, Gateway, ServiceEntry, " +
 		"PeerAuthentication, AuthorizationPolicy, RequestAuthentication. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *IstioResourceTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where Istio is installed).",
 			},
@@ -160,14 +160,14 @@ func (t *IstioResourceTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the Istio resource.",
 			},
 		},
-		Required: []string{"source_id", "kind", "namespace", "name"},
+		Required: []string{"component_id", "kind", "namespace", "name"},
 	}
 }
 
 func (t *IstioResourceTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	kind, ok := args["kind"].(string)
 	if !ok || kind == "" {
@@ -192,10 +192,10 @@ func (t *IstioResourceTool) Execute(ctx context.Context, args map[string]any) (a
 		return nil, fmt.Errorf("get istio %s %s/%s: %w", kind, namespace, name, err)
 	}
 	return map[string]any{
-		"resource":  resource,
-		"kind":      kind,
-		"namespace": namespace,
-		"name":      name,
-		"source_id": sourceID,
+		"resource":     resource,
+		"kind":         kind,
+		"namespace":    namespace,
+		"name":         name,
+		"component_id": sourceID,
 	}, nil
 }

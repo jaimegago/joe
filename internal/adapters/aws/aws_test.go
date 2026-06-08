@@ -110,7 +110,7 @@ func TestAdapter_ConnectValidatesConfig(t *testing.T) {
 	adapter := awsadapter.New()
 
 	// Test with invalid source config (missing region)
-	source := store.Source{
+	source := store.Component{
 		ID:     "test-aws",
 		Name:   "Test AWS",
 		Type:   "aws",

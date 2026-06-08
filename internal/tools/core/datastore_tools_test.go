@@ -51,8 +51,8 @@ func TestPostgresStatTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -65,7 +65,7 @@ func TestPostgresStatTool_Execute_Success(t *testing.T) {
 	tool := core.NewPostgresStatTool(&mockPostgresClient{stat: stat})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "pg-1",
+		"component_id": "pg-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -75,25 +75,25 @@ func TestPostgresStatTool_Execute_Success(t *testing.T) {
 	if !ok {
 		t.Fatal("result is not map[string]any")
 	}
-	if m["source_id"] != "pg-1" {
-		t.Errorf("source_id = %v, want pg-1", m["source_id"])
+	if m["component_id"] != "pg-1" {
+		t.Errorf("component_id = %v, want pg-1", m["component_id"])
 	}
 	if m["stat"] == nil {
 		t.Error("stat should not be nil")
 	}
 }
 
-func TestPostgresStatTool_Execute_MissingSourceID(t *testing.T) {
+func TestPostgresStatTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewPostgresStatTool(&mockPostgresClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestPostgresStatTool_Execute_Error(t *testing.T) {
 	tool := core.NewPostgresStatTool(&mockPostgresClient{err: errors.New("connection refused")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "pg-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "pg-1"})
 	if err == nil {
 		t.Error("expected error from stat, got nil")
 	}
@@ -115,8 +115,8 @@ func TestPostgresQueryTool_Execute_Success(t *testing.T) {
 	tool := core.NewPostgresQueryTool(&mockPostgresClient{rows: rows})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "pg-1",
-		"query":     "SELECT id, name FROM services",
+		"component_id": "pg-1",
+		"query":        "SELECT id, name FROM services",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -131,17 +131,17 @@ func TestPostgresQueryTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestPostgresQueryTool_Execute_MissingSourceID(t *testing.T) {
+func TestPostgresQueryTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewPostgresQueryTool(&mockPostgresClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{"query": "SELECT 1"})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestPostgresQueryTool_Execute_MissingQuery(t *testing.T) {
 	tool := core.NewPostgresQueryTool(&mockPostgresClient{})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "pg-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "pg-1"})
 	if err == nil {
 		t.Error("expected error for missing query, got nil")
 	}
@@ -150,8 +150,8 @@ func TestPostgresQueryTool_Execute_MissingQuery(t *testing.T) {
 func TestPostgresQueryTool_Execute_Error(t *testing.T) {
 	tool := core.NewPostgresQueryTool(&mockPostgresClient{err: errors.New("permission denied")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "pg-1",
-		"query":     "SELECT 1",
+		"component_id": "pg-1",
+		"query":        "SELECT 1",
 	})
 	if err == nil {
 		t.Error("expected error from query, got nil")
@@ -161,8 +161,8 @@ func TestPostgresQueryTool_Execute_Error(t *testing.T) {
 func TestPostgresQueryTool_Execute_NilRows(t *testing.T) {
 	tool := core.NewPostgresQueryTool(&mockPostgresClient{rows: nil})
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "pg-1",
-		"query":     "SELECT 1",
+		"component_id": "pg-1",
+		"query":        "SELECT 1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -211,8 +211,8 @@ func TestMySQLStatTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -225,29 +225,29 @@ func TestMySQLStatTool_Execute_Success(t *testing.T) {
 	tool := core.NewMySQLStatTool(&mockMySQLClient{stat: stat})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mysql-1",
+		"component_id": "mysql-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "mysql-1" {
-		t.Errorf("source_id = %v, want mysql-1", m["source_id"])
+	if m["component_id"] != "mysql-1" {
+		t.Errorf("component_id = %v, want mysql-1", m["component_id"])
 	}
 }
 
-func TestMySQLStatTool_Execute_MissingSourceID(t *testing.T) {
+func TestMySQLStatTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewMySQLStatTool(&mockMySQLClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestMySQLStatTool_Execute_Error(t *testing.T) {
 	tool := core.NewMySQLStatTool(&mockMySQLClient{err: errors.New("connection refused")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "mysql-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "mysql-1"})
 	if err == nil {
 		t.Error("expected error from stat, got nil")
 	}
@@ -267,8 +267,8 @@ func TestMySQLQueryTool_Execute_Success(t *testing.T) {
 	tool := core.NewMySQLQueryTool(&mockMySQLClient{rows: rows})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mysql-1",
-		"query":     "SELECT COUNT(*) as count FROM orders",
+		"component_id": "mysql-1",
+		"query":        "SELECT COUNT(*) as count FROM orders",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -282,7 +282,7 @@ func TestMySQLQueryTool_Execute_Success(t *testing.T) {
 
 func TestMySQLQueryTool_Execute_MissingQuery(t *testing.T) {
 	tool := core.NewMySQLQueryTool(&mockMySQLClient{})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "mysql-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "mysql-1"})
 	if err == nil {
 		t.Error("expected error for missing query, got nil")
 	}
@@ -291,8 +291,8 @@ func TestMySQLQueryTool_Execute_MissingQuery(t *testing.T) {
 func TestMySQLQueryTool_Execute_Error(t *testing.T) {
 	tool := core.NewMySQLQueryTool(&mockMySQLClient{err: errors.New("table not found")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mysql-1",
-		"query":     "SELECT * FROM nonexistent",
+		"component_id": "mysql-1",
+		"query":        "SELECT * FROM nonexistent",
 	})
 	if err == nil {
 		t.Error("expected error from query, got nil")
@@ -342,8 +342,8 @@ func TestRedisInfoTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 	if _, ok := params.Properties["section"]; !ok {
 		t.Error("Parameters() missing section")
@@ -358,16 +358,16 @@ func TestRedisInfoTool_Execute_Success(t *testing.T) {
 	tool := core.NewRedisInfoTool(&mockRedisClient{info: info})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "redis-1",
-		"section":   "memory",
+		"component_id": "redis-1",
+		"section":      "memory",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "redis-1" {
-		t.Errorf("source_id = %v, want redis-1", m["source_id"])
+	if m["component_id"] != "redis-1" {
+		t.Errorf("component_id = %v, want redis-1", m["component_id"])
 	}
 	if m["section"] != "memory" {
 		t.Errorf("section = %v, want memory", m["section"])
@@ -377,7 +377,7 @@ func TestRedisInfoTool_Execute_Success(t *testing.T) {
 func TestRedisInfoTool_Execute_NoSection(t *testing.T) {
 	tool := core.NewRedisInfoTool(&mockRedisClient{info: map[string]string{"uptime_in_seconds": "3600"}})
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "redis-1",
+		"component_id": "redis-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -388,17 +388,17 @@ func TestRedisInfoTool_Execute_NoSection(t *testing.T) {
 	}
 }
 
-func TestRedisInfoTool_Execute_MissingSourceID(t *testing.T) {
+func TestRedisInfoTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewRedisInfoTool(&mockRedisClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestRedisInfoTool_Execute_Error(t *testing.T) {
 	tool := core.NewRedisInfoTool(&mockRedisClient{err: errors.New("connection refused")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "redis-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "redis-1"})
 	if err == nil {
 		t.Error("expected error from info, got nil")
 	}
@@ -420,8 +420,8 @@ func TestRedisSlowLogTool_Execute_Success(t *testing.T) {
 	tool := core.NewRedisSlowLogTool(&mockRedisClient{entries: entries})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "redis-1",
-		"count":     float64(5),
+		"component_id": "redis-1",
+		"count":        float64(5),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -436,24 +436,24 @@ func TestRedisSlowLogTool_Execute_Success(t *testing.T) {
 func TestRedisSlowLogTool_Execute_DefaultCount(t *testing.T) {
 	tool := core.NewRedisSlowLogTool(&mockRedisClient{entries: []redisadapter.SlowLogEntry{}})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "redis-1",
+		"component_id": "redis-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 }
 
-func TestRedisSlowLogTool_Execute_MissingSourceID(t *testing.T) {
+func TestRedisSlowLogTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewRedisSlowLogTool(&mockRedisClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestRedisSlowLogTool_Execute_Error(t *testing.T) {
 	tool := core.NewRedisSlowLogTool(&mockRedisClient{err: errors.New("timeout")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "redis-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "redis-1"})
 	if err == nil {
 		t.Error("expected error from slowlog, got nil")
 	}
@@ -502,8 +502,8 @@ func TestMongoDBStatTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 	if _, ok := params.Properties["action"]; !ok {
 		t.Error("Parameters() missing action")
@@ -515,15 +515,15 @@ func TestMongoDBStatTool_Execute_ServerStatus(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{serverStatus: status})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mongo-1",
+		"component_id": "mongo-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "mongo-1" {
-		t.Errorf("source_id = %v, want mongo-1", m["source_id"])
+	if m["component_id"] != "mongo-1" {
+		t.Errorf("component_id = %v, want mongo-1", m["component_id"])
 	}
 	if m["action"] != "server_status" {
 		t.Errorf("action = %v, want server_status", m["action"])
@@ -535,8 +535,8 @@ func TestMongoDBStatTool_Execute_ReplicaStatus(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{replicaStatus: status})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mongo-1",
-		"action":    "replica_status",
+		"component_id": "mongo-1",
+		"action":       "replica_status",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -553,8 +553,8 @@ func TestMongoDBStatTool_Execute_CurrentOp(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{currentOp: op})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mongo-1",
-		"action":    "current_op",
+		"component_id": "mongo-1",
+		"action":       "current_op",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -569,25 +569,25 @@ func TestMongoDBStatTool_Execute_CurrentOp(t *testing.T) {
 func TestMongoDBStatTool_Execute_UnknownAction(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "mongo-1",
-		"action":    "invalid_action",
+		"component_id": "mongo-1",
+		"action":       "invalid_action",
 	})
 	if err == nil {
 		t.Error("expected error for unknown action, got nil")
 	}
 }
 
-func TestMongoDBStatTool_Execute_MissingSourceID(t *testing.T) {
+func TestMongoDBStatTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestMongoDBStatTool_Execute_Error(t *testing.T) {
 	tool := core.NewMongoDBStatTool(&mockMongoDBClient{err: errors.New("connection refused")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "mongo-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "mongo-1"})
 	if err == nil {
 		t.Error("expected error from server_status, got nil")
 	}
@@ -636,8 +636,8 @@ func TestKafkaTopicsTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -649,7 +649,7 @@ func TestKafkaTopicsTool_Execute_Success(t *testing.T) {
 	tool := core.NewKafkaTopicsTool(&mockKafkaClient{topics: topics})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "kafka-1",
+		"component_id": "kafka-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -661,17 +661,17 @@ func TestKafkaTopicsTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestKafkaTopicsTool_Execute_MissingSourceID(t *testing.T) {
+func TestKafkaTopicsTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewKafkaTopicsTool(&mockKafkaClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestKafkaTopicsTool_Execute_Error(t *testing.T) {
 	tool := core.NewKafkaTopicsTool(&mockKafkaClient{err: errors.New("broker unavailable")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "kafka-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "kafka-1"})
 	if err == nil {
 		t.Error("expected error from topics, got nil")
 	}
@@ -694,7 +694,7 @@ func TestKafkaBrokersTool_Execute_Success(t *testing.T) {
 	tool := core.NewKafkaBrokersTool(&mockKafkaClient{brokers: brokers})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "kafka-1",
+		"component_id": "kafka-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -706,17 +706,17 @@ func TestKafkaBrokersTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestKafkaBrokersTool_Execute_MissingSourceID(t *testing.T) {
+func TestKafkaBrokersTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewKafkaBrokersTool(&mockKafkaClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestKafkaBrokersTool_Execute_Error(t *testing.T) {
 	tool := core.NewKafkaBrokersTool(&mockKafkaClient{err: errors.New("timeout")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "kafka-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "kafka-1"})
 	if err == nil {
 		t.Error("expected error from brokers, got nil")
 	}
@@ -741,7 +741,7 @@ func TestKafkaConsumerGroupsTool_Execute_Success(t *testing.T) {
 	tool := core.NewKafkaConsumerGroupsTool(&mockKafkaClient{groups: groups})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "kafka-1",
+		"component_id": "kafka-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -753,17 +753,17 @@ func TestKafkaConsumerGroupsTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestKafkaConsumerGroupsTool_Execute_MissingSourceID(t *testing.T) {
+func TestKafkaConsumerGroupsTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewKafkaConsumerGroupsTool(&mockKafkaClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestKafkaConsumerGroupsTool_Execute_Error(t *testing.T) {
 	tool := core.NewKafkaConsumerGroupsTool(&mockKafkaClient{err: errors.New("connection refused")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "kafka-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "kafka-1"})
 	if err == nil {
 		t.Error("expected error from consumer groups, got nil")
 	}
@@ -807,8 +807,8 @@ func TestElasticsearchHealthTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -823,32 +823,32 @@ func TestElasticsearchHealthTool_Execute_Success(t *testing.T) {
 	tool := core.NewElasticsearchHealthTool(&mockElasticsearchClient{health: health})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "es-1",
+		"component_id": "es-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "es-1" {
-		t.Errorf("source_id = %v, want es-1", m["source_id"])
+	if m["component_id"] != "es-1" {
+		t.Errorf("component_id = %v, want es-1", m["component_id"])
 	}
 	if m["health"] == nil {
 		t.Error("health should not be nil")
 	}
 }
 
-func TestElasticsearchHealthTool_Execute_MissingSourceID(t *testing.T) {
+func TestElasticsearchHealthTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewElasticsearchHealthTool(&mockElasticsearchClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestElasticsearchHealthTool_Execute_Error(t *testing.T) {
 	tool := core.NewElasticsearchHealthTool(&mockElasticsearchClient{err: errors.New("cluster unreachable")})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "es-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "es-1"})
 	if err == nil {
 		t.Error("expected error from health, got nil")
 	}
@@ -876,8 +876,8 @@ func TestElasticsearchIndicesTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 	if _, ok := params.Properties["pattern"]; !ok {
 		t.Error("Parameters() missing pattern")
@@ -892,8 +892,8 @@ func TestElasticsearchIndicesTool_Execute_Success(t *testing.T) {
 	tool := core.NewElasticsearchIndicesTool(&mockElasticsearchClient{indices: indices})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "es-1",
-		"pattern":   "logs-*",
+		"component_id": "es-1",
+		"pattern":      "logs-*",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -913,7 +913,7 @@ func TestElasticsearchIndicesTool_Execute_NoPattern(t *testing.T) {
 	tool := core.NewElasticsearchIndicesTool(&mockElasticsearchClient{indices: indices})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "es-1",
+		"component_id": "es-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -925,19 +925,19 @@ func TestElasticsearchIndicesTool_Execute_NoPattern(t *testing.T) {
 	}
 }
 
-func TestElasticsearchIndicesTool_Execute_MissingSourceID(t *testing.T) {
+func TestElasticsearchIndicesTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewElasticsearchIndicesTool(&mockElasticsearchClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestElasticsearchIndicesTool_Execute_Error(t *testing.T) {
 	tool := core.NewElasticsearchIndicesTool(&mockElasticsearchClient{err: errors.New("cluster unreachable")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "es-1",
-		"pattern":   "logs-*",
+		"component_id": "es-1",
+		"pattern":      "logs-*",
 	})
 	if err == nil {
 		t.Error("expected error from indices, got nil")
@@ -947,7 +947,7 @@ func TestElasticsearchIndicesTool_Execute_Error(t *testing.T) {
 func TestElasticsearchIndicesTool_Execute_NilIndices(t *testing.T) {
 	tool := core.NewElasticsearchIndicesTool(&mockElasticsearchClient{indices: nil})
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "es-1",
+		"component_id": "es-1",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)

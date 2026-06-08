@@ -53,8 +53,8 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 	// 021 (the principals table), and 022 (chat sessions) now sit above 017, so
 	// reverting 017 requires first reverting them. Stepping -6 lands the schema
 	// just below 017, which is what this test exercises.
-	if err := m.Steps(-6); err != nil {
-		t.Fatalf("Steps(-6): %v", err)
+	if err := m.Steps(-7); err != nil {
+		t.Fatalf("Steps(-7): %v", err)
 	}
 	// After the down, the four new tables must be gone.
 	for _, table := range []string{

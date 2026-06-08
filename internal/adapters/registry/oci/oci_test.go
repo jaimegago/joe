@@ -442,7 +442,7 @@ func TestListRepositories_RelativeLinkPagination(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource_Success(t *testing.T) {
+func TestConnect_ViaComponent_Success(t *testing.T) {
 	// Connect requires a real HTTP connection to /v2/; use httptest.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(w http.ResponseWriter, _ *http.Request) {
@@ -452,7 +452,7 @@ func TestConnect_ViaSource_Success(t *testing.T) {
 	defer srv.Close()
 
 	a := oci.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(fmt.Sprintf(`{"registry_url":%q}`, srv.URL)),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -463,7 +463,7 @@ func TestConnect_ViaSource_Success(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource_Auth401(t *testing.T) {
+func TestConnect_ViaComponent_Auth401(t *testing.T) {
 	// 401 from /v2/ is valid (auth required but registry is live).
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(w http.ResponseWriter, _ *http.Request) {
@@ -473,7 +473,7 @@ func TestConnect_ViaSource_Auth401(t *testing.T) {
 	defer srv.Close()
 
 	a := oci.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(fmt.Sprintf(`{"registry_url":%q}`, srv.URL)),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -484,7 +484,7 @@ func TestConnect_ViaSource_Auth401(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource_UnexpectedStatus(t *testing.T) {
+func TestConnect_ViaComponent_UnexpectedStatus(t *testing.T) {
 	// Non-200/401 status should return error.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(w http.ResponseWriter, _ *http.Request) {
@@ -494,7 +494,7 @@ func TestConnect_ViaSource_UnexpectedStatus(t *testing.T) {
 	defer srv.Close()
 
 	a := oci.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(fmt.Sprintf(`{"registry_url":%q}`, srv.URL)),
 	}
 	if err := a.Connect(context.Background(), src); err == nil {
@@ -502,18 +502,18 @@ func TestConnect_ViaSource_UnexpectedStatus(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource_BadConfig(t *testing.T) {
+func TestConnect_ViaComponent_BadConfig(t *testing.T) {
 	a := oci.New()
-	src := store.Source{Config: []byte(`{}`)} // missing registry_url
+	src := store.Component{Config: []byte(`{}`)} // missing registry_url
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing registry_url")
 	}
 }
 
-func TestConnect_ViaSource_NetworkError(t *testing.T) {
+func TestConnect_ViaComponent_NetworkError(t *testing.T) {
 	// Point to a URL that will fail to connect (no server listening).
 	a := oci.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"registry_url":"http://127.0.0.1:19999"}`),
 	}
 	if err := a.Connect(context.Background(), src); err == nil {

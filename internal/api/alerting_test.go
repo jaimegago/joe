@@ -25,8 +25,8 @@ type mockAlertmanagerAdapter struct {
 	err    error
 }
 
-func (m *mockAlertmanagerAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockAlertmanagerAdapter) Disconnect() error                               { return nil }
+func (m *mockAlertmanagerAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockAlertmanagerAdapter) Disconnect() error                                  { return nil }
 func (m *mockAlertmanagerAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -42,8 +42,8 @@ type mockPagerDutyAdapter struct {
 	err       error
 }
 
-func (m *mockPagerDutyAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockPagerDutyAdapter) Disconnect() error                               { return nil }
+func (m *mockPagerDutyAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockPagerDutyAdapter) Disconnect() error                                  { return nil }
 func (m *mockPagerDutyAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -63,8 +63,8 @@ type mockGrafanaAdapter struct {
 	err        error
 }
 
-func (m *mockGrafanaAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockGrafanaAdapter) Disconnect() error                               { return nil }
+func (m *mockGrafanaAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockGrafanaAdapter) Disconnect() error                                  { return nil }
 func (m *mockGrafanaAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -177,7 +177,7 @@ func TestHandleAlertmanagerAlerts(t *testing.T) {
 	}
 }
 
-func TestHandleAlertmanagerAlerts_MissingSource(t *testing.T) {
+func TestHandleAlertmanagerAlerts_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -291,7 +291,7 @@ func TestHandlePagerDutyIncidents_WithParams(t *testing.T) {
 	}
 }
 
-func TestHandlePagerDutyIncidents_MissingSource(t *testing.T) {
+func TestHandlePagerDutyIncidents_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -467,7 +467,7 @@ func TestHandleGrafanaGetDashboard(t *testing.T) {
 	}
 }
 
-func TestHandleGrafanaGetDashboard_MissingSource(t *testing.T) {
+func TestHandleGrafanaGetDashboard_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -540,7 +540,7 @@ func TestHandleGrafanaAlerts(t *testing.T) {
 	}
 }
 
-func TestHandleGrafanaAlerts_MissingSource(t *testing.T) {
+func TestHandleGrafanaAlerts_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)

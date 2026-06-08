@@ -59,15 +59,15 @@ func (e *Engine) ProcessInput(ctx context.Context, input string) (err error) {
 
 // DiscoverInfrastructure performs automated infrastructure discovery
 func (e *Engine) DiscoverInfrastructure(ctx context.Context, sourceID int64) error {
-	e.logger.Info("discovering infrastructure", "source_id", sourceID)
+	e.logger.Info("discovering infrastructure", "component_id", sourceID)
 
 	// Phase 5 MVP: Placeholder for future LLM-powered discovery
 	// Future implementation will:
-	// 1. Connect to infrastructure sources
+	// 1. Connect to infrastructure components
 	// 2. Query for resources
 	// 3. Use LLM to interpret and categorize findings
 	// 4. Update the knowledge graph
 
-	e.logger.Info("infrastructure discovery completed", "source_id", sourceID)
+	e.logger.Info("infrastructure discovery completed", "component_id", sourceID)
 	return nil
 }

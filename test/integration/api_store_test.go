@@ -91,8 +91,8 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Test source CRUD
-	t.Run("sources", func(t *testing.T) {
-		src := &store.Source{
+	t.Run("components", func(t *testing.T) {
+		src := &store.Component{
 			ID:     "test-k8s",
 			Type:   "kubernetes",
 			Name:   "Test Cluster",
@@ -100,12 +100,12 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 		}
 
 		// Create
-		if err := testStore.Sources.Create(ctx, src); err != nil {
+		if err := testStore.Components.Create(ctx, src); err != nil {
 			t.Fatalf("create failed: %v", err)
 		}
 
 		// Read
-		got, err := testStore.Sources.Get(ctx, "test-k8s")
+		got, err := testStore.Components.Get(ctx, "test-k8s")
 		if err != nil {
 			t.Fatalf("get failed: %v", err)
 		}
@@ -114,29 +114,29 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 		}
 
 		// List
-		sources, err := testStore.Sources.List(ctx)
+		components, err := testStore.Components.List(ctx)
 		if err != nil {
 			t.Fatalf("list failed: %v", err)
 		}
-		if len(sources) != 1 {
-			t.Errorf("expected 1 source, got %d", len(sources))
+		if len(components) != 1 {
+			t.Errorf("expected 1 source, got %d", len(components))
 		}
 
 		// Update
 		src.Name = "Updated Cluster"
-		if err := testStore.Sources.Update(ctx, src); err != nil {
+		if err := testStore.Components.Update(ctx, src); err != nil {
 			t.Fatalf("update failed: %v", err)
 		}
-		got, _ = testStore.Sources.Get(ctx, "test-k8s")
+		got, _ = testStore.Components.Get(ctx, "test-k8s")
 		if got.Name != "Updated Cluster" {
 			t.Errorf("expected 'Updated Cluster', got %q", got.Name)
 		}
 
 		// Delete
-		if err := testStore.Sources.Delete(ctx, "test-k8s"); err != nil {
+		if err := testStore.Components.Delete(ctx, "test-k8s"); err != nil {
 			t.Fatalf("delete failed: %v", err)
 		}
-		got, _ = testStore.Sources.Get(ctx, "test-k8s")
+		got, _ = testStore.Components.Get(ctx, "test-k8s")
 		if got != nil {
 			t.Error("expected nil after delete")
 		}

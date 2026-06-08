@@ -18,7 +18,7 @@ import (
 //
 // Declare and resolve are sourceless RBAC capabilities; they bypass the
 // source-keyed EnforcementMiddleware (which only fires on paths with
-// /api/v1/{adapter}/{sourceID}/...) and instead authorize via
+// /api/v1/{adapter}/{componentID}/...) and instead authorize via
 // PolicyEngine.HasZoneAccess against the seeded "regime-control" zone.
 // See the §6-B finding in internal/store/migrations/012_regime_rbac.up.sql.
 //

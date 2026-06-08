@@ -27,8 +27,8 @@ export const GraphSchema = z.object({
 
 export const SubgraphSchema = GraphSchema;
 
-// Sources
-export const SourceSchema = z.object({
+// Components
+export const ComponentSchema = z.object({
   id: z.string(),
   type: z.string(),
   name: z.string(),
@@ -51,8 +51,8 @@ export const SecurityZoneSchema = z.object({
   sourceCount: z.number().optional(),
 });
 
-export const SourceZoneAssignmentSchema = z.object({
-  source_id: z.string(),
+export const ComponentZoneAssignmentSchema = z.object({
+  component_id: z.string(),
   zone_id: z.string(),
   assigned_by: z.string(),
   assigned_at: z.string(),

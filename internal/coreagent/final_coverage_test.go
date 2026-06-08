@@ -40,7 +40,7 @@ func TestBuildMetricsInEdges_SkipsNonServiceNode(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-prom-skip", Type: store.SourceTypePrometheus}
+	src := &store.Component{ID: "src-prom-skip", Type: store.ComponentTypePrometheus}
 
 	edges, err := r.buildMetricsInEdges(ctx, src, "prom-node", []prometheusadapter.Target{
 		{State: "active", Labels: map[string]string{"job": "worker-1"}},
@@ -66,7 +66,7 @@ func TestBuildMetricsInEdges_WithMatchingDeployment(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-prom-dep", Type: store.SourceTypePrometheus}
+	src := &store.Component{ID: "src-prom-dep", Type: store.ComponentTypePrometheus}
 
 	edges, err := r.buildMetricsInEdges(ctx, src, "prom-node", []prometheusadapter.Target{
 		{State: "active", Labels: map[string]string{"job": "api"}},
@@ -100,7 +100,7 @@ func TestBuildAlertsInEdges_Deduplication(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-am-dedup", Type: store.SourceTypeAlertmanager}
+	src := &store.Component{ID: "src-am-dedup", Type: store.ComponentTypeAlertmanager}
 
 	// Two alerts with the same service name → only one edge expected.
 	alerts := []alertmanageradapter.Alert{
@@ -139,7 +139,7 @@ func TestBuildAlertsInEdges_NonServiceNodeSkipped(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-am-skip", Type: store.SourceTypeAlertmanager}
+	src := &store.Component{ID: "src-am-skip", Type: store.ComponentTypeAlertmanager}
 
 	alerts := []alertmanageradapter.Alert{
 		{
@@ -442,7 +442,7 @@ func TestExecuteJoeFileToolCalls_SaveFactMissingArgs(t *testing.T) {
 }
 
 // ============================================================
-// refreshGitSource: ProcessJoeFiles error branch (joe_dir_present = false)
+// refreshGitComponent: ProcessJoeFiles error branch (joe_dir_present = false)
 // ============================================================
 
 type errListGitAdapter struct {
@@ -457,7 +457,7 @@ func (e *errListGitAdapter) ListFiles(_ context.Context, dir string) ([]gitadapt
 	return nil, nil
 }
 
-func TestRefreshGitSource_ProcessJoeFilesError(t *testing.T) {
+func TestRefreshGitComponent_ProcessJoeFilesError(t *testing.T) {
 	gs := setupGraphStore(t)
 	cache := newFakeCache()
 	fakeLLMInst := &fakeLLM{}
@@ -469,19 +469,19 @@ func TestRefreshGitSource_ProcessJoeFilesError(t *testing.T) {
 		logger:         slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-git-err", Type: store.SourceTypeGit, Name: "err-repo"}
+	source := &store.Component{ID: "src-git-err", Type: store.ComponentTypeGit, Name: "err-repo"}
 	adapter := &errListGitAdapter{
 		listErr: errors.New("permission denied"),
 	}
 
 	// Should not return an error — the git refresh logs the warning and continues.
-	if err := refresher.refreshGitSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshGitSource should not error on ProcessJoeFiles failure, got: %v", err)
+	if err := refresher.refreshGitComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshGitComponent should not error on ProcessJoeFiles failure, got: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), gs, source.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), gs, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 	if len(nodes) != 1 {
 		t.Fatalf("nodes = %d, want 1", len(nodes))
@@ -497,7 +497,7 @@ func TestRefreshGitSource_ProcessJoeFilesError(t *testing.T) {
 // Loki/Tempo/Jaeger: non-service-node skip branch
 // ============================================================
 
-func TestRefreshLokiSource_SkipsNonServiceNode(t *testing.T) {
+func TestRefreshLokiComponent_SkipsNonServiceNode(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
@@ -511,17 +511,17 @@ func TestRefreshLokiSource_SkipsNonServiceNode(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-loki-skip", Type: store.SourceTypeLoki, Name: "test-loki"}
+	src := &store.Component{ID: "src-loki-skip", Type: store.ComponentTypeLoki, Name: "test-loki"}
 	adapter := &fakeLokiAdapter{services: []string{"loki-worker"}}
 
-	if err := r.refreshLokiSource(ctx, src, adapter); err != nil {
-		t.Fatalf("refreshLokiSource error: %v", err)
+	if err := r.refreshLokiComponent(ctx, src, adapter); err != nil {
+		t.Fatalf("refreshLokiComponent error: %v", err)
 	}
 
 	// The loki node itself is added, but no logs_in edge should exist.
-	nodes, edges, err := LoadGraphStateForSource(ctx, gs, src.ID)
+	nodes, edges, err := LoadGraphStateForComponent(ctx, gs, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(nodes) != 1 {
 		t.Errorf("want 1 node (loki source), got %d", len(nodes))
@@ -531,7 +531,7 @@ func TestRefreshLokiSource_SkipsNonServiceNode(t *testing.T) {
 	}
 }
 
-func TestRefreshTempoSource_SkipsNonServiceNode(t *testing.T) {
+func TestRefreshTempoComponent_SkipsNonServiceNode(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
@@ -544,23 +544,23 @@ func TestRefreshTempoSource_SkipsNonServiceNode(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-tempo-skip", Type: store.SourceTypeTempo, Name: "test-tempo"}
+	src := &store.Component{ID: "src-tempo-skip", Type: store.ComponentTypeTempo, Name: "test-tempo"}
 	adapter := &fakeTempoAdapter{services: []string{"tempo-worker"}}
 
-	if err := r.refreshTempoSource(ctx, src, adapter); err != nil {
-		t.Fatalf("refreshTempoSource error: %v", err)
+	if err := r.refreshTempoComponent(ctx, src, adapter); err != nil {
+		t.Fatalf("refreshTempoComponent error: %v", err)
 	}
 
-	_, edges, err := LoadGraphStateForSource(ctx, gs, src.ID)
+	_, edges, err := LoadGraphStateForComponent(ctx, gs, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for non-service node, got %d", len(edges))
 	}
 }
 
-func TestRefreshJaegerSource_SkipsNonServiceNode(t *testing.T) {
+func TestRefreshJaegerComponent_SkipsNonServiceNode(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
@@ -573,16 +573,16 @@ func TestRefreshJaegerSource_SkipsNonServiceNode(t *testing.T) {
 	}
 
 	r := &Refresher{services: &core.Services{Graph: gs}, logger: slog.Default()}
-	src := &store.Source{ID: "src-jaeger-skip", Type: store.SourceTypeJaeger, Name: "test-jaeger"}
+	src := &store.Component{ID: "src-jaeger-skip", Type: store.ComponentTypeJaeger, Name: "test-jaeger"}
 	adapter := &fakeJaegerAdapter{services: []string{"jaeger-worker"}}
 
-	if err := r.refreshJaegerSource(ctx, src, adapter); err != nil {
-		t.Fatalf("refreshJaegerSource error: %v", err)
+	if err := r.refreshJaegerComponent(ctx, src, adapter); err != nil {
+		t.Fatalf("refreshJaegerComponent error: %v", err)
 	}
 
-	_, edges, err := LoadGraphStateForSource(ctx, gs, src.ID)
+	_, edges, err := LoadGraphStateForComponent(ctx, gs, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for non-service node, got %d", len(edges))
@@ -596,7 +596,7 @@ func TestRefreshJaegerSource_SkipsNonServiceNode(t *testing.T) {
 func TestBuildMetricsInEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-prom-qerr", Type: store.SourceTypePrometheus}
+	src := &store.Component{ID: "src-prom-qerr", Type: store.ComponentTypePrometheus}
 
 	edges, err := r.buildMetricsInEdges(context.Background(), src, "prom-node", []prometheusadapter.Target{
 		{State: "active", Labels: map[string]string{"job": "payment"}},
@@ -610,106 +610,106 @@ func TestBuildMetricsInEdges_QueryError(t *testing.T) {
 }
 
 // ============================================================
-// applyRegistryDelta: error path from LoadGraphStateForSource
+// applyRegistryDelta: error path from LoadGraphStateForComponent
 // ============================================================
 
 type errListNodesGraphStore struct {
 	errorGraphStore
 }
 
-func (e *errListNodesGraphStore) ListNodesBySource(_ context.Context, _ string) ([]graph.Node, error) {
+func (e *errListNodesGraphStore) ListNodesByComponent(_ context.Context, _ string) ([]graph.Node, error) {
 	return nil, errors.New("db error listing nodes")
 }
 
 func TestApplyRegistryDelta_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-reg-err", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-reg-err", Type: store.ComponentTypeOCIRegistry}
 
 	err := r.applyRegistryDelta(context.Background(), src, []graph.Node{}, []graph.Edge{}, "oci")
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
 // ============================================================
-// Splunk / Dynatrace / NewRelic: LoadGraphStateForSource error paths
+// Splunk / Dynatrace / NewRelic: LoadGraphStateForComponent error paths
 // ============================================================
 
-func TestRefreshSplunkSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshSplunkComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-splunk-err", Type: store.SourceTypeSplunk}
+	src := &store.Component{ID: "src-splunk-err", Type: store.ComponentTypeSplunk}
 
-	err := r.refreshSplunkSource(context.Background(), src, &fakeSplunkAdapter{})
+	err := r.refreshSplunkComponent(context.Background(), src, &fakeSplunkAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshDynatraceSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshDynatraceComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-dyna-err", Type: store.SourceTypeDynatrace}
+	src := &store.Component{ID: "src-dyna-err", Type: store.ComponentTypeDynatrace}
 
-	err := r.refreshDynatraceSource(context.Background(), src, &fakeDynatraceAdapter{})
+	err := r.refreshDynatraceComponent(context.Background(), src, &fakeDynatraceAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshNewRelicSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshNewRelicComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-nr-err", Type: store.SourceTypeNewRelic}
+	src := &store.Component{ID: "src-nr-err", Type: store.ComponentTypeNewRelic}
 
-	err := r.refreshNewRelicSource(context.Background(), src, &fakeNewRelicAdapter{})
+	err := r.refreshNewRelicComponent(context.Background(), src, &fakeNewRelicAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshPrometheusSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshPrometheusComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-prom-lgs-err", Type: store.SourceTypePrometheus}
+	src := &store.Component{ID: "src-prom-lgs-err", Type: store.ComponentTypePrometheus}
 
-	err := r.refreshPrometheusSource(context.Background(), src, &fakePrometheusAdapter{})
+	err := r.refreshPrometheusComponent(context.Background(), src, &fakePrometheusAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshLokiSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshLokiComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-loki-lgs-err", Type: store.SourceTypeLoki}
+	src := &store.Component{ID: "src-loki-lgs-err", Type: store.ComponentTypeLoki}
 
-	err := r.refreshLokiSource(context.Background(), src, &fakeLokiAdapter{})
+	err := r.refreshLokiComponent(context.Background(), src, &fakeLokiAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshTempoSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshTempoComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-tempo-lgs-err", Type: store.SourceTypeTempo}
+	src := &store.Component{ID: "src-tempo-lgs-err", Type: store.ComponentTypeTempo}
 
-	err := r.refreshTempoSource(context.Background(), src, &fakeTempoAdapter{})
+	err := r.refreshTempoComponent(context.Background(), src, &fakeTempoAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
-func TestRefreshJaegerSource_LoadGraphStateError(t *testing.T) {
+func TestRefreshJaegerComponent_LoadGraphStateError(t *testing.T) {
 	gs := &errListNodesGraphStore{}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-jaeger-lgs-err", Type: store.SourceTypeJaeger}
+	src := &store.Component{ID: "src-jaeger-lgs-err", Type: store.ComponentTypeJaeger}
 
-	err := r.refreshJaegerSource(context.Background(), src, &fakeJaegerAdapter{})
+	err := r.refreshJaegerComponent(context.Background(), src, &fakeJaegerAdapter{})
 	if err == nil {
-		t.Error("expected error when LoadGraphStateForSource fails")
+		t.Error("expected error when LoadGraphStateForComponent fails")
 	}
 }
 
@@ -806,9 +806,9 @@ func TestProcessJoeFiles_CacheUnmarshalError_FallsBackToLLM(t *testing.T) {
 }
 
 // ============================================================
-// refreshPrometheusSource: buildMetricsInEdges error path
+// refreshPrometheusComponent: buildMetricsInEdges error path
 // NOTE: buildMetricsInEdges always returns nil error currently,
-// so we focus on the refreshPrometheusSource ApplyGraphDelta error.
+// so we focus on the refreshPrometheusComponent ApplyGraphDelta error.
 // ============================================================
 
 type addEdgeErrGraphStore struct {
@@ -821,7 +821,7 @@ func (e *addEdgeErrGraphStore) AddNode(ctx context.Context, node graph.Node) err
 	return nil
 }
 
-func (e *addEdgeErrGraphStore) ListNodesBySource(_ context.Context, _ string) ([]graph.Node, error) {
+func (e *addEdgeErrGraphStore) ListNodesByComponent(_ context.Context, _ string) ([]graph.Node, error) {
 	return nil, nil
 }
 
@@ -833,7 +833,7 @@ func (e *addEdgeErrGraphStore) AddEdge(_ context.Context, _ graph.Edge) error {
 	return errors.New("failed to add edge")
 }
 
-func TestRefreshPrometheusSource_ApplyDeltaError(t *testing.T) {
+func TestRefreshPrometheusComponent_ApplyDeltaError(t *testing.T) {
 	// Seed a real service node so buildMetricsInEdges produces an edge,
 	// then make AddEdge fail so ApplyGraphDelta returns an error.
 	realGs := setupGraphStore(t)
@@ -853,7 +853,7 @@ func TestRefreshPrometheusSource_ApplyDeltaError(t *testing.T) {
 		services: &core.Services{Graph: gs},
 		logger:   slog.Default(),
 	}
-	src := &store.Source{ID: "src-prom-applyerr", Type: store.SourceTypePrometheus}
+	src := &store.Component{ID: "src-prom-applyerr", Type: store.ComponentTypePrometheus}
 
 	// Use the real graph for the query in buildMetricsInEdges.
 	r.services.Graph = realGs
@@ -871,7 +871,7 @@ func TestRefreshPrometheusSource_ApplyDeltaError(t *testing.T) {
 		},
 	}
 
-	err := r2.refreshPrometheusSource(ctx, src, adapter)
+	err := r2.refreshPrometheusComponent(ctx, src, adapter)
 	if err == nil {
 		t.Error("expected error when AddEdge fails during ApplyGraphDelta")
 	}

@@ -46,7 +46,7 @@ const (
 	DecisionDeny  Decision = "deny"
 )
 
-// Kind discriminates the three sources of audit rows. The kind is the
+// Kind discriminates the three components of audit rows. The kind is the
 // audit_log.kind column value (see migration 015).
 type Kind string
 
@@ -228,13 +228,13 @@ const (
 	// ActionAdminPolicyRead records an admin listing/reading policies
 	// (GET /api/v1/admin/policies) — leaks who holds which zone. Read-class.
 	ActionAdminPolicyRead = "policy.read"
-	// ActionAdminSourceZoneAssign records an admin assigning a source to a
-	// zone (POST /api/v1/admin/source-zones). Decision "allow"; mutating.
-	ActionAdminSourceZoneAssign = "source_zone.assign"
-	// ActionAdminSourceZoneRead records an admin listing source-zone
+	// ActionAdminComponentZoneAssign records an admin assigning a source to a
+	// zone (POST /api/v1/admin/component-zones). Decision "allow"; mutating.
+	ActionAdminComponentZoneAssign = "component_zone.assign"
+	// ActionAdminComponentZoneRead records an admin listing source-zone
 	// assignments OR the unassigned-source roster (GET
-	// /api/v1/admin/source-zones, GET /api/v1/admin/unassigned). Read-class.
-	ActionAdminSourceZoneRead = "source_zone.read"
+	// /api/v1/admin/component-zones, GET /api/v1/admin/unassigned). Read-class.
+	ActionAdminComponentZoneRead = "component_zone.read"
 	// ActionAdminGrant records an admin promoting another principal to
 	// admin via the admin REST surface (POST /api/v1/admin/admins →
 	// Provisioner.GrantAdmin → internal/rbac AddAdmin), the single audited
@@ -276,10 +276,10 @@ const (
 	// (DELETE /api/v1/admin/zones/{id}). rbac_policies for the zone cascade;
 	// a zone still referenced by a source assignment is refused (RESTRICT).
 	ActionAdminZoneDelete = "zone.delete"
-	// ActionAdminSourceZoneUnassign records an admin removing a source→zone
-	// assignment (DELETE /api/v1/admin/source-zones/{sourceID}). The source
+	// ActionAdminComponentZoneUnassign records an admin removing a source→zone
+	// assignment (DELETE /api/v1/admin/component-zones/{componentID}). The source
 	// then falls back to the default unassigned zone.
-	ActionAdminSourceZoneUnassign = "source_zone.unassign"
+	ActionAdminComponentZoneUnassign = "component_zone.unassign"
 	// ActionAdminPrincipalDisable records an admin disabling a principal in
 	// the identity registry (status active→disabled).
 	ActionAdminPrincipalDisable = "principal.disable"
@@ -313,8 +313,8 @@ const KindAdminAccess Kind = "admin_access"
 //   - Target: WHAT was acted on — the target resource identifier. For a
 //     zone: "zone:<id>"; a policy grant: "policy:<principal>@<zone>"; a
 //     policy revoke: "policy:<id>"; a source-zone assignment:
-//     "source_zone:<sourceID>"; a read: the resource collection name
-//     ("zones", "policies", "source_zones", "unassigned"); a denial: the
+//     "component_zone:<sourceID>"; a read: the resource collection name
+//     ("zones", "policies", "component_zones", "unassigned"); a denial: the
 //     attempted endpoint "<METHOD> <path>". Always set.
 //
 //   - Before: the target's state BEFORE the mutation, for revokes and
@@ -338,14 +338,14 @@ type Details struct {
 // (migration 015). Timestamp is filled by the repository if zero; callers
 // are not required to stamp.
 type Event struct {
-	Timestamp time.Time
-	Principal string
-	Action    string
-	Zone      string
-	Source    string
-	Decision  Decision
-	Reason    string
-	Kind      Kind
+	Timestamp   time.Time
+	Principal   string
+	Action      string
+	Zone        string
+	ComponentID string
+	Decision    Decision
+	Reason      string
+	Kind        Kind
 	// Context is a JSON blob carrying kind-specific specifics
 	// (declared_kind, session_id, captain_id, transfer initiator, etc.).
 	// "" is stored as the default "{}" by the repository.
@@ -487,11 +487,11 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 // isFailOpen reports whether the given action verb is read-class for the
 // purposes of the §4 failure split. Read-class: the infra read verbs "read"
 // and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
-// D-0013 admin-surface read verbs (zone.read, policy.read, source_zone.read,
+// D-0013 admin-surface read verbs (zone.read, policy.read, component_zone.read,
 // admin.read, principal.read).
 // Mutate-class: everything else, including all transition verbs, the admin
 // mutations (zone.create, zone.update, zone.delete, policy.grant,
-// policy.revoke, source_zone.assign, source_zone.unassign, admin.grant,
+// policy.revoke, component_zone.assign, component_zone.unassign, admin.grant,
 // admin.revoke, principal.disable, principal.enable), and the admin
 // gate-denial verb (admin.access_denied is a deny event, not a read — its
 // absence must be loud, matching captaingate's fail-closed refusal posture).
@@ -505,7 +505,7 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 func isFailOpen(action string) bool {
 	switch action {
 	case "read", "query",
-		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminSourceZoneRead,
+		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
 		ActionAdminAdminRead, ActionAdminPrincipalRead:
 		return true
 	default:

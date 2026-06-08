@@ -102,11 +102,11 @@ func TestSQLRepository_UpsertAssignment(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	a := rbac.SourceZoneAssignment{
-		SourceID:   "k8s-prod",
-		ZoneID:     "prod-readonly",
-		AssignedBy: "admin",
-		Reason:     "initial assignment",
+	a := rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod",
+		ZoneID:      "prod-readonly",
+		AssignedBy:  "admin",
+		Reason:      "initial assignment",
 	}
 
 	// First upsert
@@ -167,8 +167,8 @@ func TestSQLRepository_ListAssignments(t *testing.T) {
 	initialCount := len(initial)
 
 	// Assign k8s-prod
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
 	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
@@ -298,33 +298,33 @@ func TestSQLRepository_DeletePolicy(t *testing.T) {
 	}
 }
 
-func TestSQLRepository_ListUnassignedSourceIDs(t *testing.T) {
+func TestSQLRepository_ListUnassignedComponentIDs(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	// Both seeded sources (k8s-prod, k8s-dev) are initially unassigned
-	unassigned, err := repo.ListUnassignedSourceIDs(ctx)
+	// Both seeded components (k8s-prod, k8s-dev) are initially unassigned
+	unassigned, err := repo.ListUnassignedComponentIDs(ctx)
 	if err != nil {
-		t.Fatalf("ListUnassignedSourceIDs: %v", err)
+		t.Fatalf("ListUnassignedComponentIDs: %v", err)
 	}
 	if len(unassigned) != 2 {
-		t.Errorf("got %d unassigned sources, want 2", len(unassigned))
+		t.Errorf("got %d unassigned components, want 2", len(unassigned))
 	}
 
 	// Assign k8s-prod → should drop to 1
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
 	}, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
 
-	unassigned, err = repo.ListUnassignedSourceIDs(ctx)
+	unassigned, err = repo.ListUnassignedComponentIDs(ctx)
 	if err != nil {
-		t.Fatalf("ListUnassignedSourceIDs after assign: %v", err)
+		t.Fatalf("ListUnassignedComponentIDs after assign: %v", err)
 	}
 	if len(unassigned) != 1 {
-		t.Errorf("got %d unassigned sources after assigning one, want 1", len(unassigned))
+		t.Errorf("got %d unassigned components after assigning one, want 1", len(unassigned))
 	}
 	if len(unassigned) > 0 && unassigned[0] != "k8s-dev" {
 		t.Errorf("remaining unassigned = %q, want %q", unassigned[0], "k8s-dev")
@@ -391,10 +391,10 @@ func TestSQLRepository_UpsertAssignment_TimestampSet(t *testing.T) {
 	ctx := context.Background()
 
 	// AssignedAt is intentionally left zero so the auto-populate branch fires.
-	a := rbac.SourceZoneAssignment{
-		SourceID:   "k8s-dev",
-		ZoneID:     "dev-full",
-		AssignedBy: "auto-test",
+	a := rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-dev",
+		ZoneID:      "dev-full",
+		AssignedBy:  "auto-test",
 	}
 	if err := repo.UpsertAssignment(ctx, a, "test"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
@@ -419,19 +419,19 @@ func TestSQLRepository_ListAssignments_ScanRows(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	sources := []struct {
+	components := []struct {
 		sourceID string
 		zoneID   string
 	}{
 		{"k8s-prod", "prod-readonly"},
 		{"k8s-dev", "dev-full"},
 	}
-	for _, s := range sources {
-		if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-			SourceID:   s.sourceID,
-			ZoneID:     s.zoneID,
-			AssignedBy: "admin",
-			Reason:     "test",
+	for _, s := range components {
+		if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+			ComponentID: s.sourceID,
+			ZoneID:      s.zoneID,
+			AssignedBy:  "admin",
+			Reason:      "test",
 		}, "test"); err != nil {
 			t.Fatalf("UpsertAssignment %s: %v", s.sourceID, err)
 		}
@@ -445,8 +445,8 @@ func TestSQLRepository_ListAssignments_ScanRows(t *testing.T) {
 		t.Fatalf("got %d assignments, want 2", len(assignments))
 	}
 	for _, a := range assignments {
-		if a.SourceID == "" {
-			t.Error("scanned assignment has empty SourceID")
+		if a.ComponentID == "" {
+			t.Error("scanned assignment has empty ComponentID")
 		}
 		if a.ZoneID == "" {
 			t.Error("scanned assignment has empty ZoneID")
@@ -556,31 +556,31 @@ func TestSQLRepository_DeletePolicy_NonExistentID(t *testing.T) {
 	}
 }
 
-// TestSQLRepository_ListUnassignedSourceIDs_AllAssigned verifies the empty-result
-// path of ListUnassignedSourceIDs when every source has been assigned.
-func TestSQLRepository_ListUnassignedSourceIDs_AllAssigned(t *testing.T) {
+// TestSQLRepository_ListUnassignedComponentIDs_AllAssigned verifies the empty-result
+// path of ListUnassignedComponentIDs when every source has been assigned.
+func TestSQLRepository_ListUnassignedComponentIDs_AllAssigned(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	// Assign both seeded sources.
+	// Assign both seeded components.
 	for _, s := range []struct{ id, zone string }{
 		{"k8s-prod", "prod-readonly"},
 		{"k8s-dev", "dev-full"},
 	} {
-		if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-			SourceID: s.id, ZoneID: s.zone, AssignedBy: "admin",
+		if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+			ComponentID: s.id, ZoneID: s.zone, AssignedBy: "admin",
 		}, "test"); err != nil {
 			t.Fatalf("UpsertAssignment %s: %v", s.id, err)
 		}
 	}
 
-	unassigned, err := repo.ListUnassignedSourceIDs(ctx)
+	unassigned, err := repo.ListUnassignedComponentIDs(ctx)
 	if err != nil {
-		t.Fatalf("ListUnassignedSourceIDs: %v", err)
+		t.Fatalf("ListUnassignedComponentIDs: %v", err)
 	}
 	if len(unassigned) != 0 {
-		t.Errorf("expected 0 unassigned sources when all are assigned, got %d: %v", len(unassigned), unassigned)
+		t.Errorf("expected 0 unassigned components when all are assigned, got %d: %v", len(unassigned), unassigned)
 	}
 }
 
@@ -644,8 +644,8 @@ func TestSQLRepository_UpsertAssignment_DBError(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
 	db.Close()
-	err := repo.UpsertAssignment(context.Background(), rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
+	err := repo.UpsertAssignment(context.Background(), rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "admin",
 	}, "test")
 	if err == nil {
 		t.Error("expected error from UpsertAssignment on closed DB")
@@ -694,12 +694,12 @@ func TestSQLRepository_DeletePolicy_DBError(t *testing.T) {
 	}
 }
 
-func TestSQLRepository_ListUnassignedSourceIDs_DBError(t *testing.T) {
+func TestSQLRepository_ListUnassignedComponentIDs_DBError(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
 	db.Close()
-	_, err := repo.ListUnassignedSourceIDs(context.Background())
+	_, err := repo.ListUnassignedComponentIDs(context.Background())
 	if err == nil {
-		t.Error("expected error from ListUnassignedSourceIDs on closed DB")
+		t.Error("expected error from ListUnassignedComponentIDs on closed DB")
 	}
 }

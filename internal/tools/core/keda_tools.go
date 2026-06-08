@@ -37,15 +37,15 @@ func (t *KEDAScaledObjectsTool) Description() string {
 		"Shows target workload, trigger types (Kafka, Prometheus, Redis, etc.), " +
 		"min/max replicas, and current scaling status. " +
 		"Use to understand how workloads are scaled and whether autoscaling is healthy. " +
-		"Use source_id of a Kubernetes source where KEDA is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where KEDA is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *KEDAScaledObjectsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where KEDA is installed).",
 			},
@@ -54,14 +54,14 @@ func (t *KEDAScaledObjectsTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter. Omit for all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *KEDAScaledObjectsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -80,7 +80,7 @@ func (t *KEDAScaledObjectsTool) Execute(ctx context.Context, args map[string]any
 		"scaled_objects": result,
 		"count":          total,
 		"namespace":      namespace,
-		"source_id":      sourceID,
+		"component_id":   sourceID,
 	}, nil
 }
 

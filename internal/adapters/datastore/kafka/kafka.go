@@ -134,7 +134,7 @@ func NewWithAdmin(a kafkaAdmin) *Adapter {
 }
 
 // Connect verifies connectivity to Kafka by dialing the first broker.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

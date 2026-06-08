@@ -26,15 +26,15 @@ func openClosedRBACDB(t *testing.T) *sql.DB {
 			id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
 			allowed_actions TEXT NOT NULL DEFAULT '["read"]', created_at TEXT NOT NULL
 		);
-		CREATE TABLE source_zone_assignments (
-			source_id TEXT NOT NULL, zone_id TEXT NOT NULL, assigned_by TEXT NOT NULL,
-			reason TEXT, assigned_at TEXT NOT NULL, PRIMARY KEY (source_id)
+		CREATE TABLE component_zone_assignments (
+			component_id TEXT NOT NULL, zone_id TEXT NOT NULL, assigned_by TEXT NOT NULL,
+			reason TEXT, assigned_at TEXT NOT NULL, PRIMARY KEY (component_id)
 		);
 		CREATE TABLE rbac_policies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, principal TEXT NOT NULL,
 			zone_id TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (principal, zone_id)
 		);
-		CREATE TABLE sources (id TEXT PRIMARY KEY, name TEXT);
+		CREATE TABLE components (id TEXT PRIMARY KEY, name TEXT);
 	`); err != nil {
 		t.Fatalf("seed schema: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestAdminListZones_RepoError(t *testing.T) {
 
 func TestAdminListAssignments_RepoError(t *testing.T) {
 	h := newClosedDBAdminHandler(t)
-	req := httptest.NewRequest("GET", "/api/v1/admin/source-zones", nil)
+	req := httptest.NewRequest("GET", "/api/v1/admin/component-zones", nil)
 	w := httptest.NewRecorder()
 	h.listAssignments(w, req)
 	if w.Code != http.StatusInternalServerError {
@@ -105,13 +105,13 @@ func TestAdminCreateZone_RepoError(t *testing.T) {
 	}
 }
 
-func TestAdminAssignSourceZone_RepoError(t *testing.T) {
+func TestAdminAssignComponentZone_RepoError(t *testing.T) {
 	h := newClosedDBAdminHandler(t)
-	body := `{"source_id":"s1","zone_id":"z1","assigned_by":"admin"}`
-	req := httptest.NewRequest("POST", "/api/v1/admin/source-zones", strings.NewReader(body))
+	body := `{"component_id":"s1","zone_id":"z1","assigned_by":"admin"}`
+	req := httptest.NewRequest("POST", "/api/v1/admin/component-zones", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	h.assignSourceZone(w, req)
+	h.assignComponentZone(w, req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", w.Code)
 	}

@@ -140,7 +140,7 @@ type LedgerEntry struct {
 	ToolName       string
 	Tier           Tier
 	Principal      string
-	SourceID       *string
+	ComponentID    *string
 	Summary        string
 	RecordedAt     time.Time
 	CompletedAt    *time.Time

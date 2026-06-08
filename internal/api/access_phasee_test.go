@@ -52,10 +52,10 @@ func TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-prod")
+	mustCreateComponent(t, sqlStore, "s-prod")
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign s-prod: %v", err)
 	}
@@ -187,13 +187,13 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-allow")
-	mustCreateSource(t, sqlStore, "s-deny")
+	mustCreateComponent(t, sqlStore, "s-allow")
+	mustCreateComponent(t, sqlStore, "s-deny")
 	repo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-deny", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-deny: %v", err)
 	}
 	if _, err := repo.CreatePolicy(ctx, rbac.Policy{Principal: "svc:operator", ZoneID: "prod-readonly"}, "test"); err != nil {
@@ -320,7 +320,7 @@ func buildPhaseEServices(t *testing.T, sqlStore *store.Store, rbacRepo rbac.Repo
 func mockToolThenFinalLLM() llm.LLMAdapter {
 	return &seqLLM{turns: []*llm.ChatResponse{
 		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "k8s_get", Args: map[string]any{
-			"source_id": "s-prod", "resource": "pods",
+			"component_id": "s-prod", "resource": "pods",
 		}}}},
 		{Content: "done"},
 	}}

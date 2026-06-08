@@ -626,23 +626,23 @@ func (h *webUIHandler) handleLinkIncident(w http.ResponseWriter, r *http.Request
 
 // handleGetAlerts returns an aggregated list of active alerts (stub).
 func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
-	// TODO: aggregate from Alertmanager/Grafana sources
+	// TODO: aggregate from Alertmanager/Grafana components
 	writeJSON(w, http.StatusOK, map[string]any{
 		"alerts": []any{},
 		"count":  0,
 	})
 }
 
-// handleTestSource tests whether a source connection is healthy by building a
+// handleTestComponent tests whether a source connection is healthy by building a
 // fresh adapter and actually connecting to the backend. On success the live
 // adapter is (re)registered — self-healing an "adapter not found" state left by
 // a failed startup connect — and the source's error status is cleared; on
-// failure the live error is persisted so the sources list reflects reality.
+// failure the live error is persisted so the components list reflects reality.
 //
 // HTTP 200 is returned for both connect outcomes (the JSON "ok" field carries
 // the result) so that request-level failures (400/404/503) stay distinct from a
 // reachable-but-unhealthy backend.
-func (h *webUIHandler) handleTestSource(w http.ResponseWriter, r *http.Request) {
+func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
@@ -655,7 +655,7 @@ func (h *webUIHandler) handleTestSource(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ctx := r.Context()
-	src, err := h.server.services.Store.Sources.Get(ctx, id)
+	src, err := h.server.services.Store.Components.Get(ctx, id)
 	if err != nil {
 		writeInternalError(w, err, "get source for test")
 		return
@@ -677,8 +677,8 @@ func (h *webUIHandler) handleTestSource(w http.ResponseWriter, r *http.Request) 
 
 	if err := adapter.Connect(ctx, *src); err != nil {
 		// Persist the live failure so the list status agrees with the test.
-		if updateErr := h.server.services.Store.Sources.UpdateSyncStatus(ctx, src.ID, time.Now(), err.Error()); updateErr != nil {
-			slog.Warn("failed to persist source test status", "source_id", src.ID, "error", updateErr)
+		if updateErr := h.server.services.Store.Components.UpdateSyncStatus(ctx, src.ID, time.Now(), err.Error()); updateErr != nil {
+			slog.Warn("failed to persist source test status", "component_id", src.ID, "error", updateErr)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      false,
@@ -692,8 +692,8 @@ func (h *webUIHandler) handleTestSource(w http.ResponseWriter, r *http.Request) 
 	if h.server.services.Adapters != nil {
 		h.server.services.Adapters.Register(src.ID, adapter)
 	}
-	if updateErr := h.server.services.Store.Sources.UpdateSyncStatus(ctx, src.ID, time.Now(), ""); updateErr != nil {
-		slog.Warn("failed to persist source test status", "source_id", src.ID, "error", updateErr)
+	if updateErr := h.server.services.Store.Components.UpdateSyncStatus(ctx, src.ID, time.Now(), ""); updateErr != nil {
+		slog.Warn("failed to persist source test status", "component_id", src.ID, "error", updateErr)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -726,5 +726,5 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/alerts", prefix), h.handleGetAlerts)
 
 	// Source test
-	mux.HandleFunc(fmt.Sprintf("POST %s/sources/{id}/test", prefix), h.handleTestSource)
+	mux.HandleFunc(fmt.Sprintf("POST %s/components/{id}/test", prefix), h.handleTestComponent)
 }

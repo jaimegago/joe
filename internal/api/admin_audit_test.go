@@ -169,29 +169,29 @@ func TestAdminAudit_PolicyRevoke_WritesRowWithBefore(t *testing.T) {
 func TestAdminAudit_SourceZoneAssign_WritesRow(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	// source_zone_assignments.source_id has a FOREIGN KEY to sources(id), so
+	// component_zone_assignments.component_id has a FOREIGN KEY to components(id), so
 	// the source must exist before the upsert runs (the gate regression tests
 	// never reach the upsert — the gate refuses first — so they skip this).
 	if _, err := f.store.DB().ExecContext(context.Background(),
-		`INSERT INTO sources (id, type, name, config) VALUES ('src-1', 'k8s', 'Src One', '{}')`); err != nil {
+		`INSERT INTO components (id, type, name, config) VALUES ('src-1', 'k8s', 'Src One', '{}')`); err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
 
-	w := f.do(http.MethodPost, "/api/v1/admin/source-zones",
-		`{"source_id":"src-1","zone_id":"prod-write","assigned_by":"user:alice"}`, "user:alice")
+	w := f.do(http.MethodPost, "/api/v1/admin/component-zones",
+		`{"component_id":"src-1","zone_id":"prod-write","assigned_by":"user:alice"}`, "user:alice")
 	if w.Code != http.StatusOK {
 		t.Fatalf("admin assign source-zone: status=%d body=%s; want 200", w.Code, w.Body.String())
 	}
 
-	principal, decision, d, found := latestAudit(t, f, audit.ActionAdminSourceZoneAssign)
+	principal, decision, d, found := latestAudit(t, f, audit.ActionAdminComponentZoneAssign)
 	if !found {
-		t.Fatal("no source_zone.assign audit row written")
+		t.Fatal("no component_zone.assign audit row written")
 	}
 	if principal != "user:alice" || decision != string(audit.DecisionAllow) {
-		t.Errorf("source_zone.assign row principal=%q decision=%q; want user:alice/allow", principal, decision)
+		t.Errorf("component_zone.assign row principal=%q decision=%q; want user:alice/allow", principal, decision)
 	}
-	if d.Target != "source_zone:src-1" || d.After == nil {
-		t.Errorf("source_zone.assign details=%+v; want target=source_zone:src-1 with after-state", d)
+	if d.Target != "component_zone:src-1" || d.After == nil {
+		t.Errorf("component_zone.assign details=%+v; want target=component_zone:src-1 with after-state", d)
 	}
 }
 
@@ -207,8 +207,8 @@ func TestAdminAudit_Reads_WriteRows(t *testing.T) {
 	}{
 		{"/api/v1/admin/zones", audit.ActionAdminZoneRead},
 		{"/api/v1/admin/policies", audit.ActionAdminPolicyRead},
-		{"/api/v1/admin/source-zones", audit.ActionAdminSourceZoneRead},
-		{"/api/v1/admin/unassigned", audit.ActionAdminSourceZoneRead},
+		{"/api/v1/admin/component-zones", audit.ActionAdminComponentZoneRead},
+		{"/api/v1/admin/unassigned", audit.ActionAdminComponentZoneRead},
 	}
 	for _, c := range cases {
 		if w := f.do(http.MethodGet, c.path, "", "user:alice"); w.Code != http.StatusOK {

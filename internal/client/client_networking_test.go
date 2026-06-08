@@ -21,17 +21,17 @@ func TestNginxURLsAndDecode(t *testing.T) {
 				"ingresses": []map[string]any{
 					{"name": "frontend", "namespace": "default"},
 				},
-				"source_id": "nginx-1",
+				"component_id": "nginx-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/status"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status":    map[string]any{"active_connections": 42},
-				"source_id": "nginx-1",
+				"status":       map[string]any{"active_connections": 42},
+				"component_id": "nginx-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/config"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"config_maps": []map[string]any{{"name": "nginx-config", "namespace": "ingress-nginx"}},
-				"source_id":   "nginx-1",
+				"config_maps":  []map[string]any{{"name": "nginx-config", "namespace": "ingress-nginx"}},
+				"component_id": "nginx-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -93,18 +93,18 @@ func TestEnvoyURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/clusters"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"clusters":  []map[string]any{{"name": "payment-svc", "status": "healthy"}},
-				"source_id": "envoy-1",
+				"clusters":     []map[string]any{{"name": "payment-svc", "status": "healthy"}},
+				"component_id": "envoy-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/config"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"config":    map[string]any{"@type": "type.googleapis.com/envoy.admin.v3.ConfigDump"},
-				"source_id": "envoy-1",
+				"config":       map[string]any{"@type": "type.googleapis.com/envoy.admin.v3.ConfigDump"},
+				"component_id": "envoy-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/stats"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"stats":     []map[string]any{{"name": "http.ingress.downstream_cx_active", "value": "5"}},
-				"source_id": "envoy-1",
+				"stats":        []map[string]any{{"name": "http.ingress.downstream_cx_active", "value": "5"}},
+				"component_id": "envoy-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})

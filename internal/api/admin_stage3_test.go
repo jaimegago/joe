@@ -128,7 +128,7 @@ func TestAdminRemoveAdmin_Succeeds(t *testing.T) {
 	}
 }
 
-// --- 4. Zone delete returns 409 when sources are still assigned ---
+// --- 4. Zone delete returns 409 when components are still assigned ---
 
 func TestAdminDeleteZone_InUseConflict(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
@@ -136,15 +136,15 @@ func TestAdminDeleteZone_InUseConflict(t *testing.T) {
 
 	// Seed a source and a zone, then assign the source to the zone.
 	if _, err := f.store.DB().ExecContext(context.Background(),
-		`INSERT INTO sources (id, type, name, config) VALUES ('src-1','k8s','Src One','{}')`); err != nil {
+		`INSERT INTO components (id, type, name, config) VALUES ('src-1','k8s','Src One','{}')`); err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
 	if w := f.do(http.MethodPost, "/api/v1/admin/zones",
 		`{"id":"z-inuse","name":"In Use","allowed_actions":["read"]}`, "user:alice"); w.Code != http.StatusCreated {
 		t.Fatalf("seed zone: status=%d body=%s", w.Code, w.Body.String())
 	}
-	if w := f.do(http.MethodPost, "/api/v1/admin/source-zones",
-		`{"source_id":"src-1","zone_id":"z-inuse","assigned_by":"user:alice"}`, "user:alice"); w.Code != http.StatusOK {
+	if w := f.do(http.MethodPost, "/api/v1/admin/component-zones",
+		`{"component_id":"src-1","zone_id":"z-inuse","assigned_by":"user:alice"}`, "user:alice"); w.Code != http.StatusOK {
 		t.Fatalf("seed assignment: status=%d body=%s", w.Code, w.Body.String())
 	}
 
@@ -239,27 +239,27 @@ func TestAdminRevokePolicy_ByPrincipalAndZone(t *testing.T) {
 
 // --- 7. Source-zone unassign ---
 
-func TestAdminUnassignSourceZone(t *testing.T) {
+func TestAdminUnassignComponentZone(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
 	if _, err := f.store.DB().ExecContext(context.Background(),
-		`INSERT INTO sources (id, type, name, config) VALUES ('src-u','k8s','Src U','{}')`); err != nil {
+		`INSERT INTO components (id, type, name, config) VALUES ('src-u','k8s','Src U','{}')`); err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
 	if err := f.rbac.UpsertAssignment(context.Background(),
-		rbac.SourceZoneAssignment{SourceID: "src-u", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
+		rbac.ComponentZoneAssignment{ComponentID: "src-u", ZoneID: "prod-write", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("seed assignment: %v", err)
 	}
-	before := f.countAudit(audit.ActionAdminSourceZoneUnassign)
-	w := f.do(http.MethodDelete, "/api/v1/admin/source-zones/src-u", "", "user:alice")
+	before := f.countAudit(audit.ActionAdminComponentZoneUnassign)
+	w := f.do(http.MethodDelete, "/api/v1/admin/component-zones/src-u", "", "user:alice")
 	if w.Code != http.StatusOK {
 		t.Fatalf("unassign source-zone: status=%d body=%s; want 200", w.Code, w.Body.String())
 	}
 	if a, _ := f.rbac.GetAssignment(context.Background(), "src-u"); a != nil {
 		t.Error("assignment still present after unassign")
 	}
-	if got := f.countAudit(audit.ActionAdminSourceZoneUnassign); got != before+1 {
-		t.Errorf("source_zone.unassign audit rows = %d; want %d (exactly one)", got, before+1)
+	if got := f.countAudit(audit.ActionAdminComponentZoneUnassign); got != before+1 {
+		t.Errorf("component_zone.unassign audit rows = %d; want %d (exactly one)", got, before+1)
 	}
 }
 
@@ -406,7 +406,7 @@ func TestAdminRoutes_Stage3RoutesGuarded(t *testing.T) {
 	auditing := auditingAdminHandlers(f)
 
 	newHandlers := []string{
-		"updateZone", "deleteZone", "unassignSourceZone", "revokePolicy",
+		"updateZone", "deleteZone", "unassignComponentZone", "revokePolicy",
 		"listAdmins", "addAdmin", "removeAdmin",
 		"listPrincipals", "disablePrincipal", "enablePrincipal",
 	}

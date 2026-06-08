@@ -26,14 +26,14 @@ func NewK8sLogsTool(c K8sLogsClient) *K8sLogsTool {
 func (t *K8sLogsTool) Name() string { return "k8s_logs" }
 
 func (t *K8sLogsTool) Description() string {
-	return "Get logs from a Kubernetes pod. Returns the most recent log lines from a pod, optionally from a specific container. If you don't know the source_id, call list_sources first to discover available Kubernetes clusters."
+	return "Get logs from a Kubernetes pod. Returns the most recent log lines from a pod, optionally from a specific container. If you don't know the component_id, call list_components first to discover available Kubernetes clusters."
 }
 
 func (t *K8sLogsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source/cluster.",
 			},
@@ -54,14 +54,14 @@ func (t *K8sLogsTool) Parameters() llm.ParameterSchema {
 				Description: "Number of log lines to return from the end. Defaults to 100.",
 			},
 		},
-		Required: []string{"source_id", "namespace", "pod"},
+		Required: []string{"component_id", "namespace", "pod"},
 	}
 }
 
 func (t *K8sLogsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	namespace, ok := args["namespace"].(string)
@@ -87,9 +87,9 @@ func (t *K8sLogsTool) Execute(ctx context.Context, args map[string]any) (any, er
 	}
 
 	return map[string]any{
-		"logs":      logs,
-		"pod":       pod,
-		"namespace": namespace,
-		"source_id": sourceID,
+		"logs":         logs,
+		"pod":          pod,
+		"namespace":    namespace,
+		"component_id": sourceID,
 	}, nil
 }

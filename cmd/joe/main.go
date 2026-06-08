@@ -253,11 +253,11 @@ func runReviewCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			return 1
 		}
 		job := &review.ReviewJob{
-			Platform: review.Platform(*platform),
-			SourceID: *sourceID,
-			Owner:    *owner,
-			Repo:     *repo,
-			PRNumber: *pr,
+			Platform:    review.Platform(*platform),
+			ComponentID: *sourceID,
+			Owner:       *owner,
+			Repo:        *repo,
+			PRNumber:    *pr,
 		}
 		created, err := c.EnqueueReview(ctx, job)
 		if err != nil {
@@ -399,7 +399,7 @@ func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps run
 }
 
 // runSkillsCommand implements `joe skills <subcommand>` — install, list,
-// remove, update, and (Phase 3) reload Agent Skills sources installed at
+// remove, update, and (Phase 3) reload Agent Skills components installed at
 // ~/.joe/skills/. install/list/remove/update operate on the local filesystem
 // only; reload calls into the joe server to refresh its in-memory registry without
 // a restart.
@@ -740,7 +740,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  mcp      Run Joe as an MCP stdio server")
 	fmt.Fprintln(w, "  slack    Run Joe as a Slack bot")
 	fmt.Fprintln(w, "  review   Manage code-review jobs")
-	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
+	fmt.Fprintln(w, "  skills   Manage Agent Skills components")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")

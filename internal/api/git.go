@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -34,14 +34,14 @@ func (s *Server) handleGitReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"content":   content,
-		"path":      path,
-		"source_id": sourceID,
+		"content":      content,
+		"path":         path,
+		"component_id": sourceID,
 	})
 }
 
 func (s *Server) handleGitListFiles(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	dir := r.URL.Query().Get("dir")
 
@@ -62,15 +62,15 @@ func (s *Server) handleGitListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"files":     files,
-		"count":     len(files),
-		"dir":       dir,
-		"source_id": sourceID,
+		"files":        files,
+		"count":        len(files),
+		"dir":          dir,
+		"component_id": sourceID,
 	})
 }
 
 func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	limit := constants.DefaultGitLogLimit
 	if l := r.URL.Query().Get("limit"); l != "" {
@@ -102,14 +102,14 @@ func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"commits":   commits,
-		"count":     len(commits),
-		"source_id": sourceID,
+		"commits":      commits,
+		"count":        len(commits),
+		"component_id": sourceID,
 	})
 }
 
 func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
@@ -133,9 +133,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"diff":      diff,
-		"from":      from,
-		"to":        to,
-		"source_id": sourceID,
+		"diff":         diff,
+		"from":         from,
+		"to":           to,
+		"component_id": sourceID,
 	})
 }

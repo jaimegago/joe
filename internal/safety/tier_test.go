@@ -15,7 +15,7 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"local_git_status", ActionRead},
 		{"local_git_diff", ActionRead},
 		{"ask_user", ActionRead},
-		{"list_sources", ActionRead},
+		{"list_components", ActionRead},
 		{"graph_query", ActionRead},
 		{"graph_related", ActionRead},
 		{"k8s_get", ActionRead},
@@ -45,7 +45,7 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"graph_add_node", ActionRead},
 		{"graph_add_edge", ActionRead},
 		{"graph_update_node", ActionRead},
-		{"register_source", ActionRead},
+		{"register_component", ActionRead},
 		{"save_onboarding_fact", ActionRead},
 		{"save_knowledge_entry", ActionRead},
 		{"generate_doc_draft", ActionRead},
@@ -145,7 +145,7 @@ func TestClassifyTool_ExternalCommentsAreMutate(t *testing.T) {
 func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
 	needs := []string{
 		// Read-class creates with server-generated identity outside the args.
-		"register_source", "save_onboarding_fact", "save_knowledge_entry",
+		"register_component", "save_onboarding_fact", "save_knowledge_entry",
 		"generate_doc_draft",
 		// Mutate-class non-idempotent external appends.
 		"github_comment", "gitlab_comment", "github_request_changes",
@@ -163,7 +163,7 @@ func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
 // graph upserts, and status-guarded publishes must stay OFF.
 func TestClassifyTool_IdempotentToolsAreNotDurable(t *testing.T) {
 	notDurable := []string{
-		"read_file", "graph_query", "list_sources", // reads
+		"read_file", "graph_query", "list_components", // reads
 		"graph_add_node", "graph_add_edge", "graph_update_node", // arg-keyed upserts
 		"write_file", "run_command", // idempotent / no Joe-side record
 		"publish_doc_update", "publish_doc_update_git", // data-layer status guard
@@ -209,7 +209,7 @@ func TestCheckAccess_ModelMaintenanceAlwaysAllowed(t *testing.T) {
 
 	for _, tool := range []string{
 		"graph_add_node", "graph_add_edge", "graph_update_node",
-		"register_source", "save_onboarding_fact", "save_knowledge_entry",
+		"register_component", "save_onboarding_fact", "save_knowledge_entry",
 		"generate_doc_draft",
 	} {
 		if err := CheckAccess(tool, policy); err != nil {

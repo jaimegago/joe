@@ -17,9 +17,9 @@ import (
 // =========================
 
 // handleArgoCDApps lists Argo CD applications.
-// GET /api/v1/argocd/{sourceID}/apps?project=
+// GET /api/v1/argocd/{componentID}/apps?project=
 func (s *Server) handleArgoCDApps(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	project := r.URL.Query().Get("project")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -38,16 +38,16 @@ func (s *Server) handleArgoCDApps(w http.ResponseWriter, r *http.Request) {
 		apps = []argocdadapter.App{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"apps":      apps,
-		"count":     len(apps),
-		"source_id": sourceID,
+		"apps":         apps,
+		"count":        len(apps),
+		"component_id": sourceID,
 	})
 }
 
 // handleArgoCDGetApp returns full details for one Argo CD application.
-// GET /api/v1/argocd/{sourceID}/apps/{name}
+// GET /api/v1/argocd/{componentID}/apps/{name}
 func (s *Server) handleArgoCDGetApp(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	name := r.PathValue("name")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -63,15 +63,15 @@ func (s *Server) handleArgoCDGetApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"detail":    detail,
-		"source_id": sourceID,
+		"detail":       detail,
+		"component_id": sourceID,
 	})
 }
 
 // handleArgoCDDiff returns the sync diff for an Argo CD application.
-// GET /api/v1/argocd/{sourceID}/apps/{name}/diff
+// GET /api/v1/argocd/{componentID}/apps/{name}/diff
 func (s *Server) handleArgoCDDiff(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	name := r.PathValue("name")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -87,15 +87,15 @@ func (s *Server) handleArgoCDDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"diff":      diff,
-		"source_id": sourceID,
+		"diff":         diff,
+		"component_id": sourceID,
 	})
 }
 
 // handleArgoCDHistory returns the sync history for an Argo CD application.
-// GET /api/v1/argocd/{sourceID}/apps/{name}/history?limit=10
+// GET /api/v1/argocd/{componentID}/apps/{name}/history?limit=10
 func (s *Server) handleArgoCDHistory(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	name := r.PathValue("name")
 
 	limit := 10
@@ -121,9 +121,9 @@ func (s *Server) handleArgoCDHistory(w http.ResponseWriter, r *http.Request) {
 		history = []argocdadapter.SyncOperation{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"history":   history,
-		"count":     len(history),
-		"source_id": sourceID,
+		"history":      history,
+		"count":        len(history),
+		"component_id": sourceID,
 	})
 }
 
@@ -132,9 +132,9 @@ func (s *Server) handleArgoCDHistory(w http.ResponseWriter, r *http.Request) {
 // =========================
 
 // handleTerraformResources lists managed resources from a Terraform state.
-// GET /api/v1/terraform/{sourceID}/state?type=aws_instance
+// GET /api/v1/terraform/{componentID}/state?type=aws_instance
 func (s *Server) handleTerraformResources(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	resourceType := r.URL.Query().Get("type")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -153,16 +153,16 @@ func (s *Server) handleTerraformResources(w http.ResponseWriter, r *http.Request
 		resources = []terraformadapter.Resource{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"resources": resources,
-		"count":     len(resources),
-		"source_id": sourceID,
+		"resources":    resources,
+		"count":        len(resources),
+		"component_id": sourceID,
 	})
 }
 
 // handleTerraformGetResource returns details for a specific Terraform resource.
-// GET /api/v1/terraform/{sourceID}/state/resource?address=aws_instance.web
+// GET /api/v1/terraform/{componentID}/state/resource?address=aws_instance.web
 func (s *Server) handleTerraformGetResource(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	address := r.URL.Query().Get("address")
 	if address == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required parameter: address", map[string]any{
@@ -184,15 +184,15 @@ func (s *Server) handleTerraformGetResource(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"resource":  resource,
-		"source_id": sourceID,
+		"resource":     resource,
+		"component_id": sourceID,
 	})
 }
 
 // handleTerraformOutputs lists output values from a Terraform state.
-// GET /api/v1/terraform/{sourceID}/outputs
+// GET /api/v1/terraform/{componentID}/outputs
 func (s *Server) handleTerraformOutputs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -210,9 +210,9 @@ func (s *Server) handleTerraformOutputs(w http.ResponseWriter, r *http.Request) 
 		outputs = map[string]terraformadapter.Output{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"outputs":   outputs,
-		"count":     len(outputs),
-		"source_id": sourceID,
+		"outputs":      outputs,
+		"count":        len(outputs),
+		"component_id": sourceID,
 	})
 }
 
@@ -221,9 +221,9 @@ func (s *Server) handleTerraformOutputs(w http.ResponseWriter, r *http.Request) 
 // =========================
 
 // handleHelmReleases lists Helm releases.
-// GET /api/v1/helm/{sourceID}/releases?namespace=production
+// GET /api/v1/helm/{componentID}/releases?namespace=production
 func (s *Server) handleHelmReleases(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	namespace := r.URL.Query().Get("namespace")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -242,16 +242,16 @@ func (s *Server) handleHelmReleases(w http.ResponseWriter, r *http.Request) {
 		releases = []helmadapter.Release{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"releases":  releases,
-		"count":     len(releases),
-		"source_id": sourceID,
+		"releases":     releases,
+		"count":        len(releases),
+		"component_id": sourceID,
 	})
 }
 
 // handleHelmGetRelease returns details for one Helm release.
-// GET /api/v1/helm/{sourceID}/releases/{namespace}/{name}
+// GET /api/v1/helm/{componentID}/releases/{namespace}/{name}
 func (s *Server) handleHelmGetRelease(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
@@ -268,15 +268,15 @@ func (s *Server) handleHelmGetRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"detail":    detail,
-		"source_id": sourceID,
+		"detail":       detail,
+		"component_id": sourceID,
 	})
 }
 
 // handleHelmHistory returns the revision history for a Helm release.
-// GET /api/v1/helm/{sourceID}/releases/{namespace}/{name}/history?limit=10
+// GET /api/v1/helm/{componentID}/releases/{namespace}/{name}/history?limit=10
 func (s *Server) handleHelmHistory(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
@@ -303,9 +303,9 @@ func (s *Server) handleHelmHistory(w http.ResponseWriter, r *http.Request) {
 		history = []helmadapter.RevisionEntry{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"history":   history,
-		"count":     len(history),
-		"source_id": sourceID,
+		"history":      history,
+		"count":        len(history),
+		"component_id": sourceID,
 	})
 }
 
@@ -314,20 +314,20 @@ func (s *Server) registerGitOpsRoutes(mux *http.ServeMux, prefix string) {
 	h := &gitOpsHandler{server: s}
 
 	// Argo CD
-	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{sourceID}/apps", prefix), h.handleArgoCDApps)
-	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{sourceID}/apps/{name}", prefix), h.handleArgoCDGetApp)
-	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{sourceID}/apps/{name}/diff", prefix), h.handleArgoCDDiff)
-	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{sourceID}/apps/{name}/history", prefix), h.handleArgoCDHistory)
+	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{componentID}/apps", prefix), h.handleArgoCDApps)
+	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{componentID}/apps/{name}", prefix), h.handleArgoCDGetApp)
+	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{componentID}/apps/{name}/diff", prefix), h.handleArgoCDDiff)
+	mux.HandleFunc(fmt.Sprintf("GET %s/argocd/{componentID}/apps/{name}/history", prefix), h.handleArgoCDHistory)
 
 	// Terraform
-	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{sourceID}/state", prefix), h.handleTerraformResources)
-	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{sourceID}/state/resource", prefix), h.handleTerraformGetResource)
-	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{sourceID}/outputs", prefix), h.handleTerraformOutputs)
+	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{componentID}/state", prefix), h.handleTerraformResources)
+	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{componentID}/state/resource", prefix), h.handleTerraformGetResource)
+	mux.HandleFunc(fmt.Sprintf("GET %s/terraform/{componentID}/outputs", prefix), h.handleTerraformOutputs)
 
 	// Helm
-	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{sourceID}/releases", prefix), h.handleHelmReleases)
-	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{sourceID}/releases/{namespace}/{name}", prefix), h.handleHelmGetRelease)
-	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{sourceID}/releases/{namespace}/{name}/history", prefix), h.handleHelmHistory)
+	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{componentID}/releases", prefix), h.handleHelmReleases)
+	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{componentID}/releases/{namespace}/{name}", prefix), h.handleHelmGetRelease)
+	mux.HandleFunc(fmt.Sprintf("GET %s/helm/{componentID}/releases/{namespace}/{name}/history", prefix), h.handleHelmHistory)
 }
 
 // gitOpsHandler delegates to Server GitOps methods.

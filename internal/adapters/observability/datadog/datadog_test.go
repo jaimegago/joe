@@ -76,7 +76,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := datadog.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -89,7 +89,7 @@ func TestAdapter_Connect_NetworkError(t *testing.T) {
 	_ = srv // Closed, so connections will fail.
 
 	adapter := datadog.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"app_key": "app",
 	})}
@@ -488,7 +488,7 @@ func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	defer srv.Close()
 
 	adapter := datadog.New()
-	source := store.Source{} // empty Config bytes
+	source := store.Component{} // empty Config bytes
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config (missing api_key), got nil")
 	}

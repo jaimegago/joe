@@ -1,21 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { fetchSourceZones, removeZone } from '@/api/security';
+import { fetchComponentZones, removeZone } from '@/api/security';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 
-export function SourceZoneAssign() {
+export function ComponentZoneAssign() {
   const qc = useQueryClient();
-  const { data = [] } = useQuery({ queryKey: ['source-zones'], queryFn: fetchSourceZones });
+  const { data = [] } = useQuery({ queryKey: ['component-zones'], queryFn: fetchComponentZones });
   const [unassigning, setUnassigning] = useState<string | null>(null);
 
   const removeMut = useMutation({
-    mutationFn: (sourceId: string) => removeZone(sourceId),
+    mutationFn: (componentId: string) => removeZone(componentId),
     onSuccess: () => {
-      toast.success('Source unassigned');
-      void qc.invalidateQueries({ queryKey: ['source-zones'] });
+      toast.success('Component unassigned');
+      void qc.invalidateQueries({ queryKey: ['component-zones'] });
       // The source returns to the unassigned pool — refresh that list too.
       void qc.invalidateQueries({ queryKey: ['unassigned'] });
     },
@@ -27,7 +27,7 @@ export function SourceZoneAssign() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Source</TableHead>
+            <TableHead>Component</TableHead>
             <TableHead>Zone</TableHead>
             <TableHead>Assigned By</TableHead>
             <TableHead>Assigned At</TableHead>
@@ -36,8 +36,8 @@ export function SourceZoneAssign() {
         </TableHeader>
         <TableBody>
           {data.map((a) => (
-            <TableRow key={a.source_id}>
-              <TableCell className="font-mono text-sm">{a.source_id}</TableCell>
+            <TableRow key={a.component_id}>
+              <TableCell className="font-mono text-sm">{a.component_id}</TableCell>
               <TableCell>{a.zone_id}</TableCell>
               <TableCell className="text-muted-foreground text-sm">{a.assigned_by}</TableCell>
               <TableCell className="text-muted-foreground text-sm">
@@ -45,7 +45,7 @@ export function SourceZoneAssign() {
               </TableCell>
               <TableCell>
                 <div className="flex justify-end">
-                  <Button variant="outline" size="sm" onClick={() => setUnassigning(a.source_id)}>
+                  <Button variant="outline" size="sm" onClick={() => setUnassigning(a.component_id)}>
                     Unassign
                   </Button>
                 </div>

@@ -41,15 +41,15 @@ func (t *CertManagerCertsTool) Description() string {
 	return "List cert-manager Certificate resources with expiry dates and readiness status. " +
 		"Shows DNS names, secret name, issuer reference, and whether the certificate is Ready. " +
 		"Use to check certificate health, upcoming renewals, or failed issuances. " +
-		"Use source_id of a Kubernetes source where cert-manager is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where cert-manager is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CertManagerCertsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where cert-manager is installed).",
 			},
@@ -58,14 +58,14 @@ func (t *CertManagerCertsTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter certificates. Omit for all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CertManagerCertsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -81,7 +81,7 @@ func (t *CertManagerCertsTool) Execute(ctx context.Context, args map[string]any)
 		"certificates": extractCertSummaries(certs),
 		"count":        len(certs),
 		"namespace":    namespace,
-		"source_id":    sourceID,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -139,15 +139,15 @@ func (t *CertManagerIssuersTool) Description() string {
 	return "List cert-manager Issuer and ClusterIssuer resources with their status. " +
 		"Shows issuer type (ACME, CA, Vault, Venafi), readiness, and error conditions. " +
 		"Use to check if certificate issuers are healthy and properly configured. " +
-		"Use source_id of a Kubernetes source where cert-manager is installed. " +
-		"If you don't know the source_id, call list_sources first."
+		"Use component_id of a Kubernetes source where cert-manager is installed. " +
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *CertManagerIssuersTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kubernetes source (where cert-manager is installed).",
 			},
@@ -156,14 +156,14 @@ func (t *CertManagerIssuersTool) Parameters() llm.ParameterSchema {
 				Description: "Namespace to filter namespaced Issuers. ClusterIssuers are always included.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *CertManagerIssuersTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -181,10 +181,10 @@ func (t *CertManagerIssuersTool) Execute(ctx context.Context, args map[string]an
 
 	total := len(result["Issuer"]) + len(result["ClusterIssuer"])
 	return map[string]any{
-		"issuers":   result,
-		"count":     total,
-		"namespace": namespace,
-		"source_id": sourceID,
+		"issuers":      result,
+		"count":        total,
+		"namespace":    namespace,
+		"component_id": sourceID,
 	}, nil
 }
 

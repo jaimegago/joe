@@ -39,7 +39,7 @@ func (a *Accessor) observeResolve(ctx context.Context, principal rbac.Principal,
 	adapter, err := a.registry.Get(sourceID)
 	if err != nil {
 		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return nil, fmt.Errorf("%w: %s", ErrSourceNotFound, sourceID)
+			return nil, fmt.Errorf("%w: %s", ErrComponentNotFound, sourceID)
 		}
 		return nil, err
 	}

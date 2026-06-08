@@ -56,7 +56,7 @@ import (
 // tool (default OFF) bypasses the wrapper entirely: no key derived, no repo
 // calls. This decision is INDEPENDENT of the Read/Mutate action class — "does
 // this need crash-resume" is not "does this mutate the managed system". A
-// Read create like register_source IS wrapped; a Mutate like write_file is
+// Read create like register_component IS wrapped; a Mutate like write_file is
 // NOT, because it is idempotent.
 //
 // No-run fallback: if the request context carries no run ID, the

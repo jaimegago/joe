@@ -233,48 +233,48 @@ func (c *Client) GraphRelated(ctx context.Context, nodeID string, depth int) (*g
 
 // --- Source Management ---
 
-// listSourcesResponse is the JSON shape returned by GET /api/v1/sources.
-type listSourcesResponse struct {
-	Sources []*store.Source `json:"sources"`
-	Count   int             `json:"count"`
+// listComponentsResponse is the JSON shape returned by GET /api/v1/components.
+type listComponentsResponse struct {
+	Components []*store.Component `json:"components"`
+	Count      int                `json:"count"`
 }
 
-// ListSources returns all registered infrastructure sources.
-func (c *Client) ListSources(ctx context.Context) ([]*store.Source, error) {
-	var result listSourcesResponse
-	if err := c.doJSON(ctx, "GET", c.baseURL+apiSourcesPath, nil, http.StatusOK, &result, "list sources"); err != nil {
+// ListComponents returns all registered infrastructure components.
+func (c *Client) ListComponents(ctx context.Context) ([]*store.Component, error) {
+	var result listComponentsResponse
+	if err := c.doJSON(ctx, "GET", c.baseURL+apiComponentsPath, nil, http.StatusOK, &result, "list components"); err != nil {
 		return nil, err
 	}
 
-	return result.Sources, nil
+	return result.Components, nil
 }
 
-// CreateSource registers a new infrastructure source.
-func (c *Client) CreateSource(ctx context.Context, source *store.Source) (*store.Source, error) {
+// CreateComponent registers a new infrastructure source.
+func (c *Client) CreateComponent(ctx context.Context, source *store.Component) (*store.Component, error) {
 	payload, err := json.Marshal(source)
 	if err != nil {
 		return nil, fmt.Errorf("marshal source: %w", err)
 	}
-	var created store.Source
-	if err := c.doJSON(ctx, "POST", c.baseURL+apiSourcesPath, bytes.NewReader(payload), http.StatusCreated, &created, "create source"); err != nil {
+	var created store.Component
+	if err := c.doJSON(ctx, "POST", c.baseURL+apiComponentsPath, bytes.NewReader(payload), http.StatusCreated, &created, "create source"); err != nil {
 		return nil, err
 	}
 
 	return &created, nil
 }
 
-// DeleteSource removes a registered source by ID.
-func (c *Client) DeleteSource(ctx context.Context, id string) error {
-	return c.doJSON(ctx, "DELETE", c.baseURL+apiSourcesPath+"/"+url.PathEscape(id), nil, http.StatusNoContent, nil, "delete source")
+// DeleteComponent removes a registered source by ID.
+func (c *Client) DeleteComponent(ctx context.Context, id string) error {
+	return c.doJSON(ctx, "DELETE", c.baseURL+apiComponentsPath+"/"+url.PathEscape(id), nil, http.StatusNoContent, nil, "delete source")
 }
 
 // --- K8s Resources ---
 
-// k8sListResponse is the JSON shape returned by GET /api/v1/k8s/{sourceID}/resources.
+// k8sListResponse is the JSON shape returned by GET /api/v1/k8s/{componentID}/resources.
 type k8sListResponse struct {
-	Resources []map[string]any `json:"resources"`
-	Count     int              `json:"count"`
-	SourceID  string           `json:"source_id"`
+	Resources   []map[string]any `json:"resources"`
+	Count       int              `json:"count"`
+	ComponentID string           `json:"component_id"`
 }
 
 // K8sListResources lists Kubernetes resources of a given type.
@@ -300,8 +300,8 @@ func (c *Client) K8sGetResource(ctx context.Context, sourceID, resource, namespa
 		url.PathEscape(namespace), url.PathEscape(name))
 
 	var result struct {
-		Resource map[string]any `json:"resource"`
-		SourceID string         `json:"source_id"`
+		Resource    map[string]any `json:"resource"`
+		ComponentID string         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "k8s get resource"); err != nil {
 		return nil, err
@@ -310,12 +310,12 @@ func (c *Client) K8sGetResource(ctx context.Context, sourceID, resource, namespa
 	return result.Resource, nil
 }
 
-// k8sLogsResponse is the JSON shape returned by GET /api/v1/k8s/{sourceID}/logs/{namespace}/{pod}.
+// k8sLogsResponse is the JSON shape returned by GET /api/v1/k8s/{componentID}/logs/{namespace}/{pod}.
 type k8sLogsResponse struct {
-	Logs      string `json:"logs"`
-	Pod       string `json:"pod"`
-	Namespace string `json:"namespace"`
-	SourceID  string `json:"source_id"`
+	Logs        string `json:"logs"`
+	Pod         string `json:"pod"`
+	Namespace   string `json:"namespace"`
+	ComponentID string `json:"component_id"`
 }
 
 // K8sGetLogs retrieves logs from a Kubernetes pod.
@@ -425,9 +425,9 @@ func (c *Client) AWSEC2ListInstances(ctx context.Context, sourceID string) ([]*a
 	u := fmt.Sprintf("%s%s/%s/ec2/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Instances []*awsadapter.EC2Instance `json:"instances"`
-		Count     int                       `json:"count"`
-		SourceID  string                    `json:"source_id"`
+		Instances   []*awsadapter.EC2Instance `json:"instances"`
+		Count       int                       `json:"count"`
+		ComponentID string                    `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws ec2 list instances"); err != nil {
 		return nil, err
@@ -442,8 +442,8 @@ func (c *Client) AWSEC2GetInstance(ctx context.Context, sourceID, instanceID str
 		url.PathEscape(sourceID), url.PathEscape(instanceID))
 
 	var result struct {
-		Instance *awsadapter.EC2Instance `json:"instance"`
-		SourceID string                  `json:"source_id"`
+		Instance    *awsadapter.EC2Instance `json:"instance"`
+		ComponentID string                  `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws ec2 get instance"); err != nil {
 		return nil, err
@@ -457,9 +457,9 @@ func (c *Client) AWSEKSListClusters(ctx context.Context, sourceID string) ([]*aw
 	u := fmt.Sprintf("%s%s/%s/eks/clusters", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Clusters []*awsadapter.EKSCluster `json:"clusters"`
-		Count    int                      `json:"count"`
-		SourceID string                   `json:"source_id"`
+		Clusters    []*awsadapter.EKSCluster `json:"clusters"`
+		Count       int                      `json:"count"`
+		ComponentID string                   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws eks list clusters"); err != nil {
 		return nil, err
@@ -474,8 +474,8 @@ func (c *Client) AWSEKSGetCluster(ctx context.Context, sourceID, clusterName str
 		url.PathEscape(sourceID), url.PathEscape(clusterName))
 
 	var result struct {
-		Cluster  *awsadapter.EKSCluster `json:"cluster"`
-		SourceID string                 `json:"source_id"`
+		Cluster     *awsadapter.EKSCluster `json:"cluster"`
+		ComponentID string                 `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws eks get cluster"); err != nil {
 		return nil, err
@@ -489,9 +489,9 @@ func (c *Client) AWSRDSListInstances(ctx context.Context, sourceID string) ([]*a
 	u := fmt.Sprintf("%s%s/%s/rds/instances", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Instances []*awsadapter.RDSInstance `json:"instances"`
-		Count     int                       `json:"count"`
-		SourceID  string                    `json:"source_id"`
+		Instances   []*awsadapter.RDSInstance `json:"instances"`
+		Count       int                       `json:"count"`
+		ComponentID string                    `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws rds list instances"); err != nil {
 		return nil, err
@@ -506,8 +506,8 @@ func (c *Client) AWSRDSGetInstance(ctx context.Context, sourceID, dbInstanceID s
 		url.PathEscape(sourceID), url.PathEscape(dbInstanceID))
 
 	var result struct {
-		Instance *awsadapter.RDSInstance `json:"instance"`
-		SourceID string                  `json:"source_id"`
+		Instance    *awsadapter.RDSInstance `json:"instance"`
+		ComponentID string                  `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws rds get instance"); err != nil {
 		return nil, err
@@ -521,9 +521,9 @@ func (c *Client) AWSVPCListVPCs(ctx context.Context, sourceID string) ([]*awsada
 	u := fmt.Sprintf("%s%s/%s/vpc/vpcs", c.baseURL, apiAWSBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		VPCs     []*awsadapter.VPC `json:"vpcs"`
-		Count    int               `json:"count"`
-		SourceID string            `json:"source_id"`
+		VPCs        []*awsadapter.VPC `json:"vpcs"`
+		Count       int               `json:"count"`
+		ComponentID string            `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws vpc list vpcs"); err != nil {
 		return nil, err
@@ -538,8 +538,8 @@ func (c *Client) AWSVPCGetVPC(ctx context.Context, sourceID, vpcID string) (*aws
 		url.PathEscape(sourceID), url.PathEscape(vpcID))
 
 	var result struct {
-		VPC      *awsadapter.VPC `json:"vpc"`
-		SourceID string          `json:"source_id"`
+		VPC         *awsadapter.VPC `json:"vpc"`
+		ComponentID string          `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, "GET", u, nil, http.StatusOK, &result, "aws vpc get vpc"); err != nil {
 		return nil, err

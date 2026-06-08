@@ -28,14 +28,14 @@ func NewDynatraceQueryTool(c DynatraceClient) *DynatraceQueryTool {
 func (t *DynatraceQueryTool) Name() string { return "dynatrace_query" }
 
 func (t *DynatraceQueryTool) Description() string {
-	return "Query Dynatrace for metrics or events. Supports metrics selector queries (DQL-style) and event feed queries. If you don't know the source_id, call list_sources first."
+	return "Query Dynatrace for metrics or events. Supports metrics selector queries (DQL-style) and event feed queries. If you don't know the component_id, call list_components first."
 }
 
 func (t *DynatraceQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Dynatrace source to query.",
 			},
@@ -60,14 +60,14 @@ func (t *DynatraceQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of events to return (default 50). Only used for 'events' action.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *DynatraceQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -98,9 +98,9 @@ func (t *DynatraceQueryTool) Execute(ctx context.Context, args map[string]any) (
 			return nil, fmt.Errorf("dynatrace events query failed: %w", err)
 		}
 		return map[string]any{
-			"events":    result.Events,
-			"count":     result.Count,
-			"source_id": sourceID,
+			"events":       result.Events,
+			"count":        result.Count,
+			"component_id": sourceID,
 		}, nil
 
 	default: // "metrics"
@@ -114,9 +114,9 @@ func (t *DynatraceQueryTool) Execute(ctx context.Context, args map[string]any) (
 			return nil, fmt.Errorf("dynatrace metrics query failed: %w", err)
 		}
 		return map[string]any{
-			"result":    result,
-			"source_id": sourceID,
-			"query":     query,
+			"result":       result,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 	}
 }

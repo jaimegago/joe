@@ -96,7 +96,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: mustMarshal(t, map[string]any{"user": "u", "database": "db"}), // missing host
 	}
 	if err := a.Connect(context.Background(), src); err == nil {
@@ -106,7 +106,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{invalid json`)}
+	src := store.Component{Config: []byte(`{invalid json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -517,7 +517,7 @@ func TestStat_ReplicationScanError(t *testing.T) {
 func TestConnect_EmptyConfig(t *testing.T) {
 	// Connect with empty (nil) config should fail because host is required.
 	a := New()
-	src := store.Source{Config: nil}
+	src := store.Component{Config: nil}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for empty config (missing host), got nil")
 	}
@@ -527,7 +527,7 @@ func TestConnect_PingFails(t *testing.T) {
 	// The real Connect path tries to open and ping a real DB; provide an invalid
 	// DSN so that Open succeeds but Ping fails (pgx doesn't validate on Open).
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: mustMarshal(t, map[string]any{
 			"host": "127.0.0.1", "port": float64(19999),
 			"user": "nobody", "database": "nodb",

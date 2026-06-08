@@ -66,11 +66,11 @@ func TestDeleteZone_RestrictWhenAssigned(t *testing.T) {
 		t.Fatalf("CreateZone: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO sources (id, type, name, config) VALUES ('src-1','k8s','Src','{}')`); err != nil {
+		`INSERT INTO components (id, type, name, config) VALUES ('src-1','k8s','Src','{}')`); err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "src-1", ZoneID: "z1", AssignedBy: "a",
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "src-1", ZoneID: "z1", AssignedBy: "a",
 	}, "a"); err != nil {
 		t.Fatalf("UpsertAssignment: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestDeleteZone_RestrictWhenAssigned(t *testing.T) {
 	if _, err := repo.DeleteAssignment(ctx, "src-1", "a"); err != nil {
 		t.Fatalf("DeleteAssignment: %v", err)
 	}
-	assertAuditRow(t, db, audit.ActionAdminSourceZoneUnassign, "a")
+	assertAuditRow(t, db, audit.ActionAdminComponentZoneUnassign, "a")
 	if err := repo.DeleteZone(ctx, "z1", "a"); err != nil {
 		t.Fatalf("DeleteZone after unassign: %v", err)
 	}

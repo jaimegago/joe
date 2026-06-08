@@ -19,9 +19,9 @@ import (
 // --- Prometheus handlers ---
 
 // handlePrometheusQuery executes an instant PromQL query.
-// GET /api/v1/prometheus/{sourceID}/query?query=<promql>&time=<unix>
+// GET /api/v1/prometheus/{componentID}/query?query=<promql>&time=<unix>
 func (s *Server) handlePrometheusQuery(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -54,16 +54,16 @@ func (s *Server) handlePrometheusQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // handlePrometheusQueryRange executes a range PromQL query.
-// GET /api/v1/prometheus/{sourceID}/query_range?query=<promql>&start=<unix>&end=<unix>&step=<sec>
+// GET /api/v1/prometheus/{componentID}/query_range?query=<promql>&start=<unix>&end=<unix>&step=<sec>
 func (s *Server) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -108,16 +108,16 @@ func (s *Server) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // handlePrometheusTargets lists Prometheus scrape targets.
-// GET /api/v1/prometheus/{sourceID}/targets
+// GET /api/v1/prometheus/{componentID}/targets
 func (s *Server) handlePrometheusTargets(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -136,18 +136,18 @@ func (s *Server) handlePrometheusTargets(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"targets":   targets,
-		"count":     len(targets),
-		"source_id": sourceID,
+		"targets":      targets,
+		"count":        len(targets),
+		"component_id": sourceID,
 	})
 }
 
 // --- Loki handlers ---
 
 // handleLokiQuery executes an instant LogQL query.
-// GET /api/v1/loki/{sourceID}/query?query=<logql>&limit=<n>&since=<sec>
+// GET /api/v1/loki/{componentID}/query?query=<logql>&limit=<n>&since=<sec>
 func (s *Server) handleLokiQuery(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -184,16 +184,16 @@ func (s *Server) handleLokiQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // handleLokiQueryRange executes a range LogQL query.
-// GET /api/v1/loki/{sourceID}/query_range?query=<logql>&start=<unix>&end=<unix>&limit=<n>
+// GET /api/v1/loki/{componentID}/query_range?query=<logql>&start=<unix>&end=<unix>&limit=<n>
 func (s *Server) handleLokiQueryRange(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -233,18 +233,18 @@ func (s *Server) handleLokiQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // --- Tempo handlers ---
 
 // handleTempoSearch searches for traces.
-// GET /api/v1/tempo/{sourceID}/search?service=<name>&tags=<tags>&min_duration=<ms>&max_duration=<ms>&limit=<n>
+// GET /api/v1/tempo/{componentID}/search?service=<name>&tags=<tags>&min_duration=<ms>&max_duration=<ms>&limit=<n>
 func (s *Server) handleTempoSearch(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	service := r.URL.Query().Get("service")
 	tags := r.URL.Query().Get("tags")
@@ -286,16 +286,16 @@ func (s *Server) handleTempoSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"traces":    results,
-		"count":     len(results),
-		"source_id": sourceID,
+		"traces":       results,
+		"count":        len(results),
+		"component_id": sourceID,
 	})
 }
 
 // handleTempoGetTrace retrieves a full trace by ID.
-// GET /api/v1/tempo/{sourceID}/traces/{traceID}
+// GET /api/v1/tempo/{componentID}/traces/{traceID}
 func (s *Server) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	traceID := r.PathValue("traceID")
 
 	if traceID == "" {
@@ -322,17 +322,17 @@ func (s *Server) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"trace":     trace,
-		"source_id": sourceID,
+		"trace":        trace,
+		"component_id": sourceID,
 	})
 }
 
 // --- Jaeger handlers ---
 
 // handleJaegerServices lists all services Jaeger knows about.
-// GET /api/v1/jaeger/{sourceID}/services
+// GET /api/v1/jaeger/{componentID}/services
 func (s *Server) handleJaegerServices(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -351,16 +351,16 @@ func (s *Server) handleJaegerServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"services":  services,
-		"count":     len(services),
-		"source_id": sourceID,
+		"services":     services,
+		"count":        len(services),
+		"component_id": sourceID,
 	})
 }
 
 // handleJaegerTraces searches for traces by service.
-// GET /api/v1/jaeger/{sourceID}/traces?service=<name>&operation=<op>&limit=<n>
+// GET /api/v1/jaeger/{componentID}/traces?service=<name>&operation=<op>&limit=<n>
 func (s *Server) handleJaegerTraces(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	service := r.URL.Query().Get("service")
 	if service == "" {
@@ -396,16 +396,16 @@ func (s *Server) handleJaegerTraces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"traces":    traces,
-		"count":     len(traces),
-		"source_id": sourceID,
+		"traces":       traces,
+		"count":        len(traces),
+		"component_id": sourceID,
 	})
 }
 
 // handleJaegerGetTrace retrieves a full trace by ID.
-// GET /api/v1/jaeger/{sourceID}/traces/{traceID}
+// GET /api/v1/jaeger/{componentID}/traces/{traceID}
 func (s *Server) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	traceID := r.PathValue("traceID")
 
 	if traceID == "" {
@@ -432,17 +432,17 @@ func (s *Server) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"trace":     trace,
-		"source_id": sourceID,
+		"trace":        trace,
+		"component_id": sourceID,
 	})
 }
 
 // --- Datadog handlers ---
 
 // handleDatadogMetrics executes a Datadog metrics query.
-// GET /api/v1/datadog/{sourceID}/metrics?query=<q>&from=<unix>&to=<unix>
+// GET /api/v1/datadog/{componentID}/metrics?query=<q>&from=<unix>&to=<unix>
 func (s *Server) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -478,16 +478,16 @@ func (s *Server) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // handleDatadogLogs searches Datadog log events.
-// GET /api/v1/datadog/{sourceID}/logs?query=<q>&from=<unix>&to=<unix>&limit=<n>
+// GET /api/v1/datadog/{componentID}/logs?query=<q>&from=<unix>&to=<unix>&limit=<n>
 func (s *Server) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -534,18 +534,18 @@ func (s *Server) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // --- Splunk handlers ---
 
 // handleSplunkSearch executes a Splunk SPL search.
-// GET /api/v1/splunk/{sourceID}/search?query=<spl>&earliest=<t>&latest=<t>&limit=<n>
+// GET /api/v1/splunk/{componentID}/search?query=<spl>&earliest=<t>&latest=<t>&limit=<n>
 func (s *Server) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -586,18 +586,18 @@ func (s *Server) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // --- Dynatrace handlers ---
 
 // handleDynatraceMetrics executes a Dynatrace metrics selector query.
-// GET /api/v1/dynatrace/{sourceID}/metrics?query=<selector>&from=<ms>&to=<ms>
+// GET /api/v1/dynatrace/{componentID}/metrics?query=<selector>&from=<ms>&to=<ms>
 func (s *Server) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -633,16 +633,16 @@ func (s *Server) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }
 
 // handleDynatraceEvents returns Dynatrace events.
-// GET /api/v1/dynatrace/{sourceID}/events?from=<ms>&to=<ms>&limit=<n>
+// GET /api/v1/dynatrace/{componentID}/events?from=<ms>&to=<ms>&limit=<n>
 func (s *Server) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	now := time.Now()
 	from := now.Add(-time.Hour).UnixMilli()
@@ -683,17 +683,17 @@ func (s *Server) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
+		"result":       result,
+		"component_id": sourceID,
 	})
 }
 
 // --- New Relic handlers ---
 
 // handleNewRelicNRQL executes a New Relic NRQL query.
-// GET /api/v1/newrelic/{sourceID}/nrql?query=<nrql>&account_id=<id>
+// GET /api/v1/newrelic/{componentID}/nrql?query=<nrql>&account_id=<id>
 func (s *Server) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	query := r.URL.Query().Get("query")
 	if query == "" {
@@ -721,8 +721,8 @@ func (s *Server) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"result":    result,
-		"source_id": sourceID,
-		"query":     query,
+		"result":       result,
+		"component_id": sourceID,
+		"query":        query,
 	})
 }

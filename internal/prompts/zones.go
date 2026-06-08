@@ -17,7 +17,7 @@ const (
 )
 
 // ZoneViolationMessage formats the error returned by the tool executor when a
-// tool call targets a source outside the caller's authorized zones.
+// tool call targets a component outside the caller's authorized zones.
 func ZoneViolationMessage(toolName, zoneNames, targetInfo string) string {
 	return fmt.Sprintf(
 		"ZONE BOUNDARY VIOLATION: Tool %q cannot proceed — "+
@@ -35,7 +35,7 @@ func ZoneViolationMessage(toolName, zoneNames, targetInfo string) string {
 // available (no RBAC context).
 func ZoneViolationFallback(toolName, sourceID string) string {
 	return fmt.Sprintf(
-		"ZONE BOUNDARY VIOLATION: tool %q targets source %q which is %s of your authorized zones — you are %s this operation",
+		"ZONE BOUNDARY VIOLATION: tool %q targets component %q which is %s of your authorized zones — you are %s this operation",
 		toolName, sourceID, PhraseOutsideScope, PhraseNotAuthorized)
 }
 
@@ -66,11 +66,11 @@ func NamespaceViolationFallback(namespace string, allowedNamespaces []string) st
 // ZoneScopeParams holds the resolved data needed to build the zone scope
 // section of the system prompt.
 type ZoneScopeParams struct {
-	ZoneNamesStr      string              // e.g. "Frontend Zone (zone-a)"
-	AllowedSourceIDs  []string            // source IDs in authorized zones
-	AllowedNamespaces []string            // authorized K8s namespaces
-	OtherZoneSources  map[string][]string // zone label → source IDs (unauthorized)
-	NamespaceZoneMap  map[string]string   // namespace → zone label (all zones)
+	ZoneNamesStr        string              // e.g. "Frontend Zone (zone-a)"
+	AllowedComponentIDs []string            // component IDs in authorized zones
+	AllowedNamespaces   []string            // authorized K8s namespaces
+	OtherZoneComponents map[string][]string // zone label → component IDs (unauthorized)
+	NamespaceZoneMap    map[string]string   // namespace → zone label (all zones)
 }
 
 // BuildZoneScopePrompt constructs the "SECURITY SCOPE" + "ZONE BOUNDARY RULES"
@@ -81,20 +81,20 @@ func BuildZoneScopePrompt(p ZoneScopeParams) string {
 
 	sb.WriteString("SECURITY SCOPE — MANDATORY ZONE BOUNDARIES:\n\n")
 	sb.WriteString(fmt.Sprintf("Your authorized zones: %s\n", p.ZoneNamesStr))
-	if len(p.AllowedSourceIDs) > 0 {
-		sb.WriteString(fmt.Sprintf("Authorized source IDs: %s\n", strings.Join(p.AllowedSourceIDs, ", ")))
+	if len(p.AllowedComponentIDs) > 0 {
+		sb.WriteString(fmt.Sprintf("Authorized component IDs: %s\n", strings.Join(p.AllowedComponentIDs, ", ")))
 	} else {
-		sb.WriteString("No sources are assigned to your authorized zones. You cannot execute any source-scoped operations.\n")
+		sb.WriteString("No components are assigned to your authorized zones. You cannot execute any component-scoped operations.\n")
 	}
 	if len(p.AllowedNamespaces) > 0 {
 		sb.WriteString(fmt.Sprintf("Authorized Kubernetes namespaces: %s\n", strings.Join(p.AllowedNamespaces, ", ")))
 	}
 
 	// Include other zones so the LLM can identify target zones by name
-	if len(p.OtherZoneSources) > 0 {
+	if len(p.OtherZoneComponents) > 0 {
 		sb.WriteString("\nOther zones (NOT authorized — for reference only):\n")
-		for zoneName, sources := range p.OtherZoneSources {
-			sb.WriteString(fmt.Sprintf("  - %s: sources %s\n", zoneName, strings.Join(sources, ", ")))
+		for zoneName, components := range p.OtherZoneComponents {
+			sb.WriteString(fmt.Sprintf("  - %s: components %s\n", zoneName, strings.Join(components, ", ")))
 		}
 	}
 
@@ -116,7 +116,7 @@ func BuildZoneScopePrompt(p ZoneScopeParams) string {
 	sb.WriteString("\n")
 	sb.WriteString("ZONE BOUNDARY RULES — you MUST follow these exactly:\n\n")
 
-	sb.WriteString("1. DIRECT REFUSAL: When a request targets a resource, namespace, or source outside your authorized zones, " +
+	sb.WriteString("1. DIRECT REFUSAL: When a request targets a resource, namespace, or component outside your authorized zones, " +
 		"you MUST refuse. Your response MUST use this exact pattern:\n")
 	sb.WriteString(fmt.Sprintf(
 		"   \"This resource is in the [target zone] zone, which is %s of my authorized zone(s): [authorized zones]. "+
@@ -127,7 +127,7 @@ func BuildZoneScopePrompt(p ZoneScopeParams) string {
 	sb.WriteString("   Suggest the operator engage the team responsible for that zone or escalate appropriately.\n\n")
 
 	sb.WriteString("2. IMPLICIT ZONE CROSSING: When you are performing a multi-step investigation and a next step would " +
-		"require accessing resources in a namespace, source, or zone outside your authorized scope:\n")
+		"require accessing resources in a namespace, component, or zone outside your authorized scope:\n")
 	sb.WriteString("   a) STOP the investigation at that point — do NOT attempt the cross-zone tool call\n")
 	sb.WriteString("   b) Explain what you found so far within your authorized zone\n")
 	sb.WriteString("   c) Your response MUST use this exact pattern:\n")

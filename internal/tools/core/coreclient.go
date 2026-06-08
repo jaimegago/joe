@@ -13,7 +13,7 @@ package core
 // CoreToolsClient is the union of every per-tool *Client interface used by
 // registerCoreTools. Any value passed to NewCoreRegistry must satisfy it.
 type CoreToolsClient interface {
-	ListSourcesClient
+	ListComponentsClient
 	GraphQueryClient
 	GraphRelatedClient
 	K8sGetClient

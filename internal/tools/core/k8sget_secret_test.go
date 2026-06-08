@@ -45,10 +45,10 @@ func TestK8sGetTool_SecretRedaction_SingleGet(t *testing.T) {
 
 	tool := NewK8sGetTool(client)
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "secrets",
-		"namespace": "payments",
-		"name":      "db-credentials",
+		"component_id": "cluster-a",
+		"resource":     "secrets",
+		"namespace":    "payments",
+		"name":         "db-credentials",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -87,10 +87,10 @@ func TestK8sGetTool_SecretRedaction_StringData(t *testing.T) {
 
 	tool := NewK8sGetTool(client)
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "secrets",
-		"namespace": "default",
-		"name":      "api-key",
+		"component_id": "cluster-a",
+		"resource":     "secrets",
+		"namespace":    "default",
+		"name":         "api-key",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -122,10 +122,10 @@ func TestK8sGetTool_NonSecret_NotRedacted(t *testing.T) {
 
 	tool := NewK8sGetTool(client)
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "configmaps",
-		"namespace": "default",
-		"name":      "app-config",
+		"component_id": "cluster-a",
+		"resource":     "configmaps",
+		"namespace":    "default",
+		"name":         "app-config",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -169,9 +169,9 @@ func TestK8sGetTool_SecretRedaction_List(t *testing.T) {
 
 	tool := NewK8sGetTool(client)
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "secrets",
-		"namespace": "default",
+		"component_id": "cluster-a",
+		"resource":     "secrets",
+		"namespace":    "default",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

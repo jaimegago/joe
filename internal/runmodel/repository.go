@@ -556,8 +556,8 @@ func (r *SQLRepository) AppendLedger(ctx context.Context, e LedgerEntry) (*Ledge
 		e.RecordedAt = time.Now().UTC()
 	}
 	var sourceID any
-	if e.SourceID != nil {
-		sourceID = *e.SourceID
+	if e.ComponentID != nil {
+		sourceID = *e.ComponentID
 	}
 	var completedAt any
 	if e.CompletedAt != nil {
@@ -565,7 +565,7 @@ func (r *SQLRepository) AppendLedger(ctx context.Context, e LedgerEntry) (*Ledge
 	}
 	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO action_ledger
-			(id, run_id, idempotency_key, tool_name, tier, principal, source_id,
+			(id, run_id, idempotency_key, tool_name, tier, principal, component_id,
 			 summary, recorded_at, completed_at, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		e.ID, e.RunID, e.IdempotencyKey, e.ToolName, int(e.Tier),
@@ -580,7 +580,7 @@ func (r *SQLRepository) AppendLedger(ctx context.Context, e LedgerEntry) (*Ledge
 func (r *SQLRepository) ListLedgerForRun(ctx context.Context, runID string) ([]LedgerEntry, error) {
 	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
 		SELECT id, run_id, idempotency_key, tool_name, tier, principal,
-		       source_id, summary, recorded_at, completed_at, status
+		       component_id, summary, recorded_at, completed_at, status
 		FROM action_ledger WHERE run_id = ? ORDER BY recorded_at`), runID)
 	if err != nil {
 		return nil, fmt.Errorf("list ledger: %w", err)
@@ -603,7 +603,7 @@ func (r *SQLRepository) ListLedgerForRun(ctx context.Context, runID string) ([]L
 		}
 		e.Tier = Tier(tier)
 		if sourceID.Valid {
-			e.SourceID = &sourceID.String
+			e.ComponentID = &sourceID.String
 		}
 		e.RecordedAt, _ = time.Parse(time.RFC3339, recordedAtStr)
 		if completedAt.Valid {

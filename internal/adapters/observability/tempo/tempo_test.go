@@ -57,7 +57,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -75,7 +75,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("Connect() expected error, got nil")
@@ -112,7 +112,7 @@ func TestAdapter_Search(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -152,7 +152,7 @@ func TestAdapter_GetTrace(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -203,7 +203,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -221,7 +221,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := tempo.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -232,7 +232,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for closed server, got nil")
 	}
@@ -249,7 +249,7 @@ func TestAdapter_Connect_WithHeaders(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "secret",
 		"org_id":  "tenant1",
@@ -279,7 +279,7 @@ func TestAdapter_Search_TagsOnly(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	results, err := adapter.Search(context.Background(), "", "http.status_code=500", 0, 0, 0)
@@ -309,7 +309,7 @@ func TestAdapter_Search_ServiceAndTags_With_Duration(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Search(context.Background(), "payment", "http.method=POST", 100, 5000, 5)
@@ -341,7 +341,7 @@ func TestAdapter_Search_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Search(context.Background(), "payment", "", 0, 0, 10)
@@ -363,7 +363,7 @@ func TestAdapter_GetTrace_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.GetTrace(context.Background(), "notexist")
@@ -386,7 +386,7 @@ func TestAdapter_GetTrace_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.GetTrace(context.Background(), "trace001")
@@ -420,7 +420,7 @@ func TestAdapter_ListServices(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -459,7 +459,7 @@ func TestAdapter_ListServices_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListServices(context.Background())
@@ -484,7 +484,7 @@ func TestAdapter_ListServices_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListServices(context.Background())
@@ -500,7 +500,7 @@ func TestAdapter_ListServices_DoError(t *testing.T) {
 	}))
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	// Close the server to cause a request error on subsequent calls.
@@ -526,7 +526,7 @@ func TestAdapter_Search_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.Search(context.Background(), "payment", "", 0, 0, 10)
@@ -542,7 +542,7 @@ func TestAdapter_Search_DoError(t *testing.T) {
 	}))
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	srv.Close()
@@ -560,7 +560,7 @@ func TestAdapter_GetTrace_DoError(t *testing.T) {
 	}))
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	srv.Close()
@@ -585,7 +585,7 @@ func TestAdapter_GetTrace_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := tempo.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.GetTrace(context.Background(), "trace001")
@@ -598,7 +598,7 @@ func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := tempo.New()
 	// nil Config bytes triggers the else branch (configMap = make(map[string]any))
 	// then ParseConfig returns error because url is missing.
-	source := store.Source{Config: nil}
+	source := store.Component{Config: nil}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}

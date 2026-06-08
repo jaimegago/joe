@@ -17,7 +17,7 @@ type fakeGitAdapter struct {
 	logs  []git.CommitInfo
 }
 
-func (f *fakeGitAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeGitAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
 
 func (f *fakeGitAdapter) Disconnect() error { return nil }
 
@@ -47,7 +47,7 @@ func (f *fakeGitAdapter) Diff(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
 
-func TestRefreshGitSourceBasic(t *testing.T) {
+func TestRefreshGitComponentBasic(t *testing.T) {
 	graphStore := setupGraphStore(t)
 	cache := newFakeCache()
 	fakeLLM := &fakeLLM{}
@@ -59,24 +59,24 @@ func TestRefreshGitSourceBasic(t *testing.T) {
 		logger:         slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-git-1", Type: store.SourceTypeGit, Name: "test-repo"}
+	source := &store.Component{ID: "src-git-1", Type: store.ComponentTypeGit, Name: "test-repo"}
 	adapter := &fakeGitAdapter{
 		files: []git.FileInfo{
 			{Path: ".joe/manifest.yaml", IsDir: false},
-			{Path: ".joe/sources.yaml", IsDir: false},
+			{Path: ".joe/components.yaml", IsDir: false},
 		},
 		logs: []git.CommitInfo{
 			{Hash: "abc123", Author: "alice", Message: "fix: update deployment"},
 		},
 	}
 
-	if err := refresher.refreshGitSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshGitSource error: %v", err)
+	if err := refresher.refreshGitComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshGitComponent error: %v", err)
 	}
 
-	nodes, edges, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	nodes, edges, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(nodes) != 1 {
@@ -104,7 +104,7 @@ func TestRefreshGitSourceBasic(t *testing.T) {
 	}
 }
 
-func TestRefreshGitSourceNoJoeFiles(t *testing.T) {
+func TestRefreshGitComponentNoJoeFiles(t *testing.T) {
 	graphStore := setupGraphStore(t)
 	cache := newFakeCache()
 	fakeLLM := &fakeLLM{}
@@ -116,7 +116,7 @@ func TestRefreshGitSourceNoJoeFiles(t *testing.T) {
 		logger:         slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-git-2", Type: store.SourceTypeGit, Name: "test-repo"}
+	source := &store.Component{ID: "src-git-2", Type: store.ComponentTypeGit, Name: "test-repo"}
 	adapter := &fakeGitAdapter{
 		files: []git.FileInfo{
 			{Path: "README.md", IsDir: false},
@@ -126,13 +126,13 @@ func TestRefreshGitSourceNoJoeFiles(t *testing.T) {
 		},
 	}
 
-	if err := refresher.refreshGitSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshGitSource error: %v", err)
+	if err := refresher.refreshGitComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshGitComponent error: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if joePresent, ok := nodes[0].Metadata["joe_dir_present"].(bool); !ok || joePresent {

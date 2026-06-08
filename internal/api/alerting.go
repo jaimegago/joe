@@ -14,9 +14,9 @@ import (
 // --- Alertmanager handlers ---
 
 // handleAlertmanagerAlerts lists active alerts from Alertmanager.
-// GET /api/v1/alertmanager/{sourceID}/alerts?filter=<matchers>
+// GET /api/v1/alertmanager/{componentID}/alerts?filter=<matchers>
 func (s *Server) handleAlertmanagerAlerts(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	filter := r.URL.Query().Get("filter")
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -36,18 +36,18 @@ func (s *Server) handleAlertmanagerAlerts(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"alerts":    alerts,
-		"count":     len(alerts),
-		"source_id": sourceID,
+		"alerts":       alerts,
+		"count":        len(alerts),
+		"component_id": sourceID,
 	})
 }
 
 // --- PagerDuty handlers ---
 
 // handlePagerDutyIncidents lists PagerDuty incidents.
-// GET /api/v1/pagerduty/{sourceID}/incidents?service=<id>&status=<status>&limit=<n>
+// GET /api/v1/pagerduty/{componentID}/incidents?service=<id>&status=<status>&limit=<n>
 func (s *Server) handlePagerDutyIncidents(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	serviceID := r.URL.Query().Get("service")
 	status := r.URL.Query().Get("status")
 
@@ -75,16 +75,16 @@ func (s *Server) handlePagerDutyIncidents(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"incidents": incidents,
-		"count":     len(incidents),
-		"source_id": sourceID,
+		"incidents":    incidents,
+		"count":        len(incidents),
+		"component_id": sourceID,
 	})
 }
 
 // handlePagerDutyServices lists all PagerDuty services.
-// GET /api/v1/pagerduty/{sourceID}/services
+// GET /api/v1/pagerduty/{componentID}/services
 func (s *Server) handlePagerDutyServices(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -103,18 +103,18 @@ func (s *Server) handlePagerDutyServices(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"services":  services,
-		"count":     len(services),
-		"source_id": sourceID,
+		"services":     services,
+		"count":        len(services),
+		"component_id": sourceID,
 	})
 }
 
 // --- Grafana handlers ---
 
 // handleGrafanaDashboards searches for Grafana dashboards.
-// GET /api/v1/grafana/{sourceID}/dashboards?query=<q>&limit=<n>
+// GET /api/v1/grafana/{componentID}/dashboards?query=<q>&limit=<n>
 func (s *Server) handleGrafanaDashboards(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	query := r.URL.Query().Get("query")
 
 	limit := 50
@@ -141,16 +141,16 @@ func (s *Server) handleGrafanaDashboards(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dashboards": dashboards,
-		"count":      len(dashboards),
-		"source_id":  sourceID,
+		"dashboards":   dashboards,
+		"count":        len(dashboards),
+		"component_id": sourceID,
 	})
 }
 
 // handleGrafanaGetDashboard retrieves a Grafana dashboard by UID.
-// GET /api/v1/grafana/{sourceID}/dashboards/{uid}
+// GET /api/v1/grafana/{componentID}/dashboards/{uid}
 func (s *Server) handleGrafanaGetDashboard(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	uid := r.PathValue("uid")
 
 	if uid == "" {
@@ -171,15 +171,15 @@ func (s *Server) handleGrafanaGetDashboard(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dashboard": dashboard,
-		"source_id": sourceID,
+		"dashboard":    dashboard,
+		"component_id": sourceID,
 	})
 }
 
 // handleGrafanaAlerts lists active Grafana-managed alerts.
-// GET /api/v1/grafana/{sourceID}/alerts
+// GET /api/v1/grafana/{componentID}/alerts
 func (s *Server) handleGrafanaAlerts(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -198,8 +198,8 @@ func (s *Server) handleGrafanaAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"alerts":    alerts,
-		"count":     len(alerts),
-		"source_id": sourceID,
+		"alerts":       alerts,
+		"count":        len(alerts),
+		"component_id": sourceID,
 	})
 }

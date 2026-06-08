@@ -281,7 +281,7 @@ func TestAdapter_WebhookSecret(t *testing.T) {
 
 func TestAdapter_Connect_Success(t *testing.T) {
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"token":"tok","base_url":"https://gitlab.com"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -294,7 +294,7 @@ func TestAdapter_Connect_Success(t *testing.T) {
 
 func TestAdapter_Connect_BadConfig(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{bad json`)}
+	src := store.Component{Config: []byte(`{bad json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for bad JSON config")
 	}
@@ -302,7 +302,7 @@ func TestAdapter_Connect_BadConfig(t *testing.T) {
 
 func TestAdapter_Connect_MissingToken(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{"base_url":"https://gitlab.com"}`)}
+	src := store.Component{Config: []byte(`{"base_url":"https://gitlab.com"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing token")
 	}

@@ -42,7 +42,7 @@ func (t *RegistryQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "The registry source ID as registered in Joe.",
 			},
@@ -55,14 +55,14 @@ func (t *RegistryQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Tag or digest to fetch the manifest for, e.g. \"latest\" or \"sha256:abc...\". Requires repo.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *RegistryQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	repo, _ := args["repo"].(string)
@@ -75,11 +75,11 @@ func (t *RegistryQueryTool) Execute(ctx context.Context, args map[string]any) (a
 			return nil, fmt.Errorf("get manifest for %s:%s: %w", repo, reference, err)
 		}
 		return map[string]any{
-			"operation": "get_manifest",
-			"source_id": sourceID,
-			"repo":      repo,
-			"reference": reference,
-			"manifest":  manifest,
+			"operation":    "get_manifest",
+			"component_id": sourceID,
+			"repo":         repo,
+			"reference":    reference,
+			"manifest":     manifest,
 		}, nil
 
 	case repo != "":
@@ -88,11 +88,11 @@ func (t *RegistryQueryTool) Execute(ctx context.Context, args map[string]any) (a
 			return nil, fmt.Errorf("list tags for %s: %w", repo, err)
 		}
 		return map[string]any{
-			"operation": "list_tags",
-			"source_id": sourceID,
-			"repo":      repo,
-			"tags":      tags,
-			"count":     len(tags),
+			"operation":    "list_tags",
+			"component_id": sourceID,
+			"repo":         repo,
+			"tags":         tags,
+			"count":        len(tags),
 		}, nil
 
 	default:
@@ -102,7 +102,7 @@ func (t *RegistryQueryTool) Execute(ctx context.Context, args map[string]any) (a
 		}
 		return map[string]any{
 			"operation":    "list_repos",
-			"source_id":    sourceID,
+			"component_id": sourceID,
 			"repositories": repos,
 			"count":        len(repos),
 		}, nil
@@ -141,7 +141,7 @@ func (t *ArtifactoryQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "The Artifactory source ID as registered in Joe.",
 			},
@@ -158,14 +158,14 @@ func (t *ArtifactoryQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Artifact path within the repo, e.g. \"myapp/latest/manifest.json\". Requires repo. Returns metadata.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *ArtifactoryQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	repo, _ := args["repo"].(string)
@@ -179,12 +179,12 @@ func (t *ArtifactoryQueryTool) Execute(ctx context.Context, args map[string]any)
 			return nil, fmt.Errorf("list docker tags for %s/%s: %w", repo, image, err)
 		}
 		return map[string]any{
-			"operation": "list_docker_tags",
-			"source_id": sourceID,
-			"repo":      repo,
-			"image":     image,
-			"tags":      tags,
-			"count":     len(tags),
+			"operation":    "list_docker_tags",
+			"component_id": sourceID,
+			"repo":         repo,
+			"image":        image,
+			"tags":         tags,
+			"count":        len(tags),
 		}, nil
 
 	case repo != "" && path != "":
@@ -193,11 +193,11 @@ func (t *ArtifactoryQueryTool) Execute(ctx context.Context, args map[string]any)
 			return nil, fmt.Errorf("get artifact info for %s/%s: %w", repo, path, err)
 		}
 		return map[string]any{
-			"operation": "get_artifact_info",
-			"source_id": sourceID,
-			"repo":      repo,
-			"path":      path,
-			"artifact":  info,
+			"operation":    "get_artifact_info",
+			"component_id": sourceID,
+			"repo":         repo,
+			"path":         path,
+			"artifact":     info,
 		}, nil
 
 	case repo != "":
@@ -210,7 +210,7 @@ func (t *ArtifactoryQueryTool) Execute(ctx context.Context, args map[string]any)
 		}
 		return map[string]any{
 			"operation":    "list_repos",
-			"source_id":    sourceID,
+			"component_id": sourceID,
 			"repositories": repos,
 			"count":        len(repos),
 		}, nil
@@ -249,7 +249,7 @@ func (t *ECRQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "The ECR source ID as registered in Joe.",
 			},
@@ -262,14 +262,14 @@ func (t *ECRQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Image tag, e.g. \"latest\" or \"v1.2.3\". Requires repo. Returns single image details.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *ECRQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	repo, _ := args["repo"].(string)
@@ -282,11 +282,11 @@ func (t *ECRQueryTool) Execute(ctx context.Context, args map[string]any) (any, e
 			return nil, fmt.Errorf("get ECR image %s:%s: %w", repo, tag, err)
 		}
 		return map[string]any{
-			"operation": "get_image",
-			"source_id": sourceID,
-			"repo":      repo,
-			"tag":       tag,
-			"image":     img,
+			"operation":    "get_image",
+			"component_id": sourceID,
+			"repo":         repo,
+			"tag":          tag,
+			"image":        img,
 		}, nil
 
 	case repo != "":
@@ -295,11 +295,11 @@ func (t *ECRQueryTool) Execute(ctx context.Context, args map[string]any) (any, e
 			return nil, fmt.Errorf("list ECR images in %s: %w", repo, err)
 		}
 		return map[string]any{
-			"operation": "list_images",
-			"source_id": sourceID,
-			"repo":      repo,
-			"images":    images,
-			"count":     len(images),
+			"operation":    "list_images",
+			"component_id": sourceID,
+			"repo":         repo,
+			"images":       images,
+			"count":        len(images),
 		}, nil
 
 	default:
@@ -309,7 +309,7 @@ func (t *ECRQueryTool) Execute(ctx context.Context, args map[string]any) (any, e
 		}
 		return map[string]any{
 			"operation":    "list_repos",
-			"source_id":    sourceID,
+			"component_id": sourceID,
 			"repositories": repos,
 			"count":        len(repos),
 		}, nil

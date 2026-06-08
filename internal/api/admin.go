@@ -102,9 +102,9 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("PATCH %s/zones/{id}", admin), h.updateZone)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/zones/{id}", admin), h.deleteZone)
 
-	mux.HandleFunc(fmt.Sprintf("GET %s/source-zones", admin), h.listAssignments)
-	mux.HandleFunc(fmt.Sprintf("POST %s/source-zones", admin), h.assignSourceZone)
-	mux.HandleFunc(fmt.Sprintf("DELETE %s/source-zones/{sourceID}", admin), h.unassignSourceZone)
+	mux.HandleFunc(fmt.Sprintf("GET %s/component-zones", admin), h.listAssignments)
+	mux.HandleFunc(fmt.Sprintf("POST %s/component-zones", admin), h.assignComponentZone)
+	mux.HandleFunc(fmt.Sprintf("DELETE %s/component-zones/{componentID}", admin), h.unassignComponentZone)
 
 	mux.HandleFunc(fmt.Sprintf("GET %s/policies", admin), h.listPolicies)
 	mux.HandleFunc(fmt.Sprintf("POST %s/policies", admin), h.createPolicy)
@@ -240,25 +240,25 @@ func (h *adminHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Read-class audit (fail-open): the source→zone map is authz topology.
-	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneRead, audit.DecisionAllow,
-		"admin_read", audit.Details{Target: "source_zones"}, "admin:source_zone.read")
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminComponentZoneRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "component_zones"}, "admin:component_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"assignments": assignments,
 		"count":       len(assignments),
 	})
 }
 
-func (h *adminHandler) assignSourceZone(w http.ResponseWriter, r *http.Request) {
+func (h *adminHandler) assignComponentZone(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
 		return
 	}
-	var a rbac.SourceZoneAssignment
+	var a rbac.ComponentZoneAssignment
 	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
 		writeBadRequest(w, err, "assign source zone", "invalid request body")
 		return
 	}
-	if a.SourceID == "" || a.ZoneID == "" || a.AssignedBy == "" {
-		writeBadRequest(w, nil, "assign source zone", "source_id, zone_id, and assigned_by are required")
+	if a.ComponentID == "" || a.ZoneID == "" || a.AssignedBy == "" {
+		writeBadRequest(w, nil, "assign source zone", "component_id, zone_id, and assigned_by are required")
 		return
 	}
 
@@ -348,24 +348,24 @@ func (h *adminHandler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// --- Unassigned sources endpoint ---
+// --- Unassigned components endpoint ---
 
 func (h *adminHandler) listUnassigned(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
 		return
 	}
-	ids, err := h.repo.ListUnassignedSourceIDs(r.Context())
+	ids, err := h.repo.ListUnassignedComponentIDs(r.Context())
 	if err != nil {
-		writeInternalError(w, err, "list unassigned sources")
+		writeInternalError(w, err, "list unassigned components")
 		return
 	}
 	// Read-class audit (fail-open): the unassigned roster is part of the
-	// source→zone authz map; recorded under the same source_zone.read verb.
-	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminSourceZoneRead, audit.DecisionAllow,
-		"admin_read", audit.Details{Target: "unassigned"}, "admin:source_zone.read")
+	// source→zone authz map; recorded under the same component_zone.read verb.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminComponentZoneRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "unassigned"}, "admin:component_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"source_ids": ids,
-		"count":      len(ids),
+		"component_ids": ids,
+		"count":         len(ids),
 	})
 }
 
@@ -448,7 +448,7 @@ func (h *adminHandler) deleteZone(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo.DeleteZone(r.Context(), id, h.actor(r)); err != nil {
 		if errors.Is(err, rbac.ErrZoneInUse) {
 			writeError(w, http.StatusConflict, errorCodeConflict,
-				fmt.Sprintf("zone %q still has source assignments; unassign those sources before deleting", id))
+				fmt.Sprintf("zone %q still has source assignments; unassign those components before deleting", id))
 			return
 		}
 		writeInternalError(w, err, "delete zone")
@@ -459,15 +459,15 @@ func (h *adminHandler) deleteZone(w http.ResponseWriter, r *http.Request) {
 
 // --- Source-zone unassign endpoint (Stage 3) ---
 
-// unassignSourceZone removes the source→zone assignment for {sourceID}. After
+// unassignComponentZone removes the source→zone assignment for {componentID}. After
 // removal the source falls back to the policy engine's default unassigned
-// behaviour. The repository writes the source_zone.unassign audit row in the
+// behaviour. The repository writes the component_zone.unassign audit row in the
 // same transaction; the handler threads the acting principal down.
-func (h *adminHandler) unassignSourceZone(w http.ResponseWriter, r *http.Request) {
+func (h *adminHandler) unassignComponentZone(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
 		return
 	}
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	if sourceID == "" {
 		writeBadRequest(w, nil, "unassign source zone", "source id is required")
 		return
@@ -478,8 +478,8 @@ func (h *adminHandler) unassignSourceZone(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"source_id": sourceID,
-		"removed":   removed,
+		"component_id": sourceID,
+		"removed":      removed,
 		// After unassignment the source falls back to the default unassigned
 		// behaviour of the policy engine.
 		"note": "source now falls back to the default unassigned zone",

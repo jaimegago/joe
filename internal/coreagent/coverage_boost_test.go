@@ -81,13 +81,13 @@ func TestRefreshCRDSpec_WithTargetFieldAndMatchingNode(t *testing.T) {
 
 	// Plant a deployment that the ScaledObject will reference.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8s/src-crd/deployment/default/payment-worker",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment-worker", "namespace": "default"},
+		ID:          "k8s/src-crd/deployment/default/payment-worker",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment-worker", "namespace": "default"},
 	})
 
-	src := &store.Source{ID: "src-crd-spec-1", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-crd-spec-1", Type: store.ComponentTypeKubernetes}
 
 	// KEDA ScaledObject with spec.scaleTargetRef.name filled in.
 	scaledObj := unstructured.Unstructured{
@@ -132,13 +132,13 @@ func TestRefreshCRDSpec_NamespaceMismatch_NoEdge(t *testing.T) {
 
 	// Plant a deployment in "other" namespace.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8s/src-crd/deployment/other/api",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "api", "namespace": "other"},
+		ID:          "k8s/src-crd/deployment/other/api",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "api", "namespace": "other"},
 	})
 
-	src := &store.Source{ID: "src-crd-spec-ns", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-crd-spec-ns", Type: store.ComponentTypeKubernetes}
 
 	// VirtualService in "default" but the deployment is in "other".
 	vs := unstructured.Unstructured{}
@@ -173,13 +173,13 @@ func TestRefreshCRDSpec_MatchingNodeWrongType(t *testing.T) {
 
 	// Plant a pod — wrong type for mesh_for (expects service/deployment).
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "pod/default/api-pod",
-		Type:     "pod",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "api-pod"},
+		ID:          "pod/default/api-pod",
+		Type:        "pod",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "api-pod"},
 	})
 
-	src := &store.Source{ID: "src-crd-wrongtype", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-crd-wrongtype", Type: store.ComponentTypeKubernetes}
 	vs := unstructured.Unstructured{}
 	vs.SetName("api-pod")
 	vs.SetNamespace("default")
@@ -225,37 +225,37 @@ func TestAzureResourceID_EmptyID(t *testing.T) {
 }
 
 // ============================================================
-// awsRegionFromSource: various branches
+// awsRegionFromComponent: various branches
 // ============================================================
 
-func TestAWSRegionFromSource_NilSource(t *testing.T) {
-	got := awsRegionFromSource(nil)
+func TestAWSRegionFromComponent_NilSource(t *testing.T) {
+	got := awsRegionFromComponent(nil)
 	if got != "" {
-		t.Errorf("awsRegionFromSource(nil) = %q, want empty", got)
+		t.Errorf("awsRegionFromComponent(nil) = %q, want empty", got)
 	}
 }
 
-func TestAWSRegionFromSource_EmptyConfig(t *testing.T) {
-	src := &store.Source{Config: nil}
-	got := awsRegionFromSource(src)
+func TestAWSRegionFromComponent_EmptyConfig(t *testing.T) {
+	src := &store.Component{Config: nil}
+	got := awsRegionFromComponent(src)
 	if got != "" {
-		t.Errorf("awsRegionFromSource(empty) = %q, want empty", got)
+		t.Errorf("awsRegionFromComponent(empty) = %q, want empty", got)
 	}
 }
 
-func TestAWSRegionFromSource_InvalidJSON(t *testing.T) {
-	src := &store.Source{Config: []byte(`not-json`)}
-	got := awsRegionFromSource(src)
+func TestAWSRegionFromComponent_InvalidJSON(t *testing.T) {
+	src := &store.Component{Config: []byte(`not-json`)}
+	got := awsRegionFromComponent(src)
 	if got != "" {
-		t.Errorf("awsRegionFromSource(invalid json) = %q, want empty", got)
+		t.Errorf("awsRegionFromComponent(invalid json) = %q, want empty", got)
 	}
 }
 
-func TestAWSRegionFromSource_WithRegion(t *testing.T) {
-	src := &store.Source{Config: []byte(`{"region":"us-west-2","access_key_id":"x","secret_access_key":"y"}`)}
-	got := awsRegionFromSource(src)
+func TestAWSRegionFromComponent_WithRegion(t *testing.T) {
+	src := &store.Component{Config: []byte(`{"region":"us-west-2","access_key_id":"x","secret_access_key":"y"}`)}
+	got := awsRegionFromComponent(src)
 	if got != "us-west-2" {
-		t.Errorf("awsRegionFromSource = %q, want us-west-2", got)
+		t.Errorf("awsRegionFromComponent = %q, want us-west-2", got)
 	}
 }
 
@@ -274,7 +274,7 @@ func setupDatastoreRefresher(t *testing.T) *Refresher {
 
 func TestBuildStoresInEdgesByName_EmptySourceName(t *testing.T) {
 	r := setupDatastoreRefresher(t)
-	src := &store.Source{ID: "src-ds-1", Name: "", Type: store.SourceTypePostgreSQL}
+	src := &store.Component{ID: "src-ds-1", Name: "", Type: store.ComponentTypePostgreSQL}
 	edges := r.buildStoresInEdgesByName(context.Background(), src, "ds-node", "stores_in", "postgres", time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for empty source name, got %d", len(edges))
@@ -283,7 +283,7 @@ func TestBuildStoresInEdgesByName_EmptySourceName(t *testing.T) {
 
 func TestBuildStoresInEdgesByName_NoMatchingNodes(t *testing.T) {
 	r := setupDatastoreRefresher(t)
-	src := &store.Source{ID: "src-ds-2", Name: "orders-db", Type: store.SourceTypePostgreSQL}
+	src := &store.Component{ID: "src-ds-2", Name: "orders-db", Type: store.ComponentTypePostgreSQL}
 	edges := r.buildStoresInEdgesByName(context.Background(), src, "ds-node", "stores_in", "postgres", time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges when no nodes match, got %d", len(edges))
@@ -293,13 +293,13 @@ func TestBuildStoresInEdgesByName_NoMatchingNodes(t *testing.T) {
 func TestBuildStoresInEdgesByName_WithMatchingService(t *testing.T) {
 	r := setupDatastoreRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-ds-3", Name: "orders-db", Type: store.SourceTypePostgreSQL}
+	src := &store.Component{ID: "src-ds-3", Name: "orders-db", Type: store.ComponentTypePostgreSQL}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/orders-db",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "orders-db"},
+		ID:          "svc/default/orders-db",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "orders-db"},
 	})
 
 	edges := r.buildStoresInEdgesByName(ctx, src, "ds-node-orders", "stores_in", "postgres", time.Now())
@@ -311,14 +311,14 @@ func TestBuildStoresInEdgesByName_WithMatchingService(t *testing.T) {
 func TestBuildStoresInEdgesByName_SkipsNonServiceNodes(t *testing.T) {
 	r := setupDatastoreRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-ds-4", Name: "orders-db", Type: store.SourceTypePostgreSQL}
+	src := &store.Component{ID: "src-ds-4", Name: "orders-db", Type: store.ComponentTypePostgreSQL}
 
 	// k8s_node type — should NOT produce an edge.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8snode/orders-db",
-		Type:     "k8s_node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "orders-db"},
+		ID:          "k8snode/orders-db",
+		Type:        "k8s_node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "orders-db"},
 	})
 
 	edges := r.buildStoresInEdgesByName(ctx, src, "ds-node-x", "stores_in", "postgres", time.Now())
@@ -334,17 +334,17 @@ func TestBuildStoresInEdgesByName_SkipsNonServiceNodes(t *testing.T) {
 func TestBuildQueuesInEdges_WithMatchingService(t *testing.T) {
 	r := setupDatastoreRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-kafka-1", Type: store.SourceTypeKafka, Name: "kafka"}
+	src := &store.Component{ID: "src-kafka-1", Type: store.ComponentTypeKafka, Name: "kafka"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/payment",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment"},
+		ID:          "svc/default/payment",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment"},
 	})
 
 	// Create a fake Kafka refresher that calls buildQueuesInEdges directly
-	// via refreshKafkaSource — no way to call it directly (unexported),
+	// via refreshKafkaComponent — no way to call it directly (unexported),
 	// so verify through the exported function.
 	kafkaNodeID := "kafka/src-kafka-1"
 	edges := r.buildQueuesInEdges(ctx, src, kafkaNodeID, []string{"payment", "payment", "orders"}, time.Now())
@@ -361,18 +361,18 @@ func TestBuildQueuesInEdges_WithMatchingService(t *testing.T) {
 }
 
 // ============================================================
-// LoadGraphStateForSource: error path (bad store)
+// LoadGraphStateForComponent: error path (bad store)
 // This is achieved by calling with a nil graph — will panic,
 // so instead we test the edge case of an empty source ID.
 // ============================================================
 
-func TestLoadGraphStateForSource_EmptySourceID(t *testing.T) {
+func TestLoadGraphStateForComponent_EmptySourceID(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
-	nodes, edges, err := LoadGraphStateForSource(ctx, gs, "")
+	nodes, edges, err := LoadGraphStateForComponent(ctx, gs, "")
 	if err != nil {
-		t.Errorf("LoadGraphStateForSource with empty sourceID: %v", err)
+		t.Errorf("LoadGraphStateForComponent with empty sourceID: %v", err)
 	}
 	if len(nodes) != 0 || len(edges) != 0 {
 		t.Errorf("expect empty result for empty source ID")
@@ -380,28 +380,28 @@ func TestLoadGraphStateForSource_EmptySourceID(t *testing.T) {
 }
 
 // ============================================================
-// refreshSource: "adapter is not <type>" branch coverage for
+// refreshComponent: "adapter is not <type>" branch coverage for
 // types we haven't covered yet.
 // ============================================================
 
-func TestRefreshSource_DatadogWrongType(t *testing.T) {
+func TestRefreshComponent_DatadogWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dd-bad", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-dd-bad", Type: store.SourceTypeDatadog, Name: "datadog"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-dd-bad", Type: store.ComponentTypeDatadog, Name: "datadog"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
-func TestRefreshSource_PrometheusWrongType_Splunk(t *testing.T) {
+func TestRefreshComponent_PrometheusWrongType_Splunk(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-prom-bad2", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-prom-bad2", Type: store.SourceTypePrometheus, Name: "prom"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-prom-bad2", Type: store.ComponentTypePrometheus, Name: "prom"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
@@ -413,13 +413,13 @@ func TestRefreshSource_PrometheusWrongType_Splunk(t *testing.T) {
 func TestBuildIngressForEdges_NoHost(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-nginx-nohost", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-nohost", Type: store.ComponentTypeNginx, Name: "nginx"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/nohost-svc",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "nohost-svc", "namespace": "default"},
+		ID:          "svc/default/nohost-svc",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "nohost-svc", "namespace": "default"},
 	})
 
 	now := time.Now()

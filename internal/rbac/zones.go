@@ -32,7 +32,7 @@ const (
 	ActionResolveIncident Action = "resolve_incident"
 )
 
-// Zone represents a security zone that groups sources by risk level and
+// Zone represents a security zone that groups components by risk level and
 // controls which actions are permitted within that zone.
 type Zone struct {
 	ID             string    `json:"id"              db:"id"`
@@ -52,13 +52,13 @@ func (z Zone) Allows(a Action) bool {
 	return false
 }
 
-// SourceZoneAssignment records which zone a source belongs to.
-type SourceZoneAssignment struct {
-	SourceID   string    `json:"source_id"   db:"source_id"`
-	ZoneID     string    `json:"zone_id"     db:"zone_id"`
-	AssignedBy string    `json:"assigned_by" db:"assigned_by"`
-	Reason     string    `json:"reason"      db:"reason"`
-	AssignedAt time.Time `json:"assigned_at" db:"assigned_at"`
+// ComponentZoneAssignment records which zone a source belongs to.
+type ComponentZoneAssignment struct {
+	ComponentID string    `json:"component_id"   db:"component_id"`
+	ZoneID      string    `json:"zone_id"     db:"zone_id"`
+	AssignedBy  string    `json:"assigned_by" db:"assigned_by"`
+	Reason      string    `json:"reason"      db:"reason"`
+	AssignedAt  time.Time `json:"assigned_at" db:"assigned_at"`
 }
 
 // Policy records that a principal has access to a security zone.
