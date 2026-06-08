@@ -205,6 +205,19 @@ export const PanicStatusSchema = z
     triggerReason: r.trigger_reason ?? null,
   }));
 
+// Mutate status — GET /api/v1/mutate-status.
+//
+// Like panicStatusResponse (and unlike the tagless Regime struct),
+// mutateStatusResponse carries explicit snake_case JSON tags
+// (internal/api/mutatestatus.go), so the wire keys are already lower-cased and
+// consumed directly with no key transform. reason is always one of the three
+// listed values — never the empty string. Read by the app-shell observation
+// banner, which gates on reason === "observation".
+export const MutateStatusSchema = z.object({
+  can_mutate: z.boolean(),
+  reason: z.enum(['observation', 'safe_mode', 'full']),
+});
+
 // Public auth config (Stream H2 follow-up — GET /api/v1/auth/config).
 //
 // The single app-wide capability the logged-out shell needs before any
