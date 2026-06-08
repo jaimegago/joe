@@ -571,3 +571,101 @@ func TestCaptain_CancelBoundToHandshakeParties(t *testing.T) {
 		t.Fatalf("cancel by outgoing party (alice): %v", err)
 	}
 }
+
+// --- D-0024: resolve detaches the active captain atomically with the
+// regime flip (resolve-half of the no-auto-lapse captaincy model) ---
+
+// resolveActiveIncident drives the active incident to believed_mitigated and
+// resolves it, returning the resolved session id. Mirrors the production
+// resolve path used by the regime handler.
+func (e *captainTestEnv) resolveActiveIncident(t *testing.T, sessionID, principal string) {
+	t.Helper()
+	if err := e.sess.UpdateIncidentState(e.ctx, sessionID,
+		sessionmodel.IncidentStateBelievedMitigated); err != nil {
+		t.Fatalf("advance to believed_mitigated: %v", err)
+	}
+	if _, err := e.sess.ResolveIncidentRegime(e.ctx, principal); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+}
+
+// TestCaptain_ResolveDetachesActiveCaptain is the break test for D-0024:
+// resolving an incident must detach its active captain. It fails if the
+// detach UPDATE is removed from ResolveIncidentRegime's transaction —
+// GetActiveCaptain would then keep returning the stale row.
+func TestCaptain_ResolveDetachesActiveCaptain(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+
+	// Sanity: declare attached alice as captain.
+	if cap, err := e.sess.GetActiveCaptain(e.ctx, sessionID); err != nil || cap == nil {
+		t.Fatalf("pre-resolve GetActiveCaptain = (%v, %v), want a live captain", cap, err)
+	}
+
+	e.resolveActiveIncident(t, sessionID, "alice")
+
+	// Break assertion: no active captain remains after resolve.
+	cap, err := e.sess.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("post-resolve GetActiveCaptain: %v", err)
+	}
+	if cap != nil {
+		t.Errorf("post-resolve GetActiveCaptain = %+v, want nil (captain must be detached on resolve)", cap)
+	}
+	if principal, ok, err := e.sess.CurrentCaptainPrincipal(e.ctx, sessionID); err != nil {
+		t.Fatalf("post-resolve CurrentCaptainPrincipal: %v", err)
+	} else if ok {
+		t.Errorf("post-resolve CurrentCaptainPrincipal = (%q, true), want (_, false)", principal)
+	}
+}
+
+// TestCaptain_ResolveAtomicRegimeAndCaptain asserts the atomicity intent of
+// D-0024 as a single post-condition: after resolve the regime is normal AND
+// no active captain exists. There must be no surviving state where the regime
+// is normal but a captain is still active.
+func TestCaptain_ResolveAtomicRegimeAndCaptain(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+	e.resolveActiveIncident(t, sessionID, "alice")
+
+	var mode string
+	if err := e.store.DB().QueryRowContext(e.ctx,
+		`SELECT mode FROM system_regime WHERE id = 1`).Scan(&mode); err != nil {
+		t.Fatalf("read regime mode: %v", err)
+	}
+	cap, err := e.sess.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetActiveCaptain: %v", err)
+	}
+	if mode != string(sessionmodel.RegimeModeNormal) || cap != nil {
+		t.Errorf("post-resolve regime=%q activeCaptain=%+v, want regime=normal AND no active captain",
+			mode, cap)
+	}
+}
+
+// TestCaptain_DeclareAfterResolveAttachesCleanly verifies a fresh incident
+// after a prior resolve attaches the new declarer cleanly, with no
+// interference from the prior incident's (now detached) captain row.
+func TestCaptain_DeclareAfterResolveAttachesCleanly(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	first := e.declareWithCaptain(t, "alice")
+	e.resolveActiveIncident(t, first, "alice")
+
+	second := e.declareWithCaptain(t, "bob")
+	if first == second {
+		t.Fatalf("expected a distinct new incident session, got same id %q", second)
+	}
+	cap, err := e.sess.GetActiveCaptain(e.ctx, second)
+	if err != nil {
+		t.Fatalf("GetActiveCaptain(second): %v", err)
+	}
+	if cap == nil || cap.Principal != "bob" {
+		t.Fatalf("new incident captain = %+v, want bob attached cleanly", cap)
+	}
+	// The prior incident's captain row stays detached and inert.
+	if old, err := e.sess.GetActiveCaptain(e.ctx, first); err != nil {
+		t.Fatalf("GetActiveCaptain(first): %v", err)
+	} else if old != nil {
+		t.Errorf("prior incident still has active captain %+v after a new declare", old)
+	}
+}
