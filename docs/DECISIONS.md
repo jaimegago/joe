@@ -10,6 +10,45 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0024 — Incident resolve detaches the active captain atomically with the regime flip (resolve-half of the no-auto-lapse captaincy model)
+
+- Date: 2026-06-08
+- Status: IMPLEMENTED. In the tree as of this date.
+- Gap: `ResolveIncidentRegime` flipped `system_regime` back to `normal` and
+  transitioned the incident session to `resolved`, but performed no write to the
+  `session_captains` row. The active-captain row therefore survived resolution
+  with `detached_at IS NULL`, so `GetActiveCaptain` / `CurrentCaptainPrincipal`
+  kept reporting a phantom captain on a resolved incident — a dangling
+  active-captain row that reads treated as live. (This is gap #8 in
+  `docs/investigations/incident-captain-flow.md`.)
+- Decision: resolve now detaches the resolving incident's active captain. The
+  detach is a `session_captains` UPDATE (`detached_at` set; transfer columns
+  cleared, mirroring `MarkCaptainDetached`) keyed by `session_id` where
+  `detached_at IS NULL`, executed **inside the existing resolve transaction**
+  alongside the session-state transition and the regime→normal flip. They commit
+  as a single unit, so there is no observable intermediate state where the regime
+  is normal but a captain is still active, nor where the captain is detached but
+  the regime still says incident. (The resolve writes already ran in one tx; the
+  detach joined that tx — no new transaction was introduced.)
+- Scope: this is the **resolve-half of the no-auto-lapse captaincy model** —
+  captaincy ends only on explicit transfer or on incident resolve; there is no
+  idle-timeout lapse. `session_captains` has no detach-reason column, so no reason
+  is recorded (out of scope to add one). The transfer-swap path
+  (`completeTransfer`) and its separate non-atomic finding (D-0017 area, gap #6)
+  are untouched.
+- Basis: fix in `internal/sessionmodel/regime_transitions.go`
+  (`ResolveIncidentRegimeWithHook`, the detach UPDATE between the session-state
+  transition and the regime clear). Break test
+  `TestCaptain_ResolveDetachesActiveCaptain` in
+  `internal/sessionmodel/captain_test.go` fails if the detach is removed;
+  `TestCaptain_ResolveAtomicRegimeAndCaptain` asserts the joint post-condition
+  (regime normal AND no active captain);
+  `TestCaptain_DeclareAfterResolveAttachesCleanly` confirms a fresh declare after
+  a prior resolve attaches the new captain without interference.
+- Supersedes: nothing — closes gap #8 from the incident-captain-flow audit.
+
+---
+
 ## D-0023 — Write-floor posture line in the task system prompt (proactive articulation, observation/safe_mode only)
 
 - Date: 2026-06-08

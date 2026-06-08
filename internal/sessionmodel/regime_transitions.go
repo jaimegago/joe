@@ -206,7 +206,27 @@ func (r *SQLRepository) ResolveIncidentRegimeWithHook(
 		}
 	}
 
-	// 2. Clear regime to normal. This is the structurally-guarded UPDATE.
+	// 2. Detach the active captain of the resolving incident (resolve-half
+	// of the no-auto-lapse captaincy model: captaincy ends only on explicit
+	// transfer or on incident resolve — see D-0024). Without this, the
+	// session_captains row would survive resolution with detached_at IS NULL,
+	// so GetActiveCaptain / CurrentCaptainPrincipal would keep reporting a
+	// phantom captain on a resolved incident. This runs inside the same tx as
+	// the regime flip below so there is no observable intermediate state where
+	// the regime is normal but a captain is still active (or vice versa).
+	// Mirrors MarkCaptainDetached's SET but keyed by session_id so it clears
+	// whichever active row exists; session_captains has no detach-reason
+	// column, so no reason is recorded.
+	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE session_captains
+		SET detached_at = ?, transfer_state = NULL,
+		    incoming_principal = NULL, transfer_initiator = NULL
+		WHERE session_id = ? AND detached_at IS NULL`),
+		now.Format(time.RFC3339), activeID); err != nil {
+		return "", fmt.Errorf("resolve incident regime: detach captain: %w", err)
+	}
+
+	// 3. Clear regime to normal. This is the structurally-guarded UPDATE.
 	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE system_regime
 		SET mode = ?, declared_at = NULL, declared_by_principal = NULL, declared_kind = NULL
