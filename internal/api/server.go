@@ -109,6 +109,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerProposalRoutes(mux, apiPrefix)
 	s.registerDriftRoutes(mux, apiPrefix)
 	s.registerPanicRoutes(mux, apiPrefix)
+	// Read-only write-posture endpoint: reports the boot-resolved write floor
+	// (D-0018) as a tri-state enum (normal/observation/safe_mode).
+	s.registerPostureRoutes(mux, apiPrefix)
 	s.registerAdminRoutes(mux, apiPrefix)
 	s.registerReviewRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
