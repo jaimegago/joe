@@ -10,6 +10,43 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0023 — Write-floor posture line in the task system prompt (proactive articulation, observation/safe_mode only)
+
+- Date: 2026-06-08
+- Status: IMPLEMENTED. In the tree as of this date. Realizes D-0019's observation
+  posture in the LLM-facing system prompt; refines neither D-0018 nor D-0020.
+- Decision: when the boot-resolved write floor is up, the task system prompt now
+  carries a posture section telling the model its current posture, so it declines
+  managed-system writes proactively with articulation instead of only reacting
+  after the floor denies the tool call at execution. The section is **conditional
+  on the floor reason** and added at the single prompt-assembly site
+  (`internal/api/tasks.go`, `buildTaskRun`):
+  - `observation` → an observation-mode posture line framed as Joe's intended
+    read-only resting state. **No recovery/unlock language** — observation is the
+    intended default, there is nothing for the user to fix or clear.
+  - `safe_mode` → a different, safe-mode posture line framed as an emergency halt.
+    **No user-directed recovery instruction**: restoration is framed as an operator
+    action, and the model is told NOT to direct the user to clear the state or run
+    any command (no `joe unlock`, no "see docs to restore"). Recovery guidance
+    already lives in the reactive denial UI message; the prompt must not duplicate
+    or contradict it.
+  - `none` (full mode) → **nothing injected**. Full-mode write behaviour is
+    governed by RBAC, not a prompt line; a "you can write" line would be
+    behaviorally risky noise.
+- Scope: this changes ONLY the model's proactive explanation. The **tool surface
+  is unchanged** (no pruning — every tool stays advertised) and **enforcement is
+  unchanged** (the floor still denies every Mutate at execution regardless of what
+  the model does). Reads the same boot-sealed `services.WriteFloor` value the
+  executor and the captaingate floor wrapper use; nothing is re-resolved.
+- Basis: prompt text and the reason→section mapping live in
+  `internal/prompts/posture.go` (`PostureSection`), per the invariant that all LLM
+  prompt strings live in `internal/prompts/`. Tests in
+  `internal/prompts/posture_test.go` assert the three cases and — the load-bearing
+  guard — the absence of unlock/recovery language in both posture strings.
+- Supersedes: nothing — implements part of D-0019.
+
+---
+
 ## D-0022 — Denial-message precedence (floor > incident > RBAC) enforced by check order; autonomous-path seam routing deferred
 
 - Date: 2026-06-08

@@ -325,6 +325,15 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 
 	// Build graph context for system prompt
 	systemPrompt := prompts.TaskSystem
+	// D-0019: when the boot-resolved write floor is up, tell the model its
+	// posture (observation / safe mode) so it declines managed-system writes
+	// proactively with articulation, rather than only after the floor denies the
+	// tool call at execution. This changes neither the tool surface (no pruning)
+	// nor enforcement (the floor still denies every Mutate). Full mode injects
+	// nothing. Reads the same boot-sealed value the executor and floor wrapper use.
+	if posture := prompts.PostureSection(h.server.services.WriteFloor.Reason()); posture != "" {
+		systemPrompt += "\n\n" + posture
+	}
 	if zoneScope.scopeDesc != "" {
 		systemPrompt += "\n\n" + zoneScope.scopeDesc
 	}
