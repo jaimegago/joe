@@ -2,7 +2,9 @@ package sessionmodel_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -667,5 +669,77 @@ func TestCaptain_DeclareAfterResolveAttachesCleanly(t *testing.T) {
 		t.Fatalf("GetActiveCaptain(first): %v", err)
 	} else if old != nil {
 		t.Errorf("prior incident still has active captain %+v after a new declare", old)
+	}
+}
+
+// --- D-0025: transfer swap (detach old + attach new) is atomic ---
+
+// forcedSwapFault is a hook that always errors. SwapCaptainWithHook runs it
+// inside the swap transaction, after the detach UPDATE and before the attach
+// INSERT, so it simulates the attach step failing after the detach would have
+// run.
+func forcedSwapFault(*sql.Tx) error { return errForcedSwapFault }
+
+var errForcedSwapFault = errors.New("forced fault between detach and attach")
+
+// TestCaptain_TransferSwapAtomicOnAttachFailure is a true rollback test for the
+// D-0025 fix: it forces the attach step to fail after the detach would have run
+// and asserts the swap rolled back as a unit. SwapCaptainWithHook returns the
+// error, the original captain (alice) is still the active captain with
+// detached_at still NULL, no incoming row was inserted, and there is no
+// captain-less state. The fault fires between the two writes *inside the
+// transaction*, so if the detach and attach are taken off the shared transaction
+// the detach commits before the fault and this test fails (the session goes
+// captain-less / alice is no longer active).
+func TestCaptain_TransferSwapAtomicOnAttachFailure(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+
+	repo, ok := e.sess.(*sessionmodel.SQLRepository)
+	if !ok {
+		t.Fatalf("expected *sessionmodel.SQLRepository, got %T", e.sess)
+	}
+
+	outgoing, err := repo.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil || outgoing == nil {
+		t.Fatalf("pre-swap GetActiveCaptain = (%+v, %v), want alice active", outgoing, err)
+	}
+
+	now := time.Now().UTC()
+	active := sessionmodel.TransferStateActive
+	incoming := sessionmodel.Captain{
+		ID:            uuid.NewString(),
+		SessionID:     sessionID,
+		CaptainType:   sessionmodel.CaptainTypeHuman,
+		Principal:     "bob",
+		AttachedAt:    now,
+		TransferState: &active,
+		LastSeenAt:    &now,
+	}
+
+	err = repo.SwapCaptainWithHook(e.ctx, outgoing.ID, incoming, now, forcedSwapFault)
+	if !errors.Is(err, errForcedSwapFault) {
+		t.Fatalf("SwapCaptainWithHook err = %v, want forced fault", err)
+	}
+
+	// The original captain must still be active — the detach rolled back.
+	cap, err := repo.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("post-fault GetActiveCaptain: %v", err)
+	}
+	if cap == nil {
+		t.Fatal("post-fault session is captain-less — swap was not atomic (detach committed without attach)")
+	}
+	if cap.Principal != "alice" || cap.ID != outgoing.ID || cap.DetachedAt != nil {
+		t.Errorf("post-fault active captain = %+v, want the original alice row with detached_at NULL", cap)
+	}
+
+	// The incoming row must not have been inserted.
+	all, err := repo.ListCaptainsForSession(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("ListCaptainsForSession: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("post-fault captain rows = %d, want 1 (incoming attach must have rolled back)", len(all))
 	}
 }

@@ -381,23 +381,22 @@ func (s *CaptainService) CancelTransfer(ctx context.Context, sessionID, callerPr
 }
 
 // completeTransfer is the shared step that detaches the current captain
-// and inserts the new captain row. Called by:
+// and attaches the new captain row. Called by:
 //   - BeginTransfer's incoming-unreachable shortcut.
+//   - BeginTransfer's R-OVR (B-OVR) joe-captain force-yield branch.
 //   - ConfirmTransfer for the normal approve path.
 //
-// Phase 1 implementation note: the two writes happen sequentially
-// against the repository (no shared tx). A failure between them leaves
-// the session captain-less, which a subsequent Attach would heal
-// (R-CAP2 pending-captain path). Tightening this to a single tx is a
-// later cleanup once the repository exposes a transactional facade.
+// The detach and attach are performed atomically by SwapCaptain in a
+// single DB transaction: either both commit or neither does. There is no
+// committed state in which the old captain is detached and the new one is
+// not attached, so a mid-swap failure can never strand the active incident
+// captain-less (D-0025). (This is the transfer-swap counterpart to the
+// resolve-path atomic detach landed in D-0024.)
 func (s *CaptainService) completeTransfer(ctx context.Context, outgoing *Captain, incomingPrincipal string) (string, error) {
 	now := time.Now().UTC()
-	if err := s.repo.MarkCaptainDetached(ctx, outgoing.ID, now); err != nil {
-		return "", err
-	}
 	newID := uuid.NewString()
 	active := TransferStateActive
-	_, err := s.repo.AttachCaptain(ctx, Captain{
+	if err := s.repo.SwapCaptain(ctx, outgoing.ID, Captain{
 		ID:            newID,
 		SessionID:     outgoing.SessionID,
 		CaptainType:   CaptainTypeHuman,
@@ -405,8 +404,7 @@ func (s *CaptainService) completeTransfer(ctx context.Context, outgoing *Captain
 		AttachedAt:    now,
 		TransferState: &active,
 		LastSeenAt:    &now,
-	})
-	if err != nil {
+	}, now); err != nil {
 		return "", err
 	}
 	return newID, nil

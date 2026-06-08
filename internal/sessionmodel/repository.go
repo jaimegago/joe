@@ -129,6 +129,16 @@ type Repository interface {
 	// step the state machine forward.
 	MarkCaptainDetached(ctx context.Context, captainID string, when time.Time) error
 
+	// SwapCaptain atomically detaches the outgoing captain (by id) and
+	// attaches `incoming` as the new active captain, both inside a single
+	// transaction. Either both writes commit or neither does, so there is
+	// never a committed state in which the outgoing captain is detached but
+	// no new captain is attached (D-0025). Used by
+	// CaptainService.completeTransfer — the transfer-swap path that
+	// MarkCaptainDetached + AttachCaptain previously performed as two
+	// independent, non-atomic writes.
+	SwapCaptain(ctx context.Context, outgoingID string, incoming Captain, when time.Time) error
+
 	// UpdateCaptainTransferState updates the transfer state and
 	// incoming-side metadata on the active captain row. Used by
 	// CaptainService.BeginTransfer / CancelTransfer.
@@ -676,6 +686,24 @@ func (r *SQLRepository) SetRegime(ctx context.Context, reg Regime) error {
 // --- Captains ---
 
 func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain, error) {
+	return r.attachCaptainExec(ctx, r.db, c)
+}
+
+// sqlExecer is the subset of *sql.DB / *sql.Tx that the captain writes use,
+// so the attach core can run either standalone (on r.db) or inside a
+// transaction (on a *sql.Tx). It lets AttachCaptain and the SwapCaptain
+// transaction share one INSERT implementation instead of forking it.
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// attachCaptainExec is the shared attach core: it validates required fields,
+// applies the §6-D last_seen_at seeding + attached_at default, and runs the
+// session_captains INSERT against the given executor. AttachCaptain calls it
+// on r.db; SwapCaptain calls it on a *sql.Tx so the insert joins the swap
+// transaction. The defaults and INSERT are defined once here so the two
+// callers cannot drift.
+func (r *SQLRepository) attachCaptainExec(ctx context.Context, exec sqlExecer, c Captain) (*Captain, error) {
 	if c.ID == "" {
 		return nil, fmt.Errorf("attach captain: id required")
 	}
@@ -710,7 +738,7 @@ func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain,
 		transferInitiator = string(*c.TransferInitiator)
 	}
 
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO session_captains
 			(id, session_id, captain_type, principal, attached_at, detached_at,
 			 transfer_state, incoming_principal, transfer_initiator, last_seen_at)
@@ -868,6 +896,70 @@ func (r *SQLRepository) MarkCaptainDetached(ctx context.Context, captainID strin
 		when.Format(time.RFC3339), captainID)
 	if err != nil {
 		return fmt.Errorf("mark captain detached: %w", err)
+	}
+	return nil
+}
+
+// SwapCaptain detaches the outgoing captain and attaches the incoming
+// captain inside a single transaction. See the interface doc for the
+// invariant. Delegates to swapCaptainWithHook with no fault hook.
+func (r *SQLRepository) SwapCaptain(ctx context.Context, outgoingID string, incoming Captain, when time.Time) error {
+	return r.swapCaptainWithHook(ctx, outgoingID, incoming, when, nil)
+}
+
+// SwapCaptainWithHook is the test-seam variant of SwapCaptain. hookAfterDetach,
+// when non-nil, runs inside the transaction after the detach UPDATE and before
+// the attach INSERT; returning an error from it forces the swap to fail mid-way
+// and roll back. This mirrors ResolveIncidentRegimeWithHook (D-0024) and exists
+// so the co-located captain test can prove the detach+attach are atomic — that a
+// failure after the detach leaves the outgoing captain still active rather than
+// stranding the incident captain-less. Production code calls SwapCaptain (nil
+// hook).
+func (r *SQLRepository) SwapCaptainWithHook(ctx context.Context, outgoingID string, incoming Captain, when time.Time, hookAfterDetach func(*sql.Tx) error) error {
+	return r.swapCaptainWithHook(ctx, outgoingID, incoming, when, hookAfterDetach)
+}
+
+func (r *SQLRepository) swapCaptainWithHook(ctx context.Context, outgoingID string, incoming Captain, when time.Time, hookAfterDetach func(*sql.Tx) error) (err error) {
+	if when.IsZero() {
+		when = time.Now().UTC()
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("swap captain: begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// 1. Detach the outgoing captain. Same SET clause as the D-0024 resolve
+	// detach (detached_at set; transfer columns cleared), keyed by id.
+	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE session_captains
+		SET detached_at = ?, transfer_state = NULL,
+		    incoming_principal = NULL, transfer_initiator = NULL
+		WHERE id = ?`),
+		when.Format(time.RFC3339), outgoingID); err != nil {
+		return fmt.Errorf("swap captain: detach outgoing: %w", err)
+	}
+
+	if hookAfterDetach != nil {
+		if hookErr := hookAfterDetach(tx); hookErr != nil {
+			err = hookErr
+			return err
+		}
+	}
+
+	// 2. Attach the incoming captain via the shared attach core, on the same
+	// tx so the INSERT commits or rolls back together with the detach.
+	if _, err = r.attachCaptainExec(ctx, tx, incoming); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("swap captain: commit: %w", err)
 	}
 	return nil
 }

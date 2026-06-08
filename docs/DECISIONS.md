@@ -10,6 +10,68 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0025 — Captain transfer swap (detach old + attach new) is a single atomic transaction (transfer-half of the no-auto-lapse captaincy model)
+
+- Date: 2026-06-08
+- Status: IMPLEMENTED. In the tree as of this date.
+- Gap: `CaptainService.completeTransfer` performed the captaincy handoff as two
+  independent, sequential repository writes — `MarkCaptainDetached(outgoing)`
+  then `AttachCaptain(incoming)` — with no shared transaction. A failure (or
+  crash) after the detach committed but before the attach committed left the
+  active incident with the old captain row detached and no successor row: a
+  permanently captain-less incident. The captaingate then reads that as the
+  pending-captain / null-authority state and refuses mutations, and nothing
+  in-process re-attaches — recovery would require a fresh `Attach`. The prior
+  code self-documented this as a Phase 1 gap ("a failure between them leaves
+  the session captain-less, which a subsequent Attach would heal"); that
+  heal is not automatic. (This is gap #6 in
+  `docs/investigations/incident-captain-flow.md`.)
+- Decision: `completeTransfer` now performs the detach-old + attach-new swap
+  atomically through a new repository method, `SwapCaptain`, which runs both
+  writes inside one DB transaction — either both commit or neither does. There
+  is no committed state in which the old captain is detached and the new one is
+  not attached, so a mid-swap failure can never strand the incident
+  captain-less. The detach is an inline `UPDATE ... SET detached_at = ?,
+  transfer_state = NULL, incoming_principal = NULL, transfer_initiator = NULL`
+  on the transaction — the same `SET` clause the D-0024 resolve detach uses,
+  keyed here by the outgoing captain's `id`. The attach reuses the existing
+  insert logic: `AttachCaptain`'s body was extracted into an unexported,
+  executor-accepting core (`attachCaptainExec(ctx, exec sqlExecer, c)`) called
+  by both `AttachCaptain` (on `r.db`) and `SwapCaptain` (on the `*sql.Tx`), so
+  the INSERT and its §6-D `last_seen_at` seeding are defined once and the two
+  callers cannot drift.
+- Scope: this is the **transfer-half of the no-auto-lapse captaincy model** —
+  the counterpart to D-0024's resolve-half. Only `completeTransfer`'s
+  transactionality changed; the §B state machine, the D-0017 confirm/cancel
+  authorization binding, the deny-only sessiongate, and the resolve-path detach
+  are untouched.
+- Deliberately deferred: this fix leaves **three** captain-write patterns in
+  the tree — resolve's inline tx detach (D-0024), the still-used non-tx
+  `MarkCaptainDetached` / `AttachCaptain` primitives, and `completeTransfer`'s
+  new tx swap. Consolidating them behind one tx-aware detach/attach seam is
+  recorded as a backlog item (`docs/backlog/captain-write-consolidation.md`)
+  and is **out of scope** here — collapsing the patterns would expand the blast
+  radius of a targeted durability fix.
+- Basis: fix in `internal/sessionmodel/captain.go` (`completeTransfer` now
+  calls `s.repo.SwapCaptain`) and `internal/sessionmodel/repository.go`
+  (`SwapCaptain` / `swapCaptainWithHook`, the shared `attachCaptainExec`, and
+  the `sqlExecer` seam). True rollback test
+  `TestCaptain_TransferSwapAtomicOnAttachFailure` in
+  `internal/sessionmodel/captain_test.go` injects a fault between the detach and
+  attach (via the `SwapCaptainWithHook` test seam, mirroring D-0024's
+  `ResolveIncidentRegimeWithHook`) and asserts the swap rolled back: the
+  original captain is still active with `detached_at` NULL and no incoming row
+  was inserted. The test fails if the two writes are taken off the shared
+  transaction (proven by re-running it with the detach moved onto `r.db`: the
+  detach commits before the fault and the session goes captain-less). The
+  happy-path transfer is covered by the existing
+  `TestCaptain_B1_PrincipalThreadedAfterConfirm` and
+  `TestCaptain_6D_IncomingInitiatedWhenUnreachableDirectConfirm`, which still
+  pass through the new swap.
+- Supersedes: nothing — closes gap #6 from the incident-captain-flow audit.
+
+---
+
 ## D-0024 — Incident resolve detaches the active captain atomically with the regime flip (resolve-half of the no-auto-lapse captaincy model)
 
 - Date: 2026-06-08
