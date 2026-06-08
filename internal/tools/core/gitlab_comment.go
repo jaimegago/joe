@@ -32,21 +32,21 @@ func (t *GitLabCommentTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id":  {Type: "string", Description: "GitLab source ID registered in Joe"},
-			"project_id": {Type: "string", Description: "GitLab project ID or URL-encoded path"},
-			"mr_iid":     {Type: "number", Description: "Merge request internal ID (iid)"},
-			"body":       {Type: "string", Description: "Note body (Markdown supported)"},
+			"component_id": {Type: "string", Description: "GitLab source ID registered in Joe"},
+			"project_id":   {Type: "string", Description: "GitLab project ID or URL-encoded path"},
+			"mr_iid":       {Type: "number", Description: "Merge request internal ID (iid)"},
+			"body":         {Type: "string", Description: "Note body (Markdown supported)"},
 		},
-		Required: []string{"source_id", "project_id", "mr_iid", "body"},
+		Required: []string{"component_id", "project_id", "mr_iid", "body"},
 	}
 }
 
 func (t *GitLabCommentTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, _ := args["source_id"].(string)
+	sourceID, _ := args["component_id"].(string)
 	projectID, _ := args["project_id"].(string)
 	body, _ := args["body"].(string)
 	if sourceID == "" || projectID == "" || body == "" {
-		return nil, fmt.Errorf("source_id, project_id, and body are required")
+		return nil, fmt.Errorf("component_id, project_id, and body are required")
 	}
 	mrIID, ok := args["mr_iid"].(float64)
 	if !ok || mrIID <= 0 {

@@ -52,9 +52,9 @@ func TestPrometheusQueryTool_Execute_Query(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{queryResult: expected})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
-		"action":    "query",
+		"component_id": "prom-1",
+		"query":        "up",
+		"action":       "query",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -64,8 +64,8 @@ func TestPrometheusQueryTool_Execute_Query(t *testing.T) {
 	if !ok {
 		t.Fatalf("result is not map[string]any")
 	}
-	if m["source_id"] != "prom-1" {
-		t.Errorf("source_id = %v, want %q", m["source_id"], "prom-1")
+	if m["component_id"] != "prom-1" {
+		t.Errorf("component_id = %v, want %q", m["component_id"], "prom-1")
 	}
 }
 
@@ -76,8 +76,8 @@ func TestPrometheusQueryTool_Execute_Targets(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{targets: targets})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"action":    "targets",
+		"component_id": "prom-1",
+		"action":       "targets",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -89,17 +89,17 @@ func TestPrometheusQueryTool_Execute_Targets(t *testing.T) {
 	}
 }
 
-func TestPrometheusQueryTool_Execute_MissingSourceID(t *testing.T) {
+func TestPrometheusQueryTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{"query": "up"})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestPrometheusQueryTool_Execute_MissingQuery(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "prom-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "prom-1"})
 	if err == nil {
 		t.Error("expected error for missing query, got nil")
 	}
@@ -138,22 +138,22 @@ func TestLokiQueryTool_Execute(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{result: expected})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"} |= "error"`,
+		"component_id": "loki-1",
+		"query":        `{app="payment"} |= "error"`,
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "loki-1" {
-		t.Errorf("source_id = %v, want %q", m["source_id"], "loki-1")
+	if m["component_id"] != "loki-1" {
+		t.Errorf("component_id = %v, want %q", m["component_id"], "loki-1")
 	}
 }
 
 func TestLokiQueryTool_Execute_MissingQuery(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{})
-	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "loki-1"})
+	_, err := tool.Execute(context.Background(), map[string]any{"component_id": "loki-1"})
 	if err == nil {
 		t.Error("expected error for missing query, got nil")
 	}
@@ -190,8 +190,8 @@ func TestTempoSearchTool_Execute_Search(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{traces: traces})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "tempo-1",
-		"service":   "payment",
+		"component_id": "tempo-1",
+		"service":      "payment",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -208,17 +208,17 @@ func TestTempoSearchTool_Execute_Get(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{trace: trace})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "tempo-1",
-		"action":    "get",
-		"trace_id":  "abc123",
+		"component_id": "tempo-1",
+		"action":       "get",
+		"trace_id":     "abc123",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	m := result.(map[string]any)
-	if m["source_id"] != "tempo-1" {
-		t.Errorf("source_id = %v, want %q", m["source_id"], "tempo-1")
+	if m["component_id"] != "tempo-1" {
+		t.Errorf("component_id = %v, want %q", m["component_id"], "tempo-1")
 	}
 }
 
@@ -252,8 +252,8 @@ func TestJaegerTracesTool_Execute_Services(t *testing.T) {
 	})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"action":    "services",
+		"component_id": "jaeger-1",
+		"action":       "services",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -272,8 +272,8 @@ func TestJaegerTracesTool_Execute_Traces(t *testing.T) {
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{traces: traces})
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"service":   "payment",
+		"component_id": "jaeger-1",
+		"service":      "payment",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -288,8 +288,8 @@ func TestJaegerTracesTool_Execute_Traces(t *testing.T) {
 func TestJaegerTracesTool_Execute_MissingService(t *testing.T) {
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"action":    "traces",
+		"component_id": "jaeger-1",
+		"action":       "traces",
 	})
 	if err == nil {
 		t.Error("expected error for missing service, got nil")
@@ -311,8 +311,8 @@ func TestPrometheusQueryTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 	if _, ok := params.Properties["query"]; !ok {
 		t.Error("Parameters() missing query")
@@ -323,28 +323,28 @@ func TestPrometheusQueryTool_Execute_QueryRange(t *testing.T) {
 	expected := &prometheusadapter.QueryResult{ResultType: "matrix"}
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{queryResult: expected})
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"query":     "rate(http_requests_total[5m])",
-		"action":    "query_range",
-		"start":     float64(1700000000),
-		"end":       float64(1700003600),
-		"step":      float64(60),
+		"component_id": "prom-1",
+		"query":        "rate(http_requests_total[5m])",
+		"action":       "query_range",
+		"start":        float64(1700000000),
+		"end":          float64(1700003600),
+		"step":         float64(60),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	m := result.(map[string]any)
-	if m["source_id"] != "prom-1" {
-		t.Errorf("source_id = %v, want prom-1", m["source_id"])
+	if m["component_id"] != "prom-1" {
+		t.Errorf("component_id = %v, want prom-1", m["component_id"])
 	}
 }
 
 func TestPrometheusQueryTool_Execute_QueryRangeDefaults(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{queryResult: &prometheusadapter.QueryResult{}})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
-		"action":    "query_range",
+		"component_id": "prom-1",
+		"query":        "up",
+		"action":       "query_range",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -354,8 +354,8 @@ func TestPrometheusQueryTool_Execute_QueryRangeDefaults(t *testing.T) {
 func TestPrometheusQueryTool_Execute_QueryRangeMissingQuery(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"action":    "query_range",
+		"component_id": "prom-1",
+		"action":       "query_range",
 	})
 	if err == nil {
 		t.Error("expected error for missing query in query_range, got nil")
@@ -365,8 +365,8 @@ func TestPrometheusQueryTool_Execute_QueryRangeMissingQuery(t *testing.T) {
 func TestPrometheusQueryTool_Execute_QueryError(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{queryErr: errors.New("connection refused")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
+		"component_id": "prom-1",
+		"query":        "up",
 	})
 	if err == nil {
 		t.Error("expected error from query, got nil")
@@ -376,8 +376,8 @@ func TestPrometheusQueryTool_Execute_QueryError(t *testing.T) {
 func TestPrometheusQueryTool_Execute_TargetsError(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{targetsErr: errors.New("server down")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"action":    "targets",
+		"component_id": "prom-1",
+		"action":       "targets",
 	})
 	if err == nil {
 		t.Error("expected error from targets, got nil")
@@ -387,9 +387,9 @@ func TestPrometheusQueryTool_Execute_TargetsError(t *testing.T) {
 func TestPrometheusQueryTool_Execute_QueryRangeError(t *testing.T) {
 	tool := core.NewPrometheusQueryTool(&mockPrometheusClient{queryErr: errors.New("timeout")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "prom-1",
-		"query":     "up",
-		"action":    "query_range",
+		"component_id": "prom-1",
+		"query":        "up",
+		"action":       "query_range",
 	})
 	if err == nil {
 		t.Error("expected error from query_range, got nil")
@@ -411,16 +411,16 @@ func TestLokiQueryTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
-func TestLokiQueryTool_Execute_MissingSourceID(t *testing.T) {
+func TestLokiQueryTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{"query": `{app="payment"}`})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
@@ -428,28 +428,28 @@ func TestLokiQueryTool_Execute_QueryRange(t *testing.T) {
 	expected := &lokiadapter.QueryResult{ResultType: "streams"}
 	tool := core.NewLokiQueryTool(&mockLokiClient{result: expected})
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"}`,
-		"action":    "query_range",
-		"start":     float64(1700000000),
-		"end":       float64(1700003600),
-		"limit":     float64(50),
+		"component_id": "loki-1",
+		"query":        `{app="payment"}`,
+		"action":       "query_range",
+		"start":        float64(1700000000),
+		"end":          float64(1700003600),
+		"limit":        float64(50),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	m := result.(map[string]any)
-	if m["source_id"] != "loki-1" {
-		t.Errorf("source_id = %v, want loki-1", m["source_id"])
+	if m["component_id"] != "loki-1" {
+		t.Errorf("component_id = %v, want loki-1", m["component_id"])
 	}
 }
 
 func TestLokiQueryTool_Execute_QueryRangeDefaults(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{result: &lokiadapter.QueryResult{}})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"}`,
-		"action":    "query_range",
+		"component_id": "loki-1",
+		"query":        `{app="payment"}`,
+		"action":       "query_range",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -459,8 +459,8 @@ func TestLokiQueryTool_Execute_QueryRangeDefaults(t *testing.T) {
 func TestLokiQueryTool_Execute_QueryError(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{resultErr: errors.New("connection refused")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"}`,
+		"component_id": "loki-1",
+		"query":        `{app="payment"}`,
 	})
 	if err == nil {
 		t.Error("expected error from query, got nil")
@@ -470,9 +470,9 @@ func TestLokiQueryTool_Execute_QueryError(t *testing.T) {
 func TestLokiQueryTool_Execute_QueryRangeError(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{resultErr: errors.New("timeout")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"}`,
-		"action":    "query_range",
+		"component_id": "loki-1",
+		"query":        `{app="payment"}`,
+		"action":       "query_range",
 	})
 	if err == nil {
 		t.Error("expected error from query_range, got nil")
@@ -482,10 +482,10 @@ func TestLokiQueryTool_Execute_QueryRangeError(t *testing.T) {
 func TestLokiQueryTool_Execute_CustomLimit(t *testing.T) {
 	tool := core.NewLokiQueryTool(&mockLokiClient{result: &lokiadapter.QueryResult{}})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "loki-1",
-		"query":     `{app="payment"}`,
-		"limit":     float64(200),
-		"since":     float64(7200),
+		"component_id": "loki-1",
+		"query":        `{app="payment"}`,
+		"limit":        float64(200),
+		"since":        float64(7200),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -507,24 +507,24 @@ func TestTempoSearchTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
-func TestTempoSearchTool_Execute_MissingSourceID(t *testing.T) {
+func TestTempoSearchTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{"service": "payment"})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestTempoSearchTool_Execute_SearchError(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{tracesErr: errors.New("timeout")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "tempo-1",
-		"service":   "payment",
+		"component_id": "tempo-1",
+		"service":      "payment",
 	})
 	if err == nil {
 		t.Error("expected error from search, got nil")
@@ -535,7 +535,7 @@ func TestTempoSearchTool_Execute_SearchWithOptions(t *testing.T) {
 	traces := []tempoadapter.TraceSearchResult{{TraceID: "abc"}}
 	tool := core.NewTempoSearchTool(&mockTempoClient{traces: traces})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id":    "tempo-1",
+		"component_id": "tempo-1",
 		"service":      "payment",
 		"tags":         "http.status_code=500",
 		"min_duration": float64(100),
@@ -550,8 +550,8 @@ func TestTempoSearchTool_Execute_SearchWithOptions(t *testing.T) {
 func TestTempoSearchTool_Execute_GetMissingTraceID(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "tempo-1",
-		"action":    "get",
+		"component_id": "tempo-1",
+		"action":       "get",
 	})
 	if err == nil {
 		t.Error("expected error for missing trace_id, got nil")
@@ -561,9 +561,9 @@ func TestTempoSearchTool_Execute_GetMissingTraceID(t *testing.T) {
 func TestTempoSearchTool_Execute_GetError(t *testing.T) {
 	tool := core.NewTempoSearchTool(&mockTempoClient{traceErr: errors.New("not found")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "tempo-1",
-		"action":    "get",
-		"trace_id":  "abc123",
+		"component_id": "tempo-1",
+		"action":       "get",
+		"trace_id":     "abc123",
 	})
 	if err == nil {
 		t.Error("expected error from get, got nil")
@@ -585,24 +585,24 @@ func TestJaegerTracesTool_Parameters(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
-func TestJaegerTracesTool_Execute_MissingSourceID(t *testing.T) {
+func TestJaegerTracesTool_Execute_MissingComponentID(t *testing.T) {
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{})
 	_, err := tool.Execute(context.Background(), map[string]any{"service": "payment"})
 	if err == nil {
-		t.Error("expected error for missing source_id, got nil")
+		t.Error("expected error for missing component_id, got nil")
 	}
 }
 
 func TestJaegerTracesTool_Execute_ServicesError(t *testing.T) {
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{servicesErr: errors.New("timeout")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"action":    "services",
+		"component_id": "jaeger-1",
+		"action":       "services",
 	})
 	if err == nil {
 		t.Error("expected error from services, got nil")
@@ -612,8 +612,8 @@ func TestJaegerTracesTool_Execute_ServicesError(t *testing.T) {
 func TestJaegerTracesTool_Execute_TracesError(t *testing.T) {
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{tracesErr: errors.New("connection refused")})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"service":   "payment",
+		"component_id": "jaeger-1",
+		"service":      "payment",
 	})
 	if err == nil {
 		t.Error("expected error from traces, got nil")
@@ -624,10 +624,10 @@ func TestJaegerTracesTool_Execute_TracesWithOptions(t *testing.T) {
 	traces := []jaegeradapter.TraceSearchResult{{TraceID: "t1", Service: "payment"}}
 	tool := core.NewJaegerTracesTool(&mockJaegerClient{traces: traces})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "jaeger-1",
-		"service":   "payment",
-		"operation": "POST /checkout",
-		"limit":     float64(5),
+		"component_id": "jaeger-1",
+		"service":      "payment",
+		"operation":    "POST /checkout",
+		"limit":        float64(5),
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)

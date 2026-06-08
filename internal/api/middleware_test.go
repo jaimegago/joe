@@ -25,7 +25,7 @@ func TestMaxRequestBody_WithinLimit(t *testing.T) {
 	})
 
 	handler := MaxRequestBody(1024)(inner)
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader("hello"))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -46,7 +46,7 @@ func TestMaxRequestBody_ExceedsLimit(t *testing.T) {
 	})
 
 	handler := MaxRequestBody(5)(inner) // limit to 5 bytes
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader("this body exceeds the limit"))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader("this body exceeds the limit"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -62,7 +62,7 @@ func TestMaxRequestBody_DefaultLimit(t *testing.T) {
 
 	// 0 should use default (1 MB)
 	handler := MaxRequestBody(0)(inner)
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader("small"))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader("small"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

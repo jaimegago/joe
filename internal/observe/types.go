@@ -4,8 +4,8 @@ import "time"
 
 // ObservabilityResult is the normalized response for metrics, logs, and traces queries.
 type ObservabilityResult struct {
-	Source      string      `json:"source"`
-	SourceID    string      `json:"source_id"`
+	Component   string      `json:"source"`
+	ComponentID string      `json:"component_id"`
 	NativeQuery string      `json:"native_query"`
 	Data        []DataPoint `json:"data"`
 	RawResult   any         `json:"raw_result,omitempty"`
@@ -20,10 +20,10 @@ type DataPoint struct {
 
 // AlertsResult is the normalized response for alerts queries.
 type AlertsResult struct {
-	Source   string  `json:"source"`
-	SourceID string  `json:"source_id"`
-	Alerts   []Alert `json:"alerts"`
-	Count    int     `json:"count"`
+	Component   string  `json:"source"`
+	ComponentID string  `json:"component_id"`
+	Alerts      []Alert `json:"alerts"`
+	Count       int     `json:"count"`
 }
 
 // Alert represents a normalized alert regardless of the backing system.
@@ -36,8 +36,8 @@ type Alert struct {
 
 // K8sResult is the normalized response for k8s queries.
 type K8sResult struct {
-	Source      string `json:"source"`
-	SourceID    string `json:"source_id"`
+	Component   string `json:"source"`
+	ComponentID string `json:"component_id"`
 	NativeQuery string `json:"native_query"`
 	Data        any    `json:"data"`
 }

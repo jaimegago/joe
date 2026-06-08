@@ -35,32 +35,32 @@ func TestSQLRepository_Insert_RoundTrip(t *testing.T) {
 	repo := audit.NewRepository(s.DB(), store.DriverSQLite)
 
 	if err := repo.Insert(context.Background(), audit.Event{
-		Principal: "user:alice",
-		Action:    "read",
-		Zone:      "prod-readonly",
-		Source:    "k8s-prod",
-		Decision:  audit.DecisionAllow,
-		Reason:    "policy_allow",
-		Kind:      audit.KindInfraAccess,
-		Context:   `{"note":"k8s list"}`,
+		Principal:   "user:alice",
+		Action:      "read",
+		Zone:        "prod-readonly",
+		ComponentID: "k8s-prod",
+		Decision:    audit.DecisionAllow,
+		Reason:      "policy_allow",
+		Kind:        audit.KindInfraAccess,
+		Context:     `{"note":"k8s list"}`,
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
 	}
 
 	var (
-		principal, action, zone, source, decision, reason, kind, ctxJSON sql.NullString
+		principal, action, zone, component, decision, reason, kind, ctxJSON sql.NullString
 	)
 	err := s.DB().QueryRowContext(context.Background(),
-		`SELECT principal, action, zone, source, decision, reason, kind, context FROM audit_log LIMIT 1`).
-		Scan(&principal, &action, &zone, &source, &decision, &reason, &kind, &ctxJSON)
+		`SELECT principal, action, zone, component_id, decision, reason, kind, context FROM audit_log LIMIT 1`).
+		Scan(&principal, &action, &zone, &component, &decision, &reason, &kind, &ctxJSON)
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
 	if principal.String != "user:alice" {
 		t.Errorf("principal = %q, want %q", principal.String, "user:alice")
 	}
-	if action.String != "read" || zone.String != "prod-readonly" || source.String != "k8s-prod" {
-		t.Errorf("action/zone/source = %q/%q/%q", action.String, zone.String, source.String)
+	if action.String != "read" || zone.String != "prod-readonly" || component.String != "k8s-prod" {
+		t.Errorf("action/zone/component = %q/%q/%q", action.String, zone.String, component.String)
 	}
 	if decision.String != "allow" || reason.String != "policy_allow" || kind.String != "infra_access" {
 		t.Errorf("decision/reason/kind = %q/%q/%q", decision.String, reason.String, kind.String)
@@ -71,7 +71,7 @@ func TestSQLRepository_Insert_RoundTrip(t *testing.T) {
 }
 
 // TestSQLRepository_Insert_NullableColumns verifies that empty
-// principal/zone/source values are stored as SQL NULL (sourceless rows
+// principal/zone/component values are stored as SQL NULL (sourceless rows
 // such as captain transitions take this path).
 func TestSQLRepository_Insert_NullableColumns(t *testing.T) {
 	s := freshStore(t)
@@ -88,18 +88,18 @@ func TestSQLRepository_Insert_NullableColumns(t *testing.T) {
 		t.Fatalf("Insert: %v", err)
 	}
 
-	var zone, source sql.NullString
+	var zone, component sql.NullString
 	err := s.DB().QueryRowContext(context.Background(),
-		`SELECT zone, source FROM audit_log WHERE action = ? LIMIT 1`, audit.ActionCaptainAttach).
-		Scan(&zone, &source)
+		`SELECT zone, component_id FROM audit_log WHERE action = ? LIMIT 1`, audit.ActionCaptainAttach).
+		Scan(&zone, &component)
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
 	if zone.Valid {
 		t.Errorf("zone = %q, want NULL for transition row", zone.String)
 	}
-	if source.Valid {
-		t.Errorf("source = %q, want NULL for transition row", source.String)
+	if component.Valid {
+		t.Errorf("component = %q, want NULL for transition row", component.String)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestSQLRepository_InsertTx_AndInsert_ProduceIdenticalRows(t *testing.T) {
 	// Both rows present. Pull them in deterministic id order and
 	// compare every column.
 	rows, err := s.DB().QueryContext(ctx, `
-		SELECT created_at, principal, action, zone, source, decision, reason, kind, context
+		SELECT created_at, principal, action, zone, component_id, decision, reason, kind, context
 		  FROM audit_log
 		 ORDER BY id ASC`)
 	if err != nil {
@@ -249,12 +249,12 @@ func TestSQLRepository_InsertTx_AndInsert_ProduceIdenticalRows(t *testing.T) {
 
 	type rowSnap struct {
 		createdAt, action, decision, reason, kind, ctxJSON string
-		principal, zone, source                            sql.NullString
+		principal, zone, component                         sql.NullString
 	}
 	var got []rowSnap
 	for rows.Next() {
 		var rs rowSnap
-		if err := rows.Scan(&rs.createdAt, &rs.principal, &rs.action, &rs.zone, &rs.source, &rs.decision, &rs.reason, &rs.kind, &rs.ctxJSON); err != nil {
+		if err := rows.Scan(&rs.createdAt, &rs.principal, &rs.action, &rs.zone, &rs.component, &rs.decision, &rs.reason, &rs.kind, &rs.ctxJSON); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		got = append(got, rs)
@@ -270,7 +270,7 @@ func TestSQLRepository_InsertTx_AndInsert_ProduceIdenticalRows(t *testing.T) {
 		a.principal != b.principal ||
 		a.action != b.action ||
 		a.zone != b.zone ||
-		a.source != b.source ||
+		a.component != b.component ||
 		a.decision != b.decision ||
 		a.reason != b.reason ||
 		a.kind != b.kind ||
@@ -287,12 +287,12 @@ func TestMigration015_TriggerBlocksUpdate(t *testing.T) {
 	repo := audit.NewRepository(s.DB(), store.DriverSQLite)
 
 	if err := repo.Insert(context.Background(), audit.Event{
-		Principal: "user:alice",
-		Action:    "read",
-		Decision:  audit.DecisionAllow,
-		Reason:    "policy_allow",
-		Kind:      audit.KindInfraAccess,
-		Source:    "k8s-prod",
+		Principal:   "user:alice",
+		Action:      "read",
+		Decision:    audit.DecisionAllow,
+		Reason:      "policy_allow",
+		Kind:        audit.KindInfraAccess,
+		ComponentID: "k8s-prod",
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
 	}
@@ -315,12 +315,12 @@ func TestMigration015_TriggerBlocksDelete(t *testing.T) {
 	repo := audit.NewRepository(s.DB(), store.DriverSQLite)
 
 	if err := repo.Insert(context.Background(), audit.Event{
-		Principal: "user:alice",
-		Action:    "read",
-		Decision:  audit.DecisionAllow,
-		Reason:    "policy_allow",
-		Kind:      audit.KindInfraAccess,
-		Source:    "k8s-prod",
+		Principal:   "user:alice",
+		Action:      "read",
+		Decision:    audit.DecisionAllow,
+		Reason:      "policy_allow",
+		Kind:        audit.KindInfraAccess,
+		ComponentID: "k8s-prod",
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
 	}

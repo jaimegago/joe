@@ -42,12 +42,12 @@ func TestGitHubPRGetTool(t *testing.T) {
 		if params.Type != "object" {
 			t.Errorf("Parameters().Type = %q, want object", params.Type)
 		}
-		if _, ok := params.Properties["source_id"]; !ok {
-			t.Error("Parameters() missing source_id")
+		if _, ok := params.Properties["component_id"]; !ok {
+			t.Error("Parameters() missing component_id")
 		}
 	})
 
-	t.Run("missing source_id/owner/repo", func(t *testing.T) {
+	t.Run("missing component_id/owner/repo", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"pr_number": float64(42)})
 		if err == nil {
 			t.Error("expected error for missing required fields")
@@ -56,9 +56,9 @@ func TestGitHubPRGetTool(t *testing.T) {
 
 	t.Run("invalid pr_number", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
 		})
 		if err == nil {
 			t.Error("expected error for missing pr_number")
@@ -67,10 +67,10 @@ func TestGitHubPRGetTool(t *testing.T) {
 
 	t.Run("zero pr_number", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(0),
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(0),
 		})
 		if err == nil {
 			t.Error("expected error for zero pr_number")
@@ -79,10 +79,10 @@ func TestGitHubPRGetTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -98,10 +98,10 @@ func TestGitHubPRGetTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(99),
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(99),
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -152,9 +152,9 @@ func TestGitHubPRDiffTool(t *testing.T) {
 
 	t.Run("missing pr_number", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
 		})
 		if err == nil {
 			t.Error("expected error for missing pr_number")
@@ -163,17 +163,17 @@ func TestGitHubPRDiffTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		m := res.(map[string]any)
-		if m["source_id"] != "gh-1" {
-			t.Errorf("source_id = %v, want gh-1", m["source_id"])
+		if m["component_id"] != "gh-1" {
+			t.Errorf("component_id = %v, want gh-1", m["component_id"])
 		}
 		diff, _ := m["diff"].(string)
 		if diff == "" {
@@ -183,10 +183,10 @@ func TestGitHubPRDiffTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(99),
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(99),
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -241,10 +241,10 @@ func TestGitHubCommentTool(t *testing.T) {
 
 	t.Run("missing pr_number", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"body":      "LGTM",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"body":         "LGTM",
 		})
 		if err == nil {
 			t.Error("expected error for missing pr_number")
@@ -253,11 +253,11 @@ func TestGitHubCommentTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
-			"body":      "Looks good to me.",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
+			"body":         "Looks good to me.",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -270,11 +270,11 @@ func TestGitHubCommentTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
-			"body":      "comment",
+			"component_id": "bad-source",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
+			"body":         "comment",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -326,10 +326,10 @@ func TestGitHubRequestChangesTool(t *testing.T) {
 
 	t.Run("missing pr_number", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"body":      "Please fix security issue",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"body":         "Please fix security issue",
 		})
 		if err == nil {
 			t.Error("expected error for missing pr_number")
@@ -338,11 +338,11 @@ func TestGitHubRequestChangesTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "gh-1",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
-			"body":      "Security vulnerability found in auth handler.",
+			"component_id": "gh-1",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
+			"body":         "Security vulnerability found in auth handler.",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -355,11 +355,11 @@ func TestGitHubRequestChangesTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "bad-source",
-			"owner":     "acme",
-			"repo":      "infra",
-			"pr_number": float64(42),
-			"body":      "issue found",
+			"component_id": "bad-source",
+			"owner":        "acme",
+			"repo":         "infra",
+			"pr_number":    float64(42),
+			"body":         "issue found",
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -404,7 +404,7 @@ func TestGitLabMRGetTool(t *testing.T) {
 		}
 	})
 
-	t.Run("missing source_id/project_id", func(t *testing.T) {
+	t.Run("missing component_id/project_id", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{"mr_iid": float64(7)})
 		if err == nil {
 			t.Error("expected error for missing required fields")
@@ -413,8 +413,8 @@ func TestGitLabMRGetTool(t *testing.T) {
 
 	t.Run("missing mr_iid", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
+			"component_id": "gl-1",
+			"project_id":   "42",
 		})
 		if err == nil {
 			t.Error("expected error for missing mr_iid")
@@ -423,9 +423,9 @@ func TestGitLabMRGetTool(t *testing.T) {
 
 	t.Run("zero mr_iid", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(0),
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(0),
 		})
 		if err == nil {
 			t.Error("expected error for zero mr_iid")
@@ -434,9 +434,9 @@ func TestGitLabMRGetTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(7),
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(7),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -449,9 +449,9 @@ func TestGitLabMRGetTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(99),
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(99),
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -502,8 +502,8 @@ func TestGitLabMRDiffTool(t *testing.T) {
 
 	t.Run("missing mr_iid", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
+			"component_id": "gl-1",
+			"project_id":   "42",
 		})
 		if err == nil {
 			t.Error("expected error for missing mr_iid")
@@ -512,9 +512,9 @@ func TestGitLabMRDiffTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(7),
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(7),
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -528,9 +528,9 @@ func TestGitLabMRDiffTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(99),
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(99),
 		})
 		if err == nil {
 			t.Error("expected error from client")
@@ -585,9 +585,9 @@ func TestGitLabCommentTool(t *testing.T) {
 
 	t.Run("missing mr_iid", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"body":       "LGTM",
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"body":         "LGTM",
 		})
 		if err == nil {
 			t.Error("expected error for missing mr_iid")
@@ -596,10 +596,10 @@ func TestGitLabCommentTool(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "gl-1",
-			"project_id": "42",
-			"mr_iid":     float64(7),
-			"body":       "Code looks good.",
+			"component_id": "gl-1",
+			"project_id":   "42",
+			"mr_iid":       float64(7),
+			"body":         "Code looks good.",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -612,10 +612,10 @@ func TestGitLabCommentTool(t *testing.T) {
 
 	t.Run("client error", func(t *testing.T) {
 		_, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":  "bad-source",
-			"project_id": "42",
-			"mr_iid":     float64(7),
-			"body":       "comment",
+			"component_id": "bad-source",
+			"project_id":   "42",
+			"mr_iid":       float64(7),
+			"body":         "comment",
 		})
 		if err == nil {
 			t.Error("expected error from client")

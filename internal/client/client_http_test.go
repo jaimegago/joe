@@ -142,7 +142,7 @@ func TestCreateDeleteSource_RequestShapeAndHeaders(t *testing.T) {
 		switch r.Method {
 		case http.MethodPost:
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(store.Source{ID: "s1", Name: "src"})
+			_ = json.NewEncoder(w).Encode(store.Component{ID: "s1", Name: "src"})
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -152,14 +152,14 @@ func TestCreateDeleteSource_RequestShapeAndHeaders(t *testing.T) {
 	defer ts.Close()
 
 	c := New(ts.URL, WithAPIKey("token-1"))
-	_, err := c.CreateSource(context.Background(), &store.Source{ID: "s1", Name: "src"})
+	_, err := c.CreateComponent(context.Background(), &store.Component{ID: "s1", Name: "src"})
 	if err != nil {
-		t.Fatalf("CreateSource() error: %v", err)
+		t.Fatalf("CreateComponent() error: %v", err)
 	}
 
-	err = c.DeleteSource(context.Background(), "source with spaces")
+	err = c.DeleteComponent(context.Background(), "source with spaces")
 	if err != nil {
-		t.Fatalf("DeleteSource() error: %v", err)
+		t.Fatalf("DeleteComponent() error: %v", err)
 	}
 
 	if len(methods) != 2 || methods[0] != http.MethodPost || methods[1] != http.MethodDelete {
@@ -174,7 +174,7 @@ func TestCreateDeleteSource_RequestShapeAndHeaders(t *testing.T) {
 	if authHeaders[0] != "Bearer token-1" || authHeaders[1] != "Bearer token-1" {
 		t.Fatalf("unexpected auth headers: %v", authHeaders)
 	}
-	if capturedRequestURI != "/api/v1/sources/source%20with%20spaces" {
+	if capturedRequestURI != "/api/v1/components/source%20with%20spaces" {
 		t.Fatalf("unexpected escaped delete request URI: %q", capturedRequestURI)
 	}
 }
@@ -187,11 +187,11 @@ func TestK8sAndGitURLConstruction(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		switch {
 		case strings.Contains(r.URL.Path, "/k8s/") && strings.Contains(r.URL.Path, "/resources") && !strings.Contains(r.URL.Path, "/resources/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"resources": []map[string]any{}, "count": 0, "source_id": "k1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"resources": []map[string]any{}, "count": 0, "component_id": "k1"})
 		case strings.Contains(r.URL.Path, "/k8s/") && strings.Contains(r.URL.Path, "/resources/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"resource": map[string]any{}, "source_id": "k1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"resource": map[string]any{}, "component_id": "k1"})
 		case strings.Contains(r.URL.Path, "/k8s/") && strings.Contains(r.URL.Path, "/logs/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"logs": "ok", "pod": "p", "namespace": "ns", "source_id": "k1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"logs": "ok", "pod": "p", "namespace": "ns", "component_id": "k1"})
 		case strings.Contains(r.URL.Path, "/git/") && strings.HasSuffix(r.URL.Path, "/file"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"content": "abc"})
 		case strings.Contains(r.URL.Path, "/git/") && strings.HasSuffix(r.URL.Path, "/files"):
@@ -232,21 +232,21 @@ func TestAWSEndpointsAndDecodeError(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/ec2/instances"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []map[string]any{}, "count": 0, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []map[string]any{}, "count": 0, "component_id": "a1"})
 		case strings.Contains(r.URL.Path, "/ec2/instances/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"instance": map[string]any{"instance_id": "i-1"}, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"instance": map[string]any{"instance_id": "i-1"}, "component_id": "a1"})
 		case strings.HasSuffix(r.URL.Path, "/eks/clusters"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"clusters": []map[string]any{}, "count": 0, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"clusters": []map[string]any{}, "count": 0, "component_id": "a1"})
 		case strings.Contains(r.URL.Path, "/eks/clusters/"):
 			_, _ = w.Write([]byte("{")) // trigger decode error
 		case strings.HasSuffix(r.URL.Path, "/rds/instances"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []map[string]any{}, "count": 0, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []map[string]any{}, "count": 0, "component_id": "a1"})
 		case strings.Contains(r.URL.Path, "/rds/instances/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"instance": map[string]any{"db_instance_id": "db-1"}, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"instance": map[string]any{"db_instance_id": "db-1"}, "component_id": "a1"})
 		case strings.HasSuffix(r.URL.Path, "/vpc/vpcs"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"vpcs": []map[string]any{}, "count": 0, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"vpcs": []map[string]any{}, "count": 0, "component_id": "a1"})
 		case strings.Contains(r.URL.Path, "/vpc/vpcs/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"vpc": map[string]any{"vpc_id": "vpc-1"}, "source_id": "a1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"vpc": map[string]any{"vpc_id": "vpc-1"}, "component_id": "a1"})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
 		}
@@ -301,8 +301,8 @@ func TestPingListSourcesGraphSummary(t *testing.T) {
 		switch r.URL.Path {
 		case apiStatusPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "version": "v", "time": "t"})
-		case apiSourcesPath:
-			_ = json.NewEncoder(w).Encode(map[string]any{"sources": []map[string]any{}, "count": 0})
+		case apiComponentsPath:
+			_ = json.NewEncoder(w).Encode(map[string]any{"components": []map[string]any{}, "count": 0})
 		case apiGraphSummaryPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"NodeCount": 1, "EdgeCount": 2, "NodesByType": map[string]int{"svc": 1}})
 		default:
@@ -316,12 +316,12 @@ func TestPingListSourcesGraphSummary(t *testing.T) {
 		t.Fatalf("Ping() error: %v", err)
 	}
 
-	sources, err := c.ListSources(context.Background())
+	components, err := c.ListComponents(context.Background())
 	if err != nil {
-		t.Fatalf("ListSources() error: %v", err)
+		t.Fatalf("ListComponents() error: %v", err)
 	}
-	if len(sources) != 0 {
-		t.Fatalf("expected no sources, got %d", len(sources))
+	if len(components) != 0 {
+		t.Fatalf("expected no components, got %d", len(components))
 	}
 
 	summary, err := c.GraphSummary(context.Background())

@@ -58,7 +58,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -76,7 +76,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("Connect() expected error, got nil")
@@ -97,7 +97,7 @@ func TestAdapter_ListServices(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestAdapter_SearchTraces(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -204,7 +204,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := jaeger.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -233,7 +233,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close() // Close immediately so connection fails
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for closed server, got nil")
 	}
@@ -249,7 +249,7 @@ func TestAdapter_Connect_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "my-secret-key",
 	})}
@@ -275,7 +275,7 @@ func TestAdapter_ListServices_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListServices(context.Background())
@@ -300,7 +300,7 @@ func TestAdapter_SearchTraces_WithOperation_And_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	results, err := adapter.SearchTraces(context.Background(), "payment", "POST /checkout", 0) // limit=0 → uses default
@@ -329,7 +329,7 @@ func TestAdapter_SearchTraces_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.SearchTraces(context.Background(), "payment", "", 5)
@@ -354,7 +354,7 @@ func TestAdapter_GetTrace_Success(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -381,7 +381,7 @@ func TestAdapter_GetTrace_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.GetTrace(context.Background(), "notexist")
@@ -404,7 +404,7 @@ func TestAdapter_GetTrace_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := jaeger.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.GetTrace(context.Background(), "trace001")
@@ -452,7 +452,7 @@ func mustMarshal(t *testing.T, v any) []byte {
 
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := jaeger.New()
-	source := store.Source{} // empty Config → ParseConfig fails (missing url)
+	source := store.Component{} // empty Config → ParseConfig fails (missing url)
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}

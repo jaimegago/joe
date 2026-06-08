@@ -11,12 +11,12 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, adapter awsadapter.AWSAdapter) error {
+func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Component, adapter awsadapter.AWSAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing aws source", "source_id", source.ID)
+	r.logger.Info("refreshing aws source", "component_id", source.ID)
 
 	now := time.Now()
-	region := awsRegionFromSource(source)
+	region := awsRegionFromComponent(source)
 
 	desiredNodes := make([]graph.Node, 0)
 	desiredEdges := make([]graph.Edge, 0)
@@ -42,11 +42,11 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 			metadata["tags"] = vpc.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "vpc",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "vpc",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 		nodeIndex[nodeID] = struct{}{}
 		vpcIndex[vpc.VpcID] = nodeID
@@ -78,24 +78,24 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 			metadata["security_groups"] = instance.SecurityGroups
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "ec2_instance",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "ec2_instance",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 		nodeIndex[nodeID] = struct{}{}
 
 		if instance.VpcID != "" {
 			if vpcID, ok := vpcIndex[instance.VpcID]; ok {
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       nodeID,
-					To:         vpcID,
-					Relation:   "in_vpc",
-					Confidence: graph.Explicit,
-					Source:     "aws_api",
-					SourceID:   source.ID,
-					Context:    "vpc_id",
+					From:        nodeID,
+					To:          vpcID,
+					Relation:    "in_vpc",
+					Confidence:  graph.Explicit,
+					Source:      "aws_api",
+					ComponentID: source.ID,
+					Context:     "vpc_id",
 				})
 			}
 		}
@@ -127,24 +127,24 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 			metadata["tags"] = cluster.Tags
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "eks_cluster",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "eks_cluster",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 		nodeIndex[nodeID] = struct{}{}
 
 		if cluster.VpcID != "" {
 			if vpcID, ok := vpcIndex[cluster.VpcID]; ok {
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       nodeID,
-					To:         vpcID,
-					Relation:   "in_vpc",
-					Confidence: graph.Explicit,
-					Source:     "aws_api",
-					SourceID:   source.ID,
-					Context:    "vpc_id",
+					From:        nodeID,
+					To:          vpcID,
+					Relation:    "in_vpc",
+					Confidence:  graph.Explicit,
+					Source:      "aws_api",
+					ComponentID: source.ID,
+					Context:     "vpc_id",
 				})
 			}
 		}
@@ -177,24 +177,24 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 			metadata["security_groups"] = instance.SecurityGroups
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
-			ID:       nodeID,
-			Type:     "rds_instance",
-			SourceID: source.ID,
-			Metadata: metadata,
-			LastSeen: now,
+			ID:          nodeID,
+			Type:        "rds_instance",
+			ComponentID: source.ID,
+			Metadata:    metadata,
+			LastSeen:    now,
 		})
 		nodeIndex[nodeID] = struct{}{}
 
 		if instance.VpcID != "" {
 			if vpcID, ok := vpcIndex[instance.VpcID]; ok {
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       nodeID,
-					To:         vpcID,
-					Relation:   "in_vpc",
-					Confidence: graph.Explicit,
-					Source:     "aws_api",
-					SourceID:   source.ID,
-					Context:    "vpc_id",
+					From:        nodeID,
+					To:          vpcID,
+					Relation:    "in_vpc",
+					Confidence:  graph.Explicit,
+					Source:      "aws_api",
+					ComponentID: source.ID,
+					Context:     "vpc_id",
 				})
 			}
 		}
@@ -203,7 +203,7 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 	// Cross-source: match EC2 instances to K8s nodes by InternalIP → is_k8s_node edges.
 	desiredEdges = append(desiredEdges, r.buildIsK8sNodeEdgesFromEC2(ctx, source, ec2Instances, now)...)
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return err
 	}
@@ -213,13 +213,13 @@ func (r *Refresher) refreshAWSSource(ctx context.Context, source *store.Source, 
 		return err
 	}
 
-	r.logger.Info("aws refresh completed", "source_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
+	r.logger.Info("aws refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
 	return nil
 }
 
 // buildIsK8sNodeEdgesFromEC2 creates is_k8s_node edges by matching EC2 private IPs
 // against K8s node InternalIPs already in the graph.
-func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *store.Source, instances []awsadapter.EC2Instance, now time.Time) []graph.Edge {
+func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *store.Component, instances []awsadapter.EC2Instance, now time.Time) []graph.Edge {
 	// Build a lookup index: InternalIP → K8s node graph ID.
 	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
 	if err != nil || len(k8sNodes) == 0 {
@@ -242,14 +242,14 @@ func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *stor
 			continue
 		}
 		edges = append(edges, graph.Edge{
-			From:       awsNodeID(source.ID, "ec2", instance.InstanceID),
-			To:         k8sNodeID,
-			Relation:   graph.RelationIsK8sNode,
-			Confidence: graph.Inferred,
-			Source:     "aws_k8s_ip_match",
-			SourceID:   source.ID,
-			Context:    "private_ip=" + instance.PrivateIP,
-			CreatedAt:  now,
+			From:        awsNodeID(source.ID, "ec2", instance.InstanceID),
+			To:          k8sNodeID,
+			Relation:    graph.RelationIsK8sNode,
+			Confidence:  graph.Inferred,
+			Source:      "aws_k8s_ip_match",
+			ComponentID: source.ID,
+			Context:     "private_ip=" + instance.PrivateIP,
+			CreatedAt:   now,
 		})
 	}
 	return edges
@@ -259,7 +259,7 @@ func awsNodeID(sourceID, service, resourceID string) string {
 	return fmt.Sprintf("aws/%s/%s/%s", sourceID, service, resourceID)
 }
 
-func awsRegionFromSource(source *store.Source) string {
+func awsRegionFromComponent(source *store.Component) string {
 	if source == nil || len(source.Config) == 0 {
 		return ""
 	}

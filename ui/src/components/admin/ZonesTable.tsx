@@ -40,9 +40,9 @@ export function ZonesTable({ zones }: ZonesTableProps) {
     onSuccess: () => {
       toast.success('Zone deleted');
       void qc.invalidateQueries({ queryKey: ['zones'] });
-      // A delete cascades grants and frees sources, so refresh the dependent lists.
+      // A delete cascades grants and frees components, so refresh the dependent lists.
       void qc.invalidateQueries({ queryKey: ['policies'] });
-      void qc.invalidateQueries({ queryKey: ['source-zones'] });
+      void qc.invalidateQueries({ queryKey: ['component-zones'] });
       void qc.invalidateQueries({ queryKey: ['unassigned'] });
     },
     onError: (e: Error, zone) => {
@@ -52,7 +52,7 @@ export function ZonesTable({ zones }: ZonesTableProps) {
       if (e instanceof ApiRequestError && e.status === 409) {
         toast.error(
           `Zone "${zone.name || zone.id}" still has source assignments and cannot be deleted. ` +
-            `Reassign those sources to another zone first (Sources tab), then delete it.`
+            `Reassign those components to another zone first (Components tab), then delete it.`
         );
         return;
       }
@@ -68,7 +68,7 @@ export function ZonesTable({ zones }: ZonesTableProps) {
             <TableHead>Zone</TableHead>
             <TableHead>Description</TableHead>
             <TableHead>Actions</TableHead>
-            <TableHead>Sources</TableHead>
+            <TableHead>Components</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>
@@ -121,7 +121,7 @@ export function ZonesTable({ zones }: ZonesTableProps) {
         title="Delete zone"
         description={
           deleting
-            ? `Delete zone "${deleting.name || deleting.id}"? Any policies granting this zone are removed. Sources assigned to it must be reassigned first.`
+            ? `Delete zone "${deleting.name || deleting.id}"? Any policies granting this zone are removed. Components assigned to it must be reassigned first.`
             : ''
         }
         confirmLabel="Delete"

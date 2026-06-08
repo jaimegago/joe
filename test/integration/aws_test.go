@@ -25,8 +25,8 @@ type MockAWSAdapter struct {
 	error     error
 }
 
-func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Source) error { return m.error }
-func (m *MockAWSAdapter) Disconnect() error                               { return nil }
+func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Component) error { return m.error }
+func (m *MockAWSAdapter) Disconnect() error                                  { return nil }
 func (m *MockAWSAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: m.error == nil, Message: "Mock AWS adapter"}
 }
@@ -143,14 +143,14 @@ func TestAWSIntegration(t *testing.T) {
 
 	t.Run("AddAWSSource", func(t *testing.T) {
 		// Create AWS source
-		source := store.Source{
+		source := store.Component{
 			ID:     "test-aws-source",
 			Name:   "Test AWS Account",
 			Type:   "aws",
 			Config: []byte(`{"region":"us-west-2","profile":"default"}`),
 		}
 
-		err := db.Sources.Create(context.Background(), &source)
+		err := db.Components.Create(context.Background(), &source)
 		if err != nil {
 			t.Fatalf("create source: %v", err)
 		}
@@ -159,17 +159,17 @@ func TestAWSIntegration(t *testing.T) {
 		registry.Register(source.ID, mockAdapter)
 
 		// Test connection status via API
-		sources, err := coreClient.ListSources(context.Background())
+		components, err := coreClient.ListComponents(context.Background())
 		if err != nil {
-			t.Fatalf("list sources: %v", err)
+			t.Fatalf("list components: %v", err)
 		}
 
-		if len(sources) == 0 {
+		if len(components) == 0 {
 			t.Fatal("expected at least one source")
 		}
 
 		found := false
-		for _, s := range sources {
+		for _, s := range components {
 			if s.ID == source.ID {
 				found = true
 				break
@@ -185,7 +185,7 @@ func TestAWSIntegration(t *testing.T) {
 		tool := coretools.NewAWSEC2Tool(coreClient)
 
 		result, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "test-aws-source",
+			"component_id": "test-aws-source",
 		})
 		if err != nil {
 			t.Fatalf("execute aws_ec2 tool: %v", err)
@@ -221,7 +221,7 @@ func TestAWSIntegration(t *testing.T) {
 		tool := coretools.NewAWSEKSTool(coreClient)
 
 		result, err := tool.Execute(context.Background(), map[string]any{
-			"source_id": "test-aws-source",
+			"component_id": "test-aws-source",
 		})
 		if err != nil {
 			t.Fatalf("execute aws_eks tool: %v", err)
@@ -257,8 +257,8 @@ func TestAWSIntegration(t *testing.T) {
 		tool := coretools.NewAWSEC2Tool(coreClient)
 
 		result, err := tool.Execute(context.Background(), map[string]any{
-			"source_id":   "test-aws-source",
-			"instance_id": "i-1234567890abcdef0",
+			"component_id": "test-aws-source",
+			"instance_id":  "i-1234567890abcdef0",
 		})
 		if err != nil {
 			t.Fatalf("execute aws_ec2 tool for specific instance: %v", err)

@@ -30,26 +30,26 @@ func (t *ElasticsearchHealthTool) Description() string {
 	return "Retrieve Elasticsearch cluster health including status (green/yellow/red), " +
 		"node counts, active shards, unassigned shards, and relocating shards. " +
 		"Use this to quickly assess cluster health and identify shard allocation problems. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ElasticsearchHealthTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Elasticsearch source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *ElasticsearchHealthTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	health, err := t.Client.ElasticsearchHealth(ctx, sourceID)
@@ -58,8 +58,8 @@ func (t *ElasticsearchHealthTool) Execute(ctx context.Context, args map[string]a
 	}
 
 	return map[string]any{
-		"health":    health,
-		"source_id": sourceID,
+		"health":       health,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -79,14 +79,14 @@ func (t *ElasticsearchIndicesTool) Description() string {
 	return "List Elasticsearch indices with health, status, document count, store size, and shard counts. " +
 		"Supports an optional wildcard pattern to filter indices (e.g. 'logs-*', 'metrics-*'). " +
 		"Use this to identify unhealthy indices, large indices, and storage usage. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *ElasticsearchIndicesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Elasticsearch source to query.",
 			},
@@ -95,14 +95,14 @@ func (t *ElasticsearchIndicesTool) Parameters() llm.ParameterSchema {
 				Description: "Optional wildcard pattern to filter indices (e.g. 'logs-*'). Omit for all indices.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *ElasticsearchIndicesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	pattern, _ := args["pattern"].(string)
@@ -117,9 +117,9 @@ func (t *ElasticsearchIndicesTool) Execute(ctx context.Context, args map[string]
 	}
 
 	return map[string]any{
-		"indices":   indices,
-		"count":     len(indices),
-		"source_id": sourceID,
-		"pattern":   pattern,
+		"indices":      indices,
+		"count":        len(indices),
+		"component_id": sourceID,
+		"pattern":      pattern,
 	}, nil
 }

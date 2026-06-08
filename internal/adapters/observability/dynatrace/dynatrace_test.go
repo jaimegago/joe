@@ -91,7 +91,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := dynatrace.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "testtoken",
 	})}
@@ -111,7 +111,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := dynatrace.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "bad",
 	})}
@@ -122,7 +122,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := dynatrace.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -133,7 +133,7 @@ func TestAdapter_Connect_NetworkError(t *testing.T) {
 	srv.Close()
 
 	adapter := dynatrace.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":   srv.URL,
 		"token": "tok",
 	})}
@@ -327,7 +327,7 @@ func TestAdapter_Events_DefaultLimit(t *testing.T) {
 
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := dynatrace.New()
-	source := store.Source{} // empty Config → ParseConfig fails (missing url)
+	source := store.Component{} // empty Config → ParseConfig fails (missing url)
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}

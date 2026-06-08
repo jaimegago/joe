@@ -23,9 +23,9 @@ type mockFalcoAdapter struct {
 	err    error
 }
 
-func (m *mockFalcoAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockFalcoAdapter) Disconnect() error                               { return nil }
-func (m *mockFalcoAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockFalcoAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockFalcoAdapter) Disconnect() error                                  { return nil }
+func (m *mockFalcoAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockFalcoAdapter) ListEvents(_ context.Context, _, _, _ string, _ int) ([]falcoadapter.Event, error) {
 	return m.events, m.err
 }

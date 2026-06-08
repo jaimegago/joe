@@ -27,21 +27,25 @@ func newTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(string(migration)); err != nil {
 		t.Fatalf("apply migration: %v", err)
 	}
+	// Migration 023 (D-0021) renames review_jobs.source_id -> component_id.
+	if _, err := db.Exec(`ALTER TABLE review_jobs RENAME COLUMN source_id TO component_id`); err != nil {
+		t.Fatalf("apply 023 column rename: %v", err)
+	}
 	t.Cleanup(func() { db.Close() })
 	return db
 }
 
 func makeJob(platform Platform, owner, repo string, pr int, sha string) *ReviewJob {
 	return &ReviewJob{
-		ID:        "job-" + sha,
-		EventID:   BuildEventID(platform, owner, repo, pr, sha),
-		Platform:  platform,
-		SourceID:  "src-1",
-		Owner:     owner,
-		Repo:      repo,
-		PRNumber:  pr,
-		HeadSHA:   sha,
-		CreatedAt: time.Now().UTC().Truncate(time.Second),
+		ID:          "job-" + sha,
+		EventID:     BuildEventID(platform, owner, repo, pr, sha),
+		Platform:    platform,
+		ComponentID: "src-1",
+		Owner:       owner,
+		Repo:        repo,
+		PRNumber:    pr,
+		HeadSHA:     sha,
+		CreatedAt:   time.Now().UTC().Truncate(time.Second),
 	}
 }
 
@@ -57,15 +61,15 @@ func TestRepository_Enqueue(t *testing.T) {
 
 	// Second enqueue with same event_id must return ErrDuplicateEvent.
 	err := repo.Enqueue(ctx, &ReviewJob{
-		ID:        "job-other",
-		EventID:   job.EventID,
-		Platform:  PlatformGitHub,
-		SourceID:  "src-1",
-		Owner:     "org",
-		Repo:      "myrepo",
-		PRNumber:  1,
-		HeadSHA:   "abc123",
-		CreatedAt: time.Now().UTC(),
+		ID:          "job-other",
+		EventID:     job.EventID,
+		Platform:    PlatformGitHub,
+		ComponentID: "src-1",
+		Owner:       "org",
+		Repo:        "myrepo",
+		PRNumber:    1,
+		HeadSHA:     "abc123",
+		CreatedAt:   time.Now().UTC(),
 	})
 	if err != ErrDuplicateEvent {
 		t.Fatalf("expected ErrDuplicateEvent, got %v", err)

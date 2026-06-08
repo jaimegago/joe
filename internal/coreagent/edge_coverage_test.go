@@ -30,13 +30,13 @@ func setupDDRefresher(t *testing.T) *Refresher {
 func TestBuildDDMetricsInEdges_WithMatchingService(t *testing.T) {
 	r := setupDDRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-dd-1", Type: store.SourceTypeDatadog, Name: "datadog"}
+	src := &store.Component{ID: "src-dd-1", Type: store.ComponentTypeDatadog, Name: "datadog"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/payment",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment"},
+		ID:          "svc/default/payment",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment"},
 	})
 
 	edges, err := r.buildDDMetricsInEdges(ctx, src, "dd-node-id", []string{"payment", "api"}, time.Now())
@@ -54,13 +54,13 @@ func TestBuildDDMetricsInEdges_WithMatchingService(t *testing.T) {
 func TestBuildDDMetricsInEdges_SkipsNonServiceNodes(t *testing.T) {
 	r := setupDDRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-dd-2", Type: store.SourceTypeDatadog, Name: "datadog"}
+	src := &store.Component{ID: "src-dd-2", Type: store.ComponentTypeDatadog, Name: "datadog"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8snode/payment-node",
-		Type:     "k8s_node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment-node"},
+		ID:          "k8snode/payment-node",
+		Type:        "k8s_node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment-node"},
 	})
 
 	edges, err := r.buildDDMetricsInEdges(ctx, src, "dd-node", []string{"payment-node"}, time.Now())
@@ -75,13 +75,13 @@ func TestBuildDDMetricsInEdges_SkipsNonServiceNodes(t *testing.T) {
 func TestBuildDDLogsInEdges_WithMatchingDeployment(t *testing.T) {
 	r := setupDDRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-dd-3", Type: store.SourceTypeDatadog, Name: "datadog"}
+	src := &store.Component{ID: "src-dd-3", Type: store.ComponentTypeDatadog, Name: "datadog"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "deploy/default/api-gateway",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "api-gateway"},
+		ID:          "deploy/default/api-gateway",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "api-gateway"},
 	})
 
 	edges, err := r.buildDDLogsInEdges(ctx, src, "dd-node-id", []string{"api-gateway"}, time.Now())
@@ -99,7 +99,7 @@ func TestBuildDDLogsInEdges_WithMatchingDeployment(t *testing.T) {
 func TestBuildDDLogsInEdges_NoMatch(t *testing.T) {
 	r := setupDDRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-dd-4", Type: store.SourceTypeDatadog, Name: "datadog"}
+	src := &store.Component{ID: "src-dd-4", Type: store.ComponentTypeDatadog, Name: "datadog"}
 
 	edges, err := r.buildDDLogsInEdges(ctx, src, "dd-node", []string{"nonexistent"}, time.Now())
 	if err != nil {
@@ -301,13 +301,13 @@ func TestExtractWorkloadInfo_DaemonSet(t *testing.T) {
 func TestBuildProxiesEdges_WithMatchingDeployment(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-envoy-deploy", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-deploy", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "deploy/default/orders",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "orders"},
+		ID:          "deploy/default/orders",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "orders"},
 	})
 
 	now := time.Now()
@@ -324,13 +324,13 @@ func TestBuildProxiesEdges_WithMatchingDeployment(t *testing.T) {
 func TestBuildQueuesInEdges_Deduplication(t *testing.T) {
 	r := setupDatastoreRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-kafka-dedup", Type: store.SourceTypeKafka, Name: "kafka"}
+	src := &store.Component{ID: "src-kafka-dedup", Type: store.ComponentTypeKafka, Name: "kafka"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/orders",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "orders"},
+		ID:          "svc/default/orders",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "orders"},
 	})
 
 	// "orders" appears 3 times — deduplication should produce only 1 edge.
@@ -349,13 +349,13 @@ func TestBuildQueuesInEdges_Deduplication(t *testing.T) {
 func TestBuildQueuesInEdges_SkipsNonServiceNodes(t *testing.T) {
 	r := setupDatastoreRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-kafka-skip", Type: store.SourceTypeKafka, Name: "kafka"}
+	src := &store.Component{ID: "src-kafka-skip", Type: store.ComponentTypeKafka, Name: "kafka"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8snode/orders-node",
-		Type:     "k8s_node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "orders-node"},
+		ID:          "k8snode/orders-node",
+		Type:        "k8s_node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "orders-node"},
 	})
 
 	edges := r.buildQueuesInEdges(ctx, src, "kafka-node", []string{"orders-node"}, time.Now())
@@ -371,15 +371,15 @@ func TestBuildQueuesInEdges_SkipsNonServiceNodes(t *testing.T) {
 func TestApplyRegistryDelta_Success(t *testing.T) {
 	r := setupRegistryRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-reg-delta", Type: store.SourceTypeOCIRegistry, Name: "reg"}
+	src := &store.Component{ID: "src-reg-delta", Type: store.ComponentTypeOCIRegistry, Name: "reg"}
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       registryNodeID(src.ID, src.Type),
-			Type:     "artifact_registry",
-			SourceID: src.ID,
-			Metadata: registryMetadata(src),
-			LastSeen: time.Now(),
+			ID:          registryNodeID(src.ID, src.Type),
+			Type:        "artifact_registry",
+			ComponentID: src.ID,
+			Metadata:    registryMetadata(src),
+			LastSeen:    time.Now(),
 		},
 	}
 
@@ -389,38 +389,38 @@ func TestApplyRegistryDelta_Success(t *testing.T) {
 }
 
 // ============================================================
-// refreshSource: wrong-type branches not covered elsewhere
+// refreshComponent: wrong-type branches not covered elsewhere
 // ============================================================
 
-func TestRefreshSource_PostgresWrongType(t *testing.T) {
+func TestRefreshComponent_PostgresWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-pg-bad", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-pg-bad", Type: store.SourceTypePostgreSQL, Name: "pg"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-pg-bad", Type: store.ComponentTypePostgreSQL, Name: "pg"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
-func TestRefreshSource_HelmWrongType(t *testing.T) {
+func TestRefreshComponent_HelmWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-helm-bad2", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-helm-bad2", Type: store.SourceTypeHelm, Name: "helm"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-helm-bad2", Type: store.ComponentTypeHelm, Name: "helm"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
-func TestRefreshSource_TerraformWrongType(t *testing.T) {
+func TestRefreshComponent_TerraformWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tf-bad2", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-tf-bad2", Type: store.SourceTypeTerraform, Name: "tf"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-tf-bad2", Type: store.ComponentTypeTerraform, Name: "tf"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }

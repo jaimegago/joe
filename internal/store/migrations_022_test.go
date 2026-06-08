@@ -17,7 +17,7 @@ import (
 //
 //   - After up: chat_messages exists; agent_sessions has title + visibility;
 //     visibility defaults to 'private'.
-//   - After Steps(-1): chat_messages and both columns are gone.
+//   - After Steps(-2): chat_messages and both columns are gone.
 //   - After re-up: everything is back and chat_messages is empty.
 func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 	s, err := New(DatabaseConfig{Driver: DriverSQLite, DSN: ":memory:"}, (*observability.Metrics)(nil))
@@ -58,8 +58,8 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 	}
 
 	// 2) Step one migration down: reverts 022 (the head).
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("Steps(-1): %v", err)
+	if err := m.Steps(-2); err != nil {
+		t.Fatalf("Steps(-2): %v", err)
 	}
 	if tableExists(t, s, "chat_messages") {
 		t.Error("after down: chat_messages must be dropped")

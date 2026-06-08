@@ -40,7 +40,7 @@ func NewJoeFileService(cache store.CacheRepository, llmAdapter llm.LLMAdapter, l
 // An empty slice (not nil) indicates .joe/ files exist but produced no tool calls (e.g., LLM returned empty).
 // A nil slice indicates no .joe/ files were found.
 func (s *JoeFileService) ProcessJoeFiles(ctx context.Context, adapter git.GitAdapter, sourceID string) ([]llm.ToolCall, error) {
-	s.logger.Debug("discovering .joe/ files", "source_id", sourceID)
+	s.logger.Debug("discovering .joe/ files", "component_id", sourceID)
 
 	// Discover .joe/ files (filter for .yaml/.yml)
 	fileInfos, err := adapter.ListFiles(ctx, ".joe")
@@ -56,16 +56,16 @@ func (s *JoeFileService) ProcessJoeFiles(ctx context.Context, adapter git.GitAda
 	}
 
 	if len(joeFiles) == 0 {
-		s.logger.Debug("no .joe/ files found", "source_id", sourceID)
+		s.logger.Debug("no .joe/ files found", "component_id", sourceID)
 		return nil, nil // nil indicates no .joe/ files found
 	}
 
-	s.logger.Debug("found .joe/ files", "source_id", sourceID, "count", len(joeFiles))
+	s.logger.Debug("found .joe/ files", "component_id", sourceID, "count", len(joeFiles))
 
 	// Process each .joe/ file
 	allToolCalls := make([]llm.ToolCall, 0)
 	for _, filePath := range joeFiles {
-		s.logger.Debug("processing .joe/ file", "source_id", sourceID, "file", filePath)
+		s.logger.Debug("processing .joe/ file", "component_id", sourceID, "file", filePath)
 
 		content, err := adapter.ReadFile(ctx, filePath)
 		if err != nil {
@@ -130,7 +130,7 @@ func (s *JoeFileService) ProcessJoeFiles(ctx context.Context, adapter git.GitAda
 		allToolCalls = append(allToolCalls, toolCalls...)
 	}
 
-	s.logger.Info("processed .joe/ files", "source_id", sourceID, "files", len(joeFiles), "tool_calls", len(allToolCalls))
+	s.logger.Info("processed .joe/ files", "component_id", sourceID, "files", len(joeFiles), "tool_calls", len(allToolCalls))
 	return allToolCalls, nil
 }
 

@@ -245,11 +245,11 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 	spyExec := &spyExecutor{returnValue: map[string]any{"ok": true}, invokeOrder: f.order}
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
-	// register_source DECLARES NeedsDurability (a non-idempotent create) — the
+	// register_component DECLARES NeedsDurability (a non-idempotent create) — the
 	// durability wrapper engages for it. (write_file is Mutate but idempotent
 	// and no longer declares durability, so it would bypass the wrapper now;
 	// see TestDurableExecutor_DrivenByProperty.)
-	_, err := dur.Execute(f.withRunCtx(""), "register_source", map[string]any{"id": "x"})
+	_, err := dur.Execute(f.withRunCtx(""), "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -275,11 +275,11 @@ func TestDurableExecutor_ReplayShortCircuit(t *testing.T) {
 	key := "fixed-key"
 	ctx := f.withRunCtx(key)
 
-	first, err := dur.Execute(ctx, "register_source", map[string]any{"id": "x"})
+	first, err := dur.Execute(ctx, "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	second, err := dur.Execute(ctx, "register_source", map[string]any{"id": "x"})
+	second, err := dur.Execute(ctx, "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("second (replay): %v", err)
 	}
@@ -310,18 +310,18 @@ func TestDurableExecutor_InRunReplayDedupsCreate(t *testing.T) {
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// No caller-supplied idempotency key — the wrapper must derive a stable key
-	// from runID + "register_source" + the canonical args hash. register_source
+	// from runID + "register_component" + the canonical args hash. register_component
 	// generates its row ID server-side OUTSIDE the args, so identical args
 	// produce an identical key across the retry.
 	ctx := f.withRunCtx("")
 	args := map[string]any{"name": "prod-cluster", "type": "kubernetes"}
 
-	if _, err := dur.Execute(ctx, "register_source", args); err != nil {
-		t.Fatalf("first register_source: %v", err)
+	if _, err := dur.Execute(ctx, "register_component", args); err != nil {
+		t.Fatalf("first register_component: %v", err)
 	}
-	second, err := dur.Execute(ctx, "register_source", args)
+	second, err := dur.Execute(ctx, "register_component", args)
 	if err != nil {
-		t.Fatalf("replay register_source: %v", err)
+		t.Fatalf("replay register_component: %v", err)
 	}
 
 	if got := spyExec.executions.Load(); got != 1 {
@@ -348,7 +348,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	f.repo.beforeMarkCompleted = func() error { return fakeMarkErr }
 
 	key := "resume-key"
-	_, _ = dur.Execute(f.withRunCtx(key), "register_source", map[string]any{"id": "x"})
+	_, _ = dur.Execute(f.withRunCtx(key), "register_component", map[string]any{"id": "x"})
 	if spyExec.executions.Load() != 1 {
 		t.Fatalf("first execution count = %d, want 1", spyExec.executions.Load())
 	}
@@ -367,7 +367,7 @@ func TestDurableExecutor_CrashResumeRetriesCleanly(t *testing.T) {
 	// inner executor should run AGAIN (because the prior call never
 	// reached 'completed'), and MarkToolCompleted should land this time.
 	f.repo.beforeMarkCompleted = nil
-	_, err = dur.Execute(f.withRunCtx(key), "register_source", map[string]any{"id": "x"})
+	_, err = dur.Execute(f.withRunCtx(key), "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("resume Execute: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestDurableExecutor_UndeclaredBypass(t *testing.T) {
 // is NOT wrapped. ---
 
 func TestDurableExecutor_DrivenByProperty(t *testing.T) {
-	// register_source is ActionRead but declares NeedsDurability → wrapped
+	// register_component is ActionRead but declares NeedsDurability → wrapped
 	// (repo touched). write_file is ActionMutate but does not declare it →
 	// bypassed (repo untouched). This pins that the durability decision no
 	// longer consumes the Read/Mutate class.
@@ -421,8 +421,8 @@ func TestDurableExecutor_DrivenByProperty(t *testing.T) {
 		tool        string
 		wantWrapped bool
 	}{
-		{"register_source", true}, // Read + declared  → wrapped
-		{"write_file", false},     // Mutate + undeclared → bypassed
+		{"register_component", true}, // Read + declared  → wrapped
+		{"write_file", false},        // Mutate + undeclared → bypassed
 	}
 	for _, tc := range cases {
 		f := newFixture(t)
@@ -457,7 +457,7 @@ func TestDurableExecutor_NoGoroutineFanOut(t *testing.T) {
 	if callerGoID < 0 {
 		t.Skip("could not extract goroutine ID — runtime.Stack format changed?")
 	}
-	_, err := dur.Execute(f.withRunCtx(""), "register_source", map[string]any{"id": "x"})
+	_, err := dur.Execute(f.withRunCtx(""), "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

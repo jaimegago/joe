@@ -18,7 +18,7 @@ interface NavItem {
 // reachable by direct URL for demos that explain Joe's dependency graph DB.
 const navItems: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/sources', icon: Database, label: 'Sources', end: false },
+  { to: '/components', icon: Database, label: 'Components', end: false },
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
   { to: '/sessions', icon: MessagesSquare, label: 'Sessions', end: false },
   { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false, adminOnly: true },

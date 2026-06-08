@@ -107,7 +107,7 @@ func TestConnect_ConfigErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := gitadapter.New()
-			source := store.Source{Config: json.RawMessage(tt.config)}
+			source := store.Component{Config: json.RawMessage(tt.config)}
 			if err := a.Connect(context.Background(), source); err == nil {
 				t.Errorf("Connect() expected error, got nil")
 			}
@@ -397,7 +397,7 @@ func TestConnect_LocalRepoWithBranch(t *testing.T) {
 	// Try with an explicit branch to exercise the branch condition in Connect
 	for _, branch := range []string{"master", "main"} {
 		a := gitadapter.New()
-		source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `", "branch": "` + branch + `"}`)}
+		source := store.Component{Config: json.RawMessage(`{"url": "` + srcDir + `", "branch": "` + branch + `"}`)}
 		if err := a.Connect(context.Background(), source); err == nil {
 			if !a.Status().Connected {
 				t.Errorf("adapter should be connected after Connect() with branch %q", branch)
@@ -415,7 +415,7 @@ func TestConnect_LocalRepo(t *testing.T) {
 	_, srcDir, _, _ := newTestRepo(t)
 
 	a := gitadapter.New()
-	source := store.Source{Config: json.RawMessage(`{"url": "` + srcDir + `"}`)}
+	source := store.Component{Config: json.RawMessage(`{"url": "` + srcDir + `"}`)}
 	if err := a.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -539,7 +539,7 @@ func TestConnect_PullExisting(t *testing.T) {
 
 	// First connect: clones the repo.
 	a := gitadapter.New()
-	src := store.Source{Config: json.RawMessage(`{"url":"` + srcDir + `"}`)}
+	src := store.Component{Config: json.RawMessage(`{"url":"` + srcDir + `"}`)}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("first Connect() error = %v", err)
 	}
@@ -583,7 +583,7 @@ func TestConnect_HTTPSAuth(t *testing.T) {
 	// https auth with a token — buildAuth should succeed returning BasicAuth.
 	// The local file URL doesn't require auth so clone succeeds despite fake token.
 	a := gitadapter.New()
-	src := store.Source{Config: json.RawMessage(
+	src := store.Component{Config: json.RawMessage(
 		`{"url":"` + srcDir + `","auth_type":"https","http_token":"fake-token"}`,
 	)}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -765,7 +765,7 @@ func TestListFiles_DotDir(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := gitadapter.New()
-	src := store.Source{Config: json.RawMessage(`not-json`)}
+	src := store.Component{Config: json.RawMessage(`not-json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for invalid config JSON")
 	}
@@ -802,7 +802,7 @@ func TestConnect_SSHAuthWithKey(t *testing.T) {
 	a := gitadapter.New()
 	// HOME doesn't matter here — it will fail at clone, not at auth build.
 	t.Setenv("HOME", t.TempDir())
-	src := store.Source{Config: json.RawMessage(
+	src := store.Component{Config: json.RawMessage(
 		`{"url":"git@github.example.invalid:org/repo.git","auth_type":"ssh","ssh_key_path":"` + keyPath + `"}`,
 	)}
 	err := a.Connect(context.Background(), src)

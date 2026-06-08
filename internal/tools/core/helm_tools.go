@@ -33,14 +33,14 @@ func (t *HelmReleasesTool) Description() string {
 		"Shows name, namespace, chart, chart_version, app_version, status (deployed/failed/pending), " +
 		"revision, and updated timestamp. " +
 		"Optionally filter by namespace. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *HelmReleasesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Helm source.",
 			},
@@ -49,14 +49,14 @@ func (t *HelmReleasesTool) Parameters() llm.ParameterSchema {
 				Description: "Kubernetes namespace to list releases from. Omit to list all namespaces.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *HelmReleasesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, _ := args["namespace"].(string)
 
@@ -68,9 +68,9 @@ func (t *HelmReleasesTool) Execute(ctx context.Context, args map[string]any) (an
 		releases = []helm.Release{}
 	}
 	return map[string]any{
-		"releases":  releases,
-		"count":     len(releases),
-		"source_id": sourceID,
+		"releases":     releases,
+		"count":        len(releases),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -90,14 +90,14 @@ func (t *HelmGetReleaseTool) Name() string { return "helm_release" }
 func (t *HelmGetReleaseTool) Description() string {
 	return "Get full details for a specific Helm release: values (user-provided chart configuration) " +
 		"and release notes. Use helm_releases first to find the release name and namespace. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *HelmGetReleaseTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Helm source.",
 			},
@@ -110,14 +110,14 @@ func (t *HelmGetReleaseTool) Parameters() llm.ParameterSchema {
 				Description: "Name of the Helm release.",
 			},
 		},
-		Required: []string{"source_id", "namespace", "name"},
+		Required: []string{"component_id", "namespace", "name"},
 	}
 }
 
 func (t *HelmGetReleaseTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, ok := args["namespace"].(string)
 	if !ok || namespace == "" {
@@ -133,8 +133,8 @@ func (t *HelmGetReleaseTool) Execute(ctx context.Context, args map[string]any) (
 		return nil, fmt.Errorf("helm release: %w", err)
 	}
 	return map[string]any{
-		"detail":    detail,
-		"source_id": sourceID,
+		"detail":       detail,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -155,14 +155,14 @@ func (t *HelmHistoryTool) Description() string {
 	return "Get the revision history for a Helm release. " +
 		"Each entry shows revision number, status, chart version, and deployment time. " +
 		"Ordered newest first. Use this to see what changed across upgrades or rollbacks. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *HelmHistoryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Helm source.",
 			},
@@ -179,14 +179,14 @@ func (t *HelmHistoryTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of history entries to return. Defaults to 10.",
 			},
 		},
-		Required: []string{"source_id", "namespace", "name"},
+		Required: []string{"component_id", "namespace", "name"},
 	}
 }
 
 func (t *HelmHistoryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	namespace, ok := args["namespace"].(string)
 	if !ok || namespace == "" {
@@ -210,8 +210,8 @@ func (t *HelmHistoryTool) Execute(ctx context.Context, args map[string]any) (any
 		history = []helm.RevisionEntry{}
 	}
 	return map[string]any{
-		"history":   history,
-		"count":     len(history),
-		"source_id": sourceID,
+		"history":      history,
+		"count":        len(history),
+		"component_id": sourceID,
 	}, nil
 }

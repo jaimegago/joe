@@ -24,8 +24,8 @@ func (c *Client) ArgoCDApps(ctx context.Context, sourceID, project string) ([]ar
 	}
 
 	var result struct {
-		Apps     []argocdadapter.App `json:"apps"`
-		SourceID string              `json:"source_id"`
+		Apps        []argocdadapter.App `json:"apps"`
+		ComponentID string              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "argocd apps"); err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func (c *Client) ArgoCDGetApp(ctx context.Context, sourceID, name string) (*argo
 		c.baseURL, apiArgoCDBasePath, url.PathEscape(sourceID), url.PathEscape(name))
 
 	var result struct {
-		Detail   *argocdadapter.AppDetail `json:"detail"`
-		SourceID string                   `json:"source_id"`
+		Detail      *argocdadapter.AppDetail `json:"detail"`
+		ComponentID string                   `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "argocd get app"); err != nil {
 		return nil, err
@@ -54,8 +54,8 @@ func (c *Client) ArgoCDGetDiff(ctx context.Context, sourceID, name string) (*arg
 		c.baseURL, apiArgoCDBasePath, url.PathEscape(sourceID), url.PathEscape(name))
 
 	var result struct {
-		Diff     *argocdadapter.Diff `json:"diff"`
-		SourceID string              `json:"source_id"`
+		Diff        *argocdadapter.Diff `json:"diff"`
+		ComponentID string              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "argocd diff"); err != nil {
 		return nil, err
@@ -69,8 +69,8 @@ func (c *Client) ArgoCDGetHistory(ctx context.Context, sourceID, name string, li
 		c.baseURL, apiArgoCDBasePath, url.PathEscape(sourceID), url.PathEscape(name), limit)
 
 	var result struct {
-		History  []argocdadapter.SyncOperation `json:"history"`
-		SourceID string                        `json:"source_id"`
+		History     []argocdadapter.SyncOperation `json:"history"`
+		ComponentID string                        `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "argocd history"); err != nil {
 		return nil, err
@@ -90,8 +90,8 @@ func (c *Client) TerraformResources(ctx context.Context, sourceID, resourceType 
 	}
 
 	var result struct {
-		Resources []terraformadapter.Resource `json:"resources"`
-		SourceID  string                      `json:"source_id"`
+		Resources   []terraformadapter.Resource `json:"resources"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "terraform resources"); err != nil {
 		return nil, err
@@ -105,8 +105,8 @@ func (c *Client) TerraformGetResource(ctx context.Context, sourceID, address str
 		c.baseURL, apiTerraformBasePath, url.PathEscape(sourceID), url.QueryEscape(address))
 
 	var result struct {
-		Resource *terraformadapter.Resource `json:"resource"`
-		SourceID string                     `json:"source_id"`
+		Resource    *terraformadapter.Resource `json:"resource"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "terraform get resource"); err != nil {
 		return nil, err
@@ -119,8 +119,8 @@ func (c *Client) TerraformOutputs(ctx context.Context, sourceID string) (map[str
 	u := fmt.Sprintf("%s%s/%s/outputs", c.baseURL, apiTerraformBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Outputs  map[string]terraformadapter.Output `json:"outputs"`
-		SourceID string                             `json:"source_id"`
+		Outputs     map[string]terraformadapter.Output `json:"outputs"`
+		ComponentID string                             `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "terraform outputs"); err != nil {
 		return nil, err
@@ -140,8 +140,8 @@ func (c *Client) HelmReleases(ctx context.Context, sourceID, namespace string) (
 	}
 
 	var result struct {
-		Releases []helmadapter.Release `json:"releases"`
-		SourceID string                `json:"source_id"`
+		Releases    []helmadapter.Release `json:"releases"`
+		ComponentID string                `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "helm releases"); err != nil {
 		return nil, err
@@ -156,8 +156,8 @@ func (c *Client) HelmGetRelease(ctx context.Context, sourceID, namespace, name s
 		url.PathEscape(sourceID), url.PathEscape(namespace), url.PathEscape(name))
 
 	var result struct {
-		Detail   *helmadapter.ReleaseDetail `json:"detail"`
-		SourceID string                     `json:"source_id"`
+		Detail      *helmadapter.ReleaseDetail `json:"detail"`
+		ComponentID string                     `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "helm get release"); err != nil {
 		return nil, err
@@ -173,8 +173,8 @@ func (c *Client) HelmHistory(ctx context.Context, sourceID, namespace, name stri
 		strconv.Itoa(limit))
 
 	var result struct {
-		History  []helmadapter.RevisionEntry `json:"history"`
-		SourceID string                      `json:"source_id"`
+		History     []helmadapter.RevisionEntry `json:"history"`
+		ComponentID string                      `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "helm history"); err != nil {
 		return nil, err

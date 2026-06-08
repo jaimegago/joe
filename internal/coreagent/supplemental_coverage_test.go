@@ -25,9 +25,9 @@ type fakeSplunkAdapter struct {
 	err    error
 }
 
-func (f *fakeSplunkAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeSplunkAdapter) Disconnect() error                               { return nil }
-func (f *fakeSplunkAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeSplunkAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeSplunkAdapter) Disconnect() error                                  { return nil }
+func (f *fakeSplunkAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeSplunkAdapter) Search(_ context.Context, _, _, _ string, _ int) (*splunkadapter.SearchResult, error) {
 	return f.result, f.err
 }
@@ -38,8 +38,8 @@ type fakeDynatraceAdapter struct {
 	err     error
 }
 
-func (f *fakeDynatraceAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeDynatraceAdapter) Disconnect() error                               { return nil }
+func (f *fakeDynatraceAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeDynatraceAdapter) Disconnect() error                                  { return nil }
 func (f *fakeDynatraceAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -55,8 +55,8 @@ type fakeNewRelicAdapter struct {
 	err    error
 }
 
-func (f *fakeNewRelicAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeNewRelicAdapter) Disconnect() error                               { return nil }
+func (f *fakeNewRelicAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeNewRelicAdapter) Disconnect() error                                  { return nil }
 func (f *fakeNewRelicAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -79,160 +79,160 @@ func setupObsVendorRefresher(t *testing.T) *Refresher {
 
 // ---- Splunk ----
 
-func TestRefreshSplunkSource_Basic(t *testing.T) {
+func TestRefreshSplunkComponent_Basic(t *testing.T) {
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-splunk-1", Type: store.SourceTypeSplunk, Name: "splunk-prod"}
+	src := &store.Component{ID: "src-splunk-1", Type: store.ComponentTypeSplunk, Name: "splunk-prod"}
 
-	if err := r.refreshSplunkSource(context.Background(), src, &fakeSplunkAdapter{}); err != nil {
-		t.Fatalf("refreshSplunkSource: %v", err)
+	if err := r.refreshSplunkComponent(context.Background(), src, &fakeSplunkAdapter{}); err != nil {
+		t.Fatalf("refreshSplunkComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "splunk_source" {
+	if len(nodes) != 1 || nodes[0].Type != "splunk_component" {
 		t.Errorf("want 1 splunk_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshSplunkSource_SecondRefresh(t *testing.T) {
+func TestRefreshSplunkComponent_SecondRefresh(t *testing.T) {
 	// Verifies idempotency — running twice should not error.
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-splunk-2", Type: store.SourceTypeSplunk, Name: "splunk"}
+	src := &store.Component{ID: "src-splunk-2", Type: store.ComponentTypeSplunk, Name: "splunk"}
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		if err := r.refreshSplunkSource(ctx, src, &fakeSplunkAdapter{}); err != nil {
-			t.Fatalf("refreshSplunkSource (iteration %d): %v", i, err)
+		if err := r.refreshSplunkComponent(ctx, src, &fakeSplunkAdapter{}); err != nil {
+			t.Fatalf("refreshSplunkComponent (iteration %d): %v", i, err)
 		}
 	}
 }
 
-func TestRefreshSource_SplunkType(t *testing.T) {
+func TestRefreshComponent_SplunkType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-splunk", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-splunk", Type: store.SourceTypeSplunk, Name: "splunk"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(splunk) error: %v", err)
+	src := &store.Component{ID: "src-splunk", Type: store.ComponentTypeSplunk, Name: "splunk"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(splunk) error: %v", err)
 	}
 }
 
-func TestRefreshSource_SplunkWrongType(t *testing.T) {
+func TestRefreshComponent_SplunkWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-splunk-bad", &fakeDynatraceAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-splunk-bad", Type: store.SourceTypeSplunk, Name: "splunk"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-splunk-bad", Type: store.ComponentTypeSplunk, Name: "splunk"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
 // ---- Dynatrace ----
 
-func TestRefreshDynatraceSource_Basic(t *testing.T) {
+func TestRefreshDynatraceComponent_Basic(t *testing.T) {
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-dyna-1", Type: store.SourceTypeDynatrace, Name: "dynatrace-prod"}
+	src := &store.Component{ID: "src-dyna-1", Type: store.ComponentTypeDynatrace, Name: "dynatrace-prod"}
 
-	if err := r.refreshDynatraceSource(context.Background(), src, &fakeDynatraceAdapter{}); err != nil {
-		t.Fatalf("refreshDynatraceSource: %v", err)
+	if err := r.refreshDynatraceComponent(context.Background(), src, &fakeDynatraceAdapter{}); err != nil {
+		t.Fatalf("refreshDynatraceComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "dynatrace_source" {
+	if len(nodes) != 1 || nodes[0].Type != "dynatrace_component" {
 		t.Errorf("want 1 dynatrace_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshDynatraceSource_SecondRefresh(t *testing.T) {
+func TestRefreshDynatraceComponent_SecondRefresh(t *testing.T) {
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-dyna-2", Type: store.SourceTypeDynatrace, Name: "dynatrace"}
+	src := &store.Component{ID: "src-dyna-2", Type: store.ComponentTypeDynatrace, Name: "dynatrace"}
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		if err := r.refreshDynatraceSource(ctx, src, &fakeDynatraceAdapter{}); err != nil {
-			t.Fatalf("refreshDynatraceSource (iteration %d): %v", i, err)
+		if err := r.refreshDynatraceComponent(ctx, src, &fakeDynatraceAdapter{}); err != nil {
+			t.Fatalf("refreshDynatraceComponent (iteration %d): %v", i, err)
 		}
 	}
 }
 
-func TestRefreshSource_DynatraceType(t *testing.T) {
+func TestRefreshComponent_DynatraceType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dyna", &fakeDynatraceAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-dyna", Type: store.SourceTypeDynatrace, Name: "dynatrace"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(dynatrace) error: %v", err)
+	src := &store.Component{ID: "src-dyna", Type: store.ComponentTypeDynatrace, Name: "dynatrace"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(dynatrace) error: %v", err)
 	}
 }
 
-func TestRefreshSource_DynatraceWrongType(t *testing.T) {
+func TestRefreshComponent_DynatraceWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dyna-bad", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-dyna-bad", Type: store.SourceTypeDynatrace, Name: "dynatrace"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-dyna-bad", Type: store.ComponentTypeDynatrace, Name: "dynatrace"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
 
 // ---- NewRelic ----
 
-func TestRefreshNewRelicSource_Basic(t *testing.T) {
+func TestRefreshNewRelicComponent_Basic(t *testing.T) {
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-nr-1", Type: store.SourceTypeNewRelic, Name: "newrelic-prod"}
+	src := &store.Component{ID: "src-nr-1", Type: store.ComponentTypeNewRelic, Name: "newrelic-prod"}
 
-	if err := r.refreshNewRelicSource(context.Background(), src, &fakeNewRelicAdapter{}); err != nil {
-		t.Fatalf("refreshNewRelicSource: %v", err)
+	if err := r.refreshNewRelicComponent(context.Background(), src, &fakeNewRelicAdapter{}); err != nil {
+		t.Fatalf("refreshNewRelicComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "newrelic_source" {
+	if len(nodes) != 1 || nodes[0].Type != "newrelic_component" {
 		t.Errorf("want 1 newrelic_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshNewRelicSource_SecondRefresh(t *testing.T) {
+func TestRefreshNewRelicComponent_SecondRefresh(t *testing.T) {
 	r := setupObsVendorRefresher(t)
-	src := &store.Source{ID: "src-nr-2", Type: store.SourceTypeNewRelic, Name: "newrelic"}
+	src := &store.Component{ID: "src-nr-2", Type: store.ComponentTypeNewRelic, Name: "newrelic"}
 	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
-		if err := r.refreshNewRelicSource(ctx, src, &fakeNewRelicAdapter{}); err != nil {
-			t.Fatalf("refreshNewRelicSource (iteration %d): %v", i, err)
+		if err := r.refreshNewRelicComponent(ctx, src, &fakeNewRelicAdapter{}); err != nil {
+			t.Fatalf("refreshNewRelicComponent (iteration %d): %v", i, err)
 		}
 	}
 }
 
-func TestRefreshSource_NewRelicType(t *testing.T) {
+func TestRefreshComponent_NewRelicType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nr", &fakeNewRelicAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-nr", Type: store.SourceTypeNewRelic, Name: "newrelic"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(newrelic) error: %v", err)
+	src := &store.Component{ID: "src-nr", Type: store.ComponentTypeNewRelic, Name: "newrelic"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(newrelic) error: %v", err)
 	}
 }
 
-func TestRefreshSource_NewRelicWrongType(t *testing.T) {
+func TestRefreshComponent_NewRelicWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nr-bad", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-nr-bad", Type: store.SourceTypeNewRelic, Name: "newrelic"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-nr-bad", Type: store.ComponentTypeNewRelic, Name: "newrelic"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }
@@ -382,21 +382,21 @@ func TestSaveKnowledgeEntryTool_Execute_MissingEntryType(t *testing.T) {
 }
 
 // ============================================================
-// buildIngressForEdges — exercise via refreshNginxSource with
+// buildIngressForEdges — exercise via refreshNginxComponent with
 // a pre-existing service node so an edge can be created.
 // ============================================================
 
 func TestBuildIngressForEdges_WithMatchingService(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-nginx-edge", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-edge", Type: store.ComponentTypeNginx, Name: "nginx"}
 
 	// Add a service node that matches the backend.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/api-service",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "api-service", "namespace": "default"},
+		ID:          "svc/default/api-service",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "api-service", "namespace": "default"},
 	})
 
 	// Call buildIngressForEdges directly.
@@ -413,14 +413,14 @@ func TestBuildIngressForEdges_WithMatchingService(t *testing.T) {
 func TestBuildIngressForEdges_NamespaceMismatch(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-nginx-ns", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-ns", Type: store.ComponentTypeNginx, Name: "nginx"}
 
 	// Service is in "other" namespace, ingress is in "default".
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/other/api-service",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "api-service", "namespace": "other"},
+		ID:          "svc/other/api-service",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "api-service", "namespace": "other"},
 	})
 
 	now := time.Now()
@@ -434,7 +434,7 @@ func TestBuildIngressForEdges_NamespaceMismatch(t *testing.T) {
 func TestBuildIngressForEdges_NoMatchingNodes(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-nginx-nomatch", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-nomatch", Type: store.ComponentTypeNginx, Name: "nginx"}
 
 	now := time.Now()
 	edges := r.buildIngressForEdges(ctx, src, "ing-node-id", "nonexistent-svc", "default", "host.example.com", now)
@@ -450,13 +450,13 @@ func TestBuildIngressForEdges_NoMatchingNodes(t *testing.T) {
 func TestBuildProxiesEdges_WithMatchingService(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-envoy-edge", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-edge", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "svc/default/payment",
-		Type:     "service",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment"},
+		ID:          "svc/default/payment",
+		Type:        "service",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment"},
 	})
 
 	now := time.Now()
@@ -472,14 +472,14 @@ func TestBuildProxiesEdges_WithMatchingService(t *testing.T) {
 func TestBuildProxiesEdges_NonServiceNode(t *testing.T) {
 	r := setupNetworkingRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-envoy-ns", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-ns", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 
 	// k8s_node type — should be skipped.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "k8snode/payment-node",
-		Type:     "k8s_node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment-node"},
+		ID:          "k8snode/payment-node",
+		Type:        "k8s_node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment-node"},
 	})
 
 	now := time.Now()
@@ -495,7 +495,7 @@ func TestBuildProxiesEdges_NonServiceNode(t *testing.T) {
 
 func TestBuildManagedByEdges_EmptyName(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-argocd-me-1", Type: store.SourceTypeArgoCd}
+	src := &store.Component{ID: "src-argocd-me-1", Type: store.ComponentTypeArgoCd}
 	edges := r.buildManagedByEdges(context.Background(), src, "manager-node", "", "default", time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for empty name, got %d", len(edges))
@@ -505,13 +505,13 @@ func TestBuildManagedByEdges_EmptyName(t *testing.T) {
 func TestBuildManagedByEdges_WithMatchingDeployment(t *testing.T) {
 	r := setupGitOpsRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-argocd-me-2", Type: store.SourceTypeArgoCd}
+	src := &store.Component{ID: "src-argocd-me-2", Type: store.ComponentTypeArgoCd}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "deploy/default/payment",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment", "namespace": "default"},
+		ID:          "deploy/default/payment",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment", "namespace": "default"},
 	})
 
 	edges := r.buildManagedByEdges(ctx, src, "argocd-app-node", "payment", "default", time.Now())
@@ -526,13 +526,13 @@ func TestBuildManagedByEdges_WithMatchingDeployment(t *testing.T) {
 func TestBuildManagedByEdges_NamespaceMismatch(t *testing.T) {
 	r := setupGitOpsRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-argocd-me-3", Type: store.SourceTypeArgoCd}
+	src := &store.Component{ID: "src-argocd-me-3", Type: store.ComponentTypeArgoCd}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "deploy/other/payment",
-		Type:     "deployment",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment", "namespace": "other"},
+		ID:          "deploy/other/payment",
+		Type:        "deployment",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment", "namespace": "other"},
 	})
 
 	edges := r.buildManagedByEdges(ctx, src, "argocd-app-node", "payment", "default", time.Now())
@@ -544,14 +544,14 @@ func TestBuildManagedByEdges_NamespaceMismatch(t *testing.T) {
 func TestBuildManagedByEdges_SkipsUnsupportedTypes(t *testing.T) {
 	r := setupGitOpsRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-argocd-me-4", Type: store.SourceTypeArgoCd}
+	src := &store.Component{ID: "src-argocd-me-4", Type: store.ComponentTypeArgoCd}
 
 	// pod type — not in the accepted list.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "pod/default/payment-abc",
-		Type:     "pod",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "payment-abc"},
+		ID:          "pod/default/payment-abc",
+		Type:        "pod",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "payment-abc"},
 	})
 
 	edges := r.buildManagedByEdges(ctx, src, "argocd-app-node", "payment-abc", "default", time.Now())
@@ -566,7 +566,7 @@ func TestBuildManagedByEdges_SkipsUnsupportedTypes(t *testing.T) {
 
 func TestBuildProvidesEdges_EmptyName(t *testing.T) {
 	r := setupGitOpsRefresher(t)
-	src := &store.Source{ID: "src-tf-pe-1", Type: store.SourceTypeTerraform}
+	src := &store.Component{ID: "src-tf-pe-1", Type: store.ComponentTypeTerraform}
 	edges := r.buildProvidesEdges(context.Background(), src, "tf-node", "", "aws_instance", time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for empty name, got %d", len(edges))
@@ -576,13 +576,13 @@ func TestBuildProvidesEdges_EmptyName(t *testing.T) {
 func TestBuildProvidesEdges_WithMatchingEC2(t *testing.T) {
 	r := setupGitOpsRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-tf-pe-2", Type: store.SourceTypeTerraform}
+	src := &store.Component{ID: "src-tf-pe-2", Type: store.ComponentTypeTerraform}
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "aws/ec2/web-server",
-		Type:     "ec2_instance",
-		SourceID: "src-aws",
-		Metadata: map[string]any{"name": "web-server"},
+		ID:          "aws/ec2/web-server",
+		Type:        "ec2_instance",
+		ComponentID: "src-aws",
+		Metadata:    map[string]any{"name": "web-server"},
 	})
 
 	edges := r.buildProvidesEdges(ctx, src, "tf-resource-node", "web-server", "aws_instance", time.Now())
@@ -594,14 +594,14 @@ func TestBuildProvidesEdges_WithMatchingEC2(t *testing.T) {
 func TestBuildProvidesEdges_SkipsUnsupportedCloudTypes(t *testing.T) {
 	r := setupGitOpsRefresher(t)
 	ctx := context.Background()
-	src := &store.Source{ID: "src-tf-pe-3", Type: store.SourceTypeTerraform}
+	src := &store.Component{ID: "src-tf-pe-3", Type: store.ComponentTypeTerraform}
 
 	// pod — not a cloud node type.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
-		ID:       "pod/default/web",
-		Type:     "pod",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "web"},
+		ID:          "pod/default/web",
+		Type:        "pod",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "web"},
 	})
 
 	edges := r.buildProvidesEdges(ctx, src, "tf-resource-node", "web", "aws_instance", time.Now())
@@ -611,23 +611,23 @@ func TestBuildProvidesEdges_SkipsUnsupportedCloudTypes(t *testing.T) {
 }
 
 // ============================================================
-// refreshSource default case
+// refreshComponent default case
 // ============================================================
 
-func TestRefreshSource_UnknownTypeWithSplunkAdapter(t *testing.T) {
+func TestRefreshComponent_UnknownTypeWithSplunkAdapter(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-unknown-splunk", &fakeSplunkAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-unknown-splunk", Type: "unsupported_type_xyz", Name: "unknown"}
+	src := &store.Component{ID: "src-unknown-splunk", Type: "unsupported_type_xyz", Name: "unknown"}
 	// Should return nil — unknown types are silently skipped.
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Errorf("refreshSource(unknown) should return nil, got: %v", err)
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Errorf("refreshComponent(unknown) should return nil, got: %v", err)
 	}
 }
 
 // ============================================================
-// Refresher.refresh with sources that have no adapter
+// Refresher.refresh with components that have no adapter
 // ============================================================
 
 func TestRefresher_Refresh_WithUnsupportedSource(t *testing.T) {
@@ -635,15 +635,15 @@ func TestRefresher_Refresh_WithUnsupportedSource(t *testing.T) {
 	ctx := context.Background()
 
 	// Register a source in the store without an adapter in the registry.
-	_ = svc.Store.Sources.Create(ctx, &store.Source{
+	_ = svc.Store.Components.Create(ctx, &store.Component{
 		ID:     "src-no-adapter-refresh",
 		Name:   "test",
-		Type:   store.SourceTypeSplunk,
+		Type:   store.ComponentTypeSplunk,
 		Config: []byte(`{}`),
 	})
 
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
-	// refresh should complete without error even if individual sources fail.
+	// refresh should complete without error even if individual components fail.
 	if err := r.refresh(ctx); err != nil {
 		t.Errorf("refresh() with failing source should not propagate error, got: %v", err)
 	}
@@ -738,9 +738,9 @@ func TestObsNodeID_VendorTypes(t *testing.T) {
 		sourceType string
 		want       string
 	}{
-		{"src1", store.SourceTypeSplunk, "obs/" + store.SourceTypeSplunk + "/src1"},
-		{"src2", store.SourceTypeDynatrace, "obs/" + store.SourceTypeDynatrace + "/src2"},
-		{"src3", store.SourceTypeNewRelic, "obs/" + store.SourceTypeNewRelic + "/src3"},
+		{"src1", store.ComponentTypeSplunk, "obs/" + store.ComponentTypeSplunk + "/src1"},
+		{"src2", store.ComponentTypeDynatrace, "obs/" + store.ComponentTypeDynatrace + "/src2"},
+		{"src3", store.ComponentTypeNewRelic, "obs/" + store.ComponentTypeNewRelic + "/src3"},
 	}
 	for _, tt := range tests {
 		got := obsNodeID(tt.sourceID, tt.sourceType)
@@ -770,29 +770,29 @@ func TestRefresher_Refresh_MetricsNotNil(t *testing.T) {
 }
 
 // ============================================================
-// refreshSource: verify UpdateSyncStatus is called (deferred)
+// refreshComponent: verify UpdateSyncStatus is called (deferred)
 // by using a real store source and checking no panic occurs.
 // ============================================================
 
-func TestRefreshSource_UpdateSyncStatusCalled(t *testing.T) {
+func TestRefreshComponent_UpdateSyncStatusCalled(t *testing.T) {
 	svc := makeTestServices(t)
 	ctx := context.Background()
 
 	// Create a real source in the store (config must be non-null).
-	src := &store.Source{
+	src := &store.Component{
 		ID:     "src-sync-status",
 		Name:   "test",
-		Type:   store.SourceTypeOCIRegistry,
+		Type:   store.ComponentTypeOCIRegistry,
 		Config: []byte(`{}`),
 	}
-	if err := svc.Store.Sources.Create(ctx, src); err != nil {
+	if err := svc.Store.Components.Create(ctx, src); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
 
-	// No adapter registered → refreshSource will fail, but deferred
+	// No adapter registered → refreshComponent will fail, but deferred
 	// UpdateSyncStatus should still run without panic.
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
-	_ = r.refreshSource(ctx, src) // error expected; just verify no panic.
+	_ = r.refreshComponent(ctx, src) // error expected; just verify no panic.
 }
 
 // Dummy test to ensure llm import is used (for the Parameters() test).

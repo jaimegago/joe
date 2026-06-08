@@ -30,26 +30,26 @@ func (t *MySQLStatTool) Description() string {
 	return "Retrieve MySQL database status including the process list, replication status, " +
 		"slow query count, thread counts, and aborted connections. " +
 		"Use this to diagnose query pile-ups, replication lag, and connection issues. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *MySQLStatTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the MySQL source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *MySQLStatTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	stat, err := t.Client.MySQLStat(ctx, sourceID)
@@ -58,8 +58,8 @@ func (t *MySQLStatTool) Execute(ctx context.Context, args map[string]any) (any, 
 	}
 
 	return map[string]any{
-		"stat":      stat,
-		"source_id": sourceID,
+		"stat":         stat,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -79,14 +79,14 @@ func (t *MySQLQueryTool) Description() string {
 	return "Execute a read-only SELECT query against a MySQL database. " +
 		"Only SELECT statements are permitted. Use this to inspect table data, " +
 		"information_schema views, or run diagnostic queries. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *MySQLQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the MySQL source to query.",
 			},
@@ -95,14 +95,14 @@ func (t *MySQLQueryTool) Parameters() llm.ParameterSchema {
 				Description: "SQL SELECT statement to execute. Only SELECT is allowed.",
 			},
 		},
-		Required: []string{"source_id", "query"},
+		Required: []string{"component_id", "query"},
 	}
 }
 
 func (t *MySQLQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	query, ok := args["query"].(string)
@@ -120,9 +120,9 @@ func (t *MySQLQueryTool) Execute(ctx context.Context, args map[string]any) (any,
 	}
 
 	return map[string]any{
-		"rows":      rows,
-		"count":     len(rows),
-		"source_id": sourceID,
-		"query":     query,
+		"rows":         rows,
+		"count":        len(rows),
+		"component_id": sourceID,
+		"query":        query,
 	}, nil
 }

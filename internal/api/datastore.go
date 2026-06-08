@@ -15,9 +15,9 @@ import (
 // --- PostgreSQL handlers ---
 
 // handlePostgresStat returns pg_stat_* statistics for a PostgreSQL source.
-// GET /api/v1/postgresql/{sourceID}/stat
+// GET /api/v1/postgresql/{componentID}/stat
 func (s *Server) handlePostgresStat(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -32,15 +32,15 @@ func (s *Server) handlePostgresStat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"stat":      stat,
-		"source_id": sourceID,
+		"stat":         stat,
+		"component_id": sourceID,
 	})
 }
 
 // handlePostgresQuery executes a read-only SQL query against a PostgreSQL source.
-// GET /api/v1/postgresql/{sourceID}/query?sql=SELECT+...
+// GET /api/v1/postgresql/{componentID}/query?sql=SELECT+...
 func (s *Server) handlePostgresQuery(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	sqlParam := r.URL.Query().Get("sql")
 	if sqlParam == "" {
@@ -67,18 +67,18 @@ func (s *Server) handlePostgresQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"rows":      rows,
-		"count":     len(rows),
-		"source_id": sourceID,
+		"rows":         rows,
+		"count":        len(rows),
+		"component_id": sourceID,
 	})
 }
 
 // --- MySQL handlers ---
 
 // handleMySQLStat returns status statistics for a MySQL source.
-// GET /api/v1/mysql/{sourceID}/stat
+// GET /api/v1/mysql/{componentID}/stat
 func (s *Server) handleMySQLStat(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -93,15 +93,15 @@ func (s *Server) handleMySQLStat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"stat":      stat,
-		"source_id": sourceID,
+		"stat":         stat,
+		"component_id": sourceID,
 	})
 }
 
 // handleMySQLQuery executes a read-only SQL query against a MySQL source.
-// GET /api/v1/mysql/{sourceID}/query?sql=SELECT+...
+// GET /api/v1/mysql/{componentID}/query?sql=SELECT+...
 func (s *Server) handleMySQLQuery(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	sqlParam := r.URL.Query().Get("sql")
 	if sqlParam == "" {
@@ -128,18 +128,18 @@ func (s *Server) handleMySQLQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"rows":      rows,
-		"count":     len(rows),
-		"source_id": sourceID,
+		"rows":         rows,
+		"count":        len(rows),
+		"component_id": sourceID,
 	})
 }
 
 // --- Redis handlers ---
 
 // handleRedisInfo returns Redis INFO output for a given section.
-// GET /api/v1/redis/{sourceID}/info?section=memory
+// GET /api/v1/redis/{componentID}/info?section=memory
 func (s *Server) handleRedisInfo(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	section := r.URL.Query().Get("section") // optional, default ""
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -155,15 +155,15 @@ func (s *Server) handleRedisInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"info":      info,
-		"source_id": sourceID,
+		"info":         info,
+		"component_id": sourceID,
 	})
 }
 
 // handleRedisSlowLog returns the most recent slow log entries from a Redis source.
-// GET /api/v1/redis/{sourceID}/slowlog?count=10
+// GET /api/v1/redis/{componentID}/slowlog?count=10
 func (s *Server) handleRedisSlowLog(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	count := int64(10)
 	if c := r.URL.Query().Get("count"); c != "" {
@@ -189,16 +189,16 @@ func (s *Server) handleRedisSlowLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"entries":   entries,
-		"count":     len(entries),
-		"source_id": sourceID,
+		"entries":      entries,
+		"count":        len(entries),
+		"component_id": sourceID,
 	})
 }
 
 // handleRedisDBSize returns the number of keys in the current Redis database.
-// GET /api/v1/redis/{sourceID}/dbsize
+// GET /api/v1/redis/{componentID}/dbsize
 func (s *Server) handleRedisDBSize(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -213,17 +213,17 @@ func (s *Server) handleRedisDBSize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"db_size":   size,
-		"source_id": sourceID,
+		"db_size":      size,
+		"component_id": sourceID,
 	})
 }
 
 // --- MongoDB handlers ---
 
 // handleMongoDBServerStatus returns db.serverStatus() for a MongoDB source.
-// GET /api/v1/mongodb/{sourceID}/server-status
+// GET /api/v1/mongodb/{componentID}/server-status
 func (s *Server) handleMongoDBServerStatus(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -238,15 +238,15 @@ func (s *Server) handleMongoDBServerStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    status,
-		"source_id": sourceID,
+		"status":       status,
+		"component_id": sourceID,
 	})
 }
 
 // handleMongoDBReplicaStatus returns rs.status() for a MongoDB source.
-// GET /api/v1/mongodb/{sourceID}/replica-status
+// GET /api/v1/mongodb/{componentID}/replica-status
 func (s *Server) handleMongoDBReplicaStatus(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -261,15 +261,15 @@ func (s *Server) handleMongoDBReplicaStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    status,
-		"source_id": sourceID,
+		"status":       status,
+		"component_id": sourceID,
 	})
 }
 
 // handleMongoDBCurrentOp returns db.currentOp() for a MongoDB source.
-// GET /api/v1/mongodb/{sourceID}/current-op
+// GET /api/v1/mongodb/{componentID}/current-op
 func (s *Server) handleMongoDBCurrentOp(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -284,17 +284,17 @@ func (s *Server) handleMongoDBCurrentOp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"op":        op,
-		"source_id": sourceID,
+		"op":           op,
+		"component_id": sourceID,
 	})
 }
 
 // --- Kafka handlers ---
 
 // handleKafkaTopics returns the list of Kafka topics from a Kafka source.
-// GET /api/v1/kafka/{sourceID}/topics
+// GET /api/v1/kafka/{componentID}/topics
 func (s *Server) handleKafkaTopics(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -313,16 +313,16 @@ func (s *Server) handleKafkaTopics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"topics":    topics,
-		"count":     len(topics),
-		"source_id": sourceID,
+		"topics":       topics,
+		"count":        len(topics),
+		"component_id": sourceID,
 	})
 }
 
 // handleKafkaBrokers returns the list of Kafka brokers from a Kafka source.
-// GET /api/v1/kafka/{sourceID}/brokers
+// GET /api/v1/kafka/{componentID}/brokers
 func (s *Server) handleKafkaBrokers(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -341,16 +341,16 @@ func (s *Server) handleKafkaBrokers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"brokers":   brokers,
-		"count":     len(brokers),
-		"source_id": sourceID,
+		"brokers":      brokers,
+		"count":        len(brokers),
+		"component_id": sourceID,
 	})
 }
 
 // handleKafkaConsumerGroups returns consumer group information from a Kafka source.
-// GET /api/v1/kafka/{sourceID}/consumer-groups
+// GET /api/v1/kafka/{componentID}/consumer-groups
 func (s *Server) handleKafkaConsumerGroups(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -369,18 +369,18 @@ func (s *Server) handleKafkaConsumerGroups(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"groups":    groups,
-		"count":     len(groups),
-		"source_id": sourceID,
+		"groups":       groups,
+		"count":        len(groups),
+		"component_id": sourceID,
 	})
 }
 
 // --- Elasticsearch handlers ---
 
 // handleElasticsearchHealth returns the cluster health from an Elasticsearch source.
-// GET /api/v1/elasticsearch/{sourceID}/health
+// GET /api/v1/elasticsearch/{componentID}/health
 func (s *Server) handleElasticsearchHealth(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -395,15 +395,15 @@ func (s *Server) handleElasticsearchHealth(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"health":    health,
-		"source_id": sourceID,
+		"health":       health,
+		"component_id": sourceID,
 	})
 }
 
 // handleElasticsearchIndices returns index information from an Elasticsearch source.
-// GET /api/v1/elasticsearch/{sourceID}/indices?pattern=logs-*
+// GET /api/v1/elasticsearch/{componentID}/indices?pattern=logs-*
 func (s *Server) handleElasticsearchIndices(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	pattern := r.URL.Query().Get("pattern") // optional, default ""
 
 	principal := rbac.PrincipalFromContext(r.Context())
@@ -423,9 +423,9 @@ func (s *Server) handleElasticsearchIndices(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"indices":   indices,
-		"count":     len(indices),
-		"source_id": sourceID,
+		"indices":      indices,
+		"count":        len(indices),
+		"component_id": sourceID,
 	})
 }
 
@@ -433,26 +433,26 @@ func (s *Server) handleElasticsearchIndices(w http.ResponseWriter, r *http.Reque
 func (s *Server) registerDatastoreRoutes(mux *http.ServeMux, prefix string) {
 	h := &datastoreHandler{server: s}
 	// PostgreSQL
-	mux.HandleFunc(fmt.Sprintf("GET %s/postgresql/{sourceID}/stat", prefix), h.handlePostgresStat)
-	mux.HandleFunc(fmt.Sprintf("GET %s/postgresql/{sourceID}/query", prefix), h.handlePostgresQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/postgresql/{componentID}/stat", prefix), h.handlePostgresStat)
+	mux.HandleFunc(fmt.Sprintf("GET %s/postgresql/{componentID}/query", prefix), h.handlePostgresQuery)
 	// MySQL
-	mux.HandleFunc(fmt.Sprintf("GET %s/mysql/{sourceID}/stat", prefix), h.handleMySQLStat)
-	mux.HandleFunc(fmt.Sprintf("GET %s/mysql/{sourceID}/query", prefix), h.handleMySQLQuery)
+	mux.HandleFunc(fmt.Sprintf("GET %s/mysql/{componentID}/stat", prefix), h.handleMySQLStat)
+	mux.HandleFunc(fmt.Sprintf("GET %s/mysql/{componentID}/query", prefix), h.handleMySQLQuery)
 	// Redis
-	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{sourceID}/info", prefix), h.handleRedisInfo)
-	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{sourceID}/slowlog", prefix), h.handleRedisSlowLog)
-	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{sourceID}/dbsize", prefix), h.handleRedisDBSize)
+	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{componentID}/info", prefix), h.handleRedisInfo)
+	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{componentID}/slowlog", prefix), h.handleRedisSlowLog)
+	mux.HandleFunc(fmt.Sprintf("GET %s/redis/{componentID}/dbsize", prefix), h.handleRedisDBSize)
 	// MongoDB
-	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{sourceID}/server-status", prefix), h.handleMongoDBServerStatus)
-	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{sourceID}/replica-status", prefix), h.handleMongoDBReplicaStatus)
-	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{sourceID}/current-op", prefix), h.handleMongoDBCurrentOp)
+	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{componentID}/server-status", prefix), h.handleMongoDBServerStatus)
+	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{componentID}/replica-status", prefix), h.handleMongoDBReplicaStatus)
+	mux.HandleFunc(fmt.Sprintf("GET %s/mongodb/{componentID}/current-op", prefix), h.handleMongoDBCurrentOp)
 	// Kafka
-	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{sourceID}/topics", prefix), h.handleKafkaTopics)
-	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{sourceID}/brokers", prefix), h.handleKafkaBrokers)
-	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{sourceID}/consumer-groups", prefix), h.handleKafkaConsumerGroups)
+	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{componentID}/topics", prefix), h.handleKafkaTopics)
+	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{componentID}/brokers", prefix), h.handleKafkaBrokers)
+	mux.HandleFunc(fmt.Sprintf("GET %s/kafka/{componentID}/consumer-groups", prefix), h.handleKafkaConsumerGroups)
 	// Elasticsearch
-	mux.HandleFunc(fmt.Sprintf("GET %s/elasticsearch/{sourceID}/health", prefix), h.handleElasticsearchHealth)
-	mux.HandleFunc(fmt.Sprintf("GET %s/elasticsearch/{sourceID}/indices", prefix), h.handleElasticsearchIndices)
+	mux.HandleFunc(fmt.Sprintf("GET %s/elasticsearch/{componentID}/health", prefix), h.handleElasticsearchHealth)
+	mux.HandleFunc(fmt.Sprintf("GET %s/elasticsearch/{componentID}/indices", prefix), h.handleElasticsearchIndices)
 }
 
 // datastoreHandler delegates to Server datastore methods.

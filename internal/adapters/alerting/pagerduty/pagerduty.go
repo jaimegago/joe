@@ -87,7 +87,7 @@ func NewWithClient(client httpDoer, baseURL string) *Adapter {
 }
 
 // Connect establishes and verifies connectivity to PagerDuty.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

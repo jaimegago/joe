@@ -32,7 +32,7 @@ import (
 type CoreAgent interface {
 	ProcessOnboarding(ctx context.Context, input string) error
 	TriggerRefresh(ctx context.Context) error
-	TriggerRefreshSource(ctx context.Context, sourceID string) error
+	TriggerRefreshComponent(ctx context.Context, sourceID string) error
 }
 
 // Services provides access to all core functionality.

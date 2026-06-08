@@ -32,21 +32,21 @@ func (t *GitHubPRDiffTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {Type: "string", Description: "GitHub source ID registered in Joe"},
-			"owner":     {Type: "string", Description: "Repository owner"},
-			"repo":      {Type: "string", Description: "Repository name"},
-			"pr_number": {Type: "number", Description: "Pull request number"},
+			"component_id": {Type: "string", Description: "GitHub source ID registered in Joe"},
+			"owner":        {Type: "string", Description: "Repository owner"},
+			"repo":         {Type: "string", Description: "Repository name"},
+			"pr_number":    {Type: "number", Description: "Pull request number"},
 		},
-		Required: []string{"source_id", "owner", "repo", "pr_number"},
+		Required: []string{"component_id", "owner", "repo", "pr_number"},
 	}
 }
 
 func (t *GitHubPRDiffTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, _ := args["source_id"].(string)
+	sourceID, _ := args["component_id"].(string)
 	owner, _ := args["owner"].(string)
 	repo, _ := args["repo"].(string)
 	if sourceID == "" || owner == "" || repo == "" {
-		return nil, fmt.Errorf("source_id, owner, and repo are required")
+		return nil, fmt.Errorf("component_id, owner, and repo are required")
 	}
 	prNum, ok := args["pr_number"].(float64)
 	if !ok || prNum <= 0 {
@@ -58,10 +58,10 @@ func (t *GitHubPRDiffTool) Execute(ctx context.Context, args map[string]any) (an
 		return nil, fmt.Errorf("github_pr_diff: %w", err)
 	}
 	return map[string]any{
-		"diff":      diff,
-		"source_id": sourceID,
-		"owner":     owner,
-		"repo":      repo,
-		"pr_number": int(prNum),
+		"diff":         diff,
+		"component_id": sourceID,
+		"owner":        owner,
+		"repo":         repo,
+		"pr_number":    int(prNum),
 	}, nil
 }

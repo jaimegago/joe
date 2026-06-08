@@ -1,7 +1,7 @@
 # Adapter construction is fragmented across divergent type-keyed paths
 
 Status: open
-Depends on: source→component rename (do this AFTER the rename lands)
+Depends on: source→component rename — LANDED 2026-06-08 (D-0021, migration 023). This is now unblocked.
 Severity: latent correctness bug — type→adapter coverage gaps, not a safety issue
 
 ## Symptom

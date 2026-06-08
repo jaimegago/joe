@@ -208,13 +208,13 @@ func recordBreakGlassAudit(ctx context.Context, repo audit.Repository, dedup *lo
 		"user_agent": r.UserAgent(),
 	})
 	err := repo.Insert(ctx, audit.Event{
-		Principal: string(p),
-		Action:    audit.ActionBreakGlassUse,
-		Source:    auditSourceBreakGlass,
-		Decision:  audit.DecisionAllow,
-		Reason:    "break_glass_credential_used",
-		Kind:      audit.KindAuthLogin,
-		Context:   string(blob),
+		Principal:   string(p),
+		Action:      audit.ActionBreakGlassUse,
+		ComponentID: auditSourceBreakGlass,
+		Decision:    audit.DecisionAllow,
+		Reason:      "break_glass_credential_used",
+		Kind:        audit.KindAuthLogin,
+		Context:     string(blob),
 	})
 	// Fail-open-but-loud: pass audit.FailOpen so the loud log names the real
 	// outcome (the request PROCEEDED) rather than claiming a fail-closed

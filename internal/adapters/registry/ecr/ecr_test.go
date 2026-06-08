@@ -510,7 +510,7 @@ func TestParseConfig_WithAccessKeyAndRoleARN(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := ecr.New()
-	src := store.Source{Config: []byte(`{bad json`)}
+	src := store.Component{Config: []byte(`{bad json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON")
 	}
@@ -519,7 +519,7 @@ func TestConnect_BadJSON(t *testing.T) {
 func TestConnect_MissingRegion(t *testing.T) {
 	a := ecr.New()
 	data, _ := json.Marshal(map[string]any{}) // no region
-	src := store.Source{Config: data}
+	src := store.Component{Config: data}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for missing region")
 	}
@@ -535,7 +535,7 @@ func TestConnect_DescribeRegistryError(t *testing.T) {
 		"access_key": "AKIAFAKE",
 		"secret_key": "fakesecret",
 	})
-	src := store.Source{Config: data}
+	src := store.Component{Config: data}
 	// This will fail because there's no real AWS endpoint — that's the point.
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error when DescribeRegistry fails")
@@ -552,7 +552,7 @@ func TestConnect_WithRoleARN(t *testing.T) {
 		"secret_key": "fakesecret",
 		"role_arn":   "arn:aws:iam::123456789012:role/FakeRole",
 	})
-	src := store.Source{Config: data}
+	src := store.Component{Config: data}
 	// Expected to fail at DescribeRegistry; we just need buildAWSConfig to run.
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for fake AWS creds")
@@ -568,7 +568,7 @@ func TestConnect_WithProfile(t *testing.T) {
 		"region":  "us-east-1",
 		"profile": "nonexistent-profile-for-testing",
 	})
-	src := store.Source{Config: data}
+	src := store.Component{Config: data}
 	// Expected to fail — either at profile load or DescribeRegistry.
 	err := a.Connect(context.Background(), src)
 	// We just verify it doesn't panic; failure is expected.

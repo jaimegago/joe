@@ -122,7 +122,7 @@ type KnowledgeConfig struct {
 	// DerivedMinConfidence is the minimum confidence for Tier 3 (derived) entries
 	// to appear in semantic search results. 0 means include all.
 	DerivedMinConfidence float32 `yaml:"derived_min_confidence"`
-	// SyncEnabled controls whether background sync of external knowledge sources runs.
+	// SyncEnabled controls whether background sync of external knowledge components runs.
 	SyncEnabled bool `yaml:"sync_enabled"`
 }
 

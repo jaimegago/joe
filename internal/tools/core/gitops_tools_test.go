@@ -101,8 +101,8 @@ func TestArgoCDAppsTool_Name(t *testing.T) {
 func TestArgoCDAppsTool_Parameters(t *testing.T) {
 	tool := core.NewArgoCDAppsTool(&mockArgoCDClient{})
 	p := tool.Parameters()
-	if _, ok := p.Properties["source_id"]; !ok {
-		t.Error("expected source_id in parameters")
+	if _, ok := p.Properties["component_id"]; !ok {
+		t.Error("expected component_id in parameters")
 	}
 	if _, ok := p.Properties["project"]; !ok {
 		t.Error("expected project in parameters")
@@ -124,37 +124,37 @@ func TestArgoCDAppsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "success",
-			args:      map[string]any{"source_id": "argocd-1"},
+			args:      map[string]any{"component_id": "argocd-1"},
 			mock:      &mockArgoCDClient{apps: apps},
 			wantCount: 2,
 		},
 		{
 			name:      "with project filter",
-			args:      map[string]any{"source_id": "argocd-1", "project": "myproject"},
+			args:      map[string]any{"component_id": "argocd-1", "project": "myproject"},
 			mock:      &mockArgoCDClient{apps: apps[1:]},
 			wantCount: 1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockArgoCDClient{},
 			wantErr: true,
 		},
 		{
-			name:    "empty source_id",
-			args:    map[string]any{"source_id": ""},
+			name:    "empty component_id",
+			args:    map[string]any{"component_id": ""},
 			mock:    &mockArgoCDClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "argocd-1"},
+			args:    map[string]any{"component_id": "argocd-1"},
 			mock:    &mockArgoCDClient{err: errors.New("unauthorized")},
 			wantErr: true,
 		},
 		{
 			name:      "nil apps returns empty list",
-			args:      map[string]any{"source_id": "argocd-1"},
+			args:      map[string]any{"component_id": "argocd-1"},
 			mock:      &mockArgoCDClient{apps: nil},
 			wantCount: 0,
 		},
@@ -193,14 +193,14 @@ func TestArgoCDGetAppTool_Execute(t *testing.T) {
 	}{
 		{
 			name: "success",
-			args: map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args: map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock: &mockArgoCDClient{detail: detail},
 		},
-		{name: "missing source_id", args: map[string]any{"name": "my-app"}, mock: &mockArgoCDClient{}, wantErr: true},
-		{name: "missing name", args: map[string]any{"source_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
+		{name: "missing component_id", args: map[string]any{"name": "my-app"}, mock: &mockArgoCDClient{}, wantErr: true},
+		{name: "missing name", args: map[string]any{"component_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args:    map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock:    &mockArgoCDClient{err: errors.New("not found")},
 			wantErr: true,
 		},
@@ -228,13 +228,13 @@ func TestArgoCDDiffTool_Execute(t *testing.T) {
 	}{
 		{
 			name: "success",
-			args: map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args: map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock: &mockArgoCDClient{diff: diff},
 		},
-		{name: "missing name", args: map[string]any{"source_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
+		{name: "missing name", args: map[string]any{"component_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
 		{
 			name:    "error",
-			args:    map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args:    map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock:    &mockArgoCDClient{err: errors.New("timeout")},
 			wantErr: true,
 		},
@@ -265,20 +265,20 @@ func TestArgoCDHistoryTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "success",
-			args:      map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args:      map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock:      &mockArgoCDClient{history: history},
 			wantCount: 1,
 		},
 		{
 			name:      "custom limit",
-			args:      map[string]any{"source_id": "argocd-1", "name": "my-app", "limit": float64(5)},
+			args:      map[string]any{"component_id": "argocd-1", "name": "my-app", "limit": float64(5)},
 			mock:      &mockArgoCDClient{history: history},
 			wantCount: 1,
 		},
-		{name: "missing name", args: map[string]any{"source_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
+		{name: "missing name", args: map[string]any{"component_id": "argocd-1"}, mock: &mockArgoCDClient{}, wantErr: true},
 		{
 			name:      "nil history",
-			args:      map[string]any{"source_id": "argocd-1", "name": "my-app"},
+			args:      map[string]any{"component_id": "argocd-1", "name": "my-app"},
 			mock:      &mockArgoCDClient{history: nil},
 			wantCount: 0,
 		},
@@ -335,16 +335,16 @@ func TestFluxStatusTool_Execute(t *testing.T) {
 	}{
 		{
 			name: "success",
-			args: map[string]any{"source_id": "k8s-1"},
+			args: map[string]any{"component_id": "k8s-1"},
 			mock: &mockFluxClient{list: resources},
 		},
 		{
 			name: "with namespace",
-			args: map[string]any{"source_id": "k8s-1", "namespace": "flux-system"},
+			args: map[string]any{"component_id": "k8s-1", "namespace": "flux-system"},
 			mock: &mockFluxClient{list: resources},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockFluxClient{},
 			wantErr: true,
@@ -352,7 +352,7 @@ func TestFluxStatusTool_Execute(t *testing.T) {
 		{
 			// CRD not installed — error is silently skipped per flux tool logic
 			name: "list error is skipped",
-			args: map[string]any{"source_id": "k8s-1"},
+			args: map[string]any{"component_id": "k8s-1"},
 			mock: &mockFluxClient{err: errors.New("no resource type")},
 		},
 	}
@@ -383,7 +383,7 @@ func TestFluxResourceTool_Execute(t *testing.T) {
 		{
 			name: "success",
 			args: map[string]any{
-				"source_id": "k8s-1", "kind": "Kustomization",
+				"component_id": "k8s-1", "kind": "Kustomization",
 				"namespace": "flux-system", "name": "my-kustomization",
 			},
 			mock: &mockFluxClient{single: resource},
@@ -391,7 +391,7 @@ func TestFluxResourceTool_Execute(t *testing.T) {
 		{
 			name: "unsupported kind",
 			args: map[string]any{
-				"source_id": "k8s-1", "kind": "InvalidKind",
+				"component_id": "k8s-1", "kind": "InvalidKind",
 				"namespace": "flux-system", "name": "my-thing",
 			},
 			mock:    &mockFluxClient{},
@@ -400,7 +400,7 @@ func TestFluxResourceTool_Execute(t *testing.T) {
 		{
 			name: "missing kind",
 			args: map[string]any{
-				"source_id": "k8s-1", "namespace": "flux-system", "name": "my-kustomization",
+				"component_id": "k8s-1", "namespace": "flux-system", "name": "my-kustomization",
 			},
 			mock:    &mockFluxClient{},
 			wantErr: true,
@@ -408,7 +408,7 @@ func TestFluxResourceTool_Execute(t *testing.T) {
 		{
 			name: "client error",
 			args: map[string]any{
-				"source_id": "k8s-1", "kind": "Kustomization",
+				"component_id": "k8s-1", "kind": "Kustomization",
 				"namespace": "flux-system", "name": "my-kustomization",
 			},
 			mock:    &mockFluxClient{err: errors.New("not found")},
@@ -453,31 +453,31 @@ func TestTerraformStateTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "all resources",
-			args:      map[string]any{"source_id": "tf-1"},
+			args:      map[string]any{"component_id": "tf-1"},
 			mock:      &mockTerraformClient{resources: resources},
 			wantCount: 2,
 		},
 		{
 			name:      "with type filter",
-			args:      map[string]any{"source_id": "tf-1", "resource_type": "aws_instance"},
+			args:      map[string]any{"component_id": "tf-1", "resource_type": "aws_instance"},
 			mock:      &mockTerraformClient{resources: resources[:1]},
 			wantCount: 1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockTerraformClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "tf-1"},
+			args:    map[string]any{"component_id": "tf-1"},
 			mock:    &mockTerraformClient{err: errors.New("file not found")},
 			wantErr: true,
 		},
 		{
 			name:      "nil resources",
-			args:      map[string]any{"source_id": "tf-1"},
+			args:      map[string]any{"component_id": "tf-1"},
 			mock:      &mockTerraformClient{resources: nil},
 			wantCount: 0,
 		},
@@ -516,13 +516,13 @@ func TestTerraformResourceTool_Execute(t *testing.T) {
 	}{
 		{
 			name: "success",
-			args: map[string]any{"source_id": "tf-1", "address": "aws_instance.web"},
+			args: map[string]any{"component_id": "tf-1", "address": "aws_instance.web"},
 			mock: &mockTerraformClient{resource: resource},
 		},
-		{name: "missing address", args: map[string]any{"source_id": "tf-1"}, mock: &mockTerraformClient{}, wantErr: true},
+		{name: "missing address", args: map[string]any{"component_id": "tf-1"}, mock: &mockTerraformClient{}, wantErr: true},
 		{
 			name:    "not found",
-			args:    map[string]any{"source_id": "tf-1", "address": "aws_instance.missing"},
+			args:    map[string]any{"component_id": "tf-1", "address": "aws_instance.missing"},
 			mock:    &mockTerraformClient{err: errors.New("not found")},
 			wantErr: true,
 		},
@@ -554,19 +554,19 @@ func TestTerraformOutputsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "success",
-			args:      map[string]any{"source_id": "tf-1"},
+			args:      map[string]any{"component_id": "tf-1"},
 			mock:      &mockTerraformClient{outputs: outputs},
 			wantCount: 2,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockTerraformClient{},
 			wantErr: true,
 		},
 		{
 			name:      "nil outputs",
-			args:      map[string]any{"source_id": "tf-1"},
+			args:      map[string]any{"component_id": "tf-1"},
 			mock:      &mockTerraformClient{outputs: nil},
 			wantCount: 0,
 		},
@@ -617,31 +617,31 @@ func TestHelmReleasesTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "all namespaces",
-			args:      map[string]any{"source_id": "helm-1"},
+			args:      map[string]any{"component_id": "helm-1"},
 			mock:      &mockHelmClient{releases: releases},
 			wantCount: 2,
 		},
 		{
 			name:      "with namespace",
-			args:      map[string]any{"source_id": "helm-1", "namespace": "production"},
+			args:      map[string]any{"component_id": "helm-1", "namespace": "production"},
 			mock:      &mockHelmClient{releases: releases[:1]},
 			wantCount: 1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			mock:    &mockHelmClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "helm-1"},
+			args:    map[string]any{"component_id": "helm-1"},
 			mock:    &mockHelmClient{err: errors.New("connection refused")},
 			wantErr: true,
 		},
 		{
 			name:      "nil releases",
-			args:      map[string]any{"source_id": "helm-1"},
+			args:      map[string]any{"component_id": "helm-1"},
 			mock:      &mockHelmClient{releases: nil},
 			wantCount: 0,
 		},
@@ -681,14 +681,14 @@ func TestHelmGetReleaseTool_Execute(t *testing.T) {
 	}{
 		{
 			name: "success",
-			args: map[string]any{"source_id": "helm-1", "namespace": "production", "name": "nginx"},
+			args: map[string]any{"component_id": "helm-1", "namespace": "production", "name": "nginx"},
 			mock: &mockHelmClient{detail: detail},
 		},
-		{name: "missing namespace", args: map[string]any{"source_id": "helm-1", "name": "nginx"}, mock: &mockHelmClient{}, wantErr: true},
-		{name: "missing name", args: map[string]any{"source_id": "helm-1", "namespace": "production"}, mock: &mockHelmClient{}, wantErr: true},
+		{name: "missing namespace", args: map[string]any{"component_id": "helm-1", "name": "nginx"}, mock: &mockHelmClient{}, wantErr: true},
+		{name: "missing name", args: map[string]any{"component_id": "helm-1", "namespace": "production"}, mock: &mockHelmClient{}, wantErr: true},
 		{
 			name:    "not found",
-			args:    map[string]any{"source_id": "helm-1", "namespace": "production", "name": "missing"},
+			args:    map[string]any{"component_id": "helm-1", "namespace": "production", "name": "missing"},
 			mock:    &mockHelmClient{err: errors.New("not found")},
 			wantErr: true,
 		},
@@ -720,25 +720,25 @@ func TestHelmHistoryTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "success",
-			args:      map[string]any{"source_id": "helm-1", "namespace": "production", "name": "nginx"},
+			args:      map[string]any{"component_id": "helm-1", "namespace": "production", "name": "nginx"},
 			mock:      &mockHelmClient{history: history},
 			wantCount: 2,
 		},
 		{
 			name:      "with limit",
-			args:      map[string]any{"source_id": "helm-1", "namespace": "production", "name": "nginx", "limit": float64(1)},
+			args:      map[string]any{"component_id": "helm-1", "namespace": "production", "name": "nginx", "limit": float64(1)},
 			mock:      &mockHelmClient{history: history[:1]},
 			wantCount: 1,
 		},
 		{
 			name:    "missing name",
-			args:    map[string]any{"source_id": "helm-1", "namespace": "production"},
+			args:    map[string]any{"component_id": "helm-1", "namespace": "production"},
 			mock:    &mockHelmClient{},
 			wantErr: true,
 		},
 		{
 			name:      "nil history",
-			args:      map[string]any{"source_id": "helm-1", "namespace": "production", "name": "nginx"},
+			args:      map[string]any{"component_id": "helm-1", "namespace": "production", "name": "nginx"},
 			mock:      &mockHelmClient{history: nil},
 			wantCount: 0,
 		},

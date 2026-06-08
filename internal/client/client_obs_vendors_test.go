@@ -27,7 +27,7 @@ func TestDatadogMetricsQuery_Success(t *testing.T) {
 					{"metric": "system.cpu.user", "points": [][]float64{{1000000, 45.2}}},
 				},
 			},
-			"source_id": "dd-prod",
+			"component_id": "dd-prod",
 		})
 	}))
 	defer ts.Close()
@@ -51,7 +51,7 @@ func TestDatadogMetricsQuery_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "dd-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "dd-1"})
 	}))
 	defer ts.Close()
 
@@ -87,7 +87,7 @@ func TestDatadogLogsSearch_Success(t *testing.T) {
 				},
 				"count": 1,
 			},
-			"source_id": "dd-prod",
+			"component_id": "dd-prod",
 		})
 	}))
 	defer ts.Close()
@@ -111,7 +111,7 @@ func TestDatadogLogsSearch_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "dd-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "dd-1"})
 	}))
 	defer ts.Close()
 
@@ -153,7 +153,7 @@ func TestSplunkSearch_Success(t *testing.T) {
 				},
 				"count": 1,
 			},
-			"source_id": "splunk-prod",
+			"component_id": "splunk-prod",
 		})
 	}))
 	defer ts.Close()
@@ -177,7 +177,7 @@ func TestSplunkSearch_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "splunk-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "splunk-1"})
 	}))
 	defer ts.Close()
 
@@ -195,7 +195,7 @@ func TestSplunkSearch_NoTimeRange(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "splunk-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "splunk-1"})
 	}))
 	defer ts.Close()
 
@@ -239,7 +239,7 @@ func TestDynatraceMetricsQuery_Success(t *testing.T) {
 					},
 				},
 			},
-			"source_id": "dt-prod",
+			"component_id": "dt-prod",
 		})
 	}))
 	defer ts.Close()
@@ -263,7 +263,7 @@ func TestDynatraceMetricsQuery_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "dt-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "dt-1"})
 	}))
 	defer ts.Close()
 
@@ -307,7 +307,7 @@ func TestDynatraceEvents_Success(t *testing.T) {
 				},
 				"count": 1,
 			},
-			"source_id": "dt-prod",
+			"component_id": "dt-prod",
 		})
 	}))
 	defer ts.Close()
@@ -331,7 +331,7 @@ func TestDynatraceEvents_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "dt-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "dt-1"})
 	}))
 	defer ts.Close()
 
@@ -376,7 +376,7 @@ func TestNewRelicNRQLQuery_Success(t *testing.T) {
 					"time_window": map[string]any{"since": "1 hour ago", "until": "now"},
 				},
 			},
-			"source_id": "nr-prod",
+			"component_id": "nr-prod",
 		})
 	}))
 	defer ts.Close()
@@ -400,7 +400,7 @@ func TestNewRelicNRQLQuery_URLConstruction(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "nr-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "nr-1"})
 	}))
 	defer ts.Close()
 
@@ -416,7 +416,7 @@ func TestNewRelicNRQLQuery_ZeroAccountID(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "source_id": "nr-1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": nil, "component_id": "nr-1"})
 	}))
 	defer ts.Close()
 

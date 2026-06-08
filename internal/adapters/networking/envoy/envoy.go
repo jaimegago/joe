@@ -71,7 +71,7 @@ func NewWithClient(client httpDoer, cfg Config) *Adapter {
 }
 
 // Connect validates the Envoy admin API URL and checks connectivity.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
 		return err

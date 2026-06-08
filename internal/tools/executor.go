@@ -21,7 +21,7 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 //  1. Classify the tool's action (Read/Mutate)
 //  2. Check the write floor (D-0018) — FIRST among the denials, so its reason
 //     outranks an RBAC scope violation (D-0019 decision 9 precedence)
-//  3. Check zone scope (source_id must be in allowed set, if configured)
+//  3. Check zone scope (component_id must be in allowed set, if configured)
 //  4. Check namespace scope (namespace must be in allowed set, if configured)
 //  5. Check safety policy (mutations require authorization)
 //  6. Notify before execution (mutate only — blocking, cancellable)
@@ -32,10 +32,10 @@ type Executor struct {
 	metrics           *observability.Metrics
 	policy            *safety.SafetyPolicy
 	notifier          safety.ActionNotifier
-	allowedSources    map[string]struct{} // nil = no restriction; non-nil = only these source_ids permitted
+	allowedComponents map[string]struct{} // nil = no restriction; non-nil = only these component_ids permitted
 	allowedNamespaces map[string]struct{} // nil = no restriction; non-nil = only these namespaces permitted
 	scopeZoneNames    string              // human-readable zone names for error messages (e.g. "zone-a (frontend)")
-	sourceZoneMap     map[string]string   // source_id → zone name (all zones, for identifying target zone in violations)
+	sourceZoneMap     map[string]string   // component_id → zone name (all zones, for identifying target zone in violations)
 	namespaceZoneMap  map[string]string   // namespace → zone name (all zones, for identifying target zone in violations)
 	floor             safety.WriteFloor   // boot-resolved write floor; zero value (down) = unrestricted
 }
@@ -76,18 +76,18 @@ func WithNotifier(n safety.ActionNotifier) ExecutorOption {
 	}
 }
 
-// WithAllowedSources restricts the executor to only permit tool calls that
-// target one of the given source IDs. Tools that don't use source_id are
+// WithAllowedComponents restricts the executor to only permit tool calls that
+// target one of the given source IDs. Tools that don't use component_id are
 // unaffected. When the set is empty, ALL source-scoped tool calls are denied
 // (the caller has no zone access). When nil (the default), no restriction
 // is applied.
-func WithAllowedSources(sourceIDs []string) ExecutorOption {
+func WithAllowedComponents(sourceIDs []string) ExecutorOption {
 	return func(e *Executor) {
 		m := make(map[string]struct{}, len(sourceIDs))
 		for _, id := range sourceIDs {
 			m[id] = struct{}{}
 		}
-		e.allowedSources = m
+		e.allowedComponents = m
 	}
 }
 
@@ -125,10 +125,10 @@ func WithScopeZoneNames(names string) ExecutorOption {
 	}
 }
 
-// WithSourceZoneMap provides a mapping of source_id → zone name for ALL zones
+// WithComponentZoneMap provides a mapping of component_id → zone name for ALL zones
 // (not just authorized ones). This allows violation errors to identify which
 // zone the target resource belongs to.
-func WithSourceZoneMap(m map[string]string) ExecutorOption {
+func WithComponentZoneMap(m map[string]string) ExecutorOption {
 	return func(e *Executor) {
 		e.sourceZoneMap = m
 	}
@@ -147,7 +147,7 @@ func WithNamespaceZoneMap(m map[string]string) ExecutorOption {
 // caller's authorized zones.
 type ZoneViolationError struct {
 	ToolName       string
-	SourceID       string
+	ComponentID    string
 	ZoneNames      string // human-readable authorized zone context for the LLM
 	TargetZoneName string // zone the target source belongs to (empty if unknown)
 }
@@ -155,12 +155,12 @@ type ZoneViolationError struct {
 func (e *ZoneViolationError) Error() string {
 	targetInfo := ""
 	if e.TargetZoneName != "" {
-		targetInfo = fmt.Sprintf(" Source %q belongs to zone %q.", e.SourceID, e.TargetZoneName)
+		targetInfo = fmt.Sprintf(" Source %q belongs to zone %q.", e.ComponentID, e.TargetZoneName)
 	}
 	if e.ZoneNames != "" {
 		return prompts.ZoneViolationMessage(e.ToolName, e.ZoneNames, targetInfo)
 	}
-	return prompts.ZoneViolationFallback(e.ToolName, e.SourceID)
+	return prompts.ZoneViolationFallback(e.ToolName, e.ComponentID)
 }
 
 // NamespaceViolationError is returned when a tool targets a Kubernetes
@@ -218,15 +218,15 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		return nil, err
 	}
 
-	// Step 4: Zone scope check — block calls targeting sources outside authorized zones
-	if e.allowedSources != nil {
-		if sourceID, ok := args["source_id"].(string); ok && sourceID != "" {
-			if _, allowed := e.allowedSources[sourceID]; !allowed {
+	// Step 4: Zone scope check — block calls targeting components outside authorized zones
+	if e.allowedComponents != nil {
+		if sourceID, ok := args["component_id"].(string); ok && sourceID != "" {
+			if _, allowed := e.allowedComponents[sourceID]; !allowed {
 				targetZone := ""
 				if e.sourceZoneMap != nil {
 					targetZone = e.sourceZoneMap[sourceID]
 				}
-				err := &ZoneViolationError{ToolName: name, SourceID: sourceID, ZoneNames: e.scopeZoneNames, TargetZoneName: targetZone}
+				err := &ZoneViolationError{ToolName: name, ComponentID: sourceID, ZoneNames: e.scopeZoneNames, TargetZoneName: targetZone}
 				e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
 				return nil, err
 			}

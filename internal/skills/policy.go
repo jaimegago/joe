@@ -17,7 +17,7 @@ import (
 // the LLM cannot influence its contents at runtime.
 const PolicyFileName = "skills-policy.yaml"
 
-// Policy controls which skill sources Joe will install without explicit
+// Policy controls which skill components Joe will install without explicit
 // approval and which lifecycle events land in quarantine. It is parallel in
 // spirit to safety.SafetyPolicy but governs skill ingestion, not tool
 // execution.
@@ -38,7 +38,7 @@ type Policy struct {
 type AutoApprovePolicy struct {
 	// TrustedSources, when true, auto-approves installs and updates whose
 	// repo URL matches an entry in Policy.TrustedSources. Off by default so
-	// even installs from listed sources land in quarantine until an operator
+	// even installs from listed components land in quarantine until an operator
 	// flips the switch.
 	TrustedSources bool `yaml:"trusted_sources"`
 	// NewSkillsInExistingRepos, when true, auto-approves updates that
@@ -50,7 +50,7 @@ type AutoApprovePolicy struct {
 }
 
 // DefaultPolicy returns the safest possible configuration: no trusted
-// sources, no auto-approve. Every install and update is quarantined; an
+// components, no auto-approve. Every install and update is quarantined; an
 // operator must run `joe skills approve` (or POST /api/v1/skills/approve)
 // before a skill becomes active.
 //

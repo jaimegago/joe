@@ -27,14 +27,14 @@ func NewAWSEC2Tool(c AWSEC2Client) *AWSEC2Tool {
 func (t *AWSEC2Tool) Name() string { return "aws_ec2" }
 
 func (t *AWSEC2Tool) Description() string {
-	return "Query AWS EC2 instances from a connected AWS account. Lists all instances in the region, or gets a specific instance by ID. Provides information about instance state, type, IPs, VPC, security groups, tags, and more. If you don't know the source_id, call list_sources first to discover available AWS connections."
+	return "Query AWS EC2 instances from a connected AWS account. Lists all instances in the region, or gets a specific instance by ID. Provides information about instance state, type, IPs, VPC, security groups, tags, and more. If you don't know the component_id, call list_components first to discover available AWS connections."
 }
 
 func (t *AWSEC2Tool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the AWS source to query.",
 			},
@@ -43,14 +43,14 @@ func (t *AWSEC2Tool) Parameters() llm.ParameterSchema {
 				Description: "EC2 instance ID to get (e.g., i-1234567890abcdef0). Omit to list all instances.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *AWSEC2Tool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	instanceID, _ := args["instance_id"].(string)
@@ -62,8 +62,8 @@ func (t *AWSEC2Tool) Execute(ctx context.Context, args map[string]any) (any, err
 			return nil, fmt.Errorf("aws ec2 get instance failed: %w", err)
 		}
 		return map[string]any{
-			"instance":  instance,
-			"source_id": sourceID,
+			"instance":     instance,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -74,8 +74,8 @@ func (t *AWSEC2Tool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	return map[string]any{
-		"instances": instances,
-		"count":     len(instances),
-		"source_id": sourceID,
+		"instances":    instances,
+		"count":        len(instances),
+		"component_id": sourceID,
 	}, nil
 }

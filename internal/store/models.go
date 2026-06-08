@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Source represents a registered infrastructure source.
-type Source struct {
+// Component represents a registered infrastructure source.
+type Component struct {
 	ID         string          `json:"id"`
 	Type       string          `json:"type"`
 	Name       string          `json:"name"`
@@ -60,7 +60,7 @@ const (
 	ClarificationNewService       = "new_service"
 	ClarificationEdgeConfirm      = "edge_confirm"
 	ClarificationAmbiguousJoeFile = "ambiguous_joe_file"
-	ClarificationNewSource        = "new_source"
+	ClarificationNewComponent     = "new_component"
 	ClarificationServicePurpose   = "service_purpose"
 )
 
@@ -83,11 +83,11 @@ type JoeFileCache struct {
 
 // OnboardingFact represents user-provided context.
 type OnboardingFact struct {
-	ID        int64     `json:"id"`
-	FactType  string    `json:"fact_type"`
-	Subject   string    `json:"subject"`
-	Content   string    `json:"content"`
-	Source    string    `json:"source"`
-	SourceID  string    `json:"source_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	FactType    string    `json:"fact_type"`
+	Subject     string    `json:"subject"`
+	Content     string    `json:"content"`
+	Source      string    `json:"source"`
+	ComponentID string    `json:"component_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }

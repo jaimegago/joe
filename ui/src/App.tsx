@@ -10,7 +10,7 @@ import { RequireAdmin } from '@/auth/RequireAdmin';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const GraphPage = lazy(() => import('@/pages/GraphPage').then(m => ({ default: m.GraphPage })));
-const SourcesPage = lazy(() => import('@/pages/SourcesPage').then(m => ({ default: m.SourcesPage })));
+const ComponentsPage = lazy(() => import('@/pages/ComponentsPage').then(m => ({ default: m.ComponentsPage })));
 const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
 const SessionsPage = lazy(() => import('@/pages/SessionsPage').then(m => ({ default: m.SessionsPage })));
 const AdminPage = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
@@ -39,7 +39,7 @@ export function App() {
               <Route path="/" element={<AppShell />}>
                 <Route index element={<Suspense fallback={<LoadingPage />}><DashboardPage /></Suspense>} />
                 <Route path="graph" element={<Suspense fallback={<LoadingPage />}><GraphPage /></Suspense>} />
-                <Route path="sources" element={<Suspense fallback={<LoadingPage />}><SourcesPage /></Suspense>} />
+                <Route path="components" element={<Suspense fallback={<LoadingPage />}><ComponentsPage /></Suspense>} />
                 <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
                 <Route path="chat/:sessionId" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />
                 <Route path="sessions" element={<Suspense fallback={<LoadingPage />}><SessionsPage /></Suspense>} />

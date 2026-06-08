@@ -92,13 +92,13 @@ func (r *sqlRepository) insertOn(ctx context.Context, exec execContext, e Event)
 		return fmt.Errorf("%w: action required", ErrAuditWriteFailed)
 	}
 
-	// principal/zone/source are nullable. Empty string → SQL NULL so the
+	// principal/zone/component are nullable. Empty string → SQL NULL so the
 	// CHECK constraints on the table behave consistently regardless of
 	// what callers passed.
 	var (
 		principal sql.NullString
 		zone      sql.NullString
-		source    sql.NullString
+		component sql.NullString
 	)
 	if e.Principal != "" {
 		principal = sql.NullString{String: e.Principal, Valid: true}
@@ -106,19 +106,19 @@ func (r *sqlRepository) insertOn(ctx context.Context, exec execContext, e Event)
 	if e.Zone != "" {
 		zone = sql.NullString{String: e.Zone, Valid: true}
 	}
-	if e.Source != "" {
-		source = sql.NullString{String: e.Source, Valid: true}
+	if e.ComponentID != "" {
+		component = sql.NullString{String: e.ComponentID, Valid: true}
 	}
 
 	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO audit_log
-			(created_at, principal, action, zone, source, decision, reason, kind, context)
+			(created_at, principal, action, zone, component_id, decision, reason, kind, context)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		e.Timestamp.UTC().Format(time.RFC3339Nano),
 		principal,
 		e.Action,
 		zone,
-		source,
+		component,
 		string(e.Decision),
 		e.Reason,
 		string(e.Kind),

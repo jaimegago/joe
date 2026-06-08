@@ -57,7 +57,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -75,7 +75,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("Connect() expected error, got nil")
@@ -112,7 +112,7 @@ func TestAdapter_ListAlerts(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func TestAdapter_ListAlerts_WithFilter(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -203,7 +203,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -221,7 +221,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := alertmanager.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -232,7 +232,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for closed server, got nil")
 	}
@@ -248,7 +248,7 @@ func TestAdapter_Connect_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"url":     srv.URL,
 		"api_key": "my-secret",
 	})}
@@ -274,7 +274,7 @@ func TestAdapter_ListAlerts_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	_ = adapter.Connect(context.Background(), source)
 
 	_, err := adapter.ListAlerts(context.Background(), "")
@@ -299,7 +299,7 @@ func TestParseConfig_WithAPIKey(t *testing.T) {
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := alertmanager.New()
 	// Empty config (no URL) should fail ParseConfig.
-	source := store.Source{}
+	source := store.Component{}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}
@@ -326,7 +326,7 @@ func TestAdapter_ListAlerts_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -353,7 +353,7 @@ func TestAdapter_ListAlerts_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := alertmanager.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}

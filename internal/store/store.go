@@ -27,7 +27,7 @@ var migrationsFS embed.FS
 type Store struct {
 	db             *sql.DB
 	driver         string
-	Sources        SourceRepository
+	Components     ComponentRepository
 	Sessions       SessionRepository
 	Clarifications ClarificationRepository
 	Cache          CacheRepository
@@ -157,7 +157,7 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 	store := &Store{
 		db:             db,
 		driver:         cfg.Driver,
-		Sources:        &sqlSourceRepository{db: db, driver: cfg.Driver, metrics: metrics},
+		Components:     &sqlComponentRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Sessions:       &sqlSessionRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Clarifications: &sqlClarificationRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Cache:          &sqlCacheRepository{db: db, driver: cfg.Driver, metrics: metrics},

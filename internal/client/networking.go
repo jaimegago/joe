@@ -22,8 +22,8 @@ func (c *Client) NginxIngresses(ctx context.Context, sourceID, namespace string)
 	}
 
 	var result struct {
-		Ingresses []nginxadapter.Ingress `json:"ingresses"`
-		SourceID  string                 `json:"source_id"`
+		Ingresses   []nginxadapter.Ingress `json:"ingresses"`
+		ComponentID string                 `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "nginx ingresses"); err != nil {
 		return nil, err
@@ -36,8 +36,8 @@ func (c *Client) NginxStatus(ctx context.Context, sourceID string) (*nginxadapte
 	u := fmt.Sprintf("%s%s/%s/status", c.baseURL, apiNginxBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Status   *nginxadapter.NginxStatus `json:"status"`
-		SourceID string                    `json:"source_id"`
+		Status      *nginxadapter.NginxStatus `json:"status"`
+		ComponentID string                    `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "nginx status"); err != nil {
 		return nil, err
@@ -53,8 +53,8 @@ func (c *Client) NginxConfigMaps(ctx context.Context, sourceID, namespace string
 	}
 
 	var result struct {
-		ConfigMaps []nginxadapter.ConfigMapSummary `json:"config_maps"`
-		SourceID   string                          `json:"source_id"`
+		ConfigMaps  []nginxadapter.ConfigMapSummary `json:"config_maps"`
+		ComponentID string                          `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "nginx configmaps"); err != nil {
 		return nil, err
@@ -71,8 +71,8 @@ func (c *Client) EnvoyClusters(ctx context.Context, sourceID string) ([]envoyada
 	u := fmt.Sprintf("%s%s/%s/clusters", c.baseURL, apiEnvoyBasePath, url.PathEscape(sourceID))
 
 	var result struct {
-		Clusters []envoyadapter.ClusterStatus `json:"clusters"`
-		SourceID string                       `json:"source_id"`
+		Clusters    []envoyadapter.ClusterStatus `json:"clusters"`
+		ComponentID string                       `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "envoy clusters"); err != nil {
 		return nil, err
@@ -88,8 +88,8 @@ func (c *Client) EnvoyConfigDump(ctx context.Context, sourceID, section string) 
 	}
 
 	var result struct {
-		Config   map[string]any `json:"config"`
-		SourceID string         `json:"source_id"`
+		Config      map[string]any `json:"config"`
+		ComponentID string         `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "envoy config"); err != nil {
 		return nil, err
@@ -105,8 +105,8 @@ func (c *Client) EnvoyStats(ctx context.Context, sourceID, filter string) ([]env
 	}
 
 	var result struct {
-		Stats    []envoyadapter.Stat `json:"stats"`
-		SourceID string              `json:"source_id"`
+		Stats       []envoyadapter.Stat `json:"stats"`
+		ComponentID string              `json:"component_id"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, u, nil, http.StatusOK, &result, "envoy stats"); err != nil {
 		return nil, err

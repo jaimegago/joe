@@ -34,23 +34,23 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// GraphSourceID is the reserved source identifier used when evaluating
+// GraphComponentID is the reserved source identifier used when evaluating
 // RBAC for graph-store operations. The graph store is not keyed by a real
 // infrastructure source, so a stable reserved key is used; like any source
 // with no zone assignment it resolves to the "unassigned" zone, which is
 // exactly how the previous HTTP transport gated graph paths (their parsed
 // path segments were likewise non-source strings resolving to unassigned).
-const GraphSourceID = "graph"
+const GraphComponentID = "graph"
 
 // ErrPermissionDenied is returned when the policy engine denies a decision.
 // It wraps no infrastructure error because, by contract, no infrastructure
 // call is attempted on denial.
 var ErrPermissionDenied = errors.New("access denied by RBAC policy")
 
-// ErrSourceNotFound is returned when no adapter is registered for the
-// requested source. It wraps store.ErrSourceNotFound so existing HTTP error
-// mapping (errors.Is(err, store.ErrSourceNotFound) → 404) is preserved.
-var ErrSourceNotFound = fmt.Errorf("%w", store.ErrSourceNotFound)
+// ErrComponentNotFound is returned when no adapter is registered for the
+// requested source. It wraps store.ErrComponentNotFound so existing HTTP error
+// mapping (errors.Is(err, store.ErrComponentNotFound) → 404) is preserved.
+var ErrComponentNotFound = fmt.Errorf("%w", store.ErrComponentNotFound)
 
 // ErrWrongAdapterType is returned when the registered adapter for a source
 // does not implement the requested typed interface (e.g. asking for a
@@ -149,13 +149,13 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 	}
 	if a.auditRepo != nil {
 		auditErr := a.auditRepo.Insert(ctx, audit.Event{
-			Principal: primaryPrincipal,
-			Action:    string(action),
-			Zone:      zone,
-			Source:    sourceID,
-			Decision:  decision,
-			Reason:    reason,
-			Kind:      audit.KindInfraAccess,
+			Principal:   primaryPrincipal,
+			Action:      string(action),
+			Zone:        zone,
+			ComponentID: sourceID,
+			Decision:    decision,
+			Reason:      reason,
+			Kind:        audit.KindInfraAccess,
 		})
 		if auditErr != nil {
 			// Fail-closed for mutate/delete; fail-open for reads.
@@ -206,7 +206,7 @@ func guard[T any](
 	adapter, err := a.registry.Get(sourceID)
 	if err != nil {
 		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return zero, fmt.Errorf("%w: %s", ErrSourceNotFound, sourceID)
+			return zero, fmt.Errorf("%w: %s", ErrComponentNotFound, sourceID)
 		}
 		return zero, err
 	}

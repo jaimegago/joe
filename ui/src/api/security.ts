@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import {
   SecurityZoneSchema,
-  SourceZoneAssignmentSchema,
+  ComponentZoneAssignmentSchema,
   RbacPolicySchema,
   PrincipalRecordSchema,
   AdminSchema,
@@ -9,7 +9,7 @@ import {
 import { z } from 'zod';
 import type {
   SecurityZone,
-  SourceZoneAssignment,
+  ComponentZoneAssignment,
   RbacPolicy,
   PrincipalRecord,
   Admin,
@@ -57,46 +57,46 @@ export function deleteZone(id: string): Promise<void> {
   return apiClient.delete<void>(`/api/v1/admin/zones/${encodeURIComponent(id)}`);
 }
 
-export function fetchSourceZones(): Promise<SourceZoneAssignment[]> {
+export function fetchComponentZones(): Promise<ComponentZoneAssignment[]> {
   return apiClient
-    .get<unknown>('/api/v1/admin/source-zones')
+    .get<unknown>('/api/v1/admin/component-zones')
     .then(
       (r) =>
-        z.object({ assignments: z.array(SourceZoneAssignmentSchema) }).parse(r).assignments
+        z.object({ assignments: z.array(ComponentZoneAssignmentSchema) }).parse(r).assignments
     );
 }
 
-export function fetchUnassigned(): Promise<{ source_id: string }[]> {
+export function fetchUnassigned(): Promise<{ component_id: string }[]> {
   return apiClient
     .get<unknown>('/api/v1/admin/unassigned')
     .then((r) =>
       z
-        .object({ source_ids: z.array(z.string()) })
+        .object({ component_ids: z.array(z.string()) })
         .parse(r)
-        .source_ids.map((id) => ({ source_id: id }))
+        .component_ids.map((id) => ({ component_id: id }))
     );
 }
 
 export function assignZone(
-  sourceId: string,
+  componentId: string,
   zoneId: string,
   reason?: string
-): Promise<SourceZoneAssignment> {
+): Promise<ComponentZoneAssignment> {
   return apiClient
-    .post<unknown>('/api/v1/admin/source-zones', {
-      source_id: sourceId,
+    .post<unknown>('/api/v1/admin/component-zones', {
+      component_id: componentId,
       zone_id: zoneId,
       assigned_by: 'web-ui',
       reason: reason ?? '',
     })
-    .then((r) => SourceZoneAssignmentSchema.parse(r));
+    .then((r) => ComponentZoneAssignmentSchema.parse(r));
 }
 
 // removeZone unassigns a source from its zone — DELETE
-// /api/v1/admin/source-zones/{sourceID}. The source then falls back to the
+// /api/v1/admin/component-zones/{sourceID}. The source then falls back to the
 // policy engine's default unassigned behaviour.
-export function removeZone(sourceId: string): Promise<void> {
-  return apiClient.delete<void>(`/api/v1/admin/source-zones/${encodeURIComponent(sourceId)}`);
+export function removeZone(componentId: string): Promise<void> {
+  return apiClient.delete<void>(`/api/v1/admin/component-zones/${encodeURIComponent(componentId)}`);
 }
 
 export function fetchPolicies(): Promise<RbacPolicy[]> {

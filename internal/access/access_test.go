@@ -49,12 +49,12 @@ func (f *fakeRepo) addZone(id string, allowed ...rbac.Action) {
 	f.zones[id] = rbac.Zone{ID: id, AllowedActions: allowed}
 }
 
-func (f *fakeRepo) GetAssignment(_ context.Context, sourceID string) (*rbac.SourceZoneAssignment, error) {
+func (f *fakeRepo) GetAssignment(_ context.Context, sourceID string) (*rbac.ComponentZoneAssignment, error) {
 	z, ok := f.assignments[sourceID]
 	if !ok {
 		return nil, nil
 	}
-	return &rbac.SourceZoneAssignment{SourceID: sourceID, ZoneID: z}, nil
+	return &rbac.ComponentZoneAssignment{ComponentID: sourceID, ZoneID: z}, nil
 }
 func (f *fakeRepo) GetZone(_ context.Context, id string) (*rbac.Zone, error) {
 	z, ok := f.zones[id]
@@ -80,10 +80,10 @@ func (f *fakeRepo) UpdateZone(context.Context, rbac.Zone, string) (*rbac.Zone, e
 	return nil, nil
 }
 func (f *fakeRepo) DeleteZone(context.Context, string, string) error { return nil }
-func (f *fakeRepo) ListAssignments(context.Context) ([]rbac.SourceZoneAssignment, error) {
+func (f *fakeRepo) ListAssignments(context.Context) ([]rbac.ComponentZoneAssignment, error) {
 	return nil, nil
 }
-func (f *fakeRepo) UpsertAssignment(context.Context, rbac.SourceZoneAssignment, string) error {
+func (f *fakeRepo) UpsertAssignment(context.Context, rbac.ComponentZoneAssignment, string) error {
 	return nil
 }
 func (f *fakeRepo) DeleteAssignment(context.Context, string, string) (int64, error) { return 0, nil }
@@ -95,7 +95,7 @@ func (f *fakeRepo) DeletePolicy(context.Context, int64, string) error { return n
 func (f *fakeRepo) DeletePolicyForPrincipalZone(context.Context, string, string, string) (int64, error) {
 	return 0, nil
 }
-func (f *fakeRepo) ListUnassignedSourceIDs(context.Context) ([]string, error) { return nil, nil }
+func (f *fakeRepo) ListUnassignedComponentIDs(context.Context) ([]string, error) { return nil, nil }
 func (f *fakeRepo) DeletePoliciesForPrincipal(_ context.Context, principal string) (int64, error) {
 	n := int64(len(f.policies[principal]))
 	delete(f.policies, principal)
@@ -130,9 +130,9 @@ func (f *fakeRepo) RemoveAdmin(_ context.Context, principal string, _ string) (i
 
 type base struct{}
 
-func (base) Connect(context.Context, store.Source) error { return nil }
-func (base) Disconnect() error                           { return nil }
-func (base) Status() adapters.Status                     { return adapters.Status{Connected: true} }
+func (base) Connect(context.Context, store.Component) error { return nil }
+func (base) Disconnect() error                              { return nil }
+func (base) Status() adapters.Status                        { return adapters.Status{Connected: true} }
 
 type fakeK8s struct {
 	base
@@ -256,7 +256,7 @@ func (f fakeGraph) Summary(context.Context) (graph.GraphSummary, error) {
 	*f.called = true
 	return graph.GraphSummary{}, nil
 }
-func (f fakeGraph) ListNodesBySource(context.Context, string) ([]graph.Node, error) {
+func (f fakeGraph) ListNodesByComponent(context.Context, string) ([]graph.Node, error) {
 	*f.called = true
 	return nil, nil
 }
@@ -373,7 +373,7 @@ func TestAccessor_PerKind_AllowAndDeny(t *testing.T) {
 
 func TestAccessor_Graph_AllowAndDeny(t *testing.T) {
 	repo := newFakeRepo()
-	repo.assign(access.GraphSourceID, "z-read")
+	repo.assign(access.GraphComponentID, "z-read")
 	repo.grant(allowed, "z-read")
 	engine := rbac.NewPolicyEngine(repo)
 

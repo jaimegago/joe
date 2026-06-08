@@ -33,17 +33,17 @@ func (t *GitLogTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {Type: "string", Description: "ID of the Git source."},
-			"limit":     {Type: "integer", Description: "Maximum number of commits to return. Defaults to 20."},
+			"component_id": {Type: "string", Description: "ID of the Git source."},
+			"limit":        {Type: "integer", Description: "Maximum number of commits to return. Defaults to 20."},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *GitLogTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	limit := 20
@@ -57,8 +57,8 @@ func (t *GitLogTool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	return map[string]any{
-		"commits":   commits,
-		"count":     len(commits),
-		"source_id": sourceID,
+		"commits":      commits,
+		"count":        len(commits),
+		"component_id": sourceID,
 	}, nil
 }

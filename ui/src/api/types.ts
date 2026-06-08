@@ -4,9 +4,9 @@ import type {
   GraphEdgeSchema,
   GraphSchema,
   SubgraphSchema,
-  SourceSchema,
+  ComponentSchema,
   SecurityZoneSchema,
-  SourceZoneAssignmentSchema,
+  ComponentZoneAssignmentSchema,
   RbacPolicySchema,
   PrincipalRecordSchema,
   AdminSchema,
@@ -38,9 +38,9 @@ export type GraphNode = z.infer<typeof GraphNodeSchema>;
 export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 export type Graph = z.infer<typeof GraphSchema>;
 export type Subgraph = z.infer<typeof SubgraphSchema>;
-export type Source = z.infer<typeof SourceSchema>;
+export type Component = z.infer<typeof ComponentSchema>;
 export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
-export type SourceZoneAssignment = z.infer<typeof SourceZoneAssignmentSchema>;
+export type ComponentZoneAssignment = z.infer<typeof ComponentZoneAssignmentSchema>;
 export type RbacPolicy = z.infer<typeof RbacPolicySchema>;
 export type PrincipalRecord = z.infer<typeof PrincipalRecordSchema>;
 export type Admin = z.infer<typeof AdminSchema>;

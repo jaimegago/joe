@@ -24,7 +24,7 @@ func (a *Accessor) GitHubWebhookSecret(sourceID string) (string, error) {
 	adapter, err := a.registry.Get(sourceID)
 	if err != nil {
 		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return "", fmt.Errorf("%w: %s", ErrSourceNotFound, sourceID)
+			return "", fmt.Errorf("%w: %s", ErrComponentNotFound, sourceID)
 		}
 		return "", err
 	}
@@ -41,7 +41,7 @@ func (a *Accessor) GitLabWebhookSecret(sourceID string) (string, error) {
 	adapter, err := a.registry.Get(sourceID)
 	if err != nil {
 		if errors.Is(err, adapters.ErrAdapterNotFound) {
-			return "", fmt.Errorf("%w: %s", ErrSourceNotFound, sourceID)
+			return "", fmt.Errorf("%w: %s", ErrComponentNotFound, sourceID)
 		}
 		return "", err
 	}

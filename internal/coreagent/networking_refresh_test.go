@@ -20,9 +20,9 @@ type fakeNginxAdapter struct {
 	err       error
 }
 
-func (f *fakeNginxAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeNginxAdapter) Disconnect() error                               { return nil }
-func (f *fakeNginxAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeNginxAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeNginxAdapter) Disconnect() error                                  { return nil }
+func (f *fakeNginxAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeNginxAdapter) ListIngresses(_ context.Context, _ string) ([]nginxadapter.Ingress, error) {
 	return f.ingresses, f.err
 }
@@ -38,9 +38,9 @@ type fakeEnvoyAdapter struct {
 	err      error
 }
 
-func (f *fakeEnvoyAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (f *fakeEnvoyAdapter) Disconnect() error                               { return nil }
-func (f *fakeEnvoyAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (f *fakeEnvoyAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (f *fakeEnvoyAdapter) Disconnect() error                                  { return nil }
+func (f *fakeEnvoyAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (f *fakeEnvoyAdapter) Clusters(_ context.Context) ([]envoypadapter.ClusterStatus, error) {
 	return f.clusters, f.err
 }
@@ -64,37 +64,37 @@ func setupNetworkingRefresher(t *testing.T) *Refresher {
 
 // ---- NGINX ----
 
-func TestRefreshNginxSource_NoIngresses(t *testing.T) {
+func TestRefreshNginxComponent_NoIngresses(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-nginx-1", Type: store.SourceTypeNginx, Name: "nginx-ingress"}
+	src := &store.Component{ID: "src-nginx-1", Type: store.ComponentTypeNginx, Name: "nginx-ingress"}
 
-	if err := r.refreshNginxSource(context.Background(), src, &fakeNginxAdapter{}); err != nil {
-		t.Fatalf("refreshNginxSource: %v", err)
+	if err := r.refreshNginxComponent(context.Background(), src, &fakeNginxAdapter{}); err != nil {
+		t.Fatalf("refreshNginxComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "nginx_source" {
+	if len(nodes) != 1 || nodes[0].Type != "nginx_component" {
 		t.Errorf("want 1 nginx_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshNginxSource_IngressesError(t *testing.T) {
+func TestRefreshNginxComponent_IngressesError(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-nginx-2", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-2", Type: store.ComponentTypeNginx, Name: "nginx"}
 	adapter := &fakeNginxAdapter{err: errors.New("k8s api error")}
 
 	// Should still succeed (skips edge discovery).
-	if err := r.refreshNginxSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshNginxSource should not error on ListIngresses failure, got: %v", err)
+	if err := r.refreshNginxComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshNginxComponent should not error on ListIngresses failure, got: %v", err)
 	}
 }
 
-func TestRefreshNginxSource_WithIngresses(t *testing.T) {
+func TestRefreshNginxComponent_WithIngresses(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-nginx-3", Type: store.SourceTypeNginx, Name: "nginx"}
+	src := &store.Component{ID: "src-nginx-3", Type: store.ComponentTypeNginx, Name: "nginx"}
 	adapter := &fakeNginxAdapter{
 		ingresses: []nginxadapter.Ingress{
 			{
@@ -113,13 +113,13 @@ func TestRefreshNginxSource_WithIngresses(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshNginxSource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshNginxSource: %v", err)
+	if err := r.refreshNginxComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshNginxComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
 	// 1 source node + 1 ingress node.
 	if len(nodes) != 2 {
@@ -129,36 +129,36 @@ func TestRefreshNginxSource_WithIngresses(t *testing.T) {
 
 // ---- Envoy ----
 
-func TestRefreshEnvoySource_NoClusters(t *testing.T) {
+func TestRefreshEnvoyComponent_NoClusters(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-envoy-1", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-1", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 
-	if err := r.refreshEnvoySource(context.Background(), src, &fakeEnvoyAdapter{}); err != nil {
-		t.Fatalf("refreshEnvoySource: %v", err)
+	if err := r.refreshEnvoyComponent(context.Background(), src, &fakeEnvoyAdapter{}); err != nil {
+		t.Fatalf("refreshEnvoyComponent: %v", err)
 	}
 
-	nodes, _, err := LoadGraphStateForSource(context.Background(), r.services.Graph, src.ID)
+	nodes, _, err := LoadGraphStateForComponent(context.Background(), r.services.Graph, src.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource: %v", err)
+		t.Fatalf("LoadGraphStateForComponent: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].Type != "envoy_source" {
+	if len(nodes) != 1 || nodes[0].Type != "envoy_component" {
 		t.Errorf("want 1 envoy_source node, got %v", nodes)
 	}
 }
 
-func TestRefreshEnvoySource_ClustersError(t *testing.T) {
+func TestRefreshEnvoyComponent_ClustersError(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-envoy-2", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-2", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 	adapter := &fakeEnvoyAdapter{err: errors.New("admin api unreachable")}
 
-	if err := r.refreshEnvoySource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshEnvoySource should not error on Clusters failure, got: %v", err)
+	if err := r.refreshEnvoyComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshEnvoyComponent should not error on Clusters failure, got: %v", err)
 	}
 }
 
-func TestRefreshEnvoySource_WithClusters(t *testing.T) {
+func TestRefreshEnvoyComponent_WithClusters(t *testing.T) {
 	r := setupNetworkingRefresher(t)
-	src := &store.Source{ID: "src-envoy-3", Type: store.SourceTypeEnvoy, Name: "envoy"}
+	src := &store.Component{ID: "src-envoy-3", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 	adapter := &fakeEnvoyAdapter{
 		clusters: []envoypadapter.ClusterStatus{
 			{Name: "payment_80"},
@@ -166,8 +166,8 @@ func TestRefreshEnvoySource_WithClusters(t *testing.T) {
 		},
 	}
 
-	if err := r.refreshEnvoySource(context.Background(), src, adapter); err != nil {
-		t.Fatalf("refreshEnvoySource: %v", err)
+	if err := r.refreshEnvoyComponent(context.Background(), src, adapter); err != nil {
+		t.Fatalf("refreshEnvoyComponent: %v", err)
 	}
 	// Just verify no error — edge creation is best-effort.
 }
@@ -233,37 +233,37 @@ func TestNetworkingNodeID(t *testing.T) {
 	}
 }
 
-// ---- refreshSource switch cases ----
+// ---- refreshComponent switch cases ----
 
-func TestRefreshSource_NginxType(t *testing.T) {
+func TestRefreshComponent_NginxType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nginx", &fakeNginxAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-nginx", Type: store.SourceTypeNginx, Name: "nginx"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(nginx) error: %v", err)
+	src := &store.Component{ID: "src-nginx", Type: store.ComponentTypeNginx, Name: "nginx"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(nginx) error: %v", err)
 	}
 }
 
-func TestRefreshSource_EnvoyType(t *testing.T) {
+func TestRefreshComponent_EnvoyType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-envoy", &fakeEnvoyAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-envoy", Type: store.SourceTypeEnvoy, Name: "envoy"}
-	if err := r.refreshSource(context.Background(), src); err != nil {
-		t.Fatalf("refreshSource(envoy) error: %v", err)
+	src := &store.Component{ID: "src-envoy", Type: store.ComponentTypeEnvoy, Name: "envoy"}
+	if err := r.refreshComponent(context.Background(), src); err != nil {
+		t.Fatalf("refreshComponent(envoy) error: %v", err)
 	}
 }
 
-func TestRefreshSource_NginxWrongType(t *testing.T) {
+func TestRefreshComponent_NginxWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nginx-bad", &fakeEnvoyAdapter{})
 
 	r := &Refresher{services: svc, logger: slog.Default()}
-	src := &store.Source{ID: "src-nginx-bad", Type: store.SourceTypeNginx, Name: "nginx"}
-	if err := r.refreshSource(context.Background(), src); err == nil {
+	src := &store.Component{ID: "src-nginx-bad", Type: store.ComponentTypeNginx, Name: "nginx"}
+	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
 	}
 }

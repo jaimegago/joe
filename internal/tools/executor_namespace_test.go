@@ -16,14 +16,14 @@ func TestExecutor_NamespaceScope_AllowedNamespace(t *testing.T) {
 	})
 
 	executor := NewExecutor(registry, nil,
-		WithAllowedSources([]string{"cluster-a"}),
+		WithAllowedComponents([]string{"cluster-a"}),
 		WithAllowedNamespaces([]string{"frontend", "backend"}),
 	)
 
 	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "frontend",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "frontend",
 	})
 	if err != nil {
 		t.Fatalf("tool targeting allowed namespace should succeed, got: %v", err)
@@ -44,14 +44,14 @@ func TestExecutor_NamespaceScope_DeniedNamespace(t *testing.T) {
 	})
 
 	executor := NewExecutor(registry, nil,
-		WithAllowedSources([]string{"cluster-a"}),
+		WithAllowedComponents([]string{"cluster-a"}),
 		WithAllowedNamespaces([]string{"frontend"}),
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "payments",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "payments",
 	})
 	if err == nil {
 		t.Fatal("expected namespace violation error for unauthorized namespace")
@@ -82,9 +82,9 @@ func TestExecutor_NamespaceScope_ReadAlsoBlocked(t *testing.T) {
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "deployments",
-		"namespace": "payments",
+		"component_id": "cluster-a",
+		"resource":     "deployments",
+		"namespace":    "payments",
 	})
 	if err == nil {
 		t.Fatal("k8s_get (read) targeting unauthorized namespace should be blocked")
@@ -133,9 +133,9 @@ func TestExecutor_NamespaceScope_NilAllowedNamespaces_NoRestriction(t *testing.T
 	executor := NewExecutor(registry, nil)
 
 	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "any-namespace",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "any-namespace",
 	})
 	if err != nil {
 		t.Fatalf("nil allowedNamespaces should not restrict: %v", err)
@@ -160,9 +160,9 @@ func TestExecutor_NamespaceScope_EmptyAllowedNamespaces_DeniesAll(t *testing.T) 
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "anything",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "anything",
 	})
 	if err == nil {
 		t.Fatal("empty allowedNamespaces should deny all namespace-scoped calls")
@@ -194,9 +194,9 @@ func TestExecutor_NamespaceScope_EnforcedRegardlessOfLLM(t *testing.T) {
 	// Run multiple times to verify determinism
 	for i := 0; i < 10; i++ {
 		_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-			"source_id": "cluster-a",
-			"resource":  "pods",
-			"namespace": "payments",
+			"component_id": "cluster-a",
+			"resource":     "pods",
+			"namespace":    "payments",
 		})
 		if err == nil {
 			t.Fatalf("iteration %d: expected namespace violation, got nil", i)
@@ -223,9 +223,9 @@ func TestExecutor_NamespaceScope_ErrorContainsZoneNames(t *testing.T) {
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "payments",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "payments",
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -266,9 +266,9 @@ func TestExecutor_NamespaceScope_ErrorContainsTargetZone(t *testing.T) {
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "payments",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "payments",
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -314,9 +314,9 @@ func TestExecutor_NamespaceScope_ImplicitCrossing_BlocksRead(t *testing.T) {
 
 	// First call: authorized namespace — should succeed
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "frontend",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "frontend",
 	})
 	if err != nil {
 		t.Fatalf("in-zone call should succeed: %v", err)
@@ -324,9 +324,9 @@ func TestExecutor_NamespaceScope_ImplicitCrossing_BlocksRead(t *testing.T) {
 
 	// Second call: cross-zone namespace — should be blocked
 	_, err = executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
-		"namespace": "orders",
+		"component_id": "cluster-a",
+		"resource":     "pods",
+		"namespace":    "orders",
 	})
 	if err == nil {
 		t.Fatal("cross-zone call should be blocked")
@@ -358,13 +358,13 @@ func TestExecutor_ZoneScope_ErrorContainsZoneNames(t *testing.T) {
 	})
 
 	executor := NewExecutor(registry, nil,
-		WithAllowedSources([]string{"cluster-a"}),
+		WithAllowedComponents([]string{"cluster-a"}),
 		WithScopeZoneNames("zone-a (Frontend)"),
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-b",
-		"resource":  "pods",
+		"component_id": "cluster-b",
+		"resource":     "pods",
 	})
 	if err == nil {
 		t.Fatal("expected zone violation error")
@@ -385,17 +385,17 @@ func TestExecutor_ZoneScope_ErrorContainsTargetZone(t *testing.T) {
 	})
 
 	executor := NewExecutor(registry, nil,
-		WithAllowedSources([]string{"cluster-a"}),
+		WithAllowedComponents([]string{"cluster-a"}),
 		WithScopeZoneNames("Frontend Zone (zone-a)"),
-		WithSourceZoneMap(map[string]string{
+		WithComponentZoneMap(map[string]string{
 			"cluster-a": "Frontend Zone (zone-a)",
 			"cluster-b": "Payments Zone (zone-b)",
 		}),
 	)
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-b",
-		"resource":  "pods",
+		"component_id": "cluster-b",
+		"resource":     "pods",
 	})
 	if err == nil {
 		t.Fatal("expected zone violation error")

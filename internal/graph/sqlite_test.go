@@ -24,13 +24,13 @@ func setupTestStoreWithDB(t *testing.T) (graph.GraphStore, *sql.DB) {
 		CREATE TABLE graph_nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			source_id TEXT,
+			component_id TEXT,
 			metadata TEXT DEFAULT '{}',
 			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(component_id);
 
 		CREATE TABLE graph_edges (
 			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -67,13 +67,13 @@ func setupTestStore(t *testing.T) graph.GraphStore {
 		CREATE TABLE graph_nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			source_id TEXT,
+			component_id TEXT,
 			metadata TEXT DEFAULT '{}',
 			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(component_id);
 
 		CREATE TABLE graph_edges (
 			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -106,10 +106,10 @@ func seedGraph(t *testing.T, store graph.GraphStore) {
 	ctx := context.Background()
 
 	nodes := []graph.Node{
-		{ID: "deployment/prod/payment-svc", Type: "deployment", SourceID: "k8s/prod", Metadata: map[string]any{"replicas": float64(3)}},
-		{ID: "deployment/prod/user-svc", Type: "deployment", SourceID: "k8s/prod", Metadata: map[string]any{"replicas": float64(2)}},
-		{ID: "statefulset/prod/postgres", Type: "statefulset", SourceID: "k8s/prod", Metadata: map[string]any{"version": "15"}},
-		{ID: "deployment/prod/redis", Type: "deployment", SourceID: "k8s/prod", Metadata: map[string]any{}},
+		{ID: "deployment/prod/payment-svc", Type: "deployment", ComponentID: "k8s/prod", Metadata: map[string]any{"replicas": float64(3)}},
+		{ID: "deployment/prod/user-svc", Type: "deployment", ComponentID: "k8s/prod", Metadata: map[string]any{"replicas": float64(2)}},
+		{ID: "statefulset/prod/postgres", Type: "statefulset", ComponentID: "k8s/prod", Metadata: map[string]any{"version": "15"}},
+		{ID: "deployment/prod/redis", Type: "deployment", ComponentID: "k8s/prod", Metadata: map[string]any{}},
 	}
 	for _, n := range nodes {
 		if err := store.AddNode(ctx, n); err != nil {
@@ -135,10 +135,10 @@ func TestAddNode(t *testing.T) {
 
 	t.Run("add new node", func(t *testing.T) {
 		err := store.AddNode(ctx, graph.Node{
-			ID:       "deployment/prod/api",
-			Type:     "deployment",
-			SourceID: "k8s/prod",
-			Metadata: map[string]any{"replicas": float64(3)},
+			ID:          "deployment/prod/api",
+			Type:        "deployment",
+			ComponentID: "k8s/prod",
+			Metadata:    map[string]any{"replicas": float64(3)},
 		})
 		if err != nil {
 			t.Fatalf("AddNode() error = %v", err)
@@ -151,8 +151,8 @@ func TestAddNode(t *testing.T) {
 		if node.Type != "deployment" {
 			t.Errorf("Type = %q, want %q", node.Type, "deployment")
 		}
-		if node.SourceID != "k8s/prod" {
-			t.Errorf("SourceID = %q, want %q", node.SourceID, "k8s/prod")
+		if node.ComponentID != "k8s/prod" {
+			t.Errorf("ComponentID = %q, want %q", node.ComponentID, "k8s/prod")
 		}
 		replicas, ok := node.Metadata["replicas"]
 		if !ok || replicas != float64(3) {
@@ -162,10 +162,10 @@ func TestAddNode(t *testing.T) {
 
 	t.Run("upsert updates existing node", func(t *testing.T) {
 		err := store.AddNode(ctx, graph.Node{
-			ID:       "deployment/prod/api",
-			Type:     "deployment",
-			SourceID: "k8s/prod",
-			Metadata: map[string]any{"replicas": float64(5)},
+			ID:          "deployment/prod/api",
+			Type:        "deployment",
+			ComponentID: "k8s/prod",
+			Metadata:    map[string]any{"replicas": float64(5)},
 		})
 		if err != nil {
 			t.Fatalf("AddNode() upsert error = %v", err)
@@ -199,8 +199,8 @@ func TestAddEdge_NewRelations(t *testing.T) {
 	ctx := context.Background()
 
 	nodes := []graph.Node{
-		{ID: "service/prod/api", Type: "service", SourceID: "k8s/prod", Metadata: map[string]any{}},
-		{ID: "observability/prom", Type: "prometheus", SourceID: "obs-1", Metadata: map[string]any{}},
+		{ID: "service/prod/api", Type: "service", ComponentID: "k8s/prod", Metadata: map[string]any{}},
+		{ID: "observability/prom", Type: "prometheus", ComponentID: "obs-1", Metadata: map[string]any{}},
 	}
 	for _, node := range nodes {
 		if err := store.AddNode(ctx, node); err != nil {
@@ -219,12 +219,12 @@ func TestAddEdge_NewRelations(t *testing.T) {
 	}
 	for _, relation := range relations {
 		edge := graph.Edge{
-			From:       nodes[0].ID,
-			To:         nodes[1].ID,
-			Relation:   relation,
-			Confidence: graph.Explicit,
-			Source:     "test",
-			SourceID:   "",
+			From:        nodes[0].ID,
+			To:          nodes[1].ID,
+			Relation:    relation,
+			Confidence:  graph.Explicit,
+			Source:      "test",
+			ComponentID: "",
 		}
 		if err := store.AddEdge(ctx, edge); err != nil {
 			t.Fatalf("AddEdge(%s): %v", relation, err)
@@ -254,13 +254,13 @@ func TestAddEdge(t *testing.T) {
 
 	t.Run("add edge", func(t *testing.T) {
 		err := store.AddEdge(ctx, graph.Edge{
-			From:       "svc-a",
-			To:         "svc-b",
-			Relation:   "calls",
-			Confidence: graph.Explicit,
-			Source:     "k8s_api",
-			SourceID:   "",
-			Context:    "network traffic",
+			From:        "svc-a",
+			To:          "svc-b",
+			Relation:    "calls",
+			Confidence:  graph.Explicit,
+			Source:      "k8s_api",
+			ComponentID: "",
+			Context:     "network traffic",
 		})
 		if err != nil {
 			t.Fatalf("AddEdge() error = %v", err)
@@ -269,12 +269,12 @@ func TestAddEdge(t *testing.T) {
 
 	t.Run("upsert edge updates confidence", func(t *testing.T) {
 		err := store.AddEdge(ctx, graph.Edge{
-			From:       "svc-a",
-			To:         "svc-b",
-			Relation:   "calls",
-			Confidence: graph.UserConfirmed,
-			Source:     "user",
-			SourceID:   "",
+			From:        "svc-a",
+			To:          "svc-b",
+			Relation:    "calls",
+			Confidence:  graph.UserConfirmed,
+			Source:      "user",
+			ComponentID: "",
 		})
 		if err != nil {
 			t.Fatalf("AddEdge() upsert error = %v", err)
@@ -283,10 +283,10 @@ func TestAddEdge(t *testing.T) {
 
 	t.Run("foreign key enforced", func(t *testing.T) {
 		err := store.AddEdge(ctx, graph.Edge{
-			From:     "svc-a",
-			To:       "nonexistent",
-			Relation: "calls",
-			SourceID: "",
+			From:        "svc-a",
+			To:          "nonexistent",
+			Relation:    "calls",
+			ComponentID: "",
 		})
 		if err == nil {
 			t.Error("expected foreign key error, got nil")
@@ -629,7 +629,7 @@ func TestScanNodes_InvalidJSON(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO graph_nodes (id, type, source_id, metadata, first_seen, last_seen)
+		INSERT INTO graph_nodes (id, type, component_id, metadata, first_seen, last_seen)
 		VALUES ('bad-json-node', 'service', 'src1', 'NOT_VALID_JSON', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
@@ -663,10 +663,10 @@ func TestScanNodes_InvalidJSON(t *testing.T) {
 		}
 	})
 
-	t.Run("ListNodesBySource with bad JSON node succeeds", func(t *testing.T) {
-		nodes, err := store.ListNodesBySource(ctx, "src1")
+	t.Run("ListNodesByComponent with bad JSON node succeeds", func(t *testing.T) {
+		nodes, err := store.ListNodesByComponent(ctx, "src1")
 		if err != nil {
-			t.Fatalf("ListNodesBySource() error = %v", err)
+			t.Fatalf("ListNodesByComponent() error = %v", err)
 		}
 		if len(nodes) == 0 {
 			t.Error("expected at least 1 node")
@@ -702,9 +702,9 @@ func TestClosedDB_ErrorPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("ListNodesBySource error on closed db", func(t *testing.T) {
+	t.Run("ListNodesByComponent error on closed db", func(t *testing.T) {
 		s := newClosedStore(t)
-		_, err := s.ListNodesBySource(ctx, "src1")
+		_, err := s.ListNodesByComponent(ctx, "src1")
 		if err == nil {
 			t.Fatal("expected error on closed db")
 		}
@@ -751,28 +751,28 @@ func TestClosedDB_ErrorPaths(t *testing.T) {
 	})
 }
 
-func TestListNodesBySource(t *testing.T) {
+func TestListNodesByComponent(t *testing.T) {
 	store := setupTestStore(t)
 	seedGraph(t, store)
 	ctx := context.Background()
 
 	t.Run("returns nodes for source", func(t *testing.T) {
-		nodes, err := store.ListNodesBySource(ctx, "k8s/prod")
+		nodes, err := store.ListNodesByComponent(ctx, "k8s/prod")
 		if err != nil {
-			t.Fatalf("ListNodesBySource() error = %v", err)
+			t.Fatalf("ListNodesByComponent() error = %v", err)
 		}
 		if len(nodes) != 4 {
-			t.Errorf("ListNodesBySource(k8s/prod) returned %d nodes, want 4", len(nodes))
+			t.Errorf("ListNodesByComponent(k8s/prod) returned %d nodes, want 4", len(nodes))
 		}
 	})
 
 	t.Run("returns empty for unknown source", func(t *testing.T) {
-		nodes, err := store.ListNodesBySource(ctx, "unknown-source")
+		nodes, err := store.ListNodesByComponent(ctx, "unknown-source")
 		if err != nil {
-			t.Fatalf("ListNodesBySource() error = %v", err)
+			t.Fatalf("ListNodesByComponent() error = %v", err)
 		}
 		if len(nodes) != 0 {
-			t.Errorf("ListNodesBySource(unknown) returned %d nodes, want 0", len(nodes))
+			t.Errorf("ListNodesByComponent(unknown) returned %d nodes, want 0", len(nodes))
 		}
 	})
 }

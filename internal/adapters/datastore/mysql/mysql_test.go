@@ -96,7 +96,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: mustMarshal(t, map[string]any{"user": "root", "database": "db"}), // missing host
 	}
 	if err := a.Connect(context.Background(), src); err == nil {
@@ -106,7 +106,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{invalid json`)}
+	src := store.Component{Config: []byte(`{invalid json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -491,7 +491,7 @@ func TestStat_ReplicaRunning_SlaveRunningField(t *testing.T) {
 
 func TestConnect_EmptyConfig(t *testing.T) {
 	a := New()
-	src := store.Source{Config: nil}
+	src := store.Component{Config: nil}
 	// Empty config is missing host — ParseConfig should error.
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for empty config, got nil")
@@ -500,7 +500,7 @@ func TestConnect_EmptyConfig(t *testing.T) {
 
 func TestConnect_PingFails(t *testing.T) {
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: mustMarshal(t, map[string]any{
 			"host": "127.0.0.1", "port": float64(19998),
 			"user": "nobody", "database": "nodb",

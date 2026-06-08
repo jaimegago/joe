@@ -9,13 +9,13 @@ import (
 func TestDefaultPolicy_DenyByDefault(t *testing.T) {
 	p := DefaultPolicy()
 	if p.AutoApprove.TrustedSources {
-		t.Error("DefaultPolicy must not auto-approve trusted sources — that is the operator opt-in")
+		t.Error("DefaultPolicy must not auto-approve trusted components — that is the operator opt-in")
 	}
 	if p.AutoApprove.NewSkillsInExistingRepos {
 		t.Error("DefaultPolicy must not auto-approve new skills in existing repos")
 	}
 	if len(p.TrustedSources) != 0 {
-		t.Errorf("DefaultPolicy must have no trusted sources, got %d", len(p.TrustedSources))
+		t.Errorf("DefaultPolicy must have no trusted components, got %d", len(p.TrustedSources))
 	}
 }
 

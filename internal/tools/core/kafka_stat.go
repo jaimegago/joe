@@ -30,26 +30,26 @@ func (t *KafkaTopicsTool) Name() string { return "kafka_topics" }
 func (t *KafkaTopicsTool) Description() string {
 	return "List all Kafka topics with their partition count, replication factor, and configuration. " +
 		"Use this to discover topics, check replication health, and understand partition layout. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *KafkaTopicsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kafka source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *KafkaTopicsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	topics, err := t.Client.KafkaTopics(ctx, sourceID)
@@ -62,9 +62,9 @@ func (t *KafkaTopicsTool) Execute(ctx context.Context, args map[string]any) (any
 	}
 
 	return map[string]any{
-		"topics":    topics,
-		"count":     len(topics),
-		"source_id": sourceID,
+		"topics":       topics,
+		"count":        len(topics),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -83,26 +83,26 @@ func (t *KafkaBrokersTool) Name() string { return "kafka_brokers" }
 func (t *KafkaBrokersTool) Description() string {
 	return "List all Kafka brokers in the cluster with their ID, host, port, and rack information. " +
 		"Use this to inspect cluster topology and identify broker count and placement. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *KafkaBrokersTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kafka source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *KafkaBrokersTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	brokers, err := t.Client.KafkaBrokers(ctx, sourceID)
@@ -115,9 +115,9 @@ func (t *KafkaBrokersTool) Execute(ctx context.Context, args map[string]any) (an
 	}
 
 	return map[string]any{
-		"brokers":   brokers,
-		"count":     len(brokers),
-		"source_id": sourceID,
+		"brokers":      brokers,
+		"count":        len(brokers),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -137,26 +137,26 @@ func (t *KafkaConsumerGroupsTool) Description() string {
 	return "List all Kafka consumer groups with their state, protocol, and per-partition offset lag. " +
 		"Total lag per group is included. Use this to identify consumer groups that are falling behind " +
 		"and to understand partition offset consumption. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *KafkaConsumerGroupsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Kafka source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *KafkaConsumerGroupsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	groups, err := t.Client.KafkaConsumerGroups(ctx, sourceID)
@@ -169,8 +169,8 @@ func (t *KafkaConsumerGroupsTool) Execute(ctx context.Context, args map[string]a
 	}
 
 	return map[string]any{
-		"groups":    groups,
-		"count":     len(groups),
-		"source_id": sourceID,
+		"groups":       groups,
+		"count":        len(groups),
+		"component_id": sourceID,
 	}, nil
 }

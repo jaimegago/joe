@@ -74,7 +74,7 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 	graphMethods := map[string]bool{
 		"AddNode": true, "AddEdge": true, "GetNode": true, "Query": true,
 		"Related": true, "Path": true, "DeleteNode": true, "DeleteEdge": true,
-		"Summary": true, "ListNodesBySource": true, "ListEdgesForNodes": true,
+		"Summary": true, "ListNodesByComponent": true, "ListEdgesForNodes": true,
 		"ListAll": true,
 	}
 

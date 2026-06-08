@@ -43,11 +43,11 @@ func TestPhaseB_ContextPrincipalReachesAccessorDecision(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-allow")
+	mustCreateComponent(t, sqlStore, "s-allow")
 
 	repo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}

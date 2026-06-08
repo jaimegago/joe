@@ -30,7 +30,7 @@ func (m *MockAWSAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
 
-func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Source) error        { return nil }
+func (m *MockAWSAdapter) Connect(_ context.Context, _ store.Component) error     { return nil }
 func (m *MockAWSAdapter) Disconnect() error                                      { return nil }
 func (m *MockAWSAdapter) Type() string                                           { return "aws" }
 func (m *MockAWSAdapter) SupportsQuery(query string) bool                        { return false }
@@ -294,8 +294,8 @@ func TestHandleAWSEC2GetInstance(t *testing.T) {
 	}
 }
 
-func TestHandleAWSMissingSource(t *testing.T) {
-	// Don't register any sources
+func TestHandleAWSMissingComponent(t *testing.T) {
+	// Don't register any components
 	registry := adapters.NewRegistry()
 
 	services := &core.Services{
@@ -356,8 +356,8 @@ func TestHandleAWSWrongAdapterType(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Error != "invalid_source" {
-		t.Errorf("error code: got %q, want %q", response.Error, "invalid_source")
+	if response.Error != "invalid_component" {
+		t.Errorf("error code: got %q, want %q", response.Error, "invalid_component")
 	}
 	if response.Message != "source is not an AWS adapter" {
 		t.Errorf("error message: got %q, want %q", response.Message, "source is not an AWS adapter")

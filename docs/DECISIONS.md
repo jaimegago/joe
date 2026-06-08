@@ -188,7 +188,7 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 ## D-0021: Rename "source" → "component"; flat model with type as a routing discriminator
 
 Date: 2026-06-08
-Status: accepted
+Status: IMPLEMENTED (2026-06-08). The lexical sweep landed: Go (`store.Source`→`store.Component`, `SourceRepository`→`ComponentRepository`, the `SourceType*` constants, the `sourceID`/`SourceID` seam→`componentID`/`ComponentID`, audit `Event.Source`→`ComponentID`, client/handler CRUD, `register_source`→`register_component`, `list_sources`→`list_components`); SQL via migration 023 (`sources`→`components`, `source_zone_assignments`→`component_zone_assignments`, the provenance `source_id` columns and `audit_log.source`→`component_id`, indexes, plus the `<type>_source`→`<type>_component` graph-label data migration); REST routes (`/api/v1/components`, `/admin/component-zones`, `{componentID}` path param) and `component_id` JSON; and the UI (`ComponentsPage`, `useComponents`, schemas/types, wire contract). `knowledge_sources`, `skills.TrustedSources`, panic `trigger_source`, the investigation "source session" columns, `Edge.Source`, and `onboarding_facts.source` were deliberately left untouched.
 
 ### Context
 

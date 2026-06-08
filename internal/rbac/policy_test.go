@@ -14,7 +14,7 @@ import (
 // errRepository is a mock rbac.Repository that returns errors on demand.
 type errRepository struct {
 	getAssignmentErr            error
-	getAssignmentResult         *rbac.SourceZoneAssignment
+	getAssignmentResult         *rbac.ComponentZoneAssignment
 	getZoneErr                  error
 	getZoneResult               *rbac.Zone
 	listPoliciesForPrincipalErr error
@@ -41,13 +41,13 @@ func (r *errRepository) UpdateZone(_ context.Context, z rbac.Zone, _ string) (*r
 func (r *errRepository) DeleteZone(_ context.Context, _ string, _ string) error {
 	return nil
 }
-func (r *errRepository) ListAssignments(_ context.Context) ([]rbac.SourceZoneAssignment, error) {
+func (r *errRepository) ListAssignments(_ context.Context) ([]rbac.ComponentZoneAssignment, error) {
 	return nil, nil
 }
-func (r *errRepository) GetAssignment(_ context.Context, _ string) (*rbac.SourceZoneAssignment, error) {
+func (r *errRepository) GetAssignment(_ context.Context, _ string) (*rbac.ComponentZoneAssignment, error) {
 	return r.getAssignmentResult, r.getAssignmentErr
 }
-func (r *errRepository) UpsertAssignment(_ context.Context, _ rbac.SourceZoneAssignment, _ string) error {
+func (r *errRepository) UpsertAssignment(_ context.Context, _ rbac.ComponentZoneAssignment, _ string) error {
 	return nil
 }
 func (r *errRepository) DeleteAssignment(_ context.Context, _ string, _ string) (int64, error) {
@@ -68,7 +68,7 @@ func (r *errRepository) DeletePolicy(_ context.Context, _ int64, _ string) error
 func (r *errRepository) DeletePolicyForPrincipalZone(_ context.Context, _, _ string, _ string) (int64, error) {
 	return 0, nil
 }
-func (r *errRepository) ListUnassignedSourceIDs(_ context.Context) ([]string, error) {
+func (r *errRepository) ListUnassignedComponentIDs(_ context.Context) ([]string, error) {
 	return nil, nil
 }
 func (r *errRepository) DeletePoliciesForPrincipal(_ context.Context, _ string) (int64, error) {
@@ -100,7 +100,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { db.Close() })
 
 	_, err = db.Exec(`
-		CREATE TABLE sources (
+		CREATE TABLE components (
 			id TEXT PRIMARY KEY,
 			name TEXT
 		);
@@ -111,13 +111,13 @@ func openTestDB(t *testing.T) *sql.DB {
 			allowed_actions TEXT NOT NULL DEFAULT '["read"]',
 			created_at TEXT NOT NULL
 		);
-		CREATE TABLE source_zone_assignments (
-			source_id TEXT NOT NULL REFERENCES sources(id),
+		CREATE TABLE component_zone_assignments (
+			component_id TEXT NOT NULL REFERENCES components(id),
 			zone_id TEXT NOT NULL REFERENCES security_zones(id),
 			assigned_by TEXT NOT NULL,
 			reason TEXT,
 			assigned_at TEXT NOT NULL,
-			PRIMARY KEY (source_id)
+			PRIMARY KEY (component_id)
 		);
 		CREATE TABLE rbac_policies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,8 +141,8 @@ func openTestDB(t *testing.T) *sql.DB {
 		INSERT INTO security_zones VALUES ('unassigned',   'Unassigned',         '',   '["read"]',                           '2026-01-01T00:00:00Z');
 
 		-- seed a source
-		INSERT INTO sources VALUES ('k8s-prod', 'Production K8s');
-		INSERT INTO sources VALUES ('k8s-dev',  'Dev K8s');
+		INSERT INTO components VALUES ('k8s-prod', 'Production K8s');
+		INSERT INTO components VALUES ('k8s-dev',  'Dev K8s');
 	`)
 	if err != nil {
 		t.Fatalf("seed schema: %v", err)
@@ -156,8 +156,8 @@ func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 	ctx := context.Background()
 
 	// Assign k8s-prod to prod-readonly zone.
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 
 	// Grant alice access to prod-readonly.
@@ -181,8 +181,8 @@ func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test",
 	}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "bob", ZoneID: "prod-write"}, "test")
 
@@ -219,8 +219,8 @@ func TestPolicyEngine_IsAllowed_NoPolicyDenied(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 	// No policy for dave.
 
@@ -236,8 +236,8 @@ func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test",
 	}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "eve", ZoneID: "dev-full"}, "test")
 
@@ -259,14 +259,14 @@ func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert a source and a direct assignment to a zone that does not exist.
-	_, err := db.Exec(`INSERT INTO sources VALUES ('orphan-src', 'Orphan Source')`)
+	_, err := db.Exec(`INSERT INTO components VALUES ('orphan-src', 'Orphan Source')`)
 	if err != nil {
 		t.Fatalf("insert source: %v", err)
 	}
 	// Bypass the FK constraint (SQLite does not enforce FKs by default) to put
 	// the source into a non-existent zone.
 	_, err = db.Exec(`
-		INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
+		INSERT INTO component_zone_assignments (component_id, zone_id, assigned_by, reason, assigned_at)
 		VALUES ('orphan-src', 'ghost-zone', 'test', '', '2026-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatalf("insert assignment: %v", err)
@@ -296,8 +296,8 @@ func TestPolicyEngine_IsAllowed_ActionNotInZone(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "grace", ZoneID: "prod-readonly"}, "test")
 
@@ -364,8 +364,8 @@ func TestPolicyEngine_IsAllowed_SetSingleMember(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
@@ -388,8 +388,8 @@ func TestPolicyEngine_IsAllowed_SetUnion(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test",
 	}, "test")
 	// Only alice is granted; bob and mallory are not.
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
@@ -524,8 +524,8 @@ func TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation(t *testing.T) {
 	}, "test"); err != nil {
 		t.Fatalf("create zone: %v", err)
 	}
-	if err := repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-prod", ZoneID: "post-bootstrap-zone", AssignedBy: "test",
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-prod", ZoneID: "post-bootstrap-zone", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("upsert assignment: %v", err)
 	}
@@ -566,8 +566,8 @@ func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
 
 	// Pre-seed every source onto a distinct zone (all four are seeded by
 	// openTestDB).
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"}, "test")
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"}, "test")
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"}, "test")
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"}, "test")
 
 	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "alice", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)
@@ -625,7 +625,7 @@ func TestPhaseH_NonAdminOutcomesUnchanged(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 
 	// An admin also exists in the same DB — its existence must not
@@ -669,7 +669,7 @@ func TestPhaseH_AdminDecisionReasonIsDistinct(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	_ = repo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
+	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-prod", ZoneID: "prod-readonly", AssignedBy: "test"}, "test")
 	_, _ = repo.CreatePolicy(ctx, rbac.Policy{Principal: "alice", ZoneID: "prod-readonly"}, "test")
 	if err := repo.AddAdmin(ctx, rbac.Admin{Principal: "root", GrantedBy: "test"}, "test"); err != nil {
 		t.Fatalf("add admin: %v", err)

@@ -1,7 +1,7 @@
 package safety
 
 // ActionClass is the binary classification of what a tool does to the MANAGED
-// SYSTEM (live infrastructure + the code/config that governs it — the sources).
+// SYSTEM (live infrastructure + the code/config that governs it — the components).
 // It answers exactly one decidable question: does this operation mutate the
 // managed system?
 //
@@ -78,18 +78,18 @@ var toolRegistry = map[string]ToolClassification{
 	"ask_user":         {Class: ActionRead, Description: "Ask user a question"},
 
 	// Core tools (call joecored API — query only)
-	"list_sources":  {Class: ActionRead, Description: "List registered sources"},
-	"graph_query":   {Class: ActionRead, Description: "Query the knowledge graph"},
-	"graph_related": {Class: ActionRead, Description: "Find related graph nodes"},
-	"k8s_get":       {Class: ActionRead, Description: "Get Kubernetes resource"},
-	"k8s_logs":      {Class: ActionRead, Description: "Get Kubernetes pod logs"},
-	"git_read":      {Class: ActionRead, Description: "Read file from git repo"},
-	"git_log":       {Class: ActionRead, Description: "Show git commit log"},
-	"git_diff":      {Class: ActionRead, Description: "Show git diff between commits"},
-	"aws_ec2":       {Class: ActionRead, Description: "Describe AWS EC2 instances"},
-	"aws_eks":       {Class: ActionRead, Description: "Describe AWS EKS clusters"},
-	"aws_rds":       {Class: ActionRead, Description: "Describe AWS RDS instances"},
-	"aws_vpc":       {Class: ActionRead, Description: "Describe AWS VPC resources"},
+	"list_components": {Class: ActionRead, Description: "List registered components"},
+	"graph_query":     {Class: ActionRead, Description: "Query the knowledge graph"},
+	"graph_related":   {Class: ActionRead, Description: "Find related graph nodes"},
+	"k8s_get":         {Class: ActionRead, Description: "Get Kubernetes resource"},
+	"k8s_logs":        {Class: ActionRead, Description: "Get Kubernetes pod logs"},
+	"git_read":        {Class: ActionRead, Description: "Read file from git repo"},
+	"git_log":         {Class: ActionRead, Description: "Show git commit log"},
+	"git_diff":        {Class: ActionRead, Description: "Show git diff between commits"},
+	"aws_ec2":         {Class: ActionRead, Description: "Describe AWS EC2 instances"},
+	"aws_eks":         {Class: ActionRead, Description: "Describe AWS EKS clusters"},
+	"aws_rds":         {Class: ActionRead, Description: "Describe AWS RDS instances"},
+	"aws_vpc":         {Class: ActionRead, Description: "Describe AWS VPC resources"},
 
 	// Observability tools (Phase 6.3) — read-only queries
 	"prometheus_query": {Class: ActionRead, Description: "Query Prometheus/Mimir metrics via PromQL"},
@@ -175,7 +175,7 @@ var toolRegistry = map[string]ToolClassification{
 	"helm_history":       {Class: ActionRead, Description: "Get revision history for a Helm release"},
 
 	// Knowledge store drift detection (Phase 8) — read-only
-	"detect_doc_drift": {Class: ActionRead, Description: "Detect documentation drift between knowledge store and external sources"},
+	"detect_doc_drift": {Class: ActionRead, Description: "Detect documentation drift between knowledge store and external components"},
 
 	// === Read — Joe's own model maintenance ===
 	//
@@ -192,13 +192,13 @@ var toolRegistry = map[string]ToolClassification{
 	"graph_add_node":    {Class: ActionRead, Description: "Add node to Joe's knowledge graph"},
 	"graph_add_edge":    {Class: ActionRead, Description: "Add edge to Joe's knowledge graph"},
 	"graph_update_node": {Class: ActionRead, Description: "Update node in Joe's knowledge graph"},
-	// register_source / save_onboarding_fact / save_knowledge_entry are
+	// register_component / save_onboarding_fact / save_knowledge_entry are
 	// plain INSERTs whose row identity is generated server-side OUTSIDE the
-	// args (register_source: crypto-random ID; save_onboarding_fact:
+	// args (register_component: crypto-random ID; save_onboarding_fact:
 	// autoincrement; save_knowledge_entry: uid.New()), with no natural unique
 	// key — an in-run retry or crash-resume would create a second row. They
 	// declare NeedsDurability so the §D5 key dedups them per run (D-0020).
-	"register_source":      {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
+	"register_component":   {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
 	"save_onboarding_fact": {Class: ActionRead, Description: "Save an onboarding fact to Joe's store", NeedsDurability: true},
 	"save_knowledge_entry": {Class: ActionRead, Description: "Save a derived knowledge entry to Joe's knowledge store", NeedsDurability: true},
 

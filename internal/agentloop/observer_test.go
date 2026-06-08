@@ -14,10 +14,10 @@ func permissivePolicy() *safety.SafetyPolicy {
 	return &safety.SafetyPolicy{
 		Version: 1,
 		Record: safety.RecordPolicy{
-			GraphMutations:     true,
-			SourceRegistration: true,
-			OnboardingFacts:    true,
-			AutonomousRefresh:  true,
+			GraphMutations:        true,
+			ComponentRegistration: true,
+			OnboardingFacts:       true,
+			AutonomousRefresh:     true,
 		},
 		Act: safety.ActPolicy{
 			WriteFile:           safety.WriteFilePolicy{Enabled: true},

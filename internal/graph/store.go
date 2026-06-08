@@ -12,7 +12,7 @@ var ErrNodeNotFound = errors.New("node not found")
 // GraphStore is the interface for the graph database
 type GraphStore interface {
 	// AddNode adds or updates a node in the graph (upsert).
-	// If a node with the same ID already exists, its type, source_id,
+	// If a node with the same ID already exists, its type, component_id,
 	// metadata, and last_seen fields are updated. The first_seen field
 	// is preserved from the original insert.
 	AddNode(ctx context.Context, node Node) error
@@ -41,8 +41,8 @@ type GraphStore interface {
 	// Summary returns a summary of the graph for LLM context
 	Summary(ctx context.Context) (GraphSummary, error)
 
-	// ListNodesBySource returns all nodes for a given source_id
-	ListNodesBySource(ctx context.Context, sourceID string) ([]Node, error)
+	// ListNodesByComponent returns all nodes for a given component_id
+	ListNodesByComponent(ctx context.Context, sourceID string) ([]Node, error)
 
 	// ListEdgesForNodes returns edges where both endpoints are in nodeIDs
 	ListEdgesForNodes(ctx context.Context, nodeIDs []string) ([]Edge, error)
@@ -53,24 +53,24 @@ type GraphStore interface {
 
 // Node represents a node in the infrastructure graph
 type Node struct {
-	ID        string
-	Type      string
-	SourceID  string
-	Metadata  map[string]any
-	FirstSeen time.Time
-	LastSeen  time.Time
+	ID          string
+	Type        string
+	ComponentID string
+	Metadata    map[string]any
+	FirstSeen   time.Time
+	LastSeen    time.Time
 }
 
 // Edge represents a relationship between two nodes
 type Edge struct {
-	From       string
-	To         string
-	Relation   string
-	Confidence ConfidenceLevel
-	Source     string
-	SourceID   string
-	Context    string
-	CreatedAt  time.Time
+	From        string
+	To          string
+	Relation    string
+	Confidence  ConfidenceLevel
+	Source      string
+	ComponentID string
+	Context     string
+	CreatedAt   time.Time
 }
 
 // ConfidenceLevel represents how certain we are about an edge

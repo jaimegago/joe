@@ -44,8 +44,8 @@ func TestTrigger_Idempotent(t *testing.T) {
 // that need a clean panic flag store directly into the unexported atomic.
 
 func TestPanicSources(t *testing.T) {
-	sources := []PanicSource{PanicSourceREPL, PanicSourceCLI, PanicSourceAPI, PanicSourceSignal}
-	for _, s := range sources {
+	components := []PanicSource{PanicSourceREPL, PanicSourceCLI, PanicSourceAPI, PanicSourceSignal}
+	for _, s := range components {
 		if string(s) == "" {
 			t.Errorf("PanicSource %v has empty string value", s)
 		}

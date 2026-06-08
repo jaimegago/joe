@@ -32,8 +32,8 @@ type mockPrometheusAdapter struct {
 	err     error
 }
 
-func (m *mockPrometheusAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockPrometheusAdapter) Disconnect() error                               { return nil }
+func (m *mockPrometheusAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockPrometheusAdapter) Disconnect() error                                  { return nil }
 func (m *mockPrometheusAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -54,8 +54,8 @@ type mockLokiAdapter struct {
 	err    error
 }
 
-func (m *mockLokiAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockLokiAdapter) Disconnect() error                               { return nil }
+func (m *mockLokiAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockLokiAdapter) Disconnect() error                                  { return nil }
 func (m *mockLokiAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -75,8 +75,8 @@ type mockTempoAdapter struct {
 	err           error
 }
 
-func (m *mockTempoAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockTempoAdapter) Disconnect() error                               { return nil }
+func (m *mockTempoAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockTempoAdapter) Disconnect() error                                  { return nil }
 func (m *mockTempoAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -97,8 +97,8 @@ type mockJaegerAdapter struct {
 	err        error
 }
 
-func (m *mockJaegerAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockJaegerAdapter) Disconnect() error                               { return nil }
+func (m *mockJaegerAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockJaegerAdapter) Disconnect() error                                  { return nil }
 func (m *mockJaegerAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -213,7 +213,7 @@ func TestHandlePrometheusQuery(t *testing.T) {
 	}
 }
 
-func TestHandlePrometheusQuery_MissingSource(t *testing.T) {
+func TestHandlePrometheusQuery_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -401,7 +401,7 @@ func TestHandleLokiQuery(t *testing.T) {
 	}
 }
 
-func TestHandleLokiQuery_MissingSource(t *testing.T) {
+func TestHandleLokiQuery_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -539,7 +539,7 @@ func TestHandleTempoSearch(t *testing.T) {
 	}
 }
 
-func TestHandleTempoSearch_MissingSource(t *testing.T) {
+func TestHandleTempoSearch_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -651,7 +651,7 @@ func TestHandleJaegerServices(t *testing.T) {
 	}
 }
 
-func TestHandleJaegerServices_MissingSource(t *testing.T) {
+func TestHandleJaegerServices_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -778,8 +778,8 @@ type mockDatadogAdapter struct {
 	err           error
 }
 
-func (m *mockDatadogAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockDatadogAdapter) Disconnect() error                               { return nil }
+func (m *mockDatadogAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockDatadogAdapter) Disconnect() error                                  { return nil }
 func (m *mockDatadogAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -799,8 +799,8 @@ type mockSplunkAdapter struct {
 	err    error
 }
 
-func (m *mockSplunkAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockSplunkAdapter) Disconnect() error                               { return nil }
+func (m *mockSplunkAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockSplunkAdapter) Disconnect() error                                  { return nil }
 func (m *mockSplunkAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -816,8 +816,8 @@ type mockDynatraceAdapter struct {
 	err           error
 }
 
-func (m *mockDynatraceAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockDynatraceAdapter) Disconnect() error                               { return nil }
+func (m *mockDynatraceAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockDynatraceAdapter) Disconnect() error                                  { return nil }
 func (m *mockDynatraceAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -835,8 +835,8 @@ type mockNewRelicAdapter struct {
 	err    error
 }
 
-func (m *mockNewRelicAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockNewRelicAdapter) Disconnect() error                               { return nil }
+func (m *mockNewRelicAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockNewRelicAdapter) Disconnect() error                                  { return nil }
 func (m *mockNewRelicAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true}
 }
@@ -940,7 +940,7 @@ func TestHandleDatadogMetrics(t *testing.T) {
 	}
 }
 
-func TestHandleDatadogMetrics_MissingSource(t *testing.T) {
+func TestHandleDatadogMetrics_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -1066,7 +1066,7 @@ func TestHandleSplunkSearch(t *testing.T) {
 	}
 }
 
-func TestHandleSplunkSearch_MissingSource(t *testing.T) {
+func TestHandleSplunkSearch_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -1132,7 +1132,7 @@ func TestHandleDynatraceMetrics(t *testing.T) {
 	}
 }
 
-func TestHandleDynatraceMetrics_MissingSource(t *testing.T) {
+func TestHandleDynatraceMetrics_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)
@@ -1249,7 +1249,7 @@ func TestHandleNewRelicNRQL(t *testing.T) {
 	}
 }
 
-func TestHandleNewRelicNRQL_MissingSource(t *testing.T) {
+func TestHandleNewRelicNRQL_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
 	server := api.New(services)

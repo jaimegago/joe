@@ -18,23 +18,23 @@ func TestArgoCDURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/apps") && !strings.Contains(r.URL.Path, "/apps/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"apps":      []map[string]any{{"name": "my-app", "namespace": "argocd"}},
-				"source_id": "argo-1",
+				"apps":         []map[string]any{{"name": "my-app", "namespace": "argocd"}},
+				"component_id": "argo-1",
 			})
 		case strings.Contains(r.URL.Path, "/apps/") && strings.HasSuffix(r.URL.Path, "/diff"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"diff":      map[string]any{"has_changes": true},
-				"source_id": "argo-1",
+				"diff":         map[string]any{"has_changes": true},
+				"component_id": "argo-1",
 			})
 		case strings.Contains(r.URL.Path, "/apps/") && strings.HasSuffix(r.URL.Path, "/history"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"history":   []map[string]any{{"revision": "abc123"}},
-				"source_id": "argo-1",
+				"history":      []map[string]any{{"revision": "abc123"}},
+				"component_id": "argo-1",
 			})
 		case strings.Contains(r.URL.Path, "/apps/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"detail":    map[string]any{"app": map[string]any{"name": "my-app"}},
-				"source_id": "argo-1",
+				"detail":       map[string]any{"app": map[string]any{"name": "my-app"}},
+				"component_id": "argo-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -93,18 +93,18 @@ func TestTerraformURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/outputs"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"outputs":   map[string]any{"vpc_id": map[string]any{"value": "vpc-123"}},
-				"source_id": "tf-1",
+				"outputs":      map[string]any{"vpc_id": map[string]any{"value": "vpc-123"}},
+				"component_id": "tf-1",
 			})
 		case strings.Contains(r.URL.Path, "/state/resource"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"resource":  map[string]any{"address": "aws_vpc.main", "type": "aws_vpc"},
-				"source_id": "tf-1",
+				"resource":     map[string]any{"address": "aws_vpc.main", "type": "aws_vpc"},
+				"component_id": "tf-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/state"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"resources": []map[string]any{{"address": "aws_vpc.main", "type": "aws_vpc"}},
-				"source_id": "tf-1",
+				"resources":    []map[string]any{{"address": "aws_vpc.main", "type": "aws_vpc"}},
+				"component_id": "tf-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -160,19 +160,19 @@ func TestHelmURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.Contains(r.URL.Path, "/history"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"history":   []map[string]any{{"revision": 1, "status": "deployed"}},
-				"source_id": "helm-1",
+				"history":      []map[string]any{{"revision": 1, "status": "deployed"}},
+				"component_id": "helm-1",
 			})
 		case strings.Contains(r.URL.Path, "/releases/") && strings.Count(r.URL.Path, "/") > 5:
 			// get release (has namespace and name)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"detail":    map[string]any{"release": map[string]any{"name": "my-release"}},
-				"source_id": "helm-1",
+				"detail":       map[string]any{"release": map[string]any{"name": "my-release"}},
+				"component_id": "helm-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/releases"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"releases":  []map[string]any{{"name": "my-release", "namespace": "default"}},
-				"source_id": "helm-1",
+				"releases":     []map[string]any{{"name": "my-release", "namespace": "default"}},
+				"component_id": "helm-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})

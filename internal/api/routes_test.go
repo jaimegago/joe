@@ -78,9 +78,9 @@ func TestRouteRegistration(t *testing.T) {
 		},
 		// Source routes
 		{
-			name:           "list sources endpoint",
+			name:           "list components endpoint",
 			method:         "GET",
-			path:           "/api/v1/sources",
+			path:           "/api/v1/components",
 			expectedStatus: http.StatusOK,
 			description:    "should return 200 with empty list",
 		},
@@ -169,17 +169,17 @@ func TestDomainRouteRegistration(t *testing.T) {
 	t.Run("source routes", func(t *testing.T) {
 		mux := http.NewServeMux()
 		server := setupTestServer(t)
-		server.registerSourceRoutes(mux, "/api/v1")
+		server.registerComponentRoutes(mux, "/api/v1")
 
 		// Test that routes are registered
 		testCases := []struct {
 			method string
 			path   string
 		}{
-			{"GET", "/api/v1/sources"},
-			{"POST", "/api/v1/sources"},
-			{"GET", "/api/v1/sources/test-id"},
-			{"DELETE", "/api/v1/sources/test-id"},
+			{"GET", "/api/v1/components"},
+			{"POST", "/api/v1/components"},
+			{"GET", "/api/v1/components/test-id"},
+			{"DELETE", "/api/v1/components/test-id"},
 		}
 
 		for _, tc := range testCases {
@@ -189,7 +189,7 @@ func TestDomainRouteRegistration(t *testing.T) {
 
 			// 404 means the route is registered but source doesn't exist - that's fine
 			// Only error if we get 404 with "Page not found" which means route isn't registered
-			if w.Code == http.StatusNotFound && tc.path == "/api/v1/sources" {
+			if w.Code == http.StatusNotFound && tc.path == "/api/v1/components" {
 				t.Errorf("route %s %s not registered (got 404)", tc.method, tc.path)
 			}
 		}

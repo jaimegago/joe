@@ -158,11 +158,11 @@ func (a *ReviewAgent) fetchPRContext(ctx context.Context, job *ReviewJob) (diff,
 		if a.github == nil {
 			return "", "", "", "", fmt.Errorf("GitHub ops not configured")
 		}
-		pr, prErr := a.github.GitHubGetPR(ctx, job.SourceID, job.Owner, job.Repo, job.PRNumber)
+		pr, prErr := a.github.GitHubGetPR(ctx, job.ComponentID, job.Owner, job.Repo, job.PRNumber)
 		if prErr != nil {
 			return "", "", "", "", prErr
 		}
-		d, dErr := a.github.GitHubGetPRDiff(ctx, job.SourceID, job.Owner, job.Repo, job.PRNumber)
+		d, dErr := a.github.GitHubGetPRDiff(ctx, job.ComponentID, job.Owner, job.Repo, job.PRNumber)
 		if dErr != nil {
 			return "", "", "", "", dErr
 		}
@@ -172,11 +172,11 @@ func (a *ReviewAgent) fetchPRContext(ctx context.Context, job *ReviewJob) (diff,
 		if a.gitlab == nil {
 			return "", "", "", "", fmt.Errorf("GitLab ops not configured")
 		}
-		mr, mrErr := a.gitlab.GitLabGetMR(ctx, job.SourceID, job.Owner, job.PRNumber)
+		mr, mrErr := a.gitlab.GitLabGetMR(ctx, job.ComponentID, job.Owner, job.PRNumber)
 		if mrErr != nil {
 			return "", "", "", "", mrErr
 		}
-		d, dErr := a.gitlab.GitLabGetMRDiff(ctx, job.SourceID, job.Owner, job.PRNumber)
+		d, dErr := a.gitlab.GitLabGetMRDiff(ctx, job.ComponentID, job.Owner, job.PRNumber)
 		if dErr != nil {
 			return "", "", "", "", dErr
 		}
@@ -191,9 +191,9 @@ func (a *ReviewAgent) fetchPRContext(ctx context.Context, job *ReviewJob) (diff,
 func (a *ReviewAgent) postReview(ctx context.Context, job *ReviewJob, review string) error {
 	switch job.Platform {
 	case PlatformGitHub:
-		return a.github.GitHubPostComment(ctx, job.SourceID, job.Owner, job.Repo, job.PRNumber, review)
+		return a.github.GitHubPostComment(ctx, job.ComponentID, job.Owner, job.Repo, job.PRNumber, review)
 	case PlatformGitLab:
-		return a.gitlab.GitLabPostNote(ctx, job.SourceID, job.Owner, job.PRNumber, review)
+		return a.gitlab.GitLabPostNote(ctx, job.ComponentID, job.Owner, job.PRNumber, review)
 	default:
 		return fmt.Errorf("unsupported platform: %s", job.Platform)
 	}

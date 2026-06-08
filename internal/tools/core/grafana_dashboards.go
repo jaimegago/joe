@@ -28,14 +28,14 @@ func NewGrafanaDashboardsTool(c GrafanaClient) *GrafanaDashboardsTool {
 func (t *GrafanaDashboardsTool) Name() string { return "grafana_dashboards" }
 
 func (t *GrafanaDashboardsTool) Description() string {
-	return "Query Grafana dashboards and alerts. Search for dashboards by keyword, retrieve a specific dashboard with its panels, or list active Grafana-managed alerts. Useful for finding the right dashboard for a service and understanding current alert state. If you don't know the source_id, call list_sources first."
+	return "Query Grafana dashboards and alerts. Search for dashboards by keyword, retrieve a specific dashboard with its panels, or list active Grafana-managed alerts. Useful for finding the right dashboard for a service and understanding current alert state. If you don't know the component_id, call list_components first."
 }
 
 func (t *GrafanaDashboardsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Grafana source to query.",
 			},
@@ -56,14 +56,14 @@ func (t *GrafanaDashboardsTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of dashboards to return. Defaults to 50.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *GrafanaDashboardsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -83,8 +83,8 @@ func (t *GrafanaDashboardsTool) Execute(ctx context.Context, args map[string]any
 			return nil, fmt.Errorf("grafana get dashboard failed: %w", err)
 		}
 		return map[string]any{
-			"dashboard": dashboard,
-			"source_id": sourceID,
+			"dashboard":    dashboard,
+			"component_id": sourceID,
 		}, nil
 
 	case "alerts":
@@ -93,9 +93,9 @@ func (t *GrafanaDashboardsTool) Execute(ctx context.Context, args map[string]any
 			return nil, fmt.Errorf("grafana list alerts failed: %w", err)
 		}
 		return map[string]any{
-			"alerts":    alerts,
-			"count":     len(alerts),
-			"source_id": sourceID,
+			"alerts":       alerts,
+			"count":        len(alerts),
+			"component_id": sourceID,
 		}, nil
 
 	default: // "search"
@@ -110,9 +110,9 @@ func (t *GrafanaDashboardsTool) Execute(ctx context.Context, args map[string]any
 			return nil, fmt.Errorf("grafana search dashboards failed: %w", err)
 		}
 		return map[string]any{
-			"dashboards": dashboards,
-			"count":      len(dashboards),
-			"source_id":  sourceID,
+			"dashboards":   dashboards,
+			"count":        len(dashboards),
+			"component_id": sourceID,
 		}, nil
 	}
 }

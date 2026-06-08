@@ -33,20 +33,20 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
-	sources, err := s.services.Store.Sources.List(r.Context())
+func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
+	components, err := s.services.Store.Components.List(r.Context())
 	if err != nil {
-		writeInternalError(w, err, "list sources")
+		writeInternalError(w, err, "list components")
 		return
 	}
 
-	if sources == nil {
-		sources = []*store.Source{}
+	if components == nil {
+		components = []*store.Component{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"sources": sources,
-		"count":   len(sources),
+		"components": components,
+		"count":      len(components),
 	})
 }
 
@@ -54,76 +54,76 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 // type, or nil when the type has no live connection to establish (config-only or
 // metadata source types that are persisted as-is). It is the single source of
 // truth for the type→adapter mapping shared by source creation and connection
-// testing, so the two paths can never disagree on which sources have adapters.
+// testing, so the two paths can never disagree on which components have adapters.
 func newAdapterForType(sourceType string) adapters.Adapter {
 	switch sourceType {
-	case store.SourceTypeAWS:
+	case store.ComponentTypeAWS:
 		return awsadapter.New()
-	case store.SourceTypeAzure:
+	case store.ComponentTypeAzure:
 		return azureadapter.New()
-	case store.SourceTypeKubernetes:
+	case store.ComponentTypeKubernetes:
 		return k8s.New()
-	case store.SourceTypeGit:
+	case store.ComponentTypeGit:
 		return gitadapter.New()
-	case store.SourceTypePrometheus, store.SourceTypeMimir:
+	case store.ComponentTypePrometheus, store.ComponentTypeMimir:
 		return prometheusadapter.New()
-	case store.SourceTypeLoki:
+	case store.ComponentTypeLoki:
 		return lokiadapter.New()
-	case store.SourceTypeTempo:
+	case store.ComponentTypeTempo:
 		return tempoadapter.New()
-	case store.SourceTypeJaeger:
+	case store.ComponentTypeJaeger:
 		return jaegeradapter.New()
-	case store.SourceTypeAlertmanager:
+	case store.ComponentTypeAlertmanager:
 		return alertmanageradapter.New()
-	case store.SourceTypePagerDuty:
+	case store.ComponentTypePagerDuty:
 		return pagerdutyadapter.New()
-	case store.SourceTypeGrafana:
+	case store.ComponentTypeGrafana:
 		return grafanaadapter.New()
-	case store.SourceTypePostgreSQL:
+	case store.ComponentTypePostgreSQL:
 		return postgresadapter.New()
-	case store.SourceTypeMySQL:
+	case store.ComponentTypeMySQL:
 		return mysqladapter.New()
-	case store.SourceTypeRedis:
+	case store.ComponentTypeRedis:
 		return redisadapter.New()
-	case store.SourceTypeMongoDB:
+	case store.ComponentTypeMongoDB:
 		return mongodbadapter.New()
-	case store.SourceTypeKafka:
+	case store.ComponentTypeKafka:
 		return kafkaadapter.New()
-	case store.SourceTypeElasticsearch:
+	case store.ComponentTypeElasticsearch:
 		return elasticsearchadapter.New()
-	case store.SourceTypeArgoCd:
+	case store.ComponentTypeArgoCd:
 		return argocdadapter.New()
-	case store.SourceTypeTerraform:
+	case store.ComponentTypeTerraform:
 		return terraformadapter.New()
-	case store.SourceTypeHelm:
+	case store.ComponentTypeHelm:
 		return helmadapter.New()
-	case store.SourceTypeNginx:
+	case store.ComponentTypeNginx:
 		return nginxadapter.New()
-	case store.SourceTypeEnvoy:
+	case store.ComponentTypeEnvoy:
 		return envoyadapter.New()
-	case store.SourceTypeFalco:
+	case store.ComponentTypeFalco:
 		return falcoadapter.New()
 	default:
 		return nil
 	}
 }
 
-// createSourceRequest is the JSON body for POST /api/v1/sources.
-type createSourceRequest struct {
+// createComponentRequest is the JSON body for POST /api/v1/components.
+type createComponentRequest struct {
 	ID     string          `json:"id"`
 	Type   string          `json:"type"`
 	Name   string          `json:"name"`
 	Config json.RawMessage `json:"config"`
 }
 
-func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "failed to read body")
 		return
 	}
 
-	var req createSourceRequest
+	var req createComponentRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON")
 		return
@@ -146,28 +146,28 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !store.IsValidSourceType(req.Type) {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidSource, "unsupported source type", map[string]any{
+	if !store.IsValidComponentType(req.Type) {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, "unsupported source type", map[string]any{
 			"type":    req.Type,
-			"allowed": store.AllowedSourceTypes(),
+			"allowed": store.AllowedComponentTypes(),
 		})
 		return
 	}
 
 	// Check if source already exists
-	existing, err := s.services.Store.Sources.Get(r.Context(), req.ID)
+	existing, err := s.services.Store.Components.Get(r.Context(), req.ID)
 	if err != nil {
 		writeInternalError(w, err, "get source")
 		return
 	}
 	if existing != nil {
 		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "source already exists", map[string]any{
-			"source_id": req.ID,
+			"component_id": req.ID,
 		})
 		return
 	}
 
-	source := &store.Source{
+	source := &store.Component{
 		ID:     req.ID,
 		Type:   req.Type,
 		Name:   req.Name,
@@ -185,7 +185,7 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		s.services.Adapters.Register(req.ID, adapter)
 	}
 
-	if err := s.services.Store.Sources.Create(r.Context(), source); err != nil {
+	if err := s.services.Store.Components.Create(r.Context(), source); err != nil {
 		writeInternalError(w, err, "create source")
 		return
 	}
@@ -193,7 +193,7 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, source)
 }
 
-func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
@@ -202,14 +202,14 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, err := s.services.Store.Sources.Get(r.Context(), id)
+	source, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
 		writeInternalError(w, err, "get source")
 		return
 	}
 	if source == nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
-			"source_id": id,
+			"component_id": id,
 		})
 		return
 	}
@@ -217,7 +217,7 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, source)
 }
 
-func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
@@ -226,14 +226,14 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, err := s.services.Store.Sources.Get(r.Context(), id)
+	source, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
 		writeInternalError(w, err, "get source")
 		return
 	}
 	if source == nil {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
-			"source_id": id,
+			"component_id": id,
 		})
 		return
 	}
@@ -244,7 +244,7 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.services.Store.Sources.Delete(r.Context(), id); err != nil {
+	if err := s.services.Store.Components.Delete(r.Context(), id); err != nil {
 		writeInternalError(w, err, "delete source")
 		return
 	}

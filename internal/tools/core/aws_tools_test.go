@@ -61,11 +61,11 @@ func TestAWSEKSTool_Execute(t *testing.T) {
 		wantList bool
 		wantGet  bool
 	}{
-		{"missing source_id", map[string]any{}, true, false, false},
-		{"list success", map[string]any{"source_id": "src"}, false, true, false},
-		{"list error", map[string]any{"source_id": "bad"}, true, false, false},
-		{"get success", map[string]any{"source_id": "src", "cluster_name": "eks-1"}, false, false, true},
-		{"get error", map[string]any{"source_id": "src", "cluster_name": "bad"}, true, false, false},
+		{"missing component_id", map[string]any{}, true, false, false},
+		{"list success", map[string]any{"component_id": "src"}, false, true, false},
+		{"list error", map[string]any{"component_id": "bad"}, true, false, false},
+		{"get success", map[string]any{"component_id": "src", "cluster_name": "eks-1"}, false, false, true},
+		{"get error", map[string]any{"component_id": "src", "cluster_name": "bad"}, true, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,11 +115,11 @@ func TestAWSRDSTool_Execute(t *testing.T) {
 		wantList bool
 		wantGet  bool
 	}{
-		{"missing source_id", map[string]any{}, true, false, false},
-		{"list success", map[string]any{"source_id": "src"}, false, true, false},
-		{"list error", map[string]any{"source_id": "bad"}, true, false, false},
-		{"get success", map[string]any{"source_id": "src", "db_instance_id": "rds-1"}, false, false, true},
-		{"get error", map[string]any{"source_id": "src", "db_instance_id": "bad"}, true, false, false},
+		{"missing component_id", map[string]any{}, true, false, false},
+		{"list success", map[string]any{"component_id": "src"}, false, true, false},
+		{"list error", map[string]any{"component_id": "bad"}, true, false, false},
+		{"get success", map[string]any{"component_id": "src", "db_instance_id": "rds-1"}, false, false, true},
+		{"get error", map[string]any{"component_id": "src", "db_instance_id": "bad"}, true, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,11 +183,11 @@ func TestAWSVPCTool_Execute(t *testing.T) {
 		wantList bool
 		wantGet  bool
 	}{
-		{"missing source_id", map[string]any{}, true, false, false},
-		{"list success", map[string]any{"source_id": "src"}, false, true, false},
-		{"list error", map[string]any{"source_id": "bad"}, true, false, false},
-		{"get success", map[string]any{"source_id": "src", "vpc_id": "vpc-1"}, false, false, true},
-		{"get error", map[string]any{"source_id": "src", "vpc_id": "bad"}, true, false, false},
+		{"missing component_id", map[string]any{}, true, false, false},
+		{"list success", map[string]any{"component_id": "src"}, false, true, false},
+		{"list error", map[string]any{"component_id": "bad"}, true, false, false},
+		{"get success", map[string]any{"component_id": "src", "vpc_id": "vpc-1"}, false, false, true},
+		{"get error", map[string]any{"component_id": "src", "vpc_id": "bad"}, true, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -268,11 +268,11 @@ func TestAWSEC2Tool_Execute(t *testing.T) {
 		wantErr bool
 		wantGet bool
 	}{
-		{"missing source_id", map[string]any{}, true, false},
-		{"list success", map[string]any{"source_id": "src"}, false, false},
-		{"list error", map[string]any{"source_id": "bad"}, true, false},
-		{"get success", map[string]any{"source_id": "src", "instance_id": "i-1"}, false, true},
-		{"get error", map[string]any{"source_id": "src", "instance_id": "bad"}, true, false},
+		{"missing component_id", map[string]any{}, true, false},
+		{"list success", map[string]any{"component_id": "src"}, false, false},
+		{"list error", map[string]any{"component_id": "bad"}, true, false},
+		{"get success", map[string]any{"component_id": "src", "instance_id": "i-1"}, false, true},
+		{"get error", map[string]any{"component_id": "src", "instance_id": "bad"}, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -309,8 +309,8 @@ func TestAWSEKSTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -333,8 +333,8 @@ func TestAWSRDSTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -357,7 +357,7 @@ func TestAWSVPCTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }

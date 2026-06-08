@@ -537,7 +537,7 @@ func TestRealDoer_HTTPGet_ConnectionRefused(t *testing.T) {
 // TestConnect_ParseConfigError exercises the Connect error path for bad JSON.
 func TestConnect_ParseConfigError(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{bad json`)}
+	src := store.Component{Config: []byte(`{bad json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON config")
 	}
@@ -549,7 +549,7 @@ func TestConnect_BuildRESTConfigError(t *testing.T) {
 	a := New()
 	// A valid JSON config with a kubeconfig path that doesn't exist causes
 	// buildRESTConfig to fail lazily on first operation.
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"kubeconfig_path":"/nonexistent/kubeconfig.yaml"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -592,7 +592,7 @@ users:
 	f.Close()
 
 	a := New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"kubeconfig_path":"` + f.Name() + `"}`),
 	}
 	// Connect succeeds (lazy); error surfaces on first use.

@@ -11,7 +11,7 @@ const (
 	apiGraphQueryPath       = "/api/v1/graph/query"
 	apiGraphRelatedPath     = "/api/v1/graph/related"
 	apiGraphSummaryPath     = "/api/v1/graph/summary"
-	apiSourcesPath          = "/api/v1/sources"
+	apiComponentsPath       = "/api/v1/components"
 	apiK8sBasePath          = "/api/v1/k8s"
 	apiGitBasePath          = "/api/v1/git"
 	apiAWSBasePath          = "/api/v1/aws"
@@ -51,7 +51,7 @@ const (
 	// Knowledge store base paths (Phase 7).
 	apiKnowledgeEntriesPath = "/api/v1/knowledge/entries"
 	apiKnowledgeSearchPath  = "/api/v1/knowledge/search"
-	apiKnowledgeSourcesPath = "/api/v1/knowledge/sources"
+	apiKnowledgeSourcesPath = "/api/v1/knowledge/components"
 
 	// Artifact registry base paths (Phase 6.13).
 	apiRegistryOCIBasePath         = "/api/v1/registry/oci"

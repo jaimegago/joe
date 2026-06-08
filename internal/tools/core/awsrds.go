@@ -27,14 +27,14 @@ func NewAWSRDSTool(c AWSRDSClient) *AWSRDSTool {
 func (t *AWSRDSTool) Name() string { return "aws_rds" }
 
 func (t *AWSRDSTool) Description() string {
-	return "Query AWS RDS (Relational Database Service) instances from a connected AWS account. Lists all database instances in the region, or gets a specific instance by ID. Provides database engine, status, endpoint, VPC configuration, and more. If you don't know the source_id, call list_sources first to discover available AWS connections."
+	return "Query AWS RDS (Relational Database Service) instances from a connected AWS account. Lists all database instances in the region, or gets a specific instance by ID. Provides database engine, status, endpoint, VPC configuration, and more. If you don't know the component_id, call list_components first to discover available AWS connections."
 }
 
 func (t *AWSRDSTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the AWS source to query.",
 			},
@@ -43,14 +43,14 @@ func (t *AWSRDSTool) Parameters() llm.ParameterSchema {
 				Description: "RDS DB instance identifier to get. Omit to list all DB instances.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *AWSRDSTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	dbInstanceID, _ := args["db_instance_id"].(string)
@@ -62,8 +62,8 @@ func (t *AWSRDSTool) Execute(ctx context.Context, args map[string]any) (any, err
 			return nil, fmt.Errorf("aws rds get instance failed: %w", err)
 		}
 		return map[string]any{
-			"instance":  instance,
-			"source_id": sourceID,
+			"instance":     instance,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -74,8 +74,8 @@ func (t *AWSRDSTool) Execute(ctx context.Context, args map[string]any) (any, err
 	}
 
 	return map[string]any{
-		"instances": instances,
-		"count":     len(instances),
-		"source_id": sourceID,
+		"instances":    instances,
+		"count":        len(instances),
+		"component_id": sourceID,
 	}, nil
 }

@@ -52,7 +52,7 @@ func TestListSources_Error(t *testing.T) {
 	ts := errorServer(t)
 	defer ts.Close()
 	c := New(ts.URL)
-	_, err := c.ListSources(context.Background())
+	_, err := c.ListComponents(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -38,8 +38,8 @@ func TestFalcoAlertsTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 	if _, ok := params.Properties["priority"]; !ok {
 		t.Error("Parameters() missing priority")
@@ -64,27 +64,27 @@ func TestFalcoAlertsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "returns events",
-			args:      map[string]any{"source_id": "src-1"},
+			args:      map[string]any{"component_id": "src-1"},
 			wantCount: 2,
 		},
 		{
 			name:      "with all filters",
-			args:      map[string]any{"source_id": "src-1", "priority": "Critical", "source": "syscall", "rule": "Write below etc", "limit": float64(10)},
+			args:      map[string]any{"component_id": "src-1", "priority": "Critical", "source": "syscall", "rule": "Write below etc", "limit": float64(10)},
 			wantCount: 2,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			wantErr: true,
 		},
 		{
-			name:    "empty source_id",
-			args:    map[string]any{"source_id": ""},
+			name:    "empty component_id",
+			args:    map[string]any{"component_id": ""},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "src-1"},
+			args:    map[string]any{"component_id": "src-1"},
 			mockErr: errors.New("connection refused"),
 			wantErr: true,
 		},
@@ -132,8 +132,8 @@ func TestFalcoRulesTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -152,22 +152,22 @@ func TestFalcoRulesTool_Execute(t *testing.T) {
 	}{
 		{
 			name:      "returns rules",
-			args:      map[string]any{"source_id": "src-1"},
+			args:      map[string]any{"component_id": "src-1"},
 			wantCount: 2,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			wantErr: true,
 		},
 		{
-			name:    "empty source_id",
-			args:    map[string]any{"source_id": ""},
+			name:    "empty component_id",
+			args:    map[string]any{"component_id": ""},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "src-1"},
+			args:    map[string]any{"component_id": "src-1"},
 			mockErr: errors.New("timeout"),
 			wantErr: true,
 		},

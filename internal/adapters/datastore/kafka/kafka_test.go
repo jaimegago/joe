@@ -88,7 +88,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{})} // missing brokers
+	src := store.Component{Config: mustMarshal(t, map[string]any{})} // missing brokers
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for missing brokers, got nil")
 	}
@@ -96,7 +96,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{bad`)}
+	src := store.Component{Config: []byte(`{bad`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -310,7 +310,7 @@ func TestDisconnect_NoAdmin(t *testing.T) {
 func TestConnect_EmptySourceConfig(t *testing.T) {
 	a := New()
 	// source.Config == nil → empty configMap → ParseConfig returns error (no brokers).
-	src := store.Source{Config: nil}
+	src := store.Component{Config: nil}
 	err := a.Connect(context.Background(), src)
 	if err == nil {
 		t.Error("Connect() expected error for empty source config, got nil")
@@ -328,7 +328,7 @@ func TestConnect_DialFails(t *testing.T) {
 	ln.Close() // close before Connect dials so DialContext fails
 
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected dial error, got nil")
 	}
@@ -356,7 +356,7 @@ func TestConnect_Success(t *testing.T) {
 	}()
 
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
+	src := store.Component{Config: mustMarshal(t, map[string]any{"brokers": []any{addr}})}
 	if err := a.Connect(context.Background(), src); err != nil {
 		t.Fatalf("Connect() unexpected error: %v", err)
 	}

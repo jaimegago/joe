@@ -20,7 +20,7 @@ type fakeK8sAdapter struct {
 	items map[string][]unstructured.Unstructured
 }
 
-func (f *fakeK8sAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeK8sAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
 
 func (f *fakeK8sAdapter) Disconnect() error { return nil }
 
@@ -65,13 +65,13 @@ func setupK8sGraphStore(t *testing.T) graph.GraphStore {
 		CREATE TABLE graph_nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			source_id TEXT,
+			component_id TEXT,
 			metadata TEXT DEFAULT '{}',
 			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(component_id);
 
 		CREATE TABLE graph_edges (
 			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -95,14 +95,14 @@ func setupK8sGraphStore(t *testing.T) graph.GraphStore {
 	return graph.NewSQLiteStore(db, nil)
 }
 
-func TestRefreshK8sSourceMapping(t *testing.T) {
+func TestRefreshK8sComponentMapping(t *testing.T) {
 	graphStore := setupK8sGraphStore(t)
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-1", Type: store.SourceTypeKubernetes, Name: "test"}
+	source := &store.Component{ID: "src-1", Type: store.ComponentTypeKubernetes, Name: "test"}
 	adapter := &fakeK8sAdapter{items: map[string][]unstructured.Unstructured{
 		"namespaces":  {makeNamespace("apps")},
 		"deployments": {makeDeployment("apps", "api")},
@@ -112,13 +112,13 @@ func TestRefreshK8sSourceMapping(t *testing.T) {
 		"nodes":       {makeNode("node-1")},
 	}}
 
-	if err := refresher.refreshK8sSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshK8sSource error: %v", err)
+	if err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshK8sComponent error: %v", err)
 	}
 
-	nodes, edges, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	nodes, edges, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(nodes) != 7 {
@@ -155,14 +155,14 @@ func TestRefreshK8sSourceMapping(t *testing.T) {
 	requireEdge(t, edges, "k8s/src-1/deployment/apps/api", "k8s/src-1/secret/apps/app-secret", "references")
 }
 
-func TestRefreshK8sSourceMapping_NoSelectorMatch(t *testing.T) {
+func TestRefreshK8sComponentMapping_NoSelectorMatch(t *testing.T) {
 	graphStore := setupK8sGraphStore(t)
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-2", Type: store.SourceTypeKubernetes, Name: "test"}
+	source := &store.Component{ID: "src-2", Type: store.ComponentTypeKubernetes, Name: "test"}
 	adapter := &fakeK8sAdapter{items: map[string][]unstructured.Unstructured{
 		"namespaces":  {makeNamespace("apps")},
 		"deployments": {makeDeployment("apps", "api")},
@@ -170,13 +170,13 @@ func TestRefreshK8sSourceMapping_NoSelectorMatch(t *testing.T) {
 		"nodes":       {makeNode("node-1")},
 	}}
 
-	if err := refresher.refreshK8sSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshK8sSource error: %v", err)
+	if err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshK8sComponent error: %v", err)
 	}
 
-	_, edges, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	_, edges, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	requireNoEdge(t, edges, "k8s/src-2/service/apps/api", "k8s/src-2/deployment/apps/api", "routes_to")

@@ -18,13 +18,13 @@ func TestPostgresURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/stat"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"stat":      map[string]any{"activity": []map[string]any{}},
-				"source_id": "pg-1",
+				"stat":         map[string]any{"activity": []map[string]any{}},
+				"component_id": "pg-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/query"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"rows":      []map[string]any{{"count": 42}},
-				"source_id": "pg-1",
+				"rows":         []map[string]any{{"count": 42}},
+				"component_id": "pg-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -66,13 +66,13 @@ func TestMySQLURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/stat"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"stat":      map[string]any{"processlist": []map[string]any{}},
-				"source_id": "mysql-1",
+				"stat":         map[string]any{"processlist": []map[string]any{}},
+				"component_id": "mysql-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/query"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"rows":      []map[string]any{},
-				"source_id": "mysql-1",
+				"rows":         []map[string]any{},
+				"component_id": "mysql-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -107,18 +107,18 @@ func TestRedisURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/info"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"info":      map[string]string{"redis_version": "7.0.0"},
-				"source_id": "redis-1",
+				"info":         map[string]string{"redis_version": "7.0.0"},
+				"component_id": "redis-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/slowlog"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"entries":   []map[string]any{},
-				"source_id": "redis-1",
+				"entries":      []map[string]any{},
+				"component_id": "redis-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/dbsize"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"db_size":   int64(1024),
-				"source_id": "redis-1",
+				"db_size":      int64(1024),
+				"component_id": "redis-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -171,18 +171,18 @@ func TestMongoDBURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/server-status"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status":    map[string]any{"uptime": 3600},
-				"source_id": "mongo-1",
+				"status":       map[string]any{"uptime": 3600},
+				"component_id": "mongo-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/replica-status"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status":    map[string]any{"set": "rs0"},
-				"source_id": "mongo-1",
+				"status":       map[string]any{"set": "rs0"},
+				"component_id": "mongo-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/current-op"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"op":        map[string]any{"inprog": []map[string]any{}},
-				"source_id": "mongo-1",
+				"op":           map[string]any{"inprog": []map[string]any{}},
+				"component_id": "mongo-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -226,21 +226,21 @@ func TestKafkaURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/topics"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"topics":    []map[string]any{{"name": "orders", "partitions": 3}},
-				"count":     1,
-				"source_id": "kafka-1",
+				"topics":       []map[string]any{{"name": "orders", "partitions": 3}},
+				"count":        1,
+				"component_id": "kafka-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/brokers"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"brokers":   []map[string]any{{"id": 0, "host": "kafka-0.kafka"}},
-				"count":     1,
-				"source_id": "kafka-1",
+				"brokers":      []map[string]any{{"id": 0, "host": "kafka-0.kafka"}},
+				"count":        1,
+				"component_id": "kafka-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/consumer-groups"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"groups":    []map[string]any{{"group_id": "my-consumer"}},
-				"count":     1,
-				"source_id": "kafka-1",
+				"groups":       []map[string]any{{"group_id": "my-consumer"}},
+				"count":        1,
+				"component_id": "kafka-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -290,14 +290,14 @@ func TestElasticsearchURLsAndDecode(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/health"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"health":    map[string]any{"status": "green", "cluster_name": "es-cluster"},
-				"source_id": "es-1",
+				"health":       map[string]any{"status": "green", "cluster_name": "es-cluster"},
+				"component_id": "es-1",
 			})
 		case strings.HasSuffix(r.URL.Path, "/indices"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"indices":   []map[string]any{{"name": "my-index", "status": "open"}},
-				"count":     1,
-				"source_id": "es-1",
+				"indices":      []map[string]any{{"name": "my-index", "status": "open"}},
+				"count":        1,
+				"component_id": "es-1",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})

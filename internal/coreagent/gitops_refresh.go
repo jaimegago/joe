@@ -12,36 +12,36 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// refreshArgoCDSource refreshes an Argo CD source.
+// refreshArgoCDComponent refreshes an Argo CD source.
 // Creates app nodes and builds managed_by edges from K8s workloads to their
 // managing Argo CD application.
-func (r *Refresher) refreshArgoCDSource(ctx context.Context, source *store.Source, adapter argocdadapter.ArgoCDAdapter) error {
-	r.logger.Info("refreshing argocd source", "source_id", source.ID)
+func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Component, adapter argocdadapter.ArgoCDAdapter) error {
+	r.logger.Info("refreshing argocd source", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       sourceNodeID,
-			Type:     "argocd_source",
-			SourceID: source.ID,
-			Metadata: gitopsMetadata(source),
-			LastSeen: now,
+			ID:          sourceNodeID,
+			Type:        "argocd_component",
+			ComponentID: source.ID,
+			Metadata:    gitopsMetadata(source),
+			LastSeen:    now,
 		},
 	}
 	desiredEdges := make([]graph.Edge, 0)
 
 	apps, err := adapter.Apps(ctx, "")
 	if err != nil {
-		r.logger.Warn("failed to list argocd apps (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list argocd apps (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, app := range apps {
 			appNodeID := fmt.Sprintf("argocd/%s/%s", source.ID, app.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
-				ID:       appNodeID,
-				Type:     "argocd_app",
-				SourceID: source.ID,
+				ID:          appNodeID,
+				Type:        "argocd_app",
+				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":        app.Name,
 					"project":     app.Project,
@@ -60,7 +60,7 @@ func (r *Refresher) refreshArgoCDSource(ctx context.Context, source *store.Sourc
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for argocd source %s: %w", source.ID, err)
 	}
@@ -71,7 +71,7 @@ func (r *Refresher) refreshArgoCDSource(ctx context.Context, source *store.Sourc
 	}
 
 	r.logger.Info("argocd refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"apps", len(apps),
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -79,22 +79,22 @@ func (r *Refresher) refreshArgoCDSource(ctx context.Context, source *store.Sourc
 	return nil
 }
 
-// refreshHelmSource refreshes a Helm source.
+// refreshHelmComponent refreshes a Helm source.
 // Creates release nodes and builds managed_by edges from K8s workloads to their
 // managing Helm release.
-func (r *Refresher) refreshHelmSource(ctx context.Context, source *store.Source, adapter helmadapter.HelmAdapter) error {
-	r.logger.Info("refreshing helm source", "source_id", source.ID)
+func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Component, adapter helmadapter.HelmAdapter) error {
+	r.logger.Info("refreshing helm source", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       sourceNodeID,
-			Type:     "helm_source",
-			SourceID: source.ID,
-			Metadata: gitopsMetadata(source),
-			LastSeen: now,
+			ID:          sourceNodeID,
+			Type:        "helm_component",
+			ComponentID: source.ID,
+			Metadata:    gitopsMetadata(source),
+			LastSeen:    now,
 		},
 	}
 	desiredEdges := make([]graph.Edge, 0)
@@ -102,14 +102,14 @@ func (r *Refresher) refreshHelmSource(ctx context.Context, source *store.Source,
 	// List all releases across all namespaces.
 	releases, err := adapter.Releases(ctx, "")
 	if err != nil {
-		r.logger.Warn("failed to list helm releases (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list helm releases (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, rel := range releases {
 			releaseNodeID := fmt.Sprintf("helm/%s/%s/%s", source.ID, rel.Namespace, rel.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
-				ID:       releaseNodeID,
-				Type:     "helm_release",
-				SourceID: source.ID,
+				ID:          releaseNodeID,
+				Type:        "helm_release",
+				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":          rel.Name,
 					"namespace":     rel.Namespace,
@@ -127,7 +127,7 @@ func (r *Refresher) refreshHelmSource(ctx context.Context, source *store.Source,
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for helm source %s: %w", source.ID, err)
 	}
@@ -138,7 +138,7 @@ func (r *Refresher) refreshHelmSource(ctx context.Context, source *store.Source,
 	}
 
 	r.logger.Info("helm refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"releases", len(releases),
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -146,22 +146,22 @@ func (r *Refresher) refreshHelmSource(ctx context.Context, source *store.Source,
 	return nil
 }
 
-// refreshTerraformSource refreshes a Terraform source.
+// refreshTerraformComponent refreshes a Terraform source.
 // Creates resource nodes and builds provisions edges from TF resources to
 // matching cloud nodes in the graph.
-func (r *Refresher) refreshTerraformSource(ctx context.Context, source *store.Source, adapter terraformadapter.TerraformAdapter) error {
-	r.logger.Info("refreshing terraform source", "source_id", source.ID)
+func (r *Refresher) refreshTerraformComponent(ctx context.Context, source *store.Component, adapter terraformadapter.TerraformAdapter) error {
+	r.logger.Info("refreshing terraform source", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       sourceNodeID,
-			Type:     "terraform_source",
-			SourceID: source.ID,
-			Metadata: gitopsMetadata(source),
-			LastSeen: now,
+			ID:          sourceNodeID,
+			Type:        "terraform_component",
+			ComponentID: source.ID,
+			Metadata:    gitopsMetadata(source),
+			LastSeen:    now,
 		},
 	}
 	desiredEdges := make([]graph.Edge, 0)
@@ -169,17 +169,17 @@ func (r *Refresher) refreshTerraformSource(ctx context.Context, source *store.So
 	// List all managed resources from state (empty string = all types).
 	resources, err := adapter.Resources(ctx, "")
 	if err != nil {
-		r.logger.Warn("failed to list terraform resources (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list terraform resources (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, res := range resources {
 			if res.Mode != "managed" {
-				continue // skip data sources
+				continue // skip data components
 			}
 			tfNodeID := fmt.Sprintf("terraform/%s/%s", source.ID, res.Address)
 			desiredNodes = append(desiredNodes, graph.Node{
-				ID:       tfNodeID,
-				Type:     "terraform_resource",
-				SourceID: source.ID,
+				ID:          tfNodeID,
+				Type:        "terraform_resource",
+				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"address":  res.Address,
 					"type":     res.Type,
@@ -197,7 +197,7 @@ func (r *Refresher) refreshTerraformSource(ctx context.Context, source *store.So
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for terraform source %s: %w", source.ID, err)
 	}
@@ -208,7 +208,7 @@ func (r *Refresher) refreshTerraformSource(ctx context.Context, source *store.So
 	}
 
 	r.logger.Info("terraform refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"resources", len(resources),
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
@@ -219,7 +219,7 @@ func (r *Refresher) refreshTerraformSource(ctx context.Context, source *store.So
 // buildManagedByEdges queries the graph for K8s workload nodes (deployment/
 // statefulset/daemonset) whose name matches the given workload name in the
 // given namespace, then creates managed_by edges pointing to the managing node.
-func (r *Refresher) buildManagedByEdges(ctx context.Context, source *store.Source, managerNodeID, name, namespace string, now time.Time) []graph.Edge {
+func (r *Refresher) buildManagedByEdges(ctx context.Context, source *store.Component, managerNodeID, name, namespace string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 
 	if name == "" {
@@ -248,14 +248,14 @@ func (r *Refresher) buildManagedByEdges(ctx context.Context, source *store.Sourc
 		}
 
 		edges = append(edges, graph.Edge{
-			From:       node.ID,
-			To:         managerNodeID,
-			Relation:   graph.RelationManagedBy,
-			Confidence: graph.Inferred,
-			Source:     "gitops_name_match",
-			SourceID:   source.ID,
-			Context:    "name=" + name,
-			CreatedAt:  now,
+			From:        node.ID,
+			To:          managerNodeID,
+			Relation:    graph.RelationManagedBy,
+			Confidence:  graph.Inferred,
+			Source:      "gitops_name_match",
+			ComponentID: source.ID,
+			Context:     "name=" + name,
+			CreatedAt:   now,
 		})
 	}
 
@@ -264,7 +264,7 @@ func (r *Refresher) buildManagedByEdges(ctx context.Context, source *store.Sourc
 
 // buildProvidesEdges queries the graph for cloud nodes matching the Terraform
 // resource name, creating provisions edges (tf resource → cloud node).
-func (r *Refresher) buildProvidesEdges(ctx context.Context, source *store.Source, tfNodeID, resName, resType string, now time.Time) []graph.Edge {
+func (r *Refresher) buildProvidesEdges(ctx context.Context, source *store.Component, tfNodeID, resName, resType string, now time.Time) []graph.Edge {
 	var edges []graph.Edge
 
 	if resName == "" {
@@ -288,14 +288,14 @@ func (r *Refresher) buildProvidesEdges(ctx context.Context, source *store.Source
 		}
 
 		edges = append(edges, graph.Edge{
-			From:       tfNodeID,
-			To:         node.ID,
-			Relation:   graph.RelationProvisions,
-			Confidence: graph.Inferred,
-			Source:     "terraform_name_match",
-			SourceID:   source.ID,
-			Context:    "type=" + resType + ",name=" + resName,
-			CreatedAt:  now,
+			From:        tfNodeID,
+			To:          node.ID,
+			Relation:    graph.RelationProvisions,
+			Confidence:  graph.Inferred,
+			Source:      "terraform_name_match",
+			ComponentID: source.ID,
+			Context:     "type=" + resType + ",name=" + resName,
+			CreatedAt:   now,
 		})
 	}
 
@@ -308,10 +308,10 @@ func gitopsNodeID(sourceID, sourceType string) string {
 }
 
 // gitopsMetadata builds the standard metadata map for a GitOps/IaC source node.
-func gitopsMetadata(source *store.Source) map[string]any {
+func gitopsMetadata(source *store.Component) map[string]any {
 	return map[string]any{
-		"source_id":   source.ID,
-		"source_type": source.Type,
-		"name":        source.Name,
+		"component_id":   source.ID,
+		"component_type": source.Type,
+		"name":           source.Name,
 	}
 }

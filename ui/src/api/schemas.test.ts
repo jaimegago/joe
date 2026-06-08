@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   GraphNodeSchema,
   GraphSchema,
-  SourceSchema,
+  ComponentSchema,
   ChatMessageSchema,
   AlertSchema,
   SessionSchema,
@@ -62,9 +62,9 @@ describe('GraphSchema', () => {
   });
 });
 
-describe('SourceSchema', () => {
+describe('ComponentSchema', () => {
   it('parses a valid source', () => {
-    const source = SourceSchema.parse({
+    const source = ComponentSchema.parse({
       id: 'k8s-prod',
       type: 'kubernetes',
       name: 'Production K8s',

@@ -25,7 +25,7 @@ func setupCRDRefresher(t *testing.T) *Refresher {
 
 func TestRefreshK8sCRDs_NoCRDsInstalled(t *testing.T) {
 	r := setupCRDRefresher(t)
-	src := &store.Source{ID: "src-k8s-crd-1", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-k8s-crd-1", Type: store.ComponentTypeKubernetes}
 
 	// Adapter returns nil for all resources — CRDs not installed.
 	adapter := &fakeK8sAdapter{items: map[string][]unstructured.Unstructured{}}
@@ -42,7 +42,7 @@ func TestRefreshK8sCRDs_NoCRDsInstalled(t *testing.T) {
 
 func TestRefreshK8sCRDs_KEDAScaledObject(t *testing.T) {
 	r := setupCRDRefresher(t)
-	src := &store.Source{ID: "src-k8s-crd-2", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-k8s-crd-2", Type: store.ComponentTypeKubernetes}
 
 	scaledObj := unstructured.Unstructured{}
 	scaledObj.SetName("payment-scaler")
@@ -68,7 +68,7 @@ func TestRefreshK8sCRDs_KEDAScaledObject(t *testing.T) {
 
 func TestRefreshK8sCRDs_CertManagerCertificate(t *testing.T) {
 	r := setupCRDRefresher(t)
-	src := &store.Source{ID: "src-k8s-crd-3", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-k8s-crd-3", Type: store.ComponentTypeKubernetes}
 
 	cert := unstructured.Unstructured{}
 	cert.SetName("api-tls")
@@ -95,7 +95,7 @@ func TestRefreshK8sCRDs_CertManagerCertificate(t *testing.T) {
 
 func TestRefreshK8sCRDs_IstioVirtualService(t *testing.T) {
 	r := setupCRDRefresher(t)
-	src := &store.Source{ID: "src-k8s-crd-4", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-k8s-crd-4", Type: store.ComponentTypeKubernetes}
 
 	vs := unstructured.Unstructured{}
 	vs.SetName("payment-vs")
@@ -125,12 +125,12 @@ func TestRefreshK8sCRDs_MeshForEdge(t *testing.T) {
 	gs := r.services.Graph
 
 	// Plant a service node that the VirtualService should mesh_for.
-	svc := store.Source{ID: "src-k8s-crd-5", Type: store.SourceTypeKubernetes}
+	svc := store.Component{ID: "src-k8s-crd-5", Type: store.ComponentTypeKubernetes}
 	_ = svc
 
 	_ = gs // graph query used internally
 
-	src := &store.Source{ID: "src-k8s-crd-5", Type: store.SourceTypeKubernetes}
+	src := &store.Component{ID: "src-k8s-crd-5", Type: store.ComponentTypeKubernetes}
 
 	vs := unstructured.Unstructured{}
 	vs.SetName("payment")

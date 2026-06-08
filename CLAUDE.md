@@ -47,7 +47,8 @@ npm run test
 - `joe` subcommands: `joe mcp`, `joe slack`, `joe panic`, `joe unlock`, `joe review`
 - Core tools (in `internal/tools/core/`) reach the server's API via `internal/client/`; shared tools (in `internal/tools/shared/`) are Go-native
 - Category-based observability API: `POST /api/v1/observe/{metrics,logs,traces,alerts,k8s}` resolves backend via graph edges
-- RBAC enforcement middleware fires only on paths with sourceID (`/api/v1/{adapter}/{sourceID}/...`)
+- RBAC enforcement middleware fires only on paths with a componentID (`/api/v1/{adapter}/{componentID}/...`)
+- The registered-external-system entity is a "component" (`store.Component`, `components` table). "source" was renamed per D-0021; the unrelated `knowledge_sources` concept keeps its name
 - Panic state persisted to the `cluster_panic_state` DB row (single row, id=1) via `internal/store/panic_store.go` — there is no `panic.state` file; safe mode blocks T2/T3 tools in executor
 - MCP server (`joe mcp`) reads `JOE_SERVER` + `JOE_API_KEY` env vars
 - **repo-specific override:** do not add a `Co-Authored-By` trailer to commit messages

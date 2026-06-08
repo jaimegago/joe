@@ -28,19 +28,19 @@ const (
 type ReviewJob struct {
 	ID string `json:"id"`
 	// EventID is the deduplication key: "<platform>:<owner>/<repo>#<prNumber>:<headSHA>"
-	EventID    string     `json:"event_id"`
-	Platform   Platform   `json:"platform"`
-	SourceID   string     `json:"source_id"`
-	Owner      string     `json:"owner"`
-	Repo       string     `json:"repo"`
-	PRNumber   int        `json:"pr_number"`
-	HeadSHA    string     `json:"head_sha"`
-	Status     JobStatus  `json:"status"`
-	ReviewBody string     `json:"review_body,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	EventID     string     `json:"event_id"`
+	Platform    Platform   `json:"platform"`
+	ComponentID string     `json:"component_id"`
+	Owner       string     `json:"owner"`
+	Repo        string     `json:"repo"`
+	PRNumber    int        `json:"pr_number"`
+	HeadSHA     string     `json:"head_sha"`
+	Status      JobStatus  `json:"status"`
+	ReviewBody  string     `json:"review_body,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
 // BuildEventID constructs the canonical deduplication key for a PR/MR event.

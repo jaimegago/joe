@@ -204,10 +204,10 @@ func TestKEDATools_Metadata(t *testing.T) {
 	tool.Parameters()
 }
 
-// ---- ListSources tool ----
+// ---- ListComponents tool ----
 
-func TestListSourcesTool_Parameters(t *testing.T) {
-	p := core.NewListSourcesTool(&fakeListSourcesClient{}).Parameters()
+func TestListComponentsTool_Parameters(t *testing.T) {
+	p := core.NewListComponentsTool(&fakeListComponentsClient{}).Parameters()
 	if p.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", p.Type)
 	}

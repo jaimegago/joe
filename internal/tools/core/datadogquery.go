@@ -28,14 +28,14 @@ func NewDatadogQueryTool(c DatadogClient) *DatadogQueryTool {
 func (t *DatadogQueryTool) Name() string { return "datadog_query" }
 
 func (t *DatadogQueryTool) Description() string {
-	return "Query Datadog for metrics or log events. Supports metrics queries (Datadog query language) and log searches. If you don't know the source_id, call list_sources first."
+	return "Query Datadog for metrics or log events. Supports metrics queries (Datadog query language) and log searches. If you don't know the component_id, call list_components first."
 }
 
 func (t *DatadogQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Datadog source to query.",
 			},
@@ -60,14 +60,14 @@ func (t *DatadogQueryTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of log events to return (default 25, max 1000). Only used for 'logs' action.",
 			},
 		},
-		Required: []string{"source_id", "query"},
+		Required: []string{"component_id", "query"},
 	}
 }
 
 func (t *DatadogQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	query, ok := args["query"].(string)
@@ -103,10 +103,10 @@ func (t *DatadogQueryTool) Execute(ctx context.Context, args map[string]any) (an
 			return nil, fmt.Errorf("datadog logs search failed: %w", err)
 		}
 		return map[string]any{
-			"logs":      result.Logs,
-			"count":     result.Count,
-			"source_id": sourceID,
-			"query":     query,
+			"logs":         result.Logs,
+			"count":        result.Count,
+			"component_id": sourceID,
+			"query":        query,
 		}, nil
 
 	default: // "metrics"
@@ -121,7 +121,7 @@ func (t *DatadogQueryTool) Execute(ctx context.Context, args map[string]any) (an
 		return map[string]any{
 			"result":       result,
 			"series_count": seriesCount,
-			"source_id":    sourceID,
+			"component_id": sourceID,
 			"query":        query,
 		}, nil
 	}

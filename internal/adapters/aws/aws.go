@@ -182,7 +182,7 @@ func NewWithClients(ec2Client *ec2.Client, eksClient *eks.Client, rdsClient *rds
 }
 
 // Connect establishes a connection to AWS
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

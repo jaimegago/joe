@@ -12,24 +12,24 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// refreshAlertmanagerSource refreshes an Alertmanager source.
+// refreshAlertmanagerComponent refreshes an Alertmanager source.
 // Creates a graph node for the source and builds alerts_in edges for any
 // services that have active alerts.
-func (r *Refresher) refreshAlertmanagerSource(ctx context.Context, source *store.Source, adapter alertmanageradapter.AlertmanagerAdapter) error {
-	r.logger.Info("refreshing alertmanager source", "source_id", source.ID)
+func (r *Refresher) refreshAlertmanagerComponent(ctx context.Context, source *store.Component, adapter alertmanageradapter.AlertmanagerAdapter) error {
+	r.logger.Info("refreshing alertmanager source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "alertmanager_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "alertmanager_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -40,17 +40,17 @@ func (r *Refresher) refreshAlertmanagerSource(ctx context.Context, source *store
 	// Discover active alerts and create alerts_in edges for matching services.
 	alerts, err := adapter.ListAlerts(ctx, "")
 	if err != nil {
-		r.logger.Warn("failed to list alertmanager alerts (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list alertmanager alerts (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		edges, edgeErr := r.buildAlertsInEdges(ctx, source, nodeID, alerts, now)
 		if edgeErr != nil {
-			r.logger.Warn("failed to build alerts_in edges", "source_id", source.ID, "error", edgeErr)
+			r.logger.Warn("failed to build alerts_in edges", "component_id", source.ID, "error", edgeErr)
 		} else {
 			desiredEdges = append(desiredEdges, edges...)
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for alertmanager source %s: %w", source.ID, err)
 	}
@@ -61,7 +61,7 @@ func (r *Refresher) refreshAlertmanagerSource(ctx context.Context, source *store
 	}
 
 	r.logger.Info("alertmanager refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
@@ -70,7 +70,7 @@ func (r *Refresher) refreshAlertmanagerSource(ctx context.Context, source *store
 
 // buildAlertsInEdges creates alerts_in edges from services to the Alertmanager node
 // based on active alert labels.
-func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Source, amNodeID string, alerts []alertmanageradapter.Alert, now time.Time) ([]graph.Edge, error) {
+func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Component, amNodeID string, alerts []alertmanageradapter.Alert, now time.Time) ([]graph.Edge, error) {
 	var edges []graph.Edge
 	seen := make(map[string]bool) // deduplicate by service node ID
 
@@ -107,14 +107,14 @@ func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Source
 			}
 			seen[svcNode.ID] = true
 			edges = append(edges, graph.Edge{
-				From:       svcNode.ID,
-				To:         amNodeID,
-				Relation:   graph.RelationAlertsIn,
-				Confidence: graph.Inferred,
-				Source:     "alertmanager_labels",
-				SourceID:   source.ID,
-				Context:    "service=" + svcName,
-				CreatedAt:  now,
+				From:        svcNode.ID,
+				To:          amNodeID,
+				Relation:    graph.RelationAlertsIn,
+				Confidence:  graph.Inferred,
+				Source:      "alertmanager_labels",
+				ComponentID: source.ID,
+				Context:     "service=" + svcName,
+				CreatedAt:   now,
 			})
 		}
 	}
@@ -122,23 +122,23 @@ func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Source
 	return edges, nil
 }
 
-// refreshPagerDutySource refreshes a PagerDuty source.
+// refreshPagerDutyComponent refreshes a PagerDuty source.
 // Creates a graph node and builds paged_via edges for services with open incidents.
-func (r *Refresher) refreshPagerDutySource(ctx context.Context, source *store.Source, adapter pagerdutyadapter.PagerDutyAdapter) error {
-	r.logger.Info("refreshing pagerduty source", "source_id", source.ID)
+func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store.Component, adapter pagerdutyadapter.PagerDutyAdapter) error {
+	r.logger.Info("refreshing pagerduty source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "pagerduty_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "pagerduty_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
@@ -149,7 +149,7 @@ func (r *Refresher) refreshPagerDutySource(ctx context.Context, source *store.So
 	// Discover services with open incidents and create paged_via edges.
 	incidents, err := adapter.ListIncidents(ctx, "", "triggered,acknowledged", 100)
 	if err != nil {
-		r.logger.Warn("failed to list pagerduty incidents (skipping edge discovery)", "source_id", source.ID, "error", err)
+		r.logger.Warn("failed to list pagerduty incidents (skipping edge discovery)", "component_id", source.ID, "error", err)
 	} else {
 		for _, incident := range incidents {
 			svcName := incident.Service.Name
@@ -166,20 +166,20 @@ func (r *Refresher) refreshPagerDutySource(ctx context.Context, source *store.So
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
-					From:       svcNode.ID,
-					To:         nodeID,
-					Relation:   graph.RelationPagedVia,
-					Confidence: graph.Inferred,
-					Source:     "pagerduty_incidents",
-					SourceID:   source.ID,
-					Context:    "pd_service=" + incident.Service.ID,
-					CreatedAt:  now,
+					From:        svcNode.ID,
+					To:          nodeID,
+					Relation:    graph.RelationPagedVia,
+					Confidence:  graph.Inferred,
+					Source:      "pagerduty_incidents",
+					ComponentID: source.ID,
+					Context:     "pd_service=" + incident.Service.ID,
+					CreatedAt:   now,
 				})
 			}
 		}
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for pagerduty source %s: %w", source.ID, err)
 	}
@@ -190,36 +190,36 @@ func (r *Refresher) refreshPagerDutySource(ctx context.Context, source *store.So
 	}
 
 	r.logger.Info("pagerduty refresh completed",
-		"source_id", source.ID,
+		"component_id", source.ID,
 		"nodes", len(desiredNodes),
 		"edges", len(desiredEdges),
 	)
 	return nil
 }
 
-// refreshGrafanaSource refreshes a Grafana source.
+// refreshGrafanaComponent refreshes a Grafana source.
 // Creates a graph node only; dashboard_in edges are discovered via .joe/ files.
-func (r *Refresher) refreshGrafanaSource(ctx context.Context, source *store.Source, _ grafanaadapter.GrafanaAdapter) error {
-	r.logger.Info("refreshing grafana source", "source_id", source.ID)
+func (r *Refresher) refreshGrafanaComponent(ctx context.Context, source *store.Component, _ grafanaadapter.GrafanaAdapter) error {
+	r.logger.Info("refreshing grafana source", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
 
 	desiredNodes := []graph.Node{
 		{
-			ID:       nodeID,
-			Type:     "grafana_source",
-			SourceID: source.ID,
+			ID:          nodeID,
+			Type:        "grafana_component",
+			ComponentID: source.ID,
 			Metadata: map[string]any{
-				"source_id":   source.ID,
-				"source_type": source.Type,
-				"name":        source.Name,
+				"component_id":   source.ID,
+				"component_type": source.Type,
+				"name":           source.Name,
 			},
 			LastSeen: now,
 		},
 	}
 
-	existingNodes, existingEdges, err := LoadGraphStateForSource(ctx, r.services.Graph, source.ID)
+	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
 		return fmt.Errorf("load graph state for grafana source %s: %w", source.ID, err)
 	}
@@ -230,7 +230,7 @@ func (r *Refresher) refreshGrafanaSource(ctx context.Context, source *store.Sour
 	}
 
 	_ = existingEdges
-	r.logger.Info("grafana refresh completed", "source_id", source.ID)
+	r.logger.Info("grafana refresh completed", "component_id", source.ID)
 	return nil
 }
 

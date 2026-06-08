@@ -68,7 +68,7 @@ func NewWithConfig(cfg Config, httpClient *http.Client) *Adapter {
 	}
 }
 
-func (a *Adapter) Connect(_ context.Context, source store.Source) error {
+func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

@@ -36,7 +36,7 @@ type mockGitHubAdapter struct {
 	listPRsErr    error
 }
 
-func (m *mockGitHubAdapter) Connect(_ context.Context, _ store.Source) error {
+func (m *mockGitHubAdapter) Connect(_ context.Context, _ store.Component) error {
 	return nil
 }
 func (m *mockGitHubAdapter) Disconnect() error { return nil }
@@ -74,7 +74,7 @@ type mockGitLabAdapter struct {
 	listMRsErr    error
 }
 
-func (m *mockGitLabAdapter) Connect(_ context.Context, _ store.Source) error {
+func (m *mockGitLabAdapter) Connect(_ context.Context, _ store.Component) error {
 	return nil
 }
 func (m *mockGitLabAdapter) Disconnect() error { return nil }
@@ -205,7 +205,7 @@ func TestReviewHandler_GitHubWebhook_Success(t *testing.T) {
 			"owner": map[string]any{"login": "myorg"},
 		},
 	}
-	req := httptest.NewRequest("POST", "/api/v1/webhooks/github?source_id=gh-src", reviewJSON(payload))
+	req := httptest.NewRequest("POST", "/api/v1/webhooks/github?component_id=gh-src", reviewJSON(payload))
 	req.Header.Set("X-GitHub-Event", "pull_request")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -237,7 +237,7 @@ func TestReviewHandler_GitHubWebhook_DuplicateEvent(t *testing.T) {
 		},
 	}
 	send := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest("POST", "/api/v1/webhooks/github?source_id=s1", reviewJSON(payload))
+		req := httptest.NewRequest("POST", "/api/v1/webhooks/github?component_id=s1", reviewJSON(payload))
 		req.Header.Set("X-GitHub-Event", "pull_request")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -304,7 +304,7 @@ func TestReviewHandler_GitHubWebhook_HMACValidation(t *testing.T) {
 			"name": "r", "owner": map[string]any{"login": "o"},
 		},
 	})
-	req := httptest.NewRequest("POST", "/api/v1/webhooks/github?source_id=gh-src", payload)
+	req := httptest.NewRequest("POST", "/api/v1/webhooks/github?component_id=gh-src", payload)
 	req.Header.Set("X-GitHub-Event", "pull_request")
 	req.Header.Set("X-Hub-Signature-256", "sha256=invalidsig")
 	w := httptest.NewRecorder()
@@ -344,7 +344,7 @@ func TestReviewHandler_GitLabWebhook_Success(t *testing.T) {
 		},
 		"project": map[string]any{"id": 99, "name": "myproject"},
 	}
-	req := httptest.NewRequest("POST", "/api/v1/webhooks/gitlab?source_id=gl-src", reviewJSON(payload))
+	req := httptest.NewRequest("POST", "/api/v1/webhooks/gitlab?component_id=gl-src", reviewJSON(payload))
 	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -393,7 +393,7 @@ func TestReviewHandler_GitLabWebhook_TokenValidation(t *testing.T) {
 		},
 		"project": map[string]any{"id": 1, "name": "p"},
 	}
-	req := httptest.NewRequest("POST", "/api/v1/webhooks/gitlab?source_id=gl-src", reviewJSON(payload))
+	req := httptest.NewRequest("POST", "/api/v1/webhooks/gitlab?component_id=gl-src", reviewJSON(payload))
 	req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
 	req.Header.Set("X-Gitlab-Token", "wrongtoken")
 	w := httptest.NewRecorder()
@@ -409,12 +409,12 @@ func TestReviewHandler_EnqueueReview_Success(t *testing.T) {
 	_, mux := setupReviewServer(t, nil)
 
 	body := map[string]any{
-		"source_id": "src-1",
-		"owner":     "org",
-		"repo":      "repo",
-		"pr_number": 10,
-		"head_sha":  "abcdef",
-		"platform":  "github",
+		"component_id": "src-1",
+		"owner":        "org",
+		"repo":         "repo",
+		"pr_number":    10,
+		"head_sha":     "abcdef",
+		"platform":     "github",
 	}
 	req := httptest.NewRequest("POST", "/api/v1/reviews", reviewJSON(body))
 	w := httptest.NewRecorder()
@@ -433,7 +433,7 @@ func TestReviewHandler_EnqueueReview_Success(t *testing.T) {
 func TestReviewHandler_EnqueueReview_MissingFields(t *testing.T) {
 	_, mux := setupReviewServer(t, nil)
 
-	body := map[string]any{"source_id": "src-1"} // missing required fields
+	body := map[string]any{"component_id": "src-1"} // missing required fields
 	req := httptest.NewRequest("POST", "/api/v1/reviews", reviewJSON(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -459,7 +459,7 @@ func TestReviewHandler_EnqueueReview_Duplicate(t *testing.T) {
 	_, mux := setupReviewServer(t, nil)
 
 	body := map[string]any{
-		"source_id": "s", "owner": "o", "repo": "r",
+		"component_id": "s", "owner": "o", "repo": "r",
 		"pr_number": 5, "head_sha": "sha5", "platform": "github",
 	}
 	send := func() *httptest.ResponseRecorder {
@@ -514,7 +514,7 @@ func TestReviewHandler_ListReviews_WithFilter(t *testing.T) {
 
 	// Enqueue one GitHub job.
 	enqReq := httptest.NewRequest("POST", "/api/v1/reviews", reviewJSON(map[string]any{
-		"source_id": "s", "owner": "o", "repo": "r",
+		"component_id": "s", "owner": "o", "repo": "r",
 		"pr_number": 1, "head_sha": "sha1", "platform": "github",
 	}))
 	enqW := httptest.NewRecorder()
@@ -540,7 +540,7 @@ func TestReviewHandler_GetReview_Success(t *testing.T) {
 
 	// Enqueue then get by ID.
 	enqReq := httptest.NewRequest("POST", "/api/v1/reviews", reviewJSON(map[string]any{
-		"source_id": "s", "owner": "o", "repo": "r",
+		"component_id": "s", "owner": "o", "repo": "r",
 		"pr_number": 2, "head_sha": "sha2", "platform": "github",
 	}))
 	enqW := httptest.NewRecorder()
@@ -906,7 +906,7 @@ func TestReviewHandler_ListReviews_WithLimit(t *testing.T) {
 
 	// Enqueue a job so we have something to list.
 	enqReq := httptest.NewRequest("POST", "/api/v1/reviews", reviewJSON(map[string]any{
-		"source_id": "s", "owner": "o", "repo": "r",
+		"component_id": "s", "owner": "o", "repo": "r",
 		"pr_number": 99, "head_sha": "shaX", "platform": "github",
 	}))
 	mux.ServeHTTP(httptest.NewRecorder(), enqReq)

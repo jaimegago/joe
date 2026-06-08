@@ -1,140 +1,140 @@
 package store
 
 const (
-	SourceTypeAWS        = "aws"
-	SourceTypeAzure      = "azure"
-	SourceTypeGit        = "git"
-	SourceTypeKubernetes = "kubernetes"
+	ComponentTypeAWS        = "aws"
+	ComponentTypeAzure      = "azure"
+	ComponentTypeGit        = "git"
+	ComponentTypeKubernetes = "kubernetes"
 
-	SourceTypePrometheus   = "prometheus"
-	SourceTypeMimir        = "mimir"
-	SourceTypeLoki         = "loki"
-	SourceTypeTempo        = "tempo"
-	SourceTypeJaeger       = "jaeger"
-	SourceTypeDatadog      = "datadog"
-	SourceTypeSplunk       = "splunk"
-	SourceTypeDynatrace    = "dynatrace"
-	SourceTypeNewRelic     = "newrelic"
-	SourceTypeCloudWatch   = "cloudwatch"
-	SourceTypeAzureMonitor = "azuremonitor"
+	ComponentTypePrometheus   = "prometheus"
+	ComponentTypeMimir        = "mimir"
+	ComponentTypeLoki         = "loki"
+	ComponentTypeTempo        = "tempo"
+	ComponentTypeJaeger       = "jaeger"
+	ComponentTypeDatadog      = "datadog"
+	ComponentTypeSplunk       = "splunk"
+	ComponentTypeDynatrace    = "dynatrace"
+	ComponentTypeNewRelic     = "newrelic"
+	ComponentTypeCloudWatch   = "cloudwatch"
+	ComponentTypeAzureMonitor = "azuremonitor"
 
-	SourceTypeAlertmanager = "alertmanager"
-	SourceTypePagerDuty    = "pagerduty"
-	SourceTypeGrafana      = "grafana"
+	ComponentTypeAlertmanager = "alertmanager"
+	ComponentTypePagerDuty    = "pagerduty"
+	ComponentTypeGrafana      = "grafana"
 
 	// Phase 6.7 data store source types.
-	SourceTypePostgreSQL    = "postgresql"
-	SourceTypeMySQL         = "mysql"
-	SourceTypeRedis         = "redis"
-	SourceTypeMongoDB       = "mongodb"
-	SourceTypeKafka         = "kafka"
-	SourceTypeElasticsearch = "elasticsearch"
+	ComponentTypePostgreSQL    = "postgresql"
+	ComponentTypeMySQL         = "mysql"
+	ComponentTypeRedis         = "redis"
+	ComponentTypeMongoDB       = "mongodb"
+	ComponentTypeKafka         = "kafka"
+	ComponentTypeElasticsearch = "elasticsearch"
 
 	// Phase 6.8 GitOps, CD & IaC source types.
-	SourceTypeArgoCd    = "argocd"
-	SourceTypeTerraform = "terraform"
-	SourceTypeHelm      = "helm"
+	ComponentTypeArgoCd    = "argocd"
+	ComponentTypeTerraform = "terraform"
+	ComponentTypeHelm      = "helm"
 
 	// Phase 6.9 Networking & Ingress source types.
-	SourceTypeNginx = "nginx-ingress"
-	SourceTypeEnvoy = "envoy"
+	ComponentTypeNginx = "nginx-ingress"
+	ComponentTypeEnvoy = "envoy"
 
 	// Phase 6.11 Security & runtime source types.
-	SourceTypeFalco = "falco"
+	ComponentTypeFalco = "falco"
 
 	// Phase 6.13 — Artifact registry source types.
-	SourceTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
-	SourceTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
-	SourceTypeArtifactory = "artifactory"  // JFrog Artifactory
-	SourceTypeECR         = "ecr"          // AWS Elastic Container Registry
+	ComponentTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
+	ComponentTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
+	ComponentTypeArtifactory = "artifactory"  // JFrog Artifactory
+	ComponentTypeECR         = "ecr"          // AWS Elastic Container Registry
 
 	// Phase 10 — Code review source types.
-	SourceTypeGitHub = "github"
-	SourceTypeGitLab = "gitlab"
+	ComponentTypeGitHub = "github"
+	ComponentTypeGitLab = "gitlab"
 )
 
-// AllowedSourceTypes returns the supported source types.
-func AllowedSourceTypes() []string {
+// AllowedComponentTypes returns the supported source types.
+func AllowedComponentTypes() []string {
 	return []string{
-		SourceTypeAWS,
-		SourceTypeAzure,
-		SourceTypeGit,
-		SourceTypeKubernetes,
-		SourceTypePrometheus,
-		SourceTypeMimir,
-		SourceTypeLoki,
-		SourceTypeTempo,
-		SourceTypeJaeger,
-		SourceTypeDatadog,
-		SourceTypeSplunk,
-		SourceTypeDynatrace,
-		SourceTypeNewRelic,
-		SourceTypeCloudWatch,
-		SourceTypeAzureMonitor,
-		SourceTypeAlertmanager,
-		SourceTypePagerDuty,
-		SourceTypeGrafana,
-		SourceTypePostgreSQL,
-		SourceTypeMySQL,
-		SourceTypeRedis,
-		SourceTypeMongoDB,
-		SourceTypeKafka,
-		SourceTypeElasticsearch,
-		SourceTypeArgoCd,
-		SourceTypeTerraform,
-		SourceTypeHelm,
-		SourceTypeNginx,
-		SourceTypeEnvoy,
-		SourceTypeFalco,
-		SourceTypeOCIRegistry,
-		SourceTypeDockerHub,
-		SourceTypeArtifactory,
-		SourceTypeECR,
-		SourceTypeGitHub,
-		SourceTypeGitLab,
+		ComponentTypeAWS,
+		ComponentTypeAzure,
+		ComponentTypeGit,
+		ComponentTypeKubernetes,
+		ComponentTypePrometheus,
+		ComponentTypeMimir,
+		ComponentTypeLoki,
+		ComponentTypeTempo,
+		ComponentTypeJaeger,
+		ComponentTypeDatadog,
+		ComponentTypeSplunk,
+		ComponentTypeDynatrace,
+		ComponentTypeNewRelic,
+		ComponentTypeCloudWatch,
+		ComponentTypeAzureMonitor,
+		ComponentTypeAlertmanager,
+		ComponentTypePagerDuty,
+		ComponentTypeGrafana,
+		ComponentTypePostgreSQL,
+		ComponentTypeMySQL,
+		ComponentTypeRedis,
+		ComponentTypeMongoDB,
+		ComponentTypeKafka,
+		ComponentTypeElasticsearch,
+		ComponentTypeArgoCd,
+		ComponentTypeTerraform,
+		ComponentTypeHelm,
+		ComponentTypeNginx,
+		ComponentTypeEnvoy,
+		ComponentTypeFalco,
+		ComponentTypeOCIRegistry,
+		ComponentTypeDockerHub,
+		ComponentTypeArtifactory,
+		ComponentTypeECR,
+		ComponentTypeGitHub,
+		ComponentTypeGitLab,
 	}
 }
 
-// IsValidSourceType reports whether the source type is supported.
-func IsValidSourceType(sourceType string) bool {
+// IsValidComponentType reports whether the source type is supported.
+func IsValidComponentType(sourceType string) bool {
 	switch sourceType {
 	case
-		SourceTypeAWS,
-		SourceTypeAzure,
-		SourceTypeGit,
-		SourceTypeKubernetes,
-		SourceTypePrometheus,
-		SourceTypeMimir,
-		SourceTypeLoki,
-		SourceTypeTempo,
-		SourceTypeJaeger,
-		SourceTypeDatadog,
-		SourceTypeSplunk,
-		SourceTypeDynatrace,
-		SourceTypeNewRelic,
-		SourceTypeCloudWatch,
-		SourceTypeAzureMonitor,
-		SourceTypeAlertmanager,
-		SourceTypePagerDuty,
-		SourceTypeGrafana,
-		SourceTypePostgreSQL,
-		SourceTypeMySQL,
-		SourceTypeRedis,
-		SourceTypeMongoDB,
-		SourceTypeKafka,
-		SourceTypeElasticsearch,
-		SourceTypeArgoCd,
-		SourceTypeTerraform,
-		SourceTypeHelm,
-		SourceTypeNginx,
-		SourceTypeEnvoy,
-		SourceTypeFalco,
-		SourceTypeOCIRegistry,
-		SourceTypeDockerHub,
-		SourceTypeArtifactory,
-		SourceTypeECR,
-		SourceTypeGitHub,
-		SourceTypeGitLab:
+		ComponentTypeAWS,
+		ComponentTypeAzure,
+		ComponentTypeGit,
+		ComponentTypeKubernetes,
+		ComponentTypePrometheus,
+		ComponentTypeMimir,
+		ComponentTypeLoki,
+		ComponentTypeTempo,
+		ComponentTypeJaeger,
+		ComponentTypeDatadog,
+		ComponentTypeSplunk,
+		ComponentTypeDynatrace,
+		ComponentTypeNewRelic,
+		ComponentTypeCloudWatch,
+		ComponentTypeAzureMonitor,
+		ComponentTypeAlertmanager,
+		ComponentTypePagerDuty,
+		ComponentTypeGrafana,
+		ComponentTypePostgreSQL,
+		ComponentTypeMySQL,
+		ComponentTypeRedis,
+		ComponentTypeMongoDB,
+		ComponentTypeKafka,
+		ComponentTypeElasticsearch,
+		ComponentTypeArgoCd,
+		ComponentTypeTerraform,
+		ComponentTypeHelm,
+		ComponentTypeNginx,
+		ComponentTypeEnvoy,
+		ComponentTypeFalco,
+		ComponentTypeOCIRegistry,
+		ComponentTypeDockerHub,
+		ComponentTypeArtifactory,
+		ComponentTypeECR,
+		ComponentTypeGitHub,
+		ComponentTypeGitLab:
 		return true
 	default:
 		return false

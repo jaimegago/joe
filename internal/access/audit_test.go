@@ -91,8 +91,8 @@ func TestPhaseF_AllowedAccessProducesOneAllowAuditRow(t *testing.T) {
 	if r.Zone != "z-read" {
 		t.Errorf("zone = %q, want %q", r.Zone, "z-read")
 	}
-	if r.Source != "s-k8s" {
-		t.Errorf("source = %q, want %q", r.Source, "s-k8s")
+	if r.ComponentID != "s-k8s" {
+		t.Errorf("source = %q, want %q", r.ComponentID, "s-k8s")
 	}
 	if r.Decision != audit.DecisionAllow {
 		t.Errorf("decision = %q, want %q", r.Decision, audit.DecisionAllow)

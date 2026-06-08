@@ -29,14 +29,14 @@ func NewFalcoAlertsTool(c FalcoClient) *FalcoAlertsTool {
 func (t *FalcoAlertsTool) Name() string { return "falco_alerts" }
 
 func (t *FalcoAlertsTool) Description() string {
-	return "List recent Falco runtime security events. Filter by priority (Emergency, Alert, Critical, Error, Warning, Notice, Informational, Debug), source (syscall, k8s_audit), or rule name. Returns event output, priority, rule, and process/container context. If you don't know the source_id, call list_sources first."
+	return "List recent Falco runtime security events. Filter by priority (Emergency, Alert, Critical, Error, Warning, Notice, Informational, Debug), source (syscall, k8s_audit), or rule name. Returns event output, priority, rule, and process/container context. If you don't know the component_id, call list_components first."
 }
 
 func (t *FalcoAlertsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Falco source to query.",
 			},
@@ -57,14 +57,14 @@ func (t *FalcoAlertsTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of events to return (default 50).",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *FalcoAlertsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	priority, _ := args["priority"].(string)
@@ -82,9 +82,9 @@ func (t *FalcoAlertsTool) Execute(ctx context.Context, args map[string]any) (any
 	}
 
 	return map[string]any{
-		"events":    events,
-		"count":     len(events),
-		"source_id": sourceID,
+		"events":       events,
+		"count":        len(events),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -103,26 +103,26 @@ func NewFalcoRulesTool(c FalcoClient) *FalcoRulesTool {
 func (t *FalcoRulesTool) Name() string { return "falco_rules" }
 
 func (t *FalcoRulesTool) Description() string {
-	return "List Falco rules observed in recent runtime security events. Returns rule name, priority, source (syscall/k8s_audit), and event count. Use this to understand which rules are actively firing. If you don't know the source_id, call list_sources first."
+	return "List Falco rules observed in recent runtime security events. Returns rule name, priority, source (syscall/k8s_audit), and event count. Use this to understand which rules are actively firing. If you don't know the component_id, call list_components first."
 }
 
 func (t *FalcoRulesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Falco source to query.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *FalcoRulesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	rules, err := t.Client.FalcoRules(ctx, sourceID)
@@ -131,8 +131,8 @@ func (t *FalcoRulesTool) Execute(ctx context.Context, args map[string]any) (any,
 	}
 
 	return map[string]any{
-		"rules":     rules,
-		"count":     len(rules),
-		"source_id": sourceID,
+		"rules":        rules,
+		"count":        len(rules),
+		"component_id": sourceID,
 	}, nil
 }

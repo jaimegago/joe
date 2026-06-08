@@ -6,21 +6,21 @@ import {
 } from '@/components/ui/select';
 import type { SecurityZone } from '@/api/types';
 
-interface UnassignedSourcesProps {
-  unassigned: { source_id: string }[];
+interface UnassignedComponentsProps {
+  unassigned: { component_id: string }[];
   zones: SecurityZone[];
 }
 
-export function UnassignedSources({ unassigned, zones }: UnassignedSourcesProps) {
+export function UnassignedComponents({ unassigned, zones }: UnassignedComponentsProps) {
   const qc = useQueryClient();
 
   const assignMut = useMutation({
-    mutationFn: ({ source_id, zoneId }: { source_id: string; zoneId: string }) =>
-      assignZone(source_id, zoneId),
+    mutationFn: ({ component_id, zoneId }: { component_id: string; zoneId: string }) =>
+      assignZone(component_id, zoneId),
     onSuccess: () => {
       toast.success('Zone assigned');
       void qc.invalidateQueries({ queryKey: ['unassigned'] });
-      void qc.invalidateQueries({ queryKey: ['source-zones'] });
+      void qc.invalidateQueries({ queryKey: ['component-zones'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -33,11 +33,11 @@ export function UnassignedSources({ unassigned, zones }: UnassignedSourcesProps)
         ⚠ {unassigned.length} unassigned source{unassigned.length > 1 ? 's' : ''} (require admin action)
       </p>
       <div className="space-y-2">
-        {unassigned.map(({ source_id }) => (
-          <div key={source_id} className="flex items-center justify-between gap-2">
-            <span className="font-mono text-sm">{source_id}</span>
+        {unassigned.map(({ component_id }) => (
+          <div key={component_id} className="flex items-center justify-between gap-2">
+            <span className="font-mono text-sm">{component_id}</span>
             <Select
-              onValueChange={(zoneId) => assignMut.mutate({ source_id, zoneId })}
+              onValueChange={(zoneId) => assignMut.mutate({ component_id, zoneId })}
             >
               <SelectTrigger className="h-7 w-40 text-xs">
                 <SelectValue placeholder="Assign Zone" />

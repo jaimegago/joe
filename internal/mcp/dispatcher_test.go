@@ -35,37 +35,37 @@ func mockJoecored(t *testing.T) *httptest.Server {
 		case r.URL.Path == "/api/v1/observe/k8s":
 			json.NewEncoder(w).Encode(map[string]any{
 				"source":       "kubernetes",
-				"source_id":    "k8s-prod",
+				"component_id": "k8s-prod",
 				"native_query": "service=payment-svc",
 				"data":         map[string]any{"pods": []any{}, "count": 0},
 			})
 		case r.URL.Path == "/api/v1/observe/metrics":
 			json.NewEncoder(w).Encode(map[string]any{
 				"source":       "prometheus",
-				"source_id":    "prom-prod",
+				"component_id": "prom-prod",
 				"native_query": `rate(http_requests_total{job="payment-svc"}[5m])`,
 				"data":         []any{},
 			})
 		case r.URL.Path == "/api/v1/observe/logs":
 			json.NewEncoder(w).Encode(map[string]any{
 				"source":       "loki",
-				"source_id":    "loki-prod",
+				"component_id": "loki-prod",
 				"native_query": `{app="payment-svc"} |= "error"`,
 				"data":         []any{},
 			})
 		case r.URL.Path == "/api/v1/observe/traces":
 			json.NewEncoder(w).Encode(map[string]any{
 				"source":       "tempo",
-				"source_id":    "tempo-prod",
+				"component_id": "tempo-prod",
 				"native_query": "service=payment-svc",
 				"data":         []any{},
 			})
 		case r.URL.Path == "/api/v1/observe/alerts":
 			json.NewEncoder(w).Encode(map[string]any{
-				"source":    "alertmanager",
-				"source_id": "am-prod",
-				"alerts":    []any{},
-				"count":     0,
+				"source":       "alertmanager",
+				"component_id": "am-prod",
+				"alerts":       []any{},
+				"count":        0,
 			})
 		case r.URL.Path == "/api/v1/knowledge/search":
 			json.NewEncoder(w).Encode(map[string]any{

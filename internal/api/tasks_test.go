@@ -1019,13 +1019,13 @@ func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, 
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// Seed sources (FK target for zone assignments)
+	// Seed components (FK target for zone assignments)
 	_, err = sqlStore.DB().Exec(`
-		INSERT INTO sources (id, type, name, config) VALUES ('k8s-frontend', 'kubernetes', 'Frontend K8s', '{}');
-		INSERT INTO sources (id, type, name, config) VALUES ('k8s-payments', 'kubernetes', 'Payments K8s', '{}');
+		INSERT INTO components (id, type, name, config) VALUES ('k8s-frontend', 'kubernetes', 'Frontend K8s', '{}');
+		INSERT INTO components (id, type, name, config) VALUES ('k8s-payments', 'kubernetes', 'Payments K8s', '{}');
 	`)
 	if err != nil {
-		t.Fatalf("seed sources: %v", err)
+		t.Fatalf("seed components: %v", err)
 	}
 
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), "sqlite")
@@ -1047,14 +1047,14 @@ func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, 
 		t.Fatalf("create zone-b: %v", err)
 	}
 
-	// Assign sources to zones
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-frontend", ZoneID: "zone-a", AssignedBy: "test",
+	// Assign components to zones
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-frontend", ZoneID: "zone-a", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign k8s-frontend: %v", err)
 	}
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{
-		SourceID: "k8s-payments", ZoneID: "zone-b", AssignedBy: "test",
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "k8s-payments", ZoneID: "zone-b", AssignedBy: "test",
 	}, "test"); err != nil {
 		t.Fatalf("assign k8s-payments: %v", err)
 	}
@@ -1088,9 +1088,9 @@ func (z *zoneViolationLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.Chat
 		return &llm.ChatResponse{
 			ToolCalls: []llm.ToolCall{
 				{ID: "tc-zone", Name: "k8s_get", Args: map[string]any{
-					"source_id": "k8s-payments",
-					"resource":  "pods",
-					"namespace": "payments",
+					"component_id": "k8s-payments",
+					"resource":     "pods",
+					"namespace":    "payments",
 				}},
 			},
 			Usage: llm.TokenUsage{InputTokens: 20, OutputTokens: 10},
@@ -1107,7 +1107,7 @@ func (z *zoneViolationLLM) Embed(_ context.Context, _ string) ([]float32, error)
 }
 
 // TestTaskEndpoint_ZoneViolationBlocked verifies that when allowed_zones is set,
-// tool calls targeting sources outside those zones are blocked at the executor level.
+// tool calls targeting components outside those zones are blocked at the executor level.
 func TestTaskEndpoint_ZoneViolationBlocked(t *testing.T) {
 	_, mux := setupTaskServerWithRBAC(t, &zoneViolationLLM{})
 

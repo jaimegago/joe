@@ -24,7 +24,7 @@ const (
 
 // handleAWSEC2ListInstances lists EC2 instances from an AWS source
 func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -39,15 +39,15 @@ func (s *Server) handleAWSEC2ListInstances(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"instances": instances,
-		"count":     len(instances),
-		"source_id": sourceID,
+		"instances":    instances,
+		"count":        len(instances),
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSEC2GetInstance gets a specific EC2 instance from an AWS source
 func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	instanceID := r.PathValue("instanceID")
 
 	if instanceID == "" {
@@ -83,14 +83,14 @@ func (s *Server) handleAWSEC2GetInstance(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"instance":  instance,
-		"source_id": sourceID,
+		"instance":     instance,
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSEKSListClusters lists EKS clusters from an AWS source
 func (s *Server) handleAWSEKSListClusters(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -105,15 +105,15 @@ func (s *Server) handleAWSEKSListClusters(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"clusters":  clusters,
-		"count":     len(clusters),
-		"source_id": sourceID,
+		"clusters":     clusters,
+		"count":        len(clusters),
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSEKSGetCluster gets a specific EKS cluster from an AWS source
 func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	clusterName := r.PathValue("clusterName")
 
 	if clusterName == "" {
@@ -149,14 +149,14 @@ func (s *Server) handleAWSEKSGetCluster(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"cluster":   cluster,
-		"source_id": sourceID,
+		"cluster":      cluster,
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSRDSListInstances lists RDS instances from an AWS source
 func (s *Server) handleAWSRDSListInstances(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -171,15 +171,15 @@ func (s *Server) handleAWSRDSListInstances(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"instances": instances,
-		"count":     len(instances),
-		"source_id": sourceID,
+		"instances":    instances,
+		"count":        len(instances),
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSRDSGetInstance gets a specific RDS instance from an AWS source
 func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	dbInstanceID := r.PathValue("dbInstanceID")
 
 	if dbInstanceID == "" {
@@ -215,14 +215,14 @@ func (s *Server) handleAWSRDSGetInstance(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"instance":  instance,
-		"source_id": sourceID,
+		"instance":     instance,
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSVPCListVPCs lists VPCs from an AWS source
 func (s *Server) handleAWSVPCListVPCs(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 
 	principal := rbac.PrincipalFromContext(r.Context())
 	start := time.Now()
@@ -237,15 +237,15 @@ func (s *Server) handleAWSVPCListVPCs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"vpcs":      vpcs,
-		"count":     len(vpcs),
-		"source_id": sourceID,
+		"vpcs":         vpcs,
+		"count":        len(vpcs),
+		"component_id": sourceID,
 	})
 }
 
 // handleAWSVPCGetVPC gets a specific VPC from an AWS source
 func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
-	sourceID := r.PathValue("sourceID")
+	sourceID := r.PathValue("componentID")
 	vpcID := r.PathValue("vpcID")
 
 	if vpcID == "" {
@@ -281,7 +281,7 @@ func (s *Server) handleAWSVPCGetVPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"vpc":       vpc,
-		"source_id": sourceID,
+		"vpc":          vpc,
+		"component_id": sourceID,
 	})
 }

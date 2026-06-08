@@ -128,24 +128,24 @@ func (r *Refresher) refresh(ctx context.Context) (err error) {
 
 	// Phase 5 MVP: Basic refresh structure
 	// Future implementation will:
-	// 1. Load connected sources from store
+	// 1. Load connected components from store
 	// 2. For each source, query current state
 	// 3. Diff against existing graph
 	// 4. Apply deterministic changes
 	// 5. Queue ambiguous findings for clarification
 
-	// Load sources
-	sources, err := r.services.Store.Sources.List(ctx)
+	// Load components
+	components, err := r.services.Store.Components.List(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load sources: %w", err)
+		return fmt.Errorf("failed to load components: %w", err)
 	}
 
-	r.logger.Debug("loaded sources for refresh", "count", len(sources))
+	r.logger.Debug("loaded components for refresh", "count", len(components))
 
-	for _, source := range sources {
-		if err := r.refreshSource(ctx, source); err != nil {
-			r.logger.Error("failed to refresh source", "source_id", source.ID, "error", err)
-			// Continue with other sources even if one fails
+	for _, source := range components {
+		if err := r.refreshComponent(ctx, source); err != nil {
+			r.logger.Error("failed to refresh source", "component_id", source.ID, "error", err)
+			// Continue with other components even if one fails
 		}
 	}
 
@@ -153,21 +153,21 @@ func (r *Refresher) refresh(ctx context.Context) (err error) {
 	return nil
 }
 
-// refreshSource refreshes a single infrastructure source
-func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (err error) {
+// refreshComponent refreshes a single infrastructure source
+func (r *Refresher) refreshComponent(ctx context.Context, source *store.Component) (err error) {
 	start := time.Now()
 	defer func() {
 		lastError := ""
 		if err != nil {
 			lastError = err.Error()
 		}
-		if updateErr := r.services.Store.Sources.UpdateSyncStatus(ctx, source.ID, time.Now(), lastError); updateErr != nil {
-			r.logger.Warn("failed to update source sync status", "source_id", source.ID, "error", updateErr)
+		if updateErr := r.services.Store.Components.UpdateSyncStatus(ctx, source.ID, time.Now(), lastError); updateErr != nil {
+			r.logger.Warn("failed to update source sync status", "component_id", source.ID, "error", updateErr)
 		}
-		r.logger.Info("source refresh finished", "source_id", source.ID, "duration_ms", time.Since(start).Milliseconds(), "error", lastError)
+		r.logger.Info("source refresh finished", "component_id", source.ID, "duration_ms", time.Since(start).Milliseconds(), "error", lastError)
 	}()
 
-	r.logger.Debug("refreshing source", "source_id", source.ID, "type", source.Type)
+	r.logger.Debug("refreshing source", "component_id", source.ID, "type", source.Type)
 
 	adapter, err := r.services.Adapters.Get(source.ID)
 	if err != nil {
@@ -178,196 +178,196 @@ func (r *Refresher) refreshSource(ctx context.Context, source *store.Source) (er
 	}
 
 	switch source.Type {
-	case store.SourceTypeKubernetes:
+	case store.ComponentTypeKubernetes:
 		k8sAdapter, ok := adapter.(k8s.KubernetesAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not kubernetes", source.ID)
 		}
-		return r.refreshK8sSource(ctx, source, k8sAdapter)
-	case store.SourceTypeGit:
+		return r.refreshK8sComponent(ctx, source, k8sAdapter)
+	case store.ComponentTypeGit:
 		gitAdapter, ok := adapter.(gitadapter.GitAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not git", source.ID)
 		}
-		return r.refreshGitSource(ctx, source, gitAdapter)
-	case store.SourceTypeAWS:
+		return r.refreshGitComponent(ctx, source, gitAdapter)
+	case store.ComponentTypeAWS:
 		awsAdapter, ok := adapter.(awsadapter.AWSAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not aws", source.ID)
 		}
-		return r.refreshAWSSource(ctx, source, awsAdapter)
-	case store.SourceTypeAzure:
+		return r.refreshAWSComponent(ctx, source, awsAdapter)
+	case store.ComponentTypeAzure:
 		azureAdapter, ok := adapter.(azureadapter.AzureAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not azure", source.ID)
 		}
-		return r.refreshAzureSource(ctx, source, azureAdapter)
-	case store.SourceTypePrometheus, store.SourceTypeMimir:
+		return r.refreshAzureComponent(ctx, source, azureAdapter)
+	case store.ComponentTypePrometheus, store.ComponentTypeMimir:
 		pa, ok := adapter.(prometheusadapter.PrometheusAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not prometheus", source.ID)
 		}
-		return r.refreshPrometheusSource(ctx, source, pa)
-	case store.SourceTypeLoki:
+		return r.refreshPrometheusComponent(ctx, source, pa)
+	case store.ComponentTypeLoki:
 		la, ok := adapter.(lokiadapter.LokiAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not loki", source.ID)
 		}
-		return r.refreshLokiSource(ctx, source, la)
-	case store.SourceTypeTempo:
+		return r.refreshLokiComponent(ctx, source, la)
+	case store.ComponentTypeTempo:
 		ta, ok := adapter.(tempoadapter.TempoAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not tempo", source.ID)
 		}
-		return r.refreshTempoSource(ctx, source, ta)
-	case store.SourceTypeJaeger:
+		return r.refreshTempoComponent(ctx, source, ta)
+	case store.ComponentTypeJaeger:
 		ja, ok := adapter.(jaegeradapter.JaegerAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not jaeger", source.ID)
 		}
-		return r.refreshJaegerSource(ctx, source, ja)
-	case store.SourceTypeAlertmanager:
+		return r.refreshJaegerComponent(ctx, source, ja)
+	case store.ComponentTypeAlertmanager:
 		aa, ok := adapter.(alertmanageradapter.AlertmanagerAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not alertmanager", source.ID)
 		}
-		return r.refreshAlertmanagerSource(ctx, source, aa)
-	case store.SourceTypePagerDuty:
+		return r.refreshAlertmanagerComponent(ctx, source, aa)
+	case store.ComponentTypePagerDuty:
 		pa, ok := adapter.(pagerdutyadapter.PagerDutyAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not pagerduty", source.ID)
 		}
-		return r.refreshPagerDutySource(ctx, source, pa)
-	case store.SourceTypeGrafana:
+		return r.refreshPagerDutyComponent(ctx, source, pa)
+	case store.ComponentTypeGrafana:
 		ga, ok := adapter.(grafanaadapter.GrafanaAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not grafana", source.ID)
 		}
-		return r.refreshGrafanaSource(ctx, source, ga)
+		return r.refreshGrafanaComponent(ctx, source, ga)
 
-	// Phase 6.7 — data store sources.
-	case store.SourceTypePostgreSQL:
+	// Phase 6.7 — data store components.
+	case store.ComponentTypePostgreSQL:
 		pa, ok := adapter.(postgresadapter.PostgreSQLAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not postgresql", source.ID)
 		}
-		return r.refreshPostgreSQLSource(ctx, source, pa)
-	case store.SourceTypeMySQL:
+		return r.refreshPostgreSQLComponent(ctx, source, pa)
+	case store.ComponentTypeMySQL:
 		ma, ok := adapter.(mysqladapter.MySQLAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not mysql", source.ID)
 		}
-		return r.refreshMySQLSource(ctx, source, ma)
-	case store.SourceTypeRedis:
+		return r.refreshMySQLComponent(ctx, source, ma)
+	case store.ComponentTypeRedis:
 		ra, ok := adapter.(redisadapter.RedisAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not redis", source.ID)
 		}
-		return r.refreshRedisSource(ctx, source, ra)
-	case store.SourceTypeMongoDB:
+		return r.refreshRedisComponent(ctx, source, ra)
+	case store.ComponentTypeMongoDB:
 		ma, ok := adapter.(mongodbadapter.MongoDBAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not mongodb", source.ID)
 		}
-		return r.refreshMongoDBSource(ctx, source, ma)
-	case store.SourceTypeKafka:
+		return r.refreshMongoDBComponent(ctx, source, ma)
+	case store.ComponentTypeKafka:
 		ka, ok := adapter.(kafkaadapter.KafkaAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not kafka", source.ID)
 		}
-		return r.refreshKafkaSource(ctx, source, ka)
-	case store.SourceTypeElasticsearch:
+		return r.refreshKafkaComponent(ctx, source, ka)
+	case store.ComponentTypeElasticsearch:
 		ea, ok := adapter.(elasticsearchadapter.ElasticsearchAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not elasticsearch", source.ID)
 		}
-		return r.refreshElasticsearchSource(ctx, source, ea)
+		return r.refreshElasticsearchComponent(ctx, source, ea)
 
-	// Phase 6.8 — GitOps / CD / IaC sources.
-	case store.SourceTypeArgoCd:
+	// Phase 6.8 — GitOps / CD / IaC components.
+	case store.ComponentTypeArgoCd:
 		aa, ok := adapter.(argocdadapter.ArgoCDAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not argocd", source.ID)
 		}
-		return r.refreshArgoCDSource(ctx, source, aa)
-	case store.SourceTypeHelm:
+		return r.refreshArgoCDComponent(ctx, source, aa)
+	case store.ComponentTypeHelm:
 		ha, ok := adapter.(helmadapter.HelmAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not helm", source.ID)
 		}
-		return r.refreshHelmSource(ctx, source, ha)
-	case store.SourceTypeTerraform:
+		return r.refreshHelmComponent(ctx, source, ha)
+	case store.ComponentTypeTerraform:
 		ta, ok := adapter.(terraformadapter.TerraformAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not terraform", source.ID)
 		}
-		return r.refreshTerraformSource(ctx, source, ta)
+		return r.refreshTerraformComponent(ctx, source, ta)
 
-	// Phase 6.9 — Networking & ingress sources.
-	case store.SourceTypeNginx:
+	// Phase 6.9 — Networking & ingress components.
+	case store.ComponentTypeNginx:
 		na, ok := adapter.(nginxadapter.NginxAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not nginx-ingress", source.ID)
 		}
-		return r.refreshNginxSource(ctx, source, na)
-	case store.SourceTypeEnvoy:
+		return r.refreshNginxComponent(ctx, source, na)
+	case store.ComponentTypeEnvoy:
 		ea, ok := adapter.(envoypadapter.EnvoyAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not envoy", source.ID)
 		}
-		return r.refreshEnvoySource(ctx, source, ea)
+		return r.refreshEnvoyComponent(ctx, source, ea)
 
 	// Phase 6.12 — Proprietary observability vendors.
-	case store.SourceTypeDatadog:
+	case store.ComponentTypeDatadog:
 		da, ok := adapter.(datadogadapter.DatadogAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not datadog", source.ID)
 		}
-		return r.refreshDatadogSource(ctx, source, da)
-	case store.SourceTypeSplunk:
+		return r.refreshDatadogComponent(ctx, source, da)
+	case store.ComponentTypeSplunk:
 		sa, ok := adapter.(splunkadapter.SplunkAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not splunk", source.ID)
 		}
-		return r.refreshSplunkSource(ctx, source, sa)
-	case store.SourceTypeDynatrace:
+		return r.refreshSplunkComponent(ctx, source, sa)
+	case store.ComponentTypeDynatrace:
 		da, ok := adapter.(dynatraceadapter.DynatraceAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not dynatrace", source.ID)
 		}
-		return r.refreshDynatraceSource(ctx, source, da)
-	case store.SourceTypeNewRelic:
+		return r.refreshDynatraceComponent(ctx, source, da)
+	case store.ComponentTypeNewRelic:
 		na, ok := adapter.(newrelicadapter.NewRelicAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not newrelic", source.ID)
 		}
-		return r.refreshNewRelicSource(ctx, source, na)
+		return r.refreshNewRelicComponent(ctx, source, na)
 
-	// Phase 6.13 — Artifact registry sources.
-	case store.SourceTypeOCIRegistry, store.SourceTypeDockerHub:
+	// Phase 6.13 — Artifact registry components.
+	case store.ComponentTypeOCIRegistry, store.ComponentTypeDockerHub:
 		oa, ok := adapter.(ociadapter.OCIAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not oci_registry", source.ID)
 		}
-		if source.Type == store.SourceTypeDockerHub {
-			return r.refreshDockerHubSource(ctx, source, oa)
+		if source.Type == store.ComponentTypeDockerHub {
+			return r.refreshDockerHubComponent(ctx, source, oa)
 		}
-		return r.refreshOCISource(ctx, source, oa)
-	case store.SourceTypeArtifactory:
+		return r.refreshOCIComponent(ctx, source, oa)
+	case store.ComponentTypeArtifactory:
 		aa, ok := adapter.(artifactoryadapter.ArtifactoryAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not artifactory", source.ID)
 		}
-		return r.refreshArtifactorySource(ctx, source, aa)
-	case store.SourceTypeECR:
+		return r.refreshArtifactoryComponent(ctx, source, aa)
+	case store.ComponentTypeECR:
 		ea, ok := adapter.(ecradapter.ECRAdapter)
 		if !ok {
 			return fmt.Errorf("adapter for source %s is not ecr", source.ID)
 		}
-		return r.refreshECRSource(ctx, source, ea)
+		return r.refreshECRComponent(ctx, source, ea)
 
 	default:
-		r.logger.Debug("skipping unsupported source type", "source_id", source.ID, "type", source.Type)
+		r.logger.Debug("skipping unsupported source type", "component_id", source.ID, "type", source.Type)
 		return nil
 	}
 }

@@ -35,22 +35,22 @@ func TestNewAndMigrate(t *testing.T) {
 	}
 }
 
-func TestSourceRepository(t *testing.T) {
+func TestComponentRepository(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
 
 	t.Run("create and get", func(t *testing.T) {
-		src := &store.Source{
+		src := &store.Component{
 			ID:     "k8s-prod",
 			Type:   "kubernetes",
 			Name:   "Production Cluster",
 			Config: json.RawMessage(`{"context": "prod"}`),
 		}
-		if err := s.Sources.Create(ctx, src); err != nil {
+		if err := s.Components.Create(ctx, src); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 
-		got, err := s.Sources.Get(ctx, "k8s-prod")
+		got, err := s.Components.Get(ctx, "k8s-prod")
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
@@ -69,7 +69,7 @@ func TestSourceRepository(t *testing.T) {
 	})
 
 	t.Run("get nonexistent returns nil", func(t *testing.T) {
-		got, err := s.Sources.Get(ctx, "nonexistent")
+		got, err := s.Components.Get(ctx, "nonexistent")
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
@@ -79,57 +79,57 @@ func TestSourceRepository(t *testing.T) {
 	})
 
 	t.Run("list", func(t *testing.T) {
-		sources, err := s.Sources.List(ctx)
+		components, err := s.Components.List(ctx)
 		if err != nil {
 			t.Fatalf("List() error = %v", err)
 		}
-		if len(sources) != 1 {
-			t.Errorf("List() returned %d sources, want 1", len(sources))
+		if len(components) != 1 {
+			t.Errorf("List() returned %d components, want 1", len(components))
 		}
 	})
 
 	t.Run("list by type", func(t *testing.T) {
-		sources, err := s.Sources.ListByType(ctx, "kubernetes")
+		components, err := s.Components.ListByType(ctx, "kubernetes")
 		if err != nil {
 			t.Fatalf("ListByType() error = %v", err)
 		}
-		if len(sources) != 1 {
-			t.Errorf("ListByType() returned %d sources, want 1", len(sources))
+		if len(components) != 1 {
+			t.Errorf("ListByType() returned %d components, want 1", len(components))
 		}
 
-		sources, err = s.Sources.ListByType(ctx, "git")
+		components, err = s.Components.ListByType(ctx, "git")
 		if err != nil {
 			t.Fatalf("ListByType() error = %v", err)
 		}
-		if len(sources) != 0 {
-			t.Errorf("ListByType(git) returned %d sources, want 0", len(sources))
+		if len(components) != 0 {
+			t.Errorf("ListByType(git) returned %d components, want 0", len(components))
 		}
 	})
 
 	t.Run("update", func(t *testing.T) {
-		src := &store.Source{
+		src := &store.Component{
 			ID:     "k8s-prod",
 			Type:   "kubernetes",
 			Name:   "Prod Cluster (updated)",
 			Config: json.RawMessage(`{"context": "prod-v2"}`),
 			Status: "active",
 		}
-		if err := s.Sources.Update(ctx, src); err != nil {
+		if err := s.Components.Update(ctx, src); err != nil {
 			t.Fatalf("Update() error = %v", err)
 		}
 
-		got, _ := s.Sources.Get(ctx, "k8s-prod")
+		got, _ := s.Components.Get(ctx, "k8s-prod")
 		if got.Name != "Prod Cluster (updated)" {
 			t.Errorf("Name = %q, want %q", got.Name, "Prod Cluster (updated)")
 		}
 	})
 
 	t.Run("update sync status with error", func(t *testing.T) {
-		if err := s.Sources.UpdateSyncStatus(ctx, "k8s-prod", time.Now(), "connection refused"); err != nil {
+		if err := s.Components.UpdateSyncStatus(ctx, "k8s-prod", time.Now(), "connection refused"); err != nil {
 			t.Fatalf("UpdateSyncStatus() error = %v", err)
 		}
 
-		got, _ := s.Sources.Get(ctx, "k8s-prod")
+		got, _ := s.Components.Get(ctx, "k8s-prod")
 		if got.Status != "error" {
 			t.Errorf("Status = %q, want %q", got.Status, "error")
 		}
@@ -139,22 +139,22 @@ func TestSourceRepository(t *testing.T) {
 	})
 
 	t.Run("update sync status success", func(t *testing.T) {
-		if err := s.Sources.UpdateSyncStatus(ctx, "k8s-prod", time.Now(), ""); err != nil {
+		if err := s.Components.UpdateSyncStatus(ctx, "k8s-prod", time.Now(), ""); err != nil {
 			t.Fatalf("UpdateSyncStatus() error = %v", err)
 		}
 
-		got, _ := s.Sources.Get(ctx, "k8s-prod")
+		got, _ := s.Components.Get(ctx, "k8s-prod")
 		if got.Status != "active" {
 			t.Errorf("Status = %q, want %q", got.Status, "active")
 		}
 	})
 
 	t.Run("delete", func(t *testing.T) {
-		if err := s.Sources.Delete(ctx, "k8s-prod"); err != nil {
+		if err := s.Components.Delete(ctx, "k8s-prod"); err != nil {
 			t.Fatalf("Delete() error = %v", err)
 		}
 
-		got, _ := s.Sources.Get(ctx, "k8s-prod")
+		got, _ := s.Components.Get(ctx, "k8s-prod")
 		if got != nil {
 			t.Error("expected nil after delete")
 		}
@@ -259,7 +259,7 @@ func TestClarificationRepository(t *testing.T) {
 	t.Run("mark notified", func(t *testing.T) {
 		c3 := &store.Clarification{
 			ID:       "clar-3",
-			Type:     store.ClarificationNewSource,
+			Type:     store.ClarificationNewComponent,
 			Context:  json.RawMessage(`{}`),
 			Question: "New source detected?",
 		}
@@ -506,11 +506,11 @@ func TestFactRepository(t *testing.T) {
 
 	t.Run("get by type", func(t *testing.T) {
 		s.Facts.Create(ctx, &store.OnboardingFact{
-			FactType: "team_ownership",
-			Subject:  "payments",
-			Content:  "Owned by billing team",
-			Source:   "clarification",
-			SourceID: "clar-1",
+			FactType:    "team_ownership",
+			Subject:     "payments",
+			Content:     "Owned by billing team",
+			Source:      "clarification",
+			ComponentID: "clar-1",
 		})
 
 		facts, err := s.Facts.GetByType(ctx, "team_ownership")
@@ -520,8 +520,8 @@ func TestFactRepository(t *testing.T) {
 		if len(facts) != 1 {
 			t.Fatalf("GetByType() returned %d, want 1", len(facts))
 		}
-		if facts[0].SourceID != "clar-1" {
-			t.Errorf("SourceID = %q, want %q", facts[0].SourceID, "clar-1")
+		if facts[0].ComponentID != "clar-1" {
+			t.Errorf("ComponentID = %q, want %q", facts[0].ComponentID, "clar-1")
 		}
 	})
 
@@ -560,32 +560,32 @@ func TestFactRepository(t *testing.T) {
 	})
 }
 
-func TestSourceRepository_ListAfterSync(t *testing.T) {
+func TestComponentRepository_ListAfterSync(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
 
-	src := &store.Source{
+	src := &store.Component{
 		ID:     "sync-src",
 		Type:   "prometheus",
 		Name:   "Synced Prometheus",
 		Config: json.RawMessage(`{"url":"http://prom:9090"}`),
 	}
-	if err := s.Sources.Create(ctx, src); err != nil {
+	if err := s.Components.Create(ctx, src); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
 	// Set sync status so last_sync_at is populated.
-	if err := s.Sources.UpdateSyncStatus(ctx, "sync-src", time.Now(), ""); err != nil {
+	if err := s.Components.UpdateSyncStatus(ctx, "sync-src", time.Now(), ""); err != nil {
 		t.Fatalf("UpdateSyncStatus() error = %v", err)
 	}
 
-	// List — scanSources should now hit the lastSyncAt.Valid branch.
-	sources, err := s.Sources.List(ctx)
+	// List — scanComponents should now hit the lastSyncAt.Valid branch.
+	components, err := s.Components.List(ctx)
 	if err != nil {
 		t.Fatalf("List() after sync error = %v", err)
 	}
-	var found *store.Source
-	for _, s := range sources {
+	var found *store.Component
+	for _, s := range components {
 		if s.ID == "sync-src" {
 			found = s
 			break
@@ -598,8 +598,8 @@ func TestSourceRepository_ListAfterSync(t *testing.T) {
 		t.Error("LastSyncAt should be set after UpdateSyncStatus")
 	}
 
-	// ListByType — also exercises scanSources with lastSyncAt.Valid.
-	byType, err := s.Sources.ListByType(ctx, "prometheus")
+	// ListByType — also exercises scanComponents with lastSyncAt.Valid.
+	byType, err := s.Components.ListByType(ctx, "prometheus")
 	if err != nil {
 		t.Fatalf("ListByType() after sync error = %v", err)
 	}
@@ -716,16 +716,16 @@ func TestRepositoryErrorPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("fact repository with empty source_id", func(t *testing.T) {
+	t.Run("fact repository with empty component_id", func(t *testing.T) {
 		fact := &store.OnboardingFact{
-			FactType: "test",
-			Subject:  "test-subject",
-			Content:  "test content",
-			Source:   "test",
-			SourceID: "", // empty source_id
+			FactType:    "test",
+			Subject:     "test-subject",
+			Content:     "test content",
+			Source:      "test",
+			ComponentID: "", // empty component_id
 		}
 		if err := s.Facts.Create(ctx, fact); err != nil {
-			t.Fatalf("Create() with empty SourceID error = %v", err)
+			t.Fatalf("Create() with empty ComponentID error = %v", err)
 		}
 		facts, err := s.Facts.GetBySubject(ctx, "test-subject")
 		if err != nil {
@@ -734,8 +734,8 @@ func TestRepositoryErrorPaths(t *testing.T) {
 		if len(facts) != 1 {
 			t.Fatalf("expected 1 fact, got %d", len(facts))
 		}
-		if facts[0].SourceID != "" {
-			t.Errorf("expected empty SourceID, got %q", facts[0].SourceID)
+		if facts[0].ComponentID != "" {
+			t.Errorf("expected empty ComponentID, got %q", facts[0].ComponentID)
 		}
 	})
 
@@ -760,17 +760,17 @@ func TestRepositoryErrorPaths(t *testing.T) {
 	})
 
 	t.Run("source without last_sync_at", func(t *testing.T) {
-		src := &store.Source{
+		src := &store.Component{
 			ID:     "test-src",
 			Type:   "test",
 			Name:   "Test Source",
 			Config: json.RawMessage(`{}`),
 		}
-		if err := s.Sources.Create(ctx, src); err != nil {
+		if err := s.Components.Create(ctx, src); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 
-		got, err := s.Sources.Get(ctx, "test-src")
+		got, err := s.Components.Get(ctx, "test-src")
 		if err != nil {
 			t.Fatalf("Get() error = %v", err)
 		}
@@ -780,10 +780,10 @@ func TestRepositoryErrorPaths(t *testing.T) {
 	})
 }
 
-func TestAllowedSourceTypes(t *testing.T) {
-	types := store.AllowedSourceTypes()
+func TestAllowedComponentTypes(t *testing.T) {
+	types := store.AllowedComponentTypes()
 	if len(types) == 0 {
-		t.Fatal("AllowedSourceTypes() returned empty slice")
+		t.Fatal("AllowedComponentTypes() returned empty slice")
 	}
 
 	// Check a few well-known types are present.
@@ -794,12 +794,12 @@ func TestAllowedSourceTypes(t *testing.T) {
 	}
 	for _, w := range want {
 		if !found[w] {
-			t.Errorf("AllowedSourceTypes() missing %q", w)
+			t.Errorf("AllowedComponentTypes() missing %q", w)
 		}
 	}
 }
 
-func TestIsValidSourceType(t *testing.T) {
+func TestIsValidComponentType(t *testing.T) {
 	tests := []struct {
 		sourceType string
 		want       bool
@@ -816,9 +816,9 @@ func TestIsValidSourceType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.sourceType, func(t *testing.T) {
-			got := store.IsValidSourceType(tt.sourceType)
+			got := store.IsValidComponentType(tt.sourceType)
 			if got != tt.want {
-				t.Errorf("IsValidSourceType(%q) = %v, want %v", tt.sourceType, got, tt.want)
+				t.Errorf("IsValidComponentType(%q) = %v, want %v", tt.sourceType, got, tt.want)
 			}
 		})
 	}
@@ -977,7 +977,7 @@ func TestCloseStore(t *testing.T) {
 
 	// Operations after close should fail
 	ctx := context.Background()
-	_, err = s.Sources.List(ctx)
+	_, err = s.Components.List(ctx)
 	if err == nil {
 		t.Error("expected error after Close(), got nil")
 	}

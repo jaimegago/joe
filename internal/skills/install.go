@@ -129,8 +129,8 @@ func NewManager(root string, g Git) *Manager {
 
 // WithTrustedSources returns m with its TrustedSources list set. Fluent
 // helper so wiring code can construct a manager in one expression.
-func (m *Manager) WithTrustedSources(sources []string) *Manager {
-	m.TrustedSources = append([]string(nil), sources...)
+func (m *Manager) WithTrustedSources(components []string) *Manager {
+	m.TrustedSources = append([]string(nil), components...)
 	return m
 }
 

@@ -33,14 +33,14 @@ func (t *RedisInfoTool) Description() string {
 		"memory (used memory, fragmentation), stats (commands processed, hits/misses), " +
 		"replication (role, slave count, replication offset), cpu, or all. " +
 		"Use this to diagnose memory pressure, connection saturation, and cache hit rates. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *RedisInfoTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Redis source to query.",
 			},
@@ -49,14 +49,14 @@ func (t *RedisInfoTool) Parameters() llm.ParameterSchema {
 				Description: "INFO section to retrieve: server, clients, memory, stats, replication, cpu, or all. Omit for default sections.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *RedisInfoTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	section, _ := args["section"].(string)
@@ -67,9 +67,9 @@ func (t *RedisInfoTool) Execute(ctx context.Context, args map[string]any) (any, 
 	}
 
 	return map[string]any{
-		"info":      info,
-		"section":   section,
-		"source_id": sourceID,
+		"info":         info,
+		"section":      section,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -89,14 +89,14 @@ func (t *RedisSlowLogTool) Description() string {
 	return "Retrieve recent Redis slow log entries showing commands that exceeded the slowlog threshold. " +
 		"Each entry includes the command, execution time in microseconds, and timestamp. " +
 		"Use this to identify expensive or blocked Redis commands. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *RedisSlowLogTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Redis source to query.",
 			},
@@ -105,14 +105,14 @@ func (t *RedisSlowLogTool) Parameters() llm.ParameterSchema {
 				Description: "Number of slow log entries to return. Defaults to 10.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *RedisSlowLogTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	count := int64(10)
@@ -130,8 +130,8 @@ func (t *RedisSlowLogTool) Execute(ctx context.Context, args map[string]any) (an
 	}
 
 	return map[string]any{
-		"entries":   entries,
-		"count":     len(entries),
-		"source_id": sourceID,
+		"entries":      entries,
+		"count":        len(entries),
+		"component_id": sourceID,
 	}, nil
 }

@@ -19,7 +19,7 @@ type fakeAWSAdapter struct {
 	vpcs         []awsadapter.VPC
 }
 
-func (f *fakeAWSAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeAWSAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
 
 func (f *fakeAWSAdapter) Disconnect() error { return nil }
 
@@ -59,16 +59,16 @@ func (f *fakeAWSAdapter) GetVPC(_ context.Context, _ string) (*awsadapter.VPC, e
 	return nil, nil
 }
 
-func TestRefreshAWSSourceMapping(t *testing.T) {
+func TestRefreshAWSComponentMapping(t *testing.T) {
 	graphStore := setupGraphStore(t)
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
 
-	source := &store.Source{
+	source := &store.Component{
 		ID:     "src-aws-1",
-		Type:   store.SourceTypeAWS,
+		Type:   store.ComponentTypeAWS,
 		Name:   "test-aws",
 		Config: []byte(`{"region":"us-west-2"}`),
 	}
@@ -87,13 +87,13 @@ func TestRefreshAWSSourceMapping(t *testing.T) {
 		},
 	}
 
-	if err := refresher.refreshAWSSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAWSSource error: %v", err)
+	if err := refresher.refreshAWSComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAWSComponent error: %v", err)
 	}
 
-	nodes, edges, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	nodes, edges, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(nodes) != 4 {
@@ -105,15 +105,15 @@ func TestRefreshAWSSourceMapping(t *testing.T) {
 	requireEdge(t, edges, "aws/src-aws-1/rds/db-1", "aws/src-aws-1/vpc/vpc-1", "in_vpc")
 }
 
-func TestRefreshAWSSource_IsK8sNodeEdge(t *testing.T) {
+func TestRefreshAWSComponent_IsK8sNodeEdge(t *testing.T) {
 	graphStore := setupGraphStore(t)
 
 	// Pre-seed a K8s node with an InternalIP matching the EC2 instance.
 	k8sNode := graph.Node{
-		ID:       "k8s/src-k8s/node/ip-10-0-1-5",
-		Type:     "node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "ip-10-0-1-5", "internal_ip": "10.0.1.5"},
+		ID:          "k8s/src-k8s/node/ip-10-0-1-5",
+		Type:        "node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "ip-10-0-1-5", "internal_ip": "10.0.1.5"},
 	}
 	if err := graphStore.AddNode(context.Background(), k8sNode); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -123,15 +123,15 @@ func TestRefreshAWSSource_IsK8sNodeEdge(t *testing.T) {
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
-	source := &store.Source{ID: "src-aws-k8s", Type: store.SourceTypeAWS, Name: "aws"}
+	source := &store.Component{ID: "src-aws-k8s", Type: store.ComponentTypeAWS, Name: "aws"}
 	adapter := &fakeAWSAdapter{
 		ec2Instances: []awsadapter.EC2Instance{
 			{InstanceID: "i-abc", InstanceType: "m5.large", State: "running", PrivateIP: "10.0.1.5"},
 		},
 	}
 
-	if err := refresher.refreshAWSSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAWSSource error: %v", err)
+	if err := refresher.refreshAWSComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAWSComponent error: %v", err)
 	}
 
 	// Cross-source edges span both endpoints; query with both node IDs.
@@ -144,14 +144,14 @@ func TestRefreshAWSSource_IsK8sNodeEdge(t *testing.T) {
 	requireEdge(t, edges, ec2NodeID, k8sNodeID, "is_k8s_node")
 }
 
-func TestRefreshAWSSource_IsK8sNodeEdge_NoMatch(t *testing.T) {
+func TestRefreshAWSComponent_IsK8sNodeEdge_NoMatch(t *testing.T) {
 	graphStore := setupGraphStore(t)
 
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
-	source := &store.Source{ID: "src-aws-nomatch", Type: store.SourceTypeAWS, Name: "aws"}
+	source := &store.Component{ID: "src-aws-nomatch", Type: store.ComponentTypeAWS, Name: "aws"}
 	adapter := &fakeAWSAdapter{
 		ec2Instances: []awsadapter.EC2Instance{
 			{InstanceID: "i-xyz", InstanceType: "t3.micro", State: "running", PrivateIP: "192.168.1.1"},
@@ -159,8 +159,8 @@ func TestRefreshAWSSource_IsK8sNodeEdge_NoMatch(t *testing.T) {
 	}
 
 	// No K8s nodes in graph → no is_k8s_node edges, no error.
-	if err := refresher.refreshAWSSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAWSSource error: %v", err)
+	if err := refresher.refreshAWSComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAWSComponent error: %v", err)
 	}
 }
 

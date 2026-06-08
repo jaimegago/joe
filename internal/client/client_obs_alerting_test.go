@@ -26,38 +26,38 @@ func TestAlertingClientEndpoints(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/alertmanager/src/alerts"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"alerts":    []alertmanageradapter.Alert{{Fingerprint: "fp1"}},
-				"count":     1,
-				"source_id": "src",
+				"alerts":       []alertmanageradapter.Alert{{Fingerprint: "fp1"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/pagerduty/src/incidents"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"incidents": []pagerdutyadapter.Incident{{ID: "INC001"}},
-				"count":     1,
-				"source_id": "src",
+				"incidents":    []pagerdutyadapter.Incident{{ID: "INC001"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/pagerduty/src/services"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"services":  []pagerdutyadapter.Service{{ID: "SVC001", Name: "payment"}},
-				"count":     1,
-				"source_id": "src",
+				"services":     []pagerdutyadapter.Service{{ID: "SVC001", Name: "payment"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/grafana/src/dashboards") && !strings.Contains(r.URL.Path, "/dashboards/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"dashboards": []grafanaadapter.Dashboard{{UID: "dash-1", Title: "Overview"}},
-				"count":      1,
-				"source_id":  "src",
+				"dashboards":   []grafanaadapter.Dashboard{{UID: "dash-1", Title: "Overview"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.Contains(r.URL.Path, "/grafana/src/dashboards/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"dashboard": &grafanaadapter.DashboardDetail{UID: "dash-1", Title: "Overview"},
-				"source_id": "src",
+				"dashboard":    &grafanaadapter.DashboardDetail{UID: "dash-1", Title: "Overview"},
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/grafana/src/alerts"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"alerts":    []grafanaadapter.GrafanaAlert{{Fingerprint: "fp2", State: "active"}},
-				"count":     1,
-				"source_id": "src",
+				"alerts":       []grafanaadapter.GrafanaAlert{{Fingerprint: "fp2", State: "active"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -149,54 +149,54 @@ func TestObservabilityClientEndpoints(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/prometheus/src/query"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result":    &prometheusadapter.QueryResult{ResultType: "vector"},
-				"source_id": "src",
-				"query":     "up",
+				"result":       &prometheusadapter.QueryResult{ResultType: "vector"},
+				"component_id": "src",
+				"query":        "up",
 			})
 		case strings.HasSuffix(r.URL.Path, "/prometheus/src/query_range"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result":    &prometheusadapter.QueryResult{ResultType: "matrix"},
-				"source_id": "src",
-				"query":     "up",
+				"result":       &prometheusadapter.QueryResult{ResultType: "matrix"},
+				"component_id": "src",
+				"query":        "up",
 			})
 		case strings.HasSuffix(r.URL.Path, "/prometheus/src/targets"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"targets":   []prometheusadapter.Target{{State: "active"}},
-				"count":     1,
-				"source_id": "src",
+				"targets":      []prometheusadapter.Target{{State: "active"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/loki/src/query"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result":    map[string]any{"result_type": "streams"},
-				"source_id": "src",
+				"result":       map[string]any{"result_type": "streams"},
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/loki/src/query_range"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result":    map[string]any{"result_type": "streams"},
-				"source_id": "src",
+				"result":       map[string]any{"result_type": "streams"},
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/tempo/src/search"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"traces":    []tempoadapter.TraceSearchResult{{TraceID: "abc"}},
-				"count":     1,
-				"source_id": "src",
+				"traces":       []tempoadapter.TraceSearchResult{{TraceID: "abc"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.Contains(r.URL.Path, "/tempo/src/traces/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"trace":     &tempoadapter.Trace{TraceID: "abc123", SpanCount: 3},
-				"source_id": "src",
+				"trace":        &tempoadapter.Trace{TraceID: "abc123", SpanCount: 3},
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/jaeger/src/services"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"services":  []string{"payment", "order"},
-				"count":     2,
-				"source_id": "src",
+				"services":     []string{"payment", "order"},
+				"count":        2,
+				"component_id": "src",
 			})
 		case strings.HasSuffix(r.URL.Path, "/jaeger/src/traces"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"traces":    []jaegeradapter.TraceSearchResult{{TraceID: "t1"}},
-				"count":     1,
-				"source_id": "src",
+				"traces":       []jaegeradapter.TraceSearchResult{{TraceID: "t1"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
@@ -396,14 +396,14 @@ func TestAWSVPCWrappers(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/vpc/vpcs") && !strings.Contains(r.URL.Path, "/vpcs/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"vpcs":      []map[string]any{{"vpc_id": "vpc-1"}},
-				"count":     1,
-				"source_id": "src",
+				"vpcs":         []map[string]any{{"vpc_id": "vpc-1"}},
+				"count":        1,
+				"component_id": "src",
 			})
 		case strings.Contains(r.URL.Path, "/vpc/vpcs/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"vpc":       map[string]any{"vpc_id": "vpc-1"},
-				"source_id": "src",
+				"vpc":          map[string]any{"vpc_id": "vpc-1"},
+				"component_id": "src",
 			})
 		}
 	}))

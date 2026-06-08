@@ -1,15 +1,15 @@
-import type { Source } from '@/api/types';
+import type { Component } from '@/api/types';
 import { STATUS_CONFIG } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
-interface SourcesHealthProps {
-  sources: Source[];
+interface ComponentsHealthProps {
+  components: Component[];
 }
 
-export function SourcesHealth({ sources }: SourcesHealthProps) {
+export function ComponentsHealth({ components }: ComponentsHealthProps) {
   return (
     <div className="flex flex-wrap gap-3">
-      {sources.map((s) => {
+      {components.map((s) => {
         const status = STATUS_CONFIG[s.status] ?? STATUS_CONFIG.unknown;
         return (
           <div key={s.id} className="flex items-center gap-1.5">

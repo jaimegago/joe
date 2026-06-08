@@ -70,7 +70,7 @@ func TestAdapter_Connect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := prometheus.New()
-	source := store.Source{
+	source := store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}
 
@@ -91,7 +91,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := prometheus.New()
-	source := store.Source{
+	source := store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}
 
@@ -130,7 +130,7 @@ func TestAdapter_Query(t *testing.T) {
 	defer srv.Close()
 
 	adapter := prometheus.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestAdapter_QueryRange(t *testing.T) {
 	defer srv.Close()
 
 	adapter := prometheus.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -233,7 +233,7 @@ func TestAdapter_Targets(t *testing.T) {
 	defer srv.Close()
 
 	adapter := prometheus.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
+	source := store.Component{Config: mustMarshal(t, map[string]any{"url": srv.URL})}
 	if err := adapter.Connect(context.Background(), source); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
@@ -297,7 +297,7 @@ func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	// Empty config (no bytes) → falls into else branch → make(map[string]any)
 	// ParseConfig will fail because URL is required.
 	adapter := prometheus.New()
-	source := store.Source{Config: nil}
+	source := store.Component{Config: nil}
 	err := adapter.Connect(context.Background(), source)
 	if err == nil {
 		t.Error("Connect() with empty config expected error, got nil")
@@ -306,7 +306,7 @@ func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := prometheus.New()
-	source := store.Source{Config: []byte(`{bad json`)}
+	source := store.Component{Config: []byte(`{bad json`)}
 	err := adapter.Connect(context.Background(), source)
 	if err == nil {
 		t.Error("Connect() with bad JSON expected error, got nil")
@@ -332,7 +332,7 @@ func TestAdapter_Query_HTTP500(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -360,7 +360,7 @@ func TestAdapter_Query_MalformedJSON(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -390,7 +390,7 @@ func TestAdapter_Query_ErrorStatus(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -439,7 +439,7 @@ func TestAdapter_QueryRange_SmallStep(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -479,7 +479,7 @@ func TestAdapter_Targets_HTTP500(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -507,7 +507,7 @@ func TestAdapter_Targets_MalformedJSON(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -555,7 +555,7 @@ func TestAdapter_Targets_WithDroppedTargets(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": srv.URL}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -615,7 +615,7 @@ func TestAdapter_Connect_NetworkError(t *testing.T) {
 	srv.Close()
 
 	adapter := prometheus.New()
-	err := adapter.Connect(context.Background(), store.Source{
+	err := adapter.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": addr}),
 	})
 	if err == nil {
@@ -638,7 +638,7 @@ func TestAdapter_Targets_NetworkError(t *testing.T) {
 	targetAddr = srv.URL
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{"url": targetAddr}),
 	}); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -674,7 +674,7 @@ func TestAdapter_addHeaders_WithAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	a := prometheus.New()
-	if err := a.Connect(context.Background(), store.Source{
+	if err := a.Connect(context.Background(), store.Component{
 		Config: mustMarshal(t, map[string]any{
 			"url":     srv.URL,
 			"api_key": "my-token",

@@ -107,21 +107,21 @@ func TestParseTimeOrWarn(t *testing.T) {
 	})
 }
 
-// TestEncryptedSourceRepository_EncryptSourceErrorPath triggers the marshal-error
-// branch in encryptSource indirectly by wrapping a repo that corrupts data.
-// We exercise the encryptSource path with a valid config to confirm 100% hit on
+// TestEncryptedComponentRepository_EncryptSourceErrorPath triggers the marshal-error
+// branch in encryptComponent indirectly by wrapping a repo that corrupts data.
+// We exercise the encryptComponent path with a valid config to confirm 100% hit on
 // the happy path, and the nil/empty branch.
-func TestEncryptedSourceRepository_EncryptSourcePaths(t *testing.T) {
+func TestEncryptedComponentRepository_EncryptSourcePaths(t *testing.T) {
 	key := testKey()
 	inner := newMockRepo()
-	repo, err := NewEncryptedSourceRepository(inner, key)
+	repo, err := NewEncryptedComponentRepository(inner, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	// Empty config — encryptSource returns early.
-	src := &Source{ID: "empty-cfg", Type: "git", Name: "bare", Config: json.RawMessage("")}
+	// Empty config — encryptComponent returns early.
+	src := &Component{ID: "empty-cfg", Type: "git", Name: "bare", Config: json.RawMessage("")}
 	if err := repo.Create(ctx, src); err != nil {
 		t.Fatalf("Create() with empty Config error = %v", err)
 	}
@@ -134,8 +134,8 @@ func TestEncryptedSourceRepository_EncryptSourcePaths(t *testing.T) {
 		t.Fatal("Get() returned nil")
 	}
 
-	// Non-empty config — encryptSource runs encryption.
-	src2 := &Source{ID: "real-cfg", Type: "prometheus", Name: "prom", Config: json.RawMessage(`{"token":"abc"}`)}
+	// Non-empty config — encryptComponent runs encryption.
+	src2 := &Component{ID: "real-cfg", Type: "prometheus", Name: "prom", Config: json.RawMessage(`{"token":"abc"}`)}
 	if err := repo.Create(ctx, src2); err != nil {
 		t.Fatalf("Create() with real Config error = %v", err)
 	}

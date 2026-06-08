@@ -54,20 +54,20 @@ import (
 // hop and NO re-authentication: identity is established once at the edge and
 // carried by context, per docs/joe-identity-design.md §1.
 //
-// For tools that do not touch an adapter or the graph store (list_sources,
+// For tools that do not touch an adapter or the graph store (list_components,
 // search_knowledge, doc-drafter, proposals/publish), the client reaches the
 // in-process service directly. These services are not principal-gated today
 // (they predate Phase A's accessor) and are NOT what the no-ungoverned-access
 // invariant covers — that invariant guards adapters and the graph store only
 // (internal/api/access_guard_test.go).
 type inProcessCoreClient struct {
-	accessor  *access.Accessor
-	services  *core.Services
-	sources   store.SourceRepository
-	knowledge *knowledge.Service
-	drafts    *drafts.Generator
-	proposals *proposals.Service
-	drift     *drift.Detector
+	accessor   *access.Accessor
+	services   *core.Services
+	components store.ComponentRepository
+	knowledge  *knowledge.Service
+	drafts     *drafts.Generator
+	proposals  *proposals.Service
+	drift      *drift.Detector
 }
 
 // newInProcessCoreClient builds the in-process accessor-backed client used by
@@ -89,7 +89,7 @@ func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) 
 		drift:     services.DriftDet,
 	}
 	if services.Store != nil {
-		c.sources = services.Store.Sources
+		c.components = services.Store.Components
 	}
 	return c
 }
@@ -100,16 +100,16 @@ func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) 
 // always sets a principal for a non-public path — see
 // docs/joe-identity-design.md §1.
 
-// --- list_sources (uses services.Store.Sources; not an adapter) ---
+// --- list_components (uses services.Store.Components; not an adapter) ---
 
-func (c *inProcessCoreClient) ListSources(ctx context.Context) ([]*store.Source, error) {
-	if c.sources == nil {
+func (c *inProcessCoreClient) ListComponents(ctx context.Context) ([]*store.Component, error) {
+	if c.components == nil {
 		return nil, fmt.Errorf("source repository not configured")
 	}
-	return c.sources.List(ctx)
+	return c.components.List(ctx)
 }
 
-// --- graph (gated by accessor under reserved GraphSourceID) ---
+// --- graph (gated by accessor under reserved GraphComponentID) ---
 
 func (c *inProcessCoreClient) GraphQuery(ctx context.Context, query string) ([]graph.Node, error) {
 	return c.accessor.GraphQuery(ctx, rbac.PrincipalFromContext(ctx), query)

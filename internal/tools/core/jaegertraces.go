@@ -27,14 +27,14 @@ func NewJaegerTracesTool(c JaegerClient) *JaegerTracesTool {
 func (t *JaegerTracesTool) Name() string { return "jaeger_traces" }
 
 func (t *JaegerTracesTool) Description() string {
-	return "Query distributed traces from Jaeger. List all services Jaeger knows about, or search for traces by service name and operation. Useful for understanding request flows, finding latency issues, and debugging distributed systems. If you don't know the source_id, call list_sources first."
+	return "Query distributed traces from Jaeger. List all services Jaeger knows about, or search for traces by service name and operation. Useful for understanding request flows, finding latency issues, and debugging distributed systems. If you don't know the component_id, call list_components first."
 }
 
 func (t *JaegerTracesTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Jaeger source to query.",
 			},
@@ -55,14 +55,14 @@ func (t *JaegerTracesTool) Parameters() llm.ParameterSchema {
 				Description: "Maximum number of traces to return. Defaults to 20.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *JaegerTracesTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	action, _ := args["action"].(string)
@@ -77,9 +77,9 @@ func (t *JaegerTracesTool) Execute(ctx context.Context, args map[string]any) (an
 			return nil, fmt.Errorf("jaeger list services failed: %w", err)
 		}
 		return map[string]any{
-			"services":  services,
-			"count":     len(services),
-			"source_id": sourceID,
+			"services":     services,
+			"count":        len(services),
+			"component_id": sourceID,
 		}, nil
 
 	default: // "traces"
@@ -100,9 +100,9 @@ func (t *JaegerTracesTool) Execute(ctx context.Context, args map[string]any) (an
 			return nil, fmt.Errorf("jaeger search traces failed: %w", err)
 		}
 		return map[string]any{
-			"traces":    traces,
-			"count":     len(traces),
-			"source_id": sourceID,
+			"traces":       traces,
+			"count":        len(traces),
+			"component_id": sourceID,
 		}, nil
 	}
 }

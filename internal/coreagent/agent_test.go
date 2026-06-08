@@ -71,7 +71,7 @@ func TestNewCoreAgent(t *testing.T) {
 		"graph_add_node":       true,
 		"graph_add_edge":       true,
 		"graph_update_node":    true,
-		"register_source":      true,
+		"register_component":   true,
 		"save_onboarding_fact": true,
 	}
 
@@ -217,7 +217,7 @@ func TestToolNamesAndDescriptions(t *testing.T) {
 		{NewGraphAddNodeTool(svc, logger), "graph_add_node"},
 		{NewGraphAddEdgeTool(svc, logger), "graph_add_edge"},
 		{NewGraphUpdateNodeTool(svc, logger), "graph_update_node"},
-		{NewRegisterSourceTool(svc, logger), "register_source"},
+		{NewRegisterComponentTool(svc, logger), "register_component"},
 		{NewSaveOnboardingFactTool(svc, logger), "save_onboarding_fact"},
 	}
 	for _, tt := range tools {
@@ -242,7 +242,7 @@ func TestToolParameters(t *testing.T) {
 		NewGraphAddNodeTool(svc, logger),
 		NewGraphAddEdgeTool(svc, logger),
 		NewGraphUpdateNodeTool(svc, logger),
-		NewRegisterSourceTool(svc, logger),
+		NewRegisterComponentTool(svc, logger),
 		NewSaveOnboardingFactTool(svc, logger),
 	}
 	for _, tool := range tools {
@@ -354,12 +354,12 @@ func TestGraphUpdateNodeTool_Execute(t *testing.T) {
 	})
 }
 
-// ── RegisterSourceTool.Execute ───────────────────────────────────────────────
+// ── RegisterComponentTool.Execute ───────────────────────────────────────────────
 
-func TestRegisterSourceTool_Execute(t *testing.T) {
+func TestRegisterComponentTool_Execute(t *testing.T) {
 	svc := makeTestServices(t)
 	ctx := context.Background()
-	tool := NewRegisterSourceTool(svc, slog.Default())
+	tool := NewRegisterComponentTool(svc, slog.Default())
 
 	tests := []struct {
 		name    string
@@ -422,33 +422,33 @@ func TestTriggerRefresh(t *testing.T) {
 	}
 }
 
-func TestTriggerRefreshSource_NotFound(t *testing.T) {
+func TestTriggerRefreshComponent_NotFound(t *testing.T) {
 	svc := makeTestServices(t)
 	agent := New(svc, &mockLLMAdapter{}, nil)
-	err := agent.TriggerRefreshSource(context.Background(), "does-not-exist")
+	err := agent.TriggerRefreshComponent(context.Background(), "does-not-exist")
 	if err == nil {
 		t.Error("expected error for nonexistent source")
 	}
 }
 
-func TestTriggerRefreshSource_NoAdapter(t *testing.T) {
+func TestTriggerRefreshComponent_NoAdapter(t *testing.T) {
 	svc := makeTestServices(t)
 	ctx := context.Background()
 
 	// Insert a source without registering an adapter.
-	src := &store.Source{
+	src := &store.Component{
 		ID:     "src-no-adapter",
 		Name:   "test",
-		Type:   store.SourceTypeKubernetes,
+		Type:   store.ComponentTypeKubernetes,
 		Config: json.RawMessage(`{}`),
 	}
-	if err := svc.Store.Sources.Create(ctx, src); err != nil {
+	if err := svc.Store.Components.Create(ctx, src); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
 
 	agent := New(svc, &mockLLMAdapter{}, nil)
-	// refreshSource will error (adapter not found) but TriggerRefreshSource returns it.
-	err := agent.TriggerRefreshSource(ctx, src.ID)
+	// refreshComponent will error (adapter not found) but TriggerRefreshComponent returns it.
+	err := agent.TriggerRefreshComponent(ctx, src.ID)
 	if err == nil {
 		t.Error("expected error when no adapter registered for source")
 	}

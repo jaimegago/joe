@@ -10,32 +10,32 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 )
 
-// ErrSourceNotFound is returned when a source cannot be found by ID.
-var ErrSourceNotFound = errors.New("source not found")
+// ErrComponentNotFound is returned when a source cannot be found by ID.
+var ErrComponentNotFound = errors.New("source not found")
 
-// SourceRepository defines operations on sources.
-type SourceRepository interface {
-	Create(ctx context.Context, source *Source) error
-	Get(ctx context.Context, id string) (*Source, error)
-	List(ctx context.Context) ([]*Source, error)
-	ListByType(ctx context.Context, sourceType string) ([]*Source, error)
-	Update(ctx context.Context, source *Source) error
+// ComponentRepository defines operations on components.
+type ComponentRepository interface {
+	Create(ctx context.Context, source *Component) error
+	Get(ctx context.Context, id string) (*Component, error)
+	List(ctx context.Context) ([]*Component, error)
+	ListByType(ctx context.Context, sourceType string) ([]*Component, error)
+	Update(ctx context.Context, source *Component) error
 	UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error
 	Delete(ctx context.Context, id string) error
 }
 
-type sqlSourceRepository struct {
+type sqlComponentRepository struct {
 	db      *sql.DB
 	driver  string
 	metrics *observability.Metrics
 }
 
-func (r *sqlSourceRepository) Create(ctx context.Context, source *Source) (err error) {
+func (r *sqlComponentRepository) Create(ctx context.Context, source *Component) (err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.create", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.create", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		INSERT INTO sources (id, type, name, config, status, created_at, updated_at)
+		INSERT INTO components (id, type, name, config, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`)
 	now := time.Now()
@@ -55,15 +55,15 @@ func (r *sqlSourceRepository) Create(ctx context.Context, source *Source) (err e
 	return nil
 }
 
-func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Source, err error) {
+func (r *sqlComponentRepository) Get(ctx context.Context, id string) (source *Component, err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.get", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.get", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
 		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
-		FROM sources WHERE id = ?
+		FROM components WHERE id = ?
 	`)
-	var s Source
+	var s Component
 	var config []byte
 	var lastSyncAt, lastError sql.NullString
 
@@ -80,7 +80,7 @@ func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Sourc
 
 	s.Config = config
 	if lastSyncAt.Valid {
-		s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "sources.last_sync_at")
+		s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "components.last_sync_at")
 	}
 	if lastError.Valid {
 		s.LastError = lastError.String
@@ -89,44 +89,44 @@ func (r *sqlSourceRepository) Get(ctx context.Context, id string) (source *Sourc
 	return &s, nil
 }
 
-func (r *sqlSourceRepository) List(ctx context.Context) (sources []*Source, err error) {
+func (r *sqlComponentRepository) List(ctx context.Context) (components []*Component, err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.list", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.list", time.Since(start), err) }()
 
 	query := `
 		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
-		FROM sources ORDER BY name
+		FROM components ORDER BY name
 	`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("query sources: %w", err)
+		return nil, fmt.Errorf("query components: %w", err)
 	}
 	defer rows.Close()
 
-	return scanSources(rows)
+	return scanComponents(rows)
 }
 
-func (r *sqlSourceRepository) ListByType(ctx context.Context, sourceType string) (sources []*Source, err error) {
+func (r *sqlComponentRepository) ListByType(ctx context.Context, sourceType string) (components []*Component, err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.list_by_type", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.list_by_type", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
 		SELECT id, type, name, config, status, last_sync_at, last_error, created_at, updated_at
-		FROM sources WHERE type = ? ORDER BY name
+		FROM components WHERE type = ? ORDER BY name
 	`)
 	rows, err := r.db.QueryContext(ctx, query, sourceType)
 	if err != nil {
-		return nil, fmt.Errorf("query sources by type: %w", err)
+		return nil, fmt.Errorf("query components by type: %w", err)
 	}
 	defer rows.Close()
 
-	return scanSources(rows)
+	return scanComponents(rows)
 }
 
-func scanSources(rows *sql.Rows) ([]*Source, error) {
-	var sources []*Source
+func scanComponents(rows *sql.Rows) ([]*Component, error) {
+	var components []*Component
 	for rows.Next() {
-		var s Source
+		var s Component
 		var config []byte
 		var lastSyncAt, lastError sql.NullString
 
@@ -139,22 +139,22 @@ func scanSources(rows *sql.Rows) ([]*Source, error) {
 
 		s.Config = config
 		if lastSyncAt.Valid {
-			s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "sources.last_sync_at")
+			s.LastSyncAt = parseTimeOrWarn(lastSyncAt.String, "components.last_sync_at")
 		}
 		if lastError.Valid {
 			s.LastError = lastError.String
 		}
-		sources = append(sources, &s)
+		components = append(components, &s)
 	}
-	return sources, rows.Err()
+	return components, rows.Err()
 }
 
-func (r *sqlSourceRepository) Update(ctx context.Context, source *Source) (err error) {
+func (r *sqlComponentRepository) Update(ctx context.Context, source *Component) (err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.update", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.update", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		UPDATE sources
+		UPDATE components
 		SET type = ?, name = ?, config = ?, status = ?, updated_at = ?
 		WHERE id = ?
 	`)
@@ -169,12 +169,12 @@ func (r *sqlSourceRepository) Update(ctx context.Context, source *Source) (err e
 	return nil
 }
 
-func (r *sqlSourceRepository) UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) (err error) {
+func (r *sqlComponentRepository) UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) (err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.update_sync_status", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.update_sync_status", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		UPDATE sources
+		UPDATE components
 		SET last_sync_at = ?, last_error = ?, status = ?, updated_at = ?
 		WHERE id = ?
 	`)
@@ -189,11 +189,11 @@ func (r *sqlSourceRepository) UpdateSyncStatus(ctx context.Context, id string, s
 	return nil
 }
 
-func (r *sqlSourceRepository) Delete(ctx context.Context, id string) (err error) {
+func (r *sqlComponentRepository) Delete(ctx context.Context, id string) (err error) {
 	start := time.Now()
-	defer func() { r.metrics.RecordDBOperation(ctx, "sources.delete", time.Since(start), err) }()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.delete", time.Since(start), err) }()
 
-	_, err = r.db.ExecContext(ctx, Rebind(r.driver, "DELETE FROM sources WHERE id = ?"), id)
+	_, err = r.db.ExecContext(ctx, Rebind(r.driver, "DELETE FROM components WHERE id = ?"), id)
 	if err != nil {
 		return fmt.Errorf("delete source: %w", err)
 	}

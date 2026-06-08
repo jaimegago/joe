@@ -281,12 +281,12 @@ func TestSignOnE2E_OIDCRoundTripAndAudit(t *testing.T) {
 	// Audit: exactly one oidc_login and one admin_granted, with the expected
 	// kind/source/decision metadata.
 	if n := a.auditCount(t,
-		"kind=? AND action=? AND principal=? AND source='oidc' AND decision='allow'",
+		"kind=? AND action=? AND principal=? AND component_id='oidc' AND decision='allow'",
 		audit.KindAuthLogin, audit.ActionOIDCLogin, e2eAdminPrincipal); n != 1 {
 		t.Errorf("oidc_login rows after first login = %d, want 1", n)
 	}
 	if n := a.auditCount(t,
-		"kind=? AND action=? AND principal=? AND source='admin-bootstrap' AND decision='allow'",
+		"kind=? AND action=? AND principal=? AND component_id='admin-bootstrap' AND decision='allow'",
 		audit.KindAuthLogin, audit.ActionAdminGranted, e2eAdminPrincipal); n != 1 {
 		t.Errorf("admin_granted rows after first login = %d, want 1", n)
 	}
@@ -389,7 +389,7 @@ func TestSignOnE2E_BreakGlassAuditDedup(t *testing.T) {
 
 	bgPrincipal := "svc:" + e2eBreakGlassName
 	if got := a.auditCount(t,
-		"kind=? AND action=? AND principal=? AND source='break-glass' AND decision='allow'",
+		"kind=? AND action=? AND principal=? AND component_id='break-glass' AND decision='allow'",
 		audit.KindAuthLogin, audit.ActionBreakGlassUse, bgPrincipal); got != 1 {
 		t.Errorf("break_glass_use rows after %d requests = %d, want 1 (windowed dedup)", n, got)
 	}

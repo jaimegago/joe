@@ -77,7 +77,7 @@ func NewWithClient(client httpDoer) *Adapter {
 }
 
 // Connect establishes and verifies connectivity to New Relic.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

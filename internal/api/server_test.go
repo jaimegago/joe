@@ -29,13 +29,13 @@ func setupTestServer(t *testing.T) (*api.Server, graph.GraphStore) {
 		CREATE TABLE graph_nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			source_id TEXT,
+			component_id TEXT,
 			metadata TEXT DEFAULT '{}',
 			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-		CREATE INDEX idx_graph_nodes_source ON graph_nodes(source_id);
+		CREATE INDEX idx_graph_nodes_source ON graph_nodes(component_id);
 
 		CREATE TABLE graph_edges (
 			from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -89,8 +89,8 @@ func seedTestGraph(t *testing.T, store graph.GraphStore) {
 	}
 
 	edges := []graph.Edge{
-		{From: "payment-svc", To: "user-svc", Relation: "calls", SourceID: ""},
-		{From: "user-svc", To: "postgres", Relation: "reads_from", SourceID: ""},
+		{From: "payment-svc", To: "user-svc", Relation: "calls", ComponentID: ""},
+		{From: "user-svc", To: "postgres", Relation: "reads_from", ComponentID: ""},
 	}
 	for _, e := range edges {
 		if err := store.AddEdge(ctx, e); err != nil {
@@ -305,7 +305,7 @@ func TestHandleGraphRelated(t *testing.T) {
 				}
 				if err := store.AddEdge(ctx, graph.Edge{
 					From: "deployment/prod/payment-svc", To: "deployment/prod/user-svc", Relation: "calls",
-					SourceID: "",
+					ComponentID: "",
 				}); err != nil {
 					t.Fatalf("add edge: %v", err)
 				}

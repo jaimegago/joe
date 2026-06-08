@@ -15,9 +15,9 @@ type GraphDelta struct {
 	EdgesToDelete []graph.Edge
 }
 
-// LoadGraphStateForSource returns current nodes and edges for a source.
-func LoadGraphStateForSource(ctx context.Context, store graph.GraphStore, sourceID string) ([]graph.Node, []graph.Edge, error) {
-	nodes, err := store.ListNodesBySource(ctx, sourceID)
+// LoadGraphStateForComponent returns current nodes and edges for a source.
+func LoadGraphStateForComponent(ctx context.Context, store graph.GraphStore, sourceID string) ([]graph.Node, []graph.Edge, error) {
+	nodes, err := store.ListNodesByComponent(ctx, sourceID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list nodes for source %s: %w", sourceID, err)
 	}

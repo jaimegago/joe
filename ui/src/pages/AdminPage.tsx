@@ -9,8 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ZonesTable } from '@/components/admin/ZonesTable';
 import { ZoneForm } from '@/components/admin/ZoneForm';
-import { UnassignedSources } from '@/components/admin/UnassignedSources';
-import { SourceZoneAssign } from '@/components/admin/SourceZoneAssign';
+import { UnassignedComponents } from '@/components/admin/UnassignedComponents';
+import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
 import { PoliciesTable } from '@/components/admin/PoliciesTable';
 import { PolicyForm } from '@/components/admin/PolicyForm';
 import { AdminsTable } from '@/components/admin/AdminsTable';
@@ -84,7 +84,7 @@ export function AdminPage() {
         <Tabs defaultValue="zones">
           <TabsList className="mb-4">
             <TabsTrigger value="zones">Zones</TabsTrigger>
-            <TabsTrigger value="sources">Sources</TabsTrigger>
+            <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="policies">Policies</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
@@ -93,7 +93,7 @@ export function AdminPage() {
             <div className="mb-3 flex justify-end">
               <Button size="sm" onClick={() => setShowCreateZone(true)}>+ Create Zone</Button>
             </div>
-            <UnassignedSources unassigned={unassigned} zones={zones} />
+            <UnassignedComponents unassigned={unassigned} zones={zones} />
             {zones.length === 0 ? (
               <EmptyState icon={ShieldCheck} title="No zones" description="Create a security zone to get started." />
             ) : (
@@ -101,8 +101,8 @@ export function AdminPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="sources">
-            <SourceZoneAssign />
+          <TabsContent value="components">
+            <ComponentZoneAssign />
           </TabsContent>
 
           <TabsContent value="policies">

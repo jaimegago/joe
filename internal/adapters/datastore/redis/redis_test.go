@@ -87,7 +87,7 @@ func TestParseConfig(t *testing.T) {
 
 func TestConnect_InvalidConfig(t *testing.T) {
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{})} // missing host
+	src := store.Component{Config: mustMarshal(t, map[string]any{})} // missing host
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for missing host, got nil")
 	}
@@ -95,7 +95,7 @@ func TestConnect_InvalidConfig(t *testing.T) {
 
 func TestConnect_BadJSON(t *testing.T) {
 	a := New()
-	src := store.Source{Config: []byte(`{invalid`)}
+	src := store.Component{Config: []byte(`{invalid`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for bad JSON, got nil")
 	}
@@ -266,7 +266,7 @@ func TestParseInfo_EdgeCases(t *testing.T) {
 func TestConnect_EmptyConfig(t *testing.T) {
 	// Connect with empty config bytes (no host) — should return an error.
 	a := New()
-	src := store.Source{} // empty Config
+	src := store.Component{} // empty Config
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() expected error for empty source config (missing host), got nil")
 	}
@@ -275,7 +275,7 @@ func TestConnect_EmptyConfig(t *testing.T) {
 func TestConnect_TLSEnabled(t *testing.T) {
 	// Connect with TLS enabled config — should fail at ping (no server), not at config parsing.
 	a := New()
-	src := store.Source{Config: mustMarshal(t, map[string]any{
+	src := store.Component{Config: mustMarshal(t, map[string]any{
 		"host":        "127.0.0.1",
 		"port":        19999, // nothing listening
 		"tls_enabled": true,

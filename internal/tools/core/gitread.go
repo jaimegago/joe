@@ -34,18 +34,18 @@ func (t *GitReadTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {Type: "string", Description: "ID of the Git source."},
-			"path":      {Type: "string", Description: "File path to read, or directory path to list."},
-			"list":      {Type: "boolean", Description: "If true, list files in the directory instead of reading a file."},
+			"component_id": {Type: "string", Description: "ID of the Git source."},
+			"path":         {Type: "string", Description: "File path to read, or directory path to list."},
+			"list":         {Type: "boolean", Description: "If true, list files in the directory instead of reading a file."},
 		},
-		Required: []string{"source_id", "path"},
+		Required: []string{"component_id", "path"},
 	}
 }
 
 func (t *GitReadTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	path, ok := args["path"].(string)
@@ -61,10 +61,10 @@ func (t *GitReadTool) Execute(ctx context.Context, args map[string]any) (any, er
 			return nil, fmt.Errorf("git list files failed: %w", err)
 		}
 		return map[string]any{
-			"files":     files,
-			"count":     len(files),
-			"dir":       path,
-			"source_id": sourceID,
+			"files":        files,
+			"count":        len(files),
+			"dir":          path,
+			"component_id": sourceID,
 		}, nil
 	}
 
@@ -73,8 +73,8 @@ func (t *GitReadTool) Execute(ctx context.Context, args map[string]any) (any, er
 		return nil, fmt.Errorf("git read file failed: %w", err)
 	}
 	return map[string]any{
-		"content":   content,
-		"path":      path,
-		"source_id": sourceID,
+		"content":      content,
+		"path":         path,
+		"component_id": sourceID,
 	}, nil
 }

@@ -15,8 +15,8 @@ func TestFalcoEvents_Success(t *testing.T) {
 			"events": []map[string]any{
 				{"rule": "Terminal shell in container", "priority": "WARNING", "output": "shell spawned", "source": "syscall"},
 			},
-			"count":     1,
-			"source_id": "falco-prod",
+			"count":        1,
+			"component_id": "falco-prod",
 		})
 	}))
 	defer ts.Close()
@@ -40,9 +40,9 @@ func TestFalcoEvents_NoFilters(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"events":    []map[string]any{},
-			"count":     0,
-			"source_id": "falco-1",
+			"events":       []map[string]any{},
+			"count":        0,
+			"component_id": "falco-1",
 		})
 	}))
 	defer ts.Close()
@@ -61,9 +61,9 @@ func TestFalcoEvents_WithAllFilters(t *testing.T) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"events":    []map[string]any{},
-			"count":     0,
-			"source_id": "falco-1",
+			"events":       []map[string]any{},
+			"count":        0,
+			"component_id": "falco-1",
 		})
 	}))
 	defer ts.Close()
@@ -99,8 +99,8 @@ func TestFalcoRules_Success(t *testing.T) {
 			"rules": []map[string]any{
 				{"name": "Write below root", "priority": "ERROR", "source": "syscall", "count": 3},
 			},
-			"count":     1,
-			"source_id": "falco-prod",
+			"count":        1,
+			"component_id": "falco-prod",
 		})
 	}))
 	defer ts.Close()
@@ -138,9 +138,9 @@ func TestFalcoRules_URLConstruction(t *testing.T) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"rules":     []map[string]any{},
-			"count":     0,
-			"source_id": "falco-2",
+			"rules":        []map[string]any{},
+			"count":        0,
+			"component_id": "falco-2",
 		})
 	}))
 	defer ts.Close()

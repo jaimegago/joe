@@ -77,7 +77,7 @@ func TestNginxIngressesTool(t *testing.T) {
 	}{
 		{
 			name: "lists ingresses",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockNginxClient{
 				ingresses: []nginxadapter.Ingress{
 					{Name: "frontend", Namespace: "production"},
@@ -87,14 +87,14 @@ func TestNginxIngressesTool(t *testing.T) {
 			wantCount: 2,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockNginxClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "k8s-prod"},
+			args:    map[string]any{"component_id": "k8s-prod"},
 			client:  &mockNginxClient{err: errors.New("k8s error")},
 			wantErr: true,
 		},
@@ -130,20 +130,20 @@ func TestNginxStatusTool(t *testing.T) {
 	}{
 		{
 			name: "returns status",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockNginxClient{
 				status: &nginxadapter.NginxStatus{ActiveConnections: 100},
 			},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockNginxClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "k8s-prod"},
+			args:    map[string]any{"component_id": "k8s-prod"},
 			client:  &mockNginxClient{err: errors.New("no status URL")},
 			wantErr: true,
 		},
@@ -172,7 +172,7 @@ func TestNginxConfigTool(t *testing.T) {
 	if tool.Name() != "nginx_config" {
 		t.Errorf("Name() = %q", tool.Name())
 	}
-	result, err := tool.Execute(context.Background(), map[string]any{"source_id": "k8s-prod"})
+	result, err := tool.Execute(context.Background(), map[string]any{"component_id": "k8s-prod"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -196,7 +196,7 @@ func TestEnvoyClustersTool(t *testing.T) {
 	}{
 		{
 			name: "returns clusters",
-			args: map[string]any{"source_id": "envoy-1"},
+			args: map[string]any{"component_id": "envoy-1"},
 			client: &mockEnvoyClient{
 				clusters: []envoyadapter.ClusterStatus{
 					{Name: "backend", HostStatuses: []envoyadapter.HostStatus{{Address: "10.0.0.1:80", HealthStatus: "HEALTHY"}}},
@@ -205,14 +205,14 @@ func TestEnvoyClustersTool(t *testing.T) {
 			wantCount: 1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockEnvoyClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "envoy-1"},
+			args:    map[string]any{"component_id": "envoy-1"},
 			client:  &mockEnvoyClient{err: errors.New("connection refused")},
 			wantErr: true,
 		},
@@ -246,7 +246,7 @@ func TestEnvoyConfigTool(t *testing.T) {
 	if tool.Name() != "envoy_config" {
 		t.Errorf("Name() = %q", tool.Name())
 	}
-	result, err := tool.Execute(context.Background(), map[string]any{"source_id": "envoy-1", "section": "routes"})
+	result, err := tool.Execute(context.Background(), map[string]any{"component_id": "envoy-1", "section": "routes"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestEnvoyStatsTool(t *testing.T) {
 	if tool.Name() != "envoy_stats" {
 		t.Errorf("Name() = %q", tool.Name())
 	}
-	result, err := tool.Execute(context.Background(), map[string]any{"source_id": "envoy-1", "filter": "cluster.backend"})
+	result, err := tool.Execute(context.Background(), map[string]any{"component_id": "envoy-1", "filter": "cluster.backend"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -288,22 +288,22 @@ func TestIstioConfigTool(t *testing.T) {
 	}{
 		{
 			name:   "all kinds",
-			args:   map[string]any{"source_id": "k8s-prod"},
+			args:   map[string]any{"component_id": "k8s-prod"},
 			client: &mockNetK8sClient{resources: []map[string]any{{"metadata": map[string]any{"name": "my-vs"}}}},
 		},
 		{
 			name:   "specific kind",
-			args:   map[string]any{"source_id": "k8s-prod", "kind": "VirtualService"},
+			args:   map[string]any{"component_id": "k8s-prod", "kind": "VirtualService"},
 			client: &mockNetK8sClient{resources: []map[string]any{}},
 		},
 		{
 			name:    "invalid kind",
-			args:    map[string]any{"source_id": "k8s-prod", "kind": "InvalidKind"},
+			args:    map[string]any{"component_id": "k8s-prod", "kind": "InvalidKind"},
 			client:  &mockNetK8sClient{},
 			wantErr: true,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockNetK8sClient{},
 			wantErr: true,
@@ -334,21 +334,21 @@ func TestIstioResourceTool(t *testing.T) {
 		{
 			name: "found",
 			args: map[string]any{
-				"source_id": "k8s-prod", "kind": "VirtualService",
+				"component_id": "k8s-prod", "kind": "VirtualService",
 				"namespace": "default", "name": "my-vs",
 			},
 			client: &mockNetK8sClient{resource: map[string]any{"metadata": map[string]any{"name": "my-vs"}}},
 		},
 		{
 			name:    "missing kind",
-			args:    map[string]any{"source_id": "k8s-prod", "namespace": "default", "name": "my-vs"},
+			args:    map[string]any{"component_id": "k8s-prod", "namespace": "default", "name": "my-vs"},
 			client:  &mockNetK8sClient{},
 			wantErr: true,
 		},
 		{
 			name: "invalid kind",
 			args: map[string]any{
-				"source_id": "k8s-prod", "kind": "BadKind",
+				"component_id": "k8s-prod", "kind": "BadKind",
 				"namespace": "default", "name": "my-vs",
 			},
 			client:  &mockNetK8sClient{},
@@ -383,7 +383,7 @@ func TestCiliumPoliciesTool(t *testing.T) {
 	}{
 		{
 			name: "returns policies",
-			args: map[string]any{"source_id": "k8s-prod"},
+			args: map[string]any{"component_id": "k8s-prod"},
 			client: &mockNetK8sClient{
 				resources: []map[string]any{
 					{"metadata": map[string]any{"name": "allow-internal"}},
@@ -391,7 +391,7 @@ func TestCiliumPoliciesTool(t *testing.T) {
 			},
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockNetK8sClient{},
 			wantErr: true,
@@ -424,7 +424,7 @@ func TestCiliumEndpointsTool(t *testing.T) {
 	if tool.Name() != "cilium_endpoints" {
 		t.Errorf("Name() = %q", tool.Name())
 	}
-	result, err := tool.Execute(context.Background(), map[string]any{"source_id": "k8s-prod"})
+	result, err := tool.Execute(context.Background(), map[string]any{"component_id": "k8s-prod"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

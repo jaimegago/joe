@@ -13,7 +13,7 @@ import (
 )
 
 // ErrZoneInUse is returned by DeleteZone when the zone still has at least one
-// source assigned to it (source_zone_assignments.zone_id is ON DELETE
+// source assigned to it (component_zone_assignments.zone_id is ON DELETE
 // RESTRICT). It is a distinguishable sentinel so a caller — the HTTP handler
 // in a later stage — can map it to a 409 Conflict rather than a 500. The
 // referencing rbac_policies rows, by contrast, are ON DELETE CASCADE and are
@@ -49,9 +49,9 @@ type Repository interface {
 	DeleteZone(ctx context.Context, id string, actor string) error
 
 	// Source → Zone assignments
-	ListAssignments(ctx context.Context) ([]SourceZoneAssignment, error)
-	GetAssignment(ctx context.Context, sourceID string) (*SourceZoneAssignment, error)
-	UpsertAssignment(ctx context.Context, a SourceZoneAssignment, actor string) error
+	ListAssignments(ctx context.Context) ([]ComponentZoneAssignment, error)
+	GetAssignment(ctx context.Context, sourceID string) (*ComponentZoneAssignment, error)
+	UpsertAssignment(ctx context.Context, a ComponentZoneAssignment, actor string) error
 	// DeleteAssignment removes a source→zone assignment by source id. Returns
 	// the number of rows removed (0 if the source had no assignment).
 	DeleteAssignment(ctx context.Context, sourceID string, actor string) (int64, error)
@@ -75,8 +75,8 @@ type Repository interface {
 	// capability is the sole basis for the principal's authority.
 	DeletePoliciesForPrincipal(ctx context.Context, principal string) (int64, error)
 
-	// Unassigned sources (no zone assignment yet)
-	ListUnassignedSourceIDs(ctx context.Context) ([]string, error)
+	// Unassigned components (no zone assignment yet)
+	ListUnassignedComponentIDs(ctx context.Context) ([]string, error)
 
 	// Admin status (Phase H, see docs/DECISIONS.md D-0011). Admin is a
 	// principal-scoped capability, not a (principal, zone) grant. The
@@ -315,7 +315,7 @@ func (r *SQLRepository) UpdateZone(ctx context.Context, z Zone, actor string) (*
 }
 
 // DeleteZone deletes the zone with the given id. If any source is still
-// assigned to the zone (source_zone_assignments.zone_id ON DELETE RESTRICT) the
+// assigned to the zone (component_zone_assignments.zone_id ON DELETE RESTRICT) the
 // delete is refused with ErrZoneInUse rather than relying on the driver's
 // foreign-key error text. Referencing rbac_policies rows are ON DELETE CASCADE
 // and are removed with the zone.
@@ -323,7 +323,7 @@ func (r *SQLRepository) DeleteZone(ctx context.Context, id string, actor string)
 	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
 		var assigned int
 		if err := exec.QueryRowContext(ctx, store.Rebind(r.driver,
-			`SELECT COUNT(*) FROM source_zone_assignments WHERE zone_id = ?`), id).Scan(&assigned); err != nil {
+			`SELECT COUNT(*) FROM component_zone_assignments WHERE zone_id = ?`), id).Scan(&assigned); err != nil {
 			return audit.Event{}, fmt.Errorf("count zone assignments: %w", err)
 		}
 		if assigned > 0 {
@@ -370,20 +370,20 @@ func getZoneOn(ctx context.Context, exec execQuerier, driver, id string) (*Zone,
 
 // --- Source zone assignments ---
 
-func (r *SQLRepository) ListAssignments(ctx context.Context) ([]SourceZoneAssignment, error) {
+func (r *SQLRepository) ListAssignments(ctx context.Context) ([]ComponentZoneAssignment, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT source_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM source_zone_assignments ORDER BY source_id`)
+		SELECT component_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
+		FROM component_zone_assignments ORDER BY component_id`)
 	if err != nil {
 		return nil, fmt.Errorf("list assignments: %w", err)
 	}
 	defer rows.Close()
 
-	var out []SourceZoneAssignment
+	var out []ComponentZoneAssignment
 	for rows.Next() {
-		var a SourceZoneAssignment
+		var a ComponentZoneAssignment
 		var assignedAtStr string
-		if err := rows.Scan(&a.SourceID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr); err != nil {
+		if err := rows.Scan(&a.ComponentID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr); err != nil {
 			return nil, fmt.Errorf("scan assignment: %w", err)
 		}
 		a.AssignedAt, _ = time.Parse(time.RFC3339, assignedAtStr)
@@ -392,13 +392,13 @@ func (r *SQLRepository) ListAssignments(ctx context.Context) ([]SourceZoneAssign
 	return out, rows.Err()
 }
 
-func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*SourceZoneAssignment, error) {
-	var a SourceZoneAssignment
+func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*ComponentZoneAssignment, error) {
+	var a ComponentZoneAssignment
 	var assignedAtStr string
 	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
-		SELECT source_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM source_zone_assignments WHERE source_id = ?`), sourceID).
-		Scan(&a.SourceID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
+		SELECT component_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
+		FROM component_zone_assignments WHERE component_id = ?`), sourceID).
+		Scan(&a.ComponentID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -409,33 +409,33 @@ func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*So
 	return &a, nil
 }
 
-func (r *SQLRepository) UpsertAssignment(ctx context.Context, a SourceZoneAssignment, actor string) error {
+func (r *SQLRepository) UpsertAssignment(ctx context.Context, a ComponentZoneAssignment, actor string) error {
 	if a.AssignedAt.IsZero() {
 		a.AssignedAt = time.Now().UTC()
 	}
 	return r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
 		// Capture prior assignment (an upsert may overwrite one) inside the
 		// transaction so the audit Before reflects true prior state.
-		before, gerr := getAssignmentOn(ctx, exec, r.driver, a.SourceID)
+		before, gerr := getAssignmentOn(ctx, exec, r.driver, a.ComponentID)
 		if gerr != nil {
 			return audit.Event{}, gerr
 		}
 		if _, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
-			INSERT INTO source_zone_assignments (source_id, zone_id, assigned_by, reason, assigned_at)
+			INSERT INTO component_zone_assignments (component_id, zone_id, assigned_by, reason, assigned_at)
 			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(source_id) DO UPDATE SET
+			ON CONFLICT(component_id) DO UPDATE SET
 				zone_id     = excluded.zone_id,
 				assigned_by = excluded.assigned_by,
 				reason      = excluded.reason,
 				assigned_at = excluded.assigned_at`),
-			a.SourceID, a.ZoneID, a.AssignedBy, a.Reason, a.AssignedAt.Format(time.RFC3339)); err != nil {
+			a.ComponentID, a.ZoneID, a.AssignedBy, a.Reason, a.AssignedAt.Format(time.RFC3339)); err != nil {
 			return audit.Event{}, fmt.Errorf("upsert assignment: %w", err)
 		}
-		d := audit.Details{Target: "source_zone:" + a.SourceID, After: a}
+		d := audit.Details{Target: "component_zone:" + a.ComponentID, After: a}
 		if before != nil {
 			d.Before = *before
 		}
-		return adminEvent(actor, audit.ActionAdminSourceZoneAssign, d)
+		return adminEvent(actor, audit.ActionAdminComponentZoneAssign, d)
 	})
 }
 
@@ -450,7 +450,7 @@ func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, a
 			return audit.Event{}, gerr
 		}
 		res, derr := exec.ExecContext(ctx, store.Rebind(r.driver,
-			`DELETE FROM source_zone_assignments WHERE source_id = ?`), sourceID)
+			`DELETE FROM component_zone_assignments WHERE component_id = ?`), sourceID)
 		if derr != nil {
 			return audit.Event{}, fmt.Errorf("delete assignment: %w", derr)
 		}
@@ -459,11 +459,11 @@ func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, a
 			return audit.Event{}, fmt.Errorf("rows affected: %w", aerr)
 		}
 		removed = n
-		d := audit.Details{Target: "source_zone:" + sourceID}
+		d := audit.Details{Target: "component_zone:" + sourceID}
 		if before != nil {
 			d.Before = *before
 		}
-		return adminEvent(actor, audit.ActionAdminSourceZoneUnassign, d)
+		return adminEvent(actor, audit.ActionAdminComponentZoneUnassign, d)
 	})
 	if err != nil {
 		return 0, err
@@ -474,13 +474,13 @@ func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, a
 // getAssignmentOn reads a single source-zone assignment against the supplied
 // execQuerier so the before-state read runs inside the mutation's transaction.
 // Returns (nil, nil) when no assignment exists for the source.
-func getAssignmentOn(ctx context.Context, exec execQuerier, driver, sourceID string) (*SourceZoneAssignment, error) {
-	var a SourceZoneAssignment
+func getAssignmentOn(ctx context.Context, exec execQuerier, driver, sourceID string) (*ComponentZoneAssignment, error) {
+	var a ComponentZoneAssignment
 	var assignedAtStr string
 	err := exec.QueryRowContext(ctx, store.Rebind(driver, `
-		SELECT source_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM source_zone_assignments WHERE source_id = ?`), sourceID).
-		Scan(&a.SourceID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
+		SELECT component_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
+		FROM component_zone_assignments WHERE component_id = ?`), sourceID).
+		Scan(&a.ComponentID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -707,13 +707,13 @@ func (r *SQLRepository) RemoveAdmin(ctx context.Context, principal string, actor
 	return removed, nil
 }
 
-func (r *SQLRepository) ListUnassignedSourceIDs(ctx context.Context) ([]string, error) {
+func (r *SQLRepository) ListUnassignedComponentIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id FROM sources
-		WHERE id NOT IN (SELECT source_id FROM source_zone_assignments)
+		SELECT id FROM components
+		WHERE id NOT IN (SELECT component_id FROM component_zone_assignments)
 		ORDER BY id`)
 	if err != nil {
-		return nil, fmt.Errorf("list unassigned sources: %w", err)
+		return nil, fmt.Errorf("list unassigned components: %w", err)
 	}
 	defer rows.Close()
 

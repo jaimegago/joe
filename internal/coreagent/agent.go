@@ -124,17 +124,17 @@ func (a *Agent) TriggerRefresh(ctx context.Context) error {
 	return a.refresher.refresh(ctx)
 }
 
-// TriggerRefreshSource manually triggers refresh for a specific source
-func (a *Agent) TriggerRefreshSource(ctx context.Context, sourceID string) error {
-	a.logger.Info("manual source refresh triggered", "source_id", sourceID)
-	source, err := a.services.Store.Sources.Get(ctx, sourceID)
+// TriggerRefreshComponent manually triggers refresh for a specific source
+func (a *Agent) TriggerRefreshComponent(ctx context.Context, sourceID string) error {
+	a.logger.Info("manual source refresh triggered", "component_id", sourceID)
+	source, err := a.services.Store.Components.Get(ctx, sourceID)
 	if err != nil {
 		return fmt.Errorf("get source: %w", err)
 	}
 	if source == nil {
-		return fmt.Errorf("%w: %s", store.ErrSourceNotFound, sourceID)
+		return fmt.Errorf("%w: %s", store.ErrComponentNotFound, sourceID)
 	}
-	return a.refresher.refreshSource(ctx, source)
+	return a.refresher.refreshComponent(ctx, source)
 }
 
 // ExecuteTool executes a Core Agent tool call
@@ -154,7 +154,7 @@ func registerCoreAgentTools(registry *tools.Registry, services *core.Services, l
 	registry.Register(NewGraphAddNodeTool(services, logger))
 	registry.Register(NewGraphAddEdgeTool(services, logger))
 	registry.Register(NewGraphUpdateNodeTool(services, logger))
-	registry.Register(NewRegisterSourceTool(services, logger))
+	registry.Register(NewRegisterComponentTool(services, logger))
 	registry.Register(NewSaveOnboardingFactTool(services, logger))
 	registry.Register(NewSaveKnowledgeEntryTool(services, logger))
 
@@ -294,10 +294,10 @@ func (t *GraphAddEdgeTool) Execute(ctx context.Context, args map[string]any) (an
 	}
 
 	edge := graph.Edge{
-		From:     fromNode,
-		To:       toNode,
-		Relation: relationship,
-		SourceID: "",
+		From:        fromNode,
+		To:          toNode,
+		Relation:    relationship,
+		ComponentID: "",
 	}
 
 	err := t.services.Graph.AddEdge(ctx, edge)
@@ -381,28 +381,28 @@ func (t *GraphUpdateNodeTool) Execute(ctx context.Context, args map[string]any) 
 	return fmt.Sprintf("Updated node %s metadata", nodeID), nil
 }
 
-// RegisterSourceTool registers new infrastructure sources
-type RegisterSourceTool struct {
+// RegisterComponentTool registers new infrastructure components
+type RegisterComponentTool struct {
 	services *core.Services
 	logger   *slog.Logger
 }
 
-func NewRegisterSourceTool(services *core.Services, logger *slog.Logger) *RegisterSourceTool {
-	return &RegisterSourceTool{
+func NewRegisterComponentTool(services *core.Services, logger *slog.Logger) *RegisterComponentTool {
+	return &RegisterComponentTool{
 		services: services,
-		logger:   logger.With("tool", "register_source"),
+		logger:   logger.With("tool", "register_component"),
 	}
 }
 
-func (t *RegisterSourceTool) Name() string {
-	return "register_source"
+func (t *RegisterComponentTool) Name() string {
+	return "register_component"
 }
 
-func (t *RegisterSourceTool) Description() string {
+func (t *RegisterComponentTool) Description() string {
 	return "Register a new infrastructure source (K8s cluster, Git repo, etc.)"
 }
 
-func (t *RegisterSourceTool) Parameters() llm.ParameterSchema {
+func (t *RegisterComponentTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
@@ -423,7 +423,7 @@ func (t *RegisterSourceTool) Parameters() llm.ParameterSchema {
 	}
 }
 
-func (t *RegisterSourceTool) Execute(ctx context.Context, args map[string]any) (any, error) {
+func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any) (any, error) {
 	name, ok := args["name"].(string)
 	if !ok || name == "" {
 		return nil, fmt.Errorf("name is required and must be a string")
@@ -433,8 +433,8 @@ func (t *RegisterSourceTool) Execute(ctx context.Context, args map[string]any) (
 	if !ok || sourceType == "" {
 		return nil, fmt.Errorf("type is required and must be a string")
 	}
-	if !store.IsValidSourceType(sourceType) {
-		return nil, fmt.Errorf("unsupported source type %q (allowed: %s)", sourceType, strings.Join(store.AllowedSourceTypes(), ", "))
+	if !store.IsValidComponentType(sourceType) {
+		return nil, fmt.Errorf("unsupported source type %q (allowed: %s)", sourceType, strings.Join(store.AllowedComponentTypes(), ", "))
 	}
 
 	config, ok := args["config"].(map[string]any)
@@ -452,14 +452,14 @@ func (t *RegisterSourceTool) Execute(ctx context.Context, args map[string]any) (
 	if _, err := crypto_rand.Read(randBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate source ID: %w", err)
 	}
-	source := &store.Source{
+	source := &store.Component{
 		ID:     fmt.Sprintf("%s-%x", sourceType, randBytes),
 		Name:   name,
 		Type:   sourceType,
 		Config: configBytes,
 	}
 
-	err = t.services.Store.Sources.Create(ctx, source)
+	err = t.services.Store.Components.Create(ctx, source)
 	if err != nil {
 		t.logger.Error("failed to register source", "error", err, "name", name)
 		return nil, fmt.Errorf("failed to register source: %w", err)

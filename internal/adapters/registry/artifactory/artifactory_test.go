@@ -308,7 +308,7 @@ func TestConnect_Success(t *testing.T) {
 	defer srv.Close()
 
 	a := artifactory.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"base_url":"` + srv.URL + `"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -328,7 +328,7 @@ func TestConnect_BadStatus(t *testing.T) {
 	defer srv.Close()
 
 	a := artifactory.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"base_url":"` + srv.URL + `"}`),
 	}
 	if err := a.Connect(context.Background(), src); err == nil {
@@ -338,7 +338,7 @@ func TestConnect_BadStatus(t *testing.T) {
 
 func TestConnect_BadConfig(t *testing.T) {
 	a := artifactory.New()
-	src := store.Source{Config: []byte(`{}`)}
+	src := store.Component{Config: []byte(`{}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing base_url")
 	}
@@ -351,7 +351,7 @@ func TestConnect_NetworkError(t *testing.T) {
 	srv.Close()
 
 	a := artifactory.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"base_url":"` + srvURL + `"}`),
 	}
 	if err := a.Connect(context.Background(), src); err == nil {

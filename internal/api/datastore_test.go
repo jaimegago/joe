@@ -27,9 +27,9 @@ type mockPostgresAdapter struct {
 	err  error
 }
 
-func (m *mockPostgresAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockPostgresAdapter) Disconnect() error                               { return nil }
-func (m *mockPostgresAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockPostgresAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockPostgresAdapter) Disconnect() error                                  { return nil }
+func (m *mockPostgresAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockPostgresAdapter) Stat(_ context.Context) (*postgresadapter.Stat, error) {
 	return m.stat, m.err
 }
@@ -258,9 +258,9 @@ type mockMySQLAdapter struct {
 	err  error
 }
 
-func (m *mockMySQLAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockMySQLAdapter) Disconnect() error                               { return nil }
-func (m *mockMySQLAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockMySQLAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockMySQLAdapter) Disconnect() error                                  { return nil }
+func (m *mockMySQLAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockMySQLAdapter) Stat(_ context.Context) (*mysqladapter.Stat, error) {
 	return m.stat, m.err
 }
@@ -277,9 +277,9 @@ type mockRedisAdapter struct {
 	err    error
 }
 
-func (m *mockRedisAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockRedisAdapter) Disconnect() error                               { return nil }
-func (m *mockRedisAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockRedisAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockRedisAdapter) Disconnect() error                                  { return nil }
+func (m *mockRedisAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockRedisAdapter) Info(_ context.Context, _ string) (map[string]string, error) {
 	return m.info, m.err
 }
@@ -299,9 +299,9 @@ type mockMongoDBAdapter struct {
 	err     error
 }
 
-func (m *mockMongoDBAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockMongoDBAdapter) Disconnect() error                               { return nil }
-func (m *mockMongoDBAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockMongoDBAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockMongoDBAdapter) Disconnect() error                                  { return nil }
+func (m *mockMongoDBAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockMongoDBAdapter) ServerStatus(_ context.Context) (map[string]any, error) {
 	return m.status, m.err
 }
@@ -321,9 +321,9 @@ type mockKafkaAdapter struct {
 	err     error
 }
 
-func (m *mockKafkaAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockKafkaAdapter) Disconnect() error                               { return nil }
-func (m *mockKafkaAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockKafkaAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockKafkaAdapter) Disconnect() error                                  { return nil }
+func (m *mockKafkaAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockKafkaAdapter) Topics(_ context.Context) ([]kafkaadapter.TopicInfo, error) {
 	return m.topics, m.err
 }
@@ -342,9 +342,9 @@ type mockElasticsearchAdapter struct {
 	err     error
 }
 
-func (m *mockElasticsearchAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (m *mockElasticsearchAdapter) Disconnect() error                               { return nil }
-func (m *mockElasticsearchAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (m *mockElasticsearchAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (m *mockElasticsearchAdapter) Disconnect() error                                  { return nil }
+func (m *mockElasticsearchAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 func (m *mockElasticsearchAdapter) ClusterHealth(_ context.Context) (*elasticsearchadapter.ClusterHealth, error) {
 	return m.health, m.err
 }

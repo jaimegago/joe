@@ -28,14 +28,14 @@ func TestPhaseD_TwoServiceAccountsIndependentZones(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-ci")  // granted to svc:ci only
-	mustCreateSource(t, sqlStore, "s-mcp") // granted to svc:mcp only
+	mustCreateComponent(t, sqlStore, "s-ci")  // granted to svc:ci only
+	mustCreateComponent(t, sqlStore, "s-mcp") // granted to svc:mcp only
 
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-ci", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-ci", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-ci: %v", err)
 	}
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-mcp", ZoneID: "dev-full", AssignedBy: "test"}, "test"); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-mcp", ZoneID: "dev-full", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-mcp: %v", err)
 	}
 	// Independent grants: svc:ci → prod-readonly, svc:mcp → dev-full.
@@ -127,9 +127,9 @@ func TestPhaseD_ZeroZoneDeniedThenGrantAllows(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-allow")
+	mustCreateComponent(t, sqlStore, "s-allow")
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-allow", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-allow: %v", err)
 	}
 
@@ -240,9 +240,9 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
 
-	mustCreateSource(t, sqlStore, "s-infra")
+	mustCreateComponent(t, sqlStore, "s-infra")
 	rbacRepo := rbac.NewRepository(sqlStore.DB(), sqlStore.Driver())
-	if err := rbacRepo.UpsertAssignment(ctx, rbac.SourceZoneAssignment{SourceID: "s-infra", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
+	if err := rbacRepo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "s-infra", ZoneID: "prod-readonly", AssignedBy: "test"}, "test"); err != nil {
 		t.Fatalf("assign s-infra: %v", err)
 	}
 

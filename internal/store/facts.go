@@ -29,13 +29,13 @@ func (r *sqlFactRepository) Create(ctx context.Context, fact *OnboardingFact) (e
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.create", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		INSERT INTO onboarding_facts (fact_type, subject, content, source, source_id, created_at)
+		INSERT INTO onboarding_facts (fact_type, subject, content, source, component_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		RETURNING id
 	`)
 	fact.CreatedAt = time.Now()
 	err = r.db.QueryRowContext(ctx, query,
-		fact.FactType, fact.Subject, fact.Content, fact.Source, fact.SourceID, fact.CreatedAt,
+		fact.FactType, fact.Subject, fact.Content, fact.Source, fact.ComponentID, fact.CreatedAt,
 	).Scan(&fact.ID)
 	if err != nil {
 		return fmt.Errorf("insert fact: %w", err)
@@ -48,7 +48,7 @@ func (r *sqlFactRepository) GetBySubject(ctx context.Context, subject string) (f
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_subject", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		SELECT id, fact_type, subject, content, source, source_id, created_at
+		SELECT id, fact_type, subject, content, source, component_id, created_at
 		FROM onboarding_facts WHERE subject = ? ORDER BY created_at
 	`)
 	return r.queryFacts(ctx, query, subject)
@@ -59,7 +59,7 @@ func (r *sqlFactRepository) GetByType(ctx context.Context, factType string) (fac
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.get_by_type", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		SELECT id, fact_type, subject, content, source, source_id, created_at
+		SELECT id, fact_type, subject, content, source, component_id, created_at
 		FROM onboarding_facts WHERE fact_type = ? ORDER BY created_at
 	`)
 	return r.queryFacts(ctx, query, factType)
@@ -70,7 +70,7 @@ func (r *sqlFactRepository) Search(ctx context.Context, searchQuery string) (fac
 	defer func() { r.metrics.RecordDBOperation(ctx, "facts.search", time.Since(start), err) }()
 
 	query := Rebind(r.driver, `
-		SELECT id, fact_type, subject, content, source, source_id, created_at
+		SELECT id, fact_type, subject, content, source, component_id, created_at
 		FROM onboarding_facts
 		WHERE subject LIKE ? OR content LIKE ?
 		ORDER BY created_at
@@ -96,7 +96,7 @@ func (r *sqlFactRepository) queryFacts(ctx context.Context, query string, args .
 			return nil, fmt.Errorf("scan fact: %w", err)
 		}
 		if sourceID.Valid {
-			f.SourceID = sourceID.String
+			f.ComponentID = sourceID.String
 		}
 		facts = append(facts, &f)
 	}

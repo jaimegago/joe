@@ -82,7 +82,7 @@ func NewWithClient(client ecrClient, cfg Config) *Adapter {
 }
 
 // Connect establishes AWS credentials and validates ECR access.
-func (a *Adapter) Connect(ctx context.Context, source store.Source) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

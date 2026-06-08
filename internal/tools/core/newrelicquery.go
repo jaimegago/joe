@@ -26,14 +26,14 @@ func NewNewRelicQueryTool(c NewRelicClient) *NewRelicQueryTool {
 func (t *NewRelicQueryTool) Name() string { return "newrelic_query" }
 
 func (t *NewRelicQueryTool) Description() string {
-	return "Execute NRQL (New Relic Query Language) queries against New Relic. Returns telemetry data including metrics, events, logs, and traces. If you don't know the source_id, call list_sources first."
+	return "Execute NRQL (New Relic Query Language) queries against New Relic. Returns telemetry data including metrics, events, logs, and traces. If you don't know the component_id, call list_components first."
 }
 
 func (t *NewRelicQueryTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the New Relic source to query.",
 			},
@@ -46,14 +46,14 @@ func (t *NewRelicQueryTool) Parameters() llm.ParameterSchema {
 				Description: "New Relic account ID to query. Defaults to the account configured on the source.",
 			},
 		},
-		Required: []string{"source_id", "query"},
+		Required: []string{"component_id", "query"},
 	}
 }
 
 func (t *NewRelicQueryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	query, ok := args["query"].(string)
@@ -72,10 +72,10 @@ func (t *NewRelicQueryTool) Execute(ctx context.Context, args map[string]any) (a
 	}
 
 	return map[string]any{
-		"results":   result.Results,
-		"metadata":  result.Metadata,
-		"count":     len(result.Results),
-		"source_id": sourceID,
-		"query":     query,
+		"results":      result.Results,
+		"metadata":     result.Metadata,
+		"count":        len(result.Results),
+		"component_id": sourceID,
+		"query":        query,
 	}, nil
 }

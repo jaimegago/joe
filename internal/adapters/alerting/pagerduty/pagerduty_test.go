@@ -58,7 +58,7 @@ func TestAdapter_Connect(t *testing.T) {
 
 	adapter := pagerduty.New()
 	// Override the base URL via the config's api_url field.
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "test-key",
 		"api_url": srv.URL,
 	})}
@@ -79,7 +79,7 @@ func TestAdapter_Connect_Failure(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "bad-key",
 		"api_url": srv.URL,
 	})}
@@ -120,7 +120,7 @@ func TestAdapter_ListIncidents(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "test-key",
 		"api_url": srv.URL,
 	})}
@@ -168,7 +168,7 @@ func TestAdapter_ListServices(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "test-key",
 		"api_url": srv.URL,
 	})}
@@ -219,7 +219,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -240,7 +240,7 @@ func TestAdapter_Disconnect(t *testing.T) {
 
 func TestAdapter_Connect_BadJSON(t *testing.T) {
 	adapter := pagerduty.New()
-	source := store.Source{Config: []byte(`invalid json`)}
+	source := store.Component{Config: []byte(`invalid json`)}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for bad JSON config, got nil")
 	}
@@ -251,7 +251,7 @@ func TestAdapter_Connect_DoError(t *testing.T) {
 	srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -274,7 +274,7 @@ func TestAdapter_ListIncidents_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -308,7 +308,7 @@ func TestAdapter_ListServices_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -345,7 +345,7 @@ func TestParseConfig_DefaultAPIURL(t *testing.T) {
 
 func TestAdapter_Connect_EmptyConfig(t *testing.T) {
 	adapter := pagerduty.New()
-	source := store.Source{}
+	source := store.Component{}
 	if err := adapter.Connect(context.Background(), source); err == nil {
 		t.Error("expected error for empty config, got nil")
 	}
@@ -369,7 +369,7 @@ func TestAdapter_ListIncidents_DefaultStatus(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -402,7 +402,7 @@ func TestAdapter_ListIncidents_WithServiceID(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -433,7 +433,7 @@ func TestAdapter_ListIncidents_DefaultLimit(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -466,7 +466,7 @@ func TestAdapter_ListIncidents_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -493,7 +493,7 @@ func TestAdapter_ListIncidents_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -523,7 +523,7 @@ func TestAdapter_ListServices_DoError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}
@@ -550,7 +550,7 @@ func TestAdapter_ListServices_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	adapter := pagerduty.New()
-	source := store.Source{Config: mustMarshal(t, map[string]any{
+	source := store.Component{Config: mustMarshal(t, map[string]any{
 		"api_key": "key",
 		"api_url": srv.URL,
 	})}

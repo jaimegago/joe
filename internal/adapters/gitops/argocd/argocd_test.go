@@ -390,7 +390,7 @@ func TestDoJSON_NetworkError(t *testing.T) {
 	}
 }
 
-func TestConnect_ViaSource(t *testing.T) {
+func TestConnect_ViaComponent(t *testing.T) {
 	// Test Connect via httptest server.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
@@ -401,7 +401,7 @@ func TestConnect_ViaSource(t *testing.T) {
 	defer srv.Close()
 
 	a := argocd.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"url":"` + srv.URL + `","token":"tok"}`),
 	}
 	if err := a.Connect(context.Background(), src); err != nil {
@@ -414,7 +414,7 @@ func TestConnect_ViaSource(t *testing.T) {
 
 func TestConnect_BadConfig(t *testing.T) {
 	a := argocd.New()
-	src := store.Source{Config: []byte(`{}`)} // missing url
+	src := store.Component{Config: []byte(`{}`)} // missing url
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing url in config")
 	}
@@ -431,7 +431,7 @@ func TestConnect_PingError(t *testing.T) {
 	defer srv.Close()
 
 	a := argocd.New()
-	src := store.Source{
+	src := store.Component{
 		Config: []byte(`{"url":"` + srv.URL + `","token":"tok"}`),
 	}
 	if err := a.Connect(context.Background(), src); err == nil {

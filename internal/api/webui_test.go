@@ -64,7 +64,7 @@ func TestWebUIEndpointsRegistered(t *testing.T) {
 		// 404 for an unknown/non-owned session, indistinguishable from "route not
 		// found" here; covered by TestWebUIChatOwnership_* below.
 		// source test omitted: legitimately returns 404 for unknown source,
-		// indistinguishable from "route not found" here; covered by TestWebUISourceTest.
+		// indistinguishable from "route not found" here; covered by TestWebUIComponentTest.
 	}
 
 	for _, r := range routes {
@@ -160,27 +160,27 @@ func TestWebUICreateAndListSessions(t *testing.T) {
 	}
 }
 
-// TestWebUISourceTest returns 404 for unknown source.
-func TestWebUISourceTest(t *testing.T) {
+// TestWebUIComponentTest returns 404 for unknown source.
+func TestWebUIComponentTest(t *testing.T) {
 	_, mux := setupWebUIServer(t)
-	w := doRequest(mux, "POST", "/api/v1/sources/nonexistent/test", nil)
+	w := doRequest(mux, "POST", "/api/v1/components/nonexistent/test", nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for unknown source, got %d", w.Code)
 	}
 }
 
-// TestWebUISourceTest_Success seeds a source and verifies 200 is returned.
-func TestWebUISourceTest_Success(t *testing.T) {
+// TestWebUIComponentTest_Success seeds a source and verifies 200 is returned.
+func TestWebUIComponentTest_Success(t *testing.T) {
 	srv, mux := setupWebUIServer(t)
 
-	if err := srv.services.Store.Sources.Create(context.Background(), &store.Source{
+	if err := srv.services.Store.Components.Create(context.Background(), &store.Component{
 		ID: "test-src", Type: "kubernetes", Name: "test cluster",
 		Config: json.RawMessage(`{}`),
 	}); err != nil {
 		t.Fatalf("seed source: %v", err)
 	}
 
-	w := doRequest(mux, "POST", "/api/v1/sources/test-src/test", nil)
+	w := doRequest(mux, "POST", "/api/v1/components/test-src/test", nil)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -502,13 +502,13 @@ func TestWebUIGetSessionMessages_NilStore(t *testing.T) {
 	}
 }
 
-// TestWebUITestSource_NilStore covers the nil-store guard in handleTestSource.
-func TestWebUITestSource_NilStore(t *testing.T) {
+// TestWebUITestComponent_NilStore covers the nil-store guard in handleTestComponent.
+func TestWebUITestComponent_NilStore(t *testing.T) {
 	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
-	// Route "/api/v1/sources/{id}/test" is registered; with nil store → 503.
-	w := doRequest(mux, "POST", "/api/v1/sources/some-id/test", nil)
+	// Route "/api/v1/components/{id}/test" is registered; with nil store → 503.
+	w := doRequest(mux, "POST", "/api/v1/components/some-id/test", nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", w.Code)
 	}
@@ -532,15 +532,15 @@ func TestWebUIGetGraph_NilGraph(t *testing.T) {
 	}
 }
 
-// TestWebUITestSource_EmptyID covers the empty-id guard in handleTestSource directly.
-func TestWebUITestSource_EmptyID(t *testing.T) {
+// TestWebUITestComponent_EmptyID covers the empty-id guard in handleTestComponent directly.
+func TestWebUITestComponent_EmptyID(t *testing.T) {
 	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
 	h := &webUIHandler{server: srv}
 
-	req := httptest.NewRequest("POST", "/api/v1/sources//test", nil)
+	req := httptest.NewRequest("POST", "/api/v1/components//test", nil)
 	// No SetPathValue → PathValue("id") returns "".
 	w := httptest.NewRecorder()
-	h.handleTestSource(w, req)
+	h.handleTestComponent(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for empty id, got %d", w.Code)
 	}

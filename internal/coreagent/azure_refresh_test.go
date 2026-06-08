@@ -19,7 +19,7 @@ type fakeAzureAdapter struct {
 	vnets []azureadapter.VNet
 }
 
-func (f *fakeAzureAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
+func (f *fakeAzureAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
 
 func (f *fakeAzureAdapter) Disconnect() error { return nil }
 
@@ -59,14 +59,14 @@ func (f *fakeAzureAdapter) GetVNet(_ context.Context, _ string) (*azureadapter.V
 	return nil, nil
 }
 
-func TestRefreshAzureSourceMapping(t *testing.T) {
+func TestRefreshAzureComponentMapping(t *testing.T) {
 	graphStore := setupGraphStore(t)
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
 
-	source := &store.Source{ID: "src-az-1", Type: store.SourceTypeAzure, Name: "test-az"}
+	source := &store.Component{ID: "src-az-1", Type: store.ComponentTypeAzure, Name: "test-az"}
 	adapter := &fakeAzureAdapter{
 		vnets: []azureadapter.VNet{
 			{ID: "vnet-1", Name: "vnet-1", Address: "10.1.0.0/16"},
@@ -82,13 +82,13 @@ func TestRefreshAzureSourceMapping(t *testing.T) {
 		},
 	}
 
-	if err := refresher.refreshAzureSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAzureSource error: %v", err)
+	if err := refresher.refreshAzureComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAzureComponent error: %v", err)
 	}
 
-	nodes, edges, err := LoadGraphStateForSource(context.Background(), graphStore, source.ID)
+	nodes, edges, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
 	if err != nil {
-		t.Fatalf("LoadGraphStateForSource error: %v", err)
+		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
 	if len(nodes) != 4 {
@@ -100,15 +100,15 @@ func TestRefreshAzureSourceMapping(t *testing.T) {
 	requireEdge(t, edges, "azure/src-az-1/sql/sql-1", "azure/src-az-1/vnet/vnet-1", "in_vnet")
 }
 
-func TestRefreshAzureSource_IsK8sNodeEdge(t *testing.T) {
+func TestRefreshAzureComponent_IsK8sNodeEdge(t *testing.T) {
 	graphStore := setupGraphStore(t)
 
 	// Pre-seed a K8s node whose name matches the Azure VM name (AKS pattern).
 	k8sNode := graph.Node{
-		ID:       "k8s/src-k8s/node/aks-nodepool1-12345",
-		Type:     "node",
-		SourceID: "src-k8s",
-		Metadata: map[string]any{"name": "aks-nodepool1-12345"},
+		ID:          "k8s/src-k8s/node/aks-nodepool1-12345",
+		Type:        "node",
+		ComponentID: "src-k8s",
+		Metadata:    map[string]any{"name": "aks-nodepool1-12345"},
 	}
 	if err := graphStore.AddNode(context.Background(), k8sNode); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -118,15 +118,15 @@ func TestRefreshAzureSource_IsK8sNodeEdge(t *testing.T) {
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
-	source := &store.Source{ID: "src-az-k8s", Type: store.SourceTypeAzure, Name: "azure"}
+	source := &store.Component{ID: "src-az-k8s", Type: store.ComponentTypeAzure, Name: "azure"}
 	adapter := &fakeAzureAdapter{
 		vms: []azureadapter.VM{
 			{ID: "/subscriptions/sub/vms/aks-nodepool1-12345", Name: "aks-nodepool1-12345"},
 		},
 	}
 
-	if err := refresher.refreshAzureSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAzureSource error: %v", err)
+	if err := refresher.refreshAzureComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAzureComponent error: %v", err)
 	}
 
 	// Cross-source edges span both endpoints; query with both node IDs.
@@ -139,14 +139,14 @@ func TestRefreshAzureSource_IsK8sNodeEdge(t *testing.T) {
 	requireEdge(t, edges, vmNodeID, k8sNodeID, "is_k8s_node")
 }
 
-func TestRefreshAzureSource_IsK8sNodeEdge_NoMatch(t *testing.T) {
+func TestRefreshAzureComponent_IsK8sNodeEdge_NoMatch(t *testing.T) {
 	graphStore := setupGraphStore(t)
 
 	refresher := &Refresher{
 		services: &core.Services{Graph: graphStore},
 		logger:   slog.Default(),
 	}
-	source := &store.Source{ID: "src-az-nomatch", Type: store.SourceTypeAzure, Name: "azure"}
+	source := &store.Component{ID: "src-az-nomatch", Type: store.ComponentTypeAzure, Name: "azure"}
 	adapter := &fakeAzureAdapter{
 		vms: []azureadapter.VM{
 			{ID: "/subscriptions/sub/vms/standalone-vm", Name: "standalone-vm"},
@@ -154,8 +154,8 @@ func TestRefreshAzureSource_IsK8sNodeEdge_NoMatch(t *testing.T) {
 	}
 
 	// No K8s nodes in graph → no is_k8s_node edges, no error.
-	if err := refresher.refreshAzureSource(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshAzureSource error: %v", err)
+	if err := refresher.refreshAzureComponent(context.Background(), source, adapter); err != nil {
+		t.Fatalf("refreshAzureComponent error: %v", err)
 	}
 }
 

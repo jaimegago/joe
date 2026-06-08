@@ -26,9 +26,9 @@ func TestGitDiffTool_Execute_Success(t *testing.T) {
 		},
 	})
 	res, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "src",
-		"from":      "a",
-		"to":        "b",
+		"component_id": "src",
+		"from":         "a",
+		"to":           "b",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -44,8 +44,8 @@ func TestGitDiffTool_Execute_MissingParams(t *testing.T) {
 	cases := []map[string]any{
 		{},
 		{"from": "a", "to": "b"},
-		{"source_id": "src", "to": "b"},
-		{"source_id": "src", "from": "a"},
+		{"component_id": "src", "to": "b"},
+		{"component_id": "src", "from": "a"},
 	}
 	for _, args := range cases {
 		_, err := tool.Execute(context.Background(), args)
@@ -62,9 +62,9 @@ func TestGitDiffTool_Execute_ErrorFromClient(t *testing.T) {
 		},
 	})
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"source_id": "src",
-		"from":      "a",
-		"to":        "b",
+		"component_id": "src",
+		"from":         "a",
+		"to":           "b",
 	})
 	if err == nil || err.Error() == "" {
 		t.Errorf("expected error from client, got: %v", err)

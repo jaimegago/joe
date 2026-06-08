@@ -97,9 +97,9 @@ func (e *errorGraphStore) Summary(ctx context.Context) (graph.GraphSummary, erro
 	}
 	return graph.GraphSummary{}, nil
 }
-func (e *errorGraphStore) ListNodesBySource(ctx context.Context, sourceID string) ([]graph.Node, error) {
+func (e *errorGraphStore) ListNodesByComponent(ctx context.Context, sourceID string) ([]graph.Node, error) {
 	if e.underlying != nil {
-		return e.underlying.ListNodesBySource(ctx, sourceID)
+		return e.underlying.ListNodesByComponent(ctx, sourceID)
 	}
 	return nil, nil
 }
@@ -190,7 +190,7 @@ func TestApplyGraphDelta_DeleteNodeErrNotFound_IsSwallowed(t *testing.T) {
 func TestBuildImageStoredInEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-img-err", Type: store.SourceTypeOCIRegistry}
+	src := &store.Component{ID: "src-img-err", Type: store.ComponentTypeOCIRegistry}
 
 	edges := r.buildImageStoredInEdges(context.Background(), src, "repo-node", "payment", time.Now())
 	if len(edges) != 0 {
@@ -205,7 +205,7 @@ func TestBuildImageStoredInEdges_QueryError(t *testing.T) {
 func TestBuildIngressForEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-nginx-err", Type: store.SourceTypeNginx}
+	src := &store.Component{ID: "src-nginx-err", Type: store.ComponentTypeNginx}
 
 	edges := r.buildIngressForEdges(context.Background(), src, "ing-node", "api-svc", "default", "api.example.com", time.Now())
 	if len(edges) != 0 {
@@ -220,7 +220,7 @@ func TestBuildIngressForEdges_QueryError(t *testing.T) {
 func TestBuildProxiesEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-envoy-err", Type: store.SourceTypeEnvoy}
+	src := &store.Component{ID: "src-envoy-err", Type: store.ComponentTypeEnvoy}
 
 	edges := r.buildProxiesEdges(context.Background(), src, "envoy-node", "payment", "payment_80", time.Now())
 	if len(edges) != 0 {
@@ -235,7 +235,7 @@ func TestBuildProxiesEdges_QueryError(t *testing.T) {
 func TestBuildManagedByEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-argocd-err", Type: store.SourceTypeArgoCd}
+	src := &store.Component{ID: "src-argocd-err", Type: store.ComponentTypeArgoCd}
 
 	edges := r.buildManagedByEdges(context.Background(), src, "manager-node", "payment", "default", time.Now())
 	if len(edges) != 0 {
@@ -250,7 +250,7 @@ func TestBuildManagedByEdges_QueryError(t *testing.T) {
 func TestBuildProvidesEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-tf-err", Type: store.SourceTypeTerraform}
+	src := &store.Component{ID: "src-tf-err", Type: store.ComponentTypeTerraform}
 
 	edges := r.buildProvidesEdges(context.Background(), src, "tf-node", "web-server", "aws_instance", time.Now())
 	if len(edges) != 0 {
@@ -265,7 +265,7 @@ func TestBuildProvidesEdges_QueryError(t *testing.T) {
 func TestBuildDDMetricsInEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-dd-err", Type: store.SourceTypeDatadog}
+	src := &store.Component{ID: "src-dd-err", Type: store.ComponentTypeDatadog}
 
 	edges, err := r.buildDDMetricsInEdges(context.Background(), src, "dd-node", []string{"payment"}, time.Now())
 	if err != nil {
@@ -279,7 +279,7 @@ func TestBuildDDMetricsInEdges_QueryError(t *testing.T) {
 func TestBuildDDLogsInEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-dd-log-err", Type: store.SourceTypeDatadog}
+	src := &store.Component{ID: "src-dd-log-err", Type: store.ComponentTypeDatadog}
 
 	edges, err := r.buildDDLogsInEdges(context.Background(), src, "dd-node", []string{"payment"}, time.Now())
 	if err != nil {
@@ -302,7 +302,7 @@ func TestBuildDDLogsInEdges_SkipsNonServiceNodes2(t *testing.T) {
 
 	gs := &errorGraphStore{underlying: realStore}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-dd-log-skip", Type: store.SourceTypeDatadog}
+	src := &store.Component{ID: "src-dd-log-skip", Type: store.ComponentTypeDatadog}
 
 	edges, err := r.buildDDLogsInEdges(ctx, src, "dd-node", []string{"api-node"}, time.Now())
 	if err != nil {
@@ -320,7 +320,7 @@ func TestBuildDDLogsInEdges_SkipsNonServiceNodes2(t *testing.T) {
 func TestBuildStoresInEdgesByName_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-ds-err", Name: "orders-db", Type: store.SourceTypePostgreSQL}
+	src := &store.Component{ID: "src-ds-err", Name: "orders-db", Type: store.ComponentTypePostgreSQL}
 
 	edges := r.buildStoresInEdgesByName(context.Background(), src, "ds-node", "stores_in", "postgres", time.Now())
 	if len(edges) != 0 {
@@ -335,7 +335,7 @@ func TestBuildStoresInEdgesByName_QueryError(t *testing.T) {
 func TestBuildQueuesInEdges_QueryError(t *testing.T) {
 	gs := &errorGraphStore{queryErr: errors.New("graph query failed")}
 	r := makeErrRefresher(t, gs)
-	src := &store.Source{ID: "src-kafka-err", Type: store.SourceTypeKafka}
+	src := &store.Component{ID: "src-kafka-err", Type: store.ComponentTypeKafka}
 
 	edges := r.buildQueuesInEdges(context.Background(), src, "kafka-node", []string{"orders"}, time.Now())
 	if len(edges) != 0 {

@@ -74,7 +74,7 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "tool with complex arguments",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "list_sources",
+					name: "list_components",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]any{
 							"count":  args["count"],
@@ -84,7 +84,7 @@ func TestExecutor_Execute(t *testing.T) {
 					},
 				})
 			},
-			toolName: "list_sources",
+			toolName: "list_components",
 			args: map[string]any{
 				"count": 42,
 				"items": []string{"a", "b", "c"},
@@ -664,11 +664,11 @@ func TestExecutor_ZoneScope_AllowedSource(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a", "cluster-b"}))
+	executor := NewExecutor(registry, nil, WithAllowedComponents([]string{"cluster-a", "cluster-b"}))
 
 	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-a",
-		"resource":  "pods",
+		"component_id": "cluster-a",
+		"resource":     "pods",
 	})
 	if err != nil {
 		t.Fatalf("tool targeting allowed source should succeed, got: %v", err)
@@ -688,11 +688,11 @@ func TestExecutor_ZoneScope_DeniedSource(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a"}))
+	executor := NewExecutor(registry, nil, WithAllowedComponents([]string{"cluster-a"}))
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "cluster-b",
-		"resource":  "pods",
+		"component_id": "cluster-b",
+		"resource":     "pods",
 	})
 	if err == nil {
 		t.Fatal("expected zone violation error for unauthorized source")
@@ -702,8 +702,8 @@ func TestExecutor_ZoneScope_DeniedSource(t *testing.T) {
 	if !errors.As(err, &zoneErr) {
 		t.Fatalf("expected ZoneViolationError, got %T: %v", err, err)
 	}
-	if zoneErr.SourceID != "cluster-b" {
-		t.Errorf("ZoneViolationError.SourceID = %q, want %q", zoneErr.SourceID, "cluster-b")
+	if zoneErr.ComponentID != "cluster-b" {
+		t.Errorf("ZoneViolationError.ComponentID = %q, want %q", zoneErr.ComponentID, "cluster-b")
 	}
 }
 
@@ -716,14 +716,14 @@ func TestExecutor_ZoneScope_NoSourceID_Allowed(t *testing.T) {
 		},
 	})
 
-	// Even with zone restrictions, tools without source_id should work
-	executor := NewExecutor(registry, nil, WithAllowedSources([]string{"cluster-a"}))
+	// Even with zone restrictions, tools without component_id should work
+	executor := NewExecutor(registry, nil, WithAllowedComponents([]string{"cluster-a"}))
 
 	result, err := executor.Execute(context.Background(), "graph_query", map[string]any{
 		"query": "services",
 	})
 	if err != nil {
-		t.Fatalf("tool without source_id should not be blocked by zone scope: %v", err)
+		t.Fatalf("tool without component_id should not be blocked by zone scope: %v", err)
 	}
 	if result != "nodes" {
 		t.Errorf("result = %v, want nodes", result)
@@ -739,15 +739,15 @@ func TestExecutor_ZoneScope_NilAllowedSources_NoRestriction(t *testing.T) {
 		},
 	})
 
-	// Default (nil allowedSources) should not restrict anything
+	// Default (nil allowedComponents) should not restrict anything
 	executor := NewExecutor(registry, nil)
 
 	result, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "any-cluster",
-		"resource":  "pods",
+		"component_id": "any-cluster",
+		"resource":     "pods",
 	})
 	if err != nil {
-		t.Fatalf("nil allowedSources should not restrict: %v", err)
+		t.Fatalf("nil allowedComponents should not restrict: %v", err)
 	}
 	if result != "ok" {
 		t.Errorf("result = %v, want ok", result)
@@ -765,14 +765,14 @@ func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
 	})
 
 	// Empty slice = caller has no zone access, all source-scoped calls denied
-	executor := NewExecutor(registry, nil, WithAllowedSources([]string{}))
+	executor := NewExecutor(registry, nil, WithAllowedComponents([]string{}))
 
 	_, err := executor.Execute(context.Background(), "k8s_get", map[string]any{
-		"source_id": "any-cluster",
-		"resource":  "pods",
+		"component_id": "any-cluster",
+		"resource":     "pods",
 	})
 	if err == nil {
-		t.Fatal("empty allowedSources should deny all source-scoped calls")
+		t.Fatal("empty allowedComponents should deny all source-scoped calls")
 	}
 	var zoneErr *ZoneViolationError
 	if !errors.As(err, &zoneErr) {
@@ -782,7 +782,7 @@ func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
 
 // TestExecutor_Floor_PrecedesZoneScope pins the denial-message precedence
 // floor > RBAC (D-0019 decision 9) at the executor layer. When a Mutate trips
-// BOTH the write floor (up) AND a zone-scope violation (out-of-zone source_id),
+// BOTH the write floor (up) AND a zone-scope violation (out-of-zone component_id),
 // the user must see the floor reason — the one they can least readily fix — not
 // the zone violation. Because enforcement short-circuits, only one error ever
 // exists; reordering the floor check above the zone check makes that one error
@@ -798,17 +798,17 @@ func TestExecutor_Floor_PrecedesZoneScope(t *testing.T) {
 		},
 	})
 
-	// Floor up (safe_mode) AND an allowed-sources set that excludes the target.
+	// Floor up (safe_mode) AND an allowed-components set that excludes the target.
 	floor := safety.ResolveWriteFloor(true /*panicStatePresent*/, false)
 	executor := NewExecutor(registry, nil,
 		WithWriteFloor(floor),
-		WithAllowedSources([]string{"cluster-a"}),
+		WithAllowedComponents([]string{"cluster-a"}),
 		WithPolicy(safety.DefaultPolicy()),
 	)
 
 	_, err := executor.Execute(context.Background(), "write_file", map[string]any{
-		"source_id": "cluster-b", // out of zone — would be a ZoneViolationError if it ran first
-		"path":      "/etc/x",
+		"component_id": "cluster-b", // out of zone — would be a ZoneViolationError if it ran first
+		"path":         "/etc/x",
 	})
 	if err == nil {
 		t.Fatal("expected denial when floor is up and source is out of zone")

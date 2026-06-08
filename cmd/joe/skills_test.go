@@ -573,6 +573,6 @@ func TestRunSkillsCommand_Install_PassesTrustedSourcesFromConfig(t *testing.T) {
 		t.Fatalf("exit = %d, stderr=%q", code, stderr.String())
 	}
 	if len(observed) != 1 || observed[0] != "github.com/myorg" {
-		t.Errorf("trusted sources not threaded through; got %v", observed)
+		t.Errorf("trusted components not threaded through; got %v", observed)
 	}
 }

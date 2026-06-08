@@ -13,9 +13,9 @@ type stubAdapter struct {
 	disconnected bool
 }
 
-func (a *stubAdapter) Connect(_ context.Context, _ store.Source) error { return nil }
-func (a *stubAdapter) Disconnect() error                               { a.disconnected = true; return nil }
-func (a *stubAdapter) Status() adapters.Status                         { return adapters.Status{Connected: true} }
+func (a *stubAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
+func (a *stubAdapter) Disconnect() error                                  { a.disconnected = true; return nil }
+func (a *stubAdapter) Status() adapters.Status                            { return adapters.Status{Connected: true} }
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
 	r := adapters.NewRegistry()

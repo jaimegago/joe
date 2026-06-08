@@ -68,8 +68,8 @@ func TestAlertmanagerAlertsTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -85,8 +85,8 @@ func TestPagerDutyIncidentsTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -102,8 +102,8 @@ func TestGrafanaDashboardsTool_Metadata(t *testing.T) {
 	if params.Type != "object" {
 		t.Errorf("Parameters().Type = %q, want object", params.Type)
 	}
-	if _, ok := params.Properties["source_id"]; !ok {
-		t.Error("Parameters() missing source_id")
+	if _, ok := params.Properties["component_id"]; !ok {
+		t.Error("Parameters() missing component_id")
 	}
 }
 
@@ -127,25 +127,25 @@ func TestAlertmanagerAlertsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:   "list alerts",
-			args:   map[string]any{"source_id": "am-prod"},
+			args:   map[string]any{"component_id": "am-prod"},
 			client: &mockAlertmanagerClient{alerts: sampleAlerts},
 			wantN:  1,
 		},
 		{
 			name:   "list alerts with filter",
-			args:   map[string]any{"source_id": "am-prod", "filter": "severity=critical"},
+			args:   map[string]any{"component_id": "am-prod", "filter": "severity=critical"},
 			client: &mockAlertmanagerClient{alerts: sampleAlerts},
 			wantN:  1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockAlertmanagerClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "am-prod"},
+			args:    map[string]any{"component_id": "am-prod"},
 			client:  &mockAlertmanagerClient{err: errors.New("connection refused")},
 			wantErr: true,
 		},
@@ -190,27 +190,27 @@ func TestPagerDutyIncidentsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:    "list incidents (default)",
-			args:    map[string]any{"source_id": "pd-prod"},
+			args:    map[string]any{"component_id": "pd-prod"},
 			client:  &mockPagerDutyClient{incidents: sampleIncidents},
 			wantKey: "incidents",
 			wantN:   1,
 		},
 		{
 			name:    "list services",
-			args:    map[string]any{"source_id": "pd-prod", "action": "services"},
+			args:    map[string]any{"component_id": "pd-prod", "action": "services"},
 			client:  &mockPagerDutyClient{services: sampleServices},
 			wantKey: "services",
 			wantN:   1,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockPagerDutyClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "pd-prod"},
+			args:    map[string]any{"component_id": "pd-prod"},
 			client:  &mockPagerDutyClient{err: errors.New("unauthorized")},
 			wantErr: true,
 		},
@@ -271,39 +271,39 @@ func TestGrafanaDashboardsTool_Execute(t *testing.T) {
 	}{
 		{
 			name:    "search dashboards (default)",
-			args:    map[string]any{"source_id": "grafana-prod"},
+			args:    map[string]any{"component_id": "grafana-prod"},
 			client:  &mockGrafanaClient{dashboards: sampleDashboards},
 			wantKey: "dashboards",
 			wantN:   1,
 		},
 		{
 			name:    "get dashboard by uid",
-			args:    map[string]any{"source_id": "grafana-prod", "action": "get", "uid": "abc123"},
+			args:    map[string]any{"component_id": "grafana-prod", "action": "get", "uid": "abc123"},
 			client:  &mockGrafanaClient{dashboard: sampleDetail},
 			wantKey: "dashboard",
 		},
 		{
 			name:    "list alerts",
-			args:    map[string]any{"source_id": "grafana-prod", "action": "alerts"},
+			args:    map[string]any{"component_id": "grafana-prod", "action": "alerts"},
 			client:  &mockGrafanaClient{alerts: sampleAlerts},
 			wantKey: "alerts",
 			wantN:   1,
 		},
 		{
 			name:    "get without uid",
-			args:    map[string]any{"source_id": "grafana-prod", "action": "get"},
+			args:    map[string]any{"component_id": "grafana-prod", "action": "get"},
 			client:  &mockGrafanaClient{},
 			wantErr: true,
 		},
 		{
-			name:    "missing source_id",
+			name:    "missing component_id",
 			args:    map[string]any{},
 			client:  &mockGrafanaClient{},
 			wantErr: true,
 		},
 		{
 			name:    "client error",
-			args:    map[string]any{"source_id": "grafana-prod"},
+			args:    map[string]any{"component_id": "grafana-prod"},
 			client:  &mockGrafanaClient{err: errors.New("timeout")},
 			wantErr: true,
 		},

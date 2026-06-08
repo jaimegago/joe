@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// setupFullTestServer creates a test server with full store (graph + sources tables).
+// setupFullTestServer creates a test server with full store (graph + components tables).
 func setupFullTestServer(t *testing.T) *api.Server {
 	t.Helper()
 
@@ -41,12 +41,12 @@ func setupFullTestServer(t *testing.T) *api.Server {
 	return api.New(services)
 }
 
-func TestHandleListSources_Empty(t *testing.T) {
+func TestHandleListComponents_Empty(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("GET", "/api/v1/sources", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -63,12 +63,12 @@ func TestHandleListSources_Empty(t *testing.T) {
 	}
 }
 
-func TestHandleCreateSource_MissingFields(t *testing.T) {
+func TestHandleCreateComponent_MissingFields(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(`{"id":"test"}`))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(`{"id":"test"}`))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -77,12 +77,12 @@ func TestHandleCreateSource_MissingFields(t *testing.T) {
 	}
 }
 
-func TestHandleCreateSource_InvalidJSON(t *testing.T) {
+func TestHandleCreateComponent_InvalidJSON(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(`{bad`))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(`{bad`))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -91,12 +91,12 @@ func TestHandleCreateSource_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestHandleCreateSource_InvalidType(t *testing.T) {
+func TestHandleCreateComponent_InvalidType(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(`{"id":"src-1","type":"nope","name":"bad","config":{}}`))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(`{"id":"src-1","type":"nope","name":"bad","config":{}}`))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -111,17 +111,17 @@ func TestHandleCreateSource_InvalidType(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Error != "invalid_source" {
-		t.Errorf("error code: got %q, want %q", response.Error, "invalid_source")
+	if response.Error != "invalid_component" {
+		t.Errorf("error code: got %q, want %q", response.Error, "invalid_component")
 	}
 }
 
-func TestHandleGetSource_NotFound(t *testing.T) {
+func TestHandleGetComponent_NotFound(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("GET", "/api/v1/sources/nonexistent", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components/nonexistent", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -130,12 +130,12 @@ func TestHandleGetSource_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleDeleteSource_NotFound(t *testing.T) {
+func TestHandleDeleteComponent_NotFound(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/sources/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/components/nonexistent", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -171,11 +171,11 @@ func setupTestServerWithStore(t *testing.T) (*api.Server, *store.Store, *http.Se
 	return server, sqlStore, mux
 }
 
-func TestHandleCreateSource_DuplicateSource(t *testing.T) {
+func TestHandleCreateComponent_DuplicateSource(t *testing.T) {
 	_, sqlStore, mux := setupTestServerWithStore(t)
 
 	// Pre-insert a source directly so the duplicate check triggers
-	sqlStore.Sources.Create(context.Background(), &store.Source{
+	sqlStore.Components.Create(context.Background(), &store.Component{
 		ID:     "src-dup",
 		Type:   "kubernetes",
 		Name:   "existing cluster",
@@ -183,7 +183,7 @@ func TestHandleCreateSource_DuplicateSource(t *testing.T) {
 	})
 
 	body := `{"id":"src-dup","type":"kubernetes","name":"cluster"}`
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -200,12 +200,12 @@ func TestHandleCreateSource_DuplicateSource(t *testing.T) {
 	}
 }
 
-func TestHandleCreateSource_GitConnectFails(t *testing.T) {
+func TestHandleCreateComponent_GitConnectFails(t *testing.T) {
 	// Empty config causes git adapter to fail (url is required) -> covers writeBadRequest
 	_, _, mux := setupTestServerWithStore(t)
 
 	body := `{"id":"git-1","type":"git","name":"test repo","config":{}}`
-	req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -214,10 +214,10 @@ func TestHandleCreateSource_GitConnectFails(t *testing.T) {
 	}
 }
 
-// TestHandleCreateSource_AdapterConnectFails exercises the switch statement in
-// handleCreateSource for each adapter type that validates config on Connect().
+// TestHandleCreateComponent_AdapterConnectFails exercises the switch statement in
+// handleCreateComponent for each adapter type that validates config on Connect().
 // With an empty config `{}` each adapter should fail and return 400 or 500.
-func TestHandleCreateSource_AdapterConnectFails(t *testing.T) {
+func TestHandleCreateComponent_AdapterConnectFails(t *testing.T) {
 	// These adapter types validate required config fields on Connect() and fail fast
 	// with empty config, exercising the connect-error branch in the switch statement.
 	adapterTypes := []string{
@@ -232,7 +232,7 @@ func TestHandleCreateSource_AdapterConnectFails(t *testing.T) {
 		t.Run(srcType, func(t *testing.T) {
 			_, _, mux := setupTestServerWithStore(t)
 			body := `{"id":"src-1","type":"` + srcType + `","name":"test source","config":{}}`
-			req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
 			// Just verify we get a valid HTTP response — the goal is code coverage of the
@@ -244,9 +244,9 @@ func TestHandleCreateSource_AdapterConnectFails(t *testing.T) {
 	}
 }
 
-// TestHandleCreateSource_FallthroughTypes exercises source types that have no
+// TestHandleCreateComponent_FallthroughTypes exercises source types that have no
 // adapter connect step (fall through the switch) and are saved directly.
-func TestHandleCreateSource_FallthroughTypes(t *testing.T) {
+func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 	// Types that have no connect step (fall through the switch) plus types whose
 	// Connect() succeeds with empty config.
 	fallthroughTypes := []string{
@@ -260,7 +260,7 @@ func TestHandleCreateSource_FallthroughTypes(t *testing.T) {
 		t.Run(srcType, func(t *testing.T) {
 			_, _, mux := setupTestServerWithStore(t)
 			body := `{"id":"src-ft","type":"` + srcType + `","name":"fallthrough source","config":{}}`
-			req := httptest.NewRequest("POST", "/api/v1/sources", strings.NewReader(body))
+			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
 			// These types have no Connect() step, so the source should be saved successfully.
@@ -271,17 +271,17 @@ func TestHandleCreateSource_FallthroughTypes(t *testing.T) {
 	}
 }
 
-func TestHandleGetSource_Success(t *testing.T) {
+func TestHandleGetComponent_Success(t *testing.T) {
 	_, sqlStore, mux := setupTestServerWithStore(t)
 
-	sqlStore.Sources.Create(context.Background(), &store.Source{
+	sqlStore.Components.Create(context.Background(), &store.Component{
 		ID:     "test-src",
 		Type:   "git",
 		Name:   "test repo",
 		Config: json.RawMessage(`{}`),
 	})
 
-	req := httptest.NewRequest("GET", "/api/v1/sources/test-src", nil)
+	req := httptest.NewRequest("GET", "/api/v1/components/test-src", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -298,17 +298,17 @@ func TestHandleGetSource_Success(t *testing.T) {
 	}
 }
 
-func TestHandleDeleteSource_Success(t *testing.T) {
+func TestHandleDeleteComponent_Success(t *testing.T) {
 	_, sqlStore, mux := setupTestServerWithStore(t)
 
-	sqlStore.Sources.Create(context.Background(), &store.Source{
+	sqlStore.Components.Create(context.Background(), &store.Component{
 		ID:     "del-src",
 		Type:   "kubernetes",
 		Name:   "to delete",
 		Config: json.RawMessage(`{}`),
 	})
 
-	req := httptest.NewRequest("DELETE", "/api/v1/sources/del-src", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/components/del-src", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -317,7 +317,7 @@ func TestHandleDeleteSource_Success(t *testing.T) {
 	}
 
 	// Verify source is gone
-	src, _ := sqlStore.Sources.Get(context.Background(), "del-src")
+	src, _ := sqlStore.Components.Get(context.Background(), "del-src")
 	if src != nil {
 		t.Error("source should have been deleted")
 	}

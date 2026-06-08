@@ -31,26 +31,26 @@ func (t *EnvoyClustersTool) Name() string { return "envoy_clusters" }
 func (t *EnvoyClustersTool) Description() string {
 	return "List Envoy upstream clusters with host health status and circuit breaker info. " +
 		"Use to check upstream connectivity, health, and load distribution. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *EnvoyClustersTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Envoy source.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *EnvoyClustersTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 
 	clusters, err := t.Client.EnvoyClusters(ctx, sourceID)
@@ -61,9 +61,9 @@ func (t *EnvoyClustersTool) Execute(ctx context.Context, args map[string]any) (a
 		clusters = []envoyadapter.ClusterStatus{}
 	}
 	return map[string]any{
-		"clusters":  clusters,
-		"count":     len(clusters),
-		"source_id": sourceID,
+		"clusters":     clusters,
+		"count":        len(clusters),
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -84,14 +84,14 @@ func (t *EnvoyConfigTool) Description() string {
 	return "Dump Envoy configuration. " +
 		"Use section to filter: 'listeners', 'clusters', 'routes', 'endpoints', 'secrets'. " +
 		"Leave section empty for the full config dump. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *EnvoyConfigTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Envoy source.",
 			},
@@ -100,14 +100,14 @@ func (t *EnvoyConfigTool) Parameters() llm.ParameterSchema {
 				Description: "Config section: listeners, clusters, routes, endpoints, secrets. Omit for full dump.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *EnvoyConfigTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	section, _ := args["section"].(string)
 
@@ -116,9 +116,9 @@ func (t *EnvoyConfigTool) Execute(ctx context.Context, args map[string]any) (any
 		return nil, fmt.Errorf("envoy config: %w", err)
 	}
 	return map[string]any{
-		"config":    dump,
-		"section":   section,
-		"source_id": sourceID,
+		"config":       dump,
+		"section":      section,
+		"component_id": sourceID,
 	}, nil
 }
 
@@ -139,14 +139,14 @@ func (t *EnvoyStatsTool) Description() string {
 	return "Get Envoy statistics filtered by an optional prefix. " +
 		"Use filter to narrow results, e.g. 'cluster.backend' or 'http.ingress'. " +
 		"Returns stat names and values. Useful for diagnosing request rates, errors, and retries. " +
-		"If you don't know the source_id, call list_sources first."
+		"If you don't know the component_id, call list_components first."
 }
 
 func (t *EnvoyStatsTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"source_id": {
+			"component_id": {
 				Type:        "string",
 				Description: "ID of the Envoy source.",
 			},
@@ -155,14 +155,14 @@ func (t *EnvoyStatsTool) Parameters() llm.ParameterSchema {
 				Description: "Optional stat name prefix filter, e.g. 'cluster.backend' or 'http.ingress'.",
 			},
 		},
-		Required: []string{"source_id"},
+		Required: []string{"component_id"},
 	}
 }
 
 func (t *EnvoyStatsTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	sourceID, ok := args["source_id"].(string)
+	sourceID, ok := args["component_id"].(string)
 	if !ok || sourceID == "" {
-		return nil, fmt.Errorf("missing required parameter: source_id")
+		return nil, fmt.Errorf("missing required parameter: component_id")
 	}
 	filter, _ := args["filter"].(string)
 
@@ -174,9 +174,9 @@ func (t *EnvoyStatsTool) Execute(ctx context.Context, args map[string]any) (any,
 		stats = []envoyadapter.Stat{}
 	}
 	return map[string]any{
-		"stats":     stats,
-		"count":     len(stats),
-		"filter":    filter,
-		"source_id": sourceID,
+		"stats":        stats,
+		"count":        len(stats),
+		"filter":       filter,
+		"component_id": sourceID,
 	}, nil
 }
