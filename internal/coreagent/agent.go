@@ -67,9 +67,11 @@ func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observabil
 
 	// Inject the boot-resolved write floor (D-0018) so the Core Agent's own tool
 	// executor denies managed-system mutations whenever the floor is up. Routing
-	// the autonomous graph-refresh path through this executor seam is deferred to
-	// a separate task; the floor still governs the LLM tool calls this executor
-	// runs today.
+	// the autonomous graph-refresh path (graphdelta → store) through this executor
+	// seam is deferred to a dedicated follow-up (D-0022 Task 2: non-trivial — the
+	// seam is tool-name/args-shaped, the refresh is typed-store-shaped, and the
+	// agent:core principal does not yet exist). The floor still governs the LLM
+	// tool calls this executor runs today.
 	executor := tools.NewExecutor(toolRegistry, metrics, tools.WithWriteFloor(services.WriteFloor))
 
 	return &Agent{

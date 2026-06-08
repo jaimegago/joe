@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
@@ -394,6 +395,117 @@ func TestPhaseG_GateRefusalRecordedInAuditTrail(t *testing.T) {
 	}
 	if !strings.Contains(ctxBlob, captainSess) {
 		t.Errorf("context blob %q does not name the captain session %q", ctxBlob, captainSess)
+	}
+}
+
+// floorGateEnv is newGateEnv with a wrapper built WithFloor(floor), so the
+// floor is checked upstream of the §C gate. Everything else is identical.
+func floorGateEnv(t *testing.T, floor safety.WriteFloor) *gateEnv {
+	t.Helper()
+	e := newGateEnv(t)
+	e.wrapper = captaingate.New(e.spy, e.sess, e.audit, captaingate.WithFloor(floor))
+	return e
+}
+
+// TestFloorPrecedesIncidentGate pins the denial-message precedence floor >
+// incident (D-0019 decision 9) at the captaingate layer. This is the genuine
+// co-occurrence case: the floor is up AND the system is in incident regime with
+// a non-captain session attempting a Mutate. Both denials apply; the user must
+// see the floor reason (the one they can least readily fix), not the
+// incident-mode refusal. Because the wrapper checks the floor before the §C
+// gate, the gate is never consulted: no GateRefusalError, no inner.Execute, and
+// no captain_gate_refused audit row.
+func TestFloorPrecedesIncidentGate(t *testing.T) {
+	// Observation floor (up). The Mutate also trips the incident gate below.
+	floor := safety.ResolveWriteFloor(false, true /*observationEnvSet*/)
+	e := floorGateEnv(t, floor)
+
+	captainSess := e.declareWithCaptain(t, "alice")
+	investigation := sessionmodel.AgentSession{
+		ID:               uuid.NewString(),
+		Type:             sessionmodel.SessionTypeInvestigation,
+		CreatorPrincipal: "bob",
+		LinkedIncidentID: &captainSess,
+	}
+	if _, err := e.sess.CreateSession(e.ctx, investigation); err != nil {
+		t.Fatalf("create investigation: %v", err)
+	}
+
+	auditBefore := countAuditRows(t, e.store, audit.ActionCaptainGateRefused)
+
+	// Non-captain session in incident regime → would be a GateRefusalError if
+	// the gate ran. With the floor up, the floor wins.
+	ctx := withCtx(e.ctx, investigation.ID, "bob")
+	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	if err == nil {
+		t.Fatal("expected denial when floor is up during an incident")
+	}
+	// Floor wins.
+	if !errors.Is(err, safety.ErrWriteFloor) {
+		t.Fatalf("expected the write-floor error to take precedence, got %T: %v", err, err)
+	}
+	var floorErr *safety.WriteFloorError
+	if !errors.As(err, &floorErr) || floorErr.Reason != safety.FloorReasonObservation {
+		t.Fatalf("expected observation floor reason, got %T: %v", err, err)
+	}
+	// The §C gate must NOT have fired: no refusal type, no inner call, no audit.
+	var refusal *captaingate.GateRefusalError
+	if errors.As(err, &refusal) {
+		t.Fatal("incident-mode refusal surfaced instead of the floor reason — precedence floor > incident violated")
+	}
+	if got := e.spy.calls.Load(); got != 0 {
+		t.Errorf("inner executor called %d times — floor denial must short-circuit before inner.Execute", got)
+	}
+	if after := countAuditRows(t, e.store, audit.ActionCaptainGateRefused); after != auditBefore {
+		t.Errorf("captain_gate_refused audit rows changed (%d→%d) — the gate ran though the floor should have pre-empted it", auditBefore, after)
+	}
+}
+
+// TestFloorDownGateStillRefuses confirms the floor pre-check does not disturb
+// existing gate behavior: when the floor is DOWN (inert), a non-captain Mutate
+// in incident regime is still refused by the §C gate exactly as before.
+func TestFloorDownGateStillRefuses(t *testing.T) {
+	floor := safety.ResolveWriteFloor(false, false) // down
+	e := floorGateEnv(t, floor)
+
+	captainSess := e.declareWithCaptain(t, "alice")
+	investigation := sessionmodel.AgentSession{
+		ID:               uuid.NewString(),
+		Type:             sessionmodel.SessionTypeInvestigation,
+		CreatorPrincipal: "bob",
+		LinkedIncidentID: &captainSess,
+	}
+	if _, err := e.sess.CreateSession(e.ctx, investigation); err != nil {
+		t.Fatalf("create investigation: %v", err)
+	}
+
+	ctx := withCtx(e.ctx, investigation.ID, "bob")
+	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	if err == nil {
+		t.Fatal("expected the §C gate to refuse a non-captain mutation")
+	}
+	var refusal *captaingate.GateRefusalError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("expected *GateRefusalError with the floor down, got %T: %v", err, err)
+	}
+	if errors.Is(err, safety.ErrWriteFloor) {
+		t.Fatal("floor error surfaced with the floor down — WithFloor(down) must be inert")
+	}
+}
+
+// TestFloorAllowsReadsThroughGate confirms the floor pre-check never freezes
+// reads: even with the floor up, a Read flows through the wrapper to the inner
+// executor (Joe's own model maintenance and investigation must not freeze).
+func TestFloorAllowsReadsThroughGate(t *testing.T) {
+	floor := safety.ResolveWriteFloor(true, false) // safe_mode, up
+	e := floorGateEnv(t, floor)
+
+	ctx := withCtx(e.ctx, "", "bob")
+	if _, err := e.wrapper.Execute(ctx, "read_file", map[string]any{"path": "/etc/hosts"}); err != nil {
+		t.Fatalf("read must pass even with the floor up: %v", err)
+	}
+	if got := e.spy.calls.Load(); got != 1 {
+		t.Errorf("inner Execute should run for a Read under an up floor: calls = %d, want 1", got)
 	}
 }
 

@@ -100,6 +100,26 @@ type Wrapper struct {
 	inner    SingleExecutor
 	sessRepo sessionmodel.Repository // nil ⇒ gate disabled (test-only carve-out)
 	auditRep audit.Repository        // nil ⇒ refusal-audit disabled (test/dev)
+	floor    safety.WriteFloor       // boot-resolved write floor; zero value (down) = inert
+}
+
+// Option configures optional Wrapper settings.
+type Option func(*Wrapper)
+
+// WithFloor injects the boot-resolved write floor (D-0018) so the wrapper checks
+// it BEFORE the §C incident gate. This is what makes the denial-message
+// precedence floor > incident (D-0019 decision 9) hold by construction: when the
+// floor is up, a Mutate is refused with the floor's reason (observation /
+// safe_mode) and the §C gate is never consulted, so the user sees the reason
+// they can least readily fix rather than the incident-mode redirect.
+//
+// The floor is the SAME boot-sealed value the underlying *tools.Executor carries
+// (defense-in-depth: the executor still re-checks it). Pass it only where that
+// executor itself carries the floor, so the gate and the executor agree on
+// whether the floor is live. The zero value (down) is inert, so a wrapper built
+// without this option behaves exactly as before.
+func WithFloor(f safety.WriteFloor) Option {
+	return func(w *Wrapper) { w.floor = f }
 }
 
 // New constructs a Wrapper. sessRepo is the session-model repository
@@ -107,9 +127,14 @@ type Wrapper struct {
 // the accessor writes through (so a gate refusal lands in the same
 // append-only audit_log as every other event). Production wiring in
 // cmd/joe/server.go always passes both; tests pass nil when they
-// deliberately want to bypass the gate or the audit row.
-func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit.Repository) *Wrapper {
-	return &Wrapper{inner: inner, sessRepo: sessRepo, auditRep: auditRepo}
+// deliberately want to bypass the gate or the audit row. Optional WithFloor
+// injects the write floor so it is checked upstream of the §C gate.
+func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit.Repository, opts ...Option) *Wrapper {
+	w := &Wrapper{inner: inner, sessRepo: sessRepo, auditRep: auditRepo}
+	for _, opt := range opts {
+		opt(w)
+	}
+	return w
 }
 
 // Execute is the §C-gated + §B1-substituted tool-call entry point.
@@ -121,20 +146,24 @@ func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit
 //  1. classify tool action (safety.ClassifyTool).
 //  2. Read → bypass the gate entirely (reads/discovery are §A1/§C1-free).
 //  3. Mutate:
-//     a. §C gate (sessiongate.Check) — UPSTREAM of the inner executor's
+//     a. Write floor (D-0018) — when WithFloor is injected and the floor is
+//     up, refuse the Mutate with *WriteFloorError BEFORE the §C gate, so the
+//     floor reason outranks an incident-mode refusal (D-0019 decision 9
+//     precedence: floor > incident). No gate consulted, no audit row.
+//     b. §C gate (sessiongate.Check) — UPSTREAM of the inner executor's
 //     safety check AND of the accessor's RBAC check. Refusal returns
 //     *GateRefusalError; no inner.Execute call, no accessor call.
-//     b. On refusal: write ONE captain_transition audit row with
+//     c. On refusal: write ONE captain_transition audit row with
 //     action=captain_gate_refused, decision=deny. Fail-closed per
 //     Phase F's posture for mutating actions (audit fail ⇒ surface
 //     the audit error; the mutation still does not run because the
 //     gate already refused it).
-//     c. §B1 principal substitution — in incident regime + Allow,
+//     d. §B1 principal substitution — in incident regime + Allow,
 //     replace the request-time principal in ctx with the current
 //     captain's principal so downstream PrincipalFromContext readers
 //     (the accessor, anything that reads ctx) see the captain's
 //     authority.
-//     d. inner.Execute on the same goroutine.
+//     e. inner.Execute on the same goroutine.
 //
 // Test coverage of this ordering lives in captaingate_test.go (the
 // migrated equivalents of the Change-10 executor_gate_test.go tests).
@@ -148,15 +177,28 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 
 	classification := safety.ClassifyTool(name)
 
-	// 1. Reads/discovery skip the gate.
+	// 1. Reads/discovery skip the gate (and the floor — the floor only denies
+	//    Mutates; reads must always flow, incl. Joe's own model maintenance).
 	if classification.Class == safety.ActionRead {
 		return w.inner.Execute(ctx, name, args)
+	}
+
+	// 2. Write floor (D-0018 / D-0019 decision 9): checked UPSTREAM of the §C
+	//    gate so the floor reason (observation / safe_mode) outranks an
+	//    incident-mode refusal — precedence floor > incident, ordered by
+	//    resolvability depth. We are past the Read bypass, so the call is a
+	//    Mutate; an up floor denies it with the reason as data and the gate is
+	//    never consulted (no inner.Execute, no gate-refusal audit row). The
+	//    inner executor re-checks the same floor (defense-in-depth); a wrapper
+	//    built without WithFloor carries the inert zero value and skips this.
+	if w.floor.Up() {
+		return nil, &safety.WriteFloorError{Reason: w.floor.Reason()}
 	}
 
 	sessionID := agentctx.SessionID(ctx)
 	callerPrincipal := string(rbac.PrincipalFromContext(ctx))
 
-	// 2. §C gate.
+	// 3. §C gate.
 	decision, err := sessiongate.Check(ctx, w.sessRepo, sessionID, callerPrincipal, classification.Class)
 	if err != nil {
 		return nil, fmt.Errorf("captaingate: §C gate: %w", err)
@@ -167,7 +209,7 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 			Tool:             name,
 			CaptainSessionID: decision.CaptainSessionID,
 		}
-		// 2a. Write the durable refusal row. Phase F failure posture:
+		// 3c. Write the durable refusal row. Phase F failure posture:
 		// captain_gate_refused is not in the read-class, so a missing
 		// audit row fails closed — we surface the audit error rather
 		// than the refusal. Either way the inner.Execute is not
@@ -178,7 +220,7 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 		return nil, refusal
 	}
 
-	// 3. §B1 principal substitution.
+	// 4. §B1 principal substitution.
 	regime, err := w.sessRepo.GetRegime(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("captaingate: load regime for principal substitution: %w", err)

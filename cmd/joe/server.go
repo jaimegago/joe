@@ -684,7 +684,14 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// safe — newCoreAgent in defaultServerDeps returns *coreagent.Agent.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
 		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
-		gated := captaingate.New(durable, services.SessionModel, services.Audit)
+		// WithFloor makes the denial precedence floor > incident hold by
+		// construction on the autonomous path (D-0019 decision 9): the wrapper
+		// checks the same boot-sealed floor the inner executor carries
+		// (agent.go injects it via tools.WithWriteFloor) BEFORE the §C gate, so a
+		// floored Mutate surfaces the floor reason rather than an incident-mode
+		// refusal. A no-op today — the Core Agent issues only Reads — but correct
+		// the day an autonomous managed-system Mutate exists.
+		gated := captaingate.New(durable, services.SessionModel, services.Audit, captaingate.WithFloor(services.WriteFloor))
 		concrete.SetToolExecutor(gated)
 		slog.Info("core agent: §C captain-session gate + §D5 durable executor wrapper installed (gate runs upstream)")
 	}
