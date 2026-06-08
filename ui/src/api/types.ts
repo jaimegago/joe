@@ -18,6 +18,7 @@ import type {
   ZoneAccessSchema,
   RegimeSchema,
   PanicStatusSchema,
+  MutateStatusSchema,
   AuthConfigSchema,
   LLMLimitStateSchema,
   LLMCostLimitSchema,
@@ -51,6 +52,7 @@ export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 export type ZoneAccess = z.infer<typeof ZoneAccessSchema>;
 export type Regime = z.infer<typeof RegimeSchema>;
 export type PanicStatus = z.infer<typeof PanicStatusSchema>;
+export type MutateStatus = z.infer<typeof MutateStatusSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type LLMLimitState = z.infer<typeof LLMLimitStateSchema>;
 export type LLMCostLimit = z.infer<typeof LLMCostLimitSchema>;
