@@ -60,25 +60,36 @@ Format per entry: ID, date, decision, basis, supersedes, status.
     exactly ONE reason at boot (`safety.ResolveWriteFloor`, panic wins over the
     env var), pinned by the pre-existing `TestResolveWriteFloor_Precedence`.
 
-- **No behavior change today.** The floor is injected at exactly one executor —
-  the Core Agent's (`internal/coreagent/agent.go`) — which issues only Reads
-  (per D-0010), so neither the floor nor the gate fires on it today; and the
-  user-task executor (`internal/api/tasks.go`) carries no floor, so the floor
-  half of the precedence is inert there. `WithFloor` is wired only at the
-  Core-Agent captaingate site (`cmd/joe/server.go`), inert at the user-task site
-  to match its floor-less executor. The reorders are therefore no-ops on every
-  reachable path today; they make the precedence correct BY CONSTRUCTION for the
-  day an autonomous (or user-task) Mutate exists under an up floor.
+- **Behavior on the autonomous path is unchanged; the user-task path now
+  enforces the floor.** The Core Agent executor (`internal/coreagent/agent.go`)
+  issues only Reads (per D-0010), so neither the floor nor the gate fires on it
+  today — the reorders there remain no-ops, correct BY CONSTRUCTION for the day
+  an autonomous Mutate exists. The user-task executor (`internal/api/tasks.go`)
+  now carries the floor (see "Discovered gap — CLOSED" below), so a user-task
+  Mutate under an up floor IS denied with the floor reason, and `WithFloor` is
+  wired at BOTH captaingate sites so floor > incident holds on both agentic
+  paths.
 
-- Discovered gap (recorded, NOT fixed here — out of scope of D-0019 decisions 9
-  and the autonomous-routing item): the D-0018 write floor is injected ONLY on
-  the Core Agent executor, not on the user-task-loop executor
-  (`internal/api/tasks.go` builds its `tools.Executor` without
-  `tools.WithWriteFloor`). In observation/safe mode a user-task Mutate
-  (`write_file`, `run_command`, `publish_doc_update`, …) is currently NOT
-  floor-blocked. The `WithWriteFloor` doc comment claims both construction sites
-  are wired; live code wires only one. This is a separate floor-coverage hole to
-  close in its own change; this entry only records it.
+- Discovered gap — **CLOSED** (2026-06-08): the D-0018 write floor was originally
+  injected ONLY on the Core Agent executor, not on the user-task-loop executor —
+  `internal/api/tasks.go` built its `tools.Executor` without
+  `tools.WithWriteFloor`, so in observation/safe mode a user-task Mutate
+  (`write_file`, `run_command`, `publish_doc_update_*`, `github_comment`, …) was
+  NOT floor-blocked, contradicting the `WithWriteFloor` doc comment's claim that
+  both construction sites are wired. Closed by adding
+  `tools.WithWriteFloor(services.WriteFloor)` to the user-task `execOpts` and
+  `captaingate.WithFloor(services.WriteFloor)` to the user-task captaingate
+  wrapper (mirroring the Core-Agent site in `cmd/joe/server.go`), so the floor is
+  enforced and the floor > incident precedence holds on the user-task path too.
+  Pinned by `TestTaskEndpoint_WriteFloorBlocksMutate` (Mutate denied with the
+  observation code), `TestTaskEndpoint_WriteFloorAllowsReads` (Reads still flow),
+  `TestUserTaskExecutorFloor_ErrorsIs` (the seam returns a
+  `*safety.WriteFloorError`, `errors.Is ErrWriteFloor`), and
+  `TestTaskEndpoint_FloorPrecedesIncidentOnUserTaskPath` (with the floor up AND
+  an incident regime active, a user-task Mutate surfaces the floor reason, not
+  `incident_mode` — the `captaingate.WithFloor` line is what makes this hold; the
+  test regresses to `incident_mode` if it is removed). The boot-floor
+  immutability guards (`internal/safety/floor_guard_test.go`) remain green.
 
 ### Task 2 — route the autonomous Core Agent path through the shared seam (DEFERRED)
 

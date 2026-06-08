@@ -20,8 +20,10 @@ import (
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/tools"
 	_ "modernc.org/sqlite"
 )
 
@@ -768,6 +770,238 @@ func TestTaskEndpoint_ToolCallsInSteps(t *testing.T) {
 	// Final answer
 	if resp.FinalAnswer != "Found 3 services in the graph." {
 		t.Errorf("final_answer = %q, want %q", resp.FinalAnswer, "Found 3 services in the graph.")
+	}
+}
+
+// floorMutateLLM issues a write_file (Mutate) tool call on its first turn, then
+// a final answer. Used to drive a managed-system mutation through the user-task
+// loop so the write floor's denial can be observed end-to-end.
+type floorMutateLLM struct{ calls int }
+
+func (m *floorMutateLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &llm.ChatResponse{
+			ToolCalls: []llm.ToolCall{
+				{ID: "tc-w", Name: "write_file", Args: map[string]any{"path": "/tmp/joe-floor-test", "content": "x"}},
+			},
+			Usage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+		}, nil
+	}
+	return &llm.ChatResponse{
+		Content: "I could not write the file.",
+		Usage:   llm.TokenUsage{InputTokens: 5, OutputTokens: 2, TotalTokens: 7},
+	}, nil
+}
+
+func (m *floorMutateLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// TestTaskEndpoint_WriteFloorBlocksMutate closes the D-0022 floor-coverage hole:
+// the user-task executor (internal/api/tasks.go) must carry the boot-resolved
+// write floor (D-0018) so a Mutate (write_file) is denied when the floor is up,
+// exactly like the Core Agent executor. With the floor up in observation mode, a
+// write_file tool call must be refused with the floor reason — surfaced as the
+// stable "observation" write-failure code (classifyWriteFailure maps the typed
+// *safety.WriteFloorError, so a non-empty observation code proves the executor
+// returned that typed error). Before the fix the executor carried no floor and
+// the mutation slipped through.
+func TestTaskEndpoint_WriteFloorBlocksMutate(t *testing.T) {
+	srv, mux := setupTaskServer(t, &floorMutateLLM{})
+	// Floor up via observation mode (JOE_MODE=observation at boot). The handler
+	// reads services.WriteFloor at request time, so setting it on the shared
+	// services pointer after setup is sufficient.
+	srv.services.WriteFloor = safety.ResolveWriteFloor(false, true)
+
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "write a file"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Steps) < 1 || len(resp.Steps[0].ToolResults) == 0 {
+		t.Fatalf("expected a tool result for the write_file call; steps=%+v", resp.Steps)
+	}
+	tr := resp.Steps[0].ToolResults[0]
+	if tr.Name != "write_file" {
+		t.Fatalf("tool result name = %q, want write_file", tr.Name)
+	}
+	if tr.Error == "" {
+		t.Error("write_file under an up floor should be denied (non-empty error)")
+	}
+	if tr.ErrorCode != errorCodeObservation {
+		t.Errorf("tool result error_code = %q, want %q (write floor not enforced on the user-task path)",
+			tr.ErrorCode, errorCodeObservation)
+	}
+	// Turn-level code is the first per-tool write-failure code.
+	if resp.ErrorCode != errorCodeObservation {
+		t.Errorf("turn error_code = %q, want %q", resp.ErrorCode, errorCodeObservation)
+	}
+}
+
+// TestTaskEndpoint_WriteFloorAllowsReads asserts the floor only denies Mutates:
+// with the floor up, a Read tool call on the user-task path must NOT be
+// floor-blocked (its result carries no floor write-failure code). Reads must
+// always flow — observation/safe mode must not freeze ordinary queries.
+func TestTaskEndpoint_WriteFloorAllowsReads(t *testing.T) {
+	srv, mux := setupTaskServer(t, &taskToolLLM{}) // issues graph_query (a Read)
+	srv.services.WriteFloor = safety.ResolveWriteFloor(false, true)
+
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "list services"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Steps) < 1 || len(resp.Steps[0].ToolResults) == 0 {
+		t.Fatalf("expected a tool result for the graph_query call; steps=%+v", resp.Steps)
+	}
+	tr := resp.Steps[0].ToolResults[0]
+	if tr.Name != "graph_query" {
+		t.Fatalf("tool result name = %q, want graph_query", tr.Name)
+	}
+	// The read must not be denied BY THE FLOOR (it may fail for unrelated
+	// reasons in this harness, but never with a floor write-failure code).
+	if tr.ErrorCode == errorCodeObservation || tr.ErrorCode == errorCodeSafeMode {
+		t.Errorf("read tool result error_code = %q; a Read must not be floor-blocked", tr.ErrorCode)
+	}
+	if resp.ErrorCode == errorCodeObservation || resp.ErrorCode == errorCodeSafeMode {
+		t.Errorf("turn error_code = %q; a read-only turn must not carry a floor code", resp.ErrorCode)
+	}
+}
+
+// stubFloorTool is a no-op tool whose action class is decided by its NAME via
+// safety.ClassifyTool (write_file → Mutate, read_file → Read). It lets the
+// executor-seam test below exercise the floor without the real tool plumbing.
+type stubFloorTool struct{ name string }
+
+func (s stubFloorTool) Name() string                    { return s.name }
+func (s stubFloorTool) Description() string             { return "stub" }
+func (s stubFloorTool) Parameters() llm.ParameterSchema { return llm.ParameterSchema{Type: "object"} }
+func (s stubFloorTool) Execute(_ context.Context, _ map[string]any) (any, error) {
+	return "ok", nil
+}
+
+// TestUserTaskExecutorFloor_ErrorsIs is the typed-error guard for the user-task
+// executor seam. tasks.go builds its executor with tools.WithWriteFloor; this
+// test constructs the same executor and asserts a Mutate is denied with an error
+// that satisfies errors.Is(err, safety.ErrWriteFloor) (i.e. a
+// *safety.WriteFloorError), while a Read passes through untouched. This is the
+// errors.Is contract the api write-failure classifier depends on.
+func TestUserTaskExecutorFloor_ErrorsIs(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(stubFloorTool{name: "write_file"}) // Mutate by classification
+	registry.Register(stubFloorTool{name: "read_file"})  // Read by classification
+
+	exec := tools.NewExecutor(registry, nil, tools.WithWriteFloor(safety.ResolveWriteFloor(false, true)))
+	ctx := context.Background()
+
+	_, err := exec.Execute(ctx, "write_file", map[string]any{"path": "/tmp/x", "content": "y"})
+	if err == nil {
+		t.Fatal("write_file under an up floor returned nil error; want a write-floor denial")
+	}
+	if !errors.Is(err, safety.ErrWriteFloor) {
+		t.Errorf("errors.Is(err, ErrWriteFloor) = false for %v; want true", err)
+	}
+	var floorErr *safety.WriteFloorError
+	if !errors.As(err, &floorErr) {
+		t.Fatalf("errors.As(err, *WriteFloorError) = false for %v", err)
+	}
+	if floorErr.Reason != safety.FloorReasonObservation {
+		t.Errorf("floor reason = %q, want %q", floorErr.Reason, safety.FloorReasonObservation)
+	}
+
+	// A Read must not be floor-blocked.
+	if _, err := exec.Execute(ctx, "read_file", map[string]any{"path": "/tmp/x"}); err != nil {
+		t.Errorf("read_file under an up floor returned %v; a Read must pass the floor", err)
+	}
+}
+
+// declareTestIncident puts the server's session model into incident regime,
+// owned by alice. Every user-task request below runs in a DIFFERENT,
+// non-captain session, so its Mutate is gate-refused (incident_mode) while the
+// regime is active and the floor is down.
+func declareTestIncident(t *testing.T, srv *Server) {
+	t.Helper()
+	if _, _, err := srv.services.SessionModel.DeclareIncidentRegime(
+		context.Background(), "user:alice@example.com", sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("declare incident regime: %v", err)
+	}
+}
+
+// firstMutateToolResult returns the first step's first tool result, failing if
+// the loop produced none (e.g. the LLM never issued the expected tool call).
+func firstMutateToolResult(t *testing.T, resp taskResponse) taskToolResult {
+	t.Helper()
+	if len(resp.Steps) < 1 || len(resp.Steps[0].ToolResults) == 0 {
+		t.Fatalf("expected a tool result for the write_file call; steps=%+v", resp.Steps)
+	}
+	return resp.Steps[0].ToolResults[0]
+}
+
+// TestTaskEndpoint_FloorPrecedesIncidentOnUserTaskPath pins the
+// captaingate.WithFloor wiring on the user-task path. When BOTH the write floor
+// is up (observation) AND an incident regime is active, a Mutate driven through
+// the user-task loop must surface the FLOOR reason (observation), NOT the
+// captain gate's incident_mode code — the floor > incident precedence (D-0022 /
+// D-0019 decision 9) realized on the chat path. It exists to handle exactly this
+// co-occurrence, and would regress to incident_mode if captaingate.WithFloor
+// were removed from tasks.go: the §C gate would then run before any floor check.
+//
+// The first sub-run is a positive control. With the SAME incident regime but the
+// floor DOWN, the very same Mutate is refused by the captain gate (incident_mode)
+// — proving the incident regime is genuinely active on this path so the
+// precedence assertion is non-vacuous. Each sub-run uses its own server because
+// floorMutateLLM carries a per-instance call counter (it issues write_file only
+// on its first Chat call), so a fresh instance is needed to re-issue the Mutate.
+func TestTaskEndpoint_FloorPrecedesIncidentOnUserTaskPath(t *testing.T) {
+	// Control: floor DOWN + incident active → captain gate refuses (incident_mode).
+	srvCtl, muxCtl := setupTaskServer(t, &floorMutateLLM{})
+	declareTestIncident(t, srvCtl)
+
+	wCtl := doRequest(muxCtl, "POST", "/api/v1/tasks", map[string]any{"message": "write a file"})
+	if wCtl.Code != http.StatusOK {
+		t.Fatalf("control: expected 200, got %d: %s", wCtl.Code, wCtl.Body.String())
+	}
+	var respCtl taskResponse
+	if err := json.NewDecoder(wCtl.Body).Decode(&respCtl); err != nil {
+		t.Fatalf("control decode: %v", err)
+	}
+	trCtl := firstMutateToolResult(t, respCtl)
+	if trCtl.ErrorCode != errorCodeIncidentMode {
+		t.Fatalf("control: tool error_code = %q, want %q — incident regime not active on the "+
+			"user-task path, so the precedence assertion below would be vacuous", trCtl.ErrorCode, errorCodeIncidentMode)
+	}
+
+	// Precedence: floor UP (observation) + incident active → the floor wins.
+	srvPre, muxPre := setupTaskServer(t, &floorMutateLLM{})
+	declareTestIncident(t, srvPre)
+	srvPre.services.WriteFloor = safety.ResolveWriteFloor(false, true) // observation
+
+	wPre := doRequest(muxPre, "POST", "/api/v1/tasks", map[string]any{"message": "write a file"})
+	if wPre.Code != http.StatusOK {
+		t.Fatalf("precedence: expected 200, got %d: %s", wPre.Code, wPre.Body.String())
+	}
+	var respPre taskResponse
+	if err := json.NewDecoder(wPre.Body).Decode(&respPre); err != nil {
+		t.Fatalf("precedence decode: %v", err)
+	}
+	trPre := firstMutateToolResult(t, respPre)
+	if trPre.ErrorCode == errorCodeIncidentMode {
+		t.Error("precedence: Mutate surfaced incident_mode under an up floor — floor > incident " +
+			"precedence broken on the user-task path (captaingate.WithFloor missing?)")
+	}
+	if trPre.ErrorCode != errorCodeObservation {
+		t.Errorf("precedence: tool error_code = %q, want %q (the floor must outrank the incident gate)",
+			trPre.ErrorCode, errorCodeObservation)
 	}
 }
 

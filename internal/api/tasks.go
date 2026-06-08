@@ -267,7 +267,18 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// caller principal already carried in the Go context (the one
 	// auth.EdgeAuth set via rbac.WithPrincipal at the edge).
 	registry := tools.NewCoreRegistry(h.server.inproc, safetyPolicy)
-	execOpts := []tools.ExecutorOption{tools.WithPolicy(safetyPolicy)}
+	// D-0018 / D-0022: inject the boot-resolved write floor so the user-task
+	// executor denies managed-system Mutates (write_file, run_command,
+	// publish_doc_update_*, github_comment, …) whenever the floor is up
+	// (observation or safe mode). This closes the floor-coverage hole D-0022
+	// recorded: the floor was injected only on the Core Agent executor
+	// (internal/coreagent/agent.go), so a user-task Mutate slipped through the
+	// floor here. The floor is a read-only boot-sealed value; the zero value
+	// (down) is inert, so this is a no-op when no floor is configured.
+	execOpts := []tools.ExecutorOption{
+		tools.WithPolicy(safetyPolicy),
+		tools.WithWriteFloor(h.server.services.WriteFloor),
+	}
 	if zoneScope.allowedSourceIDs != nil {
 		execOpts = append(execOpts, tools.WithAllowedSources(zoneScope.allowedSourceIDs))
 	}
@@ -301,7 +312,15 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// loop behaves exactly as pre-Phase-G.
 	var loopExec agentloop.BatchExecutor = executor
 	if h.server.services.SessionModel != nil {
-		loopExec = captaingate.New(executor, h.server.services.SessionModel, h.server.services.Audit)
+		// WithFloor makes the denial precedence floor > incident (D-0022 /
+		// D-0019 decision 9) hold by construction on the user-task path too: the
+		// wrapper checks the SAME boot-sealed floor the inner executor now
+		// carries (above) BEFORE its §C incident gate, so a floored Mutate
+		// surfaces the floor reason (observation / safe_mode) rather than an
+		// incident-mode redirect. Previously inert here (the executor carried no
+		// floor, so the gate would have fired first); now mirrors the Core Agent
+		// site in cmd/joe/server.go.
+		loopExec = captaingate.New(executor, h.server.services.SessionModel, h.server.services.Audit, captaingate.WithFloor(h.server.services.WriteFloor))
 	}
 
 	// Build graph context for system prompt
