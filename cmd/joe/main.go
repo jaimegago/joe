@@ -22,10 +22,18 @@ import (
 	"github.com/jaimegago/joe/internal/mcp"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/review"
-	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
+	"github.com/jaimegago/joe/internal/store"
 )
+
+// panicRowStore is the narrow surface the `joe unlock` CLI needs to operate on
+// the single panic DB row. It exists so tests can inject a fake without opening
+// a real database.
+type panicRowStore interface {
+	IsPanicked(ctx context.Context) (bool, error)
+	ClearPanicked(ctx context.Context) error
+}
 
 type runDeps struct {
 	loadConfig       func(path string) (*config.Config, error)
@@ -37,6 +45,11 @@ type runDeps struct {
 	// behavior. Injectable so dispatcher tests can assert routing without
 	// actually binding a port or opening a database.
 	runServer func(ctx context.Context) int
+	// openPanicStore opens the panic DB row store for `joe unlock`, returning the
+	// store, a closer, and any error. It opens the database directly (never
+	// contacting a running process) so recovery works while Joe is down after a
+	// panic exit. Injectable so unlock tests can supply a fake row.
+	openPanicStore func() (panicRowStore, func() error, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -52,8 +65,43 @@ func defaultRunDeps() runDeps {
 		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
 			return skills.LoadPolicy(joeDir)
 		},
-		runServer: runServer,
+		runServer:      runServer,
+		openPanicStore: defaultOpenPanicStore,
 	}
+}
+
+// defaultOpenPanicStore opens the SQLite store directly and returns its panic-row
+// store plus a closer. It honors the same database config the daemon uses
+// (cfg.Database overrides, else ~/.joe/joe.db) and runs migrations so the panic
+// row exists, mirroring boot. It NEVER contacts a running process: after a panic
+// the daemon has already exited (os.Exit), and in the not-panicked case the
+// command only reads the row, so a brief shared SQLite open (WAL + busy_timeout)
+// does not disrupt a healthy running daemon.
+func defaultOpenPanicStore() (panicRowStore, func() error, error) {
+	cfg, err := config.Load(paths.DefaultConfigPath())
+	if err != nil {
+		return nil, nil, fmt.Errorf("load config: %w", err)
+	}
+	dbPath, err := paths.DatabasePath()
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve database path: %w", err)
+	}
+	dbCfg := store.DatabaseConfig{Driver: store.DriverSQLite, DSN: dbPath}
+	if cfg.Database.Driver != "" {
+		dbCfg.Driver = cfg.Database.Driver
+	}
+	if cfg.Database.DSN != "" {
+		dbCfg.DSN = cfg.Database.DSN
+	}
+	s, err := store.New(dbCfg, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open database: %w", err)
+	}
+	if err := s.Migrate(); err != nil {
+		_ = s.Close()
+		return nil, nil, fmt.Errorf("ensure schema: %w", err)
+	}
+	return s.PanicStore(), s.Close, nil
 }
 
 // skillManager is the narrow surface the `joe skills` CLI needs from the
@@ -104,43 +152,61 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	}
 
 	fmt.Fprintln(stdout, "Emergency shutdown triggered. joe will restart in safe mode.")
-	fmt.Fprintln(stdout, "Use 'joe unlock --reason \"...\"' to resume normal operation.")
+	fmt.Fprintln(stdout, "Use 'joe unlock' to clear the panic state, then restart to resume normal operation.")
 	return 0
 }
 
-// runUnlockCommand clears the persisted panic state as a LOCAL-FILE-ONLY host
-// operation (D-0018 point 4). It does NOT contact or signal any running process,
-// does NOT lower any live write floor, and does NOT reference the floor value —
-// it edits the panic.state file only. Clearing takes effect on restart: Joe
-// remains read-only until restarted because the floor was sealed at boot and is
-// never re-derived from disk mid-process. Recovery is: clear panic state (this
-// command) + set JOE_MODE to the intended posture + restart.
-func runUnlockCommand(_ context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+// runUnlockCommand clears the single panic DB row as a deliberate operator
+// acknowledgment (D-0018). It opens the database DIRECTLY and does NOT contact or
+// signal any running process, does NOT lower any live write floor, and does NOT
+// reference the floor value — it acts on the panic row only. Clearing takes
+// effect on restart: a running Joe stays read-only because the floor was sealed
+// at boot and is never re-derived mid-process.
+//
+// It is read-then-report-conditionally and idempotent: it reads the row first
+// and only writes when a panic is present, so running it twice — or on a healthy
+// Joe — does nothing harmful and reports accurately. The functional cases (panic
+// present / absent) both exit 0; only a genuine store-access failure exits
+// non-zero, so the report never lies about what happened.
+func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	reason := fs.String("reason", "", "acknowledgment reason recorded to the audit log (required)")
+	reason := fs.String("reason", "", "optional acknowledgment reason recorded to the log")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	if *reason == "" {
-		fmt.Fprintln(stderr, "Error: --reason is required")
-		fmt.Fprintln(stderr, "Usage: joe unlock --reason \"incident resolved\"")
-		return 1
-	}
-
-	joeDir, err := deps.joeDirPath()
+	ps, closeStore, err := deps.openPanicStore()
 	if err != nil {
-		fmt.Fprintf(stderr, "Error: failed to resolve joe directory: %v\n", err)
+		fmt.Fprintf(stderr, "Error: failed to open panic store: %v\n", err)
+		return 1
+	}
+	defer func() { _ = closeStore() }()
+
+	panicked, err := ps.IsPanicked(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to read panic state: %v\n", err)
 		return 1
 	}
 
-	if err := safety.AcknowledgePanic(joeDir, *reason); err != nil {
+	if !panicked {
+		// Nothing to clear. Do not imply a restart is needed or that writes will
+		// resume — the CLI only knows the row, not the daemon's live state.
+		fmt.Fprintln(stdout, "Joe is not in a panicked state; nothing to clear.")
+		return 0
+	}
+
+	if err := ps.ClearPanicked(ctx); err != nil {
 		fmt.Fprintf(stderr, "Error: failed to clear panic state: %v\n", err)
 		return 1
 	}
-
-	fmt.Fprintln(stdout, "Panic state cleared — restart joe to resume writes. Joe remains read-only until restarted.")
+	if *reason != "" {
+		slog.Info("panic state acknowledged and cleared", "reason", *reason)
+	}
+	// Phrased against the panic row, not the daemon: another read-only posture
+	// (observation mode) may independently hold the floor up, so writes are not
+	// promised to resume unconditionally.
+	fmt.Fprintln(stdout, "Panic state was present and has been cleared. Restart any running Joe to resume writes if no other read-only posture is set; writes remain blocked until restart.")
 	return 0
 }
 
@@ -677,7 +743,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skills   Manage Agent Skills sources")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
-	fmt.Fprintln(w, "  unlock   Clear the persisted panic state (local file op; takes effect on restart)")
+	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
 }
 
 func main() {

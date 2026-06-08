@@ -1,8 +1,8 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,12 +11,11 @@ import (
 	"github.com/jaimegago/joe/internal/safety"
 )
 
-// stubPanicHandler returns a panicHandler whose joeDirFn points at t.TempDir()
-// and whose floor is down (no panic, no observation).
+// stubPanicHandler returns a panicHandler whose floor is down (no panic, no
+// observation) and whose panic-row reader is unset.
 func stubPanicHandler(t *testing.T) *panicHandler {
 	t.Helper()
-	dir := t.TempDir()
-	return &panicHandler{joeDirFn: func() (string, error) { return dir, nil }}
+	return &panicHandler{}
 }
 
 func TestHandlePanicStatus_NotInPanic(t *testing.T) {
@@ -38,20 +37,17 @@ func TestHandlePanicStatus_NotInPanic(t *testing.T) {
 }
 
 func TestHandlePanicStatus_InPanic(t *testing.T) {
-	dir := t.TempDir()
-	// The boot-resolved floor is up with reason safe_mode (sticky panic).
+	// The boot-resolved floor is up with reason safe_mode (sticky panic); detail
+	// is enriched from the single panic DB row via panicInfo.
 	h := &panicHandler{
-		joeDirFn: func() (string, error) { return dir, nil },
-		floor:    safety.ResolveWriteFloor(true, false),
-	}
-
-	state := safety.PanicState{
-		TriggeredAt:   time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
-		TriggerSource: safety.PanicSourceAPI,
-		TriggerReason: "test panic",
-	}
-	if err := safety.WritePanicState(dir, state); err != nil {
-		t.Fatalf("write panic state: %v", err)
+		floor: safety.ResolveWriteFloor(true, false),
+		panicInfo: func(context.Context) (*safety.PanicInfo, error) {
+			return &safety.PanicInfo{
+				TriggeredAt:   time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+				TriggerSource: safety.PanicSourceAPI,
+				TriggerReason: "test panic",
+			}, nil
+		},
 	}
 
 	req := httptest.NewRequest("GET", "/api/v1/panic/status", nil)
@@ -76,10 +72,8 @@ func TestHandlePanicStatus_InPanic(t *testing.T) {
 // TestHandlePanicStatus_Observation confirms the calm observation posture is NOT
 // reported as safe mode — only the safe_mode floor reason is "panic recovery".
 func TestHandlePanicStatus_Observation(t *testing.T) {
-	dir := t.TempDir()
 	h := &panicHandler{
-		joeDirFn: func() (string, error) { return dir, nil },
-		floor:    safety.ResolveWriteFloor(false, true /*observation*/),
+		floor: safety.ResolveWriteFloor(false, true /*observation*/),
 	}
 
 	req := httptest.NewRequest("GET", "/api/v1/panic/status", nil)
@@ -95,17 +89,22 @@ func TestHandlePanicStatus_Observation(t *testing.T) {
 	}
 }
 
-func TestHandlePanicStatus_JoeDirError(t *testing.T) {
+// TestHandlePanicStatus_PanicInfoError confirms a failure to read the panic-row
+// detail still reports safe_mode=true (the floor reason is authoritative; the
+// detail is best-effort enrichment).
+func TestHandlePanicStatus_PanicInfoError(t *testing.T) {
 	h := &panicHandler{
-		joeDirFn: func() (string, error) { return "", fmt.Errorf("no home") },
-		floor:    safety.ResolveWriteFloor(true, false),
+		floor: safety.ResolveWriteFloor(true, false),
+		panicInfo: func(context.Context) (*safety.PanicInfo, error) {
+			return nil, context.DeadlineExceeded
+		},
 	}
 	req := httptest.NewRequest("GET", "/api/v1/panic/status", nil)
 	w := httptest.NewRecorder()
 	h.handlePanicStatus(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 even with dir error, got %d", w.Code)
+		t.Fatalf("expected 200 even with panic-info error, got %d", w.Code)
 	}
 	var resp panicStatusResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {

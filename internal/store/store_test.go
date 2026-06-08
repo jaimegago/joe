@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -853,8 +854,8 @@ func TestPanicStore_StateTransitions(t *testing.T) {
 		t.Error("IsPanicked() = true before SetPanicked, want false")
 	}
 
-	// Set panicked.
-	if err := ps.SetPanicked(ctx); err != nil {
+	// Set panicked with trigger detail.
+	if err := ps.SetPanicked(ctx, safety.PanicSourceCLI, "operator test"); err != nil {
 		t.Fatalf("SetPanicked() error = %v", err)
 	}
 
@@ -864,6 +865,18 @@ func TestPanicStore_StateTransitions(t *testing.T) {
 	}
 	if !panicked {
 		t.Error("IsPanicked() = false after SetPanicked, want true")
+	}
+
+	// PanicInfo reports the recorded who/why from the same row.
+	info, err := ps.PanicInfo(ctx)
+	if err != nil {
+		t.Fatalf("PanicInfo() error = %v", err)
+	}
+	if info == nil {
+		t.Fatal("PanicInfo() = nil while panicked, want detail")
+	}
+	if info.TriggerSource != safety.PanicSourceCLI || info.TriggerReason != "operator test" {
+		t.Errorf("PanicInfo() = %+v, want source=cli reason=%q", info, "operator test")
 	}
 
 	// Clear panicked.
@@ -877,6 +890,15 @@ func TestPanicStore_StateTransitions(t *testing.T) {
 	}
 	if panicked {
 		t.Error("IsPanicked() = true after ClearPanicked, want false")
+	}
+
+	// PanicInfo reports nil once the row is cleared.
+	info, err = ps.PanicInfo(ctx)
+	if err != nil {
+		t.Fatalf("PanicInfo() error after ClearPanicked = %v", err)
+	}
+	if info != nil {
+		t.Errorf("PanicInfo() = %+v after clear, want nil", info)
 	}
 }
 

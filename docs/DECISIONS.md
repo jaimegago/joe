@@ -854,6 +854,74 @@ Enforced in Go via AllowedSourceTypes() — no SQL CHECK/enum. ~37 values incl. 
     shared `cluster_panic_state` row, that row must be cleared separately — the
     former live cluster-clear rode on the now-deleted `safety.Unlock`.
 
+- Implementation note (2026-06-08) — IMPLEMENTED: panic state consolidated to a
+  single store (the DB row); the `panic.state` file deleted entirely. This
+  closes the clustered-recovery divergence flagged in the prior note above —
+  by REMOVING the second store, not by patching a cluster-clear into the CLI.
+  Phase 1 re-verified every coordinate against the live tree before any change.
+  - Single home. Panic state had TWO stores — a local `panic.state` file AND the
+    shared `cluster_panic_state` DB row — and boot OR'd both. The file-only
+    acknowledge (`safety.AcknowledgePanic`) cleared only the file, leaving the
+    row set: a recovery hole. There is no clustered Joe today, so the split was
+    unnecessary. Panic state now has ONE home, the DB row — the same single-store
+    principle this entry applied to the write floor itself (one boot-resolved
+    value, no drift between sources).
+  - Panic entry writes ONLY the row. All three entry paths now persist via
+    `safety.Trigger` → the boot-registered cluster store
+    (`store.sqlPanicStore.SetPanicked`, extended to record source/reason/
+    triggered_at into the existing migration-008 columns), then `os.Exit(2)`:
+    the API handler (`internal/api/panic.go`), the SIGUSR1 handler
+    (`cmd/joe/server.go`), and the panic CLI (an HTTP call to the API handler).
+    The `safety.WritePanicState` file write was removed from every path.
+  - Boot reads ONLY the row. `cmd/joe/server.go` resolves the floor from
+    `clusterPanicStore.IsPanicked(ctx)` alone (file read deleted). Boot-order was
+    VERIFIED SAFE in Phase 1: the panic read already sat AFTER store init/migrate
+    and BEFORE the floor is sealed into `Services` and any tool executor is wired,
+    so moving to DB-only required no reordering — nothing in boot needs panic
+    state before the store is available. Floor resolution logic
+    (`ResolveWriteFloor`: panic→`safe_mode` regardless of env var; observation
+    env→`observation`; neither→down) is UNCHANGED — only its panic-state INPUT
+    moved from file-or-DB to DB-only.
+  - File deleted as a concept. `internal/safety/panic_state.go` (the
+    `panic.state` writer `WritePanicState`, reader `ReadPanicState`, clearer
+    `ClearPanicState`, the `panicStateFile` constant, the file-serialization
+    `PanicState` struct, and `AcknowledgePanic`) and its test are deleted. The
+    in-memory `safety.PanicInfo` struct + `ClusterPanicStore.PanicInfo` carry
+    who/when/why for boot logging and the status endpoint, sourced from the row.
+  - Acknowledge CLI rewritten to the DB row. `joe unlock` opens the store
+    DIRECTLY (config + `store.New` + `Migrate`, the daemon's own pattern) and
+    NEVER contacts or signals a running process. It is read-then-report-
+    conditionally and idempotent: reads the row first, and only when a panic is
+    present clears it ("panic state was present and has been cleared; restart to
+    resume writes if no other read-only posture is set"); when no panic is
+    present it clears nothing and says so ("Joe is not in a panicked state;
+    nothing to clear") — neither message asserts the daemon's live state nor
+    promises writes resume unconditionally (observation mode may independently
+    hold the floor up). The two functional cases both exit 0; only a genuine
+    store-access failure exits non-zero, so the report never lies. `--reason` is
+    now optional (logged when given), not required.
+  - Single-node contention handled. Panic entry exits the process, so during
+    recovery the daemon is down and the CLI opening the SQLite store does not
+    contend. In the not-panicked case (operator runs `joe unlock` on a healthy
+    running Joe) the CLI only READS the row — no write — and SQLite WAL +
+    `busy_timeout(5000)` make the short-lived second open non-disruptive.
+  - Immutability guarantees intact. No runtime lowering path, no live setter,
+    floor not re-derived mid-process — all preserved. Clearing the DB row affects
+    only the NEXT boot; a running process's sealed floor is unchanged by the CLI.
+  - Break-tests (all passing): `TestPanicState_SingleHomeNoFileConcept`
+    (repo-walk guard that fails if any `panic.state` file writer/reader/clearer/
+    constant reappears in production code, analogous to the no-lowering guard);
+    `TestExecutor_Floor_NotReDerivedFromDBRow` (an executor with an up floor still
+    denies after the panic row is cleared mid-process — the not-re-derived
+    guarantee re-expressed against the DB row); the executor source-scan guard
+    `TestWriteFloor_NotReDerivedFromDiskInExecutor` extended to also forbid the
+    DB-row readers (`PanicStore`/`IsPanicked`/`PanicInfo`/`cluster_panic_state`)
+    in `executor.go`; `TestRunUnlockCommand_PanicPresent` /
+    `TestRunUnlockCommand_NoPanic` (conditional clear + exit-0 in both cases);
+    store `PanicInfo` round-trip in `TestPanicStore_StateTransitions`. The
+    pre-existing `TestWriteFloor_NoRuntimeLoweringPath` and
+    `TestResolveWriteFloor_Precedence` still pass unchanged.
+
 ---
 
 ## D-0017 — The captaincy transfer handshake authenticated confirm/cancel but never bound the caller to the transfer; any authenticated principal could complete or abort a transfer it was not part of

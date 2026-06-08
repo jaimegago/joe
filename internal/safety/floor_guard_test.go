@@ -105,12 +105,89 @@ func TestWriteFloor_NotReDerivedFromDiskInExecutor(t *testing.T) {
 		t.Fatalf("read executor.go: %v", err)
 	}
 	content := string(data)
-	for _, bad := range []string{"ReadPanicState", "panic.state", "panicStateFile"} {
+	// The floor must be read from the boot-sealed WriteFloor value — never
+	// re-derived from the (now-deleted) panic.state file NOR from the panic DB
+	// row mid-process. Forbid both the file readers and the DB-row readers here.
+	for _, bad := range []string{
+		"ReadPanicState", "panic.state", "panicStateFile",
+		"PanicStore", "IsPanicked", "PanicInfo", "cluster_panic_state",
+	} {
 		if strings.Contains(content, bad) {
 			t.Errorf("executor.go references %q — the floor must be read from the "+
-				"boot-sealed WriteFloor value, never re-derived from disk mid-process "+
-				"(D-0018).", bad)
+				"boot-sealed WriteFloor value, never re-derived from disk or DB "+
+				"mid-process (D-0018).", bad)
 		}
+	}
+}
+
+// TestPanicState_SingleHomeNoFileConcept is the consolidation break-test (D-0018
+// follow-up): panic state has ONE home, the cluster_panic_state DB row, and the
+// panic.state FILE does not exist as a concept anywhere in production code. It
+// walks every production .go file and fails if any file writer/reader/clearer or
+// the path constant reappears. Analogous to the no-runtime-lowering guard: the
+// guarantee is that the second store does not exist, not that it is guarded.
+// The legitimate way to relax this is to update D-0018 and this guard together.
+func TestPanicState_SingleHomeNoFileConcept(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	// Forbid the file API identifiers and the path used as a code literal. The
+	// path is matched only as a quoted string ("panic.state") so this guard
+	// catches a re-added file constant, not the prose in comments (including this
+	// guard's own) that explains the file was removed.
+	forbidden := []*regexp.Regexp{
+		regexp.MustCompile(`\bWritePanicState\b`),
+		regexp.MustCompile(`\bReadPanicState\b`),
+		regexp.MustCompile(`\bClearPanicState\b`),
+		regexp.MustCompile(`\bAcknowledgePanic\b`),
+		regexp.MustCompile(`\bpanicStateFile\b`),
+		regexp.MustCompile(`"panic\.state"`),
+	}
+
+	skipDir := func(name string) bool {
+		if name == ".git" || name == "node_modules" || name == "vendor" ||
+			name == "dist" || name == "build" || name == ".joe" {
+			return true
+		}
+		if strings.HasPrefix(name, ".") && name != "." {
+			return true
+		}
+		return false
+	}
+
+	err := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if skipDir(d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil // production-code rule; test files exempt
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			return nil
+		}
+		content := string(data)
+		rel, _ := filepath.Rel(repoRoot, path)
+		for _, re := range forbidden {
+			if loc := re.FindStringIndex(content); loc != nil {
+				line := 1 + strings.Count(content[:loc[0]], "\n")
+				t.Errorf("%s:%d reintroduces the panic.state FILE concept matching %q. "+
+					"Panic state has ONE home — the cluster_panic_state DB row (D-0018 "+
+					"consolidation). The file writer/reader/clearer and its path were "+
+					"deleted; recovery clears the DB row via `joe unlock`. Update D-0018 "+
+					"and this guard together if this is intentional.", rel, line, re.String())
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk repo: %v", err)
 	}
 }
 

@@ -93,10 +93,17 @@ type errClusterStore struct {
 	clearPanickedErr error
 	isPanickedVal    bool
 	isPanickedErr    error
+	panicInfo        *PanicInfo
+	panicInfoErr     error
 }
 
-func (s *errClusterStore) SetPanicked(_ context.Context) error   { return s.setPanickedErr }
+func (s *errClusterStore) SetPanicked(_ context.Context, _ PanicSource, _ string) error {
+	return s.setPanickedErr
+}
 func (s *errClusterStore) ClearPanicked(_ context.Context) error { return s.clearPanickedErr }
 func (s *errClusterStore) IsPanicked(_ context.Context) (bool, error) {
 	return s.isPanickedVal, s.isPanickedErr
+}
+func (s *errClusterStore) PanicInfo(_ context.Context) (*PanicInfo, error) {
+	return s.panicInfo, s.panicInfoErr
 }

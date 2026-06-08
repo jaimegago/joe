@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/safety"
 )
 
 // openMigratedStore creates an in-memory SQLite store and runs migrations.
@@ -33,7 +34,7 @@ func TestPanicStore_ClosedDB(t *testing.T) {
 	// Close the DB to force SQL errors on subsequent calls.
 	s.Close()
 
-	if err := ps.SetPanicked(ctx); err == nil {
+	if err := ps.SetPanicked(ctx, safety.PanicSourceCLI, "test"); err == nil {
 		t.Error("SetPanicked() on closed db: expected error, got nil")
 	}
 	if err := ps.ClearPanicked(ctx); err == nil {
@@ -41,6 +42,9 @@ func TestPanicStore_ClosedDB(t *testing.T) {
 	}
 	if _, err := ps.IsPanicked(ctx); err == nil {
 		t.Error("IsPanicked() on closed db: expected error, got nil")
+	}
+	if _, err := ps.PanicInfo(ctx); err == nil {
+		t.Error("PanicInfo() on closed db: expected error, got nil")
 	}
 }
 
@@ -50,7 +54,7 @@ func TestPanicStore_NilDB(t *testing.T) {
 	ps := &sqlPanicStore{db: nil, driver: DriverSQLite}
 	ctx := context.Background()
 
-	if err := ps.SetPanicked(ctx); err != nil {
+	if err := ps.SetPanicked(ctx, safety.PanicSourceCLI, "test"); err != nil {
 		t.Errorf("SetPanicked() with nil db error = %v, want nil", err)
 	}
 
@@ -64,6 +68,14 @@ func TestPanicStore_NilDB(t *testing.T) {
 	}
 	if panicked {
 		t.Error("IsPanicked() with nil db = true, want false")
+	}
+
+	info, err := ps.PanicInfo(ctx)
+	if err != nil {
+		t.Errorf("PanicInfo() with nil db error = %v, want nil", err)
+	}
+	if info != nil {
+		t.Errorf("PanicInfo() with nil db = %+v, want nil", info)
 	}
 }
 
