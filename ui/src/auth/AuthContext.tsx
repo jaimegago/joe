@@ -90,7 +90,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ref without purging; logout handles its own clear (it does not refetch /me).
   const lastPrincipalRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    const principal = meQ.data?.principal ?? null;
+    // Skip the pre-resolution (loading) runs entirely: while /me is in flight
+    // meQ.data is undefined. If we seeded the ref with that loading-state value,
+    // the FIRST real principal would look like a change (undefined/null ->
+    // principal) and fire a purge on every cold load. That purge ran
+    // removeQueries the instant the auth state flipped to 'authed' and the app
+    // shell mounted — removing the app-shell banner queries (['mutate-status'],
+    // ['panic-status'], ['regime']) while their initial fetch was still in
+    // flight and stranding their observers in a permanent fetchStatus:'fetching'
+    // state that never self-recovered (the banners then read undefined forever).
+    // Seeding only once a real principal is known means a purge fires only on a
+    // genuine principal SWITCH (the user-rebind case this guards), never on the
+    // initial resolution. Page-content queries escaped the bug only because they
+    // mount later (lazy/Suspense), after this effect had already run.
+    if (!meQ.data) return;
+    const principal = meQ.data.principal ?? null;
     const prev = lastPrincipalRef.current;
     lastPrincipalRef.current = principal;
     if (prev === undefined || prev === principal) return;
@@ -100,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return root !== 'current-user' && root !== 'auth-config';
       },
     });
-  }, [meQ.data?.principal, queryClient]);
+  }, [meQ.data, queryClient]);
   // The OIDC-button signal comes from the public auth-config endpoint, fetched
   // unauthed on load so it is available on the cold logged-out shell before
   // any /me result. /me drives the authed state below; only this login-style

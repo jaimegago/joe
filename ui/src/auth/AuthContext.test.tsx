@@ -82,6 +82,36 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('principal')).toHaveTextContent('alice');
   });
 
+  it('does not purge unrelated queries on the initial cold-load principal resolution', async () => {
+    // Regression: the principal-purge effect must fire only on a genuine user
+    // SWITCH, never on the first undefined->principal resolution. Pre-fix it
+    // ran on cold load and removed every non-identity query — including the
+    // app-shell banner queries the instant they mounted — stranding their
+    // in-flight observers forever (the observation banner never appeared).
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // A query scoped to neither current-user nor auth-config — exactly the kind
+    // the banner queries are. It must survive the cold-load auth resolution.
+    qc.setQueryData(['mutate-status'], { can_mutate: false, reason: 'observation' });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false })
+      )
+    );
+
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'));
+    expect(qc.getQueryData(['mutate-status'])).toEqual({ can_mutate: false, reason: 'observation' });
+  });
+
   it('is unauthed when RBAC is on and /me returns 401', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(401, { message: 'unauthorized' })));
     renderWithAuth(<Probe />);
