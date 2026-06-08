@@ -10,6 +10,49 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0021: Rename "source" → "component"; flat model with type as a routing discriminator
+
+Date: 2026-06-08
+Status: accepted
+
+### Context
+
+The model's top-level concept for a registered external system was named "source" (table `sources`, `sourceID` in the RBAC seam). "Source" names only the read direction. Joe now reads AND mutates these systems (apply a k8s manifest, push to a git repo, create a Grafana dashboard, edit an alert), so "source" no longer captures what the thing is. These systems span three rough categories — observability/telemetry backends, infrastructure platforms (k8s/AWS), and code repositories (IaC, app config, app code) — all of which Joe both reads and mutates.
+
+### Decision
+
+Rename the concept to "component": a part of the managed system that Joe represents as a node in its graph and reads or mutates as the situation needs. One flat top-level type, not a kind-split.
+
+The earlier idea of splitting into two top-level kinds (read-only "sources" for telemetry vs mutable "components" for infra/repos) is REJECTED. Telemetry backends are mutable too (dashboards, alerts), so the write boundary does not run between the categories — it runs through each of them, at the operation level. The three categories are the same kind of thing under the only axis that structures Joe (the write definition, D-0018).
+
+The existing `type` field is retained as a routing-and-presentation discriminator. It drives adapter dispatch, available-operation set, and node labels — NOT safety classification and NOT a structural kind split. Type values themselves are unchanged (aws, kubernetes, prometheus, …).
+
+### Why this is safe to rename
+
+A code investigation (2026-06-08) confirmed the safety layer is completely type-blind: tier classification keys on tool name, the write floor is a pure function of two boot booleans, RBAC keys on (principal, sourceID, action). No safety/tier/floor/RBAC decision reads source.Type. The ratified write-definition — "the boundary is the operation's effect on the managed system, not the kind of target" — is upheld in code. A rename therefore cannot disturb the trust model.
+
+### Scope of the rename (lexical only)
+
+- SQL: `sources` table → `components`; `source_zone_assignments` and any FK/index naming; a NEW migration, not an edit to an existing one.
+- Go: `store.Source` → `store.Component`; `sourceID` → `componentID` in the guarded accessor / IsAllowed path and throughout.
+- Admin REST: source-zones routes and JSON field names (breaking API change — acceptable pre-launch).
+- Audit vocabulary: any audit row referencing a source.
+- UI: SourcesPage and security API; be deliberate where the `Component` domain type meets React components (import naming).
+- OASIS-facing API: check whether any scenario references a source field name through POST /api/v1/tasks; if so, OASIS needs a matching pass.
+- Graph node labels: the `<type>_source` idiom becomes `<type>_component` (e.g. "prometheus_component"). Requires a data migration for existing graph rows carrying the old `_source` label.
+- Docs: CLAUDE.md, identity/design docs, project-knowledge file.
+
+### Explicitly out of scope (separate follow-ups)
+
+- Adapter-construction consolidation: dispatch is fragmented across divergent type-keyed paths (see docs/backlog/adapter-dispatch-consolidation.md). This is a pre-existing latent bug. Fix AFTER the rename — rename is lexical and low-risk, consolidation is structural; interleaving them makes a coverage bug mid-sweep unattributable.
+- The knowledge.Source model (knowledge_sources table; human/confluence/notion/session) is a different, unrelated concept. NOT renamed.
+
+### Type values reference (unchanged by this decision)
+
+Enforced in Go via AllowedSourceTypes() — no SQL CHECK/enum. ~37 values incl. aws, azure, git, kubernetes, prometheus, mimir, loki, tempo, jaeger, datadog, splunk, dynatrace, newrelic, cloudwatch, azuremonitor, alertmanager, pagerduty, grafana, postgresql, mysql, redis, mongodb, kafka, elasticsearch, argocd, terraform, helm, nginx-ingress, envoy, falco, oci_registry, dockerhub, artifactory, ecr, github, gitlab.
+
+---
+
 ## D-0020 — Collapse the three-tier action classification (Observe/Record/Act) into a binary Read/Mutate axis
 
 - Date: 2026-06-07
