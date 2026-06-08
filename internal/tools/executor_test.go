@@ -780,6 +780,53 @@ func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
 	}
 }
 
+// TestExecutor_Floor_PrecedesZoneScope pins the denial-message precedence
+// floor > RBAC (D-0019 decision 9) at the executor layer. When a Mutate trips
+// BOTH the write floor (up) AND a zone-scope violation (out-of-zone source_id),
+// the user must see the floor reason — the one they can least readily fix — not
+// the zone violation. Because enforcement short-circuits, only one error ever
+// exists; reordering the floor check above the zone check makes that one error
+// the WriteFloorError. write_file is a registered Mutate; the floor only denies
+// Mutates, so this combination is the genuine co-occurrence case.
+func TestExecutor_Floor_PrecedesZoneScope(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&mockTool{
+		name: "write_file",
+		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
+			t.Fatal("tool must not execute: floor (and zone) should block it")
+			return nil, nil
+		},
+	})
+
+	// Floor up (safe_mode) AND an allowed-sources set that excludes the target.
+	floor := safety.ResolveWriteFloor(true /*panicStatePresent*/, false)
+	executor := NewExecutor(registry, nil,
+		WithWriteFloor(floor),
+		WithAllowedSources([]string{"cluster-a"}),
+		WithPolicy(safety.DefaultPolicy()),
+	)
+
+	_, err := executor.Execute(context.Background(), "write_file", map[string]any{
+		"source_id": "cluster-b", // out of zone — would be a ZoneViolationError if it ran first
+		"path":      "/etc/x",
+	})
+	if err == nil {
+		t.Fatal("expected denial when floor is up and source is out of zone")
+	}
+	// Floor wins: the surfaced error is the WriteFloorError, NOT the zone violation.
+	if !errors.Is(err, safety.ErrWriteFloor) {
+		t.Fatalf("expected the write-floor error to take precedence, got %T: %v", err, err)
+	}
+	var zoneErr *ZoneViolationError
+	if errors.As(err, &zoneErr) {
+		t.Fatalf("zone violation surfaced instead of the floor reason — precedence floor > RBAC violated")
+	}
+	var floorErr *safety.WriteFloorError
+	if !errors.As(err, &floorErr) || floorErr.Reason != safety.FloorReasonSafeMode {
+		t.Fatalf("expected safe_mode floor reason, got %T: %v", err, err)
+	}
+}
+
 // trackingNotifier records calls for test assertions.
 type trackingNotifier struct {
 	beforeCalled bool

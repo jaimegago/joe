@@ -18,13 +18,15 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 
 // Executor executes tool calls from the LLM with safety policy enforcement.
 // Before every tool.Execute():
-//  1. Check zone scope (source_id must be in allowed set, if configured)
-//  2. Check namespace scope (namespace must be in allowed set, if configured)
-//  3. Classify the tool's tier (T1/T2/T3)
-//  4. Check safety policy (T2/T3 require authorization)
-//  5. Notify before execution (T3 only — blocking, cancellable)
-//  6. Execute the tool
-//  7. Notify after execution (T2 and T3)
+//  1. Classify the tool's action (Read/Mutate)
+//  2. Check the write floor (D-0018) — FIRST among the denials, so its reason
+//     outranks an RBAC scope violation (D-0019 decision 9 precedence)
+//  3. Check zone scope (source_id must be in allowed set, if configured)
+//  4. Check namespace scope (namespace must be in allowed set, if configured)
+//  5. Check safety policy (mutations require authorization)
+//  6. Notify before execution (mutate only — blocking, cancellable)
+//  7. Execute the tool
+//  8. Notify after execution (mutate)
 type Executor struct {
 	registry          *Registry
 	metrics           *observability.Metrics
@@ -193,7 +195,30 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		return nil, fmt.Errorf("failed to get tool %s: %w", name, err)
 	}
 
-	// Step 2: Zone scope check — block calls targeting sources outside authorized zones
+	// Step 2: Classify the tool's action.
+	classification := safety.ClassifyTool(name)
+
+	// Step 3: Write floor (D-0018) — checked FIRST among the denials so its
+	// reason outranks an RBAC scope violation (D-0019 decision 9: precedence is
+	// floor > incident > RBAC, ordered by resolvability depth — the floor is the
+	// reason the user can least readily fix). A boot-resolved, runtime-immutable
+	// floor denies every managed-system mutation (the Mutate set; with the Record
+	// band gone this is exactly "is Mutate"). One branch, one error — the reason
+	// (observation or safe_mode) rides out as data for the api layer to present
+	// distinctly. The floor value was sealed at boot and is never re-derived from
+	// disk here.
+	//
+	// Note: enforcement short-circuits at the first failing check, so only the
+	// floor error (not a zone/namespace violation) ever exists for a Mutate that
+	// trips both. The incident-gate half of the precedence sits one layer up, in
+	// captaingate, which checks the same floor before its §C gate.
+	if e.floor.Up() && classification.Class == safety.ActionMutate {
+		err := &safety.WriteFloorError{Reason: e.floor.Reason()}
+		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
+		return nil, err
+	}
+
+	// Step 4: Zone scope check — block calls targeting sources outside authorized zones
 	if e.allowedSources != nil {
 		if sourceID, ok := args["source_id"].(string); ok && sourceID != "" {
 			if _, allowed := e.allowedSources[sourceID]; !allowed {
@@ -208,7 +233,7 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 		}
 	}
 
-	// Step 2b: Namespace scope check — block K8s tool calls targeting namespaces outside authorized scope
+	// Step 4b: Namespace scope check — block K8s tool calls targeting namespaces outside authorized scope
 	if e.allowedNamespaces != nil {
 		if ns, ok := args["namespace"].(string); ok && ns != "" {
 			if _, allowed := e.allowedNamespaces[ns]; !allowed {
@@ -231,20 +256,6 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 				return nil, err
 			}
 		}
-	}
-
-	// Step 3: Classify and check safety policy
-	classification := safety.ClassifyTool(name)
-
-	// Write floor (D-0018): a boot-resolved, runtime-immutable floor denies every
-	// managed-system mutation (the Mutate set; with the Record band gone this is
-	// exactly "is Mutate"). One branch, one error — the reason (observation or
-	// safe_mode) rides out as data for the api layer to present distinctly. The
-	// floor value was sealed at boot and is never re-derived from disk here.
-	if e.floor.Up() && classification.Class == safety.ActionMutate {
-		err := &safety.WriteFloorError{Reason: e.floor.Reason()}
-		e.metrics.RecordToolExecution(ctx, name, time.Since(start), err)
-		return nil, err
 	}
 
 	if err := safety.CheckAccess(name, e.policy); err != nil {

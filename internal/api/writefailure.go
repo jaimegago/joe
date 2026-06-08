@@ -36,24 +36,37 @@ import (
 // error vocabulary; it is injected into the loop via
 // agentloop.WithToolErrorClassifier so the loop stays unaware of these types.
 // It runs on the TYPED error before it is stringified onto the wire.
+//
+// PRECEDENCE (D-0019 decision 9: floor > incident > RBAC, ordered by
+// resolvability depth). The branch order below MATCHES that precedence, but it
+// is NOT what enforces it: enforcement short-circuits at the first failing
+// check (the floor in tools.Executor / captaingate, the §C gate in captaingate,
+// the RBAC accessor inside the tool), so exactly ONE typed error ever reaches
+// this classifier. The three error types are mutually exclusive on a single
+// err, so this switch only maps the one error that fired to its code — the
+// precedence between them is decided upstream by check order, not here. The
+// order is kept aligned with the precedence as documentation of intent.
 func classifyWriteFailure(err error) string {
 	if err == nil {
 		return ""
 	}
-	var refusal *captaingate.GateRefusalError
 	var floorErr *safety.WriteFloorError
+	var refusal *captaingate.GateRefusalError
 	switch {
-	case errors.As(err, &refusal):
-		return errorCodeIncidentMode
-	case errors.Is(err, access.ErrPermissionDenied):
-		return errorCodeZoneDenial
 	case errors.As(err, &floorErr):
 		// The write floor is one enforcement branch but two presentations: the
-		// reason rides out of the error as data (D-0018 point 1).
+		// reason rides out of the error as data (D-0018 point 1). safe_mode and
+		// observation never co-occur — the floor resolves to exactly one reason
+		// at boot (safe_mode wins, ResolveWriteFloor), so "safe_mode >
+		// observation within the floor" is settled before this point.
 		if floorErr.Reason == safety.FloorReasonObservation {
 			return errorCodeObservation
 		}
 		return errorCodeSafeMode
+	case errors.As(err, &refusal):
+		return errorCodeIncidentMode
+	case errors.Is(err, access.ErrPermissionDenied):
+		return errorCodeZoneDenial
 	default:
 		return ""
 	}

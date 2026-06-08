@@ -10,6 +10,133 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0022 — Denial-message precedence (floor > incident > RBAC) enforced by check order; autonomous-path seam routing deferred
+
+- Date: 2026-06-08
+- Status: PARTIALLY IMPLEMENTED. Task 1 (precedence) is in the tree as of this
+  date. Task 2 (routing the autonomous Core Agent path through the shared seam)
+  is DEFERRED with findings recorded below. Implements D-0019 decision 9 and the
+  "autonomous path must route through the shared seam" item under D-0019's
+  "Current state being changed". References D-0018 (the write floor) and D-0010
+  (the shared §C captaingate; coreagent refresh confirmed read-only).
+
+### Task 1 — denial-message precedence (IMPLEMENTED)
+
+- Decision: when more than one denial could apply to a single attempted write,
+  the user sees ONE reason, ordered **floor > incident > RBAC** (and within the
+  floor, `safe_mode` > `observation`). Rationale: resolvability depth — show the
+  reason the user can least readily fix, because it is the one actually blocking
+  them. A floored Joe is read-only until restart (least fixable); an incident
+  redirect needs the captain (less fixable than a zone grant); a zone denial is
+  an ordinary RBAC grant away (most fixable).
+
+- **Co-occurrence is possible, and is resolved by CHECK ORDER, not by the
+  classifier.** Enforcement short-circuits at the first failing check, so for any
+  single write attempt exactly ONE typed error is ever produced. The three error
+  types (`*safety.WriteFloorError`, `*captaingate.GateRefusalError`,
+  `access.ErrPermissionDenied`) are therefore mutually exclusive on a single
+  `err`. The classifier `classifyWriteFailure` (`internal/api/writefailure.go`)
+  only maps the one error that fired to its UI code — it does NOT decide
+  precedence. Its branch order was realigned to floor → incident → RBAC as
+  documentation of intent, but that change is functionally a no-op.
+
+- The denials live in TWO layers, so precedence is enforced by reordering checks
+  across BOTH:
+  1. **`tools.Executor.Execute`** (`internal/tools/executor.go`): the write-floor
+     check was moved ABOVE the zone/namespace scope checks, so for a Mutate that
+     trips both, the `WriteFloorError` is the one error produced (floor > RBAC
+     scope). Pinned by `TestExecutor_Floor_PrecedesZoneScope`.
+  2. **`captaingate.Wrapper.Execute`** (`internal/captaingate/captaingate.go`):
+     the §C incident gate sits in a wrapper UPSTREAM of the executor, so the
+     executor reorder alone cannot make floor > incident. The wrapper now takes
+     an optional `WithFloor` and checks the floor BEFORE the §C gate; a floored
+     Mutate is refused with the floor reason and the gate is never consulted (no
+     `GateRefusalError`, no `inner.Execute`, no `captain_gate_refused` audit row).
+     §C2 (gate upstream of RBAC) is preserved — the floor simply becomes the new
+     outermost gate. Pinned by `TestFloorPrecedesIncidentGate`; the inert-floor
+     and read-through cases by `TestFloorDownGateStillRefuses` /
+     `TestFloorAllowsReadsThroughGate`.
+  - `safe_mode > observation` needs no runtime ordering: the floor resolves to
+    exactly ONE reason at boot (`safety.ResolveWriteFloor`, panic wins over the
+    env var), pinned by the pre-existing `TestResolveWriteFloor_Precedence`.
+
+- **No behavior change today.** The floor is injected at exactly one executor —
+  the Core Agent's (`internal/coreagent/agent.go`) — which issues only Reads
+  (per D-0010), so neither the floor nor the gate fires on it today; and the
+  user-task executor (`internal/api/tasks.go`) carries no floor, so the floor
+  half of the precedence is inert there. `WithFloor` is wired only at the
+  Core-Agent captaingate site (`cmd/joe/server.go`), inert at the user-task site
+  to match its floor-less executor. The reorders are therefore no-ops on every
+  reachable path today; they make the precedence correct BY CONSTRUCTION for the
+  day an autonomous (or user-task) Mutate exists under an up floor.
+
+- Discovered gap (recorded, NOT fixed here — out of scope of D-0019 decisions 9
+  and the autonomous-routing item): the D-0018 write floor is injected ONLY on
+  the Core Agent executor, not on the user-task-loop executor
+  (`internal/api/tasks.go` builds its `tools.Executor` without
+  `tools.WithWriteFloor`). In observation/safe mode a user-task Mutate
+  (`write_file`, `run_command`, `publish_doc_update`, …) is currently NOT
+  floor-blocked. The `WithWriteFloor` doc comment claims both construction sites
+  are wired; live code wires only one. This is a separate floor-coverage hole to
+  close in its own change; this entry only records it.
+
+### Task 2 — route the autonomous Core Agent path through the shared seam (DEFERRED)
+
+- The Core Agent's background graph-refresh path writes the graph DIRECTLY:
+  each refresher (`internal/coreagent/{k8s,aws,azure,git,gitops,observability,
+  networking,datastore,alerting,registry,crd}_refresh.go`) calls
+  `BuildGraphDelta` → `ApplyGraphDelta(ctx, r.services.Graph, delta)`
+  (`internal/coreagent/graphdelta.go`), which calls `store.AddNode/AddEdge/
+  DeleteEdge/DeleteNode` on the graph store — bypassing the executor seam where
+  the floor, classification, and §C gate live. ~25 call sites across the refresh
+  files. Confirmed read-only on infrastructure per D-0010 (VERDICT-A); these
+  graph writes are Reads under the binary model (arg-keyed idempotent upserts of
+  Joe's own model), so they pass the floor and MUST keep flowing — observation
+  mode must not freeze Joe's own model (a settled design point).
+
+- Routing this through the seam is NOT a clean, mechanical reroute. It is
+  non-trivially entangled, so per the staged rule it was not implemented:
+  1. **Shape mismatch.** The seam (`Executor.Execute` / `captaingate.Wrapper`)
+     is keyed by TOOL NAME + `map[string]any` args and classifies via
+     `safety.ClassifyTool(name)`. The refresh path operates on typed
+     `graph.Node`/`graph.Edge` via the store. There is no clean adapter.
+  2. **Missing tools.** `ApplyGraphDelta` does AddNode, AddEdge, DeleteEdge,
+     DeleteNode. Tools exist for `graph_add_node`/`graph_add_edge`/
+     `graph_update_node` (all Read), but there is NO `graph_delete_edge` /
+     `graph_delete_node` tool; and the existing graph tools are CORE tools that
+     round-trip the in-process client/accessor, not the direct in-process
+     `services.Graph` store writes the refresh uses. Routing through them would
+     change the write MECHANISM, not just its path.
+  3. **Autonomous principal does not exist.** The "autonomous principal"
+     (`agent:core`) referenced by the design is NOT in live code — only
+     `user:`/`group:`/`svc:` reserved prefixes are defined
+     (`internal/rbac/identity.go`). Carrying it requires introducing a new
+     reserved principal-kind — an identity-model change.
+  4. **Behavior-change risk on the Reads.** The refresh runs in a background
+     context with no principal. Routed through the accessor with an empty/new
+     principal while RBAC is live, the accessor could DENY
+     (`access.ErrPermissionDenied`) — the graph Reads must keep passing. This is
+     precisely the "surface, do not paper over" case the task called out.
+
+- Decision: DEFER routing to a dedicated follow-up that (a) defines the
+  `agent:core` principal kind, (b) decides the seam shape for typed store writes
+  (a store-level governed wrapper vs. new delete tools), and (c) proves the
+  graph Reads still pass through the seam unchanged. The precedence work above
+  already makes the floor > incident ordering correct in `captaingate` by
+  construction, so the day that routing lands and an autonomous managed-system
+  Mutate flows through the seam, the floor governs it before the gate. The
+  deferral note at `internal/coreagent/agent.go` (New) is retained.
+
+- Basis: code investigation 2026-06-08 against the live tree (executor.go,
+  captaingate.go, writefailure.go, sessiongate.go, graphdelta.go + refreshers,
+  tasks.go, server.go, agent.go, rbac/identity.go). Build/vet/test/gofmt clean;
+  the boot-floor immutability break-tests (`internal/safety/floor_guard_test.go`)
+  still pass.
+- Supersedes: nothing. Implements part of D-0019; refines neither D-0018 nor
+  D-0020 (the binary model and floor lifecycle are unchanged).
+
+---
+
 ## D-0021: Rename "source" → "component"; flat model with type as a routing discriminator
 
 Date: 2026-06-08
