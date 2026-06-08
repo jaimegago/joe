@@ -17,16 +17,29 @@ const (
 	PanicSourceSignal PanicSource = "signal"
 )
 
-// ClusterPanicStore persists panic state to a shared store (e.g. SQLite) that
-// is visible to all joecored instances pointing at the same database.
-// Implement this interface in the store package and register it via
-// SetClusterStore so that Trigger propagates cluster-wide and boot reads the
-// shared panicked state. There is no live cluster-wide clear: recovery is a
-// local panic-state clear plus restart (D-0018).
+// PanicInfo carries the who/when/why of a recorded panic, read back from the
+// single panic store row for boot logging and the panic status endpoint. It
+// replaces the deleted file-serialization PanicState struct (D-0018
+// consolidation): panic state has ONE home, the DB row, and is never persisted
+// to a panic.state file.
+type PanicInfo struct {
+	TriggeredAt   time.Time
+	TriggerSource PanicSource
+	TriggerReason string
+}
+
+// ClusterPanicStore is the SINGLE home for panic state (D-0018 consolidation):
+// the cluster_panic_state DB row. Panic entry writes the row via SetPanicked and
+// boot reads it via IsPanicked; there is no panic.state file. Implement this
+// interface in the store package and register it via SetClusterStore so that
+// Trigger persists the panic and boot resolves the safe-mode floor from it.
+// There is no live in-process clear: recovery is clearing the row (the local
+// `joe unlock` CLI, which opens the DB directly) plus a restart (D-0018).
 type ClusterPanicStore interface {
-	SetPanicked(ctx context.Context) error
+	SetPanicked(ctx context.Context, source PanicSource, reason string) error
 	ClearPanicked(ctx context.Context) error
 	IsPanicked(ctx context.Context) (bool, error)
+	PanicInfo(ctx context.Context) (*PanicInfo, error)
 }
 
 var (
@@ -55,8 +68,8 @@ func Trigger(source PanicSource, reason string) bool {
 		"timestamp", time.Now().UTC().Format(time.RFC3339),
 	)
 	if clusterStore != nil {
-		if err := clusterStore.SetPanicked(context.Background()); err != nil {
-			slog.Error("failed to persist cluster panic state", "error", err)
+		if err := clusterStore.SetPanicked(context.Background(), source, reason); err != nil {
+			slog.Error("failed to persist panic state", "error", err)
 		}
 	}
 	return true

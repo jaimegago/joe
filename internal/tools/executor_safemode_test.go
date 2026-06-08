@@ -99,35 +99,54 @@ func TestExecutor_FloorDown_AllowsModelMaintenance(t *testing.T) {
 	}
 }
 
-// TestExecutor_Floor_NotReDerivedFromDisk is the immutability break-test: a
-// floor injected at construction stays up for the executor's lifetime even after
-// the persisted panic state file is removed on disk. The executor holds the
-// boot-sealed value and never re-derives the floor from disk mid-process, so a
-// concurrent `joe unlock` (which clears the file) cannot lower a running floor.
-func TestExecutor_Floor_NotReDerivedFromDisk(t *testing.T) {
-	dir := t.TempDir()
-	// Simulate boot finding a panic state: floor resolves up/safe_mode.
-	if err := safety.WritePanicState(dir, safety.PanicState{TriggerSource: safety.PanicSourceAPI}); err != nil {
-		t.Fatalf("write panic state: %v", err)
+// fakePanicStore is an in-memory safety.ClusterPanicStore for the
+// not-re-derived break-test below — the panic state's single home is the DB row,
+// modeled here without a real database.
+type fakePanicStore struct{ panicked bool }
+
+func (f *fakePanicStore) SetPanicked(context.Context, safety.PanicSource, string) error {
+	f.panicked = true
+	return nil
+}
+func (f *fakePanicStore) ClearPanicked(context.Context) error { f.panicked = false; return nil }
+func (f *fakePanicStore) IsPanicked(context.Context) (bool, error) {
+	return f.panicked, nil
+}
+func (f *fakePanicStore) PanicInfo(context.Context) (*safety.PanicInfo, error) {
+	if !f.panicked {
+		return nil, nil
 	}
-	present, err := safety.ReadPanicState(dir)
-	if err != nil || present == nil {
-		t.Fatalf("expected panic state present; err=%v state=%v", err, present)
+	return &safety.PanicInfo{TriggerSource: safety.PanicSourceAPI}, nil
+}
+
+// TestExecutor_Floor_NotReDerivedFromDBRow is the immutability break-test, now
+// expressed against the single panic DB row (D-0018 consolidation): a floor
+// injected at construction stays up for the executor's lifetime even after the
+// panic row is cleared mid-process. The executor holds the boot-sealed value and
+// never re-derives the floor, so a concurrent `joe unlock` (which clears the DB
+// row) cannot lower a running floor — clearing affects only the NEXT boot.
+func TestExecutor_Floor_NotReDerivedFromDBRow(t *testing.T) {
+	ctx := context.Background()
+	// Simulate boot finding the panic row set: floor resolves up/safe_mode.
+	store := &fakePanicStore{panicked: true}
+	dbPanicked, err := store.IsPanicked(ctx)
+	if err != nil || !dbPanicked {
+		t.Fatalf("expected panic row present; err=%v panicked=%v", err, dbPanicked)
 	}
-	floor := safety.ResolveWriteFloor(present != nil, false)
+	floor := safety.ResolveWriteFloor(dbPanicked, false)
 
 	reg := NewRegistry()
 	reg.Register(&safemodeTestTool{name: "write_file"})
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
 
-	// A local `joe unlock` clears the persisted state file mid-process.
-	if err := safety.ClearPanicState(dir); err != nil {
-		t.Fatalf("clear panic state: %v", err)
+	// A local `joe unlock` clears the panic DB row mid-process.
+	if err := store.ClearPanicked(ctx); err != nil {
+		t.Fatalf("clear panic row: %v", err)
 	}
 
 	// The already-constructed executor must STILL deny — the floor is not
-	// re-read from disk.
-	if _, err := e.Execute(context.Background(), "write_file", nil); !errors.Is(err, safety.ErrWriteFloor) {
-		t.Fatalf("floor must stay up after the panic file is cleared mid-process; got err=%v", err)
+	// re-derived from the DB row (or anywhere) mid-process.
+	if _, err := e.Execute(ctx, "write_file", nil); !errors.Is(err, safety.ErrWriteFloor) {
+		t.Fatalf("floor must stay up after the panic row is cleared mid-process; got err=%v", err)
 	}
 }

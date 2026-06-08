@@ -8,9 +8,25 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/jaimegago/joe/internal/safety"
 )
+
+// fakePanicRowStore is an in-memory panicRowStore for unlock tests. It records
+// whether ClearPanicked was called so a test can assert the conditional behavior.
+type fakePanicRowStore struct {
+	panicked bool
+	cleared  bool
+	readErr  error
+}
+
+func (f *fakePanicRowStore) IsPanicked(context.Context) (bool, error) {
+	return f.panicked, f.readErr
+}
+
+func (f *fakePanicRowStore) ClearPanicked(context.Context) error {
+	f.cleared = true
+	f.panicked = false
+	return nil
+}
 
 func panicServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -57,56 +73,54 @@ func TestRunPanicCommand_BadConfig(t *testing.T) {
 	}
 }
 
-// TestRunUnlockCommand_Success confirms unlock is a LOCAL-FILE-ONLY op: it clears
-// the persisted panic state and reports restart-required, WITHOUT contacting any
-// server (the deps.newClient stub would never be reached).
-func TestRunUnlockCommand_Success(t *testing.T) {
-	joeDir := t.TempDir()
-	if err := safety.WritePanicState(joeDir, safety.PanicState{TriggerSource: safety.PanicSourceCLI}); err != nil {
-		t.Fatalf("seed panic state: %v", err)
+// TestRunUnlockCommand_PanicPresent confirms unlock acts on the panic DB row,
+// clears it when present, reports cleared, exits 0, and NEVER contacts a process
+// (the deps.newClient stub is never reached). It opens the row store directly.
+func TestRunUnlockCommand_PanicPresent(t *testing.T) {
+	fake := &fakePanicRowStore{panicked: true}
+	deps := testDeps(t.TempDir())
+	deps.openPanicStore = func() (panicRowStore, func() error, error) {
+		return fake, func() error { return nil }, nil
 	}
-
-	deps := testDeps(joeDir)
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"unlock", "-reason", "incident resolved"}, &stdout, &stderr, deps)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "restart joe to resume writes") {
-		t.Errorf("expected restart-required message, got %q", stdout.String())
+	if !fake.cleared {
+		t.Error("expected ClearPanicked to be called when a panic row is present")
 	}
-	// The panic state file must be gone.
-	state, err := safety.ReadPanicState(joeDir)
-	if err != nil {
-		t.Fatalf("read panic state: %v", err)
+	if !strings.Contains(stdout.String(), "has been cleared") {
+		t.Errorf("expected cleared message, got %q", stdout.String())
 	}
-	if state != nil {
-		t.Error("expected panic state cleared after unlock")
+	if !strings.Contains(stdout.String(), "restart") {
+		t.Errorf("expected restart hint, got %q", stdout.String())
 	}
 }
 
-func TestRunUnlockCommand_MissingReason(t *testing.T) {
+// TestRunUnlockCommand_NoPanic confirms idempotency: with no panic row, unlock
+// clears nothing, reports nothing-to-clear, and exits 0 — safe to re-run or run
+// on a healthy Joe.
+func TestRunUnlockCommand_NoPanic(t *testing.T) {
+	fake := &fakePanicRowStore{panicked: false}
 	deps := testDeps(t.TempDir())
+	deps.openPanicStore = func() (panicRowStore, func() error, error) {
+		return fake, func() error { return nil }, nil
+	}
 
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"unlock"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("expected exit code 1 for missing reason, got %d", code)
-	}
-	if !strings.Contains(stderr.String(), "--reason") {
-		t.Errorf("expected --reason in error message, got %q", stderr.String())
-	}
-}
-
-// TestRunUnlockCommand_NoPanicState confirms clearing is idempotent — clearing a
-// non-existent panic state still succeeds (recovery is safe to re-run).
-func TestRunUnlockCommand_NoPanicState(t *testing.T) {
-	deps := testDeps(t.TempDir())
-
-	var stdout, stderr bytes.Buffer
-	code := runWithDeps(context.Background(), []string{"unlock", "-reason", "no-op"}, &stdout, &stderr, deps)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 clearing absent state, got %d (stderr: %s)", code, stderr.String())
+		t.Fatalf("expected exit code 0 with no panic row, got %d (stderr: %s)", code, stderr.String())
+	}
+	if fake.cleared {
+		t.Error("expected ClearPanicked NOT to be called when no panic row is present")
+	}
+	if !strings.Contains(stdout.String(), "not in a panicked state") {
+		t.Errorf("expected nothing-to-clear message, got %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "resume writes") {
+		t.Errorf("no-panic message must not promise writes resume, got %q", stdout.String())
 	}
 }

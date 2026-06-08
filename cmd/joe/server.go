@@ -412,34 +412,32 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	safety.SetClusterStore(clusterPanicStore)
 
 	// Resolve the write floor exactly once at boot (D-0018). Its two inputs are
-	// the sticky panic state (the local panic.state file OR the shared
-	// cluster_panic_state row from a previous emergency shutdown) and the
-	// JOE_MODE=observation env var. Precedence: panic wins over observation, so a
-	// panicked Joe boots into safe mode regardless of the env var. The resolved
-	// value is sealed into Services below and never re-derived from disk during
-	// the process lifetime — recovery is restart, never a live transition.
-	panicState, err := safety.ReadPanicState(joeDir)
-	if err != nil {
-		slog.Warn("failed to read panic state file on startup", "error", err)
-	}
+	// the sticky panic state (the shared cluster_panic_state DB row from a
+	// previous emergency shutdown — the SINGLE home for panic state since the
+	// panic.state file was removed) and the JOE_MODE=observation env var.
+	// Precedence: panic wins over observation, so a panicked Joe boots into safe
+	// mode regardless of the env var. The DB row is read here, AFTER the store is
+	// initialized and migrated above and BEFORE any tool executor is wired below,
+	// so the sealed floor governs every write. The resolved value is sealed into
+	// Services below and never re-derived from disk during the process lifetime —
+	// recovery is restart, never a live transition.
 	dbPanicked, dbPanicErr := clusterPanicStore.IsPanicked(ctx)
 	if dbPanicErr != nil {
-		slog.Warn("failed to read cluster panic state on startup", "error", dbPanicErr)
+		slog.Warn("failed to read panic state on startup", "error", dbPanicErr)
 	}
-	panicPresent := panicState != nil || dbPanicked
 	observationMode := os.Getenv(env.Mode) == env.ModeObservation
-	writeFloor := safety.ResolveWriteFloor(panicPresent, observationMode)
+	writeFloor := safety.ResolveWriteFloor(dbPanicked, observationMode)
 	switch writeFloor.Reason() {
 	case safety.FloorReasonSafeMode:
 		slog.Warn("WRITE FLOOR UP (safe_mode) — previous run triggered emergency shutdown; Joe is read-only")
-		if panicState != nil {
-			slog.Warn("panic state (file)",
-				"triggered_at", panicState.TriggeredAt,
-				"trigger_source", string(panicState.TriggerSource),
-				"trigger_reason", panicState.TriggerReason,
+		if info, infoErr := clusterPanicStore.PanicInfo(ctx); infoErr == nil && info != nil {
+			slog.Warn("panic state",
+				"triggered_at", info.TriggeredAt,
+				"trigger_source", string(info.TriggerSource),
+				"trigger_reason", info.TriggerReason,
 			)
 		}
-		slog.Warn("clear the panic state with 'joe unlock --reason \"...\"' (local file op), then restart to resume writes")
+		slog.Warn("clear the panic state with 'joe unlock', then restart to resume writes")
 	case safety.FloorReasonObservation:
 		slog.Info("WRITE FLOOR UP (observation) — Joe is in read-only observation mode by configuration (JOE_MODE=observation)")
 	}
@@ -909,20 +907,10 @@ func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
 		select {
 		case sig := <-quit:
 			if sig == syscall.SIGUSR1 {
-				joeDir, err := paths.JoeDirPath()
-				if err != nil {
-					slog.Error("SIGUSR1 panic: failed to resolve joe dir", "error", err)
-				} else {
-					safety.Trigger(safety.PanicSourceSignal, "SIGUSR1 received")
-					state := safety.PanicState{
-						TriggeredAt:   timeNow(),
-						TriggerSource: safety.PanicSourceSignal,
-						TriggerReason: "SIGUSR1 received",
-					}
-					if err := safety.WritePanicState(joeDir, state); err != nil {
-						slog.Error("SIGUSR1 panic: failed to write panic.state", "error", err)
-					}
-				}
+				// Trigger persists the panic to the single cluster_panic_state DB
+				// row via the cluster store registered at boot (SetClusterStore);
+				// boot reads that row to raise the safe-mode floor on next start.
+				safety.Trigger(safety.PanicSourceSignal, "SIGUSR1 received")
 				slog.Error("SIGUSR1: emergency shutdown triggered — exiting with code 2")
 				os.Exit(2)
 			}
@@ -933,9 +921,6 @@ func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
 	}()
 	return done
 }
-
-// timeNow is a package-level variable so tests can stub it.
-var timeNow = func() time.Time { return time.Now().UTC() }
 
 func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry *adapters.Registry) {
 	k8sSources, err := sqlStore.Sources.ListByType(ctx, store.SourceTypeKubernetes)
