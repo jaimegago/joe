@@ -312,6 +312,64 @@ instance of "an independent gate," so A's evidence on it feeds directly here.
 
 ---
 
+## 9. Credential resolution is a component property, applied at the accessor seam
+
+**Decision (the one commitment made now — deep design deferred).** Joe must hold
+credentials to reach the systems it manages (auth is required even for read-only
+access to most components). Those credentials are **the asset the entire security
+model exists to protect** — a subverted Joe (injection, misclassified tool) wants
+exactly them, and the blast-radius controls (§1 single seam, §2 intersection, the
+write floor) are the containment around them. The single commitment that must
+hold now, because getting it wrong contradicts §1:
+
+**A tool never holds, fetches, or knows a credential. Credential resolution is a
+property of the target component, resolved and applied at the same guarded
+accessor seam that already decides allow/deny — never ambient to the tool or
+adapter.**
+
+**Why now, not deferred.** The anti-pattern is a tool/adapter reaching into the
+environment for a credential and calling the backend directly — a side door
+around the gate, for credentials specifically. This is **exactly the shape the
+removed review agent exhibited** (its own registry wrapper resolved adapters and
+called them off the accessor), and the egress audit (2026-06-09) found the
+pattern **survives** in the proposal-publish HTTP handler (external mutation off
+both gates). So "credentials resolve at the accessor, not ambiently" is the
+pre-decided fix direction for that whole finding class, not a fresh question.
+
+**The §7 pattern again.** "Which credential" becomes another property carried by
+the **component**, alongside "which zone" (authz) and "which sensitivity class"
+(egress). One component, several consumers reading different properties of it at
+the seams they own. Credential management plugs into the accessor; it is not a
+parallel system.
+
+**Deferred to its own session (genuinely separable, behind the resolution seam):**
+- **Credential storage / provider backend** — env vars / secrets manager / Vault
+  / cloud KMS. Almost certainly **pluggable, defaulting to env**, mirroring the
+  skills and verifier patterns; the company's secrets infrastructure likely owns
+  this, so Joe must **not assume a particular store**. Behind the resolution seam,
+  so it does not constrain the architecture.
+- **Credential *type* strategy** — static tokens vs. short-lived / OIDC-federated
+  vs. cloud workload identity (instance role) vs. mTLS. **Do not foreclose
+  workload identity / per-call short-lived credentials:** a bank will treat "the
+  agent holds a standing long-lived prod token" as a finding and prefer federated
+  short-lived creds, so the eventual provider interface must be able to express
+  "fetch a short-lived credential per call," not only "read a static secret."
+- **Rotation, per-zone credential scoping, mutation-credential separation** — ride
+  with full mode, same as the rest of the mutation story.
+
+**Launch posture (tentative, to confirm in the deferred session):** observation
+mode for a bank likely needs only read-only credentials, ideally
+workload-identity / short-lived, resolved at the accessor. The hard parts are
+full-mode concerns.
+
+> **A focused secrets-handling design deserves its own threat treatment** (its
+> own attack surface: credential theft, confused-deputy, logging leakage, blast
+> radius of a compromised store). This section records only the one architectural
+> interlock so the next build increment does not bake in an ambient-credential
+> assumption that contradicts §1/§7.
+
+---
+
 ## What the write floor does and does NOT cover (threat-model note)
 
 The write floor, when up (observation mode), makes it **deterministically
