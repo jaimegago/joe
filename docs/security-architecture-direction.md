@@ -270,6 +270,48 @@ classing) and essential the moment a verifier acts per-sensitivity.
 
 ---
 
+## 8. Incident regime / captain gate — post-launch, and an input not a layer
+
+**Decision.** The incident/captain gate is **post-launch as a feature**, and
+when it returns it must land as an **input to the computed decision (§1)**, not
+as a surviving independent layer.
+
+**Why post-launch.** The captain gate can **only deny** mutations (never
+elevate) — RBAC authority is identical in and out of incident mode. It therefore
+only bites when mutations are possible at all, which is **full mode**. In
+observation mode the write floor already denies every mutation, so the captain
+gate is **redundant** — it cannot deny what is already denied. Launch is airtight
+observation mode, so the captain gate adds nothing at launch.
+
+**Why it is still in scope for this architecture.** It is one of the gates §1
+collapses. Today (per design discussion, not yet verified) precedence is
+"floor > incident > RBAC" enforced as **independent layers** by check-order. The
+target design makes "what Joe can do right now" a single computed function;
+the incident regime must become an **input** to that function (an
+incident-active flag that can flip an otherwise-allowed mutation to denied), not
+a layer that survives outside it. If it is rebuilt as a standalone layer, §1's
+unification is only partial and full mode re-fragments into the old organic
+stack. **One line of intent recorded here so future work does not rebuild it as
+a layer.**
+
+**Relationship to the §2 open question.** The captain gate binds mutations to a
+**captain session** (the human who declared / holds the incident). That is a
+**principal-set** constraint: during an incident Joe's effective permission is
+not merely `intersection(driving principal, agent budget)` — it is further
+constrained by "is there an active captain, and is this principal it." So the
+captain gate is the **incident-mode case of the §2 open question** (what
+populates and composes the principal-set), not a separate problem. When the
+captain feature is revisited post-launch, it should be designed as that case of
+§2, not as a fresh feature.
+
+**Investigation note.** No separate captain investigation is needed. Session A
+(the permissions/capability seam investigation) already surfaces the captain
+gate's current shape when it determines whether floor/incident/RBAC are
+independent gates or could be one decision — the captain gate is precisely an
+instance of "an independent gate," so A's evidence on it feeds directly here.
+
+---
+
 ## What the write floor does and does NOT cover (threat-model note)
 
 The write floor, when up (observation mode), makes it **deterministically
@@ -315,6 +357,11 @@ D-00xx / `JOE_PROJECT_KNOWLEDGE.md`):
 4. **Sensitivity provenance in the context pipeline.** Do (or can) context
    entries carry their source zone / sensitivity class through to the
    prompt-assembly seam? (§6, §7)
+5. **Gate composition (floor / incident / RBAC).** Are these enforced as
+   independent layers by check-order, or could they be inputs to one computed
+   decision? The captain gate's current shape is the concrete probe. (§1, §8 —
+   surfaced by Session A's gate-composition tracing)
 
 The two **open design questions** (non-human principal-sets, §2;
-primary-vs-third adapter, §5) are partly blocked on these facts.
+primary-vs-third adapter, §5) are partly blocked on these facts. The incident
+regime (§8) is the incident-mode case of the first of those.
