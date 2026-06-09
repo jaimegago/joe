@@ -72,17 +72,13 @@ that task's scope, so they were left.
   dead read surface are already removed. Only do this pass if a clean "single live
   entry path" surface is wanted for launch; otherwise low priority.
 
-### B2. k8s GET route retained as RBAC test fixture — DOCUMENTED EXCEPTION, not a fix
-After the direct-HTTP removal, the `GET /api/v1/k8s/{componentID}/resources`
-route is **deliberately kept** — it is the accessor-gated, componentID-scoped GET
-path the entire auth/RBAC regression suite (≈9 untagged test files + integration
-`rbac_test.go`) drives through. It is accessor-gated (RBAC fires), read-only, no
-floor concern. This is an **honest documented exception** to "the duplicate-HTTP
-surface is gone," not an oversight.
-- **Source:** direct-HTTP removal manifest (2026-06-09) decision D1-A.
-- **Action:** none required, except to **state this exception** wherever the
-  removal is described, so a future reader doesn't flag the route as vestigial and
-  re-investigate it (the exact loop this punch-list exists to prevent).
+### B2. k8s GET route — RESOLVED (deleted, not kept)
+The route was **deleted** (commit `60ac5af`): the auth/RBAC regression
+assertions were moved onto the accessor seam directly (Option 2) and a test-only
+probe handler (Option 1, `_test.go`-only, never in the production binary). No
+production route now exists solely to serve tests, and there is **no remaining
+exception** to "the vestigial direct-HTTP managed-system surface is gone." Closed;
+left here as a record.
 
 ---
 
@@ -108,7 +104,13 @@ past):**
   - `README.md` — `joe review` line.
   - `docs/joe-architecture.md` — the "Review Agent — Phase 10" section, ascii box,
     webhook endpoints, schema diagram, and any of the removed direct-HTTP route
-    descriptions.
+    descriptions (lines ~133-134 ascii diagram, ~210-228 HTTP API reference block:
+    the removed k8s/git/aws GET routes).
+  - `docs/joe-dataflow.md` — **doubly stale, higher priority:** line 32 diagram
+    and lines ~360-367 worked example show `CORE TOOL → HTTP to joecored → GET
+    .../k8s/...`. Wrong twice — the route is gone AND the HTTP-to-joecored hop
+    no longer exists (single-binary collapse made the tool path in-process). This
+    actively misdescribes current architecture, not just a removed route name.
 - **Accurate, leave:** `docs/joe-architecture.md:1925` `review_jobs:` schema
   diagram — the table still exists (migration option A kept it). Accurate until/
   unless the table is dropped in the history scrub (Stream C).
