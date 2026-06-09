@@ -50,7 +50,6 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
-	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
@@ -69,84 +68,6 @@ type coreAgentRunner interface {
 	core.CoreAgent
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-}
-
-// adapterRegistryOps wraps the adapter registry to implement review.GitHubOps and review.GitLabOps.
-// It looks up the appropriate adapter by sourceID and delegates the call.
-type adapterRegistryOps struct {
-	registry *adapters.Registry
-}
-
-func (o adapterRegistryOps) GitHubGetPR(ctx context.Context, sourceID, owner, repo string, number int) (*githubadapter.PRInfo, error) {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return nil, fmt.Errorf("github adapter %q: %w", sourceID, err)
-	}
-	gh, ok := a.(githubadapter.GitHubAdapter)
-	if !ok {
-		return nil, fmt.Errorf("source %q is not a GitHub adapter", sourceID)
-	}
-	return gh.GetPR(ctx, owner, repo, number)
-}
-
-func (o adapterRegistryOps) GitHubGetPRDiff(ctx context.Context, sourceID, owner, repo string, number int) (string, error) {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return "", fmt.Errorf("github adapter %q: %w", sourceID, err)
-	}
-	gh, ok := a.(githubadapter.GitHubAdapter)
-	if !ok {
-		return "", fmt.Errorf("source %q is not a GitHub adapter", sourceID)
-	}
-	return gh.GetPRDiff(ctx, owner, repo, number)
-}
-
-func (o adapterRegistryOps) GitHubPostComment(ctx context.Context, sourceID, owner, repo string, number int, body string) error {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return fmt.Errorf("github adapter %q: %w", sourceID, err)
-	}
-	gh, ok := a.(githubadapter.GitHubAdapter)
-	if !ok {
-		return fmt.Errorf("source %q is not a GitHub adapter", sourceID)
-	}
-	return gh.PostComment(ctx, owner, repo, number, body)
-}
-
-func (o adapterRegistryOps) GitLabGetMR(ctx context.Context, sourceID, projectID string, iid int) (*gitlabadapter.MRInfo, error) {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return nil, fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
-	}
-	gl, ok := a.(gitlabadapter.GitLabAdapter)
-	if !ok {
-		return nil, fmt.Errorf("source %q is not a GitLab adapter", sourceID)
-	}
-	return gl.GetMR(ctx, projectID, iid)
-}
-
-func (o adapterRegistryOps) GitLabGetMRDiff(ctx context.Context, sourceID, projectID string, iid int) (string, error) {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return "", fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
-	}
-	gl, ok := a.(gitlabadapter.GitLabAdapter)
-	if !ok {
-		return "", fmt.Errorf("source %q is not a GitLab adapter", sourceID)
-	}
-	return gl.GetMRDiff(ctx, projectID, iid)
-}
-
-func (o adapterRegistryOps) GitLabPostNote(ctx context.Context, sourceID, projectID string, iid int, body string) error {
-	a, err := o.registry.Get(sourceID)
-	if err != nil {
-		return fmt.Errorf("gitlab adapter %q: %w", sourceID, err)
-	}
-	gl, ok := a.(gitlabadapter.GitLabAdapter)
-	if !ok {
-		return fmt.Errorf("source %q is not a GitLab adapter", sourceID)
-	}
-	return gl.PostNote(ctx, projectID, iid, body)
 }
 
 type serverDeps struct {
@@ -583,8 +504,8 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 
 	// Stream G phase G2: wrap the raw adapter in the usage recorder
 	// EXACTLY ONCE, at the SINGLE construction site, BEFORE the
-	// SwappableAdapter and the four downstream by-name consumers
-	// (embedder, doc drafter, review agent, core agent) read it. The
+	// SwappableAdapter and the downstream by-name consumers
+	// (embedder, doc drafter, core agent) read it. The
 	// wrapped value is assigned back to the same handle so every
 	// downstream consumer below receives the recording wrapper through
 	// the identical llm.LLMAdapter interface — no consumer has a path to
@@ -637,22 +558,6 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.Knowledge = knowledge.NewService(sqlStore.Knowledge, embedder)
 	services.DocDrafter = drafts.New(services.Knowledge, services.Proposals, llmAdapter)
 	slog.Info("knowledge store ready", "embedding_model", embModelName)
-
-	// Wire up the Review Agent (Phase 10).
-	// The agent uses the adapter registry for GitHub/GitLab ops and the
-	// knowledge/graph stores for context enrichment.
-	if services.Review != nil {
-		reviewAgent := review.NewReviewAgent(
-			adapterRegistryOps{adapterRegistry},
-			adapterRegistryOps{adapterRegistry},
-			services.Knowledge,
-			services.Graph,
-			llmAdapter,
-			services.Review,
-		)
-		services.ReviewAgent = reviewAgent
-		slog.Info("review agent ready")
-	}
 
 	// Start knowledge sync coordinator when sync is enabled.
 	if cfg.Knowledge.SyncEnabled {

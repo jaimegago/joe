@@ -2,8 +2,8 @@
 //
 // The package wraps the raw llm.LLMAdapter at a single wire site in
 // cmd/joe/server.go so every downstream consumer — the swappable
-// hot-swap wrapper, the knowledge embedder, the doc drafter, the review
-// agent, the Core Agent — invokes the recorder transparently through the
+// hot-swap wrapper, the knowledge embedder, the doc drafter, the Core
+// Agent — invokes the recorder transparently through the
 // same interface. The recorder reads the caller principal, session id,
 // and task id from context and writes one row to the llm_usage table
 // (migration 017) after a successful inner Chat returns.
@@ -28,10 +28,10 @@
 //
 // # Context cancellation: WithoutCancel on the write
 //
-// One production path — the review agent (internal/review) — dispatches
-// the LLM call in a goroutine AFTER the originating HTTP request has
-// returned. By the time recording runs, the request context is already
-// cancelled, but the principal value still lives in the context. The
+// A caller may dispatch the LLM call in a goroutine that outlives the
+// originating HTTP request, so by the time recording runs the request
+// context can already be cancelled, even though the principal value
+// still lives in the context. The
 // recorder writes the row on a context derived with context.WithoutCancel
 // from the call context: cancellation is dropped, but every value
 // (principal, session, task) is preserved. This requires Go 1.21+
@@ -257,8 +257,9 @@ func (r *RecorderAdapter) record(ctx context.Context, inputTokens, outputTokens 
 	}
 
 	// Detach cancellation but preserve every context value (principal,
-	// session, task, request-id) so the review-agent goroutine path can
-	// still write its row after the originating HTTP request returned.
+	// session, task, request-id) so a background/goroutine call path can
+	// still write its row even if the originating request context was
+	// already cancelled.
 	writeCtx := context.WithoutCancel(ctx)
 	if err := r.repo.Insert(writeCtx, row); err != nil {
 		r.logger.Warn("llmusage: recording failed (fail-open, call returned successfully)",
@@ -490,8 +491,8 @@ func (r *RecorderAdapter) detectMixedCurrency(ctx context.Context) {
 	if r.currency == "" {
 		return
 	}
-	// Use a detached context: the first Chat may be cancelled (review-
-	// agent path) but the once-only detector should still publish its
+	// Use a detached context: the first Chat's context may already be
+	// cancelled but the once-only detector should still publish its
 	// signal. WithoutCancel preserves principal/session/task for the
 	// audit row.
 	detectCtx := context.WithoutCancel(ctx)

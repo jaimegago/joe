@@ -58,10 +58,9 @@ const (
 	apiRegistryArtifactoryBasePath = "/api/v1/registry/artifactory"
 	apiRegistryECRBasePath         = "/api/v1/registry/ecr"
 
-	// Code review base paths (Phase 10).
+	// GitHub PR / GitLab MR base paths (Phase 10).
 	apiGitHubBasePath = "/api/v1/github"
 	apiGitLabBasePath = "/api/v1/gitlab"
-	apiReviewsPath    = "/api/v1/reviews"
 
 	// Category-based observe endpoints (MCP plan).
 	apiObserveBasePath = "/api/v1/observe"
