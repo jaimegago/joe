@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // adminProvisioner is the admin-grant seam the admin-add handler wraps —
@@ -120,6 +122,15 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/principals", admin), h.listPrincipals)
 	mux.HandleFunc(fmt.Sprintf("POST %s/principals/{principal}/disable", admin), h.disablePrincipal)
 	mux.HandleFunc(fmt.Sprintf("POST %s/principals/{principal}/enable", admin), h.enablePrincipal)
+
+	// D-0026 unit 3 — per-component credential authz/connectivity status surface.
+	// A passive Describe listing (no backend contact), a deliberate live Probe,
+	// and the explicit captured-stderr fetch. All admin-gated + audited like the
+	// rest of this surface; see credential_status.go for the serialization-boundary
+	// rationale (only the Diagnostic/Describe halves ever reach a response).
+	mux.HandleFunc(fmt.Sprintf("GET %s/credential-status", admin), h.listCredentialStatus)
+	mux.HandleFunc(fmt.Sprintf("POST %s/credential-status/{componentID}/probe", admin), h.probeCredentialStatus)
+	mux.HandleFunc(fmt.Sprintf("POST %s/credential-status/{componentID}/probe/stderr", admin), h.credentialStderr)
 }
 
 // recordAdminAudit writes one KindAdminAccess audit row for an admin-surface
@@ -735,4 +746,181 @@ func (h *adminHandler) enablePrincipal(w http.ResponseWriter, r *http.Request) {
 		"principal": principal,
 		"status":    rbac.PrincipalStatusActive,
 	})
+}
+
+// --- Credential authz/connectivity status surface (D-0026 unit 3) ---
+//
+// These three read-class endpoints are the human instrumentation for threat T4
+// ("no Joe to troubleshoot Joe"): they answer "is Joe's credential resolution to
+// component X healthy?" without ever exposing the credential itself.
+//
+// The serialization boundary is enforced STRUCTURALLY, not by discipline. The
+// response types below embed ONLY the credential package's serializable halves —
+// credential.Descriptor (from the pure Describe) and credential.Diagnostic (the
+// staged Resolve/Probe outcome) — plus a plain stderr string sourced through the
+// deliberate CapturedStderr() accessor. A *credential.Resolution or a
+// credential.Credential is NEVER placed in a response struct, so the credential
+// half and the captured plugin stderr have no route into the passive listing or
+// the probe response. The captured stderr is reachable only through the third,
+// explicitly-requested endpoint — the FE's "show plugin output" affordance — and
+// even there it travels in its own response type, never alongside the diagnostic.
+
+// credentialStatusEntry is one component's passive, config-derived credential
+// descriptor (from Describe). Descriptor is nil and Error is set when the
+// component's config carries no usable/parseable provider; Error is a generic,
+// non-sensitive string and never echoes config contents.
+type credentialStatusEntry struct {
+	ComponentID string                 `json:"component_id"`
+	Type        string                 `json:"type"`
+	Name        string                 `json:"name"`
+	Descriptor  *credential.Descriptor `json:"descriptor,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+}
+
+// credentialProbeResponse is the staged outcome of a live Resolve(+Probe). It
+// carries the Diagnostic half only; StderrAvailable signals that a failure
+// captured plugin stderr WITHOUT including the stderr text — the FE fetches that
+// separately and deliberately. The struct has no field that can hold credential
+// material or stderr.
+type credentialProbeResponse struct {
+	ComponentID     string                `json:"component_id"`
+	Diagnostic      credential.Diagnostic `json:"diagnostic"`
+	StderrAvailable bool                  `json:"stderr_available"`
+}
+
+// credentialStderrResponse is the ONLY response type that carries the captured
+// exec-plugin stderr, returned ONLY by the explicit probe/stderr endpoint. Kept
+// structurally separate from credentialProbeResponse so the stderr cannot ride
+// along the default probe path.
+type credentialStderrResponse struct {
+	ComponentID string `json:"component_id"`
+	Stderr      string `json:"stderr"`
+}
+
+// listCredentialStatus returns the passive, config-derived credential descriptor
+// for every registered component via the pure Describe (no backend contact, so a
+// page load never probes). Read-class: audited fail-open per §4.
+func (h *adminHandler) listCredentialStatus(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	components, err := h.server.services.Store.Components.List(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "list components for credential status")
+		return
+	}
+	statuses := make([]credentialStatusEntry, 0, len(components))
+	for _, c := range components {
+		entry := credentialStatusEntry{ComponentID: c.ID, Type: c.Type, Name: c.Name}
+		provider, err := credential.Select(c.Config)
+		if err != nil {
+			// Generic, non-sensitive: never echo the config contents.
+			entry.Error = "unknown or unparseable credential provider"
+			statuses = append(statuses, entry)
+			continue
+		}
+		desc, err := provider.Describe(c.Config)
+		if err != nil {
+			entry.Error = "credential configuration could not be described"
+			statuses = append(statuses, entry)
+			continue
+		}
+		d := desc // take the address of a loop-local copy
+		entry.Descriptor = &d
+		statuses = append(statuses, entry)
+	}
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminCredentialStatusRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "credential_status"}, "admin:credential_status.read")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"statuses": statuses,
+		"count":    len(statuses),
+	})
+}
+
+// probeCredentialStatus runs a live Resolve(+Probe) for one component and returns
+// the staged Diagnostic. This is the deliberate "does it actually work right now"
+// check — it is never triggered automatically. The captured stderr (if any) is
+// signalled but NOT included; the FE fetches it through credentialStderr only on
+// an explicit human action.
+func (h *adminHandler) probeCredentialStatus(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	res, comp, ok := h.resolveAndProbe(w, r)
+	if !ok {
+		return
+	}
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminCredentialStatusRead, audit.DecisionAllow,
+		"admin_probe", audit.Details{Target: "credential_status:" + comp.ID}, "admin:credential_status.read")
+	writeJSON(w, http.StatusOK, credentialProbeResponse{
+		ComponentID:     comp.ID,
+		Diagnostic:      res.Diagnostic,
+		StderrAvailable: res.CapturedStderr() != "",
+	})
+}
+
+// credentialStderr is the deliberate "show plugin output" path: it re-runs
+// Resolve(+Probe) for the component and returns ONLY the captured exec-plugin
+// stderr via the CapturedStderr accessor. This is the sole endpoint that surfaces
+// the untrusted, possibly-secret-bearing plugin text, and it does so only when a
+// human explicitly asks — preserving R3 (the stderr is never swept into the
+// passive listing, the probe response, or any log/trace).
+func (h *adminHandler) credentialStderr(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	res, comp, ok := h.resolveAndProbe(w, r)
+	if !ok {
+		return
+	}
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminCredentialStatusRead, audit.DecisionAllow,
+		"admin_probe_stderr", audit.Details{Target: "credential_status:" + comp.ID}, "admin:credential_status.read")
+	writeJSON(w, http.StatusOK, credentialStderrResponse{
+		ComponentID: comp.ID,
+		Stderr:      res.CapturedStderr(),
+	})
+}
+
+// resolveAndProbe is the shared body of the two probe endpoints: it looks up the
+// component, selects its provider, Resolves, and — only when the Resolve
+// succeeded — Probes for live connectivity. A failed Resolve already carries the
+// staged failure diagnostic (it stops at mint-attempted), so there is nothing to
+// probe. On any error it writes the response and returns ok=false. It returns the
+// final *credential.Resolution to the caller, which extracts ONLY the Diagnostic
+// half and (for the stderr endpoint) the CapturedStderr accessor — the Resolution
+// itself never reaches a response.
+func (h *adminHandler) resolveAndProbe(w http.ResponseWriter, r *http.Request) (*credential.Resolution, *store.Component, bool) {
+	componentID := r.PathValue("componentID")
+	if componentID == "" {
+		writeBadRequest(w, nil, "probe credential", "component id is required")
+		return nil, nil, false
+	}
+	comp, err := h.server.services.Store.Components.Get(r.Context(), componentID)
+	if err != nil {
+		writeInternalError(w, err, "get component for credential probe")
+		return nil, nil, false
+	}
+	if comp == nil {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("component not found: %s", componentID))
+		return nil, nil, false
+	}
+	provider, err := credential.Select(comp.Config)
+	if err != nil {
+		writeBadRequest(w, err, "probe credential", "component has no usable credential provider")
+		return nil, nil, false
+	}
+	res, err := provider.Resolve(r.Context(), comp.ID, comp.Config)
+	if err != nil {
+		writeBadRequest(w, err, "probe credential", "credential configuration could not be resolved")
+		return nil, nil, false
+	}
+	if res.Diagnostic.OK {
+		probed, err := provider.Probe(r.Context(), res)
+		if err != nil {
+			writeInternalError(w, err, "probe credential connectivity")
+			return nil, nil, false
+		}
+		res = probed
+	}
+	return res, comp, true
 }
