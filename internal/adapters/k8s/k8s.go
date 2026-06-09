@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/store"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
@@ -50,13 +52,23 @@ func NewWithClients(dynClient dynamic.Interface, clientset kubernetes.Interface)
 }
 
 // Connect establishes a connection to the K8s cluster.
-func (a *Adapter) Connect(_ context.Context, source store.Component) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
+	}
+
+	// D-0026 unit 2: route the kubeconfig/context selection through the provider
+	// selected by the component config before building the *rest.Config. A config
+	// without a discriminator selects the static provider, which yields no
+	// KubeSelection, so cfg is left as parsed and existing behavior is preserved.
+	// The eager ServerVersion liveness probe below is kept unchanged.
+	cfg, err = applyResolvedCredential(ctx, source.ID, source.Config, cfg)
+	if err != nil {
+		return err
 	}
 	a.config = cfg
 
@@ -107,6 +119,32 @@ func (a *Adapter) Status() adapters.Status {
 		return adapters.Status{Connected: true, Message: "connected"}
 	}
 	return adapters.Status{Connected: false, Message: "disconnected"}
+}
+
+// applyResolvedCredential selects the credential provider from the component
+// config and, for a kubeconfig-exec resolution, routes the selected
+// kubeconfig/context selection into cfg. A config without a discriminator
+// resolves via the static provider, which yields no KubeSelection, so cfg is
+// returned unchanged. A resolution failure is surfaced as a plain Connect error
+// carrying only the non-sensitive reason — never the credential.
+func applyResolvedCredential(ctx context.Context, componentID string, raw json.RawMessage, cfg Config) (Config, error) {
+	provider, err := credential.Select(raw)
+	if err != nil {
+		return Config{}, fmt.Errorf("select credential provider: %w", err)
+	}
+	res, err := provider.Resolve(ctx, componentID, raw)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve credential: %w", err)
+	}
+	if !res.Diagnostic.OK {
+		return Config{}, fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
+	}
+	if sel, ok := res.KubeSelection(); ok {
+		cfg.Kubeconfig = sel.Kubeconfig
+		cfg.Context = sel.Context
+		cfg.InCluster = sel.InCluster
+	}
+	return cfg, nil
 }
 
 func buildRESTConfig(cfg Config) (*rest.Config, error) {

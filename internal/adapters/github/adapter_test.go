@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -298,6 +299,96 @@ func TestAdapter_Connect_MissingToken(t *testing.T) {
 	src := store.Component{Config: []byte(`{"base_url":"https://api.github.com"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing token")
+	}
+}
+
+// captureAuthServer returns an httptest server that records the Authorization
+// header of the most recent request and answers a minimal PR payload.
+func captureAuthServer(t *testing.T, gotAuth *string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"number":1,"title":"t","state":"open","html_url":"u","head":{"sha":"a","ref":"x"},"base":{"sha":"b","ref":"main"},"user":{"login":"alice"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// D-0026 unit 2: a component config with no discriminator still connects via the
+// static provider, and the legacy "token" field is preserved as the per-request
+// bearer token.
+func TestConnect_NoDiscriminator_PreservesLegacyToken(t *testing.T) {
+	var gotAuth string
+	srv := captureAuthServer(t, &gotAuth)
+
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"legacy-tok","base_url":%q}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gh-1", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetPR(context.Background(), "org", "repo", 1); err != nil {
+		t.Fatalf("GetPR: %v", err)
+	}
+	if gotAuth != "Bearer legacy-tok" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer legacy-tok")
+	}
+}
+
+// D-0026 unit 2: GitHub resolves its token through the static provider's inline
+// value, which overrides the legacy field, and the per-request auth uses it.
+func TestConnect_StaticProvider_ResolvesInlineValue(t *testing.T) {
+	var gotAuth string
+	srv := captureAuthServer(t, &gotAuth)
+
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","value":"resolved-tok"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gh-2", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetPR(context.Background(), "org", "repo", 1); err != nil {
+		t.Fatalf("GetPR: %v", err)
+	}
+	if gotAuth != "Bearer resolved-tok" {
+		t.Errorf("Authorization = %q, want %q (provider value should win)", gotAuth, "Bearer resolved-tok")
+	}
+}
+
+// D-0026 unit 2: GitHub resolves its token from a named environment variable via
+// the static provider, proving resolution (not just config decode) feeds auth.
+func TestConnect_StaticProvider_ResolvesEnvVar(t *testing.T) {
+	var gotAuth string
+	srv := captureAuthServer(t, &gotAuth)
+
+	t.Setenv("JOE_TEST_GH_TOKEN", "env-tok")
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GH_TOKEN"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gh-3", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetPR(context.Background(), "org", "repo", 1); err != nil {
+		t.Fatalf("GetPR: %v", err)
+	}
+	if gotAuth != "Bearer env-tok" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer env-tok")
+	}
+}
+
+// D-0026 unit 2 break-test: a Resolve failure (named env var unset) surfaces
+// through Connect's normal error path, and the credential-bearing config value
+// never appears in the error.
+func TestConnect_ResolveFailure_SurfacesWithoutCredential(t *testing.T) {
+	a := New()
+	cfg := `{"token":"SUPERSECRET","base_url":"https://api.github.com","credential_provider":"static","env_var":"JOE_DEFINITELY_UNSET_VAR_XYZ"}`
+	err := a.Connect(context.Background(), store.Component{ID: "gh-4", Config: []byte(cfg)})
+	if err == nil {
+		t.Fatal("expected Connect to fail when the named env var is unset")
+	}
+	if strings.Contains(err.Error(), "SUPERSECRET") {
+		t.Errorf("credential leaked into error: %v", err)
+	}
+	if a.Status().Connected {
+		t.Error("adapter should not be connected after a resolve failure")
 	}
 }
 
