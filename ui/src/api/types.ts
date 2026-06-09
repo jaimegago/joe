@@ -31,6 +31,11 @@ import type {
   UsageSessionSchema,
   LLMProviderSchema,
   LLMProvidersSchema,
+  CredentialStageSchema,
+  CredentialDescriptorSchema,
+  CredentialStatusEntrySchema,
+  CredentialDiagnosticSchema,
+  CredentialProbeResponseSchema,
 } from './schemas';
 
 // Types derived from Zod schemas — single source of truth
@@ -65,3 +70,8 @@ export type UsageWindow = z.infer<typeof UsageWindowSchema>;
 export type UsageSession = z.infer<typeof UsageSessionSchema>;
 export type LLMProvider = z.infer<typeof LLMProviderSchema>;
 export type LLMProviders = z.infer<typeof LLMProvidersSchema>;
+export type CredentialStage = z.infer<typeof CredentialStageSchema>;
+export type CredentialDescriptor = z.infer<typeof CredentialDescriptorSchema>;
+export type CredentialStatusEntry = z.infer<typeof CredentialStatusEntrySchema>;
+export type CredentialDiagnostic = z.infer<typeof CredentialDiagnosticSchema>;
+export type CredentialProbeResponse = z.infer<typeof CredentialProbeResponseSchema>;

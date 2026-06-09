@@ -15,6 +15,7 @@ const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.C
 const SessionsPage = lazy(() => import('@/pages/SessionsPage').then(m => ({ default: m.SessionsPage })));
 const AdminPage = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
 const UsersPage = lazy(() => import('@/pages/UsersPage').then(m => ({ default: m.UsersPage })));
+const CredentialStatusPage = lazy(() => import('@/pages/CredentialStatusPage').then(m => ({ default: m.CredentialStatusPage })));
 const LLMSettingsPage = lazy(() => import('@/pages/LLMSettingsPage').then(m => ({ default: m.LLMSettingsPage })));
 
 const queryClient = new QueryClient({
@@ -45,6 +46,7 @@ export function App() {
                 <Route path="sessions" element={<Suspense fallback={<LoadingPage />}><SessionsPage /></Suspense>} />
                 <Route path="admin" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><AdminPage /></Suspense></RequireAdmin>} />
                 <Route path="users" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><UsersPage /></Suspense></RequireAdmin>} />
+                <Route path="credentials" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><CredentialStatusPage /></Suspense></RequireAdmin>} />
                 <Route path="llm-settings" element={<RequireAdmin><Suspense fallback={<LoadingPage />}><LLMSettingsPage /></Suspense></RequireAdmin>} />
               </Route>
             </Routes>

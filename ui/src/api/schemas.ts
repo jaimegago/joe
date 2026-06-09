@@ -324,6 +324,56 @@ export const LLMProvidersSchema = z.object({
   current: z.string(),
 });
 
+// Credential authz/connectivity status (D-0026 unit 3). These mirror the
+// serializable halves of the resolved-credential type — the Descriptor (pure
+// config-derived fact) and the Diagnostic (staged Resolve/Probe outcome). No
+// schema carries credential material; the captured plugin stderr arrives only
+// from its own dedicated endpoint, never inline.
+
+// The four diagnostic stages, in order. mint-succeeded WITHOUT
+// connectivity-probed is the legal "minted, not yet proven" lazy state.
+export const CredentialStageSchema = z.enum([
+  'provider-selected',
+  'mint-attempted',
+  'mint-succeeded',
+  'connectivity-probed',
+]);
+
+export const CredentialDescriptorSchema = z.object({
+  provider: z.string(),
+  audience: z.string().optional(),
+  context: z.string().optional(),
+  expires_at: z.string().optional(),
+});
+
+// One component's passive status row. descriptor is absent and error is set
+// when the component's config has no usable/parseable provider.
+export const CredentialStatusEntrySchema = z.object({
+  component_id: z.string(),
+  type: z.string(),
+  name: z.string(),
+  descriptor: CredentialDescriptorSchema.optional(),
+  error: z.string().optional(),
+});
+
+export const CredentialDiagnosticSchema = z.object({
+  component_id: z.string(),
+  provider: z.string(),
+  audience: z.string().optional(),
+  expires_at: z.string().optional(),
+  stage: CredentialStageSchema,
+  ok: z.boolean(),
+  reason: z.string().optional(),
+});
+
+// The live probe response: the staged diagnostic plus a flag that captured
+// stderr exists. The stderr text itself is NOT here — it is fetched separately.
+export const CredentialProbeResponseSchema = z.object({
+  component_id: z.string(),
+  diagnostic: CredentialDiagnosticSchema,
+  stderr_available: z.boolean(),
+});
+
 // Alerts
 export const AlertSchema = z.object({
   id: z.string(),

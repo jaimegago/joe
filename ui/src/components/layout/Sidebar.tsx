@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Database, MessageSquare, MessagesSquare, ShieldCheck, Users, Cpu, LogOut } from 'lucide-react';
+import { LayoutDashboard, Database, MessageSquare, MessagesSquare, ShieldCheck, Users, KeyRound, Cpu, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuth } from '@/auth/AuthContext';
@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { to: '/sessions', icon: MessagesSquare, label: 'Sessions', end: false },
   { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false, adminOnly: true },
   { to: '/users', icon: Users, label: 'Users', end: false, adminOnly: true },
+  { to: '/credentials', icon: KeyRound, label: 'Credentials', end: false, adminOnly: true },
   { to: '/llm-settings', icon: Cpu, label: 'LLM Settings', end: false, adminOnly: true },
 ];
 
