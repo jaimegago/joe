@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -68,7 +69,7 @@ func NewWithConfig(cfg Config, httpClient *http.Client) *Adapter {
 	}
 }
 
-func (a *Adapter) Connect(_ context.Context, source store.Component) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -76,6 +77,28 @@ func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
 	}
+
+	// D-0026 unit 2: route the credential through the provider selected by the
+	// component config. The resolved static value becomes the token the
+	// per-request Authorization snapshot reads. A config without a discriminator
+	// selects the static provider, which yields no value for the legacy "token"
+	// field — so existing components keep their current behavior.
+	provider, err := credential.Select(source.Config)
+	if err != nil {
+		return fmt.Errorf("select credential provider: %w", err)
+	}
+	res, err := provider.Resolve(ctx, source.ID, source.Config)
+	if err != nil {
+		return fmt.Errorf("resolve credential: %w", err)
+	}
+	if !res.Diagnostic.OK {
+		// Non-sensitive reason only; the credential value never enters this error.
+		return fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
+	}
+	if token, ok := res.StaticValue(); ok && token != "" {
+		cfg.Token = token
+	}
+
 	a.config = cfg
 	a.connected = true
 	return nil
