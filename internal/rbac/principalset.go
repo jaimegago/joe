@@ -2,7 +2,7 @@ package rbac
 
 // PrincipalSet is the authorization subject evaluated by the policy engine: a
 // set of principals assessed together under union-of-grants semantics. A
-// decision is permitted if ANY member holds a matching grant for the source's
+// decision is permitted if ANY member holds a matching grant for the component's
 // zone and the requested action. The model is additive / allow-only — there
 // are no deny rules, consistent with the single-principal model it replaces
 // and with Kubernetes RBAC (docs/joe-identity-design.md §2.7).

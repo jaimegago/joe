@@ -5,7 +5,7 @@ import (
 	"log/slog"
 )
 
-// PolicyEngine answers "can this principal perform this action on this source?"
+// PolicyEngine answers "can this principal perform this action on this component?"
 // It is backed by the RBAC repository and uses zone assignments + policy tables.
 type PolicyEngine struct {
 	repo Repository
@@ -25,7 +25,7 @@ func NewPolicyEngine(repo Repository) *PolicyEngine {
 type Decision struct {
 	// Allowed is the same boolean IsAllowed returns.
 	Allowed bool
-	// Zone is the source's resolved zone — "unassigned" by default, the
+	// Zone is the component's resolved zone — "unassigned" by default, the
 	// assignment's zone when set. Never empty for a real decision.
 	Zone string
 	// Reason is a short machine-readable tag explaining the OUTCOME:
@@ -60,7 +60,7 @@ const (
 	// not have reached through a per-zone grant.
 	ReasonAdminCapability = "admin_capability"
 
-	// ReasonZoneNotFound: the source's resolved zone is missing from
+	// ReasonZoneNotFound: the component's resolved zone is missing from
 	// security_zones (a schema gap or a stale row).
 	ReasonZoneNotFound = "zone_not_found"
 
@@ -75,12 +75,12 @@ const (
 )
 
 // IsAllowed returns true if ANY principal in the set may perform action on
-// sourceID — the union-of-grants decision (additive / allow-only). A size-1
+// componentID — the union-of-grants decision (additive / allow-only). A size-1
 // set reproduces the previous single-principal decision exactly, which is the
 // Phase B regression contract (docs/joe-identity-design.md §2.7). Thin
 // wrapper over Decide.
-func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, sourceID string, action Action) bool {
-	return e.Decide(ctx, principals, sourceID, action).Allowed
+func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, componentID string, action Action) bool {
+	return e.Decide(ctx, principals, componentID, action).Allowed
 }
 
 // Decide is the full-fidelity decision call: returns the same outcome as
@@ -89,7 +89,7 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, s
 // reached (Phase F, docs/joe-identity-design.md §2.6).
 //
 // Decision path:
-//  1. Resolve the source's zone (default: "unassigned" if no assignment) —
+//  1. Resolve the component's zone (default: "unassigned" if no assignment) —
 //     this is independent of the principal set, so it is computed once.
 //  2. If that zone does not allow the action at all, deny outright. Phase H
 //     keeps this check ahead of the admin short-circuit: admin bypasses the
@@ -105,14 +105,14 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, s
 //     admin status of the principal, not the historical list of zones the
 //     admin once held grants on.
 //  4. Otherwise permit if any member of the set holds a policy granting the
-//     source's zone; deny if none do.
-func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sourceID string, action Action) Decision {
-	// Resolve source zone (independent of the principal set).
+//     component's zone; deny if none do.
+func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, componentID string, action Action) Decision {
+	// Resolve component zone (independent of the principal set).
 	zoneID := "unassigned"
-	assignment, err := e.repo.GetAssignment(ctx, sourceID)
+	assignment, err := e.repo.GetAssignment(ctx, componentID)
 	if err != nil {
 		slog.Warn("rbac: failed to get zone assignment, defaulting to unassigned",
-			"component_id", sourceID, "error", err)
+			"component_id", componentID, "error", err)
 	} else if assignment != nil {
 		zoneID = assignment.ZoneID
 	}
@@ -146,7 +146,7 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 	}
 
 	// Permit if ANY principal in the set has a policy granting access to the
-	// source's zone (union of grants). A lookup failure for one member denies
+	// component's zone (union of grants). A lookup failure for one member denies
 	// only that member — the others may still grant — so we continue rather
 	// than returning. For a size-1 set this is identical to the old behaviour:
 	// the single member's failure yields an overall deny.
@@ -168,9 +168,9 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 }
 
 // HasZoneAccess answers "does ANY principal in the set hold action on
-// zoneID?" — the sourceless variant of IsAllowed (additive / allow-only,
-// same union-of-grants semantics). Used by sourceless capabilities like
-// regime declare/resolve where there is no infrastructure source to
+// zoneID?" — the componentless variant of IsAllowed (additive / allow-only,
+// same union-of-grants semantics). Used by componentless capabilities like
+// regime declare/resolve where there is no infrastructure component to
 // gate on. Does NOT consult component_zone_assignments.
 //
 // Phase G (D-0010, joe-identity-design.md §2.7 + §2.10): the function
@@ -183,11 +183,11 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, sour
 // same logged-failure semantics.
 //
 // Encoding rationale: see the §6-B finding in
-// internal/store/migrations/012_regime_rbac.up.sql. Grafting sourceless
+// internal/store/migrations/012_regime_rbac.up.sql. Grafting componentless
 // capabilities onto the IsAllowed path would either require sentinel
 // rows in `components` (creates incidental coupling) or onto the
 // 'unassigned' zone (creates incidental over-privilege across every
-// unassigned source). HasZoneAccess reuses the existing zone+policy
+// unassigned component). HasZoneAccess reuses the existing zone+policy
 // data unchanged and adds no new tables.
 func (e *PolicyEngine) HasZoneAccess(ctx context.Context, principals PrincipalSet, zoneID string, action Action) bool {
 	zone, err := e.repo.GetZone(ctx, zoneID)

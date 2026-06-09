@@ -67,7 +67,7 @@ func TestDeleteZone_RestrictWhenAssigned(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO components (id, type, name, config) VALUES ('src-1','k8s','Src','{}')`); err != nil {
-		t.Fatalf("seed source: %v", err)
+		t.Fatalf("seed component: %v", err)
 	}
 	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
 		ComponentID: "src-1", ZoneID: "z1", AssignedBy: "a",

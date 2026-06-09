@@ -38,7 +38,7 @@ type adminPrincipalLifecycle interface {
 // adminHandler exposes RBAC management endpoints.
 //
 // Every route under /api/v1/admin/ mutates or exposes authorization state
-// (zones, policies, source-zone assignments, the unassigned-source roster),
+// (zones, policies, component-zone assignments, the unassigned-component roster),
 // so EVERY handler below does two things:
 //
 //  1. Admin-gates via server.requireAdmin — the same gate Stream G applied
@@ -228,7 +228,7 @@ func (h *adminHandler) createZone(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// --- Source zone assignment endpoints ---
+// --- Component zone assignment endpoints ---
 
 func (h *adminHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
@@ -236,10 +236,10 @@ func (h *adminHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 	}
 	assignments, err := h.repo.ListAssignments(r.Context())
 	if err != nil {
-		writeInternalError(w, err, "list source-zone assignments")
+		writeInternalError(w, err, "list component-zone assignments")
 		return
 	}
-	// Read-class audit (fail-open): the source→zone map is authz topology.
+	// Read-class audit (fail-open): the component→zone map is authz topology.
 	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminComponentZoneRead, audit.DecisionAllow,
 		"admin_read", audit.Details{Target: "component_zones"}, "admin:component_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -254,18 +254,18 @@ func (h *adminHandler) assignComponentZone(w http.ResponseWriter, r *http.Reques
 	}
 	var a rbac.ComponentZoneAssignment
 	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
-		writeBadRequest(w, err, "assign source zone", "invalid request body")
+		writeBadRequest(w, err, "assign component zone", "invalid request body")
 		return
 	}
 	if a.ComponentID == "" || a.ZoneID == "" || a.AssignedBy == "" {
-		writeBadRequest(w, nil, "assign source zone", "component_id, zone_id, and assigned_by are required")
+		writeBadRequest(w, nil, "assign component zone", "component_id, zone_id, and assigned_by are required")
 		return
 	}
 
 	// The repository captures the prior assignment and writes the audit row in
 	// the same transaction as the upsert; the handler threads the actor down.
 	if err := h.repo.UpsertAssignment(r.Context(), a, h.actor(r)); err != nil {
-		writeInternalError(w, err, "assign source zone")
+		writeInternalError(w, err, "assign component zone")
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -360,7 +360,7 @@ func (h *adminHandler) listUnassigned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Read-class audit (fail-open): the unassigned roster is part of the
-	// source→zone authz map; recorded under the same component_zone.read verb.
+	// component→zone authz map; recorded under the same component_zone.read verb.
 	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminComponentZoneRead, audit.DecisionAllow,
 		"admin_read", audit.Details{Target: "unassigned"}, "admin:component_zone.read")
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -433,7 +433,7 @@ func (h *adminHandler) updateZone(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteZone deletes the zone identified by {id}. Referencing rbac_policies
-// rows cascade away; a zone still referenced by a source assignment is refused
+// rows cascade away; a zone still referenced by a component assignment is refused
 // with 409 (rbac.ErrZoneInUse from the RESTRICT foreign key). The repository
 // writes the zone.delete audit row in the same transaction.
 func (h *adminHandler) deleteZone(w http.ResponseWriter, r *http.Request) {
@@ -448,7 +448,7 @@ func (h *adminHandler) deleteZone(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo.DeleteZone(r.Context(), id, h.actor(r)); err != nil {
 		if errors.Is(err, rbac.ErrZoneInUse) {
 			writeError(w, http.StatusConflict, errorCodeConflict,
-				fmt.Sprintf("zone %q still has source assignments; unassign those components before deleting", id))
+				fmt.Sprintf("zone %q still has component assignments; unassign those components before deleting", id))
 			return
 		}
 		writeInternalError(w, err, "delete zone")
@@ -457,32 +457,32 @@ func (h *adminHandler) deleteZone(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "id": id})
 }
 
-// --- Source-zone unassign endpoint (Stage 3) ---
+// --- Component-zone unassign endpoint (Stage 3) ---
 
-// unassignComponentZone removes the source→zone assignment for {componentID}. After
-// removal the source falls back to the policy engine's default unassigned
+// unassignComponentZone removes the component→zone assignment for {componentID}. After
+// removal the component falls back to the policy engine's default unassigned
 // behaviour. The repository writes the component_zone.unassign audit row in the
 // same transaction; the handler threads the acting principal down.
 func (h *adminHandler) unassignComponentZone(w http.ResponseWriter, r *http.Request) {
 	if _, gated := h.server.requireAdmin(w, r); gated {
 		return
 	}
-	sourceID := r.PathValue("componentID")
-	if sourceID == "" {
-		writeBadRequest(w, nil, "unassign source zone", "source id is required")
+	componentID := r.PathValue("componentID")
+	if componentID == "" {
+		writeBadRequest(w, nil, "unassign component zone", "component id is required")
 		return
 	}
-	removed, err := h.repo.DeleteAssignment(r.Context(), sourceID, h.actor(r))
+	removed, err := h.repo.DeleteAssignment(r.Context(), componentID, h.actor(r))
 	if err != nil {
-		writeInternalError(w, err, "unassign source zone")
+		writeInternalError(w, err, "unassign component zone")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"component_id": sourceID,
+		"component_id": componentID,
 		"removed":      removed,
-		// After unassignment the source falls back to the default unassigned
+		// After unassignment the component falls back to the default unassigned
 		// behaviour of the policy engine.
-		"note": "source now falls back to the default unassigned zone",
+		"note": "component now falls back to the default unassigned zone",
 	})
 }
 

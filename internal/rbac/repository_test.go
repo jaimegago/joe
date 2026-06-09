@@ -145,12 +145,12 @@ func TestSQLRepository_GetAssignment_NotFound(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	got, err := repo.GetAssignment(ctx, "no-such-source")
+	got, err := repo.GetAssignment(ctx, "no-such-component")
 	if err != nil {
 		t.Fatalf("GetAssignment: %v", err)
 	}
 	if got != nil {
-		t.Errorf("expected nil for unassigned source, got %+v", got)
+		t.Errorf("expected nil for unassigned component, got %+v", got)
 	}
 }
 
@@ -420,20 +420,20 @@ func TestSQLRepository_ListAssignments_ScanRows(t *testing.T) {
 	ctx := context.Background()
 
 	components := []struct {
-		sourceID string
-		zoneID   string
+		componentID string
+		zoneID      string
 	}{
 		{"k8s-prod", "prod-readonly"},
 		{"k8s-dev", "dev-full"},
 	}
 	for _, s := range components {
 		if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
-			ComponentID: s.sourceID,
+			ComponentID: s.componentID,
 			ZoneID:      s.zoneID,
 			AssignedBy:  "admin",
 			Reason:      "test",
 		}, "test"); err != nil {
-			t.Fatalf("UpsertAssignment %s: %v", s.sourceID, err)
+			t.Fatalf("UpsertAssignment %s: %v", s.componentID, err)
 		}
 	}
 
@@ -557,7 +557,7 @@ func TestSQLRepository_DeletePolicy_NonExistentID(t *testing.T) {
 }
 
 // TestSQLRepository_ListUnassignedComponentIDs_AllAssigned verifies the empty-result
-// path of ListUnassignedComponentIDs when every source has been assigned.
+// path of ListUnassignedComponentIDs when every component has been assigned.
 func TestSQLRepository_ListUnassignedComponentIDs_AllAssigned(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")

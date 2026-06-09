@@ -65,7 +65,7 @@ func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handl
 //
 // This middleware is now a pass-through. It is kept (a) so existing test
 // harnesses that wire it in continue to compile, and (b) as a documented seam
-// for a future coarse "authenticated principal required on source-keyed paths"
+// for a future coarse "authenticated principal required on component-keyed paths"
 // belt-and-suspenders — EdgeAuth already rejects unauthenticated protected
 // paths, so requiring a principal here would only be redundant defence. The
 // engine argument is retained so the call sites are unchanged.
