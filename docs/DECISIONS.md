@@ -10,6 +10,43 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0026 — Credential provider abstraction (Resolve/Probe/Describe, two-half resolved-credential type, launch-vs-deferred split)
+
+- Date: 2026-06-09
+- Status: ACCEPTED (design). Launch scope buildable without an Accessor refactor; not yet implemented.
+- Decision: Adopt a credential-provider abstraction in which "which credential" is
+  a property of the target component, resolved and applied at the guarded accessor
+  seam, keyed strictly on the authz'd componentID with no ambient fallback. Full
+  record in `docs/decisions/D-0026-credential-provider-abstraction.md`. In brief:
+  resolution returns one typed result with two structurally separated halves — a
+  serializable diagnostic half (component identity, provider kind, audience, expiry,
+  stage reached, non-sensitive reason) and a non-serializable credential half (a
+  means/source, never a value). A four-stage enum (provider-selected → mint-attempted
+  → mint-succeeded → connectivity-probed) is the diagnostic spine, with
+  mint-succeeded-without-probe a legal lazy-connectivity terminal state. The provider
+  exposes exactly three operations — Resolve / Probe / Describe — and deliberately
+  excludes Refresh/Rotate and any store/seam dependency in its signature. Launch ships
+  two providers (static/env-var and kubeconfig-exec) invoked inside adapter Connect
+  with no Accessor signature change; the resolve-value-at-the-seam model (and its
+  store.ComponentRepository-on-Accessor dependency), ambient-workload-identity,
+  rotation orchestration, per-zone scoping, and mutation-credential separation are
+  designed-for but deferred.
+- Basis: three read-only investigations against the live tree —
+  credential-handling-current-state.md, adapter-credential-refresh-tolerance.md,
+  credential-design-assumptions-check.md — cited file:line throughout the ADR and
+  re-verified against the tree on landing (one citation corrected: networking.go:20
+  → networking.go:13).
+- Supersedes: nothing. Builds on the security-architecture-direction record §9 (the
+  one credential commitment already made) and decides the parts §9 deferred.
+- Documented gaps (tracked separately as issues/backlog, dispositions preserved):
+  kafka parses-but-never-applies SASL auth (security finding, arguably
+  fix-before-launch); two live credential leaks — /api/v1/components returns decrypted
+  Config + mongodb URI interpolated into a ping error (T3, arguably fix-before-launch);
+  azure Connect skeleton (deferred, tied to ambient-WI); component-management paths
+  bypass the permit/guard seam (existing authz gap, flagged as issue).
+
+---
+
 ## D-0025 — Captain transfer swap (detach old + attach new) is a single atomic transaction (transfer-half of the no-auto-lapse captaincy model)
 
 - Date: 2026-06-08
