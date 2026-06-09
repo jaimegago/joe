@@ -261,6 +261,16 @@ const (
 	// registry (GET /api/v1/admin/principals) — the Users page query.
 	// Read-class (fail-open), so it is in isFailOpen below.
 	ActionAdminPrincipalRead = "principal.read"
+	// ActionAdminCredentialStatusRead records an admin reading the
+	// per-component credential authz/connectivity status surface (D-0026
+	// unit 3): the passive Describe listing (GET
+	// /api/v1/admin/credential-status), the explicit connectivity Probe
+	// (POST .../{componentID}/probe), and the deliberate captured-stderr
+	// fetch (POST .../{componentID}/probe/stderr). All three are diagnostic
+	// reads of credential health — they never mutate Joe's authz config and
+	// the credential half never serializes — so all are read-class
+	// (fail-open) and share this one verb. It is in isFailOpen below.
+	ActionAdminCredentialStatusRead = "credential_status.read"
 
 	// --- Identity Stage 1 admin-mutation action verbs ---
 	//
@@ -488,7 +498,8 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 // purposes of the §4 failure split. Read-class: the infra read verbs "read"
 // and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
 // D-0013 admin-surface read verbs (zone.read, policy.read, component_zone.read,
-// admin.read, principal.read).
+// admin.read, principal.read) and the D-0026 credential-status read verb
+// (credential_status.read).
 // Mutate-class: everything else, including all transition verbs, the admin
 // mutations (zone.create, zone.update, zone.delete, policy.grant,
 // policy.revoke, component_zone.assign, component_zone.unassign, admin.grant,
@@ -506,7 +517,7 @@ func isFailOpen(action string) bool {
 	switch action {
 	case "read", "query",
 		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
-		ActionAdminAdminRead, ActionAdminPrincipalRead:
+		ActionAdminAdminRead, ActionAdminPrincipalRead, ActionAdminCredentialStatusRead:
 		return true
 	default:
 		return false
