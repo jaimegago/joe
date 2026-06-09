@@ -37,7 +37,7 @@ func TestIdentityMiddleware_InjectsContext(t *testing.T) {
 
 // TestEnforcementMiddleware_Passthrough proves the Phase E demotion: the
 // middleware no longer evaluates per-zone IsAllowed and instead passes every
-// request through, regardless of source path, HTTP method, or engine
+// request through, regardless of component path, HTTP method, or engine
 // configuration. Per-zone enforcement now lives EXCLUSIVELY in the guarded
 // accessor (internal/access), which both HTTP handlers and the in-process
 // agent-loop reach. The Phase E equivalence test in internal/api proves the
@@ -58,12 +58,12 @@ func TestEnforcementMiddleware_Passthrough(t *testing.T) {
 		method string
 		path   string
 	}{
-		{"non-source path with engine", engine, "GET", "/api/v1/status"},
-		{"source path GET with engine", engine, "GET", "/api/v1/k8s/k8s-prod/resources"},
-		{"source path POST with engine", engine, "POST", "/api/v1/k8s/k8s-prod/resources"},
-		{"source path DELETE with engine", engine, "DELETE", "/api/v1/k8s/k8s-prod/resources/pod/default/p"},
-		{"non-source path nil engine", nil, "GET", "/api/v1/status"},
-		{"source path GET nil engine", nil, "GET", "/api/v1/k8s/k8s-prod/resources"},
+		{"non-component path with engine", engine, "GET", "/api/v1/status"},
+		{"component path GET with engine", engine, "GET", "/api/v1/k8s/k8s-prod/resources"},
+		{"component path POST with engine", engine, "POST", "/api/v1/k8s/k8s-prod/resources"},
+		{"component path DELETE with engine", engine, "DELETE", "/api/v1/k8s/k8s-prod/resources/pod/default/p"},
+		{"non-component path nil engine", nil, "GET", "/api/v1/status"},
+		{"component path GET nil engine", nil, "GET", "/api/v1/k8s/k8s-prod/resources"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

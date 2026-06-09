@@ -4,7 +4,7 @@ package rbac
 
 import "time"
 
-// Action represents an operation that can be performed on an infrastructure source.
+// Action represents an operation that can be performed on an infrastructure component.
 type Action string
 
 const (
@@ -20,14 +20,14 @@ const (
 	// ActionDelete covers destructive operations (T3 tier tools).
 	ActionDelete Action = "delete"
 
-	// ActionDeclareIncident is the sourceless capability to declare an
+	// ActionDeclareIncident is the componentless capability to declare an
 	// incident regime (§R2/§R6). Phase 1 Change 5. Granted via a policy
 	// entry binding a principal to the seeded 'regime-control' zone;
 	// evaluated by PolicyEngine.HasZoneAccess, NOT IsAllowed. See §6-B
 	// finding in migrations/012_regime_rbac.up.sql.
 	ActionDeclareIncident Action = "declare_incident"
 
-	// ActionResolveIncident is the sourceless capability to resolve the
+	// ActionResolveIncident is the componentless capability to resolve the
 	// incident regime (§R4/§R6). Same encoding as ActionDeclareIncident.
 	ActionResolveIncident Action = "resolve_incident"
 )
@@ -52,7 +52,7 @@ func (z Zone) Allows(a Action) bool {
 	return false
 }
 
-// ComponentZoneAssignment records which zone a source belongs to.
+// ComponentZoneAssignment records which zone a component belongs to.
 type ComponentZoneAssignment struct {
 	ComponentID string    `json:"component_id"   db:"component_id"`
 	ZoneID      string    `json:"zone_id"     db:"zone_id"`

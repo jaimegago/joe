@@ -13,12 +13,12 @@ import (
 )
 
 // ErrZoneInUse is returned by DeleteZone when the zone still has at least one
-// source assigned to it (component_zone_assignments.zone_id is ON DELETE
+// component assigned to it (component_zone_assignments.zone_id is ON DELETE
 // RESTRICT). It is a distinguishable sentinel so a caller — the HTTP handler
 // in a later stage — can map it to a 409 Conflict rather than a 500. The
 // referencing rbac_policies rows, by contrast, are ON DELETE CASCADE and are
 // removed silently with the zone; only the RESTRICT case blocks the delete.
-var ErrZoneInUse = errors.New("rbac: zone has source assignments and cannot be deleted")
+var ErrZoneInUse = errors.New("rbac: zone has component assignments and cannot be deleted")
 
 // Repository provides read/write access to RBAC data.
 //
@@ -44,17 +44,17 @@ type Repository interface {
 	// that id exists.
 	UpdateZone(ctx context.Context, z Zone, actor string) (*Zone, error)
 	// DeleteZone deletes the zone with the given id. Referencing rbac_policies
-	// rows cascade away; if any source is still assigned to the zone the delete
+	// rows cascade away; if any component is still assigned to the zone the delete
 	// is refused with ErrZoneInUse (the RESTRICT foreign key).
 	DeleteZone(ctx context.Context, id string, actor string) error
 
-	// Source → Zone assignments
+	// Component → Zone assignments
 	ListAssignments(ctx context.Context) ([]ComponentZoneAssignment, error)
-	GetAssignment(ctx context.Context, sourceID string) (*ComponentZoneAssignment, error)
+	GetAssignment(ctx context.Context, componentID string) (*ComponentZoneAssignment, error)
 	UpsertAssignment(ctx context.Context, a ComponentZoneAssignment, actor string) error
-	// DeleteAssignment removes a source→zone assignment by source id. Returns
-	// the number of rows removed (0 if the source had no assignment).
-	DeleteAssignment(ctx context.Context, sourceID string, actor string) (int64, error)
+	// DeleteAssignment removes a component→zone assignment by component id. Returns
+	// the number of rows removed (0 if the component had no assignment).
+	DeleteAssignment(ctx context.Context, componentID string, actor string) (int64, error)
 
 	// Policies
 	ListPolicies(ctx context.Context) ([]Policy, error)
@@ -314,7 +314,7 @@ func (r *SQLRepository) UpdateZone(ctx context.Context, z Zone, actor string) (*
 	return updated, nil
 }
 
-// DeleteZone deletes the zone with the given id. If any source is still
+// DeleteZone deletes the zone with the given id. If any component is still
 // assigned to the zone (component_zone_assignments.zone_id ON DELETE RESTRICT) the
 // delete is refused with ErrZoneInUse rather than relying on the driver's
 // foreign-key error text. Referencing rbac_policies rows are ON DELETE CASCADE
@@ -368,7 +368,7 @@ func getZoneOn(ctx context.Context, exec execQuerier, driver, id string) (*Zone,
 	return &z, nil
 }
 
-// --- Source zone assignments ---
+// --- Component zone assignments ---
 
 func (r *SQLRepository) ListAssignments(ctx context.Context) ([]ComponentZoneAssignment, error) {
 	rows, err := r.db.QueryContext(ctx, `
@@ -392,12 +392,12 @@ func (r *SQLRepository) ListAssignments(ctx context.Context) ([]ComponentZoneAss
 	return out, rows.Err()
 }
 
-func (r *SQLRepository) GetAssignment(ctx context.Context, sourceID string) (*ComponentZoneAssignment, error) {
+func (r *SQLRepository) GetAssignment(ctx context.Context, componentID string) (*ComponentZoneAssignment, error) {
 	var a ComponentZoneAssignment
 	var assignedAtStr string
 	err := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
 		SELECT component_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM component_zone_assignments WHERE component_id = ?`), sourceID).
+		FROM component_zone_assignments WHERE component_id = ?`), componentID).
 		Scan(&a.ComponentID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -439,18 +439,18 @@ func (r *SQLRepository) UpsertAssignment(ctx context.Context, a ComponentZoneAss
 	})
 }
 
-// DeleteAssignment removes a source→zone assignment by source id. Returns the
-// number of rows removed (0 if the source had no assignment). The prior
+// DeleteAssignment removes a component→zone assignment by component id. Returns the
+// number of rows removed (0 if the component had no assignment). The prior
 // assignment is captured in-transaction for the audit Before.
-func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, actor string) (int64, error) {
+func (r *SQLRepository) DeleteAssignment(ctx context.Context, componentID string, actor string) (int64, error) {
 	var removed int64
 	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
-		before, gerr := getAssignmentOn(ctx, exec, r.driver, sourceID)
+		before, gerr := getAssignmentOn(ctx, exec, r.driver, componentID)
 		if gerr != nil {
 			return audit.Event{}, gerr
 		}
 		res, derr := exec.ExecContext(ctx, store.Rebind(r.driver,
-			`DELETE FROM component_zone_assignments WHERE component_id = ?`), sourceID)
+			`DELETE FROM component_zone_assignments WHERE component_id = ?`), componentID)
 		if derr != nil {
 			return audit.Event{}, fmt.Errorf("delete assignment: %w", derr)
 		}
@@ -459,7 +459,7 @@ func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, a
 			return audit.Event{}, fmt.Errorf("rows affected: %w", aerr)
 		}
 		removed = n
-		d := audit.Details{Target: "component_zone:" + sourceID}
+		d := audit.Details{Target: "component_zone:" + componentID}
 		if before != nil {
 			d.Before = *before
 		}
@@ -471,15 +471,15 @@ func (r *SQLRepository) DeleteAssignment(ctx context.Context, sourceID string, a
 	return removed, nil
 }
 
-// getAssignmentOn reads a single source-zone assignment against the supplied
+// getAssignmentOn reads a single component-zone assignment against the supplied
 // execQuerier so the before-state read runs inside the mutation's transaction.
-// Returns (nil, nil) when no assignment exists for the source.
-func getAssignmentOn(ctx context.Context, exec execQuerier, driver, sourceID string) (*ComponentZoneAssignment, error) {
+// Returns (nil, nil) when no assignment exists for the component.
+func getAssignmentOn(ctx context.Context, exec execQuerier, driver, componentID string) (*ComponentZoneAssignment, error) {
 	var a ComponentZoneAssignment
 	var assignedAtStr string
 	err := exec.QueryRowContext(ctx, store.Rebind(driver, `
 		SELECT component_id, zone_id, assigned_by, COALESCE(reason,''), assigned_at
-		FROM component_zone_assignments WHERE component_id = ?`), sourceID).
+		FROM component_zone_assignments WHERE component_id = ?`), componentID).
 		Scan(&a.ComponentID, &a.ZoneID, &a.AssignedBy, &a.Reason, &assignedAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -721,7 +721,7 @@ func (r *SQLRepository) ListUnassignedComponentIDs(ctx context.Context) ([]strin
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan source id: %w", err)
+			return nil, fmt.Errorf("scan component id: %w", err)
 		}
 		out = append(out, id)
 	}

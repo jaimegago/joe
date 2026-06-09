@@ -140,7 +140,7 @@ func openTestDB(t *testing.T) *sql.DB {
 		INSERT INTO security_zones VALUES ('dev-full',     'Development Full',   '',   '["read","query","mutate","delete"]',  '2026-01-01T00:00:00Z');
 		INSERT INTO security_zones VALUES ('unassigned',   'Unassigned',         '',   '["read"]',                           '2026-01-01T00:00:00Z');
 
-		-- seed a source
+		-- seed a component
 		INSERT INTO components VALUES ('k8s-prod', 'Production K8s');
 		INSERT INTO components VALUES ('k8s-dev',  'Dev K8s');
 	`)
@@ -166,13 +166,13 @@ func TestPolicyEngine_IsAllowed_ReadOnZone(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionRead) {
-		t.Error("alice should be able to read prod-readonly source")
+		t.Error("alice should be able to read prod-readonly component")
 	}
 	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionQuery) {
-		t.Error("alice should be able to query prod-readonly source")
+		t.Error("alice should be able to query prod-readonly component")
 	}
 	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "k8s-prod", rbac.ActionMutate) {
-		t.Error("alice should NOT be able to mutate prod-readonly source")
+		t.Error("alice should NOT be able to mutate prod-readonly component")
 	}
 }
 
@@ -189,10 +189,10 @@ func TestPolicyEngine_IsAllowed_WriteZone(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("bob"), "k8s-prod", rbac.ActionMutate) {
-		t.Error("bob should be able to mutate prod-write source")
+		t.Error("bob should be able to mutate prod-write component")
 	}
 	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("bob"), "k8s-prod", rbac.ActionDelete) {
-		t.Error("bob should NOT be able to delete from prod-write source")
+		t.Error("bob should NOT be able to delete from prod-write component")
 	}
 }
 
@@ -207,10 +207,10 @@ func TestPolicyEngine_IsAllowed_Unassigned(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	if !engine.IsAllowed(ctx, rbac.NewPrincipalSet("charlie"), "k8s-dev", rbac.ActionRead) {
-		t.Error("charlie should be able to read unassigned source")
+		t.Error("charlie should be able to read unassigned component")
 	}
 	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("charlie"), "k8s-dev", rbac.ActionMutate) {
-		t.Error("charlie should NOT be able to mutate unassigned source")
+		t.Error("charlie should NOT be able to mutate unassigned component")
 	}
 }
 
@@ -250,7 +250,7 @@ func TestPolicyEngine_IsAllowed_DevFull(t *testing.T) {
 	}
 }
 
-// TestPolicyEngine_IsAllowed_ZoneNotFound covers the path where a source is
+// TestPolicyEngine_IsAllowed_ZoneNotFound covers the path where a component is
 // assigned to a zone ID that does not exist in the security_zones table. The
 // engine must deny access (zone == nil branch in IsAllowed).
 func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
@@ -258,16 +258,16 @@ func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	// Insert a source and a direct assignment to a zone that does not exist.
-	_, err := db.Exec(`INSERT INTO components VALUES ('orphan-src', 'Orphan Source')`)
+	// Insert a component and a direct assignment to a zone that does not exist.
+	_, err := db.Exec(`INSERT INTO components VALUES ('orphan-cmp', 'Orphan Component')`)
 	if err != nil {
-		t.Fatalf("insert source: %v", err)
+		t.Fatalf("insert component: %v", err)
 	}
 	// Bypass the FK constraint (SQLite does not enforce FKs by default) to put
-	// the source into a non-existent zone.
+	// the component into a non-existent zone.
 	_, err = db.Exec(`
 		INSERT INTO component_zone_assignments (component_id, zone_id, assigned_by, reason, assigned_at)
-		VALUES ('orphan-src', 'ghost-zone', 'test', '', '2026-01-01T00:00:00Z')`)
+		VALUES ('orphan-cmp', 'ghost-zone', 'test', '', '2026-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatalf("insert assignment: %v", err)
 	}
@@ -283,8 +283,8 @@ func TestPolicyEngine_IsAllowed_ZoneNotFound(t *testing.T) {
 
 	// Even though frank has a policy for ghost-zone, the zone doesn't exist so
 	// GetZone returns nil and IsAllowed must deny.
-	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("frank"), "orphan-src", rbac.ActionRead) {
-		t.Error("expected denial when source zone does not exist in security_zones")
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("frank"), "orphan-cmp", rbac.ActionRead) {
+		t.Error("expected denial when component zone does not exist in security_zones")
 	}
 }
 
@@ -325,7 +325,7 @@ func TestPolicyEngine_IsAllowed_GetAssignmentError(t *testing.T) {
 
 	// GetAssignment errors → engine logs warning + falls back to unassigned zone.
 	// GetZone("unassigned") returns nil → deny.
-	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-source", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-component", rbac.ActionRead) {
 		t.Error("expected denial when GetAssignment errors and zone lookup returns nil")
 	}
 }
@@ -336,7 +336,7 @@ func TestPolicyEngine_IsAllowed_ListPoliciesError(t *testing.T) {
 	ctx := context.Background()
 
 	repo := &errRepository{
-		// No assignment error — source defaults to unassigned.
+		// No assignment error — component defaults to unassigned.
 		getAssignmentResult: nil,
 		// Zone exists and allows the action.
 		getZoneResult: &rbac.Zone{
@@ -350,7 +350,7 @@ func TestPolicyEngine_IsAllowed_ListPoliciesError(t *testing.T) {
 
 	engine := rbac.NewPolicyEngine(repo)
 
-	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-source", rbac.ActionRead) {
+	if engine.IsAllowed(ctx, rbac.NewPrincipalSet("alice"), "some-component", rbac.ActionRead) {
 		t.Error("expected denial when ListPoliciesForPrincipal errors")
 	}
 }
@@ -416,15 +416,15 @@ func TestPolicyEngine_IsAllowed_SetUnion(t *testing.T) {
 	}
 }
 
-// seedRegimeControlZone adds the sourceless regime-control zone (which
+// seedRegimeControlZone adds the componentless regime-control zone (which
 // migration 012 creates in production) to openTestDB's bare schema.
 // The zone allows declare_incident and resolve_incident only — these
-// are sourceless capabilities used by the regime/captain path that
+// are componentless capabilities used by the regime/captain path that
 // HasZoneAccess gates.
 func seedRegimeControlZone(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO security_zones VALUES (
-		'regime-control','Regime Control','sourceless declare/resolve',
+		'regime-control','Regime Control','componentless declare/resolve',
 		'["declare_incident","resolve_incident"]','2026-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatalf("seed regime-control: %v", err)
@@ -432,7 +432,7 @@ func seedRegimeControlZone(t *testing.T, db *sql.DB) {
 }
 
 // TestPolicyEngine_HasZoneAccess_SetSingleMember is the Phase G size-1
-// behavioural contract for the sourceless authorization path: a set
+// behavioural contract for the componentless authorization path: a set
 // whose single member holds the zone grant is allowed; a set whose
 // single member lacks the grant is denied. This is the production case
 // — incident declare/resolve build a one-element set from the caller's
@@ -461,8 +461,8 @@ func TestPolicyEngine_HasZoneAccess_SetSingleMember(t *testing.T) {
 // holds the grant, denies if none do, denies the empty set, and stays
 // bounded by the zone's allowed actions (no action_not_in_zone widening
 // via union). Mirrors the equivalent test for IsAllowed so the
-// sourceless path is on the same multi-principal footing as the
-// source-keyed path (D-0010, §2.7 + §2.10).
+// componentless path is on the same multi-principal footing as the
+// component-keyed path (D-0010, §2.7 + §2.10).
 func TestPolicyEngine_HasZoneAccess_SetUnion(t *testing.T) {
 	db := openTestDB(t)
 	seedRegimeControlZone(t, db)
@@ -564,7 +564,7 @@ func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
 	repo := rbac.NewRepository(db, "sqlite")
 	ctx := context.Background()
 
-	// Pre-seed every source onto a distinct zone (all four are seeded by
+	// Pre-seed every component onto a distinct zone (all four are seeded by
 	// openTestDB).
 	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-prod", ZoneID: "prod-write", AssignedBy: "test"}, "test")
 	_ = repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{ComponentID: "k8s-dev", ZoneID: "dev-full", AssignedBy: "test"}, "test")
@@ -576,9 +576,9 @@ func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
 	engine := rbac.NewPolicyEngine(repo)
 
 	cases := []struct {
-		source string
-		action rbac.Action
-		want   bool // bounded by zone's allowed_actions
+		component string
+		action    rbac.Action
+		want      bool // bounded by zone's allowed_actions
 	}{
 		// prod-write allows read/query/mutate but not delete.
 		{"k8s-prod", rbac.ActionRead, true},
@@ -592,18 +592,18 @@ func TestPhaseH_AdminAllowedAcrossMultipleZonesWithoutGrants(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), c.source, c.action)
+		d := engine.Decide(ctx, rbac.NewPrincipalSet("alice"), c.component, c.action)
 		if d.Allowed != c.want {
 			t.Errorf("Phase H admin on (%s, %s): got allowed=%v reason=%q, want allowed=%v",
-				c.source, c.action, d.Allowed, d.Reason, c.want)
+				c.component, c.action, d.Allowed, d.Reason, c.want)
 		}
 		if c.want && d.Reason != rbac.ReasonAdminCapability {
 			t.Errorf("Phase H admin allow on (%s, %s): reason=%q, want %q",
-				c.source, c.action, d.Reason, rbac.ReasonAdminCapability)
+				c.component, c.action, d.Reason, rbac.ReasonAdminCapability)
 		}
 		if !c.want && d.Reason != rbac.ReasonActionNotInZone {
 			t.Errorf("Phase H admin deny on (%s, %s): reason=%q, want %q (admin must NOT widen allowed_actions)",
-				c.source, c.action, d.Reason, rbac.ReasonActionNotInZone)
+				c.component, c.action, d.Reason, rbac.ReasonActionNotInZone)
 		}
 	}
 
@@ -693,7 +693,7 @@ func TestPhaseH_AdminDecisionReasonIsDistinct(t *testing.T) {
 	}
 }
 
-// TestPhaseH_HasZoneAccessAdminCapability covers the sourceless path:
+// TestPhaseH_HasZoneAccessAdminCapability covers the componentless path:
 // the admin short-circuit applies to HasZoneAccess too, so an admin can
 // declare/resolve incidents without a regime-control grant.
 func TestPhaseH_HasZoneAccessAdminCapability(t *testing.T) {
