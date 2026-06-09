@@ -1,8 +1,9 @@
 // Package core's CoreToolsClient is the aggregate of every small *Client
-// interface the core tools depend on. Two implementations satisfy it: the HTTP
-// *client.Client (pre-Phase-E, retained for the external tests in
-// internal/tools and test/e2e), and the in-process accessor-backed client built
-// inside internal/api (the loop's Phase-E path).
+// interface the core tools depend on. It is satisfied by the in-process
+// accessor-backed client built inside internal/api (the loop's Phase-E path) —
+// the sole production implementation. (The two-binary-era HTTP *client.Client
+// no longer satisfies it; its managed-system methods were removed along with
+// the vestigial direct-HTTP surface.)
 //
 // Identity Phase E (docs/joe-identity-design.md §3): the loop's tool registry
 // is wired to an in-process accessor — there is no loopback HTTP self-call.

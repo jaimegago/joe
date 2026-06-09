@@ -2,43 +2,39 @@ package api_test
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
-	"github.com/jaimegago/joe/internal/api"
-	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
-// TestPhaseB_ContextPrincipalReachesAccessorDecision is the Phase B
-// requirement-2 proof: the principal the accessor enforces on is the one
-// IdentityMiddleware placed in the request context, NOT a constant or a
-// server/default principal.
+// TestPhaseB_ContextPrincipalReachesAccessorDecision proves the Phase B
+// requirement-2 property at the accessor seam directly: the accessor's
+// allow/deny decision tracks the principal it is handed, with a non-nil policy
+// engine and no HTTP transport involved.
 //
-// To isolate the accessor as the decision-maker, the outer HTTP
-// EnforcementMiddleware is deliberately omitted here — so the ONLY RBAC gate is
-// the accessor inside the handler. The accessor's engine is non-nil (API key
-// configured), and the request carries an injected, non-default principal in
-// its context (the value IdentityMiddleware would set). The decision must then
-// track that injected principal's grants:
-//   - "alice" (granted prod-readonly) → the accessor allows → 200.
-//   - "mallory" (no grant)            → the accessor denies → 403.
+//   - "alice" (granted prod-readonly) → the accessor allows and reaches the
+//     adapter.
+//   - "mallory" (no grant)            → the accessor denies with
+//     ErrPermissionDenied and performs no infrastructure call (the
+//     security-load-bearing deny assertion, previously the ungranted→403 case).
 //
-// This is the behavioural form of the §B "static" acceptance criterion
-// (joe-identity-phase-plan.md Phase B): a precise AST data-flow assertion is
-// brittle against Phase A's explicit-principal signature, so per the prompt we
-// prove the same property behaviourally — a context-injected principal reaches
-// the accessor's decision. A complementary lightweight static guard lives in
-// TestPhaseB_AccessorCallersDerivePrincipalFromContext below.
+// This was historically a behavioural HTTP test that drove a managed-system
+// route to reach the accessor. That route is gone; the decision is exercised
+// here directly with constructed principals — the accessor is the RBAC
+// chokepoint Phase E moved enforcement onto, so this is the authoritative place
+// to assert it. The complementary static guard
+// TestPhaseB_AccessorCallersDerivePrincipalFromContext below proves the HTTP
+// handlers feed that accessor a principal derived from the request context (the
+// transport half of the original property), so no coverage is lost.
 func TestPhaseB_ContextPrincipalReachesAccessorDecision(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
@@ -58,41 +54,18 @@ func TestPhaseB_ContextPrincipalReachesAccessorDecision(t *testing.T) {
 	registry := adapters.NewRegistry()
 	registry.Register("s-allow", apiFakeK8s{})
 
-	// Service account set ⇒ newPolicyEngine builds a non-nil engine ⇒ the
-	// accessor enforces. RBAC repo + adapters wired so the handler can resolve
-	// and call.
-	services := &core.Services{
-		Config:   &config.Config{Server: config.ServerConfig{ServiceAccounts: []config.ServiceAccount{{Name: "operator", Key: "secret"}}}},
-		Store:    sqlStore,
-		RBAC:     repo,
-		Adapters: registry,
-	}
-	srv := api.New(services)
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
+	// Non-nil policy engine ⇒ the accessor enforces, exactly as api.New wires it
+	// when a service account is configured.
+	acc := access.New(registry, nil, rbac.NewPolicyEngine(repo), nil)
 
-	// No EnforcementMiddleware: the accessor is the sole gate. The principal is
-	// injected straight into the request context (as IdentityMiddleware would),
-	// so the outcome is driven purely by what the handler reads from context and
-	// hands to the accessor.
-	call := func(principal rbac.Principal) int {
-		r := httptest.NewRequest("GET", "/api/v1/k8s/s-allow/resources?resource=pods", nil)
-		r = r.WithContext(rbac.WithPrincipal(r.Context(), principal))
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-		return w.Code
+	// alice holds the grant → allowed, reaches the adapter.
+	if _, err := acc.K8sListResources(ctx, "alice", "s-allow", "pods", ""); err != nil {
+		t.Errorf("principal alice (granted) should be allowed by the accessor, got: %v", err)
 	}
-
-	if code := call("alice"); code != http.StatusOK {
-		t.Errorf("context principal alice (granted) should be allowed by the accessor: got %d, want 200", code)
+	// mallory holds no grant → denied with ErrPermissionDenied; no infra call.
+	if _, err := acc.K8sListResources(ctx, "mallory", "s-allow", "pods", ""); !errors.Is(err, access.ErrPermissionDenied) {
+		t.Errorf("principal mallory (ungranted) should be denied with ErrPermissionDenied, got: %v", err)
 	}
-	if code := call("mallory"); code != http.StatusForbidden {
-		t.Errorf("context principal mallory (ungranted) should be denied by the accessor: got %d, want 403", code)
-	}
-
-	// Belt-and-suspenders: if the handler ignored context and used a constant,
-	// both calls above would return the SAME status. They differ, which proves
-	// the decision follows the context-injected principal.
 }
 
 // accessorMethodName returns the method name when call is an invocation of a

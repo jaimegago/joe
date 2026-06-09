@@ -60,13 +60,17 @@ func TestPhaseD_TwoServiceAccountsIndependentZones(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table); proves the bearer-resolved svc: principal reaches
+	// the accessor decision, not any product route.
+	srv.RegisterProbeRouteForTest(mux)
 
 	// EdgeAuth is the only auth layer; the accessor inside the handler is the
 	// only RBAC gate (no EnforcementMiddleware).
 	handler := auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, accounts...)})(mux)
 
 	call := func(bearerKey, sourceID string) int {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/"+sourceID+"/resources?resource=pods", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/"+sourceID+"/read", nil)
 		r.Header.Set("Authorization", "Bearer "+bearerKey)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -109,7 +113,7 @@ func TestPhaseD_UnknownKeyUnauthenticated(t *testing.T) {
 	srv.RegisterRoutes(mux)
 	handler := auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, accounts...)})(mux)
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources?resource=pods", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.Header.Set("Authorization", "Bearer wrong-key")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -146,10 +150,13 @@ func TestPhaseD_ZeroZoneDeniedThenGrantAllows(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table).
+	srv.RegisterProbeRouteForTest(mux)
 	handler := auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, accounts...)})(mux)
 
 	call := func() int {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s-allow/resources?resource=pods", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s-allow/read", nil)
 		r.Header.Set("Authorization", "Bearer key-ci")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -200,7 +207,7 @@ func TestPhaseD_OIDCAndServiceKeyCoexist(t *testing.T) {
 	}))
 
 	resolve := func(withCookie, withBearer bool) (int, string) {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 		if withCookie {
 			r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session.ID})
 		}
@@ -264,6 +271,9 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table).
+	srv.RegisterProbeRouteForTest(mux)
 
 	engine := rbac.NewPolicyEngine(rbacRepo)
 	handler := api.Chain(mux,
@@ -272,7 +282,7 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 	)
 
 	call := func() int {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s-infra/resources?resource=pods", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s-infra/read", nil)
 		r.Header.Set("Authorization", "Bearer "+srvCfg.LoopbackKey())
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)

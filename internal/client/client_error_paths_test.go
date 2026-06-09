@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 // errorServer returns a helper that responds with 500 + structured JSON error.
@@ -63,126 +62,6 @@ func TestGraphSummary_Error(t *testing.T) {
 	defer ts.Close()
 	c := New(ts.URL)
 	_, err := c.GraphSummary(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestK8sListResources_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.K8sListResources(context.Background(), "src", "pods", "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestK8sGetResource_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.K8sGetResource(context.Background(), "src", "pods", "default", "mypod")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestK8sGetLogs_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.K8sGetLogs(context.Background(), "src", "default", "pod", "", 0)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestGitReadFile_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.GitReadFile(context.Background(), "git-1", "README.md")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestGitDiff_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.GitDiff(context.Background(), "git-1", "main", "feature")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSEC2ListInstances_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSEC2ListInstances(context.Background(), "aws-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSEC2GetInstance_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSEC2GetInstance(context.Background(), "aws-1", "i-123")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSEKSListClusters_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSEKSListClusters(context.Background(), "aws-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSRDSListInstances_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSRDSListInstances(context.Background(), "aws-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSRDSGetInstance_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSRDSGetInstance(context.Background(), "aws-1", "db-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSVPCListVPCs_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSVPCListVPCs(context.Background(), "aws-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestAWSVPCGetVPC_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSVPCGetVPC(context.Background(), "aws-1", "vpc-1")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -315,78 +194,6 @@ func TestElasticsearchHealth_Error(t *testing.T) {
 	defer ts.Close()
 	c := New(ts.URL)
 	_, err := c.ElasticsearchHealth(context.Background(), "es-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-// --- gitops.go error paths ---
-
-func TestArgoCDGetApp_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.ArgoCDGetApp(context.Background(), "argocd-1", "my-app")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestArgoCDGetDiff_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.ArgoCDGetDiff(context.Background(), "argocd-1", "my-app")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestArgoCDGetHistory_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.ArgoCDGetHistory(context.Background(), "argocd-1", "my-app", 10)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestTerraformGetResource_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.TerraformGetResource(context.Background(), "tf-1", "aws_instance.web")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestTerraformOutputs_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.TerraformOutputs(context.Background(), "tf-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestHelmGetRelease_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.HelmGetRelease(context.Background(), "helm-1", "my-release", "default")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestHelmHistory_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.HelmHistory(context.Background(), "helm-1", "default", "my-release", 10)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -542,18 +349,6 @@ func TestECRGetImage_Error(t *testing.T) {
 	}
 }
 
-// TestAWSEKSGetCluster_Error exercises the error return from doJSON
-// (already partially covered by existing decode-error test, but adds HTTP error)
-func TestAWSEKSGetCluster_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.AWSEKSGetCluster(context.Background(), "aws-1", "my-cluster")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 // TestGraphRelated_404StructuredError exercises the 404 structured-error path
 func TestGraphRelated_404StructuredError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -591,17 +386,6 @@ func TestGraphRelated_Non200StructuredAPIError(t *testing.T) {
 	defer ts.Close()
 	c := New(ts.URL)
 	_, err := c.GraphRelated(context.Background(), "node-z", 1)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-// TestPrometheusQuery_Error exercises error path for PrometheusQuery
-func TestPrometheusQuery_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.PrometheusQuery(context.Background(), "prom-1", "up", time.Time{})
 	if err == nil {
 		t.Fatal("expected error")
 	}

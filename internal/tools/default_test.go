@@ -4,9 +4,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/llm"
+	coretools "github.com/jaimegago/joe/internal/tools/core"
 )
+
+// stubCoreClient satisfies coretools.CoreToolsClient for registry-construction
+// tests. These tests only inspect tool schemas/registration and never invoke a
+// client method, so the embedded nil interface is sufficient. (In production the
+// registry is wired to the in-process accessor client; see internal/api.)
+type stubCoreClient struct{ coretools.CoreToolsClient }
 
 // validatePropertySchema checks a single property for schema correctness.
 // Returns a non-nil error describing the exact problem so the developer knows
@@ -27,7 +33,7 @@ func validatePropertySchema(toolName, propName string, prop llm.Property) error 
 // is valid for all LLM providers.  It acts as a compile-time-level gate so
 // schema bugs are caught by `go test` rather than at runtime against a live API.
 func TestToolSchemaValidity(t *testing.T) {
-	coreClient := client.New("http://localhost:7777")
+	coreClient := stubCoreClient{}
 	registry := NewCoreRegistry(coreClient, nil)
 
 	for _, tool := range registry.GetAll() {
@@ -43,7 +49,7 @@ func TestToolSchemaValidity(t *testing.T) {
 }
 
 func TestNewCoreRegistry(t *testing.T) {
-	coreClient := client.New("http://localhost:7777")
+	coreClient := stubCoreClient{}
 	registry := NewCoreRegistry(coreClient, nil)
 
 	if registry == nil {

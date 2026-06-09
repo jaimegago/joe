@@ -58,6 +58,10 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table); this test proves a cookie-borne principal flows
+	// through EdgeAuth into the accessor decision, not any product route.
+	srv.RegisterProbeRouteForTest(mux)
 
 	// A session for the OIDC-derived principal, backed by the same store.
 	authRepo := auth.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -73,7 +77,7 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 	handler := auth.EdgeAuth(auth.EdgeConfig{Sessions: sessions, OIDCConfigured: true})(mux)
 
 	call := func(sourceID string) int {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/"+sourceID+"/resources?resource=pods", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/"+sourceID+"/read", nil)
 		r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session.ID})
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -123,7 +127,7 @@ func TestPhaseC_ExpiredSessionTreatedAsUnauthenticated(t *testing.T) {
 	handler := auth.EdgeAuth(auth.EdgeConfig{Sessions: sessions, OIDCConfigured: true})(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "expired-id"})
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)

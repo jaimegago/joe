@@ -93,13 +93,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerStatusRoutes(mux, apiPrefix)
 	s.registerGraphRoutes(mux, apiPrefix)
 	s.registerComponentRoutes(mux, apiPrefix)
-	s.registerK8sRoutes(mux, apiPrefix)
-	s.registerGitRoutes(mux, apiPrefix)
-	s.registerAWSRoutes(mux, apiPrefix)
-	s.registerObservabilityRoutes(mux, apiPrefix)
 	s.registerAlertingRoutes(mux, apiPrefix)
 	s.registerDatastoreRoutes(mux, apiPrefix)
-	s.registerGitOpsRoutes(mux, apiPrefix)
 	s.registerNetworkingRoutes(mux, apiPrefix)
 	s.registerSecurityRoutes(mux, apiPrefix)
 	s.registerClarificationRoutes(mux, apiPrefix)
@@ -114,7 +109,6 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// full/observation/safe_mode.
 	s.registerMutateStatusRoutes(mux, apiPrefix)
 	s.registerAdminRoutes(mux, apiPrefix)
-	s.registerVCSRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
 	s.registerTaskRoutes(mux, apiPrefix)
 	// Phase 2: model control plane — list/swap the single LLM contact point.
@@ -164,117 +158,6 @@ func (s *Server) registerComponentRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/components", prefix), handler.handleCreate)
 	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}", prefix), handler.handleGet)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/components/{id}", prefix), handler.handleDelete)
-}
-
-// registerK8sRoutes registers Kubernetes resource routes
-func (s *Server) registerK8sRoutes(mux *http.ServeMux, prefix string) {
-	handler := &k8sHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/resources", prefix), handler.handleListResources)
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/resources/{resource}/{namespace}/{name}", prefix), handler.handleGetResource)
-	mux.HandleFunc(fmt.Sprintf("GET %s/k8s/{componentID}/logs/{namespace}/{pod}", prefix), handler.handleGetLogs)
-}
-
-// registerGitRoutes registers Git repository routes
-func (s *Server) registerGitRoutes(mux *http.ServeMux, prefix string) {
-	handler := &gitHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/file", prefix), handler.handleReadFile)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/files", prefix), handler.handleListFiles)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/log", prefix), handler.handleLog)
-	mux.HandleFunc(fmt.Sprintf("GET %s/git/{componentID}/diff", prefix), handler.handleDiff)
-}
-
-// registerAWSRoutes registers AWS resource routes
-func (s *Server) registerAWSRoutes(mux *http.ServeMux, prefix string) {
-	handler := &awsHandler{server: s}
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/ec2/instances", prefix), handler.handleEC2ListInstances)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/ec2/instances/{instanceID}", prefix), handler.handleEC2GetInstance)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/eks/clusters", prefix), handler.handleEKSListClusters)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/eks/clusters/{clusterName}", prefix), handler.handleEKSGetCluster)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/rds/instances", prefix), handler.handleRDSListInstances)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/rds/instances/{dbInstanceID}", prefix), handler.handleRDSGetInstance)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/vpc/vpcs", prefix), handler.handleVPCListVPCs)
-	mux.HandleFunc(fmt.Sprintf("GET %s/aws/{componentID}/vpc/vpcs/{vpcID}", prefix), handler.handleVPCGetVPC)
-}
-
-// registerObservabilityRoutes registers observability query routes (Prometheus, Loki, Tempo, Jaeger, and proprietary vendors).
-func (s *Server) registerObservabilityRoutes(mux *http.ServeMux, prefix string) {
-	h := &observabilityHandler{server: s}
-	// Prometheus / Mimir
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/query", prefix), h.handlePrometheusQuery)
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/query_range", prefix), h.handlePrometheusQueryRange)
-	mux.HandleFunc(fmt.Sprintf("GET %s/prometheus/{componentID}/targets", prefix), h.handlePrometheusTargets)
-	// Loki
-	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{componentID}/query", prefix), h.handleLokiQuery)
-	mux.HandleFunc(fmt.Sprintf("GET %s/loki/{componentID}/query_range", prefix), h.handleLokiQueryRange)
-	// Tempo
-	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{componentID}/search", prefix), h.handleTempoSearch)
-	mux.HandleFunc(fmt.Sprintf("GET %s/tempo/{componentID}/traces/{traceID}", prefix), h.handleTempoGetTrace)
-	// Jaeger
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/services", prefix), h.handleJaegerServices)
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/traces", prefix), h.handleJaegerTraces)
-	mux.HandleFunc(fmt.Sprintf("GET %s/jaeger/{componentID}/traces/{traceID}", prefix), h.handleJaegerGetTrace)
-	// Datadog (Phase 6, Step 12)
-	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{componentID}/metrics", prefix), h.handleDatadogMetrics)
-	mux.HandleFunc(fmt.Sprintf("GET %s/datadog/{componentID}/logs", prefix), h.handleDatadogLogs)
-	// Splunk
-	mux.HandleFunc(fmt.Sprintf("GET %s/splunk/{componentID}/search", prefix), h.handleSplunkSearch)
-	// Dynatrace
-	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{componentID}/metrics", prefix), h.handleDynatraceMetrics)
-	mux.HandleFunc(fmt.Sprintf("GET %s/dynatrace/{componentID}/events", prefix), h.handleDynatraceEvents)
-	// New Relic
-	mux.HandleFunc(fmt.Sprintf("GET %s/newrelic/{componentID}/nrql", prefix), h.handleNewRelicNRQL)
-}
-
-// observabilityHandler delegates to Server observability methods.
-type observabilityHandler struct{ server *Server }
-
-func (h *observabilityHandler) handlePrometheusQuery(w http.ResponseWriter, r *http.Request) {
-	h.server.handlePrometheusQuery(w, r)
-}
-func (h *observabilityHandler) handlePrometheusQueryRange(w http.ResponseWriter, r *http.Request) {
-	h.server.handlePrometheusQueryRange(w, r)
-}
-func (h *observabilityHandler) handlePrometheusTargets(w http.ResponseWriter, r *http.Request) {
-	h.server.handlePrometheusTargets(w, r)
-}
-func (h *observabilityHandler) handleLokiQuery(w http.ResponseWriter, r *http.Request) {
-	h.server.handleLokiQuery(w, r)
-}
-func (h *observabilityHandler) handleLokiQueryRange(w http.ResponseWriter, r *http.Request) {
-	h.server.handleLokiQueryRange(w, r)
-}
-func (h *observabilityHandler) handleTempoSearch(w http.ResponseWriter, r *http.Request) {
-	h.server.handleTempoSearch(w, r)
-}
-func (h *observabilityHandler) handleTempoGetTrace(w http.ResponseWriter, r *http.Request) {
-	h.server.handleTempoGetTrace(w, r)
-}
-func (h *observabilityHandler) handleJaegerServices(w http.ResponseWriter, r *http.Request) {
-	h.server.handleJaegerServices(w, r)
-}
-func (h *observabilityHandler) handleJaegerTraces(w http.ResponseWriter, r *http.Request) {
-	h.server.handleJaegerTraces(w, r)
-}
-func (h *observabilityHandler) handleJaegerGetTrace(w http.ResponseWriter, r *http.Request) {
-	h.server.handleJaegerGetTrace(w, r)
-}
-func (h *observabilityHandler) handleDatadogMetrics(w http.ResponseWriter, r *http.Request) {
-	h.server.handleDatadogMetrics(w, r)
-}
-func (h *observabilityHandler) handleDatadogLogs(w http.ResponseWriter, r *http.Request) {
-	h.server.handleDatadogLogs(w, r)
-}
-func (h *observabilityHandler) handleSplunkSearch(w http.ResponseWriter, r *http.Request) {
-	h.server.handleSplunkSearch(w, r)
-}
-func (h *observabilityHandler) handleDynatraceMetrics(w http.ResponseWriter, r *http.Request) {
-	h.server.handleDynatraceMetrics(w, r)
-}
-func (h *observabilityHandler) handleDynatraceEvents(w http.ResponseWriter, r *http.Request) {
-	h.server.handleDynatraceEvents(w, r)
-}
-func (h *observabilityHandler) handleNewRelicNRQL(w http.ResponseWriter, r *http.Request) {
-	h.server.handleNewRelicNRQL(w, r)
 }
 
 // registerAlertingRoutes registers alerting query routes (Alertmanager, PagerDuty, Grafana).
@@ -444,81 +327,6 @@ func (h *sourceHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *sourceHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	h.server.handleDeleteComponent(w, r)
-}
-
-// k8sHandler handles Kubernetes resource requests
-type k8sHandler struct {
-	server *Server
-}
-
-func (h *k8sHandler) handleListResources(w http.ResponseWriter, r *http.Request) {
-	h.server.handleK8sListResources(w, r)
-}
-
-func (h *k8sHandler) handleGetResource(w http.ResponseWriter, r *http.Request) {
-	h.server.handleK8sGetResource(w, r)
-}
-
-func (h *k8sHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
-	h.server.handleK8sGetLogs(w, r)
-}
-
-// gitHandler handles Git repository requests
-type gitHandler struct {
-	server *Server
-}
-
-func (h *gitHandler) handleReadFile(w http.ResponseWriter, r *http.Request) {
-	h.server.handleGitReadFile(w, r)
-}
-
-func (h *gitHandler) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	h.server.handleGitListFiles(w, r)
-}
-
-func (h *gitHandler) handleLog(w http.ResponseWriter, r *http.Request) {
-	h.server.handleGitLog(w, r)
-}
-
-func (h *gitHandler) handleDiff(w http.ResponseWriter, r *http.Request) {
-	h.server.handleGitDiff(w, r)
-}
-
-// awsHandler handles AWS resource requests
-type awsHandler struct {
-	server *Server
-}
-
-func (h *awsHandler) handleEC2ListInstances(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSEC2ListInstances(w, r)
-}
-
-func (h *awsHandler) handleEC2GetInstance(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSEC2GetInstance(w, r)
-}
-
-func (h *awsHandler) handleEKSListClusters(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSEKSListClusters(w, r)
-}
-
-func (h *awsHandler) handleEKSGetCluster(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSEKSGetCluster(w, r)
-}
-
-func (h *awsHandler) handleRDSListInstances(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSRDSListInstances(w, r)
-}
-
-func (h *awsHandler) handleRDSGetInstance(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSRDSGetInstance(w, r)
-}
-
-func (h *awsHandler) handleVPCListVPCs(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSVPCListVPCs(w, r)
-}
-
-func (h *awsHandler) handleVPCGetVPC(w http.ResponseWriter, r *http.Request) {
-	h.server.handleAWSVPCGetVPC(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

@@ -70,14 +70,6 @@ func (a *Accessor) GitHubGetPRDiff(ctx context.Context, principal rbac.Principal
 	return ad.GetPRDiff(ctx, owner, repo, number)
 }
 
-func (a *Accessor) GitHubListPRs(ctx context.Context, principal rbac.Principal, sourceID, owner, repo, state string) ([]*githubadapter.PRInfo, error) {
-	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "github")
-	if err != nil {
-		return nil, err
-	}
-	return ad.ListPRs(ctx, owner, repo, state)
-}
-
 func (a *Accessor) GitHubPostComment(ctx context.Context, principal rbac.Principal, sourceID, owner, repo string, number int, body string) error {
 	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "github")
 	if err != nil {
@@ -112,26 +104,10 @@ func (a *Accessor) GitLabGetMRDiff(ctx context.Context, principal rbac.Principal
 	return ad.GetMRDiff(ctx, projectID, iid)
 }
 
-func (a *Accessor) GitLabListMRs(ctx context.Context, principal rbac.Principal, sourceID, projectID, state string) ([]*gitlabadapter.MRInfo, error) {
-	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "gitlab")
-	if err != nil {
-		return nil, err
-	}
-	return ad.ListMRs(ctx, projectID, state)
-}
-
 func (a *Accessor) GitLabPostNote(ctx context.Context, principal rbac.Principal, sourceID, projectID string, iid int, body string) error {
 	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "gitlab")
 	if err != nil {
 		return err
 	}
 	return ad.PostNote(ctx, projectID, iid, body)
-}
-
-func (a *Accessor) GitLabRequestChanges(ctx context.Context, principal rbac.Principal, sourceID, projectID string, iid int, body string) error {
-	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "gitlab")
-	if err != nil {
-		return err
-	}
-	return ad.RequestChanges(ctx, projectID, iid, body)
 }

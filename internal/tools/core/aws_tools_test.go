@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
-	"github.com/jaimegago/joe/internal/client"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
 )
 
@@ -215,7 +214,7 @@ func TestAWSVPCTool_Execute(t *testing.T) {
 }
 
 func TestAWSEC2Tool(t *testing.T) {
-	tool := coretools.NewAWSEC2Tool(&client.Client{})
+	tool := coretools.NewAWSEC2Tool(&fakeEC2Client{})
 
 	if tool.Name() != "aws_ec2" {
 		t.Errorf("tool name: got %q, want %q", tool.Name(), "aws_ec2")

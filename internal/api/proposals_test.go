@@ -258,22 +258,6 @@ func TestHandleRejectProposal(t *testing.T) {
 	}
 }
 
-// TestHandlePublishProposal_NotApproved verifies 422 when publishing a pending proposal.
-func TestHandlePublishProposal_NotApproved(t *testing.T) {
-	// Use publisher-enabled server so DocDrafter nil-check passes.
-	mux, proposalSvc, _ := setupProposalsWithPublisherTestServer(t)
-
-	seedProposal(t, proposalSvc, &proposals.Proposal{
-		ID: "pub-pending", Title: "Pending", TargetType: proposals.TargetConfluence, TargetID: "page-1",
-		ProposedContent: "content",
-	})
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/pub-pending/publish", nil)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("status = %d, want %d (pending proposal)", w.Code, http.StatusUnprocessableEntity)
-	}
-}
-
 // TestHandleCreateProposal_InvalidJSON verifies 400 for malformed JSON body.
 func TestHandleCreateProposal_InvalidJSON(t *testing.T) {
 	mux, _, _ := setupProposalsWithPublisherTestServer(t)
@@ -310,82 +294,6 @@ func TestHandleCreateProposal_Success(t *testing.T) {
 	})
 	if w.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
-	}
-}
-
-// TestHandlePublishProposal_ApprovedNoSource verifies publish dispatch returns 500
-// when no matching source is configured for the target type.
-func TestHandlePublishProposal_ApprovedNoSource(t *testing.T) {
-	// Use publisher-enabled server so DocDrafter nil-check passes.
-	mux, proposalSvc, _ := setupProposalsWithPublisherTestServer(t)
-
-	seedProposal(t, proposalSvc, &proposals.Proposal{
-		ID: "pub-approved", Title: "Approved", TargetType: proposals.TargetConfluence, TargetID: "page-1",
-		ProposedContent: "content",
-	})
-	if err := proposalSvc.Approve(context.Background(), "pub-approved"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	// No confluence source configured → publishToConfluence returns error → 500
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/pub-approved/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d (no source configured)", w.Code, http.StatusInternalServerError)
-	}
-}
-
-// TestHandlePublishProposal_NotionNoSource covers publishToNotion when no notion source exists.
-func TestHandlePublishProposal_NotionNoSource(t *testing.T) {
-	mux, proposalSvc, _ := setupProposalsWithPublisherTestServer(t)
-
-	seedProposal(t, proposalSvc, &proposals.Proposal{
-		ID: "notion-pub", Title: "Notion Doc", TargetType: proposals.TargetNotion, TargetID: "db-1",
-		ProposedContent: "content",
-	})
-	if err := proposalSvc.Approve(context.Background(), "notion-pub"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/notion-pub/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (no notion source)", w.Code)
-	}
-}
-
-// TestHandlePublishProposal_GitNoSource covers publishToGit when no git source exists.
-func TestHandlePublishProposal_GitNoSource(t *testing.T) {
-	mux, proposalSvc, _ := setupProposalsWithPublisherTestServer(t)
-
-	seedProposal(t, proposalSvc, &proposals.Proposal{
-		ID: "git-pub", Title: "Git Doc", TargetType: proposals.TargetGit, TargetID: "docs/README.md",
-		ProposedContent: "content",
-	})
-	if err := proposalSvc.Approve(context.Background(), "git-pub"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/git-pub/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (no git source)", w.Code)
-	}
-}
-
-// TestHandlePublishProposal_ServiceUnavailable covers the nil-service check.
-func TestHandlePublishProposal_ServiceUnavailable(t *testing.T) {
-	// DocDrafter is nil in setupProposalsTestServer.
-	mux, _, _ := setupProposalsTestServer(t)
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/some-id/publish", nil)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503", w.Code)
-	}
-}
-
-// TestHandlePublishProposal_NotFound covers the Get-error path (proposal not found).
-func TestHandlePublishProposal_NotFound(t *testing.T) {
-	mux, _, _ := setupProposalsWithPublisherTestServer(t)
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/nonexistent-id/publish", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", w.Code)
 	}
 }
 
@@ -429,12 +337,43 @@ func TestHandleRejectProposal_NotFound(t *testing.T) {
 	}
 }
 
-// --- publishToConfluence inner-loop coverage ---
+// --- publishProposalToTarget dispatch coverage ---
+//
+// The HTTP publish entry point (POST .../proposals/{id}/publish) was removed
+// with the vestigial direct-HTTP managed-system surface. The live publish path
+// is inProcessCoreClient.PublishProposal → publishProposalToTarget, so these
+// tests drive publishProposalToTarget directly (the shared dispatch helper that
+// the in-process tool path uses).
+
+// setupPublishDispatch builds the core services needed to exercise the
+// publishProposalToTarget dispatch helper and its publishTo{Confluence,Notion,
+// Git} branches without an HTTP server.
+func setupPublishDispatch(t *testing.T) (*core.Services, *knowledge.Service) {
+	t.Helper()
+
+	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := sqlStore.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	t.Cleanup(func() { sqlStore.Close() })
+
+	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
+	services := &core.Services{
+		Config:    &config.Config{},
+		Store:     sqlStore,
+		Adapters:  adapters.NewRegistry(),
+		Knowledge: knowledgeSvc,
+	}
+	return services, knowledgeSvc
+}
 
 // TestPublishToConfluence_WrongSourceType seeds a non-confluence source so the
 // loop runs but skips it, covering the "type != confluence → continue" path.
 func TestPublishToConfluence_WrongSourceType(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "git-src-wrong-type",
@@ -445,24 +384,19 @@ func TestPublishToConfluence_WrongSourceType(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "conf-wrong-type", Title: "Confluence Doc", TargetType: proposals.TargetConfluence,
 		TargetID: "page-1", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "conf-wrong-type"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/conf-wrong-type/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (no confluence source)", w.Code)
+	if err == nil {
+		t.Error("expected error (no confluence source configured), got nil")
 	}
 }
 
 // TestPublishToConfluence_InvalidJSONConfig seeds a confluence source with
 // malformed JSON config, covering the "unmarshal error → continue" path.
 func TestPublishToConfluence_InvalidJSONConfig(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "conf-bad-cfg",
@@ -473,18 +407,13 @@ func TestPublishToConfluence_InvalidJSONConfig(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	// Unmarshal fails → continue → "no confluence source configured".
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "conf-bad-json", Title: "Confluence Doc", TargetType: proposals.TargetConfluence,
 		TargetID: "page-1", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "conf-bad-json"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	// Unmarshal fails → continue → "no confluence source configured" → 500.
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/conf-bad-json/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (unmarshal fail)", w.Code)
+	if err == nil {
+		t.Error("expected error (unmarshal fail), got nil")
 	}
 }
 
@@ -496,7 +425,7 @@ func TestPublishToConfluence_GetPageVersionError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	cfgJSON, _ := json.Marshal(map[string]any{
 		"base_url":  ts.URL,
@@ -513,26 +442,19 @@ func TestPublishToConfluence_GetPageVersionError(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	// GetPageVersion returns 500 → error → publishToConfluence returns error.
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "conf-gpv-err", Title: "Confluence Doc", TargetType: proposals.TargetConfluence,
 		TargetID: "page-1", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "conf-gpv-err"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	// GetPageVersion returns 500 → error → publishToConfluence returns error → 500.
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/conf-gpv-err/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (GetPageVersion error)", w.Code)
+	if err == nil {
+		t.Error("expected error (GetPageVersion error), got nil")
 	}
 }
 
-// --- publishToNotion inner-loop coverage ---
-
 // TestPublishToNotion_WrongSourceType covers the "type != notion → continue" path.
 func TestPublishToNotion_WrongSourceType(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "git-src-notion-test",
@@ -543,23 +465,18 @@ func TestPublishToNotion_WrongSourceType(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "notion-wrong-type", Title: "Notion Doc", TargetType: proposals.TargetNotion,
 		TargetID: "db-1", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "notion-wrong-type"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/notion-wrong-type/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (no notion source)", w.Code)
+	if err == nil {
+		t.Error("expected error (no notion source configured), got nil")
 	}
 }
 
 // TestPublishToNotion_InvalidJSONConfig covers the "notion unmarshal error → continue" path.
 func TestPublishToNotion_InvalidJSONConfig(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "notion-bad-cfg",
@@ -570,25 +487,18 @@ func TestPublishToNotion_InvalidJSONConfig(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "notion-bad-json", Title: "Notion Doc", TargetType: proposals.TargetNotion,
 		TargetID: "db-1", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "notion-bad-json"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/notion-bad-json/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (notion unmarshal fail)", w.Code)
+	if err == nil {
+		t.Error("expected error (notion unmarshal fail), got nil")
 	}
 }
 
-// --- publishToGit inner-loop coverage ---
-
 // TestPublishToGit_WrongSourceType covers the "type != git → continue" path.
 func TestPublishToGit_WrongSourceType(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "conf-src-git-test",
@@ -599,23 +509,18 @@ func TestPublishToGit_WrongSourceType(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "git-wrong-type", Title: "Git Doc", TargetType: proposals.TargetGit,
 		TargetID: "docs/README.md", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "git-wrong-type"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/git-wrong-type/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (no git source)", w.Code)
+	if err == nil {
+		t.Error("expected error (no git source configured), got nil")
 	}
 }
 
 // TestPublishToGit_InvalidJSONConfig covers the "git unmarshal error → continue" path.
 func TestPublishToGit_InvalidJSONConfig(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:     "git-bad-cfg",
@@ -626,24 +531,19 @@ func TestPublishToGit_InvalidJSONConfig(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "git-bad-json", Title: "Git Doc", TargetType: proposals.TargetGit,
 		TargetID: "docs/README.md", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "git-bad-json"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/git-bad-json/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (git unmarshal fail)", w.Code)
+	if err == nil {
+		t.Error("expected error (git unmarshal fail), got nil")
 	}
 }
 
 // TestPublishToGit_CommitAndPushError seeds a valid git source with an unreachable
 // URL, covering the CommitAndPush error return path.
 func TestPublishToGit_CommitAndPushError(t *testing.T) {
-	mux, proposalSvc, knowledgeSvc := setupProposalsWithPublisherTestServer(t)
+	services, knowledgeSvc := setupPublishDispatch(t)
 
 	if err := knowledgeSvc.CreateSource(context.Background(), &knowledge.KnowledgeSource{
 		ID:   "git-src-unreachable",
@@ -655,35 +555,26 @@ func TestPublishToGit_CommitAndPushError(t *testing.T) {
 		t.Fatalf("CreateSource: %v", err)
 	}
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	// CommitAndPush fails with connection refused → publishToGit returns error.
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "git-cap-err", Title: "Git Doc", TargetType: proposals.TargetGit,
 		TargetID: "docs/README.md", ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "git-cap-err"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	// CommitAndPush fails with connection refused → publishToGit returns error → 500.
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/git-cap-err/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (CommitAndPush connection refused)", w.Code)
+	if err == nil {
+		t.Error("expected error (CommitAndPush connection refused), got nil")
 	}
 }
 
-// TestHandlePublishProposal_UnsupportedTarget covers the default branch of publishProposal.
-func TestHandlePublishProposal_UnsupportedTarget(t *testing.T) {
-	mux, proposalSvc, _ := setupProposalsWithPublisherTestServer(t)
+// TestPublishProposalToTarget_UnsupportedTarget covers the default branch of
+// publishProposalToTarget (unknown target type).
+func TestPublishProposalToTarget_UnsupportedTarget(t *testing.T) {
+	services, _ := setupPublishDispatch(t)
 
-	seedProposal(t, proposalSvc, &proposals.Proposal{
+	err := publishProposalToTarget(context.Background(), services, &proposals.Proposal{
 		ID: "unknown-pub", Title: "Unknown", TargetType: "unknown-backend", TargetID: "some-id",
 		ProposedContent: "content",
 	})
-	if err := proposalSvc.Approve(context.Background(), "unknown-pub"); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/proposals/unknown-pub/publish", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (unsupported target)", w.Code)
+	if err == nil || !strings.Contains(err.Error(), "unsupported target type") {
+		t.Errorf("expected unsupported target type error, got %v", err)
 	}
 }

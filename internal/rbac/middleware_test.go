@@ -23,7 +23,7 @@ func TestIdentityMiddleware_InjectsContext(t *testing.T) {
 	mw := rbac.IdentityMiddleware(&staticProvider{"alice"})
 	handler := mw(next)
 
-	r := httptest.NewRequest("GET", "/api/v1/k8s/cluster-1/resources", nil)
+	r := httptest.NewRequest("GET", "/api/v1/probe/cluster-1/read", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 
@@ -59,11 +59,11 @@ func TestEnforcementMiddleware_Passthrough(t *testing.T) {
 		path   string
 	}{
 		{"non-component path with engine", engine, "GET", "/api/v1/status"},
-		{"component path GET with engine", engine, "GET", "/api/v1/k8s/k8s-prod/resources"},
-		{"component path POST with engine", engine, "POST", "/api/v1/k8s/k8s-prod/resources"},
-		{"component path DELETE with engine", engine, "DELETE", "/api/v1/k8s/k8s-prod/resources/pod/default/p"},
+		{"component path GET with engine", engine, "GET", "/api/v1/probe/k8s-prod/read"},
+		{"component path POST with engine", engine, "POST", "/api/v1/probe/k8s-prod/read"},
+		{"component path DELETE with engine", engine, "DELETE", "/api/v1/probe/k8s-prod/read/pod/default/p"},
 		{"non-component path nil engine", nil, "GET", "/api/v1/status"},
-		{"component path GET nil engine", nil, "GET", "/api/v1/k8s/k8s-prod/resources"},
+		{"component path GET nil engine", nil, "GET", "/api/v1/probe/k8s-prod/read"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
