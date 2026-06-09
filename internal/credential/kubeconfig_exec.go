@@ -189,3 +189,9 @@ func expandKubeconfigPath(path string) (string, error) {
 	}
 	return path, nil
 }
+
+// ExpandKubeconfigPathForTest exposes the unexported expandKubeconfigPath to the
+// cross-package tilde-helper guard (internal/credential/tildeguard, D-0026). It
+// exists only so that guard can assert this hand-copied duplicate stays
+// byte-identical to the canonical k8s adapter helper; it has no production use.
+func ExpandKubeconfigPathForTest(path string) (string, error) { return expandKubeconfigPath(path) }

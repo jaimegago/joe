@@ -182,3 +182,9 @@ func expandPath(path string) (string, error) {
 	}
 	return path, nil
 }
+
+// ExpandPathForTest exposes the unexported expandPath to the cross-package
+// tilde-helper guard (internal/credential/tildeguard, D-0026). It exists only so
+// that guard can assert this canonical helper and credential's hand-copied
+// duplicate (expandKubeconfigPath) stay byte-identical; it has no production use.
+func ExpandPathForTest(path string) (string, error) { return expandPath(path) }
