@@ -114,7 +114,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// full/observation/safe_mode.
 	s.registerMutateStatusRoutes(mux, apiPrefix)
 	s.registerAdminRoutes(mux, apiPrefix)
-	s.registerReviewRoutes(mux, apiPrefix)
+	s.registerVCSRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
 	s.registerTaskRoutes(mux, apiPrefix)
 	// Phase 2: model control plane — list/swap the single LLM contact point.

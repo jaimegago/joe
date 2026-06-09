@@ -19,7 +19,6 @@ import (
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
-	"github.com/jaimegago/joe/internal/review"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
@@ -147,8 +146,6 @@ type Services struct {
 	Findings              findings.Repository          // nil until wired in cmd/joe/server.go
 	Warnings              warnings.Repository          // nil until wired in cmd/joe/server.go
 	CaptainSvc            *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
-	Review                *review.Service              // nil when code review is not configured
-	ReviewAgent           *review.ReviewAgent          // nil when review agent is not configured
 	Skills                *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
 	SkillsWatcher         *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
@@ -170,8 +167,6 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, a
 	proposalRepo := proposals.NewRepository(db, driver)
 	proposalSvc := proposals.NewService(proposalRepo)
 	driftDet := drift.New(knowledgeSvc)
-	reviewRepo := review.NewRepository(db, driver)
-	reviewSvc := review.NewService(reviewRepo)
 	return &Services{
 		Config:         cfg,
 		Store:          sqlStore,
@@ -182,8 +177,7 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, a
 		Knowledge:      knowledgeSvc,
 		Proposals:      proposalSvc,
 		DriftDet:       driftDet,
-		Review:         reviewSvc,
-		// DocDrafter and ReviewAgent are wired later in cmd/joecored/main.go.
+		// DocDrafter is wired later in cmd/joecored/main.go.
 	}
 }
 
