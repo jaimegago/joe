@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/kubernetes"
@@ -138,7 +141,11 @@ func defaultKubeProbe(_ context.Context, sel KubeSelection) kubeProbeResult {
 	} else {
 		rules := clientcmd.NewDefaultClientConfigLoadingRules()
 		if sel.Kubeconfig != "" {
-			rules.ExplicitPath = sel.Kubeconfig
+			expanded, expErr := expandKubeconfigPath(sel.Kubeconfig)
+			if expErr != nil {
+				return kubeProbeResult{stderr: expErr.Error(), err: expErr}
+			}
+			rules.ExplicitPath = expanded
 		}
 		overrides := &clientcmd.ConfigOverrides{}
 		if sel.Context != "" {
@@ -157,4 +164,28 @@ func defaultKubeProbe(_ context.Context, sel KubeSelection) kubeProbeResult {
 		return kubeProbeResult{stderr: err.Error(), err: err}
 	}
 	return kubeProbeResult{}
+}
+
+// expandKubeconfigPath expands a leading ~ in a kubeconfig path to the user's
+// home directory so Probe loads exactly the file the k8s adapter would. clientcmd
+// does not expand ~ itself, so without this a tilde-prefixed path the adapter
+// handles via its expandPath would be misreported as unreachable.
+//
+// This mirrors internal/adapters/k8s.expandPath byte-for-byte (os.UserHomeDir,
+// no filepath.Abs) deliberately: the logic is duplicated rather than shared
+// because internal/adapters/k8s imports internal/credential (D-0026 unit 2), so
+// credential cannot import it back without an import cycle. The path is a file
+// pointer, not credential material, and is never placed on the diagnostic half.
+func expandKubeconfigPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if len(path) == 1 {
+			return home, nil
+		}
+		return filepath.Join(home, path[1:]), nil
+	}
+	return path, nil
 }

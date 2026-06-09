@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -181,6 +183,40 @@ func TestKubeconfigExec_ProbeMintFailureCapturesStderr(t *testing.T) {
 	// The raw stderr is reachable ONLY through the deliberate accessor.
 	if got := probed.CapturedStderr(); got != stderr {
 		t.Fatalf("CapturedStderr = %q, want verbatim stderr", got)
+	}
+}
+
+// expandKubeconfigPath must resolve a tilde-prefixed path to the SAME absolute
+// path the k8s adapter would (D-0026 unit-1 Probe path-handling fix). The
+// adapter's expandPath computes filepath.Join(os.UserHomeDir(), rest) with no
+// filepath.Abs; this test recomputes that reference independently rather than a
+// live cluster, since Probe itself touches a backend.
+func TestExpandKubeconfigPath_TildeMatchesAdapter(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("cannot determine home directory: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "tilde with subpath", in: "~/.kube/config", want: filepath.Join(home, ".kube/config")},
+		{name: "tilde only", in: "~", want: home},
+		{name: "absolute unchanged", in: "/etc/kubeconfig", want: "/etc/kubeconfig"},
+		{name: "relative unchanged", in: "configs/kube", want: "configs/kube"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := expandKubeconfigPath(tc.in)
+			if err != nil {
+				t.Fatalf("expandKubeconfigPath(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("expandKubeconfigPath(%q) = %q, want %q (must match adapter expandPath)", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
