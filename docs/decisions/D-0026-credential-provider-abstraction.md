@@ -229,6 +229,27 @@ the existing admin/Users surface (project-knowledge §4.1).
 - Per-component authz/connectivity status UI.
 - Invocation inside adapter Connect; no Accessor signature change.
 
+### GitHub dual-source credential precedence (unit 2, as built)
+
+The GitHub adapter carries two possible credential sources: the provider
+(selected by `credential_provider` in the component config, with `value` /
+`env_var`) and the legacy `Config.Token` field. The wiring
+(internal/adapters/github/adapter.go:86-100) fixes their precedence:
+
+- Connect selects the provider, calls `Resolve`, and if the diagnostic is not OK
+  it FAILS the connect (no silent fallback) — a configured provider that cannot
+  resolve is an error, not a downgrade to the legacy token.
+- On a successful resolve, a non-empty `StaticValue()` OVERRIDES `Config.Token`
+  (provider value wins).
+- A component with no discriminator selects the static provider, which yields no
+  value; `Config.Token` is then left untouched and serves as the fallback — this
+  is what preserves existing token-only configs unchanged.
+
+So: provider-resolved value wins; the legacy `token` field is the fallback that
+preserves existing configs; a provider that is configured but fails to resolve
+fails the connect rather than falling back. Recorded as a decision, not an
+accident of wiring order.
+
 ## Deferred (designed-for, not built)
 
 - Ambient-workload-identity provider (the explicit, opt-in "use the runtime's
