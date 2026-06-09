@@ -16,7 +16,6 @@ func (s *Server) registerProposalRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/knowledge/proposals", h.handleListProposals)
 	mux.HandleFunc("GET "+prefix+"/knowledge/proposals/{id}", h.handleGetProposal)
 	mux.HandleFunc("POST "+prefix+"/knowledge/proposals/{id}/approve", h.handleApproveProposal)
-	mux.HandleFunc("POST "+prefix+"/knowledge/proposals/{id}/publish", h.handlePublishProposal)
 	mux.HandleFunc("POST "+prefix+"/knowledge/proposals/{id}/reject", h.handleRejectProposal)
 }
 
@@ -113,43 +112,6 @@ func (h *proposalHandler) handleApproveProposal(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved", "id": id})
-}
-
-func (h *proposalHandler) handlePublishProposal(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.Proposals == nil || h.server.services.DocDrafter == nil {
-		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "proposal service not available")
-		return
-	}
-
-	id := r.PathValue("id")
-
-	// Load the proposal to check status and dispatch by target type.
-	proposal, err := h.server.services.Proposals.Get(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "proposal not found", map[string]any{"id": id})
-		return
-	}
-	if proposal.Status != proposals.StatusApproved {
-		writeError(w, http.StatusUnprocessableEntity, errorCodeInvalidRequest,
-			"proposal must be approved before publishing")
-		return
-	}
-
-	if err := h.server.publishProposal(r.Context(), proposal); err != nil {
-		writeInternalError(w, err, "publish proposal")
-		return
-	}
-
-	if err := h.server.services.Proposals.MarkPublished(r.Context(), id); err != nil {
-		writeInternalError(w, err, "mark proposal published")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     "published",
-		"id":         id,
-		"target_url": proposal.TargetURL,
-	})
 }
 
 func (h *proposalHandler) handleRejectProposal(w http.ResponseWriter, r *http.Request) {

@@ -214,6 +214,10 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table); the auth/RBAC chain is what's under test here,
+	// not any product route.
+	srv.RegisterProbeRouteForTest(mux)
 
 	engine := rbac.NewPolicyEngine(repo)
 	resolver := mustResolver(t, config.ServiceAccount{Name: "operator", Key: apiKey})
@@ -234,10 +238,10 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 		token string
 		want  int
 	}{
-		{"granted read", "/api/v1/k8s/s-allow/resources?resource=pods", "Bearer " + apiKey, http.StatusOK},
-		{"ungranted zone", "/api/v1/k8s/s-deny/resources?resource=pods", "Bearer " + apiKey, http.StatusForbidden},
-		{"missing token", "/api/v1/k8s/s-allow/resources?resource=pods", "", http.StatusUnauthorized},
-		{"invalid token", "/api/v1/k8s/s-allow/resources?resource=pods", "Bearer not-a-real-key", http.StatusUnauthorized},
+		{"granted read", "/api/v1/probe/s-allow/read", "Bearer " + apiKey, http.StatusOK},
+		{"ungranted zone", "/api/v1/probe/s-deny/read", "Bearer " + apiKey, http.StatusForbidden},
+		{"missing token", "/api/v1/probe/s-allow/read", "", http.StatusUnauthorized},
+		{"invalid token", "/api/v1/probe/s-allow/read", "Bearer not-a-real-key", http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		for chainName, handler := range chains {

@@ -200,7 +200,7 @@ func TestCallback_NoopAuditLeavesLoginUnchanged(t *testing.T) {
 // breakGlassRequest builds a GET on a protected path carrying the given bearer
 // key and remote address.
 func breakGlassRequest(key, remote string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.Header.Set("Authorization", "Bearer "+key)
 	r.RemoteAddr = remote
 	return r

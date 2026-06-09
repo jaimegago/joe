@@ -13,10 +13,9 @@ import (
 )
 
 // publishProposalToTarget dispatches a proposal to the appropriate write
-// adapter. It is a package-level helper so both the HTTP handler
-// (server.publishProposal) and the in-process loop client
-// (inProcessCoreClient.PublishProposal) can share the dispatch — neither path
-// goes through the loopback after Phase E.
+// adapter. It is a package-level helper driving the in-process loop client
+// (inProcessCoreClient.PublishProposal) — the live publish path, which does
+// not go through the loopback after Phase E.
 func publishProposalToTarget(ctx context.Context, services *core.Services, p *proposals.Proposal) error {
 	switch p.TargetType {
 	case proposals.TargetConfluence:
@@ -28,12 +27,6 @@ func publishProposalToTarget(ctx context.Context, services *core.Services, p *pr
 	default:
 		return fmt.Errorf("unsupported target type: %s", p.TargetType)
 	}
-}
-
-// publishProposal preserves the prior s.publishProposal signature for the HTTP
-// handler. It delegates to the shared package-level helper.
-func (s *Server) publishProposal(ctx context.Context, p *proposals.Proposal) error {
-	return publishProposalToTarget(ctx, s.services, p)
 }
 
 func publishToConfluence(ctx context.Context, services *core.Services, p *proposals.Proposal) error {

@@ -108,6 +108,10 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table); the auth/RBAC chain is what's under test here,
+	// not any product route.
+	srv.RegisterProbeRouteForTest(mux)
 
 	engine := rbac.NewPolicyEngine(repo)
 	// Production-shaped chain: EdgeAuth resolves the service-account key to its
@@ -126,9 +130,9 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 		token string
 		want  int
 	}{
-		{"granted read → 200", "/api/v1/k8s/s-allow/resources?resource=pods", "Bearer " + apiKey, http.StatusOK},
-		{"ungranted zone → 403", "/api/v1/k8s/s-deny/resources?resource=pods", "Bearer " + apiKey, http.StatusForbidden},
-		{"missing token → 401", "/api/v1/k8s/s-allow/resources?resource=pods", "", http.StatusUnauthorized},
+		{"granted read → 200", "/api/v1/probe/s-allow/read", "Bearer " + apiKey, http.StatusOK},
+		{"ungranted zone → 403", "/api/v1/probe/s-deny/read", "Bearer " + apiKey, http.StatusForbidden},
+		{"missing token → 401", "/api/v1/probe/s-allow/read", "", http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,6 +169,9 @@ func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 	srv := api.New(services)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
+	// Test-only protected route reaching the guarded accessor (never in the
+	// production route table).
+	srv.RegisterProbeRouteForTest(mux)
 
 	// Mirror main.go: no policy engine when no service account is configured.
 	// EdgeAuth in disabled mode resolves every caller to the fallback principal
@@ -174,7 +181,7 @@ func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 		rbac.EnforcementMiddleware(nil),
 	)
 
-	r := httptest.NewRequest("GET", "/api/v1/k8s/s-1/resources?resource=pods", nil)
+	r := httptest.NewRequest("GET", "/api/v1/probe/s-1/read", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {

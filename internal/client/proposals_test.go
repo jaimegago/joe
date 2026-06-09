@@ -168,26 +168,6 @@ func TestApproveProposal(t *testing.T) {
 	}
 }
 
-func TestPublishProposal(t *testing.T) {
-	var capturedPath string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(proposals.Proposal{ID: "prop-pub", Status: proposals.StatusPublished})
-	}))
-	defer ts.Close()
-
-	c := New(ts.URL)
-	err := c.PublishProposal(context.Background(), "prop-pub")
-	if err != nil {
-		t.Fatalf("PublishProposal() error = %v", err)
-	}
-	wantPath := apiKnowledgeProposalsPath + "/prop-pub/publish"
-	if capturedPath != wantPath {
-		t.Errorf("Path = %q, want %q", capturedPath, wantPath)
-	}
-}
-
 func TestRejectProposal(t *testing.T) {
 	var capturedPath string
 	var capturedBody map[string]string

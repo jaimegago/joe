@@ -37,7 +37,7 @@ func TestEdgeAuth_RejectsUnauthenticatedOnProtectedPath(t *testing.T) {
 	})
 	h := mw(http.HandlerFunc(principalEcho))
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 
@@ -57,7 +57,7 @@ func TestEdgeAuth_SessionCookieResolvesPrincipal(t *testing.T) {
 		t.Fatalf("mint: %v", err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: s.ID})
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -79,7 +79,7 @@ func TestEdgeAuth_ServiceAccountKeyResolvesPrincipal(t *testing.T) {
 	})
 	h := mw(http.HandlerFunc(principalEcho))
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.Header.Set("Authorization", "Bearer secret")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -96,7 +96,7 @@ func TestEdgeAuth_UnknownServiceAccountKeyUnauthenticated(t *testing.T) {
 	mw := EdgeAuth(EdgeConfig{ServiceAccounts: resolver})
 	h := mw(http.HandlerFunc(principalEcho))
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	r.Header.Set("Authorization", "Bearer not-a-configured-key")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -127,7 +127,7 @@ func TestEdgeAuth_DisabledPermitsAll(t *testing.T) {
 	mw := EdgeAuth(EdgeConfig{}) // disabled
 	h := mw(http.HandlerFunc(principalEcho))
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/k8s/s1/resources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/probe/s1/read", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 

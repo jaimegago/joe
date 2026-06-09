@@ -69,12 +69,6 @@ func (c *Client) ApproveProposal(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodPost, u, nil, http.StatusOK, nil, "approve proposal")
 }
 
-// PublishProposal publishes an approved proposal to its target system.
-func (c *Client) PublishProposal(ctx context.Context, id string) error {
-	u := fmt.Sprintf("%s%s/%s/publish", c.baseURL, apiKnowledgeProposalsPath, url.PathEscape(id))
-	return c.doJSON(ctx, http.MethodPost, u, nil, http.StatusOK, nil, "publish proposal")
-}
-
 // RejectProposal rejects a pending proposal with an optional reason.
 func (c *Client) RejectProposal(ctx context.Context, id, reason string) error {
 	u := fmt.Sprintf("%s%s/%s/reject", c.baseURL, apiKnowledgeProposalsPath, url.PathEscape(id))
