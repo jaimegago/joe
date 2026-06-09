@@ -431,12 +431,12 @@ func TestRecorder_Chat_RepositoryFailureIsFailOpen(t *testing.T) {
 	}
 }
 
-// TestRecorder_Chat_WithoutCancelPreservesPrincipal is the production
-// path the review agent uses: dispatch the LLM call from a goroutine
-// AFTER the originating HTTP request has returned, so the request
-// context is already cancelled by the time recording runs. The
-// recorder must derive its write context with context.WithoutCancel so
-// the principal value still rides the context and the row lands.
+// TestRecorder_Chat_WithoutCancelPreservesPrincipal covers the
+// background-goroutine path: an LLM call dispatched from a goroutine that
+// outlives the originating HTTP request, so the request context is already
+// cancelled by the time recording runs. The recorder must derive its write
+// context with context.WithoutCancel so the principal value still rides the
+// context and the row lands.
 func TestRecorder_Chat_WithoutCancelPreservesPrincipal(t *testing.T) {
 	inner := &fakeInnerAdapter{
 		resp: &llm.ChatResponse{
