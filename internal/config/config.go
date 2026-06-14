@@ -188,6 +188,26 @@ func (s *ServerConfig) ServiceAccountsConfigured() bool {
 	return len(s.ServiceAccounts) > 0
 }
 
+// RBACEnabled is the SINGLE enable predicate for Joe's RBAC policy engine: it
+// returns true iff a real caller principal can be established — at least one
+// service account (machine access) OR a fully-configured OIDC issuer (human
+// login). It is the one shared function both engine-construction sites
+// (cmd/joe/server.go SITE 1, internal/api/server.go newPolicyEngine SITE 2) and
+// the boot-time refuse-to-start guard call, so the construct-the-engine decision
+// and the refuse-to-start decision cannot drift.
+//
+// It reads raw config only via the existing sub-predicates
+// (ServerConfig.ServiceAccountsConfigured and OIDCConfig.Configured) — it never
+// probes the IdP, so a complete-but-unreachable OIDC issuer still reports true
+// (completeness of config, not IdP liveness, is the test). Nil-safe: a nil
+// receiver returns false.
+func (c *Config) RBACEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.Server.ServiceAccountsConfigured() || c.Auth.OIDC.Configured()
+}
+
 // LoopbackKey returns the bearer key a co-located external client process
 // presents to joe: the joe CLI and the REPL. It is the key of the
 // service account that represents the server itself — the one named "server"
