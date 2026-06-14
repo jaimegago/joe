@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -133,6 +134,40 @@ func defaultServerDeps() serverDeps {
 		shutdownMetricsServer: func(ctx context.Context, server *http.Server) error { return server.Shutdown(ctx) },
 		waitForShutdown:       defaultWaitForShutdown,
 	}
+}
+
+// noIdentityConfigMessage is the operator-actionable error shown when Joe is
+// asked to boot without any usable identity configuration. It mirrors the
+// missing-LLM-creds noProviderKeyMessage style: a rich, multi-line remediation
+// string held in a constant rather than inlined at the log site. Joe refuses to
+// start in this state because the RBAC policy engine would be nil — an ungoverned
+// engine that permits every operation — so there is no safe way to run.
+const noIdentityConfigMessage = `Joe has no usable identity configuration — it would run ungoverned.
+
+Without an identity source the RBAC policy engine is not constructed, which
+permits every operation with no caller principal to authorize against. Joe
+refuses to start in this state.
+
+Configure at least one of the following, then restart:
+  - OIDC (human login): set ALL THREE of auth.oidc.issuer, auth.oidc.client_id
+    and auth.oidc.redirect_url. A partial OIDC block (e.g. issuer only) does NOT
+    count as configured and Joe will still refuse to start.
+  - Service account (machine access): add at least one entry to
+    server.service_accounts (name + key).`
+
+// requireIdentityConfigured is the boot-time refuse-to-start guard (JOE-IDBOOT).
+// It returns nil when Joe has a usable identity configuration — i.e. when the
+// shared engine-enable predicate config.Config.RBACEnabled is true — and the
+// rich noIdentityConfigMessage error otherwise. Sharing RBACEnabled with the two
+// engine-construction sites is what makes engine-nil-at-runtime unreachable:
+// the same predicate that would build the engine also decides whether Joe may
+// boot at all. The predicate is pure-config (no IdP probe), so a complete-but-
+// unreachable OIDC issuer passes — an IdP outage must not become a Joe outage.
+func requireIdentityConfigured(cfg *config.Config) error {
+	if cfg.RBACEnabled() {
+		return nil
+	}
+	return errors.New(noIdentityConfigMessage)
 }
 
 // runServer is Joe's default (no-subcommand) behavior: it boots the HTTP API
@@ -627,19 +662,40 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// input (Identity Phase D). It maps each configured key to its svc:<name>
 	// principal. An invalid configuration (duplicate/empty keys or names) is a
 	// fatal startup error, not a silently-dropped identity.
+	//
+	// This fatal gate runs BEFORE the refuse-to-start guard and engine build
+	// below: it is load-bearing, because it is what makes raw-config
+	// service-account presence (cfg.RBACEnabled) equivalent to the resolved
+	// resolver's saResolver.Configured() at the engine-build site — a malformed
+	// account map exits here rather than reaching the predicate.
 	saResolver, saErr := auth.NewServiceAccountResolver(cfg.Server.ServiceAccounts)
 	if saErr != nil {
 		slog.Error("invalid service-account configuration", "error", saErr)
 		return 1
 	}
 
+	// Refuse to start without a usable identity configuration (JOE-IDBOOT). The
+	// guard's predicate IS the engine's own enable predicate (cfg.RBACEnabled),
+	// the same one both engine-construction sites call, so refuse-to-start and
+	// construct-the-engine cannot drift. It is positioned AFTER the SA-resolver
+	// fatal gate and just BEFORE engine construction. Once it passes, the policy
+	// engine is necessarily non-nil below: running ungoverned (nil engine,
+	// all-operations-permitted) is unreachable, in the same fail-fast tier and
+	// exit semantics as missing LLM credentials above.
+	if err := requireIdentityConfigured(cfg); err != nil {
+		slog.Error("no usable identity configuration", "error", err)
+		return 1
+	}
+
 	// Build RBAC policy engine. It is enabled when EITHER a service account OR
 	// OIDC is configured — both establish a real caller principal the engine
-	// must evaluate. When neither is set (local/dev), enforcement is skipped so
-	// single-user setups are not blocked by empty policy tables.
+	// must evaluate. The shared cfg.RBACEnabled predicate is the same one the
+	// refuse-to-start guard just enforced, so this is always true here and the
+	// engine is non-nil; the call is kept at the construction site so the
+	// engine-enable decision lives in exactly one predicate.
 	oidcConfigured := cfg.Auth.OIDC.Configured()
 	var policyEngine *rbac.PolicyEngine
-	if saResolver.Configured() || oidcConfigured {
+	if cfg.RBACEnabled() {
 		policyEngine = rbac.NewPolicyEngine(rbacRepo)
 	}
 	// Stream G phase G5: surface the RBAC-enabled signal to handlers.
@@ -730,7 +786,13 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	case saResolver.Configured():
 		slog.Info("API authentication enabled (service-account keys)")
 	default:
-		slog.Warn("API authentication disabled — set auth.oidc.issuer for human login or server.service_accounts for machine access")
+		// Unreachable: the refuse-to-start guard above (requireIdentityConfigured)
+		// guarantees at least one of OIDC or service accounts is configured, so
+		// "authentication disabled" is no longer a state Joe can reach at runtime.
+		// This arm is a defensive assertion of that invariant — NOT an operator
+		// warning. If it ever fires the guard was bypassed (a programming error),
+		// not an operator misconfiguration.
+		slog.Error("unreachable: API authentication unconfigured despite the boot identity guard — this is a bug, not a misconfiguration")
 	}
 	if cfg.Server.RateLimitRPS > 0 {
 		slog.Info("API rate limiting enabled", "rps", cfg.Server.RateLimitRPS, "burst", cfg.Server.RateLimitBurst)
