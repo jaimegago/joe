@@ -66,18 +66,21 @@ func New(services *core.Services) *Server {
 }
 
 // newPolicyEngine builds the RBAC policy engine the accessor enforces with.
-// It mirrors cmd/joe/server.go exactly: enforcement is enabled when a real
-// caller principal can be established — i.e. a service account (Identity
-// Phase D) OR OIDC login (Phase C) is configured. Otherwise the engine is nil
-// and the accessor permits every decision — identical to
-// rbac.EnforcementMiddleware(nil) on the transport. Keeping the same
-// enable-condition guarantees the accessor's allow/deny decision matches the
-// middleware's for the same principal.
+// It shares cmd/joe/server.go's enable decision through the SINGLE predicate
+// config.Config.RBACEnabled (a service account OR a configured OIDC issuer), so
+// the accessor's allow/deny decision cannot drift from the transport
+// middleware's for the same principal. The Config-nil and RBAC-nil guards below
+// are NOT part of that enable disjunction: they force a nil engine for api.New's
+// looser contract (callers may pass a zero-value Services), under which the
+// accessor permits every decision — identical to rbac.EnforcementMiddleware(nil).
+// In production api.New is only reached downstream of cmd/joe's refuse-to-start
+// guard with the same gated *config.Config, so RBACEnabled is already true here
+// and the engine is non-nil.
 func newPolicyEngine(services *core.Services) *rbac.PolicyEngine {
 	if services.Config == nil || services.RBAC == nil {
 		return nil
 	}
-	if !services.Config.Server.ServiceAccountsConfigured() && !services.Config.Auth.OIDC.Configured() {
+	if !services.Config.RBACEnabled() {
 		return nil
 	}
 	return rbac.NewPolicyEngine(services.RBAC)
