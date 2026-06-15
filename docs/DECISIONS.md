@@ -10,6 +10,86 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0027 — Refuse to start without a usable identity configuration (engine-nil-at-runtime made unreachable)
+
+- Date: 2026-06-15
+- Status: IMPLEMENTED. In the tree as of this date (commits 91d472a, 3fd6d3a,
+  44e9f5f). Implements the "RBAC inert/permissive when auth off must become
+  UNREACHABLE" obstacle named in D-0019 decision 3 — the central obstacle that
+  entry said the implementation "must close, not defer."
+- Decision: Joe refuses to start unless the RBAC policy engine would be
+  constructed non-nil. Missing or incomplete identity configuration is now a hard
+  fail-fast at boot, in the SAME tier and exit semantics as missing LLM
+  credentials and DB access — not a soft warning. "Joe is running" now
+  structurally implies "Joe is governed."
+- Threat closed: previously the policy engine was nil whenever no service account
+  and no complete OIDC config existed, and a nil engine permitted every operation
+  with reason `rbac_disabled` indefinitely, off any network bind, behind only a
+  single soft boot warning. This was reachable not just by a fresh install but by
+  a HALF-configured one — a partial OIDC block (issuer set, client_id/redirect_url
+  empty) yielded engine-nil despite identity values being present, so an operator
+  mid-setup would see Joe running and assume it was governed while it was silently
+  allow-all. Refuse-to-start deletes this entire state class.
+- Load-bearing design property: the refuse-to-start predicate IS the engine's own
+  enable predicate, factored into one shared function so the guard and the engine
+  constructors cannot drift. A new nil-safe method `config.(*Config).RBACEnabled()`
+  — true iff service accounts are configured OR OIDC is `Configured()` — is the
+  single source of truth, called by BOTH engine-construction sites and the boot
+  guard. It reads raw config only (via the existing `ServiceAccountsConfigured` /
+  OIDC `Configured` sub-predicates) and adds NO IdP reachability probe.
+- What the guard does / does not fire on (both encode the decision):
+  - FIRES (refuse to start): no identity at all; partial OIDC (any of
+    issuer/client_id/redirect_url missing). The partial-OIDC case is the one that
+    proves the half-configured gap is closed.
+  - DOES NOT FIRE (start, governed): service-account-only; complete OIDC;
+    complete-but-unreachable OIDC (IdP down). Completeness of config is the test,
+    NOT IdP liveness — this deliberately avoids converting an IdP outage into a Joe
+    outage. No reachability probe was added to the boot path.
+- Implementation points (the landed shape; future readers should re-derive these
+  against the tree rather than trust any line numbers, which are intentionally
+  omitted):
+  - Shared predicate: `config.(*Config).RBACEnabled()` in
+    `internal/config/config.go`.
+  - Boot guard + rich remediation-message constant (`noIdentityConfigMessage`,
+    mirroring `noProviderKeyMessage`): `cmd/joe/server.go`, positioned AFTER the
+    service-account-resolver fatal-validation gate and BEFORE engine
+    construction. The post-gate ordering is load-bearing: it is what makes
+    raw-config SA presence equivalent to the resolved resolver at that site (a
+    malformed account map exits at the resolver gate before reaching the
+    predicate).
+  - SITE 1 (`cmd/joe`) builds the engine via `cfg.RBACEnabled()`. SITE 2
+    (`internal/api` `newPolicyEngine`) was swapped to the same predicate, keeping
+    its Config-nil / RBAC-nil guards (for `api.New`'s looser contract); no second
+    refuse-to-start is added there because `api.New` has exactly one production
+    caller, downstream of the `cmd/joe` guard.
+  - Exit semantics: `slog.Error` + `return 1` bubbling to `os.Exit(1)`. No
+    `log.Fatal`.
+- Scope / explicitly deferred (conscious non-goals):
+  - No runtime identity-provisioning / setup-wizard / first-run flow — boot-time
+    config satisfies the guard.
+  - The promotion / read-only-confinement / autonomous-discovery model is the
+    separate work this unblocks, NOT part of this unit.
+  - The soft nil-engine warning was retired: its default arm became unreachable
+    and was replaced with an unreachable-state assertion (an internal-invariant-
+    breach `slog.Error`, not an operator-misconfiguration warning).
+- Consequence to flag (newly unreachable, parked as follow-up): EdgeAuth's
+  open-when-unconfigured branch (`internal/auth/middleware.go`) is now unreachable
+  via the boot path for the same reason the nil engine is — post-guard,
+  service-account-or-OIDC is always true. This is now a dead branch in the same
+  equivalence class as this fix; a future follow-up should retire it, likely with
+  the same unreachable-state-assertion pattern.
+- Basis: the three commits above, re-verified against the live tree on landing —
+  `internal/config/config.go` (`RBACEnabled`), `cmd/joe/server.go`
+  (`requireIdentityConfigured`, `noIdentityConfigMessage`, the guard placement and
+  the retired warning arm), `internal/api/server.go` (`newPolicyEngine`). Guard
+  tests cover all five identity states, asserting the two non-negotiable cases:
+  partial-OIDC refuses, complete-but-unreachable starts
+  (`internal/config/rbacenabled_test.go`, `cmd/joe/identityguard_test.go`).
+- Supersedes: nothing — implements the engine-nil obstacle from D-0019 decision 3.
+  References D-0018 (the write floor it sits beside in the boot fail-fast tier).
+
+---
+
 ## D-0026 — Credential provider abstraction (Resolve/Probe/Describe, two-half resolved-credential type, launch-vs-deferred split)
 
 - Date: 2026-06-09
