@@ -12,12 +12,13 @@ import (
 
 // TestMigration021_UpDownUp_RoundTrip runs the full chain up (including 021),
 // steps down past the principals table, and re-applies. Migration 021 creates
-// the authoritative identity registry; migration 022 (chat sessions) now sits
-// above it, so -2 reverts 022 then 021 to isolate it. This asserts:
+// the authoritative identity registry; migrations 022 (chat sessions), 023
+// (source→component), and 024 (read promotions) now sit above it, so -4 reverts
+// 024, 023, 022, then 021 to isolate it. This asserts:
 //
 //   - After up: the principals table accepts a row and its status CHECK rejects
 //     an unknown status value.
-//   - After Steps(-3): the principals table is gone.
+//   - After Steps(-4): the principals table is gone.
 //   - After re-up: the table exists again and is empty (the migration creates
 //     but does not seed it).
 func TestMigration021_UpDownUp_RoundTrip(t *testing.T) {
@@ -55,11 +56,12 @@ func TestMigration021_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step two migrations down: reverts 022 (chat sessions, now the head)
-	// then 021, dropping principals. 022 does not touch principals, so reverting
-	// it first is inert to this probe.
-	if err := m.Steps(-3); err != nil {
-		t.Fatalf("Steps(-3): %v", err)
+	// 2) Step the migrations above 021 down, then 021: reverts 024 (read
+	// promotions, the head), 023 (source→component), 022 (chat sessions), then
+	// 021, dropping principals. None of 022..024 touches principals, so
+	// reverting them first is inert to this probe.
+	if err := m.Steps(-4); err != nil {
+		t.Fatalf("Steps(-4): %v", err)
 	}
 	if tableExists(t, s, "principals") {
 		t.Error("after down: principals table must be dropped")

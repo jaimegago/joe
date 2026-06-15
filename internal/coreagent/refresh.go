@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
 	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
 	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
@@ -40,6 +41,7 @@ import (
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -53,6 +55,27 @@ type Refresher struct {
 	interval       time.Duration
 	cancel         context.CancelFunc
 	doneCh         chan struct{}
+	// accessor is the guarded seam (A001-COREGOV CC-05) through which the
+	// refresh resolves each component's adapter under the agent:core principal
+	// (carried on the refresh ctx by CC-02) at rbac.ActionRead. It is wired at
+	// boot by SetAccessor with the SAME promote-aware policy engine CC-04 armed,
+	// so a component whose type has auto_promote_reads ON is admitted and an
+	// ungranted/unpromoted component is DENIED before its adapter — and thus its
+	// credential — is resolved. When nil the refresh path FAILS CLOSED (CC-08):
+	// resolveAdapter denies rather than reading the raw registry, and Start
+	// refuses to boot. Production boot in cmd/joe/server.go always wires it.
+	accessor *access.Accessor
+}
+
+// SetAccessor wires the guarded refresh accessor (A001-COREGOV CC-05). Called
+// once at boot, before Start, so every refresh cycle resolves adapters through
+// the access guard. A nil accessor is ignored (defensive — never deliberately
+// disable the guard at runtime).
+func (r *Refresher) SetAccessor(accessor *access.Accessor) {
+	if accessor == nil {
+		return
+	}
+	r.accessor = accessor
 }
 
 // NewRefresher creates a new background refresher
@@ -69,8 +92,26 @@ func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *sl
 	}
 }
 
-// Start begins the background refresh loop
+// Start begins the background refresh loop.
+//
+// REFUSE TO START (A001-COREGOV CC-08, mirroring D-0027 / JOE-IDBOOT): the
+// refresh resolves every component's adapter — and thus its credential —
+// through the guarded access seam (r.accessor). If that seam was never wired,
+// the only fail-closed behavior is to read nothing (resolveAdapter denies), so
+// the background refresh would be inert and silently ungoverned. Rather than
+// boot in that degraded state, Start returns a FATAL boot error here. This is a
+// returned error propagated through the normal boot error path (agent.Start ->
+// runServerWithDeps), NOT a panic in the refresh goroutine: cmd/joe/server.go
+// turns it into a clean `return 1`, same fail-fast tier as the absent-identity
+// refusal. Production boot in cmd/joe/server.go always calls SetRefreshAccessor
+// before Start, so this never fires in a correctly-wired binary; it exists to
+// make an unwired seam a loud startup failure instead of a quiet one.
 func (r *Refresher) Start(ctx context.Context) error {
+	if r.accessor == nil {
+		return fmt.Errorf("refusing to start background refresh: refresh access seam not wired " +
+			"(SetAccessor was not called before Start) — the autonomous refresh would run ungoverned; " +
+			"this is a wiring bug in cmd/joe/server.go (A001-COREGOV CC-08)")
+	}
 	r.logger.Info("starting background refresh", "interval", r.interval)
 
 	loopCtx, cancel := context.WithCancel(ctx)
@@ -153,6 +194,30 @@ func (r *Refresher) refresh(ctx context.Context) (err error) {
 	return nil
 }
 
+// resolveAdapter resolves a component's adapter through the guarded access seam
+// (A001-COREGOV CC-05). It floors the refresh read: the agent:core principal
+// carried on ctx (CC-02) is evaluated against the promote-aware policy engine
+// (CC-04) at rbac.ActionRead BEFORE the adapter — and thus its credential — is
+// resolved, so an ungranted/unpromoted component is denied with
+// access.ErrPermissionDenied and no infrastructure handle is produced.
+//
+// A nil accessor FAILS CLOSED (A001-COREGOV CC-08): it returns
+// access.ErrPermissionDenied without resolving any adapter, so absent the
+// guarded seam the refresh reads nothing. This is the belt to the
+// suspenders of the boot-time refuse-to-start check in agent.Start: production
+// boot in cmd/joe/server.go always wires the accessor before Start, and if it
+// somehow did not, Start refuses to come up — but should any direct-call path
+// reach here without an accessor, it still denies rather than reopening the raw,
+// ungoverned registry read this design closed. The denial flows into
+// refreshComponent's skip-quietly path (errors.Is(err, ErrPermissionDenied)).
+func (r *Refresher) resolveAdapter(ctx context.Context, source *store.Component) (adapters.Adapter, error) {
+	if r.accessor == nil {
+		return nil, fmt.Errorf("%w: refresh accessor not wired (fail-closed; CC-08)", access.ErrPermissionDenied)
+	}
+	principal := rbac.PrincipalFromContext(ctx)
+	return r.accessor.ResolveAdapter(ctx, principal, source.ID, rbac.ActionRead)
+}
+
 // refreshComponent refreshes a single infrastructure source
 func (r *Refresher) refreshComponent(ctx context.Context, source *store.Component) (err error) {
 	start := time.Now()
@@ -169,9 +234,20 @@ func (r *Refresher) refreshComponent(ctx context.Context, source *store.Componen
 
 	r.logger.Debug("refreshing source", "component_id", source.ID, "type", source.Type)
 
-	adapter, err := r.services.Adapters.Get(source.ID)
+	adapter, err := r.resolveAdapter(ctx, source)
 	if err != nil {
-		if errors.Is(err, adapters.ErrAdapterNotFound) {
+		// A permit DENIAL is the expected steady state for any component whose
+		// type is not granted to agent:core and not promoted via
+		// auto_promote_reads — every such component is denied on every tick.
+		// Skip it quietly (debug) and let the caller proceed to the next
+		// component; do NOT surface it as an error (which the loop logs loudly
+		// and which would also stamp a misleading sync error on the component).
+		if errors.Is(err, access.ErrPermissionDenied) {
+			r.logger.Debug("refresh access denied for component, skipping",
+				"component_id", source.ID, "type", source.Type)
+			return nil
+		}
+		if errors.Is(err, adapters.ErrAdapterNotFound) || errors.Is(err, store.ErrComponentNotFound) {
 			return fmt.Errorf("adapter not found for source %s", source.ID)
 		}
 		return fmt.Errorf("get adapter for source %s: %w", source.ID, err)

@@ -381,10 +381,10 @@ func TestRefreshComponent_AlertmanagerType(t *testing.T) {
 	adapter := &fakeAlertmanagerAdapter{}
 	reg.Register("src-am", adapter)
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-am", Type: store.ComponentTypeAlertmanager, Name: "am"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
@@ -397,10 +397,10 @@ func TestRefreshComponent_PagerDutyType(t *testing.T) {
 	adapter := &fakePagerDutyAdapter{}
 	reg.Register("src-pd", adapter)
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-pd", Type: store.ComponentTypePagerDuty, Name: "pd"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
@@ -413,10 +413,10 @@ func TestRefreshComponent_GrafanaType(t *testing.T) {
 	adapter := &fakeGrafanaAdapter{}
 	reg.Register("src-grafana", adapter)
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-grafana", Type: store.ComponentTypeGrafana, Name: "grafana"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
@@ -429,10 +429,10 @@ func TestRefreshComponent_AlertmanagerWrongType(t *testing.T) {
 	// Register a pagerduty adapter for an alertmanager source — type assertion will fail.
 	reg.Register("src-am-bad", &fakePagerDutyAdapter{})
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-am-bad", Type: store.ComponentTypeAlertmanager, Name: "am"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
@@ -444,10 +444,10 @@ func TestRefreshComponent_PagerDutyWrongType(t *testing.T) {
 	svc, reg := setupAlertingTestServices(t)
 	reg.Register("src-pd-bad", &fakeAlertmanagerAdapter{})
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-pd-bad", Type: store.ComponentTypePagerDuty, Name: "pd"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
@@ -459,10 +459,10 @@ func TestRefreshComponent_GrafanaWrongType(t *testing.T) {
 	svc, reg := setupAlertingTestServices(t)
 	reg.Register("src-grafana-bad", &fakeAlertmanagerAdapter{})
 
-	r := &Refresher{
+	r := withPermitAllAccessor(&Refresher{
 		services: svc,
 		logger:   slog.Default(),
-	}
+	})
 
 	source := &store.Component{ID: "src-grafana-bad", Type: store.ComponentTypeGrafana, Name: "grafana"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {

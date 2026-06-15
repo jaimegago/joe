@@ -123,6 +123,13 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/principals/{principal}/disable", admin), h.disablePrincipal)
 	mux.HandleFunc(fmt.Sprintf("POST %s/principals/{principal}/enable", admin), h.enablePrincipal)
 
+	// A001-COREGOV CC-04 — per-component-type auto_promote_reads flag. GET
+	// lists the full per-type view; POST flips one type's flag. Both
+	// admin-gated; the setter validates the type against the authoritative
+	// component-type enum and the mutation service writes value+audit atomically.
+	mux.HandleFunc(fmt.Sprintf("GET %s/read-promotions", admin), h.listReadPromotions)
+	mux.HandleFunc(fmt.Sprintf("POST %s/read-promotions", admin), h.setReadPromotion)
+
 	// D-0026 unit 3 — per-component credential authz/connectivity status surface.
 	// A passive Describe listing (no backend contact), a deliberate live Probe,
 	// and the explicit captured-stderr fetch. All admin-gated + audited like the
@@ -923,4 +930,95 @@ func (h *adminHandler) resolveAndProbe(w http.ResponseWriter, r *http.Request) (
 		res = probed
 	}
 	return res, comp, true
+}
+
+// --- auto_promote_reads flags (A001-COREGOV CC-04) ---
+//
+// The per-component-type auto_promote_reads flag is the dynamic admit predicate
+// the policy engine consults for the agent:core principal on ActionRead. ABSENT
+// row == OFF; the table is not seeded, so the GET handler composes the full
+// per-type view over the authoritative component-type enum
+// (store.AllowedComponentTypes) and overlays the stored ON rows. The setter
+// validates the type against that same enum and rejects unknown types (400),
+// so arbitrary keys never reach the table; writes go through the mutation
+// service, which commits the flag and its admin_access audit row atomically.
+
+// readPromotionView is one component-type's auto_promote_reads state.
+type readPromotionView struct {
+	ComponentType string `json:"component_type"`
+	Enabled       bool   `json:"enabled"`
+}
+
+// listReadPromotions returns the auto_promote_reads flag for every known
+// component type (the full enum, with OFF for types that have no row). Admin-
+// gated; read-class audit (fail-open).
+func (h *adminHandler) listReadPromotions(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	if h.server.services == nil || h.server.services.PromoteReads == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "read-promotions service not available")
+		return
+	}
+	stored, err := h.server.services.PromoteReads.Repo().List(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "list read promotions")
+		return
+	}
+	types := store.AllowedComponentTypes()
+	views := make([]readPromotionView, 0, len(types))
+	for _, t := range types {
+		views = append(views, readPromotionView{ComponentType: t, Enabled: stored[t]})
+	}
+	// Read-class audit: the promotion topology is authz-adjacent, so the access
+	// is recorded (parallel to the other admin .read verbs). Fail-open per §4.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminReadPromoteRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "read_promotions"}, "admin:read_promotion.read")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"read_promotions": views,
+		"count":           len(views),
+	})
+}
+
+type setReadPromotionRequest struct {
+	ComponentType string `json:"component_type"`
+	Enabled       bool   `json:"enabled"`
+}
+
+// setReadPromotion flips a single component-type's auto_promote_reads flag.
+// Admin-gated; the type is validated against the authoritative component-type
+// enum (unknown types are rejected 400 before any write). The mutation service
+// commits the flag and its audit row in one transaction (fail-closed). The
+// audit row is written by the mutation service itself, so the handler writes
+// none of its own — same division the principal disable/enable handlers use.
+func (h *adminHandler) setReadPromotion(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setReadPromotionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set read promotion", "invalid request body")
+		return
+	}
+	if req.ComponentType == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "component_type is required")
+		return
+	}
+	if !store.IsValidComponentType(req.ComponentType) {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
+			fmt.Sprintf("unknown component type %q", req.ComponentType))
+		return
+	}
+	if h.server.services == nil || h.server.services.PromoteReads == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "read-promotions service not available")
+		return
+	}
+	if err := h.server.services.PromoteReads.SetPromoted(r.Context(), req.ComponentType, req.Enabled); err != nil {
+		writeInternalError(w, err, "set read promotion")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"component_type": req.ComponentType,
+		"enabled":        req.Enabled,
+	})
 }

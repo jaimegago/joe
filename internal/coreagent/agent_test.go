@@ -113,8 +113,12 @@ func TestCoreAgentStartStop(t *testing.T) {
 	// Create mock LLM adapter
 	llmAdapter := &mockLLMAdapter{}
 
-	// Create and start Core Agent
+	// Create and start Core Agent. Wire a permit-all refresh accessor first:
+	// since A001-COREGOV CC-08, Start refuses to boot the background refresh
+	// without an accessor (fail-closed), so tests that start the agent must
+	// wire the guarded seam exactly as production boot does.
 	agent := New(services, llmAdapter, nil)
+	agent.SetRefreshAccessor(permitAllAccessor(services))
 	ctx := context.Background()
 
 	if err := agent.Start(ctx); err != nil {
@@ -447,6 +451,10 @@ func TestTriggerRefreshComponent_NoAdapter(t *testing.T) {
 	}
 
 	agent := New(svc, &mockLLMAdapter{}, nil)
+	// Wire a permit-all accessor so the guarded resolve runs and surfaces the
+	// real "adapter not found" error (CC-08: a nil accessor would instead
+	// fail-closed to a skip-quietly denial and the test would see no error).
+	agent.SetRefreshAccessor(permitAllAccessor(svc))
 	// refreshComponent will error (adapter not found) but TriggerRefreshComponent returns it.
 	err := agent.TriggerRefreshComponent(ctx, src.ID)
 	if err == nil {

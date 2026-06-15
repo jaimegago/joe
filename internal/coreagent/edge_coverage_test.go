@@ -396,7 +396,7 @@ func TestRefreshComponent_PostgresWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-pg-bad", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-pg-bad", Type: store.ComponentTypePostgreSQL, Name: "pg"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -407,7 +407,7 @@ func TestRefreshComponent_HelmWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-helm-bad2", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-helm-bad2", Type: store.ComponentTypeHelm, Name: "helm"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -418,7 +418,7 @@ func TestRefreshComponent_TerraformWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tf-bad2", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-tf-bad2", Type: store.ComponentTypeTerraform, Name: "tf"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

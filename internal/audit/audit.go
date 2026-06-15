@@ -296,6 +296,19 @@ const (
 	// ActionAdminPrincipalEnable records an admin re-enabling a principal
 	// (status disabled→active).
 	ActionAdminPrincipalEnable = "principal.enable"
+
+	// ActionAdminReadPromoteSet records an admin flipping a component-type's
+	// auto_promote_reads flag (A001-COREGOV CC-04, POST
+	// /api/v1/admin/read-promotions). The flag is the dynamic admit predicate
+	// the policy engine consults for agent:core + ActionRead. Decision "allow";
+	// mutating (fail-closed) — none added to isFailOpen. Carries kind
+	// KindAdminAccess like the rest of the admin surface; the {target, before,
+	// after} context records the component-type and the prior/new enabled bit.
+	ActionAdminReadPromoteSet = "read_promotion.set"
+	// ActionAdminReadPromoteRead records an admin listing the auto_promote_reads
+	// flags (GET /api/v1/admin/read-promotions) — a read of the authz-adjacent
+	// promotion topology. Read-class (fail-open), so it is in isFailOpen below.
+	ActionAdminReadPromoteRead = "read_promotion.read"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface
@@ -517,7 +530,8 @@ func isFailOpen(action string) bool {
 	switch action {
 	case "read", "query",
 		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
-		ActionAdminAdminRead, ActionAdminPrincipalRead, ActionAdminCredentialStatusRead:
+		ActionAdminAdminRead, ActionAdminPrincipalRead, ActionAdminCredentialStatusRead,
+		ActionAdminReadPromoteRead:
 		return true
 	default:
 		return false

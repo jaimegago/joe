@@ -47,21 +47,23 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step six migrations down: reverts 022 then 021 then 020 then 019 then
-	// 018 then 017. Migrations 018 (Stream H3, the auth_login kind), 019 (the
-	// LLM context-budget table), 020 (D-0013, the admin-audit kind widening),
-	// 021 (the principals table), and 022 (chat sessions) now sit above 017, so
-	// reverting 017 requires first reverting them. Stepping -6 lands the schema
-	// just below 017, which is what this test exercises.
-	if err := m.Steps(-7); err != nil {
-		t.Fatalf("Steps(-7): %v", err)
+	// 2) Step the migrations above 017 down, then 017 itself: reverts 024, 023,
+	// 022, 021, 020, 019, 018, then 017. Migrations 018 (Stream H3, the
+	// auth_login kind), 019 (the LLM context-budget table), 020 (D-0013, the
+	// admin-audit kind widening), 021 (the principals table), 022 (chat
+	// sessions), 023 (source→component rename), and 024 (A001-COREGOV CC-04, the
+	// agent_read_promotions table) now sit above 017, so reverting 017 requires
+	// first reverting them. Stepping -8 lands the schema just below 017, which is
+	// what this test exercises.
+	if err := m.Steps(-8); err != nil {
+		t.Fatalf("Steps(-8): %v", err)
 	}
 	// After the down, the four new tables must be gone.
 	for _, table := range []string{
 		"llm_usage", "llm_settings", "llm_cost_limits", "llm_runaway_limits",
 	} {
 		if tableExists(t, s, table) {
-			t.Errorf("table %s still exists after Steps(-1); the down migration did not drop it", table)
+			t.Errorf("table %s still exists after the down step; the down migration did not drop it", table)
 		}
 	}
 
@@ -81,7 +83,7 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 		"llm_settings_mutation",
 		"{}",
 	); err != nil {
-		t.Errorf("INSERT llm_settings_mutation after Steps(-1) failed: %v; the down migration must leave the widened CHECK in place", err)
+		t.Errorf("INSERT llm_settings_mutation after the down step failed: %v; the down migration must leave the widened CHECK in place", err)
 	}
 
 	// 3) Up again: re-applies 017.

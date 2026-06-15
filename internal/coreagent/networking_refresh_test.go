@@ -239,7 +239,7 @@ func TestRefreshComponent_NginxType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nginx", &fakeNginxAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-nginx", Type: store.ComponentTypeNginx, Name: "nginx"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(nginx) error: %v", err)
@@ -250,7 +250,7 @@ func TestRefreshComponent_EnvoyType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-envoy", &fakeEnvoyAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-envoy", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(envoy) error: %v", err)
@@ -261,7 +261,7 @@ func TestRefreshComponent_NginxWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nginx-bad", &fakeEnvoyAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-nginx-bad", Type: store.ComponentTypeNginx, Name: "nginx"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

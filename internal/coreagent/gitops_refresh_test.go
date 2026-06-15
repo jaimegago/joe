@@ -263,7 +263,7 @@ func TestRefreshComponent_ArgoCDType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-argocd", &fakeArgoCDAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-argocd", Type: store.ComponentTypeArgoCd, Name: "argo"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(argocd) error: %v", err)
@@ -274,7 +274,7 @@ func TestRefreshComponent_HelmType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-helm", &fakeHelmAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-helm", Type: store.ComponentTypeHelm, Name: "helm"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(helm) error: %v", err)
@@ -285,7 +285,7 @@ func TestRefreshComponent_TerraformType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tf", &fakeTerraformAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-tf", Type: store.ComponentTypeTerraform, Name: "tf"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(terraform) error: %v", err)
@@ -296,7 +296,7 @@ func TestRefreshComponent_ArgoCDWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-argocd-bad", &fakeHelmAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-argocd-bad", Type: store.ComponentTypeArgoCd, Name: "argo"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

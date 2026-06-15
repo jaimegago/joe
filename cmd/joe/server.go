@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
 	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
 	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
@@ -50,6 +51,7 @@ import (
 	"github.com/jaimegago/joe/internal/logging"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/paths"
+	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
@@ -344,6 +346,14 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	contextBudgetProvider := llmsettings.NewContextBudgetProvider(llmSettingsRepo, agentloop.NewStaticContextBudget(), slog.Default())
 	llmSettingsSvc := llmsettings.NewMutationService(llmSettingsRepo, auditRepo)
 
+	// A001-COREGOV CC-04: the per-component-type auto_promote_reads flag (table
+	// created by migration 024). promoteReadsRepo is the live read seam the
+	// policy engine consults for the agent:core dynamic admit predicate;
+	// promoteReadsSvc is the SOLE write path, committing each flag change with
+	// its admin_access audit row atomically (mirrors llmSettingsSvc).
+	promoteReadsRepo := promotereads.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	promoteReadsSvc := promotereads.NewMutationService(promoteReadsRepo, auditRepo)
+
 	// Wire session-model repository (tables created by migration 009).
 	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -443,6 +453,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.PrincipalAdmin = auth.NewPrincipalAdmin(rbacRepo, authSessions)
 	services.LLMUsage = llmUsageRepo
 	services.LLMSettings = llmSettingsSvc
+	services.PromoteReads = promoteReadsSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
 	services.CostLimitsProvider = costLimitsProvider
 	services.ContextBudgetProvider = contextBudgetProvider
@@ -636,7 +647,50 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Info("core agent: §C captain-session gate + §D5 durable executor wrapper installed (gate runs upstream)")
 	}
 
-	if err := coreAgent.Start(ctx); err != nil {
+	// A001-COREGOV CC-05: floor the autonomous refresh read. Build a SECOND
+	// accessor for the refresh path and thread it onto the refresher before
+	// Start, so every refresh cycle resolves each component's adapter through the
+	// access guard under the agent:core principal (carried on the Start ctx by
+	// CC-02) at ActionRead — denying any ungranted/unpromoted component before
+	// its adapter, and thus its credential, is resolved.
+	//
+	// CRITICAL: this accessor's engine MUST be the promote-aware engine CC-04
+	// wired (NewPolicyEngineWithPromote over the auto_promote_reads resolver),
+	// not a bare NewPolicyEngine — otherwise agent:core reads deny-all even for
+	// promoted types. The transport policyEngine below is built after the Core
+	// Agent starts, so we build the refresh engine here the SAME way, from the
+	// SAME rbacRepo + promoteReadsRepo under the SAME cfg.RBACEnabled() predicate.
+	// A nil engine (RBAC disabled) makes the accessor permit every decision,
+	// matching the transport path. The accessor is principal-agnostic; it becomes
+	// "the agent:core accessor" purely by being consumed under the CC-02 ctx.
+	if concrete, ok := coreAgent.(*coreagent.Agent); ok {
+		var refreshEngine *rbac.PolicyEngine
+		if cfg.RBACEnabled() {
+			refreshEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
+		}
+		refreshAccessor := access.New(services.Adapters, services.Graph, refreshEngine, auditRepo)
+		concrete.SetRefreshAccessor(refreshAccessor)
+		slog.Info("core agent: refresh adapter resolution floored through the access guard (agent:core, ActionRead)")
+	}
+
+	// Mint the Core Agent's internal boot identity (agent:core) once and stamp
+	// it onto the context handed to Start (A001-COREGOV CC-02). The derived
+	// (WithCancel) context inside refresher.Start inherits it, so the principal
+	// rides the already-plumbed boot context end-to-end to the refresh path
+	// (refresh → refreshComponent → the guarded adapter resolution and the
+	// ApplyGraphDelta write). agent:core is an internal boot principal, not an
+	// authenticated API caller, so it is minted directly via the rbac constructor
+	// — never through the service-account resolver above. Stamping once at this
+	// seam is preferred over threading the principal through refresh function
+	// signatures. The read is now floored through the refresh accessor wired just
+	// above (CC-05) using the promote-aware engine (CC-04); the graph-write half
+	// stays principal-stamped and governed upstream by this read floor.
+	agentCore, principalErr := rbac.AgentCorePrincipal()
+	if principalErr != nil {
+		slog.Error("failed to mint core agent principal", "error", principalErr)
+		return 1
+	}
+	if err := coreAgent.Start(rbac.WithPrincipal(ctx, agentCore)); err != nil {
 		slog.Error("failed to start core agent", "error", err)
 		return 1
 	}
@@ -696,7 +750,12 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	oidcConfigured := cfg.Auth.OIDC.Configured()
 	var policyEngine *rbac.PolicyEngine
 	if cfg.RBACEnabled() {
-		policyEngine = rbac.NewPolicyEngine(rbacRepo)
+		// A001-COREGOV CC-04: build the engine WITH the auto_promote_reads
+		// resolver so the agent:core + ActionRead dynamic admit predicate is
+		// live. The predicate is still behaviour-neutral on the main path: no
+		// caller routes agent:core reads through this engine until CC-05, so
+		// wiring the resolver here only arms the predicate for that later unit.
+		policyEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
 	}
 	// Stream G phase G5: surface the RBAC-enabled signal to handlers.
 	// Set once here at the engine-build site so the accessor's

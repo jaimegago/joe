@@ -11,13 +11,13 @@ import (
 )
 
 // TestMigration022_UpDownUp_RoundTrip runs the full chain up (including 022),
-// steps one migration down (reverting 022, the head), and re-applies. Migration
-// 022 adds the chat_messages table and the agent_sessions title/visibility
-// columns. This asserts:
+// steps the migrations above 022 down then 022 itself (reverting 024 and 023,
+// the heads, then 022), and re-applies. Migration 022 adds the chat_messages
+// table and the agent_sessions title/visibility columns. This asserts:
 //
 //   - After up: chat_messages exists; agent_sessions has title + visibility;
 //     visibility defaults to 'private'.
-//   - After Steps(-2): chat_messages and both columns are gone.
+//   - After Steps(-3): chat_messages and both columns are gone.
 //   - After re-up: everything is back and chat_messages is empty.
 func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 	s, err := New(DatabaseConfig{Driver: DriverSQLite, DSN: ":memory:"}, (*observability.Metrics)(nil))
@@ -57,9 +57,10 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step one migration down: reverts 022 (the head).
-	if err := m.Steps(-2); err != nil {
-		t.Fatalf("Steps(-2): %v", err)
+	// 2) Step down to just below 022: reverts 024 (read promotions) and 023
+	// (source→component, the heads), then 022.
+	if err := m.Steps(-3); err != nil {
+		t.Fatalf("Steps(-3): %v", err)
 	}
 	if tableExists(t, s, "chat_messages") {
 		t.Error("after down: chat_messages must be dropped")

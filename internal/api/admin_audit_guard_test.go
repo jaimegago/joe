@@ -109,6 +109,19 @@ var auditedSeamMutations = map[string]map[string]bool{
 	"principalAdmin": {"Disable": true, "Enable": true},
 }
 
+// auditedServiceMutations are mutation services reached through h.server.services
+// (rather than a handler field) that write their KindAdminAccess audit row in the
+// SAME transaction as the value write — the strongest guarantee the guard
+// endorses. A handler delegating to one leaves the same durable trail an h.repo
+// mutation would. Each entry maps the services field to the audited methods it
+// exposes:
+//
+//   - h.server.services.PromoteReads.SetPromoted → promotereads.MutationService
+//     (A001-COREGOV CC-04: read_promotion.set row, atomic with the flag write)
+var auditedServiceMutations = map[string]map[string]bool{
+	"PromoteReads": {"SetPromoted": true},
+}
+
 // callsAuditedRepoMutation reports whether the call is an audited mutation on
 // one of the handler's audited fields: h.repo.<AuditedMutation>(…) OR an
 // audited Stage-3 seam (h.provisioner.GrantAdmin, h.principalAdmin.Disable/
@@ -128,6 +141,15 @@ func callsAuditedRepoMutation(call *ast.CallExpr) bool {
 	}
 	if methods, ok := auditedSeamMutations[recv.Sel.Name]; ok && methods[sel.Sel.Name] {
 		return true
+	}
+	// Audited mutation services reached through h.server.services.<Field>.<Method>
+	// — a three-level selector (recv.X is itself h.server.services). The audit
+	// row is written transactionally by the service underneath, identical to the
+	// h.repo case, so no in-handler recordAdminAudit is needed.
+	if methods, ok := auditedServiceMutations[recv.Sel.Name]; ok && methods[sel.Sel.Name] {
+		if inner, ok := recv.X.(*ast.SelectorExpr); ok && inner.Sel.Name == "services" {
+			return true
+		}
 	}
 	return false
 }

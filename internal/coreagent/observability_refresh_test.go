@@ -541,7 +541,7 @@ func TestRefreshComponent_PrometheusType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-prom", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-prom", Type: store.ComponentTypePrometheus, Name: "prom"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(prometheus) error: %v", err)
@@ -552,7 +552,7 @@ func TestRefreshComponent_MimirType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-mimir", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-mimir", Type: store.ComponentTypeMimir, Name: "mimir"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(mimir) error: %v", err)
@@ -563,7 +563,7 @@ func TestRefreshComponent_LokiType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-loki", &fakeLokiAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-loki", Type: store.ComponentTypeLoki, Name: "loki"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(loki) error: %v", err)
@@ -574,7 +574,7 @@ func TestRefreshComponent_TempoType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tempo", &fakeTempoAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-tempo", Type: store.ComponentTypeTempo, Name: "tempo"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(tempo) error: %v", err)
@@ -585,7 +585,7 @@ func TestRefreshComponent_JaegerType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-jaeger", &fakeJaegerAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-jaeger", Type: store.ComponentTypeJaeger, Name: "jaeger"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(jaeger) error: %v", err)
@@ -596,7 +596,7 @@ func TestRefreshComponent_DatadogType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dd", &fakeDatadogAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-dd", Type: store.ComponentTypeDatadog, Name: "datadog"}
 	if err := r.refreshComponent(context.Background(), source); err != nil {
 		t.Fatalf("refreshComponent(datadog) error: %v", err)
@@ -608,7 +608,7 @@ func TestRefreshComponent_UnknownType(t *testing.T) {
 	// Register some adapter so the Get lookup succeeds.
 	reg.Register("src-unknown", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-unknown", Type: "unsupported_type", Name: "unknown"}
 	// Default case: returns nil (logs a debug message, continues).
 	if err := r.refreshComponent(context.Background(), source); err != nil {
@@ -620,7 +620,7 @@ func TestRefreshComponent_AdapterNotFound(t *testing.T) {
 	svc, _ := setupObsTestServices(t)
 	// Do NOT register any adapter for this source.
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-missing", Type: store.ComponentTypePrometheus, Name: "missing"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
 		t.Error("expected error when adapter not found, got nil")
@@ -631,7 +631,7 @@ func TestRefreshComponent_PrometheusWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-prom-bad", &fakeLokiAdapter{}) // wrong type
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-prom-bad", Type: store.ComponentTypePrometheus, Name: "prom"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -642,7 +642,7 @@ func TestRefreshComponent_LokiWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-loki-bad", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-loki-bad", Type: store.ComponentTypeLoki, Name: "loki"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -653,7 +653,7 @@ func TestRefreshComponent_TempoWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-tempo-bad", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-tempo-bad", Type: store.ComponentTypeTempo, Name: "tempo"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -664,7 +664,7 @@ func TestRefreshComponent_JaegerWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-jaeger-bad", &fakePrometheusAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	source := &store.Component{ID: "src-jaeger-bad", Type: store.ComponentTypeJaeger, Name: "jaeger"}
 	if err := r.refreshComponent(context.Background(), source); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

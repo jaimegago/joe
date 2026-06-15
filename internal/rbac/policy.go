@@ -9,11 +9,49 @@ import (
 // It is backed by the RBAC repository and uses zone assignments + policy tables.
 type PolicyEngine struct {
 	repo Repository
+	// promote is the OPTIONAL auto_promote_reads resolver (A001-COREGOV CC-04).
+	// When non-nil it powers the dynamic admit predicate for the agent:core
+	// principal on ActionRead: a component whose type has the flag ON is
+	// admitted with no materialized grant, resolved live per decision. When nil
+	// (every caller that uses NewPolicyEngine — all existing call sites and all
+	// test fakes), the predicate is inert and Decide behaves exactly as before;
+	// this is the behaviour-neutral default that keeps the predicate out of the
+	// main decision path until it is deliberately wired at the engine-build site
+	// (cmd/joe/server.go). Kept as a SEPARATE narrow interface rather than two
+	// methods on the broad Repository so the many Repository fakes need no
+	// change — the lowest-coupling of the two seams CC-04 offered.
+	promote PromoteReadsResolver
 }
 
-// NewPolicyEngine creates a new PolicyEngine.
+// PromoteReadsResolver is the minimal live-read seam the auto_promote_reads
+// dynamic admit predicate needs (A001-COREGOV CC-04): resolve a componentID to
+// its type, and report whether a type has the flag ON. Satisfied by
+// internal/promotereads.Repository and injected only at the engine-build site.
+// Both reads are live per decision (no cache), so flipping a type ON makes its
+// components readable on the NEXT decision with no restart.
+type PromoteReadsResolver interface {
+	// ComponentType resolves componentID to its component type. Returns
+	// ("", nil) for a missing/unknown id so the predicate can fail closed.
+	ComponentType(ctx context.Context, componentID string) (string, error)
+	// IsPromoted reports whether the component type has auto_promote_reads ON
+	// (absent flag => false, the OFF default).
+	IsPromoted(ctx context.Context, componentType string) (bool, error)
+}
+
+// NewPolicyEngine creates a new PolicyEngine. The auto_promote_reads predicate
+// is OFF (resolver nil): this constructor's engines decide exactly as they did
+// before CC-04. Use NewPolicyEngineWithPromote to enable the predicate.
 func NewPolicyEngine(repo Repository) *PolicyEngine {
 	return &PolicyEngine{repo: repo}
+}
+
+// NewPolicyEngineWithPromote creates a PolicyEngine with the auto_promote_reads
+// dynamic admit predicate enabled via the supplied resolver (A001-COREGOV
+// CC-04). A nil resolver is equivalent to NewPolicyEngine (predicate inert).
+// Only the engine-build site in cmd/joe/server.go uses this; every other call
+// site keeps NewPolicyEngine and is unaffected.
+func NewPolicyEngineWithPromote(repo Repository, promote PromoteReadsResolver) *PolicyEngine {
+	return &PolicyEngine{repo: repo, promote: promote}
 }
 
 // Decision carries the resolved zone and a structured reason alongside the
@@ -72,6 +110,16 @@ const (
 	// ReasonNoGrant: the action is in-zone but no principal in the set
 	// holds the grant and none is admin.
 	ReasonNoGrant = "no_grant"
+
+	// ReasonAutoPromoteRead: the deciding principal is the canonical
+	// agent:core service account, the action is ActionRead, and the target
+	// component's type has auto_promote_reads ON (A001-COREGOV CC-04). This
+	// admit needs no materialized grant — the grant-less pattern the admin
+	// short-circuit established — and is read-only by construction: the
+	// predicate fires for ActionRead exclusively, so it can never grant a
+	// mutate. The distinct reason keeps an auto-promoted read distinguishable
+	// from an ordinary grant or admin allow in the audit trail.
+	ReasonAutoPromoteRead = "auto_promote_read"
 )
 
 // IsAllowed returns true if ANY principal in the set may perform action on
@@ -128,6 +176,53 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, comp
 	// NOT widen this — see D-0011.
 	if !zone.Allows(action) {
 		return Decision{Allowed: false, Zone: zoneID, Reason: ReasonActionNotInZone}
+	}
+
+	// auto_promote_reads dynamic admit predicate (A001-COREGOV CC-04).
+	// Evaluated alongside the grant-less admin short-circuit and bound by the
+	// SAME zone.Allows gate above (a zone that forbids read still forbids it —
+	// the promote flag widens WHO may read a permitted action, not WHICH
+	// actions a zone permits, exactly as admin does not bypass allowed_actions
+	// per D-0011). It fires ONLY when:
+	//   - a resolver is wired (nil in every non-build-site engine — inert), AND
+	//   - the action is ActionRead — so the predicate can NEVER grant a mutate
+	//     for any type; the read/mutate floor is independent and unconditional,
+	//     AND
+	//   - the canonical agent:core principal is in the set, AND
+	//   - the target component's type has auto_promote_reads ON, resolved live.
+	// Fails CLOSED: a missing/unknown componentID (empty resolved type) or any
+	// lookup error does NOT admit — it falls through to the normal admin/grant
+	// logic, which denies absent any other basis. For any non-agent:core
+	// principal the predicate never fires, so their decisions are unchanged.
+	if e.promote != nil && action == ActionRead {
+		if corePrincipal, perr := AgentCorePrincipal(); perr == nil {
+			for _, principal := range principals {
+				if principal != corePrincipal {
+					continue
+				}
+				componentType, terr := e.promote.ComponentType(ctx, componentID)
+				if terr != nil {
+					slog.Warn("rbac: auto_promote_reads component-type resolve failed, not admitting",
+						"component_id", componentID, "error", terr)
+					break
+				}
+				if componentType == "" {
+					// Unknown/missing component — fail closed.
+					break
+				}
+				promoted, derr := e.promote.IsPromoted(ctx, componentType)
+				if derr != nil {
+					slog.Warn("rbac: auto_promote_reads flag lookup failed, not admitting",
+						"component_type", componentType, "error", derr)
+					break
+				}
+				if promoted {
+					return Decision{Allowed: true, Zone: zoneID, Reason: ReasonAutoPromoteRead}
+				}
+				// Flag OFF for this type — fall through to normal logic.
+				break
+			}
+		}
 	}
 
 	// Admin short-circuit (Phase H, D-0011). Evaluated before per-zone
