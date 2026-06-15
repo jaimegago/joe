@@ -319,7 +319,7 @@ func TestRefreshComponent_PostgreSQLType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-pg", &fakePostgresAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-pg", Type: store.ComponentTypePostgreSQL, Name: "pg"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(postgresql) error: %v", err)
@@ -330,7 +330,7 @@ func TestRefreshComponent_MySQLType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-mysql", &fakeMySQLAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-mysql", Type: store.ComponentTypeMySQL, Name: "mysql"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(mysql) error: %v", err)
@@ -341,7 +341,7 @@ func TestRefreshComponent_RedisType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-redis", &fakeRedisAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-redis", Type: store.ComponentTypeRedis, Name: "redis"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(redis) error: %v", err)
@@ -352,7 +352,7 @@ func TestRefreshComponent_MongoDBType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-mongo", &fakeMongoDBAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-mongo", Type: store.ComponentTypeMongoDB, Name: "mongo"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(mongodb) error: %v", err)
@@ -363,7 +363,7 @@ func TestRefreshComponent_KafkaType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-kafka", &fakeKafkaAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-kafka", Type: store.ComponentTypeKafka, Name: "kafka"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(kafka) error: %v", err)
@@ -374,7 +374,7 @@ func TestRefreshComponent_ElasticsearchType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-es", &fakeElasticsearchAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-es", Type: store.ComponentTypeElasticsearch, Name: "es"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(elasticsearch) error: %v", err)
@@ -385,7 +385,7 @@ func TestRefreshComponent_PostgreSQLWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-pg-bad", &fakeMySQLAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-pg-bad", Type: store.ComponentTypePostgreSQL, Name: "pg"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

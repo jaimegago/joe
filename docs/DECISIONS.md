@@ -10,6 +10,190 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0028 — Govern the Core Agent's autonomous refresh reads under the per-component RBAC floor (boot-minted agent:core principal + per-type auto_promote_reads predicate)
+
+- Date: 2026-06-15
+- Status: IMPLEMENTED. In the tree as of this date as the A001-COREGOV stack
+  (uncommitted at time of writing; cite paths/symbols, not commit hashes, and
+  re-derive line numbers against the tree rather than trusting any quoted here).
+  Closes the carve-out the read-only investigations named: the Core Agent
+  background refresh path resolved adapters directly off the raw registry with no
+  principal and no permit (the "documented allowlisted exception"), so the
+  per-component RBAC / read-only floor the Accessor enforces on the transport path
+  did not cover the one autonomous path that touches every component cluster-wide.
+- Decision: The Core Agent's autonomous refresh reads are now floored under the
+  same per-component RBAC seam as transport reads, via (1) a boot-minted `svc:`
+  service principal `agent:core` stamped onto the refresh context, (2) refresh
+  adapter resolution routed through an `*access.Accessor` that runs permit at
+  `rbac.ActionRead` BEFORE the adapter/credential is resolved, and (3) a
+  per-component-type, default-OFF `auto_promote_reads` control that is the single
+  autonomous-read admit, expressed as a dynamic predicate inside the policy engine
+  rather than as materialized grant rows. "The Core Agent is refreshing" now
+  structurally implies "the refresh is governed by the floor."
+- Threat closed: previously refresh ran under the plain server-lifecycle context
+  with NO principal (`PrincipalFromContext` → `rbac.Unknown`) and resolved each
+  component's adapter via the raw `r.services.Adapters.Get(source.ID)` with no
+  permit, then enumerated cluster-wide (e.g. all-namespaces k8s list). A read
+  forbidden to every human/transport caller by zone was still performed
+  autonomously against the backend by the refresh loop, using the component's
+  resident (often org-wide / ambient) credential, with the only governance being a
+  static allowlist that exempted the whole `internal/coreagent` prefix. Flooring
+  the resolve deletes that ungoverned-read state class: a component with no zone
+  grant and no promotion is now denied before its credential is ever exercised by
+  refresh.
+- Decisions (each with WHY + a verifiable basis anchor):
+  a. SINGLE SHARED SERVICE PRINCIPAL. One principal — `agent:core`, minted as
+     `svc:agent:core` — carries BOTH the refresh read path AND the in-loop graph
+     writes. WHY: there is no separate discovery-write subsystem; the autonomous
+     graph mutations run INSIDE the refresh loop (every `*_refresh.go` builds a
+     delta and calls `ApplyGraphDelta` on the same `ctx`), so stamping the
+     principal once on the context handed to the agent covers both halves with no
+     per-path threading. Minted as an internal boot principal, never through the
+     service-account resolver (it is not an authenticated API caller). BASIS:
+     `rbac.CoreAgentServiceName` / `rbac.AgentCorePrincipal()`
+     (`internal/rbac/identity.go`); the single mint + `rbac.WithPrincipal` stamp at
+     `coreAgent.Start(...)` (`cmd/joe/server.go`, the agent-start block); the
+     in-loop write half recorded in
+     `docs/investigations/coreagent-refresh-governance-mint-thread.md` (Q3 / the
+     "no distinct discovery-write subsystem" contradiction section).
+  b. REFRESH READS ARE FLOORED AT THE ADAPTER RESOLUTION. The refresh path resolves
+     each component's adapter through the guarded seam
+     (`internal/coreagent/refresh.go` `resolveAdapter` → `access.Accessor.ResolveAdapter`),
+     which runs permit at `rbac.ActionRead` BEFORE the adapter (and thus its
+     credential) is resolved. WHY: a single floored resolution point means all
+     downstream per-type reads inherit the floor — a denied component returns early
+     at `refreshComponent` (skip-quietly on `access.ErrPermissionDenied`) before any
+     `refresh*Component` runs, so no per-type read site needs its own check. BASIS:
+     `internal/coreagent/refresh.go` (`resolveAdapter`, the `ActionRead` call, the
+     skip-quietly branch); `Accessor.ResolveAdapter` permit-before-resolve
+     (`internal/access/access.go`).
+  c. auto_promote_reads IS THE SINGLE AUTONOMOUS-READ CONTROL. A per-component-type,
+     default-OFF flag, on the admin-gated / audited config surface, is THE control
+     that admits a component's type into the agent:core read floor — for both
+     refresh and discovery. It is NOT a boot grant and NOT per-component manual
+     grants. It grants ONLY read; the read/mutate floor (D-0018/D-0020) is
+     independent and unconditional — promotion never widens to mutate. WHY: a single
+     per-type admit keeps the autonomous-read surface inspectable and operator-
+     controllable from one place, default-closed, with the safety floor orthogonal to
+     it. BASIS: migration `024_agent_read_promotions`
+     (`internal/store/migrations/024_agent_read_promotions.up.sql`); the
+     `internal/promotereads` package (`Repository` read surface +
+     `MutationService.SetPromoted` sole write path); admin read-promotions endpoints
+     (`GET/POST /api/v1/admin/read-promotions`,
+     `internal/api/admin.go` `listReadPromotions` / `setReadPromotion`).
+  d. MECHANISM = DYNAMIC ADMIT PREDICATE, NOT MATERIALIZED GRANT ROWS. The flag is
+     enforced as a live branch in `rbac.PolicyEngine.Decide`
+     (`internal/rbac/policy.go`, `ReasonAutoPromoteRead`), NOT by inserting
+     `rbac_policies` rows. WHY: `rbac_policies` is zone-keyed and action-less, so it
+     cannot express a component-scoped read-only admit without new schema and would
+     over-grant the whole zone; the predicate is hot-reloadable (the engine reads
+     live per request, no boot cache), component+action precise, and covers
+     components added AFTER a flag is turned on with no backfill. It is wired via
+     `NewPolicyEngineWithPromote(repo, promoteResolver)` and fires for
+     `(principal == agent:core ∧ action == ActionRead ∧ component-type promoted)`
+     only — structurally the same grant-less admit shape as the existing admin
+     short-circuit. It sits AFTER the `zone.Allows(action)` gate, so a read-
+     forbidding zone still denies (D-0011-consistent: the flag widens WHO may read a
+     zone-permitted action, never WHICH actions a zone allows). BASIS:
+     `internal/rbac/policy.go` (`Decide`, the `e.promote != nil && action == ActionRead`
+     branch placed after `zone.Allows`, `ReasonAutoPromoteRead`,
+     `NewPolicyEngineWithPromote`, the `PromoteReadsResolver` seam); fork analysis in
+     `docs/investigations/coreagent-refresh-governance-autopromote.md` (Q2/Q4).
+  e. FAIL-CLOSED POSTURE. The refresh seam fails closed: a nil accessor denies with
+     `access.ErrPermissionDenied` (resolving nothing), and boot wires the refresh
+     accessor before `Start`. The static guard
+     (`TestInvariant_NoUngovernedAdapterOrGraphAccess`,
+     `internal/api/access_guard_test.go`) was RE-ARMED — `internal/coreagent` is no
+     longer exempt for the ADAPTER READ (the allowlist is now split by access kind),
+     so any reintroduced raw `services.Adapters.Get` on a coreagent path now fails
+     the test. WHY: mirrors D-0027's refuse-on-absent-governance posture at the
+     autonomous-read seam — the absence of governance must be unreachable, not a soft
+     default. BASIS: `internal/coreagent/refresh.go` (`resolveAdapter` nil-accessor →
+     `ErrPermissionDenied`, "fail-closed; CC-08"); the boot wiring at
+     `cmd/joe/server.go` (`SetRefreshAccessor` before `coreAgent.Start`);
+     `internal/api/access_guard_test.go` (the split-by-access-kind allowlist, adapter
+     read no longer exempt for coreagent).
+  f. WRITE-HALF INTENTIONAL NON-GATE. The autonomous graph writes
+     (`ApplyGraphDelta` → graph store `AddNode`/`AddEdge`) are internal Tier-3
+     knowledge writes governed UPSTREAM by the read floor — a denied component yields
+     no adapter, no data, and therefore no delta — and are principal-stamped
+     (agent:core) for audit, with NO write permit by design. WHY: this is a
+     deliberate non-gate, not an oversight: the only data that can reach the graph is
+     data a floored read already admitted, and the write target is Joe's own internal
+     knowledge graph, not an external system. The post-floor orphan-write
+     enumeration found ZERO graph-write call sites reachable without a floored adapter
+     read (all floored-upstream). BASIS: `internal/coreagent/graphdelta.go`
+     (`ApplyGraphDelta` on the raw graph store); the orphan-write enumeration (CC-06)
+     in `docs/investigations/coreagent-refresh-governance-mint-thread.md`; the graph-
+     write allowlist arm retained in `internal/api/access_guard_test.go`.
+- Soft spots (recorded, NOT launch bars):
+  - Secret-value redaction in the graph-write path is INCIDENTAL, not an enforced
+    invariant. `internal/coreagent/graphdelta.go` has no redaction layer; the reason
+    no secret VALUE reaches the store is upstream and incidental — the k8s build step
+    copies only `data_keys` (key names), so there is no value on the node to redact.
+    A future change that copied values would persist them unfiltered. Recorded in
+    `docs/investigations/coreagent-refresh-governance.md` (§6).
+  - Orphan-write-path outcome: the post-CC-05 re-enumeration found NO graph-write
+    reachable without a floored adapter read (all 23 `ApplyGraphDelta` sites
+    floored-upstream, zero orphans), so no new soft spot was created by routing only
+    the read half through the Accessor. Outcome recorded in
+    `docs/investigations/coreagent-refresh-governance-mint-thread.md` (CC-06).
+- Basis: re-verified against the live tree on landing —
+  `internal/rbac/identity.go` (`CoreAgentServiceName`, `AgentCorePrincipal`);
+  `cmd/joe/server.go` (refresh-accessor build + `SetRefreshAccessor` + the
+  `rbac.WithPrincipal(ctx, agentCore)` stamp at `coreAgent.Start`);
+  `internal/coreagent/refresh.go` (`resolveAdapter`, `ActionRead`, nil-accessor
+  fail-closed); `internal/access/access.go` (`ResolveAdapter` permit-before-resolve);
+  `internal/rbac/policy.go` (`Decide` auto-promote branch after `zone.Allows`,
+  `ReasonAutoPromoteRead`, `NewPolicyEngineWithPromote`, `PromoteReadsResolver`);
+  `internal/promotereads/promotereads.go` (Repository + `MutationService.SetPromoted`);
+  `internal/store/migrations/024_agent_read_promotions.{up,down}.sql`;
+  `internal/api/admin.go` (read-promotions routes); the re-armed guard
+  `internal/api/access_guard_test.go`. Tests landed alongside:
+  `internal/coreagent/agent_core_principal_test.go`,
+  `internal/coreagent/refresh_access_test.go`,
+  `internal/rbac/policy_promotereads_test.go`,
+  `internal/api/readpromotions_admin_test.go`.
+- Cross-references (investigations this design produced):
+  `docs/investigations/coreagent-refresh-governance.md` (read-only diagnosis: no
+  principal, secret-content scope, sole bypass site),
+  `docs/investigations/coreagent-refresh-governance-mint-thread.md` (mint+thread
+  dependency re-verification, the in-loop write-half contradiction, CC-06 orphan
+  enumeration), and
+  `docs/investigations/coreagent-refresh-governance-autopromote.md` (the dynamic-
+  predicate vs materialized-grant fork). Also references
+  `docs/investigations/ambient-credential-dispatch-seam.md` (the seam keyed on
+  componentID not credential reach, and the carve-out this closes).
+- Supersedes: (1) the documented allowlist exception for the coreagent ADAPTER READ
+  — the prose at `internal/access/access.go` / `internal/api/access_guard_test.go`
+  stating the in-process Core Agent refresh path is "the single documented exception"
+  is now RETIRED for the read half (the guard is re-armed; only the graph-WRITE
+  exemption remains, per decision f); and (2) the
+  `internal/coreagent/agent.go` comment asserting "the agent:core principal does not
+  yet exist", now obsolete (the principal is minted and stamped at boot).
+- Deferred (explicit post-launch non-goals, recorded so they are not assumed in
+  scope):
+  - Full-mode / self-healing autonomous MUTATING actions — a separate authorization
+    model (not covered by the read floor; the write-half non-gate of decision f is
+    deliberately read-floored-only).
+  - Scoped-ambient sub-grants — the unit of authorization remains the COMPONENT, not
+    the underlying repo/dashboard/namespace a single component credential can reach
+    (the granularity caveat from
+    `docs/investigations/ambient-credential-dispatch-seam.md`).
+  - Operator-facing UI / CLI to register or promote components — the read-promotions
+    control ships as the admin HTTP surface only.
+  - EdgeAuth open-when-unconfigured dead branch (`internal/auth/middleware.go`) —
+    the same newly-unreachable branch D-0027 parked; retire later with the
+    unreachable-state-assertion pattern.
+- References D-0027 (the boot fail-fast / refuse-on-absent-governance posture this
+  mirrors at the autonomous-read seam), D-0019 (the trust model and the promotion /
+  read-only-confinement / autonomous-discovery work D-0027 said this unblocks),
+  D-0018/D-0020 (the write floor / Read-Mutate axis the promotion is orthogonal to),
+  and D-0011 (admin/zone non-widening, which the post-`zone.Allows` predicate
+  placement preserves).
+
+---
+
 ## D-0027 — Refuse to start without a usable identity configuration (engine-nil-at-runtime made unreachable)
 
 - Date: 2026-06-15

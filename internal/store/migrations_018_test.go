@@ -54,13 +54,13 @@ func TestMigration018_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step five migrations down: reverts 022 (chat sessions) then 021
-	// (principals) then 020 (admin-audit kind widening) then 019 (the LLM
-	// context-budget table) then 018 — 019, 020, 021, and 022 now sit above
-	// 018. Stepping -5 lands the schema just below 018, isolating 018's down
-	// migration as this test intends.
-	if err := m.Steps(-6); err != nil {
-		t.Fatalf("Steps(-6): %v", err)
+	// 2) Step the migrations above 018 down, then 018: reverts 024 (read
+	// promotions), 023 (source→component), 022 (chat sessions), 021
+	// (principals), 020 (admin-audit kind widening), 019 (the LLM context-budget
+	// table), then 018 — 019..024 now sit above 018. Stepping -7 lands the
+	// schema just below 018, isolating 018's down migration as this test intends.
+	if err := m.Steps(-7); err != nil {
+		t.Fatalf("Steps(-7): %v", err)
 	}
 	if kindAdmitted(t, s, "auth_login") {
 		t.Error("after down: audit_log CHECK must reject 'auth_login' again")

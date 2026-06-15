@@ -113,7 +113,7 @@ func TestRefreshComponent_SplunkType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-splunk", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-splunk", Type: store.ComponentTypeSplunk, Name: "splunk"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(splunk) error: %v", err)
@@ -124,7 +124,7 @@ func TestRefreshComponent_SplunkWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-splunk-bad", &fakeDynatraceAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-splunk-bad", Type: store.ComponentTypeSplunk, Name: "splunk"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -166,7 +166,7 @@ func TestRefreshComponent_DynatraceType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dyna", &fakeDynatraceAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-dyna", Type: store.ComponentTypeDynatrace, Name: "dynatrace"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(dynatrace) error: %v", err)
@@ -177,7 +177,7 @@ func TestRefreshComponent_DynatraceWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dyna-bad", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-dyna-bad", Type: store.ComponentTypeDynatrace, Name: "dynatrace"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -219,7 +219,7 @@ func TestRefreshComponent_NewRelicType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nr", &fakeNewRelicAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-nr", Type: store.ComponentTypeNewRelic, Name: "newrelic"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(newrelic) error: %v", err)
@@ -230,7 +230,7 @@ func TestRefreshComponent_NewRelicWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-nr-bad", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-nr-bad", Type: store.ComponentTypeNewRelic, Name: "newrelic"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -244,6 +244,7 @@ func TestRefreshComponent_NewRelicWrongType(t *testing.T) {
 func TestRefresher_Stop_Graceful(t *testing.T) {
 	svc := makeTestServices(t)
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 	ctx := context.Background()
 
 	if err := r.Start(ctx); err != nil {
@@ -261,6 +262,7 @@ func TestRefresher_Stop_Graceful(t *testing.T) {
 func TestRefresher_Stop_ContextCancel(t *testing.T) {
 	svc := makeTestServices(t)
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := r.Start(ctx); err != nil {
@@ -284,6 +286,7 @@ func TestRefresher_Stop_ContextCancel(t *testing.T) {
 func TestRefresher_RefreshLoop_ExitsOnStop(t *testing.T) {
 	svc := makeTestServices(t)
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 	ctx := context.Background()
 
 	if err := r.Start(ctx); err != nil {
@@ -618,7 +621,7 @@ func TestRefreshComponent_UnknownTypeWithSplunkAdapter(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-unknown-splunk", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-unknown-splunk", Type: "unsupported_type_xyz", Name: "unknown"}
 	// Should return nil — unknown types are silently skipped.
 	if err := r.refreshComponent(context.Background(), src); err != nil {
@@ -643,6 +646,7 @@ func TestRefresher_Refresh_WithUnsupportedSource(t *testing.T) {
 	})
 
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 	// refresh should complete without error even if individual components fail.
 	if err := r.refresh(ctx); err != nil {
 		t.Errorf("refresh() with failing source should not propagate error, got: %v", err)
@@ -761,6 +765,7 @@ func TestRefresher_Refresh_MetricsNotNil(t *testing.T) {
 	svc := makeTestServices(t)
 	// Pass nil metrics — NewRefresher should call EnsureMetrics internally.
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 	if r.metrics == nil {
 		t.Error("metrics should not be nil after NewRefresher")
 	}
@@ -792,6 +797,7 @@ func TestRefreshComponent_UpdateSyncStatusCalled(t *testing.T) {
 	// No adapter registered → refreshComponent will fail, but deferred
 	// UpdateSyncStatus should still run without panic.
 	r := NewRefresher(svc, &mockLLMAdapter{}, slog.Default(), nil)
+	r.SetAccessor(permitAllAccessor(svc))
 	_ = r.refreshComponent(ctx, src) // error expected; just verify no panic.
 }
 

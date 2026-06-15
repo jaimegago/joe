@@ -73,6 +73,30 @@ func ServicePrincipal(name string) (Principal, error) {
 	return Principal(PrefixSvc + name), nil
 }
 
+// CoreAgentServiceName is the canonical service-account name for the Core
+// Agent's internal boot identity (design A001-COREGOV). It is the single
+// source of truth for the "agent:core" name: the boot path stamps the
+// principal onto the refresh context (CC-02), and the floored read resolution
+// (CC-03) plus the auto_promote_reads grant wiring (CC-04) reference it. No
+// other call site may re-type the "agent:core" literal — they all import this
+// constant or call AgentCorePrincipal below.
+//
+// Unlike a Phase D named API key, agent:core is not an authenticated caller:
+// it is minted in-process at boot and rides the context, never the
+// auth/service-account resolver.
+const CoreAgentServiceName = "agent:core"
+
+// AgentCorePrincipal returns the canonical svc:agent:core principal for the
+// Core Agent's internal boot identity. It is the constructor counterpart to
+// CoreAgentServiceName and the single point where that name becomes a
+// Principal. It delegates to ServicePrincipal, so the svc: prefix invariant
+// holds by construction; the only way it returns an error is if the constant
+// above were ever malformed (empty or reserved-prefixed), which the unit
+// tests guard against.
+func AgentCorePrincipal() (Principal, error) {
+	return ServicePrincipal(CoreAgentServiceName)
+}
+
 // HasReservedPrefix reports whether s begins with one of the reserved kind
 // prefixes. Used by CLI provisioning to reject grants to malformed principals.
 func HasReservedPrefix(s string) bool {

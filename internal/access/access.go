@@ -16,10 +16,22 @@
 // Invariant (asserted by internal/access/guard_test.go and
 // internal/api/access_guard_test.go): no package other than this one
 // resolves an adapter via Registry.Get or calls a graph-store method, so
-// there is exactly one path to reach an adapter or the graph store. The
-// in-process Core Agent refresh path (internal/coreagent) is the single
-// documented exception, deferred to Phase E (loopback removal); see the
-// allowlist in api/access_guard_test.go.
+// there is exactly one path to reach an adapter or the graph store.
+//
+// The in-process Core Agent refresh ADAPTER READ is no longer an exception:
+// since A001-COREGOV CC-05 it resolves every component's adapter through
+// access.ResolveAdapter under the agent:core principal, so the read is
+// GOVERNED by this seam (and floored by the promote-aware engine) like any
+// other adapter access.
+//
+// The Core Agent's graph WRITE (internal/coreagent ApplyGraphDelta ->
+// raw services.Graph.AddNode/AddEdge/Delete*) remains outside this seam by
+// intent — NOT a deferred or not-yet-governed gap. It is an internal Tier-3
+// knowledge write, governed upstream by the agent:core read floor
+// (A001-COREGOV): a component the refresh read denies yields no delta, so no
+// write occurs. The write carries the agent:core principal for audit and
+// takes no write permit by design. See the allowlist in
+// api/access_guard_test.go.
 package access
 
 import (
@@ -179,6 +191,43 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 // infrastructure access (see permit).
 func (a *Accessor) permitForPrincipal(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) error {
 	return a.permit(ctx, rbac.NewPrincipalSet(principal), sourceID, action)
+}
+
+// ResolveAdapter enforces (principal, sourceID, action) and, on a permitted
+// decision, resolves and returns the base adapter for sourceID untyped. It is
+// the guarded entry point for callers that perform their own concrete-type
+// dispatch on the resolved adapter (the in-process Core Agent refresh path,
+// A001-COREGOV CC-05): the autonomous refresh type-switches the adapter per
+// component type, so it cannot use the generic, type-parameterised guard.
+//
+// Like guard and observeResolve, permit runs BEFORE a.registry.Get, so an
+// ungranted/unpromoted component is DENIED with ErrPermissionDenied before its
+// adapter — and thus its credential — is ever resolved. The action is declared
+// by the caller (refresh passes rbac.ActionRead) so it stays adjacent to the
+// semantics of the call (design §2.8). This method performs no infrastructure
+// access beyond resolving the adapter handle; the caller invokes adapter
+// methods itself.
+func (a *Accessor) ResolveAdapter(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) (adapters.Adapter, error) {
+	// This seam resolves adapters for the autonomous refresh path, which is
+	// read-only on customer infrastructure by invariant (api/access_guard_test.go
+	// VERDICT-A). Declaring rbac.ActionRead here — adjacent to the gated resolve,
+	// per design §2.8 — pins that contract: a caller that asks this method to
+	// resolve an adapter for a mutating action is a programming error, not a
+	// silent privilege escalation, so it is rejected before any permit/resolve.
+	if action != rbac.ActionRead && action != rbac.ActionQuery {
+		return nil, fmt.Errorf("%w: ResolveAdapter is a read-only seam, refusing action %q", ErrPermissionDenied, action)
+	}
+	if err := a.permitForPrincipal(ctx, principal, sourceID, action); err != nil {
+		return nil, err
+	}
+	adapter, err := a.registry.Get(sourceID)
+	if err != nil {
+		if errors.Is(err, adapters.ErrAdapterNotFound) {
+			return nil, fmt.Errorf("%w: %s", ErrComponentNotFound, sourceID)
+		}
+		return nil, err
+	}
+	return adapter, nil
 }
 
 // guard enforces (principal, sourceID, action), then resolves the adapter

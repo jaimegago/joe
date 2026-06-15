@@ -18,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/llmsettings"
 	"github.com/jaimegago/joe/internal/llmusage"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
@@ -118,6 +119,14 @@ type Services struct {
 	// either both rows land or neither does. nil in unit-test
 	// harnesses that don't exercise model switching or limit edits.
 	LLMSettings *llmsettings.MutationService
+	// PromoteReads is the storage-backed auto_promote_reads service
+	// (A001-COREGOV CC-04, migration 024). Owns the per-component-type flag
+	// that the policy engine consults as the agent:core + ActionRead dynamic
+	// admit predicate. The admin REST surface (GET/POST
+	// /api/v1/admin/read-promotions) reads through its Repo() and writes through
+	// SetPromoted, which commits the flag and its audit row in one transaction.
+	// nil in unit-test harnesses that don't exercise the promotion surface.
+	PromoteReads *promotereads.MutationService
 	// SessionLimitsProvider is the storage-backed agentloop.SessionLimits
 	// the per-task agent construction reads from. Built once at startup
 	// and shared across tasks so a per-task agent construction does not

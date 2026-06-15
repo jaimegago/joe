@@ -388,7 +388,7 @@ func TestRefreshComponent_DatadogWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dd-bad", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-dd-bad", Type: store.ComponentTypeDatadog, Name: "datadog"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -399,7 +399,7 @@ func TestRefreshComponent_PrometheusWrongType_Splunk(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-prom-bad2", &fakeSplunkAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-prom-bad2", Type: store.ComponentTypePrometheus, Name: "prom"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/knowledge"
@@ -56,6 +57,15 @@ func (a *Agent) ToolExecutor() ToolExecutor {
 	return a.executor
 }
 
+// SetRefreshAccessor wires the guarded refresh accessor onto the background
+// refresher (A001-COREGOV CC-05). cmd/joe/server.go calls this once at boot,
+// before Start, with an accessor built over the SAME promote-aware policy engine
+// CC-04 armed, so the autonomous refresh resolves every component's adapter
+// through the access guard under the agent:core principal at ActionRead.
+func (a *Agent) SetRefreshAccessor(accessor *access.Accessor) {
+	a.refresher.SetAccessor(accessor)
+}
+
 // New creates a new Core Agent
 func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) *Agent {
 	metrics = observability.EnsureMetrics(metrics)
@@ -69,9 +79,13 @@ func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observabil
 	// executor denies managed-system mutations whenever the floor is up. Routing
 	// the autonomous graph-refresh path (graphdelta → store) through this executor
 	// seam is deferred to a dedicated follow-up (D-0022 Task 2: non-trivial — the
-	// seam is tool-name/args-shaped, the refresh is typed-store-shaped, and the
-	// agent:core principal does not yet exist). The floor still governs the LLM
-	// tool calls this executor runs today.
+	// seam is tool-name/args-shaped while the refresh is typed-store-shaped). The
+	// agent:core principal now exists (A001-COREGOV CC-02): cmd/joe/server.go
+	// stamps rbac.AgentCorePrincipal() onto the context handed to Start, so it is
+	// carried on the refresh context end-to-end. It is carried for identity/audit
+	// only at this point — the read is not yet floored (CC-03) and no grant is
+	// wired (CC-04), so refresh behavior is unchanged. The floor still governs
+	// the LLM tool calls this executor runs today.
 	executor := tools.NewExecutor(toolRegistry, metrics, tools.WithWriteFloor(services.WriteFloor))
 
 	return &Agent{

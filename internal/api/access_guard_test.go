@@ -31,28 +31,51 @@ import (
 // caller principal, not through a loopback HTTP self-call. This is the key
 // signal Phase E achieved its purpose.
 //
-// Remaining allowlisted packages:
+// The allowlist is now SPLIT BY ACCESS KIND (A001-COREGOV CC-08): a package may
+// be exempt for graph access without being exempt for adapter reads. See
+// adapterGetAllowed and graphAccessAllowed below.
+//
+// Allowlisted packages:
 //
 //   - internal/access  — the guarded accessor itself (its whole purpose).
+//     Exempt for both kinds, though it reaches the registry via its own
+//     a.registry.Get field, never services.Adapters.Get.
 //
 //   - internal/coreagent — the Core Agent's background refresh path, which is
-//     timer-driven and runs WITHOUT a caller principal (no user request,
-//     no edge auth). The accessor requires a principal, so the refresh path
-//     stays structurally outside it. This is NOT the loop path that Phase E
-//     refactored — that is internal/api, which is covered by this guard.
+//     timer-driven and runs under the synthetic agent:core principal (no user
+//     request, no edge auth). Exempt for GRAPH ACCESS ONLY (graphAccessAllowed),
+//     NOT for adapter reads.
 //
-//     Phase G (D-0010) re-verified this exception against every refresh path
-//     and the Core Agent's own onboarding tools. The audit verdict was
-//     VERDICT-A: the refresh side is READ-ONLY on customer infrastructure
+//     coreagent is NO LONGER exempt for the ADAPTER READ. Since A001-COREGOV
+//     CC-05 the refresh resolves every component's adapter through
+//     access.ResolveAdapter under the agent:core principal at rbac.ActionRead
+//     (internal/coreagent/refresh.go resolveAdapter -> r.accessor.ResolveAdapter),
+//     and CC-08 removed the last raw fallback: a nil accessor now FAILS CLOSED
+//     (returns ErrPermissionDenied, no registry.Get) instead of reading the raw
+//     registry. With no raw services.Adapters.Get left on any coreagent path,
+//     coreagent is dropped from adapterGetAllowed — so the guard is RE-ARMED:
+//     any reintroduced raw services.Adapters.Get in coreagent now FAILS this
+//     test (it is no longer adapterExempt, so the Adapters.Get branch records a
+//     violation). Production boot in cmd/joe/server.go always wires the accessor.
+//
+//     What coreagent's graph exemption DOES still cover is the Core Agent's graph WRITE half:
+//     ApplyGraphDelta -> raw services.Graph.AddNode/AddEdge/Delete* in the
+//     *_refresh.go files, plus the onboarding-tool graph mutations in agent.go.
+//     This is INTENTIONAL, not a deferred or not-yet-governed gap: it is an
+//     internal Tier-3 knowledge write, governed upstream by the agent:core read
+//     floor (A001-COREGOV). A component whose refresh adapter read is denied
+//     yields no delta, so the write is fenced by the floored read; the write
+//     carries the agent:core principal for audit and takes no write permit by
+//     design. The orphan-write enumeration (every ApplyGraphDelta call site is
+//     reachable only downstream of the floored access.ResolveAdapter) is recorded
+//     in docs/investigations/coreagent-refresh-governance-mint-thread.md.
+//
+//     The refresh side remains READ-ONLY on customer infrastructure by invariant
 //     (every *_refresh.go file calls List/Get/Describe/Status only — no
-//     Create/Update/Delete/Apply/Post/Put/Patch on any adapter), and the
-//     onboarding side mutates only the INTERNAL graph store via
-//     graph_add_node / graph_add_edge tools. No code path on the coreagent
-//     side issues an infrastructure mutation. The allowlist therefore stays;
-//     should the refresh path ever gain a mutating call, that fact should
-//     surface here as a new violation, this comment should be updated, and
-//     the refresh should be moved under the accessor (or under captaingate
-//     with a synthetic caller principal).
+//     Create/Update/Delete/Apply/Post/Put/Patch on any adapter). Should the
+//     refresh path ever gain a mutating INFRASTRUCTURE call, that is a different
+//     matter from this intentional internal graph write and must be moved under
+//     the accessor (or under captaingate with a synthetic caller principal).
 //
 //   - cmd/joe — the composition root. Its only access is a process-level
 //     OpenTelemetry business-metrics gauge that reads graph.Summary; this is
@@ -64,7 +87,27 @@ import (
 func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 
-	allowedPrefixes := []string{
+	// Two SEPARATE allowlists, one per access kind (A001-COREGOV CC-08). Before
+	// CC-08 a single prefix list exempted internal/coreagent for BOTH adapter
+	// reads and graph writes, so the guard could no longer catch a reintroduced
+	// raw services.Adapters.Get in coreagent. CC-08 fail-closed the refresh
+	// resolve (it now flows through access.ResolveAdapter), so coreagent no longer
+	// needs — and must NOT keep — an adapter-read exemption: dropping it from
+	// adapterGetAllowed re-arms the guard so any new raw services.Adapters.Get in
+	// coreagent (or anywhere outside the accessor) FAILS this test. The intentional
+	// graph-WRITE half (ApplyGraphDelta -> services.Graph.AddNode/AddEdge/Delete*,
+	// plus agent.go onboarding writes) stays exempt via graphAccessAllowed.
+	//
+	// internal/access is the guarded accessor itself; it reaches the registry via
+	// its own a.registry.Get field (NOT services.Adapters.Get), so it does not even
+	// need the adapter-read exemption — it is listed only for defensive clarity.
+	adapterGetAllowed := []string{
+		filepath.FromSlash("internal/access/"),
+	}
+	// Graph access stays exempt for the accessor, the Core Agent's intentional
+	// Tier-3 graph write (governed upstream by the CC-05 floored read), and the
+	// composition root's process-level graph.Summary telemetry gauge.
+	graphAccessAllowed := []string{
 		filepath.FromSlash("internal/access/"),
 		filepath.FromSlash("internal/coreagent/"),
 		filepath.FromSlash("cmd/joe/"),
@@ -102,10 +145,23 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 			return nil
 		}
 		rel, _ := filepath.Rel(repoRoot, path)
-		for _, p := range allowedPrefixes {
-			if strings.HasPrefix(rel, p) {
-				return nil
+		// A file may be exempt for one access kind but not the other (e.g.
+		// coreagent is exempt for graph writes but NOT for adapter reads since
+		// CC-08), so the prefix check is applied per-violation below, not as a
+		// whole-file skip.
+		hasPrefix := func(prefixes []string) bool {
+			for _, p := range prefixes {
+				if strings.HasPrefix(rel, p) {
+					return true
+				}
 			}
+			return false
+		}
+		adapterExempt := hasPrefix(adapterGetAllowed)
+		graphExempt := hasPrefix(graphAccessAllowed)
+		// Skip parsing only when the file is exempt for BOTH kinds.
+		if adapterExempt && graphExempt {
+			return nil
 		}
 
 		fset := token.NewFileSet()
@@ -129,14 +185,16 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 				return true
 			}
 			line := fset.Position(call.Pos()).Line
-			// services.Adapters.Get(...) — resolve-for-use path.
-			if recv.Sel.Name == "Adapters" && sel.Sel.Name == "Get" {
+			// services.Adapters.Get(...) — resolve-for-use path. Exempt only for
+			// adapterGetAllowed (NOT coreagent since CC-08).
+			if recv.Sel.Name == "Adapters" && sel.Sel.Name == "Get" && !adapterExempt {
 				violations = append(violations, violation{rel, line,
 					"services.Adapters.Get(...) — resolve an adapter through the guarded accessor instead"})
 				return true
 			}
-			// services.Graph.<GraphStoreMethod>(...) — graph access.
-			if recv.Sel.Name == "Graph" && graphMethods[sel.Sel.Name] {
+			// services.Graph.<GraphStoreMethod>(...) — graph access. Exempt for
+			// graphAccessAllowed (includes coreagent's intentional Tier-3 write).
+			if recv.Sel.Name == "Graph" && graphMethods[sel.Sel.Name] && !graphExempt {
 				violations = append(violations, violation{rel, line,
 					"services.Graph." + sel.Sel.Name + "(...) — reach the graph store through the guarded accessor instead"})
 			}
@@ -152,7 +210,11 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 		t.Errorf("ungoverned adapter/graph access at %s:%d — %s\n\n"+
 			"  Phase A invariant: the only path to an adapter or the graph store is the\n"+
 			"  guarded accessor (internal/access). If this is the accessor or a documented\n"+
-			"  Phase-E exception, add its package prefix to allowedPrefixes in this test.",
+			"  exception, add its package prefix to the matching allowlist in this test\n"+
+			"  (adapterGetAllowed for services.Adapters.Get, graphAccessAllowed for graph\n"+
+			"  methods). NOTE (CC-08): coreagent is intentionally NOT in adapterGetAllowed —\n"+
+			"  a raw adapter read there must flow through access.ResolveAdapter, not be\n"+
+			"  re-exempted.",
 			v.rel, v.line, v.what)
 	}
 }

@@ -376,7 +376,7 @@ func TestRefreshComponent_OCIType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-oci", &fakeOCIAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-oci", Type: store.ComponentTypeOCIRegistry, Name: "oci"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(oci_registry) error: %v", err)
@@ -387,7 +387,7 @@ func TestRefreshComponent_DockerHubType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-dh", &fakeOCIAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-dh", Type: store.ComponentTypeDockerHub, Name: "dockerhub"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(dockerhub) error: %v", err)
@@ -398,7 +398,7 @@ func TestRefreshComponent_ArtifactoryType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-art", &fakeArtifactoryAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-art", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(artifactory) error: %v", err)
@@ -409,7 +409,7 @@ func TestRefreshComponent_ECRType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-ecr", &fakeECRAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-ecr", Type: store.ComponentTypeECR, Name: "ecr"}
 	if err := r.refreshComponent(context.Background(), src); err != nil {
 		t.Fatalf("refreshComponent(ecr) error: %v", err)
@@ -421,7 +421,7 @@ func TestRefreshComponent_OCIWrongType(t *testing.T) {
 	// Register wrong adapter type — adapter is ECR but source is OCI.
 	reg.Register("src-oci-bad", &fakeECRAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-oci-bad", Type: store.ComponentTypeOCIRegistry, Name: "oci"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -432,7 +432,7 @@ func TestRefreshComponent_ArtifactoryWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-art-bad", &fakeOCIAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-art-bad", Type: store.ComponentTypeArtifactory, Name: "artifactory"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
@@ -443,7 +443,7 @@ func TestRefreshComponent_ECRWrongType(t *testing.T) {
 	svc, reg := setupObsTestServices(t)
 	reg.Register("src-ecr-bad", &fakeOCIAdapter{})
 
-	r := &Refresher{services: svc, logger: slog.Default()}
+	r := withPermitAllAccessor(&Refresher{services: svc, logger: slog.Default()})
 	src := &store.Component{ID: "src-ecr-bad", Type: store.ComponentTypeECR, Name: "ecr"}
 	if err := r.refreshComponent(context.Background(), src); err == nil {
 		t.Error("expected error for wrong adapter type, got nil")
