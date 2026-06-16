@@ -157,6 +157,10 @@ func (s *Server) registerGraphRoutes(mux *http.ServeMux, prefix string) {
 // registerComponentRoutes registers source management routes
 func (s *Server) registerComponentRoutes(mux *http.ServeMux, prefix string) {
 	handler := &sourceHandler{server: s}
+	// Authenticated (not admin-gated) read of the component-type enum, for the
+	// registration UI's type selector. A distinct literal path from
+	// /components/{id}, so no route collision.
+	mux.HandleFunc(fmt.Sprintf("GET %s/component-types", prefix), handler.handleListTypes)
 	mux.HandleFunc(fmt.Sprintf("GET %s/components", prefix), handler.handleList)
 	mux.HandleFunc(fmt.Sprintf("POST %s/components", prefix), handler.handleCreate)
 	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}", prefix), handler.handleGet)
@@ -323,6 +327,10 @@ type sourceHandler struct {
 
 func (h *sourceHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	h.server.handleListComponents(w, r)
+}
+
+func (h *sourceHandler) handleListTypes(w http.ResponseWriter, r *http.Request) {
+	h.server.handleListComponentTypes(w, r)
 }
 
 func (h *sourceHandler) handleCreate(w http.ResponseWriter, r *http.Request) {

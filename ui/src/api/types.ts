@@ -5,6 +5,7 @@ import type {
   GraphSchema,
   SubgraphSchema,
   ComponentSchema,
+  CreatedComponentSchema,
   SecurityZoneSchema,
   ComponentZoneAssignmentSchema,
   RbacPolicySchema,
@@ -44,6 +45,7 @@ export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 export type Graph = z.infer<typeof GraphSchema>;
 export type Subgraph = z.infer<typeof SubgraphSchema>;
 export type Component = z.infer<typeof ComponentSchema>;
+export type CreatedComponent = z.infer<typeof CreatedComponentSchema>;
 export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
 export type ComponentZoneAssignment = z.infer<typeof ComponentZoneAssignmentSchema>;
 export type RbacPolicy = z.infer<typeof RbacPolicySchema>;

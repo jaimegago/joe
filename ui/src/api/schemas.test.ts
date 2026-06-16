@@ -3,6 +3,8 @@ import {
   GraphNodeSchema,
   GraphSchema,
   ComponentSchema,
+  CreatedComponentSchema,
+  ComponentTypesSchema,
   ChatMessageSchema,
   AlertSchema,
   SessionSchema,
@@ -75,6 +77,52 @@ describe('ComponentSchema', () => {
     });
     expect(source.id).toBe('k8s-prod');
     expect(source.zone).toBeUndefined();
+  });
+});
+
+describe('CreatedComponentSchema', () => {
+  it('parses a config-less create response (config null, zero-value status/timestamps)', () => {
+    // The governed create endpoint returns the raw component; for a config-less
+    // registration config is null and (under the at-rest encryption wrapper)
+    // status/timestamps are zero-valued. The schema must tolerate this.
+    const created = CreatedComponentSchema.parse({
+      id: 'prod-prometheus',
+      type: 'prometheus',
+      name: 'Production Prometheus',
+      config: null,
+      status: '',
+      created_at: '0001-01-01T00:00:00Z',
+      updated_at: '0001-01-01T00:00:00Z',
+    });
+    expect(created.id).toBe('prod-prometheus');
+    expect(created.type).toBe('prometheus');
+  });
+
+  it('parses a create response with only id/type/name', () => {
+    const created = CreatedComponentSchema.parse({
+      id: 'c1',
+      type: 'github',
+      name: 'gh',
+    });
+    expect(created.config).toBeUndefined();
+  });
+
+  it('throws when a required field is missing', () => {
+    expect(() => CreatedComponentSchema.parse({ id: 'c1', type: 'github' })).toThrow();
+  });
+});
+
+describe('ComponentTypesSchema', () => {
+  it('parses the component-type enum response', () => {
+    const r = ComponentTypesSchema.parse({
+      component_types: ['kubernetes', 'prometheus', 'github'],
+      count: 3,
+    });
+    expect(r.component_types).toHaveLength(3);
+  });
+
+  it('throws when component_types is missing', () => {
+    expect(() => ComponentTypesSchema.parse({ count: 0 })).toThrow();
   });
 });
 
