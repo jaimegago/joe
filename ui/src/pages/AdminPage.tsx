@@ -15,10 +15,13 @@ import { PoliciesTable } from '@/components/admin/PoliciesTable';
 import { PolicyForm } from '@/components/admin/PolicyForm';
 import { AdminsTable } from '@/components/admin/AdminsTable';
 import { AdminForm } from '@/components/admin/AdminForm';
+import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
 import { useZones, useUnassigned } from '@/hooks/useZones';
 import { usePolicies } from '@/hooks/usePolicies';
 import { usePrincipals, useAdmins } from '@/hooks/usePrincipals';
 import { createZone, createPolicy, addAdmin } from '@/api/security';
+import { createComponent } from '@/api/components';
+import { ApiRequestError } from '@/api/client';
 import { ShieldCheck } from 'lucide-react';
 
 export function AdminPage() {
@@ -26,6 +29,7 @@ export function AdminPage() {
   const [showCreateZone, setShowCreateZone] = useState(false);
   const [showCreatePolicy, setShowCreatePolicy] = useState(false);
   const [showAddAdmin, setShowAddAdmin] = useState(false);
+  const [showRegisterComponent, setShowRegisterComponent] = useState(false);
 
   const zonesQ = useZones();
   const unassignedQ = useUnassigned();
@@ -53,6 +57,38 @@ export function AdminPage() {
       void qc.invalidateQueries({ queryKey: ['policies'] });
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const registerComponentMut = useMutation({
+    mutationFn: (data: { id: string; type: string; name: string }) => createComponent(data),
+    onSuccess: (comp) => {
+      // The component is registered INERT — credential-less, in the unassigned
+      // zone, under the read-only floor. Point the operator at the next
+      // governance steps rather than implying it is ready to use.
+      toast.success(
+        `Component "${comp.id}" registered (inert). Assign it a zone (below) and promote it to supply credentials before it can act.`
+      );
+      setShowRegisterComponent(false);
+      // A new registration lands unassigned; refresh the dependent lists so it
+      // surfaces in the unassigned pool and the component views.
+      void qc.invalidateQueries({ queryKey: ['components'] });
+      void qc.invalidateQueries({ queryKey: ['unassigned'] });
+      void qc.invalidateQueries({ queryKey: ['component-zones'] });
+    },
+    onError: (e: Error) => {
+      // Duplicate id is a 409 from the governed create endpoint. The
+      // credential-rejection 400 is defended against here even though this form
+      // sends no config and so cannot trigger it.
+      if (e instanceof ApiRequestError && e.status === 409) {
+        toast.error('A component with that ID already exists. Choose a different ID.');
+        return;
+      }
+      if (e instanceof ApiRequestError && e.status === 400) {
+        toast.error(`Registration rejected: ${e.message}`);
+        return;
+      }
+      toast.error(e.message);
+    },
   });
 
   const addAdminMut = useMutation({
@@ -102,6 +138,11 @@ export function AdminPage() {
           </TabsContent>
 
           <TabsContent value="components">
+            <div className="mb-3 flex justify-end">
+              <Button size="sm" onClick={() => setShowRegisterComponent(true)}>
+                + Register Component
+              </Button>
+            </div>
             <ComponentZoneAssign />
           </TabsContent>
 
@@ -150,6 +191,13 @@ export function AdminPage() {
         onOpenChange={setShowAddAdmin}
         onSubmit={(principal, reason) => addAdminMut.mutate({ principal, reason })}
         isLoading={addAdminMut.isPending}
+      />
+
+      <ComponentRegisterForm
+        open={showRegisterComponent}
+        onOpenChange={setShowRegisterComponent}
+        onSubmit={(data) => registerComponentMut.mutate(data)}
+        isLoading={registerComponentMut.isPending}
       />
     </>
   );

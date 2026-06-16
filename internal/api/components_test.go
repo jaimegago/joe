@@ -63,6 +63,41 @@ func TestHandleListComponents_Empty(t *testing.T) {
 	}
 }
 
+func TestHandleListComponentTypes(t *testing.T) {
+	server := setupFullTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/component-types", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		ComponentTypes []string `json:"component_types"`
+		Count          int      `json:"count"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	want := store.AllowedComponentTypes()
+	if body.Count != len(want) {
+		t.Errorf("count = %d, want %d (full enum)", body.Count, len(want))
+	}
+	if len(body.ComponentTypes) != len(want) {
+		t.Fatalf("component_types len = %d, want %d", len(body.ComponentTypes), len(want))
+	}
+	for i, ty := range want {
+		if body.ComponentTypes[i] != ty {
+			t.Errorf("component_types[%d] = %q, want %q", i, body.ComponentTypes[i], ty)
+		}
+	}
+}
+
 func TestHandleCreateComponent_MissingFields(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()

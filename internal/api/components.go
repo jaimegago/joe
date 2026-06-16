@@ -57,6 +57,22 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleListComponentTypes returns the authoritative component-type enum
+// (store.AllowedComponentTypes) as a JSON list, so the operator-facing
+// registration UI can populate its type selector from the single source of
+// truth instead of hardcoding the set. This is AUTHENTICATED but deliberately
+// NOT admin-gated: the value is a compile-time constant, not a privileged or
+// tenant-specific datum, and the registration form is admin-gated at the write
+// boundary regardless. It reads the enum directly — it never maintains its own
+// copy — so a new component type flows into the UI automatically.
+func (s *Server) handleListComponentTypes(w http.ResponseWriter, r *http.Request) {
+	types := store.AllowedComponentTypes()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"component_types": types,
+		"count":           len(types),
+	})
+}
+
 // newAdapterForType returns a fresh, unconnected adapter for the given source
 // type, or nil when the type has no live connection to establish (config-only or
 // metadata source types that are persisted as-is). It is the single source of

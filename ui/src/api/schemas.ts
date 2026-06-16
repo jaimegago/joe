@@ -41,6 +41,29 @@ export const ComponentSchema = z.object({
   updated_at: z.string(),
 });
 
+// ComponentTypesSchema is the response of GET /api/v1/component-types — the
+// authoritative component-type enum (store.AllowedComponentTypes), so the
+// registration form populates its selector without a hardcoded TS list.
+export const ComponentTypesSchema = z.object({
+  component_types: z.array(z.string()),
+  count: z.number().optional(),
+});
+
+// CreatedComponentSchema validates the 201 body of POST /api/v1/components. It
+// is deliberately lenient where ComponentSchema is strict: a config-less
+// registration returns config: null, and (under the at-rest encryption wrapper)
+// zero-value status/timestamps — only id/type/name are reliably populated on
+// the create response. The form only needs id/type/name to confirm the write.
+export const CreatedComponentSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  name: z.string(),
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+  status: z.string().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+});
+
 // Security / RBAC
 export const SecurityZoneSchema = z.object({
   id: z.string(),
