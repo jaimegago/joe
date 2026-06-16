@@ -5,13 +5,18 @@
 // routing config only, and credentials enter the system later, exclusively at
 // promotion (a different stream). This package owns the ONE list of
 // credential-bearing config fields so the HTTP create path and the LLM tool
-// path cannot drift in what they reject.
+// path cannot drift in what they reject. That rejected set is itself
+// single-sourced from internal/credential (the package that owns the provider
+// config structs), so it cannot drift from the providers either (D-0029 seam
+// closure).
 package componentgov
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/jaimegago/joe/internal/credential"
 )
 
 // ErrCredentialField is the sentinel returned when a submitted component
@@ -21,39 +26,28 @@ import (
 // registration learns it was refused.
 var ErrCredentialField = errors.New("credential-bearing field not permitted at registration")
 
-// credentialBearingFields is the SINGLE authoritative denylist of config keys
-// that constitute authentication. A credential-less registration must carry
-// NONE of these.
+// credentialBearingFields is the authoritative set of config keys that
+// constitute authentication. A credential-less registration must carry NONE of
+// these.
 //
-// These are duplicated from — and MUST stay in lockstep with — the json tags
-// the credential providers parse (internal/credential), which is the seam
-// recorded in DECISIONS.md D-0029:
+// It is single-sourced FROM the credential package
+// (credential.CredentialBearingFields), which owns the provider config structs
+// and derives the set from the json tags they actually parse:
 //
 //   - "credential_provider": the provider discriminator
 //     (internal/credential/provider.go, discriminator.CredentialProvider).
-//     Its mere presence selects a non-default provider, so it is itself a
-//     credential-routing signal and is rejected.
 //   - "value", "env_var": the static provider's inline secret and its
-//     environment-variable locator (internal/credential/static.go,
-//     staticConfig.Value / staticConfig.EnvVar).
+//     environment-variable locator (internal/credential/static.go).
 //   - "kubeconfig", "context", "in_cluster": the kubeconfig-exec provider's
-//     locators (internal/credential/kubeconfig_exec.go,
-//     kubeconfigExecConfig.Kubeconfig / .Context / .InCluster).
+//     locators (internal/credential/kubeconfig_exec.go).
 //
-// The provider structs are unexported, so there is no clean single source to
-// import today; this list is the duplication seam. Adding a future credential
-// provider field WITHOUT adding it here would silently re-open a credential
-// hole in create — the guard test TestCredentialBearingFields_CoverProviders
-// (and the DECISIONS.md entry) flag what must change to make this single-
-// sourced: export the field set from internal/credential and consume it here.
-var credentialBearingFields = []string{
-	"credential_provider",
-	"value",
-	"env_var",
-	"kubeconfig",
-	"context",
-	"in_cluster",
-}
+// Before D-0029's seam closure this was a hand-copied literal mirroring those
+// tags with no shared source: a new provider field could silently re-open a
+// credential hole in create. Consuming the exported accessor means a new
+// authentication field flows into the denylist automatically (or must be
+// consciously excluded in the credential package). The divergence guard is
+// TestCredentialBearingFields_MatchCredentialPackage.
+var credentialBearingFields = credential.CredentialBearingFields()
 
 // RejectCredentialFields returns a non-nil error wrapping ErrCredentialField if
 // the submitted config carries ANY credential-bearing field at its top level —
