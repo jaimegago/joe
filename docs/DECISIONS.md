@@ -10,6 +10,102 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0030 — The component promotion endpoint: the single governed read-only-to-armed transition that owns credential entry (A003 Stream P)
+
+- Date: 2026-06-16
+- Status: IMPLEMENTED. In the tree as of this date as the A003 Stream P stack.
+  Cite paths/symbols and re-derive line numbers against the tree.
+- Gap closed: D-0029 made registration a credential-less promotion BOUNDARY but
+  left promotion itself unbuilt — a registered component could land inert, with
+  no governed path to ever acquire a credential. There was no promotion/arm
+  route and no PATCH/PUT on components (`internal/api/server.go`
+  `registerComponentRoutes`), so changing or supplying a component's credential
+  meant either editing the DB directly or delete-and-recreate — an ungoverned,
+  un-audited credential-change path (the delete-and-recreate-only gap; Finding 3
+  in `docs/investigations/component-credential-registration-surface.md:22`).
+- Decision: add a dedicated, admin-only promotion endpoint that performs the
+  read-only-to-armed transition by writing a credential REFERENCE into the
+  component's existing Config blob. It is the keystone of A003.
+  a. ROUTE. `POST /api/v1/components/{id}/promote` — the arming verb as a
+     sub-path of the component resource keyed on componentID, distinct from
+     create/get/delete and from any (deliberately non-existent) full-resource
+     PATCH/PUT. Registered in `registerComponentRoutes`
+     (`internal/api/server.go`), handler `handlePromoteComponent`
+     (`internal/api/components.go`). Off the chat/LLM path: an admin REST handler
+     only; no core-agent tool reaches it.
+  b. REFERENCE-IN-CONFIG (B-2). Promotion writes the `credential_provider`
+     discriminator + the wired provider Kind's locator fields into the EXISTING
+     Config blob (merged, preserving non-credential routing fields), via the new
+     `store.ComponentRepository.UpdateConfigTx` (`internal/store/components.go`,
+     encrypted-at-rest through `encryptedComponentRepository.UpdateConfigTx`). It
+     introduces NO new schema column and writes exactly what the two wired
+     providers read (`credential.KindFromConfig` / `staticConfig` /
+     `kubeconfigExecConfig`). This is the arming transition: the component now
+     carries a credential reference where before it had none.
+  c. REJECT-UNWIRED, keyed on the W1 registry. The FIRST validation after the
+     component loads consults `credential.WiredProvider`
+     (`internal/credential/wiring.go`): a type with no wired credential provider
+     can never be armed and is refused naming the type. Only github, gitlab
+     (static) and kubernetes (kubeconfig-exec) are wired today.
+  d. INLINE-VALUE POSTURE — INDIRECTION-ONLY. Promotion REFUSES an inline static
+     `value` (a literal secret) and requires a true indirection (static
+     `env_var`; kubeconfig-exec `kubeconfig` path or `in_cluster`). Rationale:
+     the boundary's whole purpose is that the armed record carries a REFERENCE,
+     not a secret — accepting an inline value would put a literal secret at rest
+     in the Config blob, exactly what D-0029 rejects at registration. The static
+     provider's inline-value capability remains for legacy/other paths; the
+     GOVERNED promotion boundary does not use it. (`buildArmedConfig`.)
+  e. UPDATE-VIA-RE-PROMOTE — YES. Promotion is idempotent-by-design: re-promoting
+     an already-armed component overwrites the reference in the same governed,
+     audited transaction, because the alternative (delete-and-recreate to rotate
+     a credential) is precisely the ungoverned gap A003 exists to close
+     (Finding 3). Re-arm is subject to the identical gate / reject-unwired /
+     reference-validation checks; the audit before-state (`armed`) distinguishes
+     initial-arm from re-arm.
+  f. ADMIN-GATED + SAME-TX FAIL-CLOSED AUDIT, NO CREDENTIAL IN THE ROW. Gated by
+     `Server.requireAdmin` (`internal/api/admingate.go`, the D-0029 standard).
+     The Config write and a new `component.promote` audit verb
+     (`audit.ActionComponentPromote`, kind `KindAdminAccess`, mutating /
+     fail-closed) commit in ONE transaction via `Server.mutateWithAudit`; a
+     failed audit rolls the arming back. The row records actor, componentID,
+     type, provider Kind, and the reference SHAPE (the locator KEY names written)
+     — NEVER the credential material or locator VALUES (an inline value is
+     refused outright, so it can never reach the row).
+  g. NO RESOLUTION ON PROMOTE. The handler performs no `Connect` / `Resolve` /
+     `Probe` / provider `Select` / adapter build — promotion writes a reference;
+     whether it works is a separate explicit admin Probe that already exists
+     (`adminHandler.resolveAndProbe`, `internal/api/admin.go`). Asserted
+     structurally by an AST guard (`TestPromote_NoResolution`).
+- Prerequisite (commit-one): closed the D-0029 single-source seam.
+  `internal/componentgov` no longer hand-maintains its credential-field denylist;
+  it consumes `credential.CredentialBearingFields()` (`internal/credential/fields.go`),
+  derived by reflection from the provider config structs (audience excluded).
+  Guard tests: `credential.TestCredentialBearingFields_ExactSet`,
+  `componentgov.TestCredentialBearingFields_MatchCredentialPackage`. This is the
+  one place P touched `internal/credential`, exporting an existing fact only — no
+  provider resolution behavior changed.
+- Basis: `internal/api/components.go` (`handlePromoteComponent`,
+  `promoteComponentRequest`, `buildArmedConfig`, `armedState`,
+  `componentPromoteEvent`); `internal/api/server.go` (route +
+  `sourceHandler.handlePromote`); `internal/store/components.go`
+  (`UpdateConfigTx`) + `internal/store/encrypted_components.go`
+  (`encryptConfig`); `internal/audit/audit.go` (`ActionComponentPromote`);
+  `internal/credential/fields.go`; `internal/componentgov/credentials.go`.
+  Tests: `internal/api/components_promote_governance_test.go` (reject-unwired,
+  static + kubeconfig-exec arm, indirection-only, non-admin 403, audit
+  fail-closed rollback, re-promote, mismatched-provider, no-resolution AST guard
+  — the reject-unwired and no-resolution guards verified break-tested),
+  `internal/credential/fields_test.go`,
+  `internal/componentgov/credentials_test.go`,
+  `internal/store/encrypted_components_test.go`
+  (`TestEncryptedComponentRepository_UpdateConfigTxEncrypts`).
+- Supersedes: nothing — completes D-0029. D-0029 built the credential-less
+  registration boundary; this builds the credential-supplying promotion boundary
+  it deferred. Use-time at-seam credential resolution stays where it is today
+  (adapter Connect); P stores a reference, resolution is unchanged (D-0026).
+
+---
+
 ## D-0029 — Govern component registration as a promotion boundary: credential-less, admin-gated, same-tx-audited CREATE/DELETE and register_component (A003 Stream G)
 
 - Date: 2026-06-16
