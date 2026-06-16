@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -103,6 +104,26 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
 	}
+
+	// A003-W2: resolve the credential through the provider selected by the
+	// component config (default static). The resolved static value overrides the
+	// parsed api_key; an empty value leaves the legacy inline token intact, so a
+	// component carrying an inline api_key keeps working.
+	provider, err := credential.Select(source.Config)
+	if err != nil {
+		return fmt.Errorf("select credential provider: %w", err)
+	}
+	res, err := provider.Resolve(ctx, source.ID, source.Config)
+	if err != nil {
+		return fmt.Errorf("resolve credential: %w", err)
+	}
+	if !res.Diagnostic.OK {
+		return fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
+	}
+	if v, ok := res.StaticValue(); ok && v != "" {
+		cfg.APIKey = v
+	}
+
 	a.config = cfg
 
 	// Health check: a lightweight events query (limit=1) confirms the API is up.
