@@ -289,7 +289,17 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, source)
 }
 
+// handleDeleteComponent deregisters a component (A003 Stream G governed DELETE).
+// Admin-gated; removes the FULL row — including whatever in-config credential
+// reference the component carries — and writes its audit row in one fail-closed
+// transaction, so a delete can never leave a dangling credential reference
+// behind regardless of whether the component was ever promoted/armed.
 func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
+	principal, gated := s.requireAdmin(w, r)
+	if gated {
+		return
+	}
+
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
@@ -310,13 +320,27 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Disconnect and unregister adapter
+	// Disconnect and unregister any in-memory adapter. This is in-process state,
+	// not part of the DB transaction; a no-op for an inert (never-promoted)
+	// component, which has no resident adapter.
 	if err := s.services.Adapters.Unregister(id); err != nil {
 		writeInternalError(w, err, "unregister source")
 		return
 	}
 
-	if err := s.services.Store.Components.Delete(r.Context(), id); err != nil {
+	blob, _ := json.Marshal(audit.Details{Target: "component:" + id})
+	ev := audit.Event{
+		Principal:   string(principal),
+		Action:      audit.ActionComponentDelete,
+		ComponentID: id,
+		Decision:    audit.DecisionAllow,
+		Reason:      "component_deletion",
+		Kind:        audit.KindAdminAccess,
+		Context:     string(blob),
+	}
+	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
+		return s.services.Store.Components.DeleteTx(r.Context(), tx, id)
+	}); err != nil {
 		writeInternalError(w, err, "delete source")
 		return
 	}
