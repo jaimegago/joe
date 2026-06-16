@@ -1,10 +1,16 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/componentgov"
+	"github.com/jaimegago/joe/internal/rbac"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
@@ -116,7 +122,20 @@ type createComponentRequest struct {
 	Config json.RawMessage `json:"config"`
 }
 
+// handleCreateComponent registers a component (A003 Stream G governed CREATE).
+// The registration is admin-gated, credential-less by construction, and lands
+// the component plus its audit row in one fail-closed transaction. It performs
+// NO eager Connect probe: a credential-less record cannot authenticate, so
+// connecting at registration is both pointless and the attacker-controllable
+// network-call / env-dereference vector A003 closes. The component lands inert
+// — unassigned zone, read-only floor, no credential; connectivity checking and
+// credential supply belong to promotion (a different stream).
 func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
+	principal, gated := s.requireAdmin(w, r)
+	if gated {
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "failed to read body")
@@ -154,6 +173,17 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Credential-less by construction: reject any credential-bearing field
+	// rather than silently stripping it, so an operator who tried to smuggle a
+	// secret in at registration learns it was refused. Credentials enter only
+	// at promotion.
+	if err := componentgov.RejectCredentialFields(req.Config); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
+			"config must be credential-less at registration; credentials are supplied only at promotion",
+			map[string]any{"detail": err.Error()})
+		return
+	}
+
 	// Check if source already exists
 	existing, err := s.services.Store.Components.Get(r.Context(), req.ID)
 	if err != nil {
@@ -174,23 +204,65 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		Config: req.Config,
 	}
 
-	// Try to connect the adapter before saving. Source types with no adapter
-	// (config-only/metadata types) return nil and are persisted directly.
-	ctx := r.Context()
-	if adapter := newAdapterForType(req.Type); adapter != nil {
-		if err := adapter.Connect(ctx, *source); err != nil {
-			writeBadRequest(w, err, "connect "+req.Type+" source", fmt.Sprintf("failed to connect to %s source", req.Type))
-			return
-		}
-		s.services.Adapters.Register(req.ID, adapter)
-	}
-
-	if err := s.services.Store.Components.Create(r.Context(), source); err != nil {
+	ev := componentRegisterEvent(principal, source)
+	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
+		return s.services.Store.Components.CreateTx(r.Context(), tx, source)
+	}); err != nil {
 		writeInternalError(w, err, "create source")
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, source)
+}
+
+// componentRegisterEvent builds the same-transaction audit row for a governed
+// registration (HTTP create OR the register_component tool — both reuse this so
+// the row shape cannot diverge across the two registration paths).
+func componentRegisterEvent(principal rbac.Principal, source *store.Component) audit.Event {
+	blob, _ := json.Marshal(audit.Details{
+		Target: "component:" + source.ID,
+		After:  map[string]string{"type": source.Type, "name": source.Name},
+	})
+	return audit.Event{
+		Principal:   string(principal),
+		Action:      audit.ActionComponentRegister,
+		ComponentID: source.ID,
+		Decision:    audit.DecisionAllow,
+		Reason:      "component_registration",
+		Kind:        audit.KindAdminAccess,
+		Context:     string(blob),
+	}
+}
+
+// mutateWithAudit runs mutate against a fresh transaction and, when the audit
+// trail is wired, writes ev in the SAME transaction — fail-closed: an audit
+// write failure rolls the mutation back, so a governed create/delete cannot
+// land without its durable record. A nil audit repository (a unit-test harness
+// that does not exercise the trail) skips the row but still commits the
+// mutation, the same nil carve-out recordAdminDenial uses; the production wiring
+// always sets services.Audit, so production is always fail-closed.
+func (s *Server) mutateWithAudit(ctx context.Context, ev audit.Event, mutate func(*sql.Tx) error) (err error) {
+	tx, err := s.services.Store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = mutate(tx); err != nil {
+		return err
+	}
+	if s.services.Audit != nil {
+		if err = s.services.Audit.InsertTx(ctx, tx, ev); err != nil {
+			return fmt.Errorf("audit insert: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {

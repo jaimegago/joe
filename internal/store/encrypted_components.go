@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -31,6 +32,14 @@ func (r *encryptedComponentRepository) Create(ctx context.Context, source *Compo
 		return err
 	}
 	return r.inner.Create(ctx, enc)
+}
+
+func (r *encryptedComponentRepository) CreateTx(ctx context.Context, tx *sql.Tx, source *Component) error {
+	enc, err := r.encryptComponent(source)
+	if err != nil {
+		return err
+	}
+	return r.inner.CreateTx(ctx, tx, enc)
 }
 
 func (r *encryptedComponentRepository) Get(ctx context.Context, id string) (*Component, error) {
@@ -71,6 +80,10 @@ func (r *encryptedComponentRepository) UpdateSyncStatus(ctx context.Context, id 
 
 func (r *encryptedComponentRepository) Delete(ctx context.Context, id string) error {
 	return r.inner.Delete(ctx, id)
+}
+
+func (r *encryptedComponentRepository) DeleteTx(ctx context.Context, tx *sql.Tx, id string) error {
+	return r.inner.DeleteTx(ctx, tx, id)
 }
 
 // encryptComponent returns a shallow copy of source with Config encrypted.

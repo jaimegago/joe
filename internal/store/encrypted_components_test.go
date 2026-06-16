@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -20,6 +21,12 @@ func newMockRepo() *mockComponentRepo {
 }
 
 func (m *mockComponentRepo) Create(_ context.Context, s *Component) error {
+	cp := *s
+	m.components[s.ID] = &cp
+	return nil
+}
+
+func (m *mockComponentRepo) CreateTx(_ context.Context, _ *sql.Tx, s *Component) error {
 	cp := *s
 	m.components[s.ID] = &cp
 	return nil
@@ -69,6 +76,11 @@ func (m *mockComponentRepo) UpdateSyncStatus(_ context.Context, id string, synce
 }
 
 func (m *mockComponentRepo) Delete(_ context.Context, id string) error {
+	delete(m.components, id)
+	return nil
+}
+
+func (m *mockComponentRepo) DeleteTx(_ context.Context, _ *sql.Tx, id string) error {
 	delete(m.components, id)
 	return nil
 }
@@ -405,6 +417,9 @@ type errorComponentRepo struct{}
 func (e *errorComponentRepo) Create(_ context.Context, _ *Component) error {
 	return fmt.Errorf("inner create error")
 }
+func (e *errorComponentRepo) CreateTx(_ context.Context, _ *sql.Tx, _ *Component) error {
+	return fmt.Errorf("inner create-tx error")
+}
 func (e *errorComponentRepo) Get(_ context.Context, _ string) (*Component, error) {
 	return nil, fmt.Errorf("inner get error")
 }
@@ -422,6 +437,9 @@ func (e *errorComponentRepo) UpdateSyncStatus(_ context.Context, _ string, _ tim
 }
 func (e *errorComponentRepo) Delete(_ context.Context, _ string) error {
 	return fmt.Errorf("inner delete error")
+}
+func (e *errorComponentRepo) DeleteTx(_ context.Context, _ *sql.Tx, _ string) error {
+	return fmt.Errorf("inner delete-tx error")
 }
 
 // TestEncryptedComponentRepository_InnerErrors verifies that errors from the inner
