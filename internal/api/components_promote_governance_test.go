@@ -69,23 +69,26 @@ func auditContextRaw(t *testing.T, f *llmadminFixture, action string) string {
 
 // TestPromote_RejectsUnwiredType proves a component whose type has no wired
 // credential provider cannot be armed: 400, config unchanged, no audit row.
+// datadog is the unwired fixture: its credential is an api_key+app_key pair, so
+// A003-W2 left it out of the static-token batch and it stays absent from the
+// wired-type registry.
 func TestPromote_RejectsUnwiredType(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	registerComponent(t, f, "c-prom", "prometheus", `{"endpoint":"https://prom.internal"}`)
+	registerComponent(t, f, "c-dd", "datadog", `{"site":"datadoghq.com"}`)
 
-	w := f.do(http.MethodPost, "/api/v1/components/c-prom/promote",
-		`{"env_var":"PROM_TOKEN"}`, "user:alice")
+	w := f.do(http.MethodPost, "/api/v1/components/c-dd/promote",
+		`{"env_var":"DD_TOKEN"}`, "user:alice")
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("promote unwired prometheus: status=%d body=%s; want 400", w.Code, w.Body.String())
+		t.Fatalf("promote unwired datadog: status=%d body=%s; want 400", w.Code, w.Body.String())
 	}
 	// Assert the explicit reject-unwired check fired (the FIRST validation after
 	// load), naming the type — not a downstream "unsupported kind" from reference
 	// validation. This pins the ordering, not just the rejection.
-	if !strings.Contains(w.Body.String(), "no credential provider wired for type prometheus") {
+	if !strings.Contains(w.Body.String(), "no credential provider wired for type datadog") {
 		t.Errorf("reject-unwired error did not name the unwired type: %s", w.Body.String())
 	}
-	cfg := componentConfigMap(t, f, "c-prom")
+	cfg := componentConfigMap(t, f, "c-dd")
 	if _, armed := cfg["credential_provider"]; armed {
 		t.Errorf("unwired promotion armed the component: config=%v", cfg)
 	}
