@@ -10,6 +10,99 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0029 — Govern component registration as a promotion boundary: credential-less, admin-gated, same-tx-audited CREATE/DELETE and register_component (A003 Stream G)
+
+- Date: 2026-06-16
+- Status: IMPLEMENTED. In the tree as of this date as the A003 Stream G stack.
+  Cite paths/symbols and re-derive line numbers against the tree rather than
+  trusting any quoted here.
+- Gap closed: component registration was an ungoverned surface. POST/DELETE
+  `/api/v1/components` (`internal/api/components.go`) were authenticated-only —
+  no admin gate, no audit row — and CREATE handed the submitted config
+  `json.RawMessage` straight to `adapter.Connect(...)` at registration time, an
+  eager probe that made an attacker-controllable network call and dereferenced
+  attacker-supplied credential locators (e.g. `env_var`) before the record even
+  existed. The `register_component` LLM tool (`internal/coreagent/agent.go`)
+  minted a component with an arbitrary credential-bearing config, un-gated and
+  un-audited on the LLM path. Credentials could enter the system at
+  registration, through both the HTTP and the LLM surface, with no durable trail.
+- Decision: registration is a promotion BOUNDARY. A registration writes
+  `type` + `name` + non-credential routing config only; the component lands
+  inert (unassigned zone, read-only floor, no credential). Credentials enter the
+  system later, EXCLUSIVELY at promotion (a separate stream — not built here).
+  Concretely:
+  a. CREDENTIAL-LESS BY CONSTRUCTION. Both registration paths reject — never
+     silently strip — any credential-bearing config field, via the single
+     shared `componentgov.RejectCredentialFields`
+     (`internal/componentgov/credentials.go`). The denied set is the
+     authentication fields the credential providers parse: the
+     `credential_provider` discriminator, the static provider's `value` /
+     `env_var`, and the kubeconfig-exec locators `kubeconfig` / `context` /
+     `in_cluster`. CREATE returns 400; the LLM tool returns an error the LLM
+     sees.
+  b. ADMIN-GATED + SAME-TX FAIL-CLOSED AUDIT (CREATE/DELETE). Both HTTP handlers
+     admit through the same `Server.requireAdmin` gate the Area-6 exemplar uses
+     (`internal/api/admingate.go`), then commit the store mutation AND a
+     `component.register` / `component.delete` audit row in ONE transaction via
+     `Server.mutateWithAudit` + the new `ComponentRepository.CreateTx` /
+     `DeleteTx` (`internal/store/components.go`) + `audit.Repository.InsertTx`.
+     A failed audit rolls the mutation back — no row, no registration/deletion.
+     This is the read-promotions `MutationService.SetPromoted` pattern
+     (`internal/promotereads/promotereads.go`) applied to component writes.
+  c. EAGER CONNECT PROBE REMOVED. `handleCreateComponent` no longer resolves an
+     adapter or calls `Connect` at registration; a credential-less record cannot
+     authenticate, so the probe was both pointless and the launch-blocking
+     attacker-controllable-network-call / env-dereference vector. Connectivity
+     checking belongs to promotion (the provider's Probe), out of scope here. A
+     structural AST guard (`TestCreateComponent_NoConnectProbe`) fails the build
+     if a `Connect` / `newAdapterForType` call is re-introduced on the create
+     path.
+  d. DELETE CLEARS THE CREDENTIAL REFERENCE. Delete removes the FULL component
+     row (including whatever in-config credential reference it carries) in the
+     audited transaction, so a delete cannot leave a dangling credential
+     reference behind whether or not the component was ever promoted/armed. This
+     requirement is satisfied by the existing full-row delete made
+     transactional — no promotion-specific cleanup was built.
+  e. register_component STAYS ActionRead, STAYS on the LLM surface. Recording a
+     discovered component to Joe's OWN store is not a managed-system mutation, so
+     the tool is NOT reclassified to Mutate and NOT subjected to the write floor
+     (`internal/safety/tier.go` unchanged); discovery remains a legitimate
+     LLM-path capability. It is now credential-less (same rejection rule) and
+     writes a `component.register` audit row with actor `svc:agent:core`
+     (`rbac.AgentCorePrincipal`), even though credential-less — an autonomous
+     "Joe registered a component it discovered" action warrants a durable record.
+- Single-source seam (flagged, not closed): the rejected-credential-field list
+  in `componentgov.credentialBearingFields` is the ONE place both paths consult,
+  so the two registration surfaces cannot drift from each other. It is, however,
+  DUPLICATED from the provider json tags it mirrors: those tags live on
+  UNEXPORTED structs (`staticConfig`, `kubeconfigExecConfig`, `discriminator` in
+  `internal/credential/{static,kubeconfig_exec,provider}.go`), which this stream
+  is fenced from modifying. Adding a future credential provider field without
+  also adding it to `credentialBearingFields` would silently re-open a credential
+  hole in create. To make this single-sourced later, export the field set from
+  `internal/credential` (e.g. a `CredentialBearingFields()` accessor) and have
+  `componentgov` consume it; the duplication and its fix are recorded in the
+  `componentgov` package doc.
+- Basis: `internal/componentgov/credentials.go`;
+  `internal/api/components.go` (`handleCreateComponent`,
+  `handleDeleteComponent`, `mutateWithAudit`, `componentRegisterEvent`);
+  `internal/store/components.go` (`CreateTx` / `DeleteTx` + shared
+  `create` / `delete` bodies); `internal/audit/audit.go`
+  (`ActionComponentRegister` / `ActionComponentDelete`);
+  `internal/coreagent/agent.go` (`RegisterComponentTool.Execute` /
+  `registerWithAudit`). Tests:
+  `internal/api/components_governance_test.go`,
+  `internal/coreagent/register_component_governance_test.go`, and the updated
+  probe-free expectations in `internal/api/components_test.go`. Pattern derived
+  from the read-promotions exemplar (D-0028 / A001-COREGOV) and the admin gate
+  (D-0012/D-0013).
+- Supersedes: nothing — extends the governed-surface posture (D-0012 admin gate,
+  D-0013 admin-surface audit vocabulary, D-0028 same-tx fail-closed mutation
+  service) to the component-registration surface. Promotion (credential supply +
+  connectivity Probe) remains a separate, unbuilt stream.
+
+---
+
 ## D-0028 — Govern the Core Agent's autonomous refresh reads under the per-component RBAC floor (boot-minted agent:core principal + per-type auto_promote_reads predicate)
 
 - Date: 2026-06-15
