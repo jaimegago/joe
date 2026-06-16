@@ -9,11 +9,14 @@ import (
 	"strings"
 
 	"github.com/jaimegago/joe/internal/access"
+	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/componentgov"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools"
 )
@@ -462,6 +465,14 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
 	}
 
+	// Credential-less by construction (A003 Stream G): an autonomous discovery
+	// write records type + name + routing config only. Reuse the SAME rejection
+	// rule the HTTP create path uses so the LLM cannot supply a credential the
+	// operator surface would refuse. Credentials enter only at promotion.
+	if err := componentgov.RejectCredentialFields(configBytes); err != nil {
+		return nil, fmt.Errorf("config must be credential-less: %w", err)
+	}
+
 	randBytes := make([]byte, 8)
 	if _, err := crypto_rand.Read(randBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate source ID: %w", err)
@@ -473,14 +484,62 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		Config: configBytes,
 	}
 
-	err = t.services.Store.Components.Create(ctx, source)
-	if err != nil {
+	// Land the component AND its audit row in one fail-closed transaction.
+	// register_component stays ActionRead (recording a discovered component to
+	// Joe's own store is not a managed-system mutation), but an autonomous "Joe
+	// registered a component it discovered" action still warrants a durable
+	// record — actor is the Core Agent principal (agent:core).
+	actor, _ := rbac.AgentCorePrincipal()
+	if err := t.registerWithAudit(ctx, actor, source); err != nil {
 		t.logger.Error("failed to register source", "error", err, "name", name)
 		return nil, fmt.Errorf("failed to register source: %w", err)
 	}
 
 	t.logger.Info("registered new source", "id", source.ID, "name", name, "type", sourceType)
 	return fmt.Sprintf("Registered source %s (id: %s, type: %s)", name, source.ID, sourceType), nil
+}
+
+// registerWithAudit commits the component insert and its audit row in one
+// transaction (fail-closed: an audit failure rolls back the insert). A nil
+// audit repository — a unit-test harness that does not exercise the trail —
+// skips the row but still commits the insert, the same nil carve-out the HTTP
+// governed-registration path uses; production always wires services.Audit.
+func (t *RegisterComponentTool) registerWithAudit(ctx context.Context, actor rbac.Principal, source *store.Component) (err error) {
+	blob, _ := json.Marshal(audit.Details{
+		Target: "component:" + source.ID,
+		After:  map[string]string{"type": source.Type, "name": source.Name},
+	})
+	ev := audit.Event{
+		Principal:   string(actor),
+		Action:      audit.ActionComponentRegister,
+		ComponentID: source.ID,
+		Decision:    audit.DecisionAllow,
+		Reason:      "component_registration",
+		Kind:        audit.KindAdminAccess,
+		Context:     string(blob),
+	}
+
+	tx, err := t.services.Store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = t.services.Store.Components.CreateTx(ctx, tx, source); err != nil {
+		return err
+	}
+	if t.services.Audit != nil {
+		if err = t.services.Audit.InsertTx(ctx, tx, ev); err != nil {
+			return fmt.Errorf("audit insert: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
 
 // SaveOnboardingFactTool saves facts discovered during onboarding
