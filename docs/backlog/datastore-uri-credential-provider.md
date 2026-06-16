@@ -12,6 +12,9 @@ tokens. The credential-provider seam (`internal/credential/provider.go`) has onl
 `StaticProvider` (`internal/credential/static.go`) and `KubeconfigExecProvider`
 (`internal/credential/kubeconfig_exec.go`).
 
+`redis` (`internal/adapters/datastore/redis/`) is in the datastore family but
+does **not** share the URI shape — see the carve-out below.
+
 ## Why the existing providers do not fit
 
 `StaticProvider`'s `staticConfig` (`internal/credential/static.go`) models a
@@ -44,11 +47,30 @@ sites are the concrete fixes that gate promotion. (The other datastores should b
 swept for the same pattern when the provider is designed — only mongodb's two
 sites were verified here.)
 
+## redis — same family, different credential shape (VERIFIED)
+
+`redis` (`internal/adapters/datastore/redis/`) is a datastore type but does
+**not** authenticate via a credential-bearing URI. Its config is discrete fields
+— `host`, `port`, `password`, `db`, `tls_enabled` (`redis/config.go:10-14`) — and
+it connects with `Addr: host:port` plus a separate `Password` field
+(`redis/redis.go:128-129`). The secret is an isolated `password` value, so the
+token-shaped `StaticProvider` model is a *closer* fit for redis than for the URI
+stores (its `value` / `env_var` could carry the password), and redis may not need
+a URI-shaped provider at all — this should be confirmed when redis is wired.
+
+Notably, redis does **not** exhibit the URI leak: its ping error
+(`redis/redis.go:141`) and connected `Status.Message` (`redis/redis.go:170`)
+format only `host:port`, never the `Password` field. It is listed here only so
+the datastore family is recorded completely, not because it shares the
+URI-redaction problem.
+
 ## Promotion impact
 
 `postgresql`, `mysql`, `mongodb`, `kafka`, and `elasticsearch` **cannot be
 promoted under the credential-reference model** until a URI-shaped credential
-provider (or a redaction-aware `StaticProvider` extension) exists.
+provider (or a redaction-aware `StaticProvider` extension) exists. `redis` is
+blocked only on a provider decision (likely the existing `StaticProvider` token
+shape covers its discrete `password`), not on URI redaction.
 
 ## Why deferred
 
