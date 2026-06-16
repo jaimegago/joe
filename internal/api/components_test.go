@@ -200,8 +200,14 @@ func TestHandleCreateComponent_DuplicateSource(t *testing.T) {
 	}
 }
 
-func TestHandleCreateComponent_GitConnectFails(t *testing.T) {
-	// Empty config causes git adapter to fail (url is required) -> covers writeBadRequest
+// TestHandleCreateComponent_NoConnectProbe_GitEmptyConfig pins the A003 Stream G
+// probe removal: an empty git config used to FAIL at registration because the
+// handler eagerly called the git adapter's Connect (url required). Registration
+// no longer connects — a credential-less record cannot authenticate — so the
+// same request now succeeds (201). This is the behavioural half of the
+// "probe is gone" guarantee (the structural half is the AST guard in
+// components_governance_test.go).
+func TestHandleCreateComponent_NoConnectProbe_GitEmptyConfig(t *testing.T) {
 	_, _, mux := setupTestServerWithStore(t)
 
 	body := `{"id":"git-1","type":"git","name":"test repo","config":{}}`
@@ -209,17 +215,16 @@ func TestHandleCreateComponent_GitConnectFails(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d (git connect should fail with empty config)", w.Code, http.StatusBadRequest)
+	if w.Code != http.StatusCreated {
+		t.Errorf("status = %d, want %d — registration must not connect, so empty git config is accepted", w.Code, http.StatusCreated)
 	}
 }
 
-// TestHandleCreateComponent_AdapterConnectFails exercises the switch statement in
-// handleCreateComponent for each adapter type that validates config on Connect().
-// With an empty config `{}` each adapter should fail and return 400 or 500.
-func TestHandleCreateComponent_AdapterConnectFails(t *testing.T) {
-	// These adapter types validate required config fields on Connect() and fail fast
-	// with empty config, exercising the connect-error branch in the switch statement.
+// TestHandleCreateComponent_AdapterTypesRegisterInert confirms every adapter
+// type registers as an inert, credential-less record with an empty config — no
+// Connect probe runs at registration (A003 Stream G), so types that previously
+// failed Connect with empty config now persist successfully (201).
+func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 	adapterTypes := []string{
 		"kubernetes", "aws", "azure",
 		"prometheus", "mimir", "loki", "tempo", "jaeger",
@@ -235,10 +240,8 @@ func TestHandleCreateComponent_AdapterConnectFails(t *testing.T) {
 			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
-			// Just verify we get a valid HTTP response — the goal is code coverage of the
-			// switch statement, not the outcome of each adapter's Connect().
-			if w.Code < 200 || w.Code >= 600 {
-				t.Errorf("type=%s: unexpected status %d", srcType, w.Code)
+			if w.Code != http.StatusCreated {
+				t.Errorf("type=%s: status %d, want 201 — registration is probe-free and credential-less", srcType, w.Code)
 			}
 		})
 	}

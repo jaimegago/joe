@@ -309,6 +309,29 @@ const (
 	// flags (GET /api/v1/admin/read-promotions) — a read of the authz-adjacent
 	// promotion topology. Read-class (fail-open), so it is in isFailOpen below.
 	ActionAdminReadPromoteRead = "read_promotion.read"
+
+	// --- A003 Stream G governed-registration action verbs ---
+	//
+	// Component registration is a governed surface: CREATE/DELETE on
+	// /api/v1/components and the register_component LLM tool all write a
+	// durable row in the SAME transaction as the store mutation (fail-closed —
+	// no audit row ⇒ no registration/deletion). All carry kind KindAdminAccess
+	// (registration mutates Joe's own component registry, the same authz-
+	// adjacent config surface the other admin verbs cover) and decision
+	// "allow"; both are mutating (fail-closed) — neither is added to isFailOpen.
+	// The component id rides in Event.ComponentID; the {target, after} context
+	// records the component type and name on register.
+
+	// ActionComponentRegister records a component registration: an admin via
+	// POST /api/v1/components, OR the Core Agent (agent:core) via the
+	// register_component tool when it records a component it discovered. The
+	// registration is credential-less by construction (A003 Stream G); this row
+	// is the durable trail of "a component entered Joe's registry".
+	ActionComponentRegister = "component.register"
+	// ActionComponentDelete records a component deletion (admin via DELETE
+	// /api/v1/components/{id}). The full row — including any in-config
+	// credential reference — is removed in the same transaction as this row.
+	ActionComponentDelete = "component.delete"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface
