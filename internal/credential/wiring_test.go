@@ -33,7 +33,6 @@ func TestWiredTypes_ExactSetAfterW2(t *testing.T) {
 		store.ComponentTypeGrafana,
 		store.ComponentTypeFalco,
 		store.ComponentTypeArgoCd,
-		store.ComponentTypeArtifactory,
 	}
 	sort.Strings(want)
 
@@ -71,13 +70,14 @@ func TestWiredProvider_AnswersForWiredAndUnwiredTypes(t *testing.T) {
 		{"grafana wired to static", store.ComponentTypeGrafana, KindStatic, true},
 		{"falco wired to static", store.ComponentTypeFalco, KindStatic, true},
 		{"argocd wired to static", store.ComponentTypeArgoCd, KindStatic, true},
-		{"artifactory wired to static", store.ComponentTypeArtifactory, KindStatic, true},
 		// Out-of-batch / no-credential types stay UNWIRED: datadog (api_key+app_key
-		// pair), git (auth_type-discriminated), oci_registry (basic-auth pair), helm
-		// (kubeconfig), terraform (no credential), envoy (no credential).
+		// pair), git (auth_type-discriminated), oci_registry and artifactory
+		// (registry-auth shape — token-or-basic-auth, not an unambiguous single static
+		// token), helm (kubeconfig), terraform (no credential), envoy (no credential).
 		{"datadog unwired (credential pair)", store.ComponentTypeDatadog, "", false},
 		{"git unwired (discriminated auth)", store.ComponentTypeGit, "", false},
 		{"oci_registry unwired (basic-auth pair)", store.ComponentTypeOCIRegistry, "", false},
+		{"artifactory unwired (registry-auth shape, bimodal token/basic-auth)", store.ComponentTypeArtifactory, "", false},
 		{"helm unwired (kubeconfig)", store.ComponentTypeHelm, "", false},
 		{"terraform unwired (no credential)", store.ComponentTypeTerraform, "", false},
 		{"envoy unwired (no credential)", store.ComponentTypeEnvoy, "", false},

@@ -25,13 +25,17 @@ import "github.com/jaimegago/joe/internal/store"
 // A003-W1 seeded the set with {github, kubernetes, gitlab}. A003-W2 closed out the
 // remaining static-token adapters: the HTTP telemetry backends (prometheus, mimir,
 // loki, tempo, jaeger), the alerting backends (alertmanager, pagerduty, grafana),
-// the gitops/registry/security single-token backends (argocd, falco, splunk,
-// dynatrace, newrelic, artifactory). mimir shares the prometheus adapter, so both
-// type strings map here even though one adapter Connect serves them.
+// the gitops/security single-token backends (argocd, falco, splunk, dynatrace,
+// newrelic). mimir shares the prometheus adapter, so both type strings map here
+// even though one adapter Connect serves them.
 //
 // Deliberately ABSENT (re-verified at W2, not wired): git (auth_type-discriminated
 // ssh-key-path / http-token, not a single static token), datadog (api_key + app_key
-// pair), oci_registry and dockerhub (username/password basic-auth pair), helm and
+// pair), oci_registry, dockerhub, and artifactory (registry-auth shape — a token-or-
+// basic-auth pair, not an unambiguous single static token: oci_registry/dockerhub
+// carry username/password and artifactory is bimodal between an X-JFrog-Art-Api
+// single-token header and a username basic-auth fallback, so all three need a
+// dedicated registry credential provider rather than the static seam), helm and
 // nginx-ingress (kubeconfig-shaped, not a static token), terraform and envoy (no
 // credential — local state file / unauthenticated admin API). The registry is the
 // promotion endpoint's reject-unwired authority, so it lists only types whose
@@ -53,7 +57,6 @@ var wiredTypes = map[string]Kind{
 	store.ComponentTypeGrafana:      KindStatic,
 	store.ComponentTypeFalco:        KindStatic,
 	store.ComponentTypeArgoCd:       KindStatic,
-	store.ComponentTypeArtifactory:  KindStatic,
 }
 
 // WiredProvider reports the default credential-provider Kind for a component type
