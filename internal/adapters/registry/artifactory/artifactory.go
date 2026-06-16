@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
-	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/store"
 	"sync"
 )
@@ -75,7 +74,7 @@ func NewWithClient(client httpDoer, cfg Config) *Adapter {
 }
 
 // Connect establishes connectivity by probing the Artifactory ping endpoint.
-func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
+func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -83,27 +82,6 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if err != nil {
 		return fmt.Errorf("parse artifactory source config: %w", err)
 	}
-
-	// A003-W2: resolve the credential through the provider selected by the
-	// component config (default static). The resolved static value overrides the
-	// parsed api_key (the X-JFrog-Art-Api token); an empty value leaves the legacy
-	// inline api_key intact, so a component carrying an inline api_key keeps
-	// working. The optional username remains plain config (basic-auth fallback).
-	provider, err := credential.Select(source.Config)
-	if err != nil {
-		return fmt.Errorf("select credential provider: %w", err)
-	}
-	res, err := provider.Resolve(ctx, source.ID, source.Config)
-	if err != nil {
-		return fmt.Errorf("resolve credential: %w", err)
-	}
-	if !res.Diagnostic.OK {
-		return fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
-	}
-	if v, ok := res.StaticValue(); ok && v != "" {
-		cfg.APIKey = v
-	}
-
 	a.config = cfg
 	a.httpClient = &http.Client{Timeout: 30 * time.Second}
 
