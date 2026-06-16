@@ -3,6 +3,7 @@ package gitlab
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -305,6 +306,98 @@ func TestAdapter_Connect_MissingToken(t *testing.T) {
 	src := store.Component{Config: []byte(`{"base_url":"https://gitlab.com"}`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("expected error for missing token")
+	}
+}
+
+// captureTokenServer returns an httptest server that records the PRIVATE-TOKEN
+// header of the most recent request and answers a minimal MR payload.
+func captureTokenServer(t *testing.T, gotToken *string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotToken = r.Header.Get("PRIVATE-TOKEN")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"iid":7,"title":"t","state":"opened","sha":"a","source_branch":"x","target_branch":"main","web_url":"u","author":{"username":"alice"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// D-0026 unit 2 (A003-W1): a component config with no discriminator still connects
+// via the static provider, and the legacy "token" field is preserved as the
+// per-request PRIVATE-TOKEN. This is the default-static, no-behavior-regression path.
+func TestConnect_NoDiscriminator_PreservesLegacyToken(t *testing.T) {
+	var gotToken string
+	srv := captureTokenServer(t, &gotToken)
+
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"legacy-tok","base_url":%q}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gl-1", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetMR(context.Background(), "42", 7); err != nil {
+		t.Fatalf("GetMR: %v", err)
+	}
+	if gotToken != "legacy-tok" {
+		t.Errorf("PRIVATE-TOKEN = %q, want %q", gotToken, "legacy-tok")
+	}
+}
+
+// D-0026 unit 2 (A003-W1): GitLab resolves its token through the static provider's
+// inline value, which overrides the legacy field, proving the seam is exercised
+// rather than bypassed.
+func TestConnect_StaticProvider_ResolvesInlineValue(t *testing.T) {
+	var gotToken string
+	srv := captureTokenServer(t, &gotToken)
+
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","value":"resolved-tok"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gl-2", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetMR(context.Background(), "42", 7); err != nil {
+		t.Fatalf("GetMR: %v", err)
+	}
+	if gotToken != "resolved-tok" {
+		t.Errorf("PRIVATE-TOKEN = %q, want %q (provider value should win)", gotToken, "resolved-tok")
+	}
+}
+
+// D-0026 unit 2 (A003-W1): GitLab resolves its token from a named environment
+// variable via the static provider, proving resolution (not just config decode)
+// feeds the per-request token.
+func TestConnect_StaticProvider_ResolvesEnvVar(t *testing.T) {
+	var gotToken string
+	srv := captureTokenServer(t, &gotToken)
+
+	t.Setenv("JOE_TEST_GL_TOKEN", "env-tok")
+	a := New()
+	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GL_TOKEN"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "gl-3", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := a.GetMR(context.Background(), "42", 7); err != nil {
+		t.Fatalf("GetMR: %v", err)
+	}
+	if gotToken != "env-tok" {
+		t.Errorf("PRIVATE-TOKEN = %q, want %q", gotToken, "env-tok")
+	}
+}
+
+// D-0026 unit 2 (A003-W1) break-test: a Resolve failure (named env var unset)
+// surfaces through Connect's normal error path, and the credential-bearing config
+// value never appears in the error.
+func TestConnect_ResolveFailure_SurfacesWithoutCredential(t *testing.T) {
+	a := New()
+	cfg := `{"token":"SUPERSECRET","base_url":"https://gitlab.com","credential_provider":"static","env_var":"JOE_DEFINITELY_UNSET_VAR_XYZ"}`
+	err := a.Connect(context.Background(), store.Component{ID: "gl-4", Config: []byte(cfg)})
+	if err == nil {
+		t.Fatal("expected Connect to fail when the named env var is unset")
+	}
+	if strings.Contains(err.Error(), "SUPERSECRET") {
+		t.Errorf("credential leaked into error: %v", err)
+	}
+	if a.Status().Connected {
+		t.Error("adapter should not be connected after a resolve failure")
 	}
 }
 
