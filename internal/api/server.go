@@ -161,6 +161,11 @@ func (s *Server) registerComponentRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/components", prefix), handler.handleCreate)
 	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}", prefix), handler.handleGet)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/components/{id}", prefix), handler.handleDelete)
+	// Promotion boundary (A003): the single governed read-only-to-armed
+	// transition. A POST to a /promote sub-path of the component resource keyed on
+	// {id} — the arming verb on the existing resource, distinct from create/get/
+	// delete and from any (non-existent) full-resource PATCH/PUT.
+	mux.HandleFunc(fmt.Sprintf("POST %s/components/{id}/promote", prefix), handler.handlePromote)
 }
 
 // registerAlertingRoutes registers alerting query routes (Alertmanager, PagerDuty, Grafana).
@@ -330,6 +335,10 @@ func (h *sourceHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *sourceHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	h.server.handleDeleteComponent(w, r)
+}
+
+func (h *sourceHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
+	h.server.handlePromoteComponent(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

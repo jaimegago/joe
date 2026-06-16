@@ -332,6 +332,20 @@ const (
 	// /api/v1/components/{id}). The full row — including any in-config
 	// credential reference — is removed in the same transaction as this row.
 	ActionComponentDelete = "component.delete"
+
+	// ActionComponentPromote records the promotion boundary: an admin arming a
+	// registered, inert, credential-less component by writing a credential
+	// REFERENCE (the credential_provider discriminator + the wired provider's
+	// locator fields) into its Config blob (POST /api/v1/components/{id}/promote,
+	// A003). The reference is written and this row inserted in ONE transaction
+	// (fail-closed — no row ⇒ no arming). The row records the actor, componentID,
+	// type, provider Kind, and the reference SHAPE (which locator KEYS were
+	// written) — NEVER the credential material or locator VALUES. The {target,
+	// before, after} context distinguishes initial-arm (before.armed=false) from
+	// re-arm (before.armed=true) so a credential change via re-promotion is
+	// itself an audited, governed event. Kind KindAdminAccess, decision "allow";
+	// mutating (fail-closed) — not added to isFailOpen.
+	ActionComponentPromote = "component.promote"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface

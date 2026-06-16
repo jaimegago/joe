@@ -74,6 +74,14 @@ func (r *encryptedComponentRepository) Update(ctx context.Context, source *Compo
 	return r.inner.Update(ctx, enc)
 }
 
+func (r *encryptedComponentRepository) UpdateConfigTx(ctx context.Context, tx *sql.Tx, id string, config json.RawMessage) error {
+	enc, err := r.encryptConfig(config)
+	if err != nil {
+		return err
+	}
+	return r.inner.UpdateConfigTx(ctx, tx, id, enc)
+}
+
 func (r *encryptedComponentRepository) UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error {
 	return r.inner.UpdateSyncStatus(ctx, id, syncedAt, lastError)
 }
@@ -89,10 +97,25 @@ func (r *encryptedComponentRepository) DeleteTx(ctx context.Context, tx *sql.Tx,
 // encryptComponent returns a shallow copy of source with Config encrypted.
 // The original source is not modified.
 func (r *encryptedComponentRepository) encryptComponent(source *Component) (*Component, error) {
-	if len(source.Config) == 0 {
-		return source, nil
+	enc, err := r.encryptConfig(source.Config)
+	if err != nil {
+		return nil, err
 	}
-	encrypted, err := crypto.Encrypt(r.key, source.Config)
+	copy := *source
+	copy.Config = enc
+	return &copy, nil
+}
+
+// encryptConfig encrypts a raw config blob to the at-rest form (a JSON-encoded
+// string so the column type stays TEXT/JSON), the inverse of decryptComponent's
+// read path. An empty config is returned unchanged. Shared by the whole-component
+// write path (encryptComponent) and the config-only promotion write
+// (UpdateConfigTx) so both encrypt identically.
+func (r *encryptedComponentRepository) encryptConfig(config json.RawMessage) (json.RawMessage, error) {
+	if len(config) == 0 {
+		return config, nil
+	}
+	encrypted, err := crypto.Encrypt(r.key, config)
 	if err != nil {
 		return nil, fmt.Errorf("store: encrypt source config: %w", err)
 	}
@@ -101,9 +124,7 @@ func (r *encryptedComponentRepository) encryptComponent(source *Component) (*Com
 	if err != nil {
 		return nil, fmt.Errorf("store: marshal encrypted config: %w", err)
 	}
-	copy := *source
-	copy.Config = json.RawMessage(quoted)
-	return &copy, nil
+	return json.RawMessage(quoted), nil
 }
 
 // decryptComponent returns a shallow copy of source with Config decrypted.

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -26,6 +27,12 @@ type ComponentRepository interface {
 	List(ctx context.Context) ([]*Component, error)
 	ListByType(ctx context.Context, sourceType string) ([]*Component, error)
 	Update(ctx context.Context, source *Component) error
+	// UpdateConfigTx overwrites ONLY a component's config blob (and updated_at)
+	// against the caller-supplied transaction, leaving every other column
+	// untouched, so a governed promotion can write a credential reference into
+	// Config atomically with its audit row (A003 promotion boundary). The
+	// repository never commits or rolls back; the caller owns the transaction.
+	UpdateConfigTx(ctx context.Context, tx *sql.Tx, id string, config json.RawMessage) error
 	UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error
 	Delete(ctx context.Context, id string) error
 	// DeleteTx removes a component (the full row, including whatever in-config
@@ -195,6 +202,21 @@ func (r *sqlComponentRepository) Update(ctx context.Context, source *Component) 
 	)
 	if err != nil {
 		return fmt.Errorf("update source: %w", err)
+	}
+	return nil
+}
+
+func (r *sqlComponentRepository) UpdateConfigTx(ctx context.Context, tx *sql.Tx, id string, config json.RawMessage) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.update_config_tx", time.Since(start), err) }()
+	query := Rebind(r.driver, `
+		UPDATE components
+		SET config = ?, updated_at = ?
+		WHERE id = ?
+	`)
+	_, err = tx.ExecContext(ctx, query, []byte(config), time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update component config: %w", err)
 	}
 	return nil
 }

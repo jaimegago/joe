@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,13 @@ func (m *mockComponentRepo) Update(_ context.Context, s *Component) error {
 	return nil
 }
 
+func (m *mockComponentRepo) UpdateConfigTx(_ context.Context, _ *sql.Tx, id string, config json.RawMessage) error {
+	if s, ok := m.components[id]; ok {
+		s.Config = config
+	}
+	return nil
+}
+
 func (m *mockComponentRepo) UpdateSyncStatus(_ context.Context, id string, syncedAt time.Time, lastError string) error {
 	if s, ok := m.components[id]; ok {
 		s.LastSyncAt = &syncedAt
@@ -123,6 +131,43 @@ func TestEncryptedComponentRepository_RoundTrip(t *testing.T) {
 	}
 	if string(got.Config) != string(config) {
 		t.Errorf("Config after round-trip = %s, want %s", got.Config, config)
+	}
+}
+
+// TestEncryptedComponentRepository_UpdateConfigTxEncrypts proves the promotion
+// write path (UpdateConfigTx) encrypts the new config at rest just like Create:
+// the inner repo holds ciphertext (not the plaintext reference), and reading back
+// through the wrapper decrypts it. Guards against a promotion that writes a
+// credential reference in the clear.
+func TestEncryptedComponentRepository_UpdateConfigTxEncrypts(t *testing.T) {
+	key := testKey()
+	inner := newMockRepo()
+	repo, err := NewEncryptedComponentRepository(inner, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := repo.Create(ctx, &Component{ID: "c-1", Type: "github", Name: "gh"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	armed := json.RawMessage(`{"credential_provider":"static","env_var":"GH_TOKEN_LOCATOR"}`)
+	if err := repo.UpdateConfigTx(ctx, nil, "c-1", armed); err != nil {
+		t.Fatalf("UpdateConfigTx: %v", err)
+	}
+
+	// Inner store must NOT hold the plaintext locator.
+	rawInner := string(inner.components["c-1"].Config)
+	if strings.Contains(rawInner, "GH_TOKEN_LOCATOR") || strings.Contains(rawInner, "credential_provider") {
+		t.Errorf("UpdateConfigTx stored config in the clear: %s", rawInner)
+	}
+	// Reading back through the wrapper decrypts to the written reference.
+	got, err := repo.Get(ctx, "c-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(got.Config) != string(armed) {
+		t.Errorf("Config after UpdateConfigTx round-trip = %s, want %s", got.Config, armed)
 	}
 }
 
@@ -431,6 +476,9 @@ func (e *errorComponentRepo) ListByType(_ context.Context, _ string) ([]*Compone
 }
 func (e *errorComponentRepo) Update(_ context.Context, _ *Component) error {
 	return fmt.Errorf("inner update error")
+}
+func (e *errorComponentRepo) UpdateConfigTx(_ context.Context, _ *sql.Tx, _ string, _ json.RawMessage) error {
+	return fmt.Errorf("inner update-config-tx error")
 }
 func (e *errorComponentRepo) UpdateSyncStatus(_ context.Context, _ string, _ time.Time, _ string) error {
 	return fmt.Errorf("inner update-sync error")
