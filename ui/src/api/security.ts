@@ -5,6 +5,7 @@ import {
   RbacPolicySchema,
   PrincipalRecordSchema,
   AdminSchema,
+  ReadPromotionSchema,
 } from './schemas';
 import { z } from 'zod';
 import type {
@@ -13,6 +14,7 @@ import type {
   RbacPolicy,
   PrincipalRecord,
   Admin,
+  ReadPromotion,
 } from './types';
 
 // All admin mutations reach apiClient, which throws ApiRequestError (carrying
@@ -177,4 +179,30 @@ export function addAdmin(principal: string, reason?: string): Promise<void> {
 // first) and for the last remaining admin.
 export function removeAdmin(principal: string): Promise<void> {
   return apiClient.delete<void>(`/api/v1/admin/admins/${encodeURIComponent(principal)}`);
+}
+
+// --- Autonomous reads (per component-type read-admit toggle) ---
+
+// fetchReadPromotions lists every component type with its current autonomous-read
+// state — GET /api/v1/admin/read-promotions. The server returns the FULL component-
+// type enum overlaid with stored on-rows, so a type with no backend row comes back
+// enabled:false (off by default). The wrapping {read_promotions,count} is unwrapped
+// to the array, matching the other list fns here.
+export function fetchReadPromotions(): Promise<ReadPromotion[]> {
+  return apiClient
+    .get<unknown>('/api/v1/admin/read-promotions')
+    .then((r) => z.object({ read_promotions: z.array(ReadPromotionSchema) }).parse(r).read_promotions);
+}
+
+// setReadPromotion flips one component type's autonomous-read state — POST
+// /api/v1/admin/read-promotions. The server validates the type against the
+// authoritative enum (400 on unknown) and commits the flag and its audit row in a
+// single transaction. Returns the echoed {component_type,enabled} it just set.
+export function setReadPromotion(componentType: string, enabled: boolean): Promise<ReadPromotion> {
+  return apiClient
+    .post<unknown>('/api/v1/admin/read-promotions', {
+      component_type: componentType,
+      enabled,
+    })
+    .then((r) => ReadPromotionSchema.parse(r));
 }

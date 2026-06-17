@@ -16,7 +16,9 @@ import { PolicyForm } from '@/components/admin/PolicyForm';
 import { AdminsTable } from '@/components/admin/AdminsTable';
 import { AdminForm } from '@/components/admin/AdminForm';
 import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
+import { ReadPromotionsTable } from '@/components/admin/ReadPromotionsTable';
 import { useZones, useUnassigned } from '@/hooks/useZones';
+import { useReadPromotions } from '@/hooks/useReadPromotions';
 import { usePolicies } from '@/hooks/usePolicies';
 import { usePrincipals, useAdmins } from '@/hooks/usePrincipals';
 import { createZone, createPolicy, addAdmin } from '@/api/security';
@@ -34,6 +36,7 @@ export function AdminPage() {
   const zonesQ = useZones();
   const unassignedQ = useUnassigned();
   const policiesQ = usePolicies();
+  const readPromotionsQ = useReadPromotions();
   const principalsQ = usePrincipals();
   const adminsQ = useAdmins();
 
@@ -122,6 +125,7 @@ export function AdminPage() {
             <TabsTrigger value="zones">Zones</TabsTrigger>
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="policies">Policies</TabsTrigger>
+            <TabsTrigger value="autonomous-reads">Autonomous Reads</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
 
@@ -154,6 +158,14 @@ export function AdminPage() {
               <EmptyState icon={ShieldCheck} title="No policies" description="Create an RBAC policy to control access." />
             ) : (
               <PoliciesTable policies={policies} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="autonomous-reads">
+            {readPromotionsQ.isLoading ? (
+              <LoadingPage />
+            ) : (
+              <ReadPromotionsTable promotions={readPromotionsQ.data ?? []} />
             )}
           </TabsContent>
 
