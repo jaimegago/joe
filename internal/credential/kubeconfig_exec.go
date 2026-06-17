@@ -116,6 +116,17 @@ func (p *KubeconfigExecProvider) Probe(ctx context.Context, res *Resolution) (*R
 	return &out, nil
 }
 
+// AvailableReferences is honestly not-applicable for the kubeconfig-exec
+// provider: its reference is a kubeconfig file path plus a context name, not an
+// enumerable set the way env-var names are. Rather than forcing env semantics
+// onto it, it reports Applicable=false with no candidates — the picker renders
+// the kubeconfig/context locator form (from promotion-requirements) instead of a
+// candidate list. componentType is unused; the answer is the same for every type
+// wired to this provider.
+func (p *KubeconfigExecProvider) AvailableReferences(_ string) (References, error) {
+	return References{Applicable: false, Candidates: []Candidate{}}, nil
+}
+
 // Describe reports the kubeconfig-exec provider's non-sensitive descriptor.
 func (p *KubeconfigExecProvider) Describe(config json.RawMessage) (Descriptor, error) {
 	cfg, err := parseKubeconfigExecConfig(config)

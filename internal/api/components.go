@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"time"
 
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/componentgov"
@@ -40,6 +42,53 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
+// componentView is the read-model projection serialized by GET /api/v1/components
+// and GET /api/v1/components/{id}. It deliberately OMITS the raw store.Component
+// Config blob — which for an armed component carries credential reference
+// locators (credential_provider, env_var, kubeconfig, context, in_cluster,
+// audience) that must not reach any authenticated caller on these read endpoints
+// (A002 read-model fix) — and replaces it with a server-derived arm-state
+// projection: an `armed` boolean and, when armed, the provider Kind. The
+// projection is computed from the already-loaded Config via armedState (the same
+// helper the promote audit before-state uses) — never reimplemented, never a
+// stored field. Every other field mirrors store.Component as before. Both read
+// endpoints serialize this same shape so the frontend has one component read type.
+type componentView struct {
+	ID         string     `json:"id"`
+	Type       string     `json:"type"`
+	Name       string     `json:"name"`
+	Armed      bool       `json:"armed"`
+	Provider   string     `json:"provider,omitempty"`
+	Status     string     `json:"status"`
+	LastSyncAt *time.Time `json:"last_sync_at,omitempty"`
+	LastError  string     `json:"last_error,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// newComponentView projects a loaded *store.Component into its read-model view,
+// deriving armed/provider from the in-hand decrypted Config via armedState. The
+// provider Kind is carried only when armed (omitempty), so an inert component
+// serializes neither a provider nor the Config blob.
+func newComponentView(c *store.Component) componentView {
+	kind, armed := armedState(c.Config)
+	v := componentView{
+		ID:         c.ID,
+		Type:       c.Type,
+		Name:       c.Name,
+		Armed:      armed,
+		Status:     c.Status,
+		LastSyncAt: c.LastSyncAt,
+		LastError:  c.LastError,
+		CreatedAt:  c.CreatedAt,
+		UpdatedAt:  c.UpdatedAt,
+	}
+	if armed {
+		v.Provider = kind
+	}
+	return v
+}
+
 func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 	components, err := s.services.Store.Components.List(r.Context())
 	if err != nil {
@@ -47,13 +96,14 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if components == nil {
-		components = []*store.Component{}
+	views := make([]componentView, 0, len(components))
+	for _, c := range components {
+		views = append(views, newComponentView(c))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"components": components,
-		"count":      len(components),
+		"components": views,
+		"count":      len(views),
 	})
 }
 
@@ -303,7 +353,175 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, source)
+	writeJSON(w, http.StatusOK, newComponentView(source))
+}
+
+// handleComponentPromotionRequirements describes — for a single component — the
+// SHAPE of the credential reference an operator must supply to promote it (A002).
+// It is the backend the promotion UI renders its provider-conditional form from:
+// a GET sub-resource of the component, sibling of POST .../promote, ADMIN-GATED
+// because it describes a privileged capability (the promote input contract).
+//
+// It is strictly DESCRIBE-ONLY and value-free. For a WIRED component it composes
+// {type, wired:true, kind, locator_fields:[{name,required}], constraints:[...]}
+// from credential.WiredProvider (type->kind) and the describe-only requirements
+// table (credential.PromotionRequirements) — the locator field NAMES and required
+// flags plus the Kind-level cross-field rules, never the component's stored Config,
+// any locator VALUE, or any credential material. locator_fields excludes the
+// credential_provider discriminator and the audience descriptor by construction
+// (the table declares only the fields the form collects as a reference; a guard
+// test pins the table's names to the provider struct's reflected fields).
+//
+// For an UNWIRED type it answers the legitimate capability question with 200 —
+// {type, wired:false, armable_types:[...sorted...]} — rather than a 400: a describe
+// GET reports that the type cannot be armed and which types can, sorting the
+// (unsorted) wired-type registry for a stable form-facing list. Enforcement of the
+// reject-unwired rule remains the promote handler's job (this endpoint changes no
+// enforcement path).
+func (s *Server) handleComponentPromotionRequirements(w http.ResponseWriter, r *http.Request) {
+	if _, gated := s.requireAdmin(w, r); gated {
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+			"param": "id",
+		})
+		return
+	}
+
+	comp, err := s.services.Store.Components.Get(r.Context(), id)
+	if err != nil {
+		writeInternalError(w, err, "get source")
+		return
+	}
+	if comp == nil {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+			"component_id": id,
+		})
+		return
+	}
+
+	kind, wired := credential.WiredProvider(comp.Type)
+	if !wired {
+		// A describe GET answers the capability question with 200: this type is not
+		// armable, here are the types that are. The wired-type registry is unsorted;
+		// sort for a stable, form-renderable list.
+		armable := credential.WiredTypes()
+		sort.Strings(armable)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"type":          comp.Type,
+			"wired":         false,
+			"armable_types": armable,
+		})
+		return
+	}
+
+	reqs, ok := credential.PromotionRequirements(kind)
+	if !ok {
+		// A wired Kind with no requirements entry is a wiring bug the credential
+		// coverage guard test forbids; fail loudly rather than describe an empty shape.
+		writeInternalError(w, fmt.Errorf("no promotion requirements for wired kind %q (type %q)", kind, comp.Type), "promotion requirements")
+		return
+	}
+
+	// SHAPE only — never the Config blob, a locator value, or credential material.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"type":           comp.Type,
+		"wired":          true,
+		"kind":           string(kind),
+		"locator_fields": reqs.Fields,
+		"constraints":    reqs.Constraints,
+	})
+}
+
+// handleComponentPromotionCandidates answers — for a single component — the LIVE
+// question the promotion reference picker asks: "which credential references can
+// the admin choose for this component right NOW?" (A002 candidate surface). It is
+// the SIBLING of promotion-requirements, not a replacement: promotion-requirements
+// is the cacheable SHAPE of a reference (which locator fields, which rules); this
+// is the live candidate SET, which is not cacheable (it reflects the process
+// environment / backing store at request time). Two endpoints, two questions.
+//
+// It is ADMIN-GATED like promote and promotion-requirements (it describes a
+// privileged capability). It loads the component, resolves its type -> wired Kind
+// via the W1 registry (credential.WiredProvider), and DELEGATES enumeration to the
+// provider seam (credential.Provider.AvailableReferences): the static provider
+// enumerates the process environment scoped to the type's JOE_<SEGMENT>_ prefix
+// and returns {label, env_var_name} candidates — NAMES ONLY, never a value, never
+// another prefix — while kubeconfig-exec answers honestly not-applicable. The
+// env-var specifics live entirely behind the seam: this handler calls neither
+// os.LookupEnv nor os.Environ (a structural guard test pins that).
+//
+// For a WIRED component it returns {type, wired:true, kind, prefix, applicable,
+// candidates:[{label, env_var_name}]}. For an UNWIRED type it mirrors
+// promotion-requirements' handling exactly — {type, wired:false,
+// armable_types:[...sorted...]}, 200 — rather than a 400; enforcement of the
+// reject-unwired rule remains the promote handler's job.
+func (s *Server) handleComponentPromotionCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, gated := s.requireAdmin(w, r); gated {
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+			"param": "id",
+		})
+		return
+	}
+
+	comp, err := s.services.Store.Components.Get(r.Context(), id)
+	if err != nil {
+		writeInternalError(w, err, "get source")
+		return
+	}
+	if comp == nil {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+			"component_id": id,
+		})
+		return
+	}
+
+	kind, wired := credential.WiredProvider(comp.Type)
+	if !wired {
+		// Same shape as promotion-requirements for an unwired type: 200 with the
+		// sorted armable set. This type cannot be armed, here are the types that can.
+		armable := credential.WiredTypes()
+		sort.Strings(armable)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"type":          comp.Type,
+			"wired":         false,
+			"armable_types": armable,
+		})
+		return
+	}
+
+	provider, err := credential.ProviderForKind(kind)
+	if err != nil {
+		// A wired Kind with no constructible provider is a wiring bug; fail loudly.
+		writeInternalError(w, err, "promotion candidates")
+		return
+	}
+
+	// DELEGATE to the provider seam — env-var enumeration lives in the static
+	// provider, not here. The provider answers in normalized {candidates} terms.
+	refs, err := provider.AvailableReferences(comp.Type)
+	if err != nil {
+		writeInternalError(w, err, "promotion candidates")
+		return
+	}
+
+	// NAMES/labels only — refs carries no credential value by construction.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"type":       comp.Type,
+		"wired":      true,
+		"kind":       string(kind),
+		"prefix":     refs.Prefix,
+		"applicable": refs.Applicable,
+		"candidates": refs.Candidates,
+	})
 }
 
 // handleDeleteComponent deregisters a component (A003 Stream G governed DELETE).

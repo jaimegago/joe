@@ -33,7 +33,13 @@ export const ComponentSchema = z.object({
   type: z.string(),
   name: z.string(),
   zone: z.string().optional(),
-  config: z.record(z.string(), z.unknown()),
+  // A002 read-model fix: GET /api/v1/components and /components/{id} no longer
+  // serialize the raw config blob (it carried credential reference locators for
+  // an armed component). In its place the server sends a derived arm-state
+  // projection: `armed` is always present; `provider` (the credential provider
+  // Kind) is present only when armed and absent/empty for an inert component.
+  armed: z.boolean(),
+  provider: z.string().optional(),
   status: z.string(),
   last_sync_at: z.string().optional(),
   last_error: z.string().optional(),
@@ -62,6 +68,83 @@ export const CreatedComponentSchema = z.object({
   status: z.string().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
+});
+
+// Component promotion (A002 operator-facing arm form). The two describe
+// endpoints and the promote write back the privilege surface where an admin
+// supplies a credential REFERENCE — never a secret — to arm an inert component.
+
+// One locator field an operator supplies as part of a credential reference.
+export const PromotionLocatorFieldSchema = z.object({
+  name: z.string(),
+  required: z.boolean(),
+});
+
+// A Kind-level cross-field rule the form switches on to render the right
+// affordance (e.g. at-least-one-of {in_cluster, kubeconfig}).
+export const PromotionConstraintSchema = z.object({
+  rule: z.string(),
+  fields: z.array(z.string()),
+  message: z.string(),
+});
+
+// GET /api/v1/components/{id}/promotion-requirements — the cacheable SHAPE of
+// the reference. Discriminated on `wired`: a wired component carries the
+// provider kind + locator field shape + constraints; an unwired type carries
+// only the sorted set of types that CAN be armed (200, not a 400).
+export const PromotionRequirementsSchema = z.discriminatedUnion('wired', [
+  z.object({
+    type: z.string(),
+    wired: z.literal(true),
+    kind: z.string(),
+    locator_fields: z.array(PromotionLocatorFieldSchema),
+    constraints: z.array(PromotionConstraintSchema),
+  }),
+  z.object({
+    type: z.string(),
+    wired: z.literal(false),
+    armable_types: z.array(z.string()),
+  }),
+]);
+
+// One live credential reference the admin may choose: a human label and the
+// composed reference name (the static provider's env var name). Never a value.
+export const PromotionCandidateSchema = z.object({
+  label: z.string(),
+  env_var_name: z.string(),
+});
+
+// GET /api/v1/components/{id}/promotion-candidates — the LIVE candidate set
+// (not cacheable; reflects Joe's environment at request time). Discriminated on
+// `wired`. A wired component reports applicability + (static) the enumerable
+// candidates and their env-name prefix; kubeconfig-exec answers applicable:false
+// with no candidates. An unwired type mirrors the requirements shape. `prefix`
+// is omitted by the server when not applicable.
+export const PromotionCandidatesSchema = z.discriminatedUnion('wired', [
+  z.object({
+    type: z.string(),
+    wired: z.literal(true),
+    kind: z.string(),
+    prefix: z.string().optional(),
+    applicable: z.boolean(),
+    candidates: z.array(PromotionCandidateSchema),
+  }),
+  z.object({
+    type: z.string(),
+    wired: z.literal(false),
+    armable_types: z.array(z.string()),
+  }),
+]);
+
+// POST /api/v1/components/{id}/promote response — OUTCOME ONLY, never echoes
+// the reference. `rearm` is true when an already-armed component's reference
+// was rotated rather than armed for the first time.
+export const PromoteResponseSchema = z.object({
+  component_id: z.string(),
+  type: z.string(),
+  provider: z.string(),
+  armed: z.boolean(),
+  rearm: z.boolean(),
 });
 
 // Security / RBAC

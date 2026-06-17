@@ -15,8 +15,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fetchComponents, testComponent, deleteComponent } from '@/api/components';
+import { fetchComponents, testComponent, deleteComponent, promoteComponent } from '@/api/components';
+import type { PromoteRequest } from '@/api/components';
 import { fetchZones } from '@/api/security';
+import { ApiRequestError } from '@/api/client';
+import { PromoteComponentForm } from '@/components/admin/PromoteComponentForm';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { STATUS_CONFIG } from '@/lib/constants';
 import type { Component } from '@/api/types';
 import { Database, RefreshCw } from 'lucide-react';
@@ -30,6 +34,16 @@ function StatusDot({ status }: { status: Component['status'] }) {
   );
 }
 
+// ArmBadge renders a component's inert-vs-armed state from the read-model
+// `armed` field, matched to the page's existing status-badge weight.
+function ArmBadge({ armed }: { armed: boolean }) {
+  return armed ? (
+    <Badge variant="success">armed</Badge>
+  ) : (
+    <Badge variant="secondary">inert</Badge>
+  );
+}
+
 export function ComponentsPage() {
   const qc = useQueryClient();
   const [filterType, setFilterType] = useState('all');
@@ -37,6 +51,10 @@ export function ComponentsPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [selected, setSelected] = useState<Component | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [promoteTarget, setPromoteTarget] = useState<Component | null>(null);
+
+  const meQ = useCurrentUser();
+  const isAdmin = meQ.data?.is_admin === true;
 
   const componentsQ = useQuery({ queryKey: ['components'], queryFn: fetchComponents });
   const zonesQ = useQuery({ queryKey: ['zones'], queryFn: fetchZones });
@@ -64,6 +82,33 @@ export function ComponentsPage() {
       void qc.invalidateQueries({ queryKey: ['components'] });
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const promoteMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PromoteRequest; rearm: boolean }) =>
+      promoteComponent(id, body),
+    onSuccess: (_res, vars) => {
+      // Keep the action's vocabulary through the flow: the button said
+      // Promote/Re-arm, the toast says Promoted/Re-armed.
+      toast.success(
+        vars.rearm
+          ? `Component re-armed — ${vars.id} credential rotated.`
+          : `Component promoted — ${vars.id} is now armed.`
+      );
+      setPromoteTarget(null);
+      // Flip the row to armed and refresh the credential-status views.
+      void qc.invalidateQueries({ queryKey: ['components'] });
+      void qc.invalidateQueries({ queryKey: ['credential-status'] });
+    },
+    onError: (e: Error) => {
+      // The backend refuses a malformed/inline reference with a 400; surface
+      // what to fix rather than a bare message.
+      if (e instanceof ApiRequestError && e.status === 400) {
+        toast.error(`Promotion rejected: ${e.message}`);
+        return;
+      }
+      toast.error(e.message);
+    },
   });
 
   const components = componentsQ.data ?? [];
@@ -141,6 +186,7 @@ export function ComponentsPage() {
                 <TableHead>Type</TableHead>
                 <TableHead>Zone</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Arming</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -164,6 +210,7 @@ export function ComponentsPage() {
                     )}
                   </TableCell>
                   <TableCell><StatusDot status={s.status} /></TableCell>
+                  <TableCell><ArmBadge armed={s.armed} /></TableCell>
                   <TableCell>
                     <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelected(s); }}>
                       View
@@ -200,6 +247,15 @@ export function ComponentsPage() {
                   <p className="text-xs text-muted-foreground">Last Sync</p>
                   <p>{selectedLive.last_sync_at ? new Date(selectedLive.last_sync_at).toLocaleString() : '—'}</p>
                 </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Arming</p>
+                  <div className="flex items-center gap-2">
+                    <ArmBadge armed={selectedLive.armed} />
+                    {selectedLive.armed && selectedLive.provider && (
+                      <span className="text-xs text-muted-foreground">{selectedLive.provider}</span>
+                    )}
+                  </div>
+                </div>
               </div>
               {selectedLive.last_error && (
                 <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
@@ -215,6 +271,15 @@ export function ComponentsPage() {
                 >
                   Test Connection
                 </Button>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPromoteTarget(selectedLive)}
+                  >
+                    {selectedLive.armed ? 'Re-arm' : 'Promote'}
+                  </Button>
+                )}
                 <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
                   Remove
                 </Button>
@@ -232,6 +297,20 @@ export function ComponentsPage() {
           variant="destructive"
           onConfirm={() => selected && deleteMut.mutate(selected.id)}
         />
+
+        {promoteTarget && (
+          <PromoteComponentForm
+            open
+            onOpenChange={(o) => {
+              if (!o) setPromoteTarget(null);
+            }}
+            component={promoteTarget}
+            onSubmit={(body) =>
+              promoteMut.mutate({ id: promoteTarget.id, body, rearm: promoteTarget.armed })
+            }
+            isLoading={promoteMut.isPending}
+          />
+        )}
       </PageContainer>
     </>
   );
