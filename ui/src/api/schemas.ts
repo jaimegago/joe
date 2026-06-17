@@ -480,6 +480,15 @@ export const CredentialProbeResponseSchema = z.object({
   stderr_available: z.boolean(),
 });
 
+// Autonomous reads (per component-type read-admit toggle). One row per component
+// type from the full enum; `enabled` is the type's current on/off state. The GET
+// returns the full enum (absent backend row → enabled:false); the POST echoes the
+// single type it just set.
+export const ReadPromotionSchema = z.object({
+  component_type: z.string(),
+  enabled: z.boolean(),
+});
+
 // Alerts
 export const AlertSchema = z.object({
   id: z.string(),
