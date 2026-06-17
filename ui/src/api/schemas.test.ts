@@ -9,6 +9,9 @@ import {
   AlertSchema,
   SessionSchema,
   CurrentUserSchema,
+  PromotionRequirementsSchema,
+  PromotionCandidatesSchema,
+  PromoteResponseSchema,
 } from './schemas';
 
 describe('GraphNodeSchema', () => {
@@ -65,18 +68,42 @@ describe('GraphSchema', () => {
 });
 
 describe('ComponentSchema', () => {
-  it('parses a valid source', () => {
+  it('parses an armed component with the derived arm-state projection', () => {
+    // A002 read-model fix: GET /api/v1/components(/{id}) no longer carries the
+    // raw config blob; an armed (promoted) component instead serializes
+    // armed:true plus the provider Kind. The raw locator keys never appear.
     const source = ComponentSchema.parse({
       id: 'k8s-prod',
       type: 'kubernetes',
       name: 'Production K8s',
-      config: { server: 'https://k8s.prod' },
+      armed: true,
+      provider: 'kubeconfig-exec',
       status: 'connected',
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
     });
     expect(source.id).toBe('k8s-prod');
     expect(source.zone).toBeUndefined();
+    expect(source.armed).toBe(true);
+    expect(source.provider).toBe('kubeconfig-exec');
+  });
+
+  it('parses an inert component with armed false and no provider', () => {
+    // A config-less registration lands inert; the read model projects armed:false
+    // and omits the provider Kind entirely. The list surface parses each element
+    // against this schema, so the inert shape must parse cleanly.
+    const source = ComponentSchema.parse({
+      id: 'prod-prometheus',
+      type: 'prometheus',
+      name: 'Production Prometheus',
+      armed: false,
+      status: 'unassigned',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    });
+    expect(source.armed).toBe(false);
+    expect(source.provider).toBeUndefined();
+    expect(source.id).toBe('prod-prometheus');
   });
 });
 
@@ -207,5 +234,138 @@ describe('SessionSchema', () => {
     });
     expect(session.message_count).toBe(5);
     expect(session.ended_at).toBeUndefined();
+  });
+});
+
+describe('PromotionRequirementsSchema', () => {
+  it('parses a wired requirements shape', () => {
+    const r = PromotionRequirementsSchema.parse({
+      type: 'github',
+      wired: true,
+      kind: 'static',
+      locator_fields: [{ name: 'env_var', required: true }],
+      constraints: [
+        { rule: 'forbid-inline-value', fields: ['value'], message: 'no inline secret' },
+      ],
+    });
+    expect(r.wired).toBe(true);
+    if (r.wired) {
+      expect(r.kind).toBe('static');
+      expect(r.locator_fields[0].name).toBe('env_var');
+    }
+  });
+
+  it('parses a kubeconfig-exec at-least-one-of constraint', () => {
+    const r = PromotionRequirementsSchema.parse({
+      type: 'kubernetes',
+      wired: true,
+      kind: 'kubeconfig-exec',
+      locator_fields: [
+        { name: 'in_cluster', required: false },
+        { name: 'kubeconfig', required: false },
+        { name: 'context', required: false },
+      ],
+      constraints: [
+        {
+          rule: 'at-least-one-of',
+          fields: ['in_cluster', 'kubeconfig'],
+          message: 'supply either in_cluster=true or a kubeconfig path',
+        },
+      ],
+    });
+    expect(r.wired).toBe(true);
+    if (r.wired) {
+      const c = r.constraints.find((x) => x.rule === 'at-least-one-of');
+      expect(c?.fields).toEqual(['in_cluster', 'kubeconfig']);
+    }
+  });
+
+  it('parses an unwired shape carrying armable_types', () => {
+    const r = PromotionRequirementsSchema.parse({
+      type: 'webhook',
+      wired: false,
+      armable_types: ['github', 'kubernetes'],
+    });
+    expect(r.wired).toBe(false);
+    if (!r.wired) expect(r.armable_types).toContain('github');
+  });
+
+  it('rejects a wired shape missing kind', () => {
+    expect(() =>
+      PromotionRequirementsSchema.parse({
+        type: 'github',
+        wired: true,
+        locator_fields: [],
+        constraints: [],
+      })
+    ).toThrow();
+  });
+});
+
+describe('PromotionCandidatesSchema', () => {
+  it('parses a static applicable candidate set', () => {
+    const r = PromotionCandidatesSchema.parse({
+      type: 'github',
+      wired: true,
+      kind: 'static',
+      prefix: 'JOE_GITHUB_',
+      applicable: true,
+      candidates: [{ label: 'PROD', env_var_name: 'JOE_GITHUB_PROD' }],
+    });
+    expect(r.wired).toBe(true);
+    if (r.wired) {
+      expect(r.applicable).toBe(true);
+      expect(r.candidates[0].env_var_name).toBe('JOE_GITHUB_PROD');
+    }
+  });
+
+  it('parses a kubeconfig-exec not-applicable answer (no prefix)', () => {
+    const r = PromotionCandidatesSchema.parse({
+      type: 'kubernetes',
+      wired: true,
+      kind: 'kubeconfig-exec',
+      applicable: false,
+      candidates: [],
+    });
+    expect(r.wired).toBe(true);
+    if (r.wired) {
+      expect(r.applicable).toBe(false);
+      expect(r.candidates).toHaveLength(0);
+      expect(r.prefix).toBeUndefined();
+    }
+  });
+
+  it('parses an unwired candidate answer', () => {
+    const r = PromotionCandidatesSchema.parse({
+      type: 'webhook',
+      wired: false,
+      armable_types: ['github'],
+    });
+    expect(r.wired).toBe(false);
+  });
+});
+
+describe('PromoteResponseSchema', () => {
+  it('parses an outcome-only promote response', () => {
+    const r = PromoteResponseSchema.parse({
+      component_id: 'prod-github',
+      type: 'github',
+      provider: 'static',
+      armed: true,
+      rearm: false,
+    });
+    expect(r.armed).toBe(true);
+    expect(r.rearm).toBe(false);
+  });
+
+  it('marks a rotation with rearm:true', () => {
+    const r = PromoteResponseSchema.parse({
+      component_id: 'prod-github',
+      type: 'github',
+      provider: 'static',
+      armed: true,
+      rearm: true,
+    });
+    expect(r.rearm).toBe(true);
   });
 });

@@ -165,6 +165,19 @@ func (s *Server) registerComponentRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/components", prefix), handler.handleCreate)
 	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}", prefix), handler.handleGet)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/components/{id}", prefix), handler.handleDelete)
+	// Describe-only read of the promotion input contract for a component (A002):
+	// a GET sub-resource of the component, sibling of the POST .../promote write,
+	// that the promotion UI renders its provider-conditional form from. Admin-gated
+	// like promote — it describes a privileged capability. A distinct, longer path
+	// than GET /components/{id}, so no route collision.
+	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}/promotion-requirements", prefix), handler.handlePromotionRequirements)
+	// Live promotion-candidate read (A002): the SIBLING of promotion-requirements.
+	// Where promotion-requirements describes the cacheable SHAPE of a reference,
+	// this returns the LIVE candidate SET the reference picker offers — for a
+	// static-wired component, the env var names under the type's prefix (names
+	// only, no values), delegated to the provider seam. Admin-gated; a distinct,
+	// longer path than GET /components/{id}, so no route collision.
+	mux.HandleFunc(fmt.Sprintf("GET %s/components/{id}/promotion-candidates", prefix), handler.handlePromotionCandidates)
 	// Promotion boundary (A003): the single governed read-only-to-armed
 	// transition. A POST to a /promote sub-path of the component resource keyed on
 	// {id} — the arming verb on the existing resource, distinct from create/get/
@@ -347,6 +360,14 @@ func (h *sourceHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *sourceHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 	h.server.handlePromoteComponent(w, r)
+}
+
+func (h *sourceHandler) handlePromotionRequirements(w http.ResponseWriter, r *http.Request) {
+	h.server.handleComponentPromotionRequirements(w, r)
+}
+
+func (h *sourceHandler) handlePromotionCandidates(w http.ResponseWriter, r *http.Request) {
+	h.server.handleComponentPromotionCandidates(w, r)
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

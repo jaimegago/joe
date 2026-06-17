@@ -8,6 +8,10 @@ import type {
   CreatedComponentSchema,
   SecurityZoneSchema,
   ComponentZoneAssignmentSchema,
+  PromotionRequirementsSchema,
+  PromotionCandidateSchema,
+  PromotionCandidatesSchema,
+  PromoteResponseSchema,
   RbacPolicySchema,
   PrincipalRecordSchema,
   AdminSchema,
@@ -48,6 +52,10 @@ export type Component = z.infer<typeof ComponentSchema>;
 export type CreatedComponent = z.infer<typeof CreatedComponentSchema>;
 export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
 export type ComponentZoneAssignment = z.infer<typeof ComponentZoneAssignmentSchema>;
+export type PromotionRequirements = z.infer<typeof PromotionRequirementsSchema>;
+export type PromotionCandidate = z.infer<typeof PromotionCandidateSchema>;
+export type PromotionCandidates = z.infer<typeof PromotionCandidatesSchema>;
+export type PromoteResponse = z.infer<typeof PromoteResponseSchema>;
 export type RbacPolicy = z.infer<typeof RbacPolicySchema>;
 export type PrincipalRecord = z.infer<typeof PrincipalRecordSchema>;
 export type Admin = z.infer<typeof AdminSchema>;

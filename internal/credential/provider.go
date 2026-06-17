@@ -29,6 +29,20 @@ type Provider interface {
 	// descriptor (provider kind, audience, context name, expiry when known) for
 	// UI rendering, without calling Resolve.
 	Describe(config json.RawMessage) (Descriptor, error)
+
+	// AvailableReferences answers, in the provider's OWN terms, which credential
+	// references an admin may choose for a component of componentType right now —
+	// the live candidate set behind the promotion reference picker. The static
+	// provider enumerates the process environment scoped to the type's
+	// JOE_<SEGMENT>_ prefix, returning each match as a {label, env_var_name}
+	// candidate (NAMES ONLY — never a value, never the environment at large). A
+	// provider whose reference is not an enumerable set (kubeconfig-exec: a file
+	// path) returns Applicable=false with no candidates. It takes componentType —
+	// not config — because the answer is type-scoped, not config-scoped, and it
+	// needs no store handle: the caller resolves the type and hands it in. This is
+	// the seam that lets a future DB/external-manager provider answer the same
+	// question against its own backing store without the endpoint or form changing.
+	AvailableReferences(componentType string) (References, error)
 }
 
 // Descriptor is the non-sensitive, config-derived fact a provider reports for UI
@@ -70,6 +84,15 @@ func Select(config json.RawMessage) (Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ProviderForKind(kind)
+}
+
+// ProviderForKind constructs the Provider for a known provider Kind, with no
+// config to read a discriminator from. It is the constructor the promotion
+// reference picker uses: the candidates endpoint resolves a component type to its
+// wired Kind (credential.WiredProvider) and asks that Kind's provider for its
+// AvailableReferences. Select is the config-driven wrapper over this.
+func ProviderForKind(kind Kind) (Provider, error) {
 	switch kind {
 	case KindStatic:
 		return NewStaticProvider(), nil
