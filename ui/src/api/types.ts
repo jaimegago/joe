@@ -42,6 +42,10 @@ import type {
   CredentialDiagnosticSchema,
   CredentialProbeResponseSchema,
   ReadPromotionSchema,
+  SkillStatusEntrySchema,
+  SkillsListResponseSchema,
+  SkillsReloadResponseSchema,
+  SkillsApprovalResponseSchema,
 } from './schemas';
 
 // Types derived from Zod schemas — single source of truth
@@ -87,3 +91,7 @@ export type CredentialDescriptor = z.infer<typeof CredentialDescriptorSchema>;
 export type CredentialStatusEntry = z.infer<typeof CredentialStatusEntrySchema>;
 export type CredentialDiagnostic = z.infer<typeof CredentialDiagnosticSchema>;
 export type CredentialProbeResponse = z.infer<typeof CredentialProbeResponseSchema>;
+export type SkillStatusEntry = z.infer<typeof SkillStatusEntrySchema>;
+export type SkillsListResponse = z.infer<typeof SkillsListResponseSchema>;
+export type SkillsReloadResponse = z.infer<typeof SkillsReloadResponseSchema>;
+export type SkillsApprovalResponse = z.infer<typeof SkillsApprovalResponseSchema>;
