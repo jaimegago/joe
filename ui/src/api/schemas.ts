@@ -498,3 +498,50 @@ export const AlertSchema = z.object({
   timestamp: z.string(),
   acknowledged: z.boolean(),
 });
+
+// Skills — the loaded-skills inspection/management surface (GET /skills).
+// One row per installed skill: identity plus the git source it came from
+// (repo/ref/commit). `description` rides along when present, but the list path
+// reads the lockfile, which doesn't carry it — so treat it as optional. Status
+// is "active" (loaded into the router) or "quarantined" (on disk, awaiting an
+// operator's approve/reject); quarantine_reason explains why it was held.
+export const SkillStatusEntrySchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  repo: z.string(),
+  ref: z.string().optional(),
+  commit: z.string().optional(),
+  status: z.string(),
+  quarantine_reason: z.string().optional(),
+  hash: z.string().optional(),
+});
+
+// The GET /skills payload splits active and quarantined into separate slices so
+// the UI never has to filter client-side. Both default to [] server-side.
+export const SkillsListResponseSchema = z.object({
+  active: z.array(SkillStatusEntrySchema),
+  quarantined: z.array(SkillStatusEntrySchema),
+});
+
+// POST /skills/reload result: a before/after count plus the diff of skill names
+// added/removed/updated by the rescan. `error` is set only on a failed reload.
+export const SkillsReloadResponseSchema = z.object({
+  status: z.string(),
+  trigger: z.string(),
+  before: z.number(),
+  after: z.number(),
+  added: z.array(z.string()).optional(),
+  removed: z.array(z.string()).optional(),
+  updated: z.array(z.string()).optional(),
+  error: z.string().optional(),
+});
+
+// POST /skills/approve and /skills/reject share this outcome shape — the
+// resulting state of the install so callers needn't re-fetch GET /skills.
+export const SkillsApprovalResponseSchema = z.object({
+  status: z.string(),
+  name: z.string(),
+  repo: z.string().optional(),
+  commit: z.string().optional(),
+  skills: z.array(z.string()),
+});

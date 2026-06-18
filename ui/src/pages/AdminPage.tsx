@@ -17,14 +17,16 @@ import { AdminsTable } from '@/components/admin/AdminsTable';
 import { AdminForm } from '@/components/admin/AdminForm';
 import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
 import { ReadPromotionsTable } from '@/components/admin/ReadPromotionsTable';
+import { SkillsTable } from '@/components/admin/SkillsTable';
 import { useZones, useUnassigned } from '@/hooks/useZones';
 import { useReadPromotions } from '@/hooks/useReadPromotions';
+import { useSkills } from '@/hooks/useSkills';
 import { usePolicies } from '@/hooks/usePolicies';
 import { usePrincipals, useAdmins } from '@/hooks/usePrincipals';
 import { createZone, createPolicy, addAdmin } from '@/api/security';
 import { createComponent } from '@/api/components';
 import { ApiRequestError } from '@/api/client';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Puzzle } from 'lucide-react';
 
 export function AdminPage() {
   const qc = useQueryClient();
@@ -37,6 +39,7 @@ export function AdminPage() {
   const unassignedQ = useUnassigned();
   const policiesQ = usePolicies();
   const readPromotionsQ = useReadPromotions();
+  const skillsQ = useSkills();
   const principalsQ = usePrincipals();
   const adminsQ = useAdmins();
 
@@ -126,6 +129,7 @@ export function AdminPage() {
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="policies">Policies</TabsTrigger>
             <TabsTrigger value="autonomous-reads">Autonomous Reads</TabsTrigger>
+            <TabsTrigger value="skills">Skills</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
 
@@ -166,6 +170,29 @@ export function AdminPage() {
               <LoadingPage />
             ) : (
               <ReadPromotionsTable promotions={readPromotionsQ.data ?? []} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="skills">
+            {skillsQ.isLoading ? (
+              <LoadingPage />
+            ) : skillsQ.isError ? (
+              skillsQ.error instanceof ApiRequestError && skillsQ.error.status === 503 ? (
+                <EmptyState
+                  icon={Puzzle}
+                  title="Skills unavailable"
+                  description="The skills manager is not enabled on this joe instance."
+                />
+              ) : (
+                <EmptyState
+                  icon={Puzzle}
+                  title="Couldn't load skills"
+                  description="The request failed. This may be a transient error — try again."
+                  action={{ label: 'Retry', onClick: () => void skillsQ.refetch() }}
+                />
+              )
+            ) : (
+              <SkillsTable data={skillsQ.data ?? { active: [], quarantined: [] }} />
             )}
           </TabsContent>
 
