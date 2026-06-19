@@ -16,6 +16,12 @@ import (
 	"time"
 )
 
+// e2eServiceAccountKey is the bearer token for the "e2e" service account
+// configured in setupTestConfig. Joe refuses to boot without an identity
+// source, so the harness registers a service account and authenticates its
+// API requests with this key.
+const e2eServiceAccountKey = "e2e-service-account-key-not-a-real-credential"
+
 // JoeTestHarness manages the joe server for E2E testing
 type JoeTestHarness struct {
 	t            *testing.T
@@ -117,6 +123,7 @@ func (h *JoeTestHarness) GetStatus() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+e2eServiceAccountKey)
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -166,6 +173,7 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 			if err != nil {
 				continue
 			}
+			req.Header.Set("Authorization", "Bearer "+e2eServiceAccountKey)
 			resp, err := h.httpClient.Do(req)
 			if err == nil && resp.StatusCode == http.StatusOK {
 				resp.Body.Close()
@@ -207,6 +215,9 @@ func setupTestConfig(t *testing.T, path, port string) {
       model: gemini-2.0-flash
 server:
   address: localhost:%s
+  service_accounts:
+    - name: e2e
+      key: e2e-service-account-key-not-a-real-credential
 logging:
   level: debug
 refresh:
