@@ -9,9 +9,13 @@
 //     retention policy's inactivity window is enabled (it is OFF / nil by
 //     default, the regulated-posture default). Active sessions older than the
 //     window get the policy terminal action: trash_then_purge → trash now (a
-//     later cycle purges them past purge_after); archive → DEFERRED to B007c
-//     behind an honest seam (the session is left ACTIVE and logged, never
-//     trashed and never falsely marked archived — see the archive case below).
+//     later cycle purges them past purge_after); archive → the §12.6
+//     provider-backed archive (B007c) when an archive provider is wired (read
+//     the live transcript, write the versioned artifact, stamp the archive
+//     columns + remove the hot rows in one audited transaction); when no provider
+//     is configured it falls back to an honest leave-active-and-log seam — the
+//     session is never trashed and never falsely marked archived (see the archive
+//     case below).
 //
 //  2. Trash-grace purge (§12.5, against purge_after) — the unconditional second
 //     pass: it purges every trashed session whose purge_after has passed,
@@ -58,6 +62,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 )
 
@@ -97,6 +102,11 @@ type Config struct {
 	// Sessions / Flows are the two distinct subsystems the sweep touches.
 	Sessions SessionStore
 	Flows    FlowDrainer
+	// Archive is the §12.6 archive provider+store coupling the inactivity-expiry
+	// archive branch drives (B007c). When nil (no archive directory configured)
+	// the archive terminal action keeps its honest leave-active-and-log seam — a
+	// session is NEVER falsely marked archived without a real artifact.
+	Archive *sessionarchive.Archiver
 	// Audit is the transactional audit sink (may be nil — see AuditSink).
 	Audit AuditSink
 	// Principal is the boot-minted service principal the sweeper acts under
@@ -117,6 +127,7 @@ type Sweeper struct {
 	db        *sql.DB
 	sessions  SessionStore
 	flows     FlowDrainer
+	archive   *sessionarchive.Archiver
 	audit     AuditSink
 	principal rbac.Principal
 	logger    *slog.Logger
@@ -145,6 +156,7 @@ func New(cfg Config) *Sweeper {
 		db:        cfg.DB,
 		sessions:  cfg.Sessions,
 		flows:     cfg.Flows,
+		archive:   cfg.Archive,
 		audit:     cfg.Audit,
 		principal: cfg.Principal,
 		logger:    logger.With("component", "session-sweeper"),
@@ -253,14 +265,31 @@ func (s *Sweeper) sweepInactivity(ctx context.Context, policy *sessionmodel.Rete
 			}
 			s.logger.Info("sweep: trashed inactivity-expired session", "session_id", sess.ID)
 		case sessionmodel.TerminalActionArchive:
-			// SOFT-COUPLING HONEST SEAM (deferred to B007c). The archive provider,
-			// versioned artifact, transcript-to-cold-storage move, and restore are
-			// NOT built in this node. Marking the session archived here without a
-			// real archive_ref and without moving the transcript would be a lying
-			// state; trashing it would route it to purge (data loss). So leave it
-			// ACTIVE and log — never falsely archived, never destroyed.
-			s.logger.Warn("sweep: archive terminal action deferred to B007c; leaving inactivity-expired session ACTIVE (not trashed, not archived)",
-				"session_id", sess.ID)
+			if s.archive == nil {
+				// No archive provider wired (no archive directory configured). The
+				// honest seam holds: marking the session archived without a real
+				// archive_ref and without moving the transcript would be a lying
+				// state, and trashing it would route it to purge (data loss). So
+				// leave it ACTIVE and log — never falsely archived, never destroyed.
+				s.logger.Warn("sweep: archive provider not configured; leaving inactivity-expired session ACTIVE (not trashed, not archived)",
+					"session_id", sess.ID)
+				continue
+			}
+			// Real archive (B007c): read the live transcript, write the versioned
+			// artifact, then stamp archived_at/archived_by/archive_ref AND remove the
+			// hot rows in ONE transaction coupled to the §12.5 lifecycle audit row,
+			// under the service principal. Fail-safe per session: a failure is logged
+			// and skipped (the artifact is cleaned up by the archiver on rollback),
+			// and the batch continues.
+			ev := lifecycleEvent(s.principal, audit.ActionSessionArchive, sess.ID, "sweeper_inactivity_expiry")
+			commit := func(mutate func(*sql.Tx) error) error {
+				return s.mutateWithAudit(ctx, ev, mutate)
+			}
+			if _, err := s.archive.Archive(ctx, sess, string(s.principal), commit); err != nil {
+				s.logger.Error("sweep: archive inactive session failed; skipping", "session_id", sess.ID, "error", err)
+				continue
+			}
+			s.logger.Info("sweep: archived inactivity-expired session", "session_id", sess.ID)
 		default:
 			s.logger.Warn("sweep: unknown terminal action; leaving session active",
 				"session_id", sess.ID, "terminal_action", string(policy.TerminalAction))

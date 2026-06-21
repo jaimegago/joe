@@ -68,6 +68,98 @@ func (r *SQLRepository) restoreExec(ctx context.Context, exec sqlExecer, id stri
 	return requireOneRow(res, ErrSessionNotTrashed, "restore session")
 }
 
+// --- Archive (move to cold storage) ---
+
+func (r *SQLRepository) ArchiveSession(ctx context.Context, id, by, ref string) error {
+	return r.archiveExec(ctx, r.db, id, by, ref)
+}
+
+func (r *SQLRepository) ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string) error {
+	return r.archiveExec(ctx, tx, id, by, ref)
+}
+
+// archiveExec performs the §12.6 archive STATE transition: it stamps
+// archived_at=now / archived_by / archive_ref (the provider-produced locator) on
+// a not-yet-archived session, THEN removes the hot transcript rows — the MOVE to
+// cold storage, after which the artifact is the sole copy and the normal read
+// path (ListChatMessages) returns nothing for this session until restore. The
+// guarded UPDATE matches only an un-archived row, so re-archiving affects zero
+// rows and returns ErrSessionAlreadyArchived BEFORE any transcript is removed.
+// It touches only agent_sessions and chat_messages — never the legacy tables.
+func (r *SQLRepository) archiveExec(ctx context.Context, exec sqlExecer, id, by, ref string) error {
+	res, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions
+		SET archived_at = ?, archived_by = ?, archive_ref = ?
+		WHERE id = ? AND archived_at IS NULL`),
+		time.Now().UTC().Format(time.RFC3339), by, ref, id)
+	if err != nil {
+		return fmt.Errorf("archive session: %w", err)
+	}
+	if err := requireOneRow(res, ErrSessionAlreadyArchived, "archive session"); err != nil {
+		return err
+	}
+	// Move: the artifact now holds the transcript, so the hot rows leave
+	// chat_messages. This runs in the same transaction as the column stamp (and
+	// the caller's audit row), so a rollback restores both the columns and the
+	// rows together.
+	if _, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+		DELETE FROM chat_messages WHERE session_id = ?`), id); err != nil {
+		return fmt.Errorf("archive session: move transcript: %w", err)
+	}
+	return nil
+}
+
+// --- Unarchive (restore from cold storage) ---
+
+func (r *SQLRepository) UnarchiveSession(ctx context.Context, id string) error {
+	return r.unarchiveExec(ctx, r.db, id)
+}
+
+func (r *SQLRepository) UnarchiveSessionTx(ctx context.Context, tx *sql.Tx, id string) error {
+	return r.unarchiveExec(ctx, tx, id)
+}
+
+// unarchiveExec clears the archive columns, returning an archived session to
+// active. The caller (the archive provider's Restore) rebuilds the hot transcript
+// rows from the artifact in the SAME transaction via InsertChatMessageTx. The
+// guarded UPDATE matches only a currently-archived row, so unarchiving a
+// non-archived session affects zero rows and returns ErrSessionNotArchived.
+func (r *SQLRepository) unarchiveExec(ctx context.Context, exec sqlExecer, id string) error {
+	res, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions
+		SET archived_at = NULL, archived_by = NULL, archive_ref = NULL
+		WHERE id = ? AND archived_at IS NOT NULL`), id)
+	if err != nil {
+		return fmt.Errorf("unarchive session: %w", err)
+	}
+	return requireOneRow(res, ErrSessionNotArchived, "unarchive session")
+}
+
+// InsertChatMessageTx rebuilds ONE transcript row verbatim on a caller
+// transaction — the restore-from-archive write path. Unlike AddChatMessage it
+// does NOT compute the next seq or bump last_activity_at: it preserves the
+// artifact's recorded seq (so ordering is exact) and leaves recency alone (a
+// restore is not new chat activity). It writes ONLY to chat_messages (the live
+// transcript table) — never the legacy session_messages table.
+func (r *SQLRepository) InsertChatMessageTx(ctx context.Context, tx *sql.Tx, m ChatMessage) error {
+	if m.ID == "" || m.SessionID == "" {
+		return fmt.Errorf("insert chat message: id and session_id required")
+	}
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+	if _, err := tx.ExecContext(ctx, store.Rebind(r.driver, `
+		INSERT INTO chat_messages
+			(id, session_id, seq, role, content, tool_name, tool_args, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		m.ID, m.SessionID, m.Seq, m.Role, m.Content,
+		strPtrArg(m.ToolName), strPtrArg(m.ToolArgs),
+		m.CreatedAt.Format(time.RFC3339)); err != nil {
+		return fmt.Errorf("insert chat message: %w", err)
+	}
+	return nil
+}
+
 // --- Purge (governed expunge) ---
 
 func (r *SQLRepository) PurgeManifest(ctx context.Context, id string) (PurgeManifest, error) {

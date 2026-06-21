@@ -55,6 +55,7 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/sessionsweeper"
 	"github.com/jaimegago/joe/internal/skills"
@@ -459,6 +460,24 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.CostLimitsProvider = costLimitsProvider
 	services.ContextBudgetProvider = contextBudgetProvider
 	services.SessionModel = sessionModelRepo
+	// §12.6 archive provider (B007c): the filesystem archive backend behind the
+	// provider seam, coupled with the session store into the Archiver the admin
+	// archive/restore-archive routes and the sweeper's archive terminal action
+	// share. The directory defaults to ~/.joe/session-archive (operator override:
+	// server.session_archive_dir). A mkdir failure is fatal — an archive terminal
+	// action with no writable artifact directory would silently leave sessions
+	// active, so we surface it at boot rather than at first archive.
+	archiveDir := cfg.Server.SessionArchiveDir
+	if archiveDir == "" {
+		archiveDir = filepath.Join(joeDir, paths.SessionArchiveDirName)
+	}
+	if err := deps.mkdirAll(archiveDir, 0o700); err != nil {
+		slog.Error("failed to create session archive directory", "path", archiveDir, "error", err)
+		return 1
+	}
+	sessionArchiver := sessionarchive.New(sessionarchive.NewFilesystemProvider(archiveDir), sessionModelRepo)
+	services.SessionArchive = sessionArchiver
+	slog.Info("session archive provider ready", "scheme", "fs", "dir", archiveDir)
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
 	services.Warnings = warningsRepo
@@ -726,6 +745,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 			DB:        sqlStore.DB(),
 			Sessions:  sessionModelRepo,
 			Flows:     authSessions,
+			Archive:   sessionArchiver,
 			Audit:     auditRepo,
 			Principal: sweeperPrincipal,
 			Logger:    slog.Default(),

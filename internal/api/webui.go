@@ -223,6 +223,17 @@ type webUISession struct {
 	// projected — the owner-scoped list, create/rename, and the per-id GET all
 	// leave it empty. Its presence lets the UI label a row "shared by <owner>".
 	SharedBy string `json:"shared_by,omitempty"`
+	// CreatorPrincipal is the owning principal, surfaced on the ADMIN cross-tenant
+	// list so the governance console can show ownership and filter by principal.
+	// omitempty keeps it out of the per-user projections that don't set it.
+	CreatorPrincipal string `json:"creator_principal,omitempty"`
+	// TrashedAt / ArchivedAt are the §12.4 lifecycle timestamps, surfaced on the
+	// admin cross-tenant list so the governance console can render and filter by
+	// lifecycle state (active / trashed / archived) and drive restore. Both empty
+	// (omitted) on an active session, and on the per-user projections that leave
+	// them unset.
+	TrashedAt  string `json:"trashed_at,omitempty"`
+	ArchivedAt string `json:"archived_at,omitempty"`
 }
 
 // webUIMessage is the Web UI representation of a chat message — the legacy flat

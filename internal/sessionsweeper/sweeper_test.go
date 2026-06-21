@@ -12,6 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/sessionsweeper"
 	"github.com/jaimegago/joe/internal/store"
@@ -69,6 +70,21 @@ func (e *env) newSweeper(sessions sessionsweeper.SessionStore, auditSink session
 		Sessions:  sessions,
 		Flows:     e.auth,
 		Audit:     sink,
+		Principal: e.princ,
+		Now:       func() time.Time { return fixedNow },
+	})
+}
+
+// newSweeperWithArchive builds a sweeper wired with a real filesystem archive
+// provider rooted at dir, so the archive terminal action runs the live B007c
+// archive instead of the honest no-provider fallback.
+func (e *env) newSweeperWithArchive(dir string) *sessionsweeper.Sweeper {
+	return sessionsweeper.New(sessionsweeper.Config{
+		DB:        e.db,
+		Sessions:  e.repo,
+		Flows:     e.auth,
+		Archive:   sessionarchive.New(sessionarchive.NewFilesystemProvider(dir), e.repo),
+		Audit:     e.auditRp,
 		Principal: e.princ,
 		Now:       func() time.Time { return fixedNow },
 	})
@@ -202,20 +218,21 @@ func TestSweep_InactivityTrashThenPurge(t *testing.T) {
 	}
 }
 
-// TestSweep_ArchiveTerminalDeferred proves the soft-coupling honest seam: under
-// the archive terminal action (provider deferred to B007c), an inactivity-expired
-// session is left ACTIVE — never trashed, never falsely marked archived — and no
-// lifecycle audit row is written for it.
-func TestSweep_ArchiveTerminalDeferred(t *testing.T) {
+// TestSweep_ArchiveTerminalNoProvider proves the honest no-provider fallback:
+// under the archive terminal action with NO archive provider wired, an
+// inactivity-expired session is left ACTIVE — never trashed, never falsely marked
+// archived — and no lifecycle audit row is written for it. This is the safe
+// degradation when no archive directory is configured.
+func TestSweep_ArchiveTerminalNoProvider(t *testing.T) {
 	e := newEnv(t)
 	e.setPolicy(intPtr(7), 30, sessionmodel.TerminalActionArchive)
 	e.createSession("s-stale", "alice", fixedNow.Add(-30*24*time.Hour), nil, nil)
 
-	e.newSweeper(nil, nil).Sweep(context.Background())
+	e.newSweeper(nil, nil).Sweep(context.Background()) // no archiver wired
 
 	sess, _ := e.repo.GetSession(context.Background(), "s-stale")
 	if sess == nil {
-		t.Fatal("archive-policy session destroyed — must be left active under the deferred seam")
+		t.Fatal("archive-policy session destroyed — must be left active under the no-provider fallback")
 	}
 	if sess.TrashedAt != nil {
 		t.Error("archive-policy session trashed — would route to purge (data loss)")
@@ -224,7 +241,67 @@ func TestSweep_ArchiveTerminalDeferred(t *testing.T) {
 		t.Error("archive-policy session falsely marked archived without a real provider artifact")
 	}
 	if e.auditCount(audit.ActionSessionTrash) != 0 || e.auditCount(audit.ActionSessionArchive) != 0 {
-		t.Error("a lifecycle audit row was written for a deferred archive action")
+		t.Error("a lifecycle audit row was written for a no-provider archive action")
+	}
+}
+
+// TestSweep_ArchiveTerminalLive proves the B007c archive branch: under the archive
+// terminal action with a real provider wired, an inactivity-expired session is
+// ARCHIVED — archive columns set under the service principal, hot transcript moved
+// to the artifact (gone from the live table), exactly one session.archive
+// lifecycle audit row written in the effect transaction — while a fresh session is
+// untouched. The default-OFF and trash_then_purge paths are unaffected (covered by
+// the other tests).
+func TestSweep_ArchiveTerminalLive(t *testing.T) {
+	e := newEnv(t)
+	e.setPolicy(intPtr(7), 30, sessionmodel.TerminalActionArchive)
+	e.createSession("s-stale", "alice", fixedNow.Add(-30*24*time.Hour), nil, nil)
+	e.createSession("s-fresh", "bob", fixedNow.Add(-1*time.Hour), nil, nil)
+	// Seed a transcript so the move is observable. AddChatMessage bumps
+	// last_activity_at, so reset it back below the inactivity cutoff afterward.
+	for i, role := range []string{"user", "assistant"} {
+		if _, err := e.repo.AddChatMessage(context.Background(), sessionmodel.ChatMessage{
+			ID: "m" + role, SessionID: "s-stale", Role: role, Content: "msg",
+		}); err != nil {
+			t.Fatalf("seed message %d: %v", i, err)
+		}
+	}
+	if _, err := e.db.Exec(`UPDATE agent_sessions SET last_activity_at=? WHERE id='s-stale'`,
+		fixedNow.Add(-30*24*time.Hour).Format(time.RFC3339)); err != nil {
+		t.Fatalf("reset last_activity_at: %v", err)
+	}
+
+	dir := t.TempDir()
+	e.newSweeperWithArchive(dir).Sweep(context.Background())
+
+	stale, _ := e.repo.GetSession(context.Background(), "s-stale")
+	if stale == nil || stale.ArchivedAt == nil || stale.ArchiveRef == nil {
+		t.Fatalf("stale session not archived by the live archive branch: %+v", stale)
+	}
+	if stale.ArchivedBy == nil || *stale.ArchivedBy != string(e.princ) {
+		t.Errorf("archived_by = %v, want service principal %q", stale.ArchivedBy, e.princ)
+	}
+	// The move: hot transcript gone from the live table.
+	if msgs, _ := e.repo.ListChatMessages(context.Background(), "s-stale"); len(msgs) != 0 {
+		t.Errorf("hot transcript survived archive: %d rows", len(msgs))
+	}
+	// Fresh session untouched.
+	fresh, _ := e.repo.GetSession(context.Background(), "s-fresh")
+	if fresh.ArchivedAt != nil || fresh.TrashedAt != nil {
+		t.Error("fresh session expired — only the inactivity-expired one should be")
+	}
+	// Exactly one lifecycle archive audit row, under the lifecycle kind.
+	if got := e.auditCount(audit.ActionSessionArchive); got != 1 {
+		t.Fatalf("archive audit rows = %d, want exactly 1", got)
+	}
+	var principal, kind string
+	if err := e.db.QueryRow(`SELECT principal, kind FROM audit_log WHERE action=?`, audit.ActionSessionArchive).
+		Scan(&principal, &kind); err != nil {
+		t.Fatalf("read archive audit row: %v", err)
+	}
+	if principal != string(e.princ) || kind != string(audit.KindSessionLifecycle) {
+		t.Errorf("archive audit row = principal %q / kind %q, want %q / %q",
+			principal, kind, e.princ, audit.KindSessionLifecycle)
 	}
 }
 

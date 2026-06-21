@@ -173,6 +173,10 @@ type ServerConfig struct {
 	// reverse proxy serves joe over HTTP while the browser is on HTTPS; there the
 	// cookies must stay Secure.
 	InsecureCookies bool `yaml:"insecure_cookies"`
+	// SessionArchiveDir overrides where the §12.6 filesystem archive provider
+	// writes versioned session artifacts. Empty (the default) resolves to
+	// ~/.joe/session-archive via paths.SessionArchiveDir.
+	SessionArchiveDir string `yaml:"session_archive_dir"`
 }
 
 // TLSConfigured reports whether TLS has been configured for the server side.
