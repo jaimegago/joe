@@ -64,7 +64,7 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 
 	// Heartbeat as alice — should succeed.
 	r1 := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/heartbeat",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/heartbeat",
 		"alice", nil)
 	if r1.StatusCode != http.StatusOK {
 		t.Errorf("heartbeat status = %d, want 200", r1.StatusCode)
@@ -73,7 +73,7 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 
 	// Heartbeat as bob — should fail (not the captain).
 	r2 := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/heartbeat",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/heartbeat",
 		"bob", nil)
 	if r2.StatusCode != http.StatusForbidden {
 		t.Errorf("non-captain heartbeat status = %d, want 403", r2.StatusCode)
@@ -82,7 +82,7 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 
 	// Transfer begin (outgoing) — alice asks finish-or-cancel.
 	r3 := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/begin",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/begin",
 		"alice",
 		map[string]any{
 			"initiator":          "outgoing",
@@ -109,7 +109,7 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 	// The outgoing captain (alice) cannot confirm the transfer in bob's
 	// place; the binding is enforced at the service layer (D-0017).
 	r4 := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/confirm",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/confirm",
 		"bob", nil)
 	if r4.StatusCode != http.StatusOK {
 		t.Errorf("transfer/confirm status = %d, want 200", r4.StatusCode)
@@ -169,7 +169,7 @@ func TestCaptainAPI_TransferUnreachableDirectConfirm(t *testing.T) {
 
 	// bob requests command. alice is stale → direct transfer_confirmed.
 	r := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/begin",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/begin",
 		"bob",
 		map[string]any{
 			"initiator": "incoming",
@@ -217,7 +217,7 @@ func TestCaptainAPI_TransferConfirmCancelBindToParties(t *testing.T) {
 
 	// alice solicits bob (outgoing-initiated).
 	rb := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/begin",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/begin",
 		"alice",
 		map[string]any{"initiator": "outgoing", "incoming_principal": "bob", "run_id": run.ID})
 	if rb.StatusCode != http.StatusOK {
@@ -227,7 +227,7 @@ func TestCaptainAPI_TransferConfirmCancelBindToParties(t *testing.T) {
 
 	// carol — party to neither side — cannot confirm (403).
 	rc := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/confirm",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/confirm",
 		"carol", nil)
 	if rc.StatusCode != http.StatusForbidden {
 		t.Errorf("non-party confirm status = %d, want 403", rc.StatusCode)
@@ -236,7 +236,7 @@ func TestCaptainAPI_TransferConfirmCancelBindToParties(t *testing.T) {
 
 	// carol cannot cancel either (403).
 	rd := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/transfer/cancel",
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/transfer/cancel",
 		"carol", nil)
 	if rd.StatusCode != http.StatusForbidden {
 		t.Errorf("non-party cancel status = %d, want 403", rd.StatusCode)
@@ -263,7 +263,7 @@ func TestCaptainAPI_AttachInformationalOutsideIncident(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	r := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sess.ID+"/captain/attach",
+		ts.URL+"/api/v1/sessions/"+sess.ID+"/captain/attach",
 		"alice", nil)
 	if r.StatusCode != http.StatusOK {
 		t.Fatalf("attach status = %d, want 200", r.StatusCode)

@@ -37,10 +37,15 @@ type Server struct {
 	// *client.Client; no HTTP self-call remains for in-process tool
 	// execution.
 	inproc *inProcessCoreClient
-	// sessionAuthz is the dedicated session-authorization seam (§12.7, B003),
-	// separate from the component-RBAC accessor above. The per-user owner-mutate
-	// handlers authorize through (*Server).sessionAccess, which delegates here;
-	// the bypass guard pins the seam as the single enforcement point.
+	// sessionAuthz is the PER-USER session-authorization seam instance (§12.7
+	// seam / §12.8 two-instance defense-in-depth, B003+B005), separate from the
+	// component-RBAC accessor above. It is built with an always-false admin
+	// checker (newPerUserSessionAuthz) so an admin can never resolve to the admin
+	// relationship on a per-user /api/v1/sessions route. Every per-user
+	// owner-mutate handler authorizes through (*Server).sessionAccess, which
+	// delegates here; the bypass guard pins the seam as the single enforcement
+	// point. The real-admin seam instance + the /api/v1/admin/sessions routes are
+	// B006's, not built here.
 	sessionAuthz *sessionauthz.Seam
 	version      string
 }
@@ -67,7 +72,7 @@ func New(services *core.Services) *Server {
 		services:     services,
 		accessor:     accessor,
 		inproc:       newInProcessCoreClient(accessor, services),
-		sessionAuthz: newSessionAuthz(services),
+		sessionAuthz: newPerUserSessionAuthz(services),
 		version:      defaultVersion,
 	}
 }
@@ -125,8 +130,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerModelRoutes(mux, apiPrefix)
 	s.registerSkillsRoutes(mux, apiPrefix)
 	s.registerWebUIRoutes(mux, apiPrefix)
-	// Phase 1 Change 4: session-model HTTP CRUD.
-	s.registerSessionModelRoutes(mux, apiPrefix)
+	// The per-user session CRUD lives in the webUI routes above under
+	// /api/v1/sessions. The legacy team-global /api/v1/agent-sessions namespace
+	// was removed in B005 (§12.8); its captain/findings/runs sub-resources are
+	// re-homed under /api/v1/sessions below.
 	s.registerFindingsRoutes(mux, apiPrefix)
 	s.registerWarningsRoutes(mux, apiPrefix)
 	s.registerRegimeRoutes(mux, apiPrefix)

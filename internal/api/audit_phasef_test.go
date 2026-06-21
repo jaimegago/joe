@@ -226,7 +226,7 @@ func TestPhaseF_CaptainAttachWritesAuditRow(t *testing.T) {
 	// Second human (bob) attaches as observer (§A3); audit row is written
 	// regardless of whether they became captain.
 	rAttach := doRequest(t, http.MethodPost,
-		ts.URL+"/api/v1/agent-sessions/"+sessionID+"/captain/attach", "bob", nil)
+		ts.URL+"/api/v1/sessions/"+sessionID+"/captain/attach", "bob", nil)
 	if rAttach.StatusCode != http.StatusOK {
 		t.Fatalf("attach status = %d, want 200; body=%v", rAttach.StatusCode, rAttach.Body)
 	}

@@ -21,7 +21,7 @@ import (
 
 // Change 11 — hard-delete cascade integration tests.
 //
-// The handler shipped in Change 4: DELETE /api/v1/agent-sessions/{id}
+// The per-user handler (re-homed in B005): DELETE /api/v1/sessions/{id}
 // runs ONE SQL statement (DELETE FROM agent_sessions WHERE id = ?).
 // The §5b-5 incident-expunge cascade is a pure schema property — the
 // self-FK on linked_incident_id and the child-table FKs to
@@ -228,15 +228,17 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 		}
 	}
 
-	// DELETE the incident through the HTTP handler — one request.
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/agent-sessions/"+incidentID, nil)
+	// DELETE the incident through the per-user HTTP handler — one request, owner
+	// (alice) authenticated. The handler is a hard delete (B005 keeps the delete
+	// EFFECT unchanged; soft-delete to trash is B007) and returns 204.
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/sessions/"+incidentID, nil)
 	req.Header.Set("X-Test-Principal", "alice")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("DELETE status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE status = %d, want 204", resp.StatusCode)
 	}
 	resp.Body.Close()
 
@@ -297,11 +299,11 @@ func TestCascadeDelete_OrphanInvestigation(t *testing.T) {
 	orphanRun, _, _ := populateChildren(t, ctx, orphan, runRepo, findingsRepo, warningsRepo, "alice")
 	siblingRun, _, _ := populateChildren(t, ctx, sibling, runRepo, findingsRepo, warningsRepo, "alice")
 
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/agent-sessions/"+orphan, nil)
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/sessions/"+orphan, nil)
 	req.Header.Set("X-Test-Principal", "alice")
 	resp, _ := http.DefaultClient.Do(req)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("DELETE orphan status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE orphan status = %d, want 204", resp.StatusCode)
 	}
 	resp.Body.Close()
 

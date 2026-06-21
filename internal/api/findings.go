@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaimegago/joe/internal/findings"
+	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // findingsHandler exposes the §A4 cross-session attribution HTTP endpoints.
@@ -23,16 +24,21 @@ func (s *Server) registerFindingsRoutes(mux *http.ServeMux, prefix string) {
 		return
 	}
 	h := &findingsHandler{repo: s.services.Findings}
-	// Mounted under /agent-sessions for parity with sessions.go. See the
-	// namespace explainer in sessions.go.
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/findings", prefix), h.post)
-	mux.HandleFunc(fmt.Sprintf("GET %s/agent-sessions/{id}/findings", prefix), h.list)
+	// Re-homed under /sessions in B005 (§12.8): the legacy /agent-sessions
+	// namespace was removed. POST requires an authenticated principal and derives
+	// the author from context (the spoof-closed accountability fix); GET is a
+	// team-wide read.
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/findings", prefix), h.post)
+	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/findings", prefix), h.list)
 }
 
 type postFindingRequest struct {
-	ID                               string  `json:"id,omitempty"`
-	SourceSessionID                  string  `json:"source_session_id"`
-	AuthorPrincipal                  string  `json:"author_principal"`
+	ID              string `json:"id,omitempty"`
+	SourceSessionID string `json:"source_session_id"`
+	// AuthorPrincipal is intentionally NOT read from the request body (B005,
+	// mirroring the B002 context-derived creator fix). The author is the
+	// context-resolved authenticated principal so it cannot be spoofed. A field
+	// supplied here is ignored.
 	Body                             string  `json:"body"`
 	ReferencedInvestigationSessionID *string `json:"referenced_investigation_session_id,omitempty"`
 }
@@ -43,14 +49,21 @@ func (h *findingsHandler) post(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, nil, "post finding", "missing target session id")
 		return
 	}
+	// Author is the context-derived authenticated principal (§12.1 accountability),
+	// never client-supplied. A request with no resolvable principal cannot post.
+	principal := rbac.PrincipalFromContext(r.Context())
+	if principal == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
 	var req postFindingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeBadRequest(w, err, "post finding", "invalid request body")
 		return
 	}
-	if req.SourceSessionID == "" || req.AuthorPrincipal == "" || req.Body == "" {
+	if req.SourceSessionID == "" || req.Body == "" {
 		writeBadRequest(w, nil, "post finding",
-			"source_session_id, author_principal, and body are required")
+			"source_session_id and body are required")
 		return
 	}
 
@@ -58,7 +71,7 @@ func (h *findingsHandler) post(w http.ResponseWriter, r *http.Request) {
 		ID:                               req.ID,
 		SourceSessionID:                  req.SourceSessionID,
 		TargetSessionID:                  targetID,
-		AuthorPrincipal:                  req.AuthorPrincipal,
+		AuthorPrincipal:                  string(principal),
 		Body:                             req.Body,
 		ReferencedInvestigationSessionID: req.ReferencedInvestigationSessionID,
 	}

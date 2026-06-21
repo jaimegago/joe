@@ -54,6 +54,13 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/regime", prefix), h.read)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/declare", prefix), h.declare)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/resolve", prefix), h.resolve)
+	// Per-user promote-incident route (§12.8, B005): the chat-view / sessions-tab
+	// promote-this-session affordance. It is the SAME promote-in-place transition
+	// as /regime/declare (the global declare control), but takes the session to
+	// promote from the path. Authorization is the regime-control zone — NOT the
+	// session seam (§12.7 keeps the regime state machine out of the seam
+	// vocabulary). Both entry paths resolve to one promote (§12.3, §12.10).
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/promote-incident", prefix), h.promoteSessionIncident)
 }
 
 func (h *regimeHandler) read(w http.ResponseWriter, r *http.Request) {
@@ -100,30 +107,9 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	declaredKind := sessionmodel.RegimeKindHuman
-	if req.DeclaredKind != "" {
-		switch req.DeclaredKind {
-		case "human":
-			declaredKind = sessionmodel.RegimeKindHuman
-		case "joe":
-			// Joe-autonomous declare is a Change 12 inert seam, gated on
-			// the compile-time constant seams.JoeAutonomousDeclareEnabled.
-			// Phase 1: the constant is false — refuse with 403 BEFORE any
-			// call to sessionmodel.Repository.DeclareIncidentRegime. The
-			// placeholder is structurally tied to the seam so future
-			// enablement is a one-line constant change, not a wiring
-			// exercise (verified by the paired build-tag-isolated test).
-			if !seams.JoeAutonomousDeclareEnabled {
-				writeError(w, http.StatusForbidden, "forbidden",
-					"joe-autonomous declare is not enabled in Phase 1 (incremental-autonomy seam)")
-				return
-			}
-			declaredKind = sessionmodel.RegimeKindJoe
-		default:
-			writeBadRequest(w, nil, "declare regime",
-				"declared_kind must be 'human' or 'joe'")
-			return
-		}
+	declaredKind, ok := parseDeclaredKind(w, req.DeclaredKind)
+	if !ok {
+		return
 	}
 
 	// §6-B authorization check. Write a deny audit row before returning
@@ -132,17 +118,7 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 	// caller's context principal (size 1, consistent with the rest of
 	// the system per D-0005). Group/multi-member sets remain a v2
 	// extension behind this same call site.
-	if !h.policy.HasZoneAccess(r.Context(), rbac.NewPrincipalSet(principal), "regime-control", rbac.ActionDeclareIncident) {
-		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
-			audit.DecisionDeny, "no_grant",
-			map[string]string{"declared_kind": string(declaredKind)}); err != nil {
-			// Fail-closed on the audit write itself: refuse the deny
-			// path rather than silently swallow an audit-store failure.
-			writeInternalError(w, err, "declare regime audit (deny)")
-			return
-		}
-		writeError(w, http.StatusForbidden, "forbidden",
-			"principal lacks can_declare_incident (regime-control zone)")
+	if !h.authorizeDeclare(w, r, principal, declaredKind) {
 		return
 	}
 
@@ -156,21 +132,114 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase F bug #3 fix: write the durable audit row BEFORE the mutable
-	// session / system_regime / session_captains rows are touched, so the
-	// "who declared this incident and when" record survives a later resolve
-	// (which nulls system_regime.declared_by_principal and detaches the
-	// captain).
+	h.promoteInPlace(w, r, principal, req.SessionID, declaredKind)
+}
+
+// promoteSessionIncident is the per-user promote-in-place route
+// (POST /api/v1/sessions/{id}/promote-incident, §12.8 / B005): it promotes the
+// path-named session into the incident master. It is the SAME §12.3 transition
+// as (*regimeHandler).declare — declaration and per-user promote both resolve to
+// one promote (§12.10) — and carries the SAME regime-control-zone authorization
+// (NOT the session seam, §12.7). The session to promote comes from the path
+// rather than the body; everything else is shared.
+func (h *regimeHandler) promoteSessionIncident(w http.ResponseWriter, r *http.Request) {
+	if h.policy == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
+			"RBAC not configured — incident promotion unavailable")
+		return
+	}
+	principal := rbac.PrincipalFromContext(r.Context())
+	if principal == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeBadRequest(w, nil, "promote incident", "missing session id")
+		return
+	}
+
+	// Optional body: { "declared_kind": "human" | "joe" }. Defaults to human;
+	// joe is the Change 12 inert seam (403). Mirrors declare exactly.
+	var req struct {
+		DeclaredKind string `json:"declared_kind,omitempty"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeBadRequest(w, err, "promote incident", "invalid request body")
+			return
+		}
+	}
+	declaredKind, ok := parseDeclaredKind(w, req.DeclaredKind)
+	if !ok {
+		return
+	}
+	if !h.authorizeDeclare(w, r, principal, declaredKind) {
+		return
+	}
+	h.promoteInPlace(w, r, principal, sessionID, declaredKind)
+}
+
+// parseDeclaredKind validates the declared_kind field shared by declare and the
+// per-user promote route. Empty defaults to human; "joe" is the Change 12
+// autonomous-declare inert seam, refused with 403 BEFORE any repository call so
+// the placeholder stays structurally tied to seams.JoeAutonomousDeclareEnabled.
+// Returns ok=false (and writes the error) on an invalid kind or the disabled
+// joe seam.
+func parseDeclaredKind(w http.ResponseWriter, raw string) (sessionmodel.RegimeKind, bool) {
+	switch raw {
+	case "", "human":
+		return sessionmodel.RegimeKindHuman, true
+	case "joe":
+		if !seams.JoeAutonomousDeclareEnabled {
+			writeError(w, http.StatusForbidden, "forbidden",
+				"joe-autonomous declare is not enabled in Phase 1 (incremental-autonomy seam)")
+			return "", false
+		}
+		return sessionmodel.RegimeKindJoe, true
+	default:
+		writeBadRequest(w, nil, "declare regime",
+			"declared_kind must be 'human' or 'joe'")
+		return "", false
+	}
+}
+
+// authorizeDeclare runs the §6-B regime-control-zone check shared by declare and
+// the per-user promote route. On deny it writes the durable deny audit row and a
+// 403 and returns false; on an audit-store failure it fails closed (500, false).
+func (h *regimeHandler) authorizeDeclare(w http.ResponseWriter, r *http.Request, principal rbac.Principal, declaredKind sessionmodel.RegimeKind) bool {
+	if h.policy.HasZoneAccess(r.Context(), rbac.NewPrincipalSet(principal), "regime-control", rbac.ActionDeclareIncident) {
+		return true
+	}
+	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
+		audit.DecisionDeny, "no_grant",
+		map[string]string{"declared_kind": string(declaredKind)}); err != nil {
+		// Fail-closed on the audit write itself: refuse the deny path rather than
+		// silently swallow an audit-store failure.
+		writeInternalError(w, err, "declare regime audit (deny)")
+		return false
+	}
+	writeError(w, http.StatusForbidden, "forbidden",
+		"principal lacks can_declare_incident (regime-control zone)")
+	return false
+}
+
+// promoteInPlace performs the authorized §12.3 promote-in-place transition for
+// sessionID and writes the HTTP response on every outcome. It is the shared tail
+// of declare and the per-user promote route: write the durable allow-audit row
+// BEFORE the mutable rows are touched (Phase F bug #3), then run the one-
+// transaction promote and map its errors. Callers must have already resolved the
+// principal, validated declared_kind, and passed authorizeDeclare.
+func (h *regimeHandler) promoteInPlace(w http.ResponseWriter, r *http.Request, principal rbac.Principal, sessionID string, declaredKind sessionmodel.RegimeKind) {
 	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
 		audit.DecisionAllow, "transition_recorded",
-		map[string]string{"declared_kind": string(declaredKind), "session_id": req.SessionID}); err != nil {
-		// Transition is mutating → fail-closed. The mutable rows are
-		// untouched.
+		map[string]string{"declared_kind": string(declaredKind), "session_id": sessionID}); err != nil {
+		// Transition is mutating → fail-closed. The mutable rows are untouched.
 		writeInternalError(w, err, "declare regime audit (allow)")
 		return
 	}
 
-	sessionID, captainID, err := h.repo.DeclareIncidentRegime(r.Context(), string(principal), req.SessionID, declaredKind)
+	sessionID, captainID, err := h.repo.DeclareIncidentRegime(r.Context(), string(principal), sessionID, declaredKind)
 	if err != nil {
 		switch {
 		case errors.Is(err, sessionmodel.ErrRegimeAlreadyIncident):

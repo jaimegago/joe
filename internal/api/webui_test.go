@@ -631,9 +631,11 @@ func TestWebUIChatOwnership_CrossUserReadIsOpen(t *testing.T) {
 	}
 }
 
-// TestWebUIChatOwnership_ListIsolation: the session list returns only the
-// caller's own sessions. Before the fix, ListRecent returned every user's.
-func TestWebUIChatOwnership_ListIsolation(t *testing.T) {
+// TestWebUIChatList_TeamWideAndMine: the default GET /sessions is the TEAM-WIDE
+// list (§12.8 team-wide read) — any authenticated principal sees every session;
+// the ?mine=true filter narrows it to the caller's own. This collapses the
+// former owner-scoped-vs-shared split into one route.
+func TestWebUIChatList_TeamWideAndMine(t *testing.T) {
 	const alice, bob = "user:alice@example.com", "user:bob@example.com"
 	_, mux := setupWebUIServer(t)
 
@@ -641,10 +643,10 @@ func TestWebUIChatOwnership_ListIsolation(t *testing.T) {
 	createSessionAs(t, mux, alice)
 	createSessionAs(t, mux, bob)
 
-	countFor := func(principal string) int {
-		w := reqAsPrincipal(mux, "GET", "/api/v1/sessions", principal, nil)
+	countFor := func(principal, query string) int {
+		w := reqAsPrincipal(mux, "GET", "/api/v1/sessions"+query, principal, nil)
 		if w.Code != http.StatusOK {
-			t.Fatalf("list for %s: got %d", principal, w.Code)
+			t.Fatalf("list for %s%s: got %d", principal, query, w.Code)
 		}
 		var resp map[string]any
 		json.NewDecoder(w.Body).Decode(&resp)
@@ -652,11 +654,44 @@ func TestWebUIChatOwnership_ListIsolation(t *testing.T) {
 		return len(s)
 	}
 
-	if got := countFor(alice); got != 2 {
-		t.Errorf("alice sees %d sessions, want 2", got)
+	// Team-wide: both principals see all three sessions (read is the default).
+	if got := countFor(alice, ""); got != 3 {
+		t.Errorf("alice team-wide list = %d sessions, want 3", got)
 	}
-	if got := countFor(bob); got != 1 {
-		t.Errorf("bob sees %d sessions, want 1", got)
+	if got := countFor(bob, ""); got != 3 {
+		t.Errorf("bob team-wide list = %d sessions, want 3", got)
+	}
+	// ?mine=true: each principal sees only their own.
+	if got := countFor(alice, "?mine=true"); got != 2 {
+		t.Errorf("alice ?mine list = %d sessions, want 2", got)
+	}
+	if got := countFor(bob, "?mine=true"); got != 1 {
+		t.Errorf("bob ?mine list = %d sessions, want 1", got)
+	}
+
+	// In the team-wide list, rows the caller does not own are read_only=true and
+	// attributed via shared_by; the caller's own rows are read_only=false.
+	w := reqAsPrincipal(mux, "GET", "/api/v1/sessions", bob, nil)
+	var resp struct {
+		Sessions []struct {
+			ReadOnly bool   `json:"read_only"`
+			SharedBy string `json:"shared_by"`
+		} `json:"sessions"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	var ownByBob, ownByOthers int
+	for _, s := range resp.Sessions {
+		if s.ReadOnly {
+			ownByOthers++
+			if s.SharedBy != alice {
+				t.Errorf("non-owned row shared_by = %q, want %s", s.SharedBy, alice)
+			}
+		} else {
+			ownByBob++
+		}
+	}
+	if ownByBob != 1 || ownByOthers != 2 {
+		t.Errorf("bob team-wide split = %d own / %d others, want 1 / 2", ownByBob, ownByOthers)
 	}
 }
 
@@ -815,88 +850,95 @@ func TestWebUIUpdateSession_Validation(t *testing.T) {
 	}
 }
 
-// TestWebUISharedSessions covers GET /sessions/shared in the org-wide read
-// model: every session owned by *another* user is listed (regardless of
-// visibility), flagged read-only and attributed via shared_by, without leaking
-// creator_principal. The caller's own sessions are excluded.
-func TestWebUISharedSessions(t *testing.T) {
+// TestWebUITeamWideListMembership covers the team-wide read model across three
+// principals (§12.8): the default GET /sessions returns EVERY session to any
+// caller (rows the caller doesn't own flagged read_only + shared_by, no
+// creator_principal leak), while ?mine=true returns only the caller's own.
+func TestWebUITeamWideListMembership(t *testing.T) {
 	const alice, bob, carol = "user:alice@example.com", "user:bob@example.com", "user:carol@example.com"
 	srv, mux := setupWebUIServer(t)
 	ctx := context.Background()
 
 	aliceID := createSessionAs(t, mux, alice)
 	if _, err := srv.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
-		ID: "sm1", SessionID: aliceID, Role: "user", Content: "shared?",
+		ID: "sm1", SessionID: aliceID, Role: "user", Content: "team-wide?",
 	}); err != nil {
 		t.Fatalf("seed message: %v", err)
 	}
 	bobID := createSessionAs(t, mux, bob)
 
-	// bob's shared list contains alice's session (no toggle needed — all sessions
-	// are readable), read-only and attributed.
-	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/shared", bob, nil)
-	if got.Code != http.StatusOK {
-		t.Fatalf("shared list: got %d, want 200", got.Code)
+	// carol (owning nothing) sees BOTH alice's and bob's sessions in the team-wide
+	// list; every row is read_only with no creator_principal leak.
+	carolList := listSessionIDs(t, mux, carol, "")
+	if !slices.Contains(carolList.ids, aliceID) || !slices.Contains(carolList.ids, bobID) || len(carolList.ids) != 2 {
+		t.Errorf("carol team-wide list = %v, want both %s and %s", carolList.ids, aliceID, bobID)
 	}
-	var resp struct {
-		Sessions []map[string]any `json:"sessions"`
-		Count    int              `json:"count"`
-	}
-	if err := json.NewDecoder(got.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode shared list: %v", err)
-	}
-	// bob sees only alice's session (his own is excluded).
-	if resp.Count != 1 || len(resp.Sessions) != 1 {
-		t.Fatalf("bob shared list count = %d, want 1 (alice's)", resp.Count)
-	}
-	row := resp.Sessions[0]
-	if row["id"] != aliceID {
-		t.Errorf("shared row id = %v, want %s", row["id"], aliceID)
-	}
-	if row["read_only"] != true {
-		t.Errorf("shared row read_only = %v, want true", row["read_only"])
-	}
-	if row["shared_by"] != alice {
-		t.Errorf("shared row shared_by = %v, want %s", row["shared_by"], alice)
-	}
-	if _, leaked := row["creator_principal"]; leaked {
-		t.Error("shared row leaked creator_principal field")
+	for _, row := range carolList.rows {
+		if row["read_only"] != true {
+			t.Errorf("carol row %v read_only = %v, want true (owns nothing)", row["id"], row["read_only"])
+		}
+		if row["shared_by"] != alice && row["shared_by"] != bob {
+			t.Errorf("carol row shared_by = %v, want one of the owners", row["shared_by"])
+		}
+		if _, leaked := row["creator_principal"]; leaked {
+			t.Error("team-wide row leaked creator_principal field")
+		}
 	}
 
-	// carol (a third principal) sees BOTH alice's and bob's sessions.
-	carolIDs := sharedSessionIDs(t, mux, carol)
-	if !slices.Contains(carolIDs, aliceID) || !slices.Contains(carolIDs, bobID) || len(carolIDs) != 2 {
-		t.Errorf("carol shared list = %v, want both %s and %s", carolIDs, aliceID, bobID)
+	// bob's team-wide list contains alice's session flagged read_only + shared_by,
+	// and his OWN session flagged read_only=false.
+	bobList := listSessionIDs(t, mux, bob, "")
+	if len(bobList.ids) != 2 {
+		t.Fatalf("bob team-wide list = %v, want 2", bobList.ids)
+	}
+	for _, row := range bobList.rows {
+		if row["id"] == aliceID {
+			if row["read_only"] != true || row["shared_by"] != alice {
+				t.Errorf("bob's view of alice's row read_only=%v shared_by=%v, want true / %s",
+					row["read_only"], row["shared_by"], alice)
+			}
+		}
+		if row["id"] == bobID && row["read_only"] != false {
+			t.Errorf("bob's own row read_only = %v, want false", row["read_only"])
+		}
 	}
 
-	// alice's shared list excludes her OWN session but includes bob's.
-	aliceIDs := sharedSessionIDs(t, mux, alice)
-	if len(aliceIDs) != 1 || aliceIDs[0] != bobID {
-		t.Errorf("alice shared list = %v, want [%s] (bob's, not her own)", aliceIDs, bobID)
+	// ?mine=true: alice sees only her own, bob only his own.
+	if mine := listSessionIDs(t, mux, alice, "?mine=true"); len(mine.ids) != 1 || mine.ids[0] != aliceID {
+		t.Errorf("alice ?mine list = %v, want [%s]", mine.ids, aliceID)
+	}
+	if mine := listSessionIDs(t, mux, bob, "?mine=true"); len(mine.ids) != 1 || mine.ids[0] != bobID {
+		t.Errorf("bob ?mine list = %v, want [%s]", mine.ids, bobID)
 	}
 }
 
-// sharedSessionIDs fetches GET /sessions/shared as principal and returns the
-// session ids in the response.
-func sharedSessionIDs(t *testing.T, mux *http.ServeMux, principal string) []string {
+// sessionList is the decoded GET /sessions response used by listSessionIDs.
+type sessionList struct {
+	ids  []string
+	rows []map[string]any
+}
+
+// listSessionIDs fetches GET /sessions<query> as principal and returns the row
+// ids and the raw rows.
+func listSessionIDs(t *testing.T, mux *http.ServeMux, principal, query string) sessionList {
 	t.Helper()
-	w := reqAsPrincipal(mux, "GET", "/api/v1/sessions/shared", principal, nil)
+	w := reqAsPrincipal(mux, "GET", "/api/v1/sessions"+query, principal, nil)
 	if w.Code != http.StatusOK {
-		t.Fatalf("shared list for %s: got %d, want 200", principal, w.Code)
+		t.Fatalf("list for %s%s: got %d, want 200", principal, query, w.Code)
 	}
 	var resp struct {
-		Sessions []struct {
-			ID string `json:"id"`
-		} `json:"sessions"`
+		Sessions []map[string]any `json:"sessions"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode shared list: %v", err)
+		t.Fatalf("decode list: %v", err)
 	}
-	ids := make([]string, 0, len(resp.Sessions))
+	out := sessionList{rows: resp.Sessions}
 	for _, s := range resp.Sessions {
-		ids = append(ids, s.ID)
+		if id, ok := s["id"].(string); ok {
+			out.ids = append(out.ids, id)
+		}
 	}
-	return ids
+	return out
 }
 
 // TestWebUILinkIncident covers POST /sessions/{id}/link-incident (Phase 4):

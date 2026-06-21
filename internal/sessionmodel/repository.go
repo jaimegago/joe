@@ -22,11 +22,19 @@ type Repository interface {
 	GetSession(ctx context.Context, id string) (*AgentSession, error)
 	ListSessions(ctx context.Context) ([]AgentSession, error)
 	ListSessionsByType(ctx context.Context, t SessionType) ([]AgentSession, error)
-	// ListSessionsByCreator is the owner-scoped Web UI chat list (§11 Phase 1
-	// isolation fix): only the caller's own sessions, newest activity first,
-	// with a per-session message count. Distinct from ListSessions, which is
-	// team-global and backs the /agent-sessions route.
+	// ListSessionsByCreator is the caller-scoped chat list — the `mine` filter on
+	// the per-user GET /api/v1/sessions surface (§12.8): only the caller's own
+	// sessions, newest activity first, with a per-session message count. Distinct
+	// from ListRecentSessions, which is the team-wide (unfiltered) list.
 	ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
+	// ListRecentSessions is the team-wide chat list (DESIGN-CHAT-SESSIONS.md §12.8,
+	// team-wide read amendment 2026-06-21): EVERY session, newest activity first,
+	// with a per-session message count and no principal predicate. It backs the
+	// per-user GET /api/v1/sessions surface (the default, unfiltered view); the
+	// caller-scoped "mine" view uses ListSessionsByCreator. Each row carries
+	// creator_principal so the handler can stamp read_only per row (a non-owner is
+	// read-only on a session it does not own).
+	ListRecentSessions(ctx context.Context, limit int) ([]ChatSessionRow, error)
 	// ListSessionsByOthers is the "shared with you" list: every session owned by
 	// a principal *other* than the caller, newest activity first, with a
 	// per-session message count. In the org-wide read model every session is
@@ -386,8 +394,8 @@ func (r *SQLRepository) UpdateIncidentState(ctx context.Context, sessionID strin
 
 // ListSessionsByCreator returns the caller's own sessions, newest activity
 // first, capped at limit (<=0 means no cap). This is the owner-scoped Web UI
-// chat list — the §11 Phase 1 isolation fix: unlike ListSessions (team-global,
-// used by /agent-sessions), this filters by creator_principal so one user never
+// chat list — the §11 Phase 1 isolation fix: unlike ListRecentSessions
+// (team-wide), this filters by creator_principal so one user never
 // sees another's chat history. The LEFT JOIN counts messages in one query (no
 // N+1) so the list can render a message count per session.
 func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
@@ -422,6 +430,54 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 		var count int
 		// scanSession reads the session columns; the join's trailing
 		// message_count is captured by passing &count as the final scan dest.
+		s, err := scanSession(func(dest ...any) error {
+			return rows.Scan(append(dest, &count)...)
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			out = append(out, ChatSessionRow{AgentSession: *s, MessageCount: count})
+		}
+	}
+	return out, rows.Err()
+}
+
+// ListRecentSessions returns EVERY session, newest activity first, capped at
+// limit (<=0 means no cap). This is the team-wide chat list (§12.8, team-wide
+// read): unlike ListSessionsByCreator it applies no principal predicate, so any
+// authenticated caller sees every team session. It mirrors the owner-scoped
+// list's single-query LEFT JOIN message count (no N+1) and recency order; the
+// handler stamps read_only per row from each row's creator_principal.
+func (r *SQLRepository) ListRecentSessions(ctx context.Context, limit int) ([]ChatSessionRow, error) {
+	query := `
+		SELECT ` + sessionColumnsPrefixed + `,
+		       COUNT(m.id) AS message_count
+		FROM agent_sessions s
+		LEFT JOIN chat_messages m ON m.session_id = s.id
+		GROUP BY s.id
+		ORDER BY s.last_activity_at DESC`
+	if limit > 0 {
+		query += "\n\t\tLIMIT ?"
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if limit > 0 {
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query), limit)
+	} else {
+		rows, err = r.db.QueryContext(ctx, store.Rebind(r.driver, query))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list recent sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ChatSessionRow
+	for rows.Next() {
+		var count int
 		s, err := scanSession(func(dest ...any) error {
 			return rows.Scan(append(dest, &count)...)
 		})

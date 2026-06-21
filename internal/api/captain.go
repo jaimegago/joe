@@ -18,20 +18,23 @@ import (
 // the §6-D reachability finding in
 // internal/store/migrations/013_captain_reachability.up.sql.
 //
-// Endpoints (mounted under /api/v1/agent-sessions/{id}/captain to match
-// the Change 4 path namespace):
+// Endpoints (re-homed under /api/v1/sessions/{id}/captain in B005, §12.8 —
+// the legacy /agent-sessions namespace was removed):
 //   - POST /attach              R-CAP2/R-CAP3 attach
 //   - POST /heartbeat           §6-D reachability heartbeat
 //   - POST /transfer/begin      §B BeginTransfer (dual initiation)
 //   - POST /transfer/confirm    §B ConfirmTransfer
 //   - POST /transfer/cancel     §B CancelTransfer
 //
-// All endpoints are sourceless — they don't carry a sourceID, so the
-// existing source-keyed RBAC EnforcementMiddleware never fires. Phase 1
-// does not gate them with RBAC; downstream changes can wire HasZoneAccess
-// against a "captain-control" zone if/when the threat model calls for it.
-// The heartbeat endpoint enforces captain-identity at the repository
-// layer (RecordCaptainHeartbeat refuses non-captain principals).
+// Authorization (§12.7): the captain/regime state machine is OUTSIDE the
+// sessionAccess seam vocabulary by design — captaincy is not a session
+// read/write/delete action — so these routes are NOT routed through the seam.
+// Each carries explicit route-level authorization: every handler rejects an
+// unresolved principal (401) before any state change, and the heartbeat /
+// transfer handlers additionally enforce captain/party identity at the
+// repository layer (RecordCaptainHeartbeat and the transfer service refuse
+// non-captain / non-party principals). They remain sourceless, so the
+// source-keyed RBAC EnforcementMiddleware never fires.
 type captainHandler struct {
 	repo sessionmodel.Repository
 	svc  *sessionmodel.CaptainService
@@ -49,11 +52,11 @@ func (s *Server) registerCaptainRoutes(mux *http.ServeMux, prefix string) {
 	}
 	h := &captainHandler{repo: s.services.SessionModel, svc: s.services.CaptainSvc, auditRepo: s.services.Audit}
 
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/attach", prefix), h.attach)
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/heartbeat", prefix), h.heartbeat)
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/transfer/begin", prefix), h.transferBegin)
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/transfer/confirm", prefix), h.transferConfirm)
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/captain/transfer/cancel", prefix), h.transferCancel)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/captain/attach", prefix), h.attach)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/captain/heartbeat", prefix), h.heartbeat)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/captain/transfer/begin", prefix), h.transferBegin)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/captain/transfer/confirm", prefix), h.transferConfirm)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/captain/transfer/cancel", prefix), h.transferCancel)
 }
 
 type attachRequest struct {

@@ -16,10 +16,25 @@ import (
 // structural bypass guard in sessionauthz_guard_test.go fails the build if a
 // session-mutation call site appears outside the seam-gated allowlist.
 //
-// The seam is built once in api.New from two adapters over core.Services:
+// Two-instance defense in depth (DESIGN-CHAT-SESSIONS.md §12.8, ledger node
+// B005). The seam is constructed PER RESOURCE CLASS, but it is ALSO constructed
+// per ROUTE NAMESPACE with a different admin checker so that the per-user routes
+// can never resolve an admin relationship:
+//   - The PER-USER instance (built here, held in Server.sessionAuthz and reached
+//     by every /api/v1/sessions mutation handler via (*Server).sessionAccess)
+//     uses alwaysFalseAdminChecker. On a per-user route an admin is therefore
+//     treated as a team-member for read and a non-owner for mutation — an admin
+//     can NEVER owner-mutate a session it does not own through a per-user route.
+//     This is structural (a distinct always-false checker), not a per-call flag.
+//   - The ADMIN instance (real IsAdmin via rbacAdminChecker, plus the
+//     /api/v1/admin/sessions route prefix) is explicitly DEFERRED to B006. No
+//     per-user route may use a real-admin checker; B006 owns the admin seam.
+//
+// The seam is built from adapters over core.Services:
 //   - sessionModelResolver supplies the owning principal (ownership).
-//   - rbacAdminChecker reuses the D-0011 dynamic admin capability (governance),
-//     honoring the system-wide auth-disabled convention.
+//   - alwaysFalseAdminChecker suppresses the admin relationship on the per-user
+//     instance (B005). rbacAdminChecker — the D-0011 dynamic admin reuse — is
+//     retained for B006's admin instance, NOT wired into the per-user instance.
 
 // sessionModelResolver adapts core.Services.SessionModel to
 // sessionauthz.SessionResolver. It reads the service at call time so a nil
@@ -48,12 +63,12 @@ func (r sessionModelResolver) SessionCreator(ctx context.Context, sessionID stri
 // Auth-disabled posture: when RBAC enforcement is off (the predicate
 // services.RBACEnabled, mirroring requireAdmin's guard) there is no dynamic
 // admin, so this returns (false, nil). That deliberately DIFFERS from
-// requireAdmin, which PERMITS admin when RBAC is disabled: the per-user
-// owner-mutate handlers wired to the seam must keep their creator-only semantics
-// in local/dev runs (a disabled-RBAC caller must not be able to mutate a session
-// it does not own). Admin governance routes (B006) gate with requireAdmin
-// separately, so the disabled-permits-admin convention is preserved where it
-// belongs.
+// requireAdmin, which PERMITS admin when RBAC is disabled.
+//
+// As of B005 this checker is NOT wired into the per-user seam instance (which
+// uses alwaysFalseAdminChecker — see below). It is retained for B006, which
+// constructs the admin seam instance over the /api/v1/admin/sessions prefix and
+// is the ONLY place a real-admin relationship may be resolved.
 type rbacAdminChecker struct{ services *core.Services }
 
 func (c rbacAdminChecker) IsAdmin(ctx context.Context, principal string) (bool, error) {
@@ -63,11 +78,27 @@ func (c rbacAdminChecker) IsAdmin(ctx context.Context, principal string) (bool, 
 	return c.services.RBAC.IsAdmin(ctx, principal)
 }
 
-// newSessionAuthz builds the seam from the service adapters.
-func newSessionAuthz(services *core.Services) *sessionauthz.Seam {
+// alwaysFalseAdminChecker is the structural admin-suppressor for the per-user
+// seam instance (§12.8 defense-in-depth, B005). It returns (false, nil)
+// UNCONDITIONALLY — independent of RBAC state — so that on a per-user
+// /api/v1/sessions route the seam can never resolve the admin relationship: an
+// admin is a team-member for read and a non-owner for mutation. Admin
+// owner-mutation of a non-owned session is impossible through a per-user route
+// by construction, not by a per-call flag. B006's admin instance uses
+// rbacAdminChecker; this one never does.
+type alwaysFalseAdminChecker struct{}
+
+func (alwaysFalseAdminChecker) IsAdmin(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+// newPerUserSessionAuthz builds the PER-USER seam instance: real ownership
+// resolution, but admin suppressed by construction (alwaysFalseAdminChecker).
+// This is the instance every /api/v1/sessions route authorizes through.
+func newPerUserSessionAuthz(services *core.Services) *sessionauthz.Seam {
 	return sessionauthz.New(
 		sessionModelResolver{services: services},
-		rbacAdminChecker{services: services},
+		alwaysFalseAdminChecker{},
 	)
 }
 
