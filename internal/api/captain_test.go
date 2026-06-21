@@ -263,7 +263,7 @@ func TestCaptainAPI_AttachInformationalOutsideIncident(t *testing.T) {
 	ctx := context.Background()
 	// Plain investigation session.
 	sess := sessionmodel.AgentSession{
-		ID: "sess-1", Type: sessionmodel.SessionTypeInvestigation, CreatorPrincipal: "alice",
+		ID: "sess-1", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
 	}
 	if _, err := sessRepo.CreateSession(ctx, sess); err != nil {
 		t.Fatalf("create session: %v", err)

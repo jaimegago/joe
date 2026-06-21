@@ -12,6 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/findings"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/warnings"
@@ -45,18 +46,37 @@ func newSessionModelServer(t *testing.T) (*httptest.Server, sessionmodel.Reposit
 	srv := api.New(svc)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
-	ts := httptest.NewServer(mux)
+	// Wire identity middleware so creator_principal is context-derived (§12.1):
+	// the create handler reads the principal from context, never the body. A
+	// request with no X-Test-Principal resolves to rbac.Unknown.
+	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	return ts, sessionRepo, findingsRepo, warningsRepo
 }
 
 func postJSON(t *testing.T, url string, body any) *http.Response {
 	t.Helper()
+	return postJSONAs(t, url, "", body)
+}
+
+// postJSONAs POSTs body as the given principal (via X-Test-Principal). An empty
+// principal sends no header, so the server resolves rbac.Unknown.
+func postJSONAs(t *testing.T, url, principal string, body any) *http.Response {
+	t.Helper()
 	b, err := json.Marshal(body)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("new request %s: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if principal != "" {
+		req.Header.Set("X-Test-Principal", principal)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}
@@ -66,58 +86,59 @@ func postJSON(t *testing.T, url string, body any) *http.Response {
 func TestSessionsAPI_CreatePerType(t *testing.T) {
 	ts, _, _, _ := newSessionModelServer(t)
 
+	// Type domain is exactly {default, incident} (§12.3). creator_principal is
+	// context-derived (§12.1), so it is never a request field; the test supplies
+	// it via X-Test-Principal.
 	cases := []struct {
 		name string
 		body map[string]any
 		want int
 	}{
 		{
-			name: "investigation",
-			body: map[string]any{"type": "investigation", "creator_principal": "alice"},
+			name: "default",
+			body: map[string]any{"type": "default"},
 			want: http.StatusCreated,
 		},
 		{
 			name: "incident with state",
 			body: map[string]any{
-				"type":              "incident",
-				"incident_state":    "declared",
-				"creator_principal": "alice",
+				"type":           "incident",
+				"incident_state": "declared",
 			},
-			want: http.StatusCreated,
-		},
-		{
-			name: "other",
-			body: map[string]any{"type": "other", "creator_principal": "alice"},
 			want: http.StatusCreated,
 		},
 		{
 			name: "incident without state rejected",
-			body: map[string]any{"type": "incident", "creator_principal": "alice"},
+			body: map[string]any{"type": "incident"},
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "investigation with state rejected",
+			name: "default with state rejected",
 			body: map[string]any{
-				"type":              "investigation",
-				"incident_state":    "declared",
-				"creator_principal": "alice",
+				"type":           "default",
+				"incident_state": "declared",
 			},
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "unknown type",
-			body: map[string]any{"type": "robot", "creator_principal": "alice"},
+			name: "removed type investigation rejected",
+			body: map[string]any{"type": "investigation"},
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "missing creator_principal",
-			body: map[string]any{"type": "investigation"},
+			name: "removed type other rejected",
+			body: map[string]any{"type": "other"},
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "unknown type",
+			body: map[string]any{"type": "robot"},
 			want: http.StatusBadRequest,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := postJSON(t, ts.URL+"/api/v1/agent-sessions", tc.body)
+			resp := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", tc.body)
 			defer resp.Body.Close()
 			if resp.StatusCode != tc.want {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tc.want)
@@ -126,25 +147,50 @@ func TestSessionsAPI_CreatePerType(t *testing.T) {
 	}
 }
 
+// TestSessionsAPI_CreatorIsContextDerived proves the spoofable-creator defect is
+// closed (§12.1): a creator_principal in the request body is IGNORED; the stored
+// creator is the context-resolved principal.
+func TestSessionsAPI_CreatorIsContextDerived(t *testing.T) {
+	ts, repo, _, _ := newSessionModelServer(t)
+
+	resp := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", map[string]any{
+		"type":              "default",
+		"creator_principal": "attacker", // spoof attempt in the body
+	})
+	var created sessionmodel.AgentSession
+	json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201", resp.StatusCode)
+	}
+
+	got, err := repo.GetSession(t.Context(), created.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetSession: %v %v", err, got)
+	}
+	if got.CreatorPrincipal != "alice" {
+		t.Errorf("creator_principal = %q, want %q (body spoof must be ignored)", got.CreatorPrincipal, "alice")
+	}
+}
+
 func TestSessionsAPI_ListFilteredByType(t *testing.T) {
 	ts, _, _, _ := newSessionModelServer(t)
 
-	// Create one of each type.
+	// Create a mix across the two-value type domain.
 	for _, body := range []map[string]any{
-		{"type": "investigation", "creator_principal": "alice"},
-		{"type": "investigation", "creator_principal": "alice"},
-		{"type": "incident", "incident_state": "declared", "creator_principal": "alice"},
-		{"type": "other", "creator_principal": "alice"},
+		{"type": "default"},
+		{"type": "default"},
+		{"type": "default"},
+		{"type": "incident", "incident_state": "declared"},
 	} {
-		resp := postJSON(t, ts.URL+"/api/v1/agent-sessions", body)
+		resp := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", body)
 		resp.Body.Close()
 	}
 
 	cases := map[string]int{
-		"":              4,
-		"investigation": 2,
-		"incident":      1,
-		"other":         1,
+		"":         4,
+		"default":  3,
+		"incident": 1,
 	}
 	for filter, want := range cases {
 		url := ts.URL + "/api/v1/agent-sessions"
@@ -170,8 +216,8 @@ func TestSessionsAPI_ListFilteredByType(t *testing.T) {
 func TestSessionsAPI_GetAndDelete(t *testing.T) {
 	ts, _, _, _ := newSessionModelServer(t)
 
-	resp := postJSON(t, ts.URL+"/api/v1/agent-sessions", map[string]any{
-		"type": "investigation", "creator_principal": "alice",
+	resp := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", map[string]any{
+		"type": "default",
 	})
 	var created sessionmodel.AgentSession
 	json.NewDecoder(resp.Body).Decode(&created)
@@ -240,10 +286,9 @@ func TestSessionsAPI_GetAndDelete(t *testing.T) {
 func TestSessionsAPI_TeamGlobal(t *testing.T) {
 	ts, repo, _, _ := newSessionModelServer(t)
 
-	// Created by "alice".
-	resp := postJSON(t, ts.URL+"/api/v1/agent-sessions", map[string]any{
-		"type":              "investigation",
-		"creator_principal": "alice",
+	// Created by "alice" (creator is context-derived from X-Test-Principal).
+	resp := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", map[string]any{
+		"type": "default",
 	})
 	var created sessionmodel.AgentSession
 	json.NewDecoder(resp.Body).Decode(&created)
@@ -304,15 +349,15 @@ func TestFindingsAPI_PostAndList(t *testing.T) {
 	ts, _, _, _ := newSessionModelServer(t)
 
 	// Create source (J) and target (I).
-	rJ := postJSON(t, ts.URL+"/api/v1/agent-sessions", map[string]any{
-		"type": "investigation", "creator_principal": "alice",
+	rJ := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", map[string]any{
+		"type": "default",
 	})
 	var j sessionmodel.AgentSession
 	json.NewDecoder(rJ.Body).Decode(&j)
 	rJ.Body.Close()
 
-	rI := postJSON(t, ts.URL+"/api/v1/agent-sessions", map[string]any{
-		"type": "incident", "incident_state": "declared", "creator_principal": "alice",
+	rI := postJSONAs(t, ts.URL+"/api/v1/agent-sessions", "alice", map[string]any{
+		"type": "incident", "incident_state": "declared",
 	})
 	var iSess sessionmodel.AgentSession
 	json.NewDecoder(rI.Body).Decode(&iSess)

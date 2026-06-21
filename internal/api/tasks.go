@@ -253,9 +253,8 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		if existing, _ := h.server.services.SessionModel.GetSession(ctx, sessionID); existing == nil {
 			_, _ = h.server.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
 				ID:               sessionID,
-				Type:             sessionmodel.SessionTypeOther,
+				Type:             sessionmodel.SessionTypeDefault,
 				CreatorPrincipal: string(rbac.PrincipalFromContext(ctx)),
-				Visibility:       sessionmodel.VisibilityPrivate,
 			})
 		}
 	}

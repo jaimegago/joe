@@ -137,7 +137,7 @@ func TestWarning_WithSourceInvestigation(t *testing.T) {
 	ctx := context.Background()
 
 	sess := sessionmodel.AgentSession{
-		ID: uuid.NewString(), Type: sessionmodel.SessionTypeInvestigation,
+		ID: uuid.NewString(), Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := sessRepo.CreateSession(ctx, sess); err != nil {

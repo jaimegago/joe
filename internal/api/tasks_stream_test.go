@@ -141,7 +141,7 @@ func TestHandleTaskStream_MultiTurnHistory(t *testing.T) {
 	ctx := context.Background()
 	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
 		ID:               "s1",
-		Type:             sessionmodel.SessionTypeOther,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: string(rbac.Unknown),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)

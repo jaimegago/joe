@@ -8,15 +8,17 @@ package sessionmodel
 
 import "time"
 
-// SessionType discriminates session behavior. Only Incident sessions have a
-// lifecycle (§5b-1); Investigation and Other are persistent artifacts with no
-// terminal state (§5b-2).
+// SessionType discriminates session behavior. The domain is exactly two values
+// (DESIGN-CHAT-SESSIONS.md §12.3): Default is an ordinary chat/work session;
+// Incident is the single master session of an active incident regime. The
+// as-built third type ('investigation') is removed — participation in an
+// incident is expressed by the linked_incident_id pointer (a fact), not a type.
+// Only Incident sessions carry incident_state; Default sessions never do.
 type SessionType string
 
 const (
-	SessionTypeIncident      SessionType = "incident"
-	SessionTypeInvestigation SessionType = "investigation"
-	SessionTypeOther         SessionType = "other"
+	SessionTypeDefault  SessionType = "default"
+	SessionTypeIncident SessionType = "incident"
 )
 
 // IncidentState is the §5b-1 lifecycle. Non-incident sessions carry no
@@ -31,30 +33,40 @@ const (
 	IncidentStateReviewed          IncidentState = "reviewed"
 )
 
-// Visibility values for a session (migration 022). v1 is binary; per-principal
-// sharing is future (DESIGN-CHAT-SESSIONS.md §10). Validation lives at the app
-// layer — the column carries no CHECK so it stays droppable on SQLite.
-const (
-	VisibilityPrivate = "private"
-	VisibilityPublic  = "public"
-)
-
-// AgentSession is one row of the agent_sessions table.
+// AgentSession is one row of the agent_sessions table (clean schema, migration
+// 025 / DESIGN-CHAT-SESSIONS.md §12.4).
 type AgentSession struct {
-	ID               string
-	Type             SessionType
-	IncidentState    *IncidentState
-	CreatedAt        time.Time
-	LastActivityAt   time.Time
+	ID             string
+	Type           SessionType
+	IncidentState  *IncidentState
+	CreatedAt      time.Time
+	LastActivityAt time.Time
+	// CreatorPrincipal is the human owner. It is ALWAYS the context-resolved
+	// authenticated principal at write time and is NEVER accepted from a request
+	// body (§12.1) — callers set it from rbac.PrincipalFromContext, not from
+	// client input, which makes the spoofable-creator defect impossible by
+	// construction.
 	CreatorPrincipal string
+	// LinkedIncidentID is the participation pointer to the active incident
+	// (§12.3). Its FK is ON DELETE SET NULL (§12.4): purging an incident severs
+	// the link and never destroys this independent session.
 	LinkedIncidentID *string
-	RetentionClass   *string
-	// Title is the human-editable session label (migration 022). nil until a
-	// title is set; Phase 2 auto-suggests and lets the owner override it.
+	// RetentionClass is the per-session resolution of the active admin retention
+	// policy (§12.4) — no longer inert.
+	RetentionClass *string
+	// Title is the human-editable session label. nil until a title is set.
 	Title *string
-	// Visibility is 'private' (default) or 'public' (migration 022). Phase 1
-	// only ever writes 'private'; the public read path is Phase 3.
-	Visibility string
+	// Lifecycle is timestamp-driven, not a state enum (§12.4): an ACTIVE session
+	// has all six of these fields nil. Soft-delete sets TrashedAt/TrashedBy (and
+	// PurgeAfter under the trash-then-purge policy); archive sets
+	// ArchivedAt/ArchivedBy/ArchiveRef. The sweeper and admin transitions
+	// (later nodes) drive these; this node only persists the columns.
+	TrashedAt  *time.Time
+	TrashedBy  *string
+	PurgeAfter *time.Time
+	ArchivedAt *time.Time
+	ArchivedBy *string
+	ArchiveRef *string
 }
 
 // ChatSessionRow is a session plus its chat message count — the projection the

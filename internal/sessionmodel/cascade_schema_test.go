@@ -10,32 +10,31 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// TestCascadeSchema_TwoLevelExpunge_Change1 is the §6-C named structural
-// guard introduced by Change 1. It proves two-level expunge as a pure
-// schema property — no application code, one SQL DELETE statement.
+// TestCascadeSchema_IncidentDeleteSeversLinks is the §12.4 named structural
+// guard: deleting an incident SEVERS its linked sessions (ON DELETE SET NULL)
+// rather than cascade-destroying them. It is a pure schema property — no
+// application code, one SQL DELETE statement. This REPLACES the as-built
+// two-level-expunge guard, which relied on linked_incident_id ON DELETE CASCADE
+// (now SET NULL per §12.4: linked sessions are independent conversations and
+// must never be destroyed by an incident purge).
 //
 // Layout:
 //
 //	incident I
-//	├── linked investigation J1 (linked_incident_id = I)
+//	├── linked session J1 (linked_incident_id = I)
 //	│   └── captain on J1
-//	├── linked investigation J2 (linked_incident_id = I)
+//	├── linked session J2 (linked_incident_id = I)
 //	│   └── captain on J2
 //	└── captain on I
 //
 // After DELETE FROM agent_sessions WHERE id = I:
 //
-//   - I's row is gone (direct).
-//   - J1 and J2's rows are gone via linked_incident_id ON DELETE CASCADE
-//     (the second level — the property that makes this a schema test, not
-//     an application-code test).
-//   - All captain rows tied to I/J1/J2 are gone via session_captains.session_id
-//     ON DELETE CASCADE (downward cascade to child tables this change
-//     introduces).
-//
-// Changes 2 and 3 will extend this test with their own child tables; see
-// PHASE-1-DECOMPOSITION.md §6-C.
-func TestCascadeSchema_TwoLevelExpunge_Change1(t *testing.T) {
+//   - I's row is gone (direct), and I's captain is gone (session_captains
+//     ON DELETE CASCADE — a session's OWN dependent rows still cascade).
+//   - J1 and J2 SURVIVE, with linked_incident_id set to NULL (the link is
+//     severed, the second-level property reversed from the old CASCADE).
+//   - J1's and J2's captains SURVIVE (their parent session survives).
+func TestCascadeSchema_IncidentDeleteSeversLinks(t *testing.T) {
 	s := newTestStore(t)
 	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 	ctx := context.Background()
@@ -53,23 +52,23 @@ func TestCascadeSchema_TwoLevelExpunge_Change1(t *testing.T) {
 		t.Fatalf("create incident I: %v", err)
 	}
 
-	// 2. Insert linked investigations J1 and J2.
+	// 2. Insert linked sessions J1 and J2 (plain 'default' conversations that
+	//    point at the incident via linked_incident_id).
 	j1ID := uuid.NewString()
 	j2ID := uuid.NewString()
 	for _, id := range []string{j1ID, j2ID} {
 		linked := incidentID
 		if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
 			ID:               id,
-			Type:             sessionmodel.SessionTypeInvestigation,
+			Type:             sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice",
 			LinkedIncidentID: &linked,
 		}); err != nil {
-			t.Fatalf("create investigation %s: %v", id, err)
+			t.Fatalf("create linked session %s: %v", id, err)
 		}
 	}
 
-	// 3. Insert at least one child row per child table introduced by this
-	//    change (just session_captains in Change 1) under each session.
+	// 3. Attach a captain under each session.
 	for _, sessID := range []string{incidentID, j1ID, j2ID} {
 		if _, err := repo.AttachCaptain(ctx, sessionmodel.Captain{
 			ID:          uuid.NewString(),
@@ -87,32 +86,42 @@ func TestCascadeSchema_TwoLevelExpunge_Change1(t *testing.T) {
 		incidentID, j1ID, j2ID); n != 3 {
 		t.Fatalf("pre-delete sessions count = %d, want 3", n)
 	}
-	if n := countRows(t, s.DB(),
-		`SELECT count(*) FROM session_captains WHERE session_id IN (?,?,?)`,
-		incidentID, j1ID, j2ID); n != 3 {
-		t.Fatalf("pre-delete captains count = %d, want 3", n)
-	}
 
 	// 4. Execute one raw SQL DELETE — no handler, no application code, no
-	//    explicit transaction. This is the §6-C self-check: the cascade is
-	//    structural.
+	//    explicit transaction. This is the schema self-check: the SET NULL
+	//    severance is structural.
 	if _, err := s.DB().ExecContext(ctx,
 		`DELETE FROM agent_sessions WHERE id = ?`, incidentID); err != nil {
 		t.Fatalf("delete incident: %v", err)
 	}
 
-	// 5. Assert: I, J1, and J2 are all gone.
+	// 5. Assert: I is gone; J1 and J2 SURVIVE.
 	if n := countRows(t, s.DB(),
-		`SELECT count(*) FROM agent_sessions WHERE id IN (?,?,?)`,
-		incidentID, j1ID, j2ID); n != 0 {
-		t.Errorf("post-delete sessions count = %d, want 0 (two-level cascade failed)", n)
+		`SELECT count(*) FROM agent_sessions WHERE id = ?`, incidentID); n != 0 {
+		t.Errorf("incident post-delete count = %d, want 0", n)
+	}
+	if n := countRows(t, s.DB(),
+		`SELECT count(*) FROM agent_sessions WHERE id IN (?,?)`,
+		j1ID, j2ID); n != 2 {
+		t.Errorf("linked sessions post-delete count = %d, want 2 (must survive — link severed, not cascaded)", n)
 	}
 
-	// 6. Assert: every child row tied to I/J1/J2 is gone.
+	// 6. Assert: the severed links are now NULL on the surviving sessions.
 	if n := countRows(t, s.DB(),
-		`SELECT count(*) FROM session_captains WHERE session_id IN (?,?,?)`,
-		incidentID, j1ID, j2ID); n != 0 {
-		t.Errorf("post-delete captains count = %d, want 0 (child-table cascade failed)", n)
+		`SELECT count(*) FROM agent_sessions WHERE id IN (?,?) AND linked_incident_id IS NULL`,
+		j1ID, j2ID); n != 2 {
+		t.Errorf("linked sessions with NULL link = %d, want 2 (ON DELETE SET NULL did not fire)", n)
+	}
+
+	// 7. Assert: I's captain is gone (own-row cascade); J1/J2 captains survive.
+	if n := countRows(t, s.DB(),
+		`SELECT count(*) FROM session_captains WHERE session_id = ?`, incidentID); n != 0 {
+		t.Errorf("incident captain post-delete count = %d, want 0 (own-row cascade failed)", n)
+	}
+	if n := countRows(t, s.DB(),
+		`SELECT count(*) FROM session_captains WHERE session_id IN (?,?)`,
+		j1ID, j2ID); n != 2 {
+		t.Errorf("linked-session captains post-delete count = %d, want 2 (must survive with their session)", n)
 	}
 }
 
@@ -141,7 +150,7 @@ func TestCascadeSchema_ResolvedIncidentPostmortemProperty(t *testing.T) {
 	jID := uuid.NewString()
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
 		ID:               jID,
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 		LinkedIncidentID: &linked,
 	}); err != nil {
@@ -170,7 +179,7 @@ func TestCascadeSchema_NonIncidentDeleteIndependent(t *testing.T) {
 	soloID := uuid.NewString()
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
 		ID:               soloID,
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}); err != nil {
 		t.Fatalf("create solo investigation: %v", err)
@@ -178,7 +187,7 @@ func TestCascadeSchema_NonIncidentDeleteIndependent(t *testing.T) {
 	otherID := uuid.NewString()
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
 		ID:               otherID,
-		Type:             sessionmodel.SessionTypeOther,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}); err != nil {
 		t.Fatalf("create other: %v", err)

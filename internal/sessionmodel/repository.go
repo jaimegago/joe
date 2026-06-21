@@ -45,22 +45,14 @@ type Repository interface {
 	// not bump last_activity_at — a rename is metadata housekeeping, not chat
 	// activity, so it must not reorder the recency-sorted browse list.
 	UpdateSessionTitle(ctx context.Context, id, title string) error
-	// UpdateSessionVisibility flips a session between 'private' and 'public'
-	// (migration 022; DESIGN-CHAT-SESSIONS.md §11 Phase 3). Like
-	// UpdateSessionTitle this is an unconditional write by ID — the Web UI
-	// PATCH handler owner-checks and validates the value first — and it does
-	// not bump last_activity_at (visibility is metadata, not chat activity, so
-	// it must not reorder the recency-sorted browse list).
-	UpdateSessionVisibility(ctx context.Context, id, visibility string) error
 	// LinkSessionToIncident attaches a plain chat session to the active
-	// incident (DESIGN-CHAT-SESSIONS.md §11 Phase 4): it sets
-	// linked_incident_id and promotes the session's type to 'investigation'
-	// so the session participates in the incident (reference + participation,
-	// §10 — captaincy is out of scope). The Web UI handler owner-checks the
-	// session and resolves the active incident first, so this is an
-	// unconditional write by ID. Like the title/visibility mutators it does
-	// not bump last_activity_at (linkage is metadata, not chat activity, so it
-	// must not reorder the recency-sorted browse list).
+	// incident by setting linked_incident_id ONLY (DESIGN-CHAT-SESSIONS.md
+	// §12.3): under the two-type model participation is the pointer alone — there
+	// is no type flip (the 'investigation' type was removed). The caller
+	// owner-checks the session and resolves the active incident first, so this is
+	// an unconditional write by ID. Like the title mutator it does not bump
+	// last_activity_at (linkage is metadata, not chat activity, so it must not
+	// reorder the recency-sorted browse list).
 	LinkSessionToIncident(ctx context.Context, sessionID, incidentID string) error
 	// ActiveIncidentSession returns the currently-active incident session
 	// (type='incident', incident_state NOT IN ('resolved','reviewed')), or nil
@@ -237,10 +229,6 @@ func (r *SQLRepository) CreateSession(ctx context.Context, s AgentSession) (*Age
 		s.LastActivityAt = s.CreatedAt
 	}
 
-	if s.Visibility == "" {
-		s.Visibility = VisibilityPrivate
-	}
-
 	var incidentState any
 	if s.IncidentState != nil {
 		incidentState = string(*s.IncidentState)
@@ -258,31 +246,52 @@ func (r *SQLRepository) CreateSession(ctx context.Context, s AgentSession) (*Age
 		title = *s.Title
 	}
 
+	// Lifecycle columns (§12.4): an active session writes all-null. A caller may
+	// pre-set them (e.g. seeding a trashed/archived row in a test or migration),
+	// so they are threaded through rather than hard-coded to NULL.
 	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO agent_sessions
-			(id, type, incident_state, created_at, last_activity_at, creator_principal, linked_incident_id, retention_class, title, visibility)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			(id, type, incident_state, created_at, last_activity_at, creator_principal,
+			 linked_incident_id, retention_class, title,
+			 trashed_at, trashed_by, purge_after, archived_at, archived_by, archive_ref)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		s.ID, string(s.Type), incidentState,
 		s.CreatedAt.Format(time.RFC3339), s.LastActivityAt.Format(time.RFC3339),
-		s.CreatorPrincipal, linkedID, retentionClass, title, s.Visibility)
+		s.CreatorPrincipal, linkedID, retentionClass, title,
+		timePtrArg(s.TrashedAt), strPtrArg(s.TrashedBy), timePtrArg(s.PurgeAfter),
+		timePtrArg(s.ArchivedAt), strPtrArg(s.ArchivedBy), strPtrArg(s.ArchiveRef))
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 	return &s, nil
 }
 
+// timePtrArg renders a *time.Time as an RFC3339 string arg, or nil for a NULL.
+func timePtrArg(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.Format(time.RFC3339)
+}
+
+// strPtrArg renders a *string as a SQL arg, or nil for a NULL.
+func strPtrArg(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
 func (r *SQLRepository) GetSession(ctx context.Context, id string) (*AgentSession, error) {
 	row := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
-		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class, title, visibility
+		SELECT `+sessionColumns+`
 		FROM agent_sessions WHERE id = ?`), id)
 	return scanSession(row.Scan)
 }
 
 func (r *SQLRepository) ListSessions(ctx context.Context) ([]AgentSession, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class, title, visibility
+		SELECT `+sessionColumns+`
 		FROM agent_sessions ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -293,8 +302,7 @@ func (r *SQLRepository) ListSessions(ctx context.Context) ([]AgentSession, error
 
 func (r *SQLRepository) ListSessionsByType(ctx context.Context, t SessionType) ([]AgentSession, error) {
 	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
-		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class, title, visibility
+		SELECT `+sessionColumns+`
 		FROM agent_sessions WHERE type = ? ORDER BY created_at`), string(t))
 	if err != nil {
 		return nil, fmt.Errorf("list sessions by type: %w", err)
@@ -324,29 +332,17 @@ func (r *SQLRepository) UpdateSessionTitle(ctx context.Context, id, title string
 	return nil
 }
 
-// UpdateSessionVisibility sets the visibility column for one session.
-// last_activity_at is deliberately left untouched (parallel to
-// UpdateSessionTitle) so a visibility flip does not reorder the recency-sorted
-// browse list.
-func (r *SQLRepository) UpdateSessionVisibility(ctx context.Context, id, visibility string) error {
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
-		UPDATE agent_sessions SET visibility = ? WHERE id = ?`), visibility, id)
-	if err != nil {
-		return fmt.Errorf("update session visibility: %w", err)
-	}
-	return nil
-}
-
-// LinkSessionToIncident sets linked_incident_id and promotes the session to
-// type='investigation' in one write. last_activity_at is deliberately left
-// untouched (parallel to UpdateSessionTitle/Visibility) so a link does not
-// reorder the recency-sorted browse list. The migration-009 CHECK permits
-// linked_incident_id on any non-incident type, so promoting 'other' ->
-// 'investigation' here keeps the row valid.
+// LinkSessionToIncident sets linked_incident_id ONLY — no type flip. Under the
+// two-type model (§12.3) participation in an incident is expressed solely by the
+// linked_incident_id pointer; the removed 'investigation' type no longer exists,
+// so a linked session stays a plain 'default' conversation. last_activity_at is
+// deliberately left untouched (parallel to UpdateSessionTitle) so a link does
+// not reorder the recency-sorted browse list. The CHECK permits linked_incident_id
+// on any non-incident type.
 func (r *SQLRepository) LinkSessionToIncident(ctx context.Context, sessionID, incidentID string) error {
 	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
-		UPDATE agent_sessions SET linked_incident_id = ?, type = ? WHERE id = ?`),
-		incidentID, string(SessionTypeInvestigation), sessionID)
+		UPDATE agent_sessions SET linked_incident_id = ? WHERE id = ?`),
+		incidentID, sessionID)
 	if err != nil {
 		return fmt.Errorf("link session to incident: %w", err)
 	}
@@ -358,8 +354,7 @@ func (r *SQLRepository) LinkSessionToIncident(ctx context.Context, sessionID, in
 // query mirrors ResolveIncidentRegime's active-incident lookup.
 func (r *SQLRepository) ActiveIncidentSession(ctx context.Context) (*AgentSession, error) {
 	row := r.db.QueryRowContext(ctx, store.Rebind(r.driver, `
-		SELECT id, type, incident_state, created_at, last_activity_at,
-		       creator_principal, linked_incident_id, retention_class, title, visibility
+		SELECT `+sessionColumns+`
 		FROM agent_sessions
 		WHERE type = 'incident' AND incident_state NOT IN ('resolved', 'reviewed')
 		ORDER BY created_at DESC
@@ -387,8 +382,7 @@ func (r *SQLRepository) UpdateIncidentState(ctx context.Context, sessionID strin
 // N+1) so the list can render a message count per session.
 func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
 	query := `
-		SELECT s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
-		       s.creator_principal, s.linked_incident_id, s.retention_class, s.title, s.visibility,
+		SELECT ` + sessionColumnsPrefixed + `,
 		       COUNT(m.id) AS message_count
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
@@ -416,7 +410,7 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 	var out []ChatSessionRow
 	for rows.Next() {
 		var count int
-		// scanSession reads the 10 session columns; the join's trailing
+		// scanSession reads the session columns; the join's trailing
 		// message_count is captured by passing &count as the final scan dest.
 		s, err := scanSession(func(dest ...any) error {
 			return rows.Scan(append(dest, &count)...)
@@ -441,8 +435,7 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 // creator_principal is carried on each row so the UI can show "shared by <owner>".
 func (r *SQLRepository) ListSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
 	query := `
-		SELECT s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
-		       s.creator_principal, s.linked_incident_id, s.retention_class, s.title, s.visibility,
+		SELECT ` + sessionColumnsPrefixed + `,
 		       COUNT(m.id) AS message_count
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
@@ -570,6 +563,20 @@ func (r *SQLRepository) ListChatMessages(ctx context.Context, sessionID string) 
 	return out, rows.Err()
 }
 
+// sessionColumns is the canonical agent_sessions projection (migration 025).
+// Every SELECT that feeds scanSession must list exactly these columns in this
+// order. A LEFT JOIN message count is appended by the chat-list queries.
+const sessionColumns = `id, type, incident_state, created_at, last_activity_at,
+	       creator_principal, linked_incident_id, retention_class, title,
+	       trashed_at, trashed_by, purge_after, archived_at, archived_by, archive_ref`
+
+// sessionColumnsPrefixed is sessionColumns aliased to the agent_sessions table
+// as "s" — used by the chat-list queries that LEFT JOIN chat_messages and would
+// otherwise have an ambiguous "id".
+const sessionColumnsPrefixed = `s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
+	       s.creator_principal, s.linked_incident_id, s.retention_class, s.title,
+	       s.trashed_at, s.trashed_by, s.purge_after, s.archived_at, s.archived_by, s.archive_ref`
+
 func scanSession(scan func(...any) error) (*AgentSession, error) {
 	var (
 		s                 AgentSession
@@ -580,10 +587,16 @@ func scanSession(scan func(...any) error) (*AgentSession, error) {
 		linkedIncidentID  sql.NullString
 		retentionClass    sql.NullString
 		title             sql.NullString
-		visibility        string
+		trashedAt         sql.NullString
+		trashedBy         sql.NullString
+		purgeAfter        sql.NullString
+		archivedAt        sql.NullString
+		archivedBy        sql.NullString
+		archiveRef        sql.NullString
 	)
 	err := scan(&s.ID, &typ, &incidentState, &createdAtStr, &lastActivityAtStr,
-		&s.CreatorPrincipal, &linkedIncidentID, &retentionClass, &title, &visibility)
+		&s.CreatorPrincipal, &linkedIncidentID, &retentionClass, &title,
+		&trashedAt, &trashedBy, &purgeAfter, &archivedAt, &archivedBy, &archiveRef)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -606,8 +619,35 @@ func scanSession(scan func(...any) error) (*AgentSession, error) {
 	if title.Valid {
 		s.Title = &title.String
 	}
-	s.Visibility = visibility
+	if trashedAt.Valid {
+		s.TrashedAt = parseTimeOrNil(trashedAt.String)
+	}
+	if trashedBy.Valid {
+		s.TrashedBy = &trashedBy.String
+	}
+	if purgeAfter.Valid {
+		s.PurgeAfter = parseTimeOrNil(purgeAfter.String)
+	}
+	if archivedAt.Valid {
+		s.ArchivedAt = parseTimeOrNil(archivedAt.String)
+	}
+	if archivedBy.Valid {
+		s.ArchivedBy = &archivedBy.String
+	}
+	if archiveRef.Valid {
+		s.ArchiveRef = &archiveRef.String
+	}
 	return &s, nil
+}
+
+// parseTimeOrNil parses an RFC3339 timestamp, returning nil on failure so a
+// malformed stored value degrades to "unset" rather than a zero time.
+func parseTimeOrNil(value string) *time.Time {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 func scanSessionRows(rows *sql.Rows) ([]AgentSession, error) {

@@ -5,39 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 )
-
-// TestRepository_VisibilityDefault verifies CreateSession defaults visibility to
-// 'private' when the caller leaves it unset (migration 022).
-func TestRepository_VisibilityDefault(t *testing.T) {
-	s := newTestStore(t)
-	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
-	ctx := context.Background()
-
-	created, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeOther,
-		CreatorPrincipal: "user:alice@example.com",
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if created.Visibility != sessionmodel.VisibilityPrivate {
-		t.Errorf("returned visibility = %q, want %q", created.Visibility, sessionmodel.VisibilityPrivate)
-	}
-	got, err := repo.GetSession(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("GetSession: %v", err)
-	}
-	if got.Visibility != sessionmodel.VisibilityPrivate {
-		t.Errorf("stored visibility = %q, want %q", got.Visibility, sessionmodel.VisibilityPrivate)
-	}
-}
 
 // TestRepository_ListSessionsByCreator verifies owner-scoping, recency ordering,
 // per-session message counts, and the limit.
@@ -52,7 +24,7 @@ func TestRepository_ListSessionsByCreator(t *testing.T) {
 	base := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
 	mk := func(id, principal string, at time.Time) {
 		if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeOther, CreatorPrincipal: principal,
+			ID: id, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
 			CreatedAt: at, LastActivityAt: at,
 		}); err != nil {
 			t.Fatalf("CreateSession %s: %v", id, err)
@@ -101,28 +73,28 @@ func TestRepository_ListSessionsByCreator(t *testing.T) {
 }
 
 // TestRepository_ListSessionsByOthers verifies the "shared with you" list in the
-// org-wide read model: ALL sessions owned by *other* principals are returned
-// (regardless of visibility), newest activity first, with message counts and the
-// owner attributed on the row. Only the caller's own sessions are excluded.
+// team-wide read model: ALL sessions owned by *other* principals are returned,
+// newest activity first, with message counts and the owner attributed on the
+// row. Only the caller's own sessions are excluded. There is no visibility
+// column — every session is readable by any authenticated principal (§12.4).
 func TestRepository_ListSessionsByOthers(t *testing.T) {
 	s := newTestStore(t)
 	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 	ctx := context.Background()
 
 	base := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
-	mk := func(id, principal, visibility string, at time.Time) {
+	mk := func(id, principal string, at time.Time) {
 		if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeOther, CreatorPrincipal: principal,
-			Visibility: visibility, CreatedAt: at, LastActivityAt: at,
+			ID: id, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
+			CreatedAt: at, LastActivityAt: at,
 		}); err != nil {
 			t.Fatalf("CreateSession %s: %v", id, err)
 		}
 	}
-	// Visibility is set to varied values to prove it no longer filters the list.
-	mk("a_pub", "user:alice@example.com", sessionmodel.VisibilityPublic, base.Add(1*time.Minute))
-	mk("a_priv", "user:alice@example.com", sessionmodel.VisibilityPrivate, base.Add(2*time.Minute))
-	mk("c_pub", "user:carol@example.com", sessionmodel.VisibilityPublic, base.Add(3*time.Minute)) // most recent
-	mk("b_own", "user:bob@example.com", sessionmodel.VisibilityPrivate, base)                     // bob is the caller
+	mk("a_pub", "user:alice@example.com", base.Add(1*time.Minute))
+	mk("a_priv", "user:alice@example.com", base.Add(2*time.Minute))
+	mk("c_pub", "user:carol@example.com", base.Add(3*time.Minute)) // most recent
+	mk("b_own", "user:bob@example.com", base)                      // bob is the caller
 
 	// One message on a_pub so the count projection is exercised.
 	if _, err := repo.AddChatMessage(ctx, sessionmodel.ChatMessage{
@@ -170,7 +142,7 @@ func TestRepository_UpdateSessionTitle(t *testing.T) {
 
 	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "s1", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: "user:alice@example.com",
+		ID: "s1", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:alice@example.com",
 		CreatedAt: at, LastActivityAt: at,
 	}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -193,59 +165,10 @@ func TestRepository_UpdateSessionTitle(t *testing.T) {
 	}
 }
 
-// TestRepository_UpdateSessionVisibility verifies a visibility flip persists and
-// that it does not bump last_activity_at (visibility is metadata, not chat
-// activity, so it must not reorder the recency-sorted browse list — Phase 3).
-func TestRepository_UpdateSessionVisibility(t *testing.T) {
-	s := newTestStore(t)
-	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
-	ctx := context.Background()
-
-	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
-	created, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "s1", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: "user:alice@example.com",
-		CreatedAt: at, LastActivityAt: at,
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	// Defaults to private.
-	if created.Visibility != sessionmodel.VisibilityPrivate {
-		t.Fatalf("initial visibility = %q, want %q", created.Visibility, sessionmodel.VisibilityPrivate)
-	}
-
-	if err := repo.UpdateSessionVisibility(ctx, "s1", sessionmodel.VisibilityPublic); err != nil {
-		t.Fatalf("UpdateSessionVisibility: %v", err)
-	}
-
-	got, err := repo.GetSession(ctx, "s1")
-	if err != nil {
-		t.Fatalf("GetSession: %v", err)
-	}
-	if got.Visibility != sessionmodel.VisibilityPublic {
-		t.Errorf("visibility = %q, want %q", got.Visibility, sessionmodel.VisibilityPublic)
-	}
-	// last_activity_at must be unchanged by a visibility flip.
-	if !got.LastActivityAt.Equal(at) {
-		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
-	}
-
-	// Flip back to private.
-	if err := repo.UpdateSessionVisibility(ctx, "s1", sessionmodel.VisibilityPrivate); err != nil {
-		t.Fatalf("UpdateSessionVisibility back to private: %v", err)
-	}
-	got, err = repo.GetSession(ctx, "s1")
-	if err != nil {
-		t.Fatalf("GetSession after revert: %v", err)
-	}
-	if got.Visibility != sessionmodel.VisibilityPrivate {
-		t.Errorf("visibility after revert = %q, want %q", got.Visibility, sessionmodel.VisibilityPrivate)
-	}
-}
-
 // TestRepository_LinkSessionToIncident verifies that linking a plain chat
-// session to the active incident sets linked_incident_id, promotes the type to
-// 'investigation', and does not bump last_activity_at (linkage is metadata).
+// session to the active incident sets linked_incident_id ONLY — no type flip
+// (the 'investigation' type was removed; §12.3) — and does not bump
+// last_activity_at (linkage is metadata).
 // ActiveIncidentSession finds the active incident and goes nil once it resolves.
 func TestRepository_LinkSessionToIncident(t *testing.T) {
 	s := newTestStore(t)
@@ -261,7 +184,7 @@ func TestRepository_LinkSessionToIncident(t *testing.T) {
 		t.Fatalf("create incident: %v", err)
 	}
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "chat", Type: sessionmodel.SessionTypeOther,
+		ID: "chat", Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "user:alice@example.com", CreatedAt: at, LastActivityAt: at,
 	}); err != nil {
 		t.Fatalf("create chat: %v", err)
@@ -285,8 +208,8 @@ func TestRepository_LinkSessionToIncident(t *testing.T) {
 	if got.LinkedIncidentID == nil || *got.LinkedIncidentID != "inc" {
 		t.Errorf("linked_incident_id = %v, want inc", got.LinkedIncidentID)
 	}
-	if got.Type != sessionmodel.SessionTypeInvestigation {
-		t.Errorf("type = %q, want investigation", got.Type)
+	if got.Type != sessionmodel.SessionTypeDefault {
+		t.Errorf("type = %q, want default (linkage must NOT flip the type)", got.Type)
 	}
 	if !got.LastActivityAt.Equal(at) {
 		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
@@ -313,7 +236,7 @@ func TestRepository_ChatMessages(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "sess", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: "user:alice@example.com",
+		ID: "sess", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:alice@example.com",
 	}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}

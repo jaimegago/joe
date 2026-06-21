@@ -204,7 +204,7 @@ func newFixture(t *testing.T) *fixtureEnv {
 	// itself moved out to internal/captaingate in Phase G.
 	sess := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := sessRepo.CreateSession(context.Background(), sess); err != nil {

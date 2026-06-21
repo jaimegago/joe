@@ -942,7 +942,7 @@ func TestWebUILinkIncident(t *testing.T) {
 
 	// The promotion + link persisted.
 	sess, _ := srv.services.SessionModel.GetSession(ctx, chatID)
-	if sess == nil || sess.Type != sessionmodel.SessionTypeInvestigation {
+	if sess == nil || sess.Type != sessionmodel.SessionTypeDefault {
 		t.Errorf("type = %v, want investigation", sess)
 	}
 	if sess == nil || sess.LinkedIncidentID == nil || *sess.LinkedIncidentID != "inc-1" {
@@ -964,7 +964,7 @@ func TestWebUIChatOwnership_MessagesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "s-rt", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: alice,
+		ID: "s-rt", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: alice,
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}

@@ -48,9 +48,9 @@ func TestFindings_PostAndList(t *testing.T) {
 	repo := findings.NewRepository(s.DB(), store.DriverSQLite)
 	ctx := context.Background()
 
-	src := newTestSession(t, s, sessionmodel.SessionTypeInvestigation)
+	src := newTestSession(t, s, sessionmodel.SessionTypeDefault)
 	tgt := newTestSession(t, s, sessionmodel.SessionTypeIncident)
-	investigation := newTestSession(t, s, sessionmodel.SessionTypeInvestigation)
+	investigation := newTestSession(t, s, sessionmodel.SessionTypeDefault)
 
 	f := findings.Finding{
 		ID:                               uuid.NewString(),

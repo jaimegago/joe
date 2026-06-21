@@ -104,7 +104,7 @@ func TestRepository_Sessions(t *testing.T) {
 	t.Run("create + get investigation (no incident_state)", func(t *testing.T) {
 		sess := sessionmodel.AgentSession{
 			ID:               uuid.NewString(),
-			Type:             sessionmodel.SessionTypeInvestigation,
+			Type:             sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice",
 		}
 		if _, err := repo.CreateSession(ctx, sess); err != nil {
@@ -117,7 +117,7 @@ func TestRepository_Sessions(t *testing.T) {
 		if got == nil {
 			t.Fatal("GetSession returned nil")
 		}
-		if got.Type != sessionmodel.SessionTypeInvestigation {
+		if got.Type != sessionmodel.SessionTypeDefault {
 			t.Errorf("type = %q, want investigation", got.Type)
 		}
 		if got.IncidentState != nil {
@@ -153,7 +153,7 @@ func TestRepository_Sessions(t *testing.T) {
 		state := sessionmodel.IncidentStateDeclared
 		sess := sessionmodel.AgentSession{
 			ID:               uuid.NewString(),
-			Type:             sessionmodel.SessionTypeInvestigation,
+			Type:             sessionmodel.SessionTypeDefault,
 			IncidentState:    &state,
 			CreatorPrincipal: "alice",
 		}
