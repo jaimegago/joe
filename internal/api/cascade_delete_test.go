@@ -4,12 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/api"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -21,8 +23,10 @@ import (
 
 // Change 11 — hard-delete cascade integration tests.
 //
-// The per-user handler (re-homed in B005): DELETE /api/v1/sessions/{id}
-// runs ONE SQL statement (DELETE FROM agent_sessions WHERE id = ?).
+// The GOVERNED expunge (B007a): POST /api/v1/admin/sessions/{id}/purge with
+// {"confirm": true} runs ONE SQL statement (DELETE FROM agent_sessions WHERE
+// id = ?). The per-user DELETE is now a soft-delete (trash), so the cascade is
+// driven through admin purge — the only route-reachable hard delete.
 // The §5b-5 incident-expunge cascade is a pure schema property — the
 // self-FK on linked_incident_id and the child-table FKs to
 // agent_sessions(id) / agent_runs(id) (all declared ON DELETE CASCADE
@@ -37,6 +41,29 @@ import (
 // handler, complementing the SQL-only cascade tests in
 // internal/sessionmodel/cascade_schema_test.go and
 // internal/runmodel/cascade_schema_test.go.
+
+// cascadeAdmin is the genuine dynamic admin that drives the governed purge in the
+// cascade tests (the per-user DELETE is now a soft-delete; purge is admin-only).
+const cascadeAdmin = "user:admin@example.com"
+
+// purgeConfirmed POSTs the admin purge route with {"confirm": true} as the admin
+// and asserts the §12.5 confirmed-expunge succeeds (200). This is the GOVERNED
+// hard delete — the only route-reachable expunge after B007a.
+func purgeConfirmed(t *testing.T, baseURL, sessionID string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/admin/sessions/"+sessionID+"/purge",
+		strings.NewReader(`{"confirm": true}`))
+	req.Header.Set("X-Test-Principal", cascadeAdmin)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("purge status = %d, want 200 (confirmed governed expunge)", resp.StatusCode)
+	}
+}
 
 // newCascadeServer wires the full session/run model + findings +
 // warnings stack and returns the server URL + the store handle + every
@@ -65,12 +92,26 @@ func newCascadeServer(t *testing.T) (
 	findingsRepo := findings.NewRepository(s.DB(), store.DriverSQLite)
 	warningsRepo := warnings.NewRepository(s.DB(), store.DriverSQLite)
 
+	// B007a: the governed expunge is the admin purge route, not the per-user
+	// DELETE (now a soft-delete). Wire RBAC + a genuine admin + audit so the
+	// cascade can be driven end-to-end through POST /admin/sessions/{id}/purge.
+	rbacRepo := rbac.NewRepository(s.DB(), store.DriverSQLite)
+	auditRepo := audit.NewRepository(s.DB(), store.DriverSQLite)
+	if err := rbacRepo.AddAdmin(context.Background(), rbac.Admin{
+		Principal: cascadeAdmin, GrantedBy: "test", Reason: "cascade purge test",
+	}, "test"); err != nil {
+		t.Fatalf("AddAdmin: %v", err)
+	}
+
 	svc := &core.Services{
 		Store:        s,
 		SessionModel: sessRepo,
 		RunModel:     runRepo,
 		Findings:     findingsRepo,
 		Warnings:     warningsRepo,
+		RBAC:         rbacRepo,
+		RBACEnabled:  true,
+		Audit:        auditRepo,
 	}
 	srv := api.New(svc)
 	mux := http.NewServeMux()
@@ -228,19 +269,11 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 		}
 	}
 
-	// DELETE the incident through the per-user HTTP handler — one request, owner
-	// (alice) authenticated. The handler is a hard delete (B005 keeps the delete
-	// EFFECT unchanged; soft-delete to trash is B007) and returns 204.
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/sessions/"+incidentID, nil)
-	req.Header.Set("X-Test-Principal", "alice")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("DELETE: %v", err)
-	}
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("DELETE status = %d, want 204", resp.StatusCode)
-	}
-	resp.Body.Close()
+	// Purge the incident through the GOVERNED admin route (B007a): one confirmed
+	// request, admin-authenticated. The per-user DELETE is now a soft-delete; the
+	// designed expunge (cascade own children, sever linked children) is admin
+	// purge. The cascade itself remains a pure schema property (§12.4).
+	purgeConfirmed(t, ts.URL, incidentID)
 
 	// Post-delete (§12.4 severance, NOT two-level cascade): deleting incident I
 	// destroys ONLY I and its OWN children. J1/J2 are independent 'default'
@@ -299,13 +332,8 @@ func TestCascadeDelete_OrphanInvestigation(t *testing.T) {
 	orphanRun, _, _ := populateChildren(t, ctx, orphan, runRepo, findingsRepo, warningsRepo, "alice")
 	siblingRun, _, _ := populateChildren(t, ctx, sibling, runRepo, findingsRepo, warningsRepo, "alice")
 
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/sessions/"+orphan, nil)
-	req.Header.Set("X-Test-Principal", "alice")
-	resp, _ := http.DefaultClient.Do(req)
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("DELETE orphan status = %d, want 204", resp.StatusCode)
-	}
-	resp.Body.Close()
+	// Purge the orphan through the governed admin route (B007a).
+	purgeConfirmed(t, ts.URL, orphan)
 
 	// Orphan's child rows: gone.
 	if got := countTied(t, storeHandle,

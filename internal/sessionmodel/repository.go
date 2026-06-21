@@ -28,8 +28,10 @@ type Repository interface {
 	// from ListRecentSessions, which is the team-wide (unfiltered) list.
 	ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error)
 	// ListRecentSessions is the team-wide chat list (DESIGN-CHAT-SESSIONS.md §12.8,
-	// team-wide read amendment 2026-06-21): EVERY session, newest activity first,
-	// with a per-session message count and no principal predicate. It backs the
+	// team-wide read amendment 2026-06-21): every ACTIVE session (trashed_at and
+	// archived_at both null — §12.10 removes trashed sessions from the normal team
+	// list), newest activity first, with a per-session message count and no
+	// principal predicate. It backs the
 	// per-user GET /api/v1/sessions surface (the default, unfiltered view); the
 	// caller-scoped "mine" view uses ListSessionsByCreator. Each row carries
 	// creator_principal so the handler can stamp read_only per row (a non-owner is
@@ -69,6 +71,64 @@ type Repository interface {
 	// most recently created is returned. The Web UI link-incident handler uses
 	// it to resolve the link target.
 	ActiveIncidentSession(ctx context.Context) (*AgentSession, error)
+
+	// --- Lifecycle transitions (§12.5, B007a) ---
+	//
+	// Each transition writes EXACTLY the migration-025 lifecycle columns the
+	// design specifies and preserves the invariant "active = all six lifecycle
+	// columns null". The *Tx variants run the write on a caller-supplied
+	// transaction so the effect and its §12.5 audit row commit atomically
+	// (mutateWithAudit); the bare variants run standalone on the repo handle (for
+	// store-level tests). The manual transitions reuse the SAME state writes the
+	// sweeper (B007b) will apply — no divergent code paths.
+
+	// TrashSession soft-deletes a session into trash (§12.5 macOS-trash): it sets
+	// trashed_at=now, trashed_by, and purge_after (the trash-grace deadline, nil
+	// for no auto-purge). It is the manual entry to the trashed state. Returns
+	// ErrSessionAlreadyTrashed if the session is already trashed (the guarded
+	// UPDATE matches only an active row). The session is NOT physically removed.
+	TrashSession(ctx context.Context, id, by string, purgeAfter *time.Time) error
+	// TrashSessionTx is TrashSession on a caller transaction (audited soft-delete).
+	TrashSessionTx(ctx context.Context, tx *sql.Tx, id, by string, purgeAfter *time.Time) error
+	// RestoreSession clears trashed_at/trashed_by/purge_after, returning a trashed
+	// session to the active set (§12.5 restore). Returns ErrSessionNotTrashed if
+	// the session is not currently trashed.
+	RestoreSession(ctx context.Context, id string) error
+	// RestoreSessionTx is RestoreSession on a caller transaction (audited restore).
+	RestoreSessionTx(ctx context.Context, tx *sql.Tx, id string) error
+	// PurgeManifest returns the §12.5 manifest-with-hard-stop counts (transcript
+	// messages destroyed, linked children severed) for a prospective purge.
+	PurgeManifest(ctx context.Context, id string) (PurgeManifest, error)
+	// PurgeSessionTx is the GOVERNED expunge (§12.5 admin-only purge): a hard
+	// DELETE of the session on the caller transaction. The schema carries the
+	// effect — chat_messages + captain bindings cascade (ON DELETE CASCADE), and
+	// linked children's linked_incident_id is SEVERED (ON DELETE SET NULL), never
+	// destroyed (§12.4). This replaces the raw DeleteSession as the only
+	// route-reachable hard delete; DeleteSession survives solely as this method's
+	// non-transactional twin for store-level cascade tests.
+	PurgeSessionTx(ctx context.Context, tx *sql.Tx, id string) error
+	// ListTrashedSessions lists trashed sessions (trashed_at NOT NULL), newest
+	// trashed first, with a per-session message count. principal nil = all trash
+	// (admin all-trash, §12.8); non-nil = that creator's own trash (per-user
+	// list-own-trash, §12.8). limit <= 0 means no cap.
+	ListTrashedSessions(ctx context.Context, principal *string, limit int) ([]ChatSessionRow, error)
+
+	// --- Retention policy (§12.5, migration 026, B007a) ---
+
+	// GetRetentionPolicy returns the single admin retention policy (one row,
+	// id=1; seeded by migration 026 with the §12.5 defaults).
+	GetRetentionPolicy(ctx context.Context) (*RetentionPolicy, error)
+	// SetRetentionPolicyTx writes the retention policy on a caller transaction
+	// (audited configure_retention). It stamps updated_at/updated_by.
+	SetRetentionPolicyTx(ctx context.Context, tx *sql.Tx, p RetentionPolicy, by string, when time.Time) error
+	// ResolveRetention resolves a session against the active policy (§12.4): it
+	// returns the per-session class (the policy's terminal action) plus the
+	// effective knobs. The sweeper (B007b) reads this to decide a session's fate.
+	ResolveRetention(ctx context.Context, sessionID string) (*RetentionResolution, error)
+	// StampRetentionClass writes the resolved class onto a session's
+	// retention_class column, making that column the live per-session resolution
+	// of the policy (§12.4 "no longer inert").
+	StampRetentionClass(ctx context.Context, sessionID, class string) error
 
 	// Chat messages (interim flat store, migration 022)
 
@@ -217,6 +277,15 @@ var (
 
 // ErrNotFound is returned when a lookup finds no matching row.
 var ErrNotFound = errors.New("sessionmodel: not found")
+
+// Errors returned by lifecycle transitions (§12.5, B007a).
+var (
+	// ErrSessionAlreadyTrashed — soft-delete on a session that is already in
+	// trash (the guarded UPDATE matched no active row).
+	ErrSessionAlreadyTrashed = errors.New("sessionmodel: session is already trashed")
+	// ErrSessionNotTrashed — restore on a session that is not currently trashed.
+	ErrSessionNotTrashed = errors.New("sessionmodel: session is not trashed")
+)
 
 // SQLRepository implements Repository on top of *sql.DB. It uses raw
 // *sql.DB rather than the store.Store wrapper, parallel to the established
@@ -405,6 +474,7 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
 		WHERE s.creator_principal = ?
+		  AND s.trashed_at IS NULL AND s.archived_at IS NULL
 		GROUP BY s.id
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
@@ -455,6 +525,7 @@ func (r *SQLRepository) ListRecentSessions(ctx context.Context, limit int) ([]Ch
 		       COUNT(m.id) AS message_count
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
+		WHERE s.trashed_at IS NULL AND s.archived_at IS NULL
 		GROUP BY s.id
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
@@ -506,6 +577,7 @@ func (r *SQLRepository) ListSessionsByOthers(ctx context.Context, principal stri
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
 		WHERE s.creator_principal != ?
+		  AND s.trashed_at IS NULL AND s.archived_at IS NULL
 		GROUP BY s.id
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
