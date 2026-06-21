@@ -22,6 +22,7 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
@@ -150,13 +151,19 @@ type Services struct {
 	// don't exercise context budgeting (buildTaskRun then falls back to the
 	// static backstop fraction).
 	ContextBudgetProvider *llmsettings.ContextBudgetProvider
-	SessionModel          sessionmodel.Repository      // nil until wired in cmd/joe/server.go
-	RunModel              runmodel.Repository          // nil until wired in cmd/joe/server.go
-	Findings              findings.Repository          // nil until wired in cmd/joe/server.go
-	Warnings              warnings.Repository          // nil until wired in cmd/joe/server.go
-	CaptainSvc            *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
-	Skills                *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher         *skills.Watcher              // nil when hot reload is disabled or failed to start
+	SessionModel          sessionmodel.Repository // nil until wired in cmd/joe/server.go
+	// SessionArchive is the §12.6 archive provider+store coupling backing the
+	// admin archive / restore-archive routes (B007c). nil until wired in
+	// cmd/joe/server.go (when an archive directory is resolved); the admin routes
+	// report 503 when it is nil, the same carve-out the rest of the admin surface
+	// uses for an unwired store.
+	SessionArchive *sessionarchive.Archiver
+	RunModel       runmodel.Repository          // nil until wired in cmd/joe/server.go
+	Findings       findings.Repository          // nil until wired in cmd/joe/server.go
+	Warnings       warnings.Repository          // nil until wired in cmd/joe/server.go
+	CaptainSvc     *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
+	Skills         *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher  *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,

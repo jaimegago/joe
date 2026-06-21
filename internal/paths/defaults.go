@@ -11,7 +11,21 @@ const (
 	JoeDir       = ".joe"
 	ConfigFile   = "config.yaml"
 	DatabaseFile = "joe.db"
+	// SessionArchiveDirName is the default sub-directory under ~/.joe where the
+	// §12.6 filesystem archive provider writes versioned session artifacts.
+	SessionArchiveDirName = "session-archive"
 )
+
+// SessionArchiveDir returns the default directory the filesystem archive provider
+// writes session artifacts to (~/.joe/session-archive). An operator override is
+// resolved by cmd/joe/server.go from server.session_archive_dir.
+func SessionArchiveDir() (string, error) {
+	dir, err := JoeDirPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, SessionArchiveDirName), nil
+}
 
 // DefaultConfigPath returns the default configuration file path.
 // Returns ~/.joe/config.yaml using secure home directory resolution.

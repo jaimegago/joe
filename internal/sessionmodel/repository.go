@@ -107,6 +107,26 @@ type Repository interface {
 	// route-reachable hard delete; DeleteSession survives solely as this method's
 	// non-transactional twin for store-level cascade tests.
 	PurgeSessionTx(ctx context.Context, tx *sql.Tx, id string) error
+	// ArchiveSession is the §12.6 archive STATE transition: it stamps
+	// archived_at=now / archived_by / archive_ref (the provider-produced locator)
+	// AND removes the hot transcript rows (the MOVE to cold storage — the artifact
+	// becomes the sole copy). Returns ErrSessionAlreadyArchived if already
+	// archived. The non-Tx variant is the store-level test twin.
+	ArchiveSession(ctx context.Context, id, by, ref string) error
+	// ArchiveSessionTx is ArchiveSession on a caller transaction so the column
+	// stamp, the transcript move, and the §12.6 audit row commit atomically.
+	ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string) error
+	// UnarchiveSession clears the archive columns, returning an archived session
+	// to active (§12.6 restore). The caller rebuilds the hot transcript from the
+	// artifact. Returns ErrSessionNotArchived if not currently archived.
+	UnarchiveSession(ctx context.Context, id string) error
+	// UnarchiveSessionTx is UnarchiveSession on a caller transaction so the column
+	// clear, the transcript rebuild, and the audit row commit atomically.
+	UnarchiveSessionTx(ctx context.Context, tx *sql.Tx, id string) error
+	// InsertChatMessageTx rebuilds one transcript row verbatim on a caller
+	// transaction — the restore-from-archive write path. It preserves the
+	// artifact's seq (exact ordering) and writes ONLY to chat_messages.
+	InsertChatMessageTx(ctx context.Context, tx *sql.Tx, m ChatMessage) error
 	// ListTrashedSessions lists trashed sessions (trashed_at NOT NULL), newest
 	// trashed first, with a per-session message count. principal nil = all trash
 	// (admin all-trash, §12.8); non-nil = that creator's own trash (per-user
@@ -310,6 +330,12 @@ var (
 	ErrSessionAlreadyTrashed = errors.New("sessionmodel: session is already trashed")
 	// ErrSessionNotTrashed — restore on a session that is not currently trashed.
 	ErrSessionNotTrashed = errors.New("sessionmodel: session is not trashed")
+	// ErrSessionAlreadyArchived — archive on a session that is already archived
+	// (the guarded UPDATE matched no un-archived row).
+	ErrSessionAlreadyArchived = errors.New("sessionmodel: session is already archived")
+	// ErrSessionNotArchived — restore-from-archive on a session that is not
+	// currently archived.
+	ErrSessionNotArchived = errors.New("sessionmodel: session is not archived")
 )
 
 // SQLRepository implements Repository on top of *sql.DB. It uses raw

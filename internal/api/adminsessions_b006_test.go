@@ -14,6 +14,7 @@ import (
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -45,11 +46,12 @@ func newAdminSessionsServer(t *testing.T) (*httptest.Server, sessionmodel.Reposi
 	}
 
 	svc := &core.Services{
-		Store:        s,
-		SessionModel: sessRepo,
-		RBAC:         rbacRepo,
-		RBACEnabled:  true,
-		Audit:        auditRepo,
+		Store:          s,
+		SessionModel:   sessRepo,
+		SessionArchive: sessionarchive.New(sessionarchive.NewFilesystemProvider(t.TempDir()), sessRepo),
+		RBAC:           rbacRepo,
+		RBACEnabled:    true,
+		Audit:          auditRepo,
 	}
 	srv := api.New(svc)
 	mux := http.NewServeMux()
@@ -77,8 +79,8 @@ func countAudit(t *testing.T, s *store.Store, action string) int {
 //   - purge: manifest-with-hard-stop (no-confirm preview is 200 + no audit +
 //     session survives; confirmed is 200 + 1 audit + session gone);
 //   - configure_retention: a real policy write (200 + 1 audit);
-//   - archive / restore-archive: still 501 pending (they depend on the B007b
-//     archive provider), authorized + audited (1 decision row each).
+//   - archive / restore-archive: real provider-backed effects (B007c) — archive
+//     200 + 1 audit, restore 200 + 1 audit, each coupled to its effect.
 //
 // Cross-tenant reads write no audit.
 func TestB006_AdminGovernCrossTenant(t *testing.T) {
@@ -100,23 +102,32 @@ func TestB006_AdminGovernCrossTenant(t *testing.T) {
 		r.Body.Close()
 	}
 
-	// Provider-dependent govern actions still pending: authorized + audited → 501.
-	pending := []struct {
-		path   string
-		action string
-	}{
-		{"/api/v1/admin/sessions/" + sid + "/archive", audit.ActionSessionArchive},
-		{"/api/v1/admin/sessions/" + sid + "/restore-archive", audit.ActionSessionUnarchive},
+	// Archive (B007c): real provider-backed effect cross-tenant → 200 + exactly 1
+	// session.archive audit row; the session is now archived.
+	ra := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/archive", b006AdminPrincipal, nil)
+	if ra.StatusCode != http.StatusOK {
+		t.Errorf("admin archive = %d, want 200 (real provider effect)", ra.StatusCode)
 	}
-	for _, g := range pending {
-		r := doRequest(t, http.MethodPost, ts.URL+g.path, b006AdminPrincipal, nil)
-		if r.StatusCode != http.StatusNotImplemented {
-			t.Errorf("admin POST %s = %d, want 501 (effect depends on B007b provider)", g.path, r.StatusCode)
-		}
-		r.Body.Close()
-		if n := countAudit(t, st, g.action); n != 1 {
-			t.Errorf("audit rows for %s = %d, want exactly 1 (one append-only govern row)", g.action, n)
-		}
+	ra.Body.Close()
+	if n := countAudit(t, st, audit.ActionSessionArchive); n != 1 {
+		t.Errorf("archive audit rows = %d, want exactly 1", n)
+	}
+	if sess, _ := sessRepo.GetSession(context.Background(), sid); sess == nil || sess.ArchivedAt == nil {
+		t.Fatalf("session not archived after admin archive: %+v", sess)
+	}
+
+	// Restore-archive (B007c): rehydrate → 200 + exactly 1 session.unarchive audit
+	// row; the session is active again.
+	ru := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/restore-archive", b006AdminPrincipal, nil)
+	if ru.StatusCode != http.StatusOK {
+		t.Errorf("admin restore-archive = %d, want 200 (real provider effect)", ru.StatusCode)
+	}
+	ru.Body.Close()
+	if n := countAudit(t, st, audit.ActionSessionUnarchive); n != 1 {
+		t.Errorf("unarchive audit rows = %d, want exactly 1", n)
+	}
+	if sess, _ := sessRepo.GetSession(context.Background(), sid); sess == nil || sess.ArchivedAt != nil {
+		t.Fatalf("session still archived after restore: %+v", sess)
 	}
 
 	// configure_retention (policy-scoped PUT): real effect now → 200 + 1 audit.
@@ -196,7 +207,7 @@ func TestB006_NonAdminDeniedOnAdminNamespace(t *testing.T) {
 // the genuine dynamic admin capability, the SAME admin principal is:
 //   - DENIED owner-mutate on a non-owned session through a PER-USER route (404 —
 //     the B005 always-false suppression still holds), yet
-//   - PERMITTED the govern action through the ADMIN route (501 pending).
+//   - PERMITTED the govern action through the ADMIN route (200 manifest).
 //
 // Same principal, same target session, opposite outcomes by route prefix — which
 // is exactly the §12.8 "admin relationship only behind the admin prefix" model.
@@ -336,9 +347,10 @@ func TestB006_RBACDisabledAsymmetry(t *testing.T) {
 
 // TestB006_DeferredReadRoutesReportPending proves the read-class surfaces that
 // B006 deferred (all-trash list, retention-policy get) now return REAL data in
-// B007a, while the only genuinely-deferred govern routes — archive and
-// restore-archive, which need the B007b provider — still report 501 pending
-// rather than a fabricated success.
+// B007a. The archive / restore-archive govern routes — once the only genuinely
+// deferred surfaces — now return REAL provider-backed effects in B007c (200), not
+// 501 pending; restore on a not-archived session is a 409, never a fabricated
+// success.
 func TestB006_DeferredReadRoutesReportPending(t *testing.T) {
 	const alice = "user:alice@example.com"
 	ts, sessRepo, _, _ := newAdminSessionsServer(t)
@@ -356,17 +368,25 @@ func TestB006_DeferredReadRoutesReportPending(t *testing.T) {
 		r.Body.Close()
 	}
 
-	// Provider-dependent govern routes: still honestly pending (501), not faked.
-	for _, path := range []string{
-		"/api/v1/admin/sessions/" + sid + "/archive",
-		"/api/v1/admin/sessions/" + sid + "/restore-archive",
-	} {
-		r := doRequest(t, http.MethodPost, ts.URL+path, b006AdminPrincipal, nil)
-		if r.StatusCode != http.StatusNotImplemented {
-			t.Errorf("POST %s = %d, want 501 (depends on B007b archive provider)", path, r.StatusCode)
-		}
-		r.Body.Close()
+	// Restore on a not-yet-archived session: 409 (honest refusal), not 501, not a
+	// fabricated success.
+	rn := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/restore-archive", b006AdminPrincipal, nil)
+	if rn.StatusCode != http.StatusConflict {
+		t.Errorf("restore not-archived = %d, want 409", rn.StatusCode)
 	}
+	rn.Body.Close()
+
+	// Archive then restore: both real effects, 200.
+	ra := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/archive", b006AdminPrincipal, nil)
+	if ra.StatusCode != http.StatusOK {
+		t.Errorf("archive = %d, want 200 (B007c provider effect)", ra.StatusCode)
+	}
+	ra.Body.Close()
+	rr := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/restore-archive", b006AdminPrincipal, nil)
+	if rr.StatusCode != http.StatusOK {
+		t.Errorf("restore-archive = %d, want 200 (B007c provider effect)", rr.StatusCode)
+	}
+	rr.Body.Close()
 }
 
 // TestB006_DualDeclareSingleBackendSurface documents the dual-declare
