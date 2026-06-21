@@ -139,6 +139,50 @@ func (r *SQLRepository) ListTrashedSessions(ctx context.Context, principal *stri
 	return out, rows.Err()
 }
 
+// --- Sweeper scan queries (§12.5, B007b) ---
+
+// ListSessionsInactiveBefore returns active sessions older than cutoff (§12.5
+// inactivity expiry). "Active" is the canonical all-six-lifecycle-columns-null
+// predicate; the query also excludes incident-typed sessions defensively — an
+// active incident master is governed by the regime lifecycle, not auto-expired
+// by inactivity. It reads ONLY agent_sessions (legacy tables untouched, §13).
+func (r *SQLRepository) ListSessionsInactiveBefore(ctx context.Context, cutoff time.Time) ([]AgentSession, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT `+sessionColumns+`
+		FROM agent_sessions
+		WHERE last_activity_at < ?
+		  AND type <> 'incident'
+		  AND trashed_at IS NULL AND archived_at IS NULL
+		  AND trashed_by IS NULL AND purge_after IS NULL
+		  AND archived_by IS NULL AND archive_ref IS NULL
+		ORDER BY last_activity_at ASC`),
+		cutoff.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("list inactive sessions: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
+}
+
+// ListPurgeableSessions returns trashed sessions whose purge_after deadline has
+// passed (§12.5 trash-grace purge). It reads ONLY agent_sessions (legacy tables
+// untouched, §13).
+func (r *SQLRepository) ListPurgeableSessions(ctx context.Context, now time.Time) ([]AgentSession, error) {
+	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
+		SELECT `+sessionColumns+`
+		FROM agent_sessions
+		WHERE trashed_at IS NOT NULL
+		  AND purge_after IS NOT NULL
+		  AND purge_after <= ?
+		ORDER BY purge_after ASC`),
+		now.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("list purgeable sessions: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
+}
+
 // --- Retention policy (§12.5, migration 026) ---
 
 func (r *SQLRepository) GetRetentionPolicy(ctx context.Context) (*RetentionPolicy, error) {

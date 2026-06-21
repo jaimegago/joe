@@ -97,6 +97,30 @@ func AgentCorePrincipal() (Principal, error) {
 	return ServicePrincipal(CoreAgentServiceName)
 }
 
+// SessionSweeperServiceName is the canonical service-account name for the
+// retention sweeper's internal boot identity (DESIGN-CHAT-SESSIONS.md §12.5,
+// ledger node B007). §12.5 requires the background sweeper to act under a
+// "boot-minted service principal so automated expirations are attributed". Like
+// CoreAgentServiceName it is the single source of truth for the name: the boot
+// path stamps the minted principal onto the sweep context, and every autonomous
+// lifecycle transition the sweeper commits names this principal in its audit row.
+//
+// Like agent:core, the sweeper is NOT an authenticated caller: it is minted
+// in-process at boot and rides the context, never the auth/service-account
+// resolver. §12.7 records it as a system actor that bypasses relationship
+// resolution for its policy-authorized transitions and is neither owner nor admin.
+const SessionSweeperServiceName = "sweeper:sessions"
+
+// SessionSweeperPrincipal returns the canonical svc:sweeper:sessions principal
+// for the retention sweeper's internal boot identity (§12.5). It is the
+// constructor counterpart to SessionSweeperServiceName and the single point
+// where that name becomes a Principal, mirroring AgentCorePrincipal: it
+// delegates to ServicePrincipal so the svc: prefix invariant holds by
+// construction.
+func SessionSweeperPrincipal() (Principal, error) {
+	return ServicePrincipal(SessionSweeperServiceName)
+}
+
 // HasReservedPrefix reports whether s begins with one of the reserved kind
 // prefixes. Used by CLI provisioning to reject grants to malformed principals.
 func HasReservedPrefix(s string) bool {

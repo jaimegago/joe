@@ -64,6 +64,16 @@ type Repository interface {
 	CreateFlow(ctx context.Context, f LoginFlow) error
 	GetFlow(ctx context.Context, state string) (*LoginFlow, error)
 	DeleteFlow(ctx context.Context, state string) error
+	// DeleteExpiredFlows drains abandoned in-flight login flows: rows whose
+	// expires_at has passed without the OIDC callback consuming them (a consumed
+	// flow is removed by DeleteFlow). It returns the number drained. This is the
+	// §12.5 "the same sweeper also drains abandoned auth_login_flows rows" path —
+	// it operates ONLY on the authentication-session table and is NEVER governed by
+	// the chat-session retention policy: a login flow is short-lived CSRF/PKCE
+	// state, not a chat session, so its drain condition is its own expires_at, not
+	// any retention knob. now is injected so the drain is deterministically
+	// testable against a controllable clock.
+	DeleteExpiredFlows(ctx context.Context, now time.Time) (int64, error)
 }
 
 // SQLRepository is the SQLite/Postgres-backed Repository.
@@ -165,4 +175,22 @@ func (r *SQLRepository) DeleteFlow(ctx context.Context, state string) error {
 		return fmt.Errorf("delete login flow: %w", err)
 	}
 	return nil
+}
+
+// DeleteExpiredFlows drains abandoned login flows past their expires_at. It
+// touches ONLY auth_login_flows — never agent_sessions or any chat-session
+// table — so the auth-session drain and the chat-session retention sweep stay
+// distinct responsibilities even though one worker runs both (§12.5).
+func (r *SQLRepository) DeleteExpiredFlows(ctx context.Context, now time.Time) (int64, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver,
+		`DELETE FROM auth_login_flows WHERE expires_at < ?`),
+		now.UTC().Format(time.RFC3339))
+	if err != nil {
+		return 0, fmt.Errorf("drain expired login flows: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
 }

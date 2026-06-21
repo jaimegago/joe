@@ -32,11 +32,22 @@ import (
 // skipped — that DeleteSession is not a chat-session mutation and is out of this
 // invariant's scope.
 //
-// One allowlisted call site is deliberately NOT seam-gated, a recorded
-// exception rather than a silent gap:
+// Some allowlisted call sites are deliberately NOT seam-gated, recorded
+// exceptions rather than silent gaps:
 //   - (*taskHandler).generateTitleAsync — the LLM auto-title path is a SYSTEM
 //     actor (no human request principal to authorize), the §12.7 sweeper-style
 //     bypass. It must never grow a user-facing mutation.
+//   - (*Sweeper).sweepInactivity / (*Sweeper).sweepTrashGrace
+//     (internal/sessionsweeper, B007b) — the retention sweeper IS the §12.7
+//     system actor by name: "The sweeper principal is a system actor that
+//     bypasses relationship resolution for its policy-authorized transitions,
+//     attributed in audit; it is neither owner nor admin." It has no request
+//     principal to authorize against; its authority is the admin-approved
+//     retention policy, and every transition it makes is attributed in audit
+//     under the boot-minted service principal. It drives the SAME B007a *Tx
+//     mutators the seam-gated handlers use — no divergent transition logic — so
+//     pinning these two sites keeps the bypass to exactly the autonomous
+//     retention path.
 //
 // The former (*sessionsHandler).delete exception (the legacy
 // /api/v1/agent-sessions team-global delete, with no ownership check) was
@@ -186,6 +197,18 @@ func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 			fnName:      "(*taskHandler).generateTitleAsync",
 			requireSeam: false,
 			reason:      "LLM auto-title is a system actor (no request principal); §12.7 sweeper-style bypass",
+		},
+		{
+			fileRel:     filepath.FromSlash("internal/sessionsweeper/sweeper.go"),
+			fnName:      "(*Sweeper).sweepInactivity",
+			requireSeam: false,
+			reason:      "retention sweeper inactivity-expiry trash — the §12.7 system actor that bypasses relationship resolution; authority is the admin-approved policy, attributed in audit under the service principal (B007b)",
+		},
+		{
+			fileRel:     filepath.FromSlash("internal/sessionsweeper/sweeper.go"),
+			fnName:      "(*Sweeper).sweepTrashGrace",
+			requireSeam: false,
+			reason:      "retention sweeper trash-grace purge — the §12.7 system actor that bypasses relationship resolution; authority is the admin-approved policy, attributed in audit under the service principal (B007b)",
 		},
 	}
 
