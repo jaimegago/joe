@@ -6,3 +6,13 @@ import '@testing-library/jest-dom/vitest';
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => undefined;
 }
+
+// jsdom does not implement the Pointer Capture API, which Radix UI primitives
+// (e.g. <Select>) call on pointer interactions. Without these, opening a Select
+// under userEvent throws "hasPointerCapture is not a function". Provide no-ops so
+// Radix-based controls are interactable in tests.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => undefined;
+  Element.prototype.releasePointerCapture = () => undefined;
+}

@@ -9,12 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { EmptyState } from '@/components/common/EmptyState';
+import { useQueryClient } from '@tanstack/react-query';
 import { useChat } from '@/hooks/useChat';
 import { useSession } from '@/hooks/useSession';
 import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
 import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSession';
-import { updateSessionTitle, linkSessionToIncident } from '@/api/chat';
+import { updateSessionTitle, linkSessionToIncident, promoteSessionToIncident } from '@/api/chat';
+import { ApiRequestError } from '@/api/client';
 import {
   Plus,
   Link as LinkIcon,
@@ -30,6 +32,7 @@ export function ChatPage() {
   const chat = useChat(routeSessionId);
   const { principal, rbacEnabled, isAdmin, zones } = useAuth();
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
   // The id of the session actually in view — either the one from the URL or
   // the one useChat lazily created on the first message of a fresh chat. The
@@ -124,6 +127,26 @@ export function ChatPage() {
       toast.success('Session linked to the active incident');
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Secondary promote-this-session-to-incident affordance (§12.10): the chat-view
+  // entry point to the one promote-in-place transition (§12.3). It promotes THIS
+  // session into the incident master. Authorized by the regime-control zone
+  // server-side; a 409 means an incident is already active.
+  const promoteIncidentMut = useMutation({
+    mutationFn: (id: string) => promoteSessionToIncident(id),
+    onSuccess: () => {
+      toast.success('Incident declared on this session');
+      void qc.invalidateQueries({ queryKey: ['regime'] });
+      if (activeSessionId) void qc.invalidateQueries({ queryKey: ['session', activeSessionId] });
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onError: (e: Error) =>
+      toast.error(
+        e instanceof ApiRequestError && e.status === 409
+          ? 'An incident is already active — resolve it before declaring another.'
+          : e.message
+      ),
   });
 
   // Inline title editing in the header (the same rename available on the
@@ -270,6 +293,18 @@ export function ChatPage() {
                     Attach to incident
                   </Button>
                 )}
+                {!incidentActive && activeSessionId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                    onClick={() => promoteIncidentMut.mutate(activeSessionId)}
+                    disabled={promoteIncidentMut.isPending}
+                  >
+                    <AlertTriangle className="mr-1 h-3 w-3" />
+                    Declare incident
+                  </Button>
+                )}
                 {/* Every session is readable by anyone in the org, so the owner
                     can always share its link. */}
                 <Button variant="outline" size="sm" onClick={copyLink}>
@@ -285,6 +320,12 @@ export function ChatPage() {
           </div>
         }
       />
+      {isLinkedToIncident && incidentActive && (
+        <IncidentParticipants
+          creator={isOwner ? (principal ?? 'you') : session?.shared_by}
+          captain={regime?.declaredByPrincipal ?? null}
+        />
+      )}
       <div className="flex-1 overflow-hidden">
         {accessPending ? (
           <ZeroZoneEmptyState principal={principal} />
@@ -306,6 +347,40 @@ export function ChatPage() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+// formatPrincipal renders a principal ("user:alice@example.com") as the bare
+// identity, with a stable fallback so a missing value never renders blank.
+function formatPrincipal(principal?: string | null): string {
+  if (!principal) return 'unknown';
+  return principal.replace(/^user:/, '');
+}
+
+// IncidentParticipants renders the §12.3 creator-vs-captain distinction for a
+// session participating in an incident. The two are SEPARATE principals by
+// design: the creator is the session's original owner (creator_principal), the
+// captain is the declarer/incident lead — they may differ and must never be
+// conflated. Creator comes from the session (the caller when they own it, else
+// shared_by); captain comes from the active regime's declarer.
+function IncidentParticipants({
+  creator,
+  captain,
+}: {
+  creator?: string | null;
+  captain: string | null;
+}) {
+  return (
+    <div className="flex items-center gap-4 border-b bg-muted/40 px-6 py-1.5 text-xs text-muted-foreground">
+      <span>
+        Created by <span className="font-medium text-foreground">{formatPrincipal(creator)}</span>
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>
+        Incident captain{' '}
+        <span className="font-medium text-foreground">{formatPrincipal(captain)}</span>
+      </span>
     </div>
   );
 }

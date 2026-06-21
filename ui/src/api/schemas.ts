@@ -225,25 +225,69 @@ export const SessionSchema = z.object({
   ended_at: z.string().optional(),
   summary: z.string().optional(),
   message_count: z.number(),
-  // title is the human-editable session label (Phase 2); visibility is
-  // 'private' | 'public' (Phase 3).
+  // title is the human-editable session label (§12.4). There is NO visibility
+  // concept — the session model is team-public (§12.1): any authenticated
+  // principal may read any session; only the owner may mutate it.
   title: z.string().optional(),
-  visibility: z.string().optional(),
-  // read_only: true when the caller is a non-owner viewing a public session
-  // (Phase 3 access matrix), false when the caller owns it. The server always
-  // sends it explicitly, so owner-only controls can gate on the positive signal
-  // (read_only === false) and fail closed if it is ever absent. Kept optional
-  // here only for backward/defensive parsing — absent is treated as "not owner".
+  // read_only: true when the caller is a non-owner reading another principal's
+  // session (the team-public read model — §12.7), false when the caller owns it.
+  // The server always sends it explicitly, so owner-only controls gate on the
+  // positive signal (read_only === false) and fail closed if it is ever absent.
+  // Kept optional here only for backward/defensive parsing — absent ⇒ "not owner".
   read_only: z.boolean().optional(),
   // linked_incident_id is the active incident this session is attached to
-  // (Phase 4 incident linkage), or absent when unlinked. Its presence drives
+  // (§12.3 participation pointer), or absent when unlinked. Its presence drives
   // the incident badge on the session row and chat header.
   linked_incident_id: z.string().optional(),
-  // shared_by is the owning principal of a public session surfaced in the
-  // "shared with you" list (GET /sessions/shared). Present only on that list;
-  // the owner's own list and per-id GET never include it. Drives the
-  // "read-only · shared by <owner>" label.
+  // shared_by is the OWNER (creator_principal) of a team-wide-list row the caller
+  // does not own — the server stamps it on the non-owned rows of GET /sessions so
+  // the UI can attribute and read-only-gate them without a second request. It is
+  // NOT a sharing grant (there is no sharing in the team-public model); it is just
+  // "owned by <principal>". Absent on the caller's own rows.
   shared_by: z.string().optional(),
+  // creator_principal is the owning principal, surfaced on the ADMIN cross-tenant
+  // projection (GET /api/v1/admin/sessions) so the governance console can show
+  // ownership, filter by principal, and render creator distinctly from the
+  // incident captain (§12.3). Absent on the per-user projections.
+  creator_principal: z.string().optional(),
+  // trashed_at / archived_at are the §12.4 lifecycle timestamps. Surfaced on the
+  // admin cross-tenant list (state rendering/filtering) and on trash rows.
+  trashed_at: z.string().optional(),
+  archived_at: z.string().optional(),
+  // purge_after is the §12.5 trash-grace deadline carried on a trashed row; the
+  // trash views subtract it from the wall clock to show remaining time before
+  // automatic purge. Absent on active rows.
+  purge_after: z.string().optional(),
+});
+
+// Retention policy (§12.5) — GET/PUT /api/v1/admin/sessions/retention-policy.
+// inactivity_days is null when OFF (the default — nothing auto-expires until an
+// admin opts in); inactivity_window mirrors it as "off" | "<n>d" for display.
+// terminal_action selects the sweeper's expiry action.
+export const RetentionPolicySchema = z.object({
+  inactivity_days: z.number().nullable(),
+  inactivity_window: z.string(),
+  trash_grace_days: z.number(),
+  terminal_action: z.enum(['trash_then_purge', 'archive']),
+  updated_at: z.string().optional(),
+  updated_by: z.string().optional(),
+});
+
+// Purge manifest (§12.5 manifest-with-hard-stop) — the counts a confirmed admin
+// purge will irreversibly destroy. Returned both in the dry-run preview (with
+// requires_confirm) and echoed on the confirmed purge.
+export const PurgeManifestSchema = z.object({
+  messages_destroyed: z.number(),
+  linked_children_severed: z.number(),
+});
+
+// PurgePreviewSchema is the hard-stop response: confirm=false returns the
+// manifest and destroys nothing; the UI shows it, then re-POSTs with confirm.
+export const PurgePreviewSchema = z.object({
+  status: z.string(),
+  requires_confirm: z.boolean().optional(),
+  manifest: PurgeManifestSchema,
+  message: z.string().optional(),
 });
 
 // Current user (Stream G phase G5 — GET /api/v1/me)

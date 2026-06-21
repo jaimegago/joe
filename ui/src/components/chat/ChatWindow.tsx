@@ -7,8 +7,9 @@ interface ChatWindowProps {
   isSending: boolean;
   onSend: (message: string) => void;
   // readOnly renders the transcript without a composer — used for a non-owner
-  // viewing a public (shared) session, where sending is not permitted
-  // (DESIGN-CHAT-SESSIONS.md §10 access matrix).
+  // reading another principal's session (the team-public read model: any
+  // authenticated principal may read any session, only the owner may write —
+  // DESIGN-CHAT-SESSIONS.md §12.7).
   readOnly?: boolean;
 }
 

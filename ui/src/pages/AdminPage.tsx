@@ -18,6 +18,7 @@ import { AdminForm } from '@/components/admin/AdminForm';
 import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
 import { ReadPromotionsTable } from '@/components/admin/ReadPromotionsTable';
 import { SkillsTable } from '@/components/admin/SkillsTable';
+import { AdminSessionsPanel } from '@/components/admin/AdminSessionsPanel';
 import { useZones, useUnassigned } from '@/hooks/useZones';
 import { useReadPromotions } from '@/hooks/useReadPromotions';
 import { useSkills } from '@/hooks/useSkills';
@@ -44,8 +45,12 @@ export function AdminPage() {
   const adminsQ = useAdmins();
 
   const createZoneMut = useMutation({
-    mutationFn: (data: { id: string; name: string; description: string; allowed_actions: string[] }) =>
-      createZone(data),
+    mutationFn: (data: {
+      id: string;
+      name: string;
+      description: string;
+      allowed_actions: string[];
+    }) => createZone(data),
     onSuccess: () => {
       toast.success('Zone created');
       setShowCreateZone(false);
@@ -129,17 +134,24 @@ export function AdminPage() {
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="policies">Policies</TabsTrigger>
             <TabsTrigger value="autonomous-reads">Autonomous Reads</TabsTrigger>
+            <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="skills">Skills</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
           </TabsList>
 
           <TabsContent value="zones">
             <div className="mb-3 flex justify-end">
-              <Button size="sm" onClick={() => setShowCreateZone(true)}>+ Create Zone</Button>
+              <Button size="sm" onClick={() => setShowCreateZone(true)}>
+                + Create Zone
+              </Button>
             </div>
             <UnassignedComponents unassigned={unassigned} zones={zones} />
             {zones.length === 0 ? (
-              <EmptyState icon={ShieldCheck} title="No zones" description="Create a security zone to get started." />
+              <EmptyState
+                icon={ShieldCheck}
+                title="No zones"
+                description="Create a security zone to get started."
+              />
             ) : (
               <ZonesTable zones={zones} />
             )}
@@ -156,10 +168,16 @@ export function AdminPage() {
 
           <TabsContent value="policies">
             <div className="mb-3 flex justify-end">
-              <Button size="sm" onClick={() => setShowCreatePolicy(true)}>+ Create Policy</Button>
+              <Button size="sm" onClick={() => setShowCreatePolicy(true)}>
+                + Create Policy
+              </Button>
             </div>
             {policies.length === 0 ? (
-              <EmptyState icon={ShieldCheck} title="No policies" description="Create an RBAC policy to control access." />
+              <EmptyState
+                icon={ShieldCheck}
+                title="No policies"
+                description="Create an RBAC policy to control access."
+              />
             ) : (
               <PoliciesTable policies={policies} />
             )}
@@ -171,6 +189,10 @@ export function AdminPage() {
             ) : (
               <ReadPromotionsTable promotions={readPromotionsQ.data ?? []} />
             )}
+          </TabsContent>
+
+          <TabsContent value="sessions">
+            <AdminSessionsPanel />
           </TabsContent>
 
           <TabsContent value="skills">
@@ -198,10 +220,16 @@ export function AdminPage() {
 
           <TabsContent value="admins">
             <div className="mb-3 flex justify-end">
-              <Button size="sm" onClick={() => setShowAddAdmin(true)}>+ Add Admin</Button>
+              <Button size="sm" onClick={() => setShowAddAdmin(true)}>
+                + Add Admin
+              </Button>
             </div>
             {admins.length === 0 ? (
-              <EmptyState icon={ShieldCheck} title="No admins" description="Add an admin to manage Joe." />
+              <EmptyState
+                icon={ShieldCheck}
+                title="No admins"
+                description="Add an admin to manage Joe."
+              />
             ) : (
               <AdminsTable admins={admins} />
             )}

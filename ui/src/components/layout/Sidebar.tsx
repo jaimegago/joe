@@ -1,9 +1,20 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Database, MessageSquare, MessagesSquare, ShieldCheck, Users, KeyRound, Cpu, LogOut } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Database,
+  MessageSquare,
+  MessagesSquare,
+  ShieldCheck,
+  Users,
+  KeyRound,
+  Cpu,
+  LogOut,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuth } from '@/auth/AuthContext';
 import { Button } from '@/components/ui/button';
+import { DeclareIncidentButton } from '@/components/incident/DeclareIncidentButton';
 
 interface NavItem {
   to: string;
@@ -62,6 +73,13 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Global, always-reachable declare-incident control (§12.10). Routes to the
+          sessions area's promote-or-start-new disambiguation; hidden while an
+          incident is already active. */}
+      <div className="px-3 pb-2">
+        <DeclareIncidentButton />
+      </div>
 
       {/* Logout is only meaningful when RBAC is enforced; in permit-all local
           dev there is no credential to drop, so the control stays hidden. */}

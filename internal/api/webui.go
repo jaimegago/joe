@@ -234,6 +234,13 @@ type webUISession struct {
 	// them unset.
 	TrashedAt  string `json:"trashed_at,omitempty"`
 	ArchivedAt string `json:"archived_at,omitempty"`
+	// PurgeAfter is the §12.5 trash-grace deadline (now + trash-grace at
+	// soft-delete time); the UI trash view subtracts it from the wall clock to show
+	// the remaining time before automatic purge. Set only on a trashed row (the
+	// underlying column is null otherwise), so omitempty keeps it out of every
+	// active-session projection — a read-only projection of an existing column, no
+	// lifecycle behavior attached.
+	PurgeAfter string `json:"purge_after,omitempty"`
 }
 
 // webUIMessage is the Web UI representation of a chat message — the legacy flat
@@ -258,6 +265,12 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 	}
 	if s.LinkedIncidentID != nil {
 		out.LinkedIncidentID = *s.LinkedIncidentID
+	}
+	// purge_after is surfaced whenever it is set (a trashed row under the
+	// trash-then-purge policy) so both the per-user and admin trash views can
+	// render the remaining time before purge. An active row leaves it nil/omitted.
+	if s.PurgeAfter != nil {
+		out.PurgeAfter = s.PurgeAfter.Format(time.RFC3339)
 	}
 	if s.Title != nil {
 		out.Title = *s.Title
