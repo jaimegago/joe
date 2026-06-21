@@ -102,6 +102,39 @@ func newPerUserSessionAuthz(services *core.Services) *sessionauthz.Seam {
 	)
 }
 
+// newAdminSessionAuthz builds the ADMIN seam instance (B006): the SAME ownership
+// resolver, but the REAL D-0011 admin checker (rbacAdminChecker). It is the ONLY
+// place a real admin relationship may be resolved over a session. The
+// /api/v1/admin/sessions governance routes authorize through this instance (via
+// (*Server).sessionAccessAdmin) AFTER the requireAdmin prefix gate, so
+// cross-tenant governance requires BOTH (§12.8 defense-in-depth).
+//
+// DELIBERATE THREE-WAY ASYMMETRY — do NOT "fix" this into false consistency:
+//
+//   - The PER-USER instance (newPerUserSessionAuthz) uses alwaysFalseAdminChecker:
+//     an admin can NEVER resolve the admin relationship on a per-user route, so
+//     an admin cannot owner-mutate a session it does not own through
+//     /api/v1/sessions. Suppression is structural (a distinct checker), RBAC
+//     state notwithstanding.
+//   - The ADMIN instance (here) uses rbacAdminChecker: when RBAC is ENABLED it
+//     resolves the genuine dynamic admin; when RBAC is DISABLED it resolves
+//     (false, nil) — NO admin. So with RBAC off, the admin SEAM denies the
+//     admin-govern actions.
+//   - The requireAdmin ROUTE gate (admingate.go) does the OPPOSITE under RBAC-off:
+//     it PERMITS (auth-disabled permit convention, keeping local/dev unblocked).
+//
+// The net effect under RBAC-off is the SAFE intersection: requireAdmin permits at
+// the prefix, but the admin seam denies the govern action, so cross-tenant
+// governance still cannot fire without a real admin — exactly the BOTH-conditions
+// posture §12.8 wants. The two checkers are intentionally NOT reconciled: the gate
+// keeps dev usable, the seam keeps governance honest.
+func newAdminSessionAuthz(services *core.Services) *sessionauthz.Seam {
+	return sessionauthz.New(
+		sessionModelResolver{services: services},
+		rbacAdminChecker{services: services},
+	)
+}
+
 // sessionAccess is the HTTP-layer entry to the §12.7 seam. It normalizes the
 // rbac.Unknown sentinel to "" (the seam's single unauthenticated marker) and
 // delegates the one decision. This is the ONLY function the per-user
@@ -113,4 +146,19 @@ func (s *Server) sessionAccess(ctx context.Context, principal rbac.Principal, se
 		p = ""
 	}
 	return s.sessionAuthz.SessionAccess(ctx, p, sessionID, action)
+}
+
+// sessionAccessAdmin is the HTTP-layer entry to the ADMIN seam instance (B006).
+// It is identical in shape to sessionAccess but delegates to s.sessionAuthzAdmin
+// (rbacAdminChecker), the only seam instance that can resolve a real admin
+// relationship. The /api/v1/admin/sessions govern handlers call this AFTER the
+// requireAdmin gate so a govern action requires BOTH the admin prefix AND a
+// resolved admin relationship (§12.8). It is never reachable from a per-user
+// route — those hold only s.sessionAuthz.
+func (s *Server) sessionAccessAdmin(ctx context.Context, principal rbac.Principal, sessionID string, action sessionauthz.Action) (sessionauthz.Decision, error) {
+	p := string(principal)
+	if principal == rbac.Unknown {
+		p = ""
+	}
+	return s.sessionAuthzAdmin.SessionAccess(ctx, p, sessionID, action)
 }

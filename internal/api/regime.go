@@ -60,6 +60,30 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	// promote from the path. Authorization is the regime-control zone — NOT the
 	// session seam (§12.7 keeps the regime state machine out of the seam
 	// vocabulary). Both entry paths resolve to one promote (§12.3, §12.10).
+	//
+	// DUAL-DECLARE DISPOSITION (B006). §12 specifies ONE promote-in-place
+	// TRANSITION reached by TWO UI ENTRY POINTS (§12.3 "both UI entry paths
+	// resolve to a promote"; §12.10 "both resolve to the promote-in-place
+	// transition"); §12.8's session API contract names a SINGLE promote route
+	// (`promote-incident`). It does NOT name `/regime/declare`, and it does NOT
+	// mandate two distinct backend routes — so this is a single-backend-surface
+	// design, not a two-route one. That single surface ALREADY EXISTS below: BOTH
+	// handlers funnel through the one authorizeDeclare → promoteInPlace →
+	// DeclareIncidentRegime call site, share the regime-control-zone authz, and
+	// honour the B004 session_id-required contract; neither routes through the
+	// session seam.
+	//
+	// CANONICAL vs ALIAS. `POST /sessions/{id}/promote-incident` is the CANONICAL
+	// per-user promote surface (the §12.8-named route; both UI entry points target
+	// it — the chat-view affordance directly, the global declare control after its
+	// promote-or-start-new disambiguation, where start-new is
+	// create-empty-then-promote). `POST /regime/declare` is retained as the
+	// control-plane / CLI ALIAS of the IDENTICAL backend surface: it is the reused
+	// regime control plane (§12.10 "reused, not rebuilt") and the transport the
+	// `joe incident declare` CLI + internal/client use (body-carried session_id
+	// instead of a path id). It is NOT removed — removing it would break the CLI
+	// and rebuild the control plane §12 says to reuse. The consolidation is at the
+	// SURFACE: one transition, one call site, two thin transports.
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/promote-incident", prefix), h.promoteSessionIncident)
 }
 
