@@ -32,9 +32,10 @@ func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 	usage := func() {
 		fmt.Fprintln(stderr, "Usage: joe incident <status|declare|resolve|list> [flags]")
 		fmt.Fprintln(stderr, "  status                      Show whether an incident regime is active (and who declared it).")
-		fmt.Fprintln(stderr, "  declare [--kind <kind>] [--reason <reason>]")
-		fmt.Fprintln(stderr, "                              Declare an incident regime. --kind defaults to \"human\"")
-		fmt.Fprintln(stderr, "                              (\"joe\" is an inert Phase 1 seam the server refuses).")
+		fmt.Fprintln(stderr, "  declare --session <id> [--kind <kind>] [--reason <reason>]")
+		fmt.Fprintln(stderr, "                              Declare an incident regime by promoting the named session")
+		fmt.Fprintln(stderr, "                              in place. --kind defaults to \"human\" (\"joe\" is an inert")
+		fmt.Fprintln(stderr, "                              seam the server refuses).")
 		fmt.Fprintln(stderr, "  resolve [--reason <reason>] Resolve the active incident regime back to normal.")
 		fmt.Fprintln(stderr, "  list                        (Unsupported in v1) Incident history lives in the audit log.")
 	}
@@ -106,13 +107,20 @@ func runIncidentStatus(ctx context.Context, args []string, stdout, stderr io.Wri
 func runIncidentDeclare(ctx context.Context, args []string, stdout, stderr io.Writer, c *client.Client) int {
 	fs := flag.NewFlagSet("joe incident declare", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	session := fs.String("session", "", "id of the existing session to promote in place to the incident master (required)")
 	kind := fs.String("kind", "human", "regime declared_kind (\"human\"; \"joe\" is an inert Phase 1 seam)")
 	reason := fs.String("reason", "", "optional free-text justification for the declaration")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	// Declaration is promote-in-place (§12.3): it promotes an existing
+	// session rather than minting a fresh one, so a session id is required.
+	if *session == "" {
+		fmt.Fprintln(stderr, "Error: --session is required (incident declaration promotes an existing session in place).")
+		return 2
+	}
 
-	res, err := c.DeclareIncident(ctx, *kind, *reason)
+	res, err := c.DeclareIncident(ctx, *session, *kind, *reason)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1

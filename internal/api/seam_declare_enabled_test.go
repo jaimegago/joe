@@ -20,11 +20,13 @@ import (
 // so future enablement of the seam in production is a one-line change.
 func TestSeam_AutonomousDeclare_Enabled(t *testing.T) {
 	ts, sessRepo, rbacRepo := newRegimeServer(t)
-	_ = sessRepo
 	grantRegimeControl(t, rbacRepo, "alice")
 
+	// Promote-in-place (§12.3): declaration designates an existing session,
+	// so provide one even on the seam-enabled joe path.
+	sid := createDefaultSession(t, sessRepo, "alice")
 	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
-		map[string]any{"declared_kind": "joe"})
+		map[string]any{"declared_kind": "joe", "session_id": sid})
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusForbidden {

@@ -145,23 +145,32 @@ type Repository interface {
 
 	// Atomic regime transitions (§R / §6-A R7)
 	//
-	// DeclareIncidentRegime atomically: creates an incident-type session
-	// in state 'declared', sets system_regime to incident with the given
-	// declared_kind, and attaches the declaring principal as captain
-	// (R-CAP1). All three statements run inside a single DB transaction;
-	// if any fails, the entire operation rolls back — proven by the
-	// single-tx rollback test in internal/api/regime_test.go (which uses
-	// the unexported test-hook variant).
+	// DeclareIncidentRegime atomically PROMOTES an existing 'default'
+	// session IN PLACE into the incident master (§12.3) — it does NOT mint
+	// a fresh incident row. In one transaction it flips the designated
+	// session's type to 'incident', sets incident_state to 'declared',
+	// clears its linked_incident_id, sets system_regime to incident with the
+	// given declared_kind, and attaches the declaring principal as captain
+	// (R-CAP1). All statements run inside a single DB transaction; if any
+	// fails, the entire operation rolls back — proven by the single-tx
+	// rollback test in internal/api/regime_test.go (which uses the
+	// test-hook variant).
 	//
-	// Phase 1 callers: only the human-declare handler in
-	// internal/api/regime.go. Joe-autonomous declare is a Change 12 inert
-	// seam that bypasses this method (the seam returns 403 before any
-	// call). The AST invariant test asserts the production-code call count.
+	// The promoted session keeps its original id and its original
+	// creator_principal, so the creator (owner) and the captain (declarer)
+	// MAY DIFFER (§12.3 consequence, recorded and accepted).
+	//
+	// Production callers: only the human-declare handler in
+	// internal/api/regime.go. Joe-autonomous declare is an inert seam that
+	// bypasses this method (the seam returns 403 before any call).
 	//
 	// Preconditions:
-	//   - system_regime.mode must currently be 'normal'.
-	// Returns ErrRegimeAlreadyIncident if not.
-	DeclareIncidentRegime(ctx context.Context, principal string, declaredKind RegimeKind) (sessionID, captainID string, err error)
+	//   - system_regime.mode must currently be 'normal' (the "no second
+	//     concurrent incident" guard). Returns ErrRegimeAlreadyIncident if not.
+	//   - sessionID must name an existing session (ErrNotFound otherwise)
+	//     that is not already an incident (ErrSessionAlreadyIncident otherwise).
+	// Returns the promoted session id (== sessionID) and the new captain id.
+	DeclareIncidentRegime(ctx context.Context, principal, sessionID string, declaredKind RegimeKind) (promotedID, captainID string, err error)
 
 	// ResolveIncidentRegime atomically: transitions the active incident
 	// session from 'believed_mitigated' to 'resolved', and clears
@@ -185,10 +194,11 @@ type Repository interface {
 
 // Errors returned by atomic regime transitions.
 var (
-	ErrRegimeAlreadyIncident = errors.New("sessionmodel: regime is already incident")
-	ErrRegimeNotIncident     = errors.New("sessionmodel: regime is not incident")
-	ErrIncidentNotMitigated  = errors.New("sessionmodel: active incident is not in 'believed_mitigated'")
-	ErrNoActiveIncident      = errors.New("sessionmodel: no active incident session found")
+	ErrRegimeAlreadyIncident  = errors.New("sessionmodel: regime is already incident")
+	ErrRegimeNotIncident      = errors.New("sessionmodel: regime is not incident")
+	ErrIncidentNotMitigated   = errors.New("sessionmodel: active incident is not in 'believed_mitigated'")
+	ErrNoActiveIncident       = errors.New("sessionmodel: no active incident session found")
+	ErrSessionAlreadyIncident = errors.New("sessionmodel: session is already an incident — cannot promote twice")
 )
 
 // Errors returned by captain operations.

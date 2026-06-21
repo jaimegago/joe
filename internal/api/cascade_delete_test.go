@@ -171,11 +171,8 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 	ts, storeHandle, sessRepo, runRepo, findingsRepo, warningsRepo := newCascadeServer(t)
 	ctx := context.Background()
 
-	// Declare an incident (alice = captain by R-CAP1).
-	incidentID, _, err := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare incident: %v", err)
-	}
+	// Declare an incident (alice = captain by R-CAP1; promote-in-place §12.3).
+	incidentID := declareIncident(t, sessRepo, "alice")
 	// Two linked investigations (linked_incident_id = incidentID).
 	j1ID := uuid.NewString()
 	j2ID := uuid.NewString()
@@ -334,10 +331,7 @@ func TestCascadeDelete_ResolveDoesNotCascade(t *testing.T) {
 	_, _, sessRepo, _, _, _ := newCascadeServer(t)
 	ctx := context.Background()
 
-	incidentID, _, err := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
-	}
+	incidentID := declareIncident(t, sessRepo, "alice")
 	// Two linked investigations.
 	j1 := uuid.NewString()
 	j2 := uuid.NewString()

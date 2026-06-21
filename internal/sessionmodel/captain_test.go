@@ -53,14 +53,21 @@ func newCaptainEnv(t *testing.T, thresholdSeconds int) *captainTestEnv {
 	}
 }
 
-// declareWithCaptain creates an incident session via DeclareIncidentRegime
-// (Change 5's atomic path) and returns the session ID + initial captain
-// principal. Used by every transfer test that needs a starting state.
+// declareWithCaptain creates a 'default' session owned by principal and then
+// PROMOTES it in place via DeclareIncidentRegime (§12.3), returning the
+// session id. Declaration no longer mints a fresh row, so the starting
+// 'default' session is created first. Used by every transfer test that needs
+// a starting state.
 func (e *captainTestEnv) declareWithCaptain(t *testing.T, principal string) string {
 	t.Helper()
-	sessionID, _, err := e.sess.DeclareIncidentRegime(e.ctx, principal, sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
+	sessionID := uuid.NewString()
+	if _, err := e.sess.CreateSession(e.ctx, sessionmodel.AgentSession{
+		ID: sessionID, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := e.sess.DeclareIncidentRegime(e.ctx, principal, sessionID, sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("declare (promote): %v", err)
 	}
 	return sessionID
 }

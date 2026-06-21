@@ -75,9 +75,16 @@ func newGateEnv(t *testing.T) *gateEnv {
 
 func (e *gateEnv) declareWithCaptain(t *testing.T, principal string) string {
 	t.Helper()
-	id, _, err := e.sess.DeclareIncidentRegime(e.ctx, principal, sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
+	// Promote-in-place (§12.3): create the 'default' session first, then
+	// promote it — declaration no longer mints a fresh incident row.
+	id := uuid.NewString()
+	if _, err := e.sess.CreateSession(e.ctx, sessionmodel.AgentSession{
+		ID: id, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := e.sess.DeclareIncidentRegime(e.ctx, principal, id, sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("declare (promote): %v", err)
 	}
 	return id
 }
@@ -558,8 +565,15 @@ func TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance(t *testing.T) {
 	// Declare incident under alice (she has regime-control granted
 	// implicitly only if we wire it — we don't; we drive the regime
 	// transition directly through the repo so the test exercises the
-	// invariance under arbitrary regime states).
-	if _, _, err := e.sess.DeclareIncidentRegime(e.ctx, "alice", sessionmodel.RegimeKindHuman); err != nil {
+	// invariance under arbitrary regime states). Promote-in-place (§12.3):
+	// create the 'default' session first, then promote it.
+	incSess := uuid.NewString()
+	if _, err := e.sess.CreateSession(e.ctx, sessionmodel.AgentSession{
+		ID: incSess, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := e.sess.DeclareIncidentRegime(e.ctx, "alice", incSess, sessionmodel.RegimeKindHuman); err != nil {
 		t.Fatalf("declare incident: %v", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/api"
@@ -19,6 +20,21 @@ import (
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/store"
 )
+
+// createDefaultSession inserts a 'default' session owned by creator and returns
+// its id. Promote-in-place (§12.3) means incident declaration takes an existing
+// session, so these tests create one first. creator may differ from the
+// principal that later declares the incident (proving creator ≠ captain).
+func createDefaultSession(t *testing.T, repo sessionmodel.Repository, creator string) string {
+	t.Helper()
+	sid := uuid.NewString()
+	if _, err := repo.CreateSession(context.Background(), sessionmodel.AgentSession{
+		ID: sid, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: creator,
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	return sid
+}
 
 // testPrincipalProvider reads X-Test-Principal from the request and uses it
 // as the principal. Lets a single test server vary the caller per request.
@@ -112,7 +128,11 @@ func TestRegimeDeclare_HappyPath(t *testing.T) {
 	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
 
-	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	// Promote-in-place (§12.3): declaration promotes an existing 'default'
+	// session designated by session_id.
+	sid := createDefaultSession(t, sessRepo, "alice")
+	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", resp.StatusCode)
 	}
@@ -126,6 +146,10 @@ func TestRegimeDeclare_HappyPath(t *testing.T) {
 
 	if body.SessionID == "" || body.CaptainID == "" {
 		t.Fatalf("declare returned empty ids: %+v", body)
+	}
+	// Promote-in-place: the returned session id is the SAME row we created.
+	if body.SessionID != sid {
+		t.Errorf("declare returned session_id = %q, want the promoted session %q (mint-fresh regression)", body.SessionID, sid)
 	}
 	if body.DeclaredBy != "alice" {
 		t.Errorf("declared_by = %q, want alice", body.DeclaredBy)
@@ -186,28 +210,44 @@ func TestRegimeDeclare_Unauthorized(t *testing.T) {
 }
 
 func TestRegimeDeclare_AlreadyIncident(t *testing.T) {
-	ts, _, rbacRepo := newRegimeServer(t)
+	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
 
-	resp1 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	// First declare promotes session A. Second declare designates a fresh,
+	// eligible session B — it must still be refused with 409 because the
+	// global regime is already incident (the "no second concurrent incident"
+	// rule, §12.3), NOT because session B is ineligible.
+	sidA := createDefaultSession(t, sessRepo, "alice")
+	resp1 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sidA})
 	if resp1.StatusCode != http.StatusCreated {
 		t.Fatalf("first declare: %d", resp1.StatusCode)
 	}
 	resp1.Body.Close()
 
-	resp2 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	sidB := createDefaultSession(t, sessRepo, "alice")
+	resp2 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sidB})
 	if resp2.StatusCode != http.StatusConflict {
 		t.Fatalf("second declare status = %d, want 409", resp2.StatusCode)
 	}
 	resp2.Body.Close()
+
+	// Session B was untouched — it must still be a 'default' session.
+	sessB, _ := sessRepo.GetSession(context.Background(), sidB)
+	if sessB == nil || sessB.Type != sessionmodel.SessionTypeDefault {
+		t.Errorf("session B = %+v, want untouched default after refused second declare", sessB)
+	}
 }
 
 func TestRegimeResolve_HappyPath(t *testing.T) {
 	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
 
-	// Declare first.
-	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	// Declare first (promote-in-place, §12.3).
+	sid := createDefaultSession(t, sessRepo, "alice")
+	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
 	var declareBody struct {
 		SessionID string `json:"session_id"`
 	}
@@ -245,10 +285,12 @@ func TestRegimeResolve_HappyPath(t *testing.T) {
 }
 
 func TestRegimeResolve_Unauthorized(t *testing.T) {
-	ts, _, rbacRepo := newRegimeServer(t)
+	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
-	// Declare so there's an incident to resolve.
-	doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil).Body.Close()
+	// Declare so there's an incident to resolve (promote-in-place, §12.3).
+	sid := createDefaultSession(t, sessRepo, "alice")
+	doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid}).Body.Close()
 
 	// bob has no policy.
 	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/resolve", "bob", nil)
@@ -270,9 +312,11 @@ func TestRegimeResolve_NotIncident(t *testing.T) {
 }
 
 func TestRegimeResolve_NotMitigated(t *testing.T) {
-	ts, _, rbacRepo := newRegimeServer(t)
+	ts, sessRepo, rbacRepo := newRegimeServer(t)
 	grantRegimeControl(t, rbacRepo, "alice")
-	doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil).Body.Close()
+	sid := createDefaultSession(t, sessRepo, "alice")
+	doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid}).Body.Close()
 	// Session is in 'declared' — not yet 'believed_mitigated'.
 
 	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/resolve", "alice", nil)
@@ -288,11 +332,13 @@ func forcedRollback(*sql.Tx) error { return errForced }
 
 var errForced = errors.New("forced rollback for single-tx test")
 
-// TestRegimeDeclare_SingleTransactionRollback exercises the explicit
-// acceptance criterion from Change 5: forcing a rollback after the captain
-// attach must also roll back the regime row and the session row. Uses the
-// exported DeclareIncidentRegimeWithHook test seam on *SQLRepository.
+// TestRegimeDeclare_SingleTransactionRollback proves the promote-in-place
+// transition is atomic: forcing a rollback after the captain attach must also
+// roll back the session promotion and the regime flip, leaving NO half-applied
+// state (no promoted-but-no-captain, no regime-flipped-but-not-promoted). Uses
+// the DeclareIncidentRegimeWithHook test seam on *SQLRepository.
 func TestRegimeDeclare_SingleTransactionRollback(t *testing.T) {
+	ctx := context.Background()
 	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -303,27 +349,208 @@ func TestRegimeDeclare_SingleTransactionRollback(t *testing.T) {
 	defer s.Close()
 	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 
-	pre, _ := repo.GetRegime(context.Background())
+	pre, _ := repo.GetRegime(ctx)
 	if pre.Mode != sessionmodel.RegimeModeNormal {
 		t.Fatalf("precondition: regime = %q, want normal", pre.Mode)
 	}
 
-	_, _, err = repo.DeclareIncidentRegimeWithHook(context.Background(),
-		"alice", sessionmodel.RegimeKindHuman, forcedRollback)
+	// An existing 'default' session is the promote target.
+	sid := uuid.NewString()
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: sid, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+
+	_, _, err = repo.DeclareIncidentRegimeWithHook(ctx,
+		"alice", sid, sessionmodel.RegimeKindHuman, forcedRollback)
 	if !errors.Is(err, errForced) {
 		t.Fatalf("expected forced rollback error, got %v", err)
 	}
 
-	// Regime must still be normal.
-	post, _ := repo.GetRegime(context.Background())
+	// Regime must still be normal (regime flip rolled back).
+	post, _ := repo.GetRegime(ctx)
 	if post.Mode != sessionmodel.RegimeModeNormal {
 		t.Errorf("post-rollback regime = %q, want normal — single-tx property failed", post.Mode)
 	}
-	// And no session.
-	all, _ := repo.ListSessionsByType(context.Background(), sessionmodel.SessionTypeIncident)
-	if len(all) != 0 {
-		t.Errorf("post-rollback incident sessions = %d, want 0 — session row leaked", len(all))
+	// The session must still be 'default' (promotion rolled back), and there
+	// must be NO incident session at all.
+	sess, _ := repo.GetSession(ctx, sid)
+	if sess == nil || sess.Type != sessionmodel.SessionTypeDefault || sess.IncidentState != nil {
+		t.Errorf("post-rollback session = %+v, want untouched 'default' — promotion leaked", sess)
 	}
+	all, _ := repo.ListSessionsByType(ctx, sessionmodel.SessionTypeIncident)
+	if len(all) != 0 {
+		t.Errorf("post-rollback incident sessions = %d, want 0 — session promoted despite rollback", len(all))
+	}
+	// And no captain was left attached.
+	if _, ok, _ := repo.CurrentCaptainPrincipal(ctx, sid); ok {
+		t.Errorf("post-rollback captain attached — captain leaked past the rolled-back tx")
+	}
+}
+
+// TestRegimeDeclare_PromotesInPlace is the headline B004 acceptance: declaring
+// an incident on an existing 'default' session PROMOTES that same session — same
+// id — to an incident in state 'declared', rather than minting a fresh row. It
+// also proves the promoted session keeps its ORIGINAL creator while the captain
+// is the DECLARER, so creator and captain may differ (§12.3).
+func TestRegimeDeclare_PromotesInPlace(t *testing.T) {
+	ctx := context.Background()
+	ts, sessRepo, rbacRepo := newRegimeServer(t)
+	grantRegimeControl(t, rbacRepo, "alice")
+
+	// bob owns the pre-existing default session; alice declares the incident.
+	sid := createDefaultSession(t, sessRepo, "bob")
+
+	before, _ := sessRepo.ListSessions(ctx)
+	countBefore := len(before)
+
+	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", resp.StatusCode)
+	}
+	var body struct {
+		SessionID string `json:"session_id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+
+	// No new row was minted — the count is unchanged and the promoted id is sid.
+	after, _ := sessRepo.ListSessions(ctx)
+	if len(after) != countBefore {
+		t.Errorf("session count = %d, want %d — a fresh row was minted (mint-fresh regression)", len(after), countBefore)
+	}
+	if body.SessionID != sid {
+		t.Errorf("declare promoted session_id = %q, want the original %q", body.SessionID, sid)
+	}
+
+	// The SAME session is now the incident in state 'declared'.
+	sess, _ := sessRepo.GetSession(ctx, sid)
+	if sess == nil {
+		t.Fatalf("promoted session %q missing", sid)
+	}
+	if sess.Type != sessionmodel.SessionTypeIncident {
+		t.Errorf("type = %q, want incident", sess.Type)
+	}
+	if sess.IncidentState == nil || *sess.IncidentState != sessionmodel.IncidentStateDeclared {
+		t.Errorf("incident_state = %+v, want declared", sess.IncidentState)
+	}
+	// Creator is PRESERVED (bob), not overwritten by the declarer.
+	if sess.CreatorPrincipal != "bob" {
+		t.Errorf("creator_principal = %q, want bob (preserved across promote)", sess.CreatorPrincipal)
+	}
+	// Captain is the DECLARER (alice) — creator ≠ captain.
+	cap, _ := sessRepo.GetActiveCaptain(ctx, sid)
+	if cap == nil || cap.Principal != "alice" {
+		t.Fatalf("captain = %+v, want principal alice (the declarer)", cap)
+	}
+	if cap.Principal == sess.CreatorPrincipal {
+		t.Errorf("captain (%q) equals creator (%q) — the test must prove they may differ",
+			cap.Principal, sess.CreatorPrincipal)
+	}
+}
+
+// TestRegimeDeclare_ClearsLinkedIncidentOnPromote proves a session that was
+// participating in a prior (resolved) incident sheds its linked_incident_id
+// pointer when it is itself promoted — required by the migration-025 CHECK
+// (linked_incident_id IS NULL OR type <> 'incident').
+func TestRegimeDeclare_ClearsLinkedIncidentOnPromote(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	defer s.Close()
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+
+	// anchor is any existing session the FK can point at; target carries a
+	// linked_incident_id to it and is then promoted.
+	anchor := createDefaultSession(t, repo, "carol")
+	targetID := uuid.NewString()
+	link := anchor
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: targetID, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "carol",
+		LinkedIncidentID: &link,
+	}); err != nil {
+		t.Fatalf("create linked session: %v", err)
+	}
+
+	if _, _, err := repo.DeclareIncidentRegime(ctx, "alice", targetID, sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("promote linked session: %v", err)
+	}
+
+	sess, _ := repo.GetSession(ctx, targetID)
+	if sess == nil || sess.Type != sessionmodel.SessionTypeIncident {
+		t.Fatalf("promoted session = %+v, want incident", sess)
+	}
+	if sess.LinkedIncidentID != nil {
+		t.Errorf("linked_incident_id = %v, want nil (cleared on promote, CHECK requires it)", *sess.LinkedIncidentID)
+	}
+}
+
+// TestRegimeDeclare_RejectsIneligibleSession proves the promote-in-place
+// preconditions: a missing session is rejected with ErrNotFound, and an
+// already-incident session is rejected with ErrSessionAlreadyIncident rather
+// than double-promoted.
+func TestRegimeDeclare_RejectsIneligibleSession(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	defer s.Close()
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+
+	// (a) Missing session → ErrNotFound.
+	if _, _, err := repo.DeclareIncidentRegime(ctx, "alice", "does-not-exist", sessionmodel.RegimeKindHuman); !errors.Is(err, sessionmodel.ErrNotFound) {
+		t.Errorf("declare on missing session: err = %v, want ErrNotFound", err)
+	}
+
+	// (b) Promote a session, resolve the regime so a second declare can pass
+	// the regime-normal precondition, then try to promote the SAME (now
+	// incident/resolved) session again → ErrSessionAlreadyIncident.
+	sid := createDefaultSession(t, repo, "alice")
+	if _, _, err := repo.DeclareIncidentRegime(ctx, "alice", sid, sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("first promote: %v", err)
+	}
+	if err := repo.UpdateIncidentState(ctx, sid, sessionmodel.IncidentStateBelievedMitigated); err != nil {
+		t.Fatalf("advance to mitigated: %v", err)
+	}
+	if _, err := repo.ResolveIncidentRegime(ctx, "alice"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if _, _, err := repo.DeclareIncidentRegime(ctx, "alice", sid, sessionmodel.RegimeKindHuman); !errors.Is(err, sessionmodel.ErrSessionAlreadyIncident) {
+		t.Errorf("re-promote already-incident session: err = %v, want ErrSessionAlreadyIncident", err)
+	}
+}
+
+// TestRegimeDeclare_RequiresSessionID proves the HTTP declare handler refuses a
+// declaration with no session_id (400), since promote-in-place always
+// designates an existing session, while a denied caller still gets 403 first.
+func TestRegimeDeclare_RequiresSessionID(t *testing.T) {
+	ts, _, rbacRepo := newRegimeServer(t)
+	grantRegimeControl(t, rbacRepo, "alice")
+
+	// Authorized caller, no session_id → 400.
+	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing session_id: status = %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Unauthorized caller, no session_id → 403 (authz precedes the 400).
+	resp2 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "mallory", nil)
+	if resp2.StatusCode != http.StatusForbidden {
+		t.Fatalf("unauthorized + missing session_id: status = %d, want 403", resp2.StatusCode)
+	}
+	resp2.Body.Close()
 }
 
 // TestRegimeResolve_SingleTransactionRollback: same property for resolve.
@@ -340,8 +567,8 @@ func TestRegimeResolve_SingleTransactionRollback(t *testing.T) {
 	defer s.Close()
 	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 
-	sessionID, _, err := repo.DeclareIncidentRegime(context.Background(), "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
+	sessionID := createDefaultSession(t, repo, "alice")
+	if _, _, err := repo.DeclareIncidentRegime(context.Background(), "alice", sessionID, sessionmodel.RegimeKindHuman); err != nil {
 		t.Fatalf("declare: %v", err)
 	}
 	if err := repo.UpdateIncidentState(context.Background(), sessionID,
@@ -390,9 +617,16 @@ func TestR7_NoUnwatchedAmbiguousIncident(t *testing.T) {
 		fn   func() (string, error)
 	}{
 		{
-			name: "human declare (Change 5)",
+			name: "human declare (promote-in-place)",
 			fn: func() (string, error) {
-				sid, _, err := repo.DeclareIncidentRegime(context.Background(), "alice", sessionmodel.RegimeKindHuman)
+				// Promote-in-place: create the 'default' session, then promote.
+				sid := uuid.NewString()
+				if _, err := repo.CreateSession(context.Background(), sessionmodel.AgentSession{
+					ID: sid, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
+				}); err != nil {
+					return "", err
+				}
+				_, _, err := repo.DeclareIncidentRegime(context.Background(), "alice", sid, sessionmodel.RegimeKindHuman)
 				return sid, err
 			},
 		},

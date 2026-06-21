@@ -72,9 +72,15 @@ func TestCheck_NormalRegime_AllowsAllClasses(t *testing.T) {
 func TestCheck_IncidentRegime_Matrix(t *testing.T) {
 	e := newGateEnv(t)
 
-	// Declare an incident — alice is captain by R-CAP1.
-	captainSessionID, _, err := e.repo.DeclareIncidentRegime(e.ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
+	// Declare an incident — alice is captain by R-CAP1. Promote-in-place
+	// (§12.3): create the 'default' session first, then promote it.
+	captainSessionID := uuid.NewString()
+	if _, err := e.repo.CreateSession(e.ctx, sessionmodel.AgentSession{
+		ID: captainSessionID, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := e.repo.DeclareIncidentRegime(e.ctx, "alice", captainSessionID, sessionmodel.RegimeKindHuman); err != nil {
 		t.Fatalf("declare: %v", err)
 	}
 
@@ -208,9 +214,15 @@ func TestCheck_IncidentRegime_NoActiveIncident_Refuses(t *testing.T) {
 
 func TestCheck_IncidentRegime_AfterCaptainTransfer_NewPrincipalAllowed(t *testing.T) {
 	e := newGateEnv(t)
-	// alice declares → captain.
-	captainSessionID, _, err := e.repo.DeclareIncidentRegime(e.ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
+	// alice declares → captain. Promote-in-place (§12.3): create the
+	// 'default' session first, then promote it.
+	captainSessionID := uuid.NewString()
+	if _, err := e.repo.CreateSession(e.ctx, sessionmodel.AgentSession{
+		ID: captainSessionID, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "alice",
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := e.repo.DeclareIncidentRegime(e.ctx, "alice", captainSessionID, sessionmodel.RegimeKindHuman); err != nil {
 		t.Fatalf("declare: %v", err)
 	}
 

@@ -54,14 +54,20 @@ func (c *Client) GetRegime(ctx context.Context) (*Regime, error) {
 	return &reg, nil
 }
 
-// DeclareIncident declares an incident regime. kind is the regime
-// declared_kind ("human"; "joe" is an inert Phase 1 seam the server
-// refuses). reason is forwarded for forensic context; the current server
-// records declared_kind only, so an empty reason is harmless. The caller's
-// principal (the declaring human) is resolved server-side from the
-// credential and echoed back in DeclareResult.DeclaredBy.
-func (c *Client) DeclareIncident(ctx context.Context, kind, reason string) (*DeclareResult, error) {
+// DeclareIncident declares an incident regime by PROMOTING the existing
+// session named by sessionID in place (§12.3) — declaration no longer mints
+// a fresh incident row, so a session id is required. kind is the regime
+// declared_kind ("human"; "joe" is an inert seam the server refuses).
+// reason is forwarded for forensic context; the current server records
+// declared_kind only, so an empty reason is harmless. The caller's principal
+// (the declaring human) is resolved server-side from the credential and
+// echoed back in DeclareResult.DeclaredBy; it may differ from the promoted
+// session's creator.
+func (c *Client) DeclareIncident(ctx context.Context, sessionID, kind, reason string) (*DeclareResult, error) {
 	payload := map[string]string{}
+	if sessionID != "" {
+		payload["session_id"] = sessionID
+	}
 	if kind != "" {
 		payload["declared_kind"] = kind
 	}

@@ -21,8 +21,9 @@
 // enumerates every config permutation and asserts non-captain mutation
 // in incident regime is refused in all of them.
 //
-// Change 10 wires this into joe's executor wrapper. Phase 1 ships
-// the function callable but unwired.
+// This gate is wired into joe's executor wrapper by the captain-gate
+// decorator (internal/captaingate), which calls Check upstream of the
+// unchanged RBAC + Safety pipeline.
 package sessiongate
 
 import (

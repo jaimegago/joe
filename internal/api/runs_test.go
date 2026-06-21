@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/api"
@@ -49,13 +50,21 @@ func newRunsServer(t *testing.T) (*httptest.Server, sessionmodel.Repository, run
 	return ts, sessRepo, runRepo
 }
 
-// declareIncident creates an incident session via the atomic regime path
-// from Change 5. Used as the starting point for run-lifecycle tests.
+// declareIncident creates a 'default' session owned by principal and PROMOTES
+// it in place to the incident master via the atomic regime path (§12.3
+// promote-in-place). Declaration no longer mints a fresh row, so the starting
+// 'default' session is created first. Returns the (now incident) session id.
+// Used as the starting point for run-lifecycle and captain tests.
 func declareIncident(t *testing.T, sessRepo sessionmodel.Repository, principal string) string {
 	t.Helper()
-	id, _, err := sessRepo.DeclareIncidentRegime(context.Background(), principal, sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare incident: %v", err)
+	id := uuid.NewString()
+	if _, err := sessRepo.CreateSession(context.Background(), sessionmodel.AgentSession{
+		ID: id, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
+	if _, _, err := sessRepo.DeclareIncidentRegime(context.Background(), principal, id, sessionmodel.RegimeKindHuman); err != nil {
+		t.Fatalf("declare incident (promote): %v", err)
 	}
 	return id
 }

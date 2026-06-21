@@ -83,8 +83,10 @@ func TestPhaseF_Bug3_IncidentHistorySurvivesResolve(t *testing.T) {
 	ts, sessRepo, rbacRepo, db := newRegimeServerWithAudit(t)
 	grantRegimeControl(t, rbacRepo, "alice")
 
-	// 1. Declare.
-	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	// 1. Declare (promote-in-place, §12.3).
+	sid := createDefaultSession(t, sessRepo, "alice")
+	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
 	if rDeclare.StatusCode != http.StatusCreated {
 		t.Fatalf("declare status = %d, want 201", rDeclare.StatusCode)
 	}
@@ -158,7 +160,9 @@ func TestPhaseF_CaptainTransitionsSurviveResolve(t *testing.T) {
 	// (no HTTP /captain/attach hit, no audit row yet — R-CAP1 is internal
 	// to the declare path; the declare audit row covers "who took
 	// command" via Reason=transition_recorded).
-	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	sid := createDefaultSession(t, sessRepo, "alice")
+	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
 	rDeclare.Body.Close()
 	sessions, err := sessRepo.ListSessionsByType(context.Background(), sessionmodel.SessionTypeIncident)
 	if err != nil {
@@ -206,7 +210,9 @@ func TestPhaseF_CaptainAttachWritesAuditRow(t *testing.T) {
 	grantRegimeControl(t, rbacRepo, "alice")
 
 	// Declare an incident so the captain endpoints have a session.
-	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice", nil)
+	sid := createDefaultSession(t, sessRepo, "alice")
+	rDeclare := doRequest(t, http.MethodPost, ts.URL+"/api/v1/regime/declare", "alice",
+		map[string]string{"session_id": sid})
 	rDeclare.Body.Close()
 	sessions, err := sessRepo.ListSessionsByType(context.Background(), sessionmodel.SessionTypeIncident)
 	if err != nil {
