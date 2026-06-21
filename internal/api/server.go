@@ -45,9 +45,17 @@ type Server struct {
 	// owner-mutate handler authorizes through (*Server).sessionAccess, which
 	// delegates here; the bypass guard pins the seam as the single enforcement
 	// point. The real-admin seam instance + the /api/v1/admin/sessions routes are
-	// B006's, not built here.
+	// B006's (sessionAuthzAdmin below).
 	sessionAuthz *sessionauthz.Seam
-	version      string
+	// sessionAuthzAdmin is the ADMIN session-authorization seam instance (§12.7
+	// seam / §12.8 two-instance defense-in-depth, B006). It is built with the REAL
+	// D-0011 admin checker (newAdminSessionAuthz / rbacAdminChecker) and is the
+	// ONLY instance that can resolve a real admin relationship over a session. The
+	// /api/v1/admin/sessions govern handlers authorize through (*Server).
+	// sessionAccessAdmin (this instance) AFTER the requireAdmin prefix gate, so
+	// cross-tenant governance requires BOTH. No per-user route holds it.
+	sessionAuthzAdmin *sessionauthz.Seam
+	version           string
 }
 
 // New creates a new API server with access to core services.
@@ -69,11 +77,12 @@ func New(services *core.Services) *Server {
 	}
 	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services), auditRepo)
 	return &Server{
-		services:     services,
-		accessor:     accessor,
-		inproc:       newInProcessCoreClient(accessor, services),
-		sessionAuthz: newPerUserSessionAuthz(services),
-		version:      defaultVersion,
+		services:          services,
+		accessor:          accessor,
+		inproc:            newInProcessCoreClient(accessor, services),
+		sessionAuthz:      newPerUserSessionAuthz(services),
+		sessionAuthzAdmin: newAdminSessionAuthz(services),
+		version:           defaultVersion,
 	}
 }
 
@@ -124,6 +133,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// full/observation/safe_mode.
 	s.registerMutateStatusRoutes(mux, apiPrefix)
 	s.registerAdminRoutes(mux, apiPrefix)
+	// B006: the admin session-governance namespace /api/v1/admin/sessions —
+	// cross-tenant list/get/get-messages plus the admin-gated, audited govern
+	// actions (purge/archive/restore-archive/retention) whose store effects are
+	// deferred to B007.
+	s.registerAdminSessionRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
 	s.registerTaskRoutes(mux, apiPrefix)
 	// Phase 2: model control plane — list/swap the single LLM contact point.

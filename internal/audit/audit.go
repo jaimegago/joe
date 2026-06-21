@@ -346,6 +346,50 @@ const (
 	// itself an audited, governed event. Kind KindAdminAccess, decision "allow";
 	// mutating (fail-closed) — not added to isFailOpen.
 	ActionComponentPromote = "component.promote"
+
+	// --- B006 admin session-governance action verbs (DESIGN-CHAT-SESSIONS.md
+	// §12.5 / §12.7 / §12.8) ---
+	//
+	// The /api/v1/admin/sessions namespace governs sessions cross-tenant. Every
+	// admin-govern transition writes one KindAdminAccess row (decision "allow")
+	// naming the operator and the target session — the §12.2 "operator action
+	// without attribution" mitigation. These are the §12.7 admin-only actions
+	// (purge / archive / unarchive / configure_retention); the §12.5 lifecycle
+	// list (trash, restore, purge, archive, unarchive, incident link-sever) is the
+	// audited transition set, of which the admin namespace owns purge / archive /
+	// unarchive (owner trash/restore land on the per-user trash routes in B007).
+	//
+	// IMPORTANT — effects are deferred to B007. The store EFFECT of every verb
+	// below does not exist yet (no soft-delete/purge pipeline, no archive
+	// provider, no retention-policy store). B006 wires, authorizes, and AUDITS the
+	// governance DECISION; the route reports its effect as pending. The audit row
+	// is written non-transactionally (there is no store mutation to couple it to
+	// yet); when B007 lands the real transitions, the row moves into the same
+	// transaction as the effect via InsertTx (the mutateWithAudit pattern), the
+	// same fail-closed coupling the component verbs above already use.
+	//
+	// Reads on the admin namespace (list-all / get / get-messages) are ORDINARY
+	// reads and write NO audit row (§12.10: admin content viewing is an ordinary
+	// content read, no special audit verb). Per-user owner-mutate (rename, link)
+	// are likewise unaudited: §12 audits admin + sweeper + lifecycle transitions
+	// only, and rename/link are neither.
+
+	// ActionSessionPurge records an admin purge (POST
+	// /api/v1/admin/sessions/{id}/purge): the irreversible hard delete that, per
+	// §12.5, trashes-and-empties in one operation and severs linked_incident_id
+	// on children. Effect deferred to B007; B006 audits the authorized decision.
+	ActionSessionPurge = "session.purge"
+	// ActionSessionArchive records an admin archive (POST
+	// /api/v1/admin/sessions/{id}/archive): move to cold storage via the archive
+	// provider seam (§12.6). Effect deferred to B007.
+	ActionSessionArchive = "session.archive"
+	// ActionSessionUnarchive records an admin restore-from-archive (POST
+	// /api/v1/admin/sessions/{id}/restore-archive). Effect deferred to B007.
+	ActionSessionUnarchive = "session.unarchive"
+	// ActionSessionConfigureRetention records an admin retention-policy edit (PUT
+	// /api/v1/admin/sessions/retention-policy): the §12.5 inactivity-window /
+	// trash-grace / terminal-action knobs. Effect (policy store) deferred to B007.
+	ActionSessionConfigureRetention = "session.configure_retention"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface
