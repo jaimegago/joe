@@ -56,6 +56,7 @@ import (
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionmodel"
+	"github.com/jaimegago/joe/internal/sessionsweeper"
 	"github.com/jaimegago/joe/internal/skills"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/warnings"
@@ -701,6 +702,45 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	}()
 
 	slog.Info("core agent started with background refresh")
+
+	// Start the §12.5 retention sweeper (B007b): the single automated expiration
+	// driver. It applies the admin retention policy (inactivity expiry → trash
+	// under trash_then_purge; trash-grace purge of trashed sessions past
+	// purge_after) and drains abandoned auth_login_flows, each lifecycle effect
+	// coupled to its audit row in one transaction under a boot-minted service
+	// principal (svc:sweeper:sessions). It runs only when the session store is
+	// wired; the principal rides the Start ctx (mirroring the Core Agent refresh)
+	// and is also carried explicitly for audit attribution. The archive terminal
+	// action is deferred to B007c behind an honest seam (archive-policy
+	// inactivity-expired sessions are left active and logged, never falsely
+	// archived). Inactivity expiry is OFF by default (regulated posture); a
+	// default deployment only purges trashed sessions past grace and drains login
+	// flows.
+	if services.SessionModel != nil {
+		sweeperPrincipal, sweeperErr := rbac.SessionSweeperPrincipal()
+		if sweeperErr != nil {
+			slog.Error("failed to mint session sweeper principal", "error", sweeperErr)
+			return 1
+		}
+		sweeper := sessionsweeper.New(sessionsweeper.Config{
+			DB:        sqlStore.DB(),
+			Sessions:  sessionModelRepo,
+			Flows:     authSessions,
+			Audit:     auditRepo,
+			Principal: sweeperPrincipal,
+			Logger:    slog.Default(),
+		})
+		if err := sweeper.Start(rbac.WithPrincipal(ctx, sweeperPrincipal)); err != nil {
+			slog.Error("failed to start session retention sweeper", "error", err)
+			return 1
+		}
+		defer func() {
+			if err := sweeper.Stop(context.Background()); err != nil {
+				slog.Error("failed to stop session retention sweeper", "error", err)
+			}
+		}()
+		slog.Info("session retention sweeper started", "principal", string(sweeperPrincipal))
+	}
 
 	// Setup HTTP server
 	mux := http.NewServeMux()

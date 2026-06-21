@@ -213,6 +213,93 @@ func TestLifecycle_RetentionPolicyAndResolution(t *testing.T) {
 	}
 }
 
+// TestSweeperScans_InactiveAndPurgeable proves the B007b scan queries select the
+// right candidates: ListSessionsInactiveBefore returns only ACTIVE sessions older
+// than the cutoff (excluding fresh, trashed, and incident sessions), and
+// ListPurgeableSessions returns only trashed sessions whose purge_after has
+// passed (excluding trashed-with-future-deadline and trashed-with-no-deadline).
+func TestSweeperScans_InactiveAndPurgeable(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Active + stale → an inactivity candidate.
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "stale", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:a",
+		CreatedAt: now.Add(-40 * 24 * time.Hour), LastActivityAt: now.Add(-40 * 24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("create stale: %v", err)
+	}
+	// Active + fresh → not a candidate.
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "fresh", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:a",
+		CreatedAt: now.Add(-1 * time.Hour), LastActivityAt: now.Add(-1 * time.Hour),
+	}); err != nil {
+		t.Fatalf("create fresh: %v", err)
+	}
+	// Trashed-past-deadline → a purge candidate, NOT an inactivity candidate.
+	trashedAt := now.Add(-60 * 24 * time.Hour)
+	pastDeadline := now.Add(-1 * time.Hour)
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "due", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:a",
+		CreatedAt: trashedAt, LastActivityAt: trashedAt,
+		TrashedAt: &trashedAt, TrashedBy: strPtr("user:a"), PurgeAfter: &pastDeadline,
+	}); err != nil {
+		t.Fatalf("create due: %v", err)
+	}
+	// Trashed-future-deadline → neither candidate.
+	futureDeadline := now.Add(24 * time.Hour)
+	if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "waiting", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:a",
+		CreatedAt: trashedAt, LastActivityAt: trashedAt,
+		TrashedAt: &trashedAt, TrashedBy: strPtr("user:a"), PurgeAfter: &futureDeadline,
+	}); err != nil {
+		t.Fatalf("create waiting: %v", err)
+	}
+
+	cutoff := now.Add(-7 * 24 * time.Hour)
+	inactive, err := repo.ListSessionsInactiveBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("ListSessionsInactiveBefore: %v", err)
+	}
+	if !onlyIDs(inactive, "stale") {
+		t.Errorf("inactive candidates = %v, want exactly [stale]", ids(inactive))
+	}
+
+	purgeable, err := repo.ListPurgeableSessions(ctx, now)
+	if err != nil {
+		t.Fatalf("ListPurgeableSessions: %v", err)
+	}
+	if !onlyIDs(purgeable, "due") {
+		t.Errorf("purgeable candidates = %v, want exactly [due]", ids(purgeable))
+	}
+}
+
+func ids(rows []sessionmodel.AgentSession) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.ID
+	}
+	return out
+}
+
+func onlyIDs(rows []sessionmodel.AgentSession, want ...string) bool {
+	if len(rows) != len(want) {
+		return false
+	}
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.ID] = true
+	}
+	for _, w := range want {
+		if !got[w] {
+			return false
+		}
+	}
+	return true
+}
+
 func containsID(rows []sessionmodel.ChatSessionRow, id string) bool {
 	for _, r := range rows {
 		if r.ID == id {

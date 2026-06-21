@@ -113,6 +113,31 @@ type Repository interface {
 	// list-own-trash, §12.8). limit <= 0 means no cap.
 	ListTrashedSessions(ctx context.Context, principal *string, limit int) ([]ChatSessionRow, error)
 
+	// --- Sweeper scan queries (§12.5, B007b) ---
+	//
+	// These are READ-ONLY scans the background sweeper uses to find expiration
+	// candidates. They target ONLY agent_sessions — never the legacy migration-001
+	// `sessions` / `session_messages` tables (§13 hard constraint). They return the
+	// candidate rows; the sweeper applies the transition (trash / purge) per row,
+	// each in its own effect+audit transaction, so a per-session failure cannot
+	// corrupt a cross-session batch.
+
+	// ListSessionsInactiveBefore returns ACTIVE sessions (all six lifecycle
+	// columns null) whose last_activity_at is strictly before cutoff — the §12.5
+	// inactivity-expiry candidates. The sweeper calls it ONLY when the inactivity
+	// window is enabled (it is OFF / nil by default), passing cutoff = now -
+	// inactivity_days. Oldest-activity first so the most-stale sessions are
+	// processed first.
+	ListSessionsInactiveBefore(ctx context.Context, cutoff time.Time) ([]AgentSession, error)
+	// ListPurgeableSessions returns TRASHED sessions whose purge_after deadline has
+	// passed (trashed_at NOT NULL AND purge_after NOT NULL AND purge_after <= now)
+	// — the §12.5 trash-grace purge candidates. It is the second, unconditional
+	// pass: it catches both sweeper-trashed sessions (under trash_then_purge) and
+	// manually owner-trashed sessions past their grace deadline, regardless of the
+	// policy terminal action. A trashed session with no purge_after (no auto-purge
+	// deadline) is never returned. Oldest deadline first.
+	ListPurgeableSessions(ctx context.Context, now time.Time) ([]AgentSession, error)
+
 	// --- Retention policy (§12.5, migration 026, B007a) ---
 
 	// GetRetentionPolicy returns the single admin retention policy (one row,
