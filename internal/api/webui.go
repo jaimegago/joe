@@ -11,6 +11,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionauthz"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/uid"
 )
@@ -487,24 +488,32 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	principal := string(rbac.PrincipalFromContext(r.Context()))
+	principal := rbac.PrincipalFromContext(r.Context())
 	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
 	if err != nil {
 		writeInternalError(w, err, "get session")
 		return
 	}
-	if sess == nil || sess.CreatorPrincipal != principal {
+	// Authorize the rename (owner-mutate 'write') through the single session
+	// seam (§12.7) instead of an inline creator comparison. A denied decision
+	// keeps the 404-on-non-owner posture (a non-owner's session is
+	// indistinguishable from a missing one); the diagnostic still separates a
+	// missing session from an ownership mismatch.
+	decision, err := h.server.sessionAccess(r.Context(), principal, sessionID, sessionauthz.ActionWrite)
+	if err != nil {
+		writeInternalError(w, err, "authorize session write")
+		return
+	}
+	if sess == nil || !decision.Allowed {
 		reason := "session_missing"
-		var ownerField string
 		if sess != nil {
 			reason = "owner_mismatch"
-			ownerField = sess.CreatorPrincipal
 		}
 		slog.Warn("update session: 404",
 			"reason", reason,
 			"session_id", sessionID,
-			"request_principal", principal,
-			"session_owner", ownerField)
+			"request_principal", string(principal),
+			"relationship", string(decision.Relationship))
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
@@ -533,13 +542,23 @@ func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	principal := string(rbac.PrincipalFromContext(r.Context()))
+	principal := rbac.PrincipalFromContext(r.Context())
 	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
 	if err != nil {
 		writeInternalError(w, err, "get session")
 		return
 	}
-	if sess == nil || sess.CreatorPrincipal != principal {
+	// Authorize the delete through the single session seam (§12.7). The
+	// owner-delete action is 'soft_delete' in the §12.7 vocabulary; the handler
+	// still performs a hard DeleteSession until trash semantics land (B007) —
+	// only the authorization is routed through the seam here. 404-on-non-owner
+	// posture preserved.
+	decision, err := h.server.sessionAccess(r.Context(), principal, sessionID, sessionauthz.ActionSoftDelete)
+	if err != nil {
+		writeInternalError(w, err, "authorize session delete")
+		return
+	}
+	if sess == nil || !decision.Allowed {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
@@ -573,13 +592,21 @@ func (h *webUIHandler) handleLinkIncident(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	principal := string(rbac.PrincipalFromContext(r.Context()))
+	principal := rbac.PrincipalFromContext(r.Context())
 	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
 	if err != nil {
 		writeInternalError(w, err, "get session")
 		return
 	}
-	if sess == nil || sess.CreatorPrincipal != principal {
+	// Authorize linking (owner-mutate 'write' — §12.7 "write (rename, link,
+	// send-message)") through the single session seam. 404-on-non-owner posture
+	// preserved.
+	decision, err := h.server.sessionAccess(r.Context(), principal, sessionID, sessionauthz.ActionWrite)
+	if err != nil {
+		writeInternalError(w, err, "authorize session link")
+		return
+	}
+	if sess == nil || !decision.Allowed {
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
