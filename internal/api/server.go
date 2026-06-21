@@ -16,6 +16,7 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/sessionauthz"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -35,8 +36,13 @@ type Server struct {
 	// doc tools — none of which touch an adapter). It replaces the loopback
 	// *client.Client; no HTTP self-call remains for in-process tool
 	// execution.
-	inproc  *inProcessCoreClient
-	version string
+	inproc *inProcessCoreClient
+	// sessionAuthz is the dedicated session-authorization seam (§12.7, B003),
+	// separate from the component-RBAC accessor above. The per-user owner-mutate
+	// handlers authorize through (*Server).sessionAccess, which delegates here;
+	// the bypass guard pins the seam as the single enforcement point.
+	sessionAuthz *sessionauthz.Seam
+	version      string
 }
 
 // New creates a new API server with access to core services.
@@ -58,10 +64,11 @@ func New(services *core.Services) *Server {
 	}
 	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services), auditRepo)
 	return &Server{
-		services: services,
-		accessor: accessor,
-		inproc:   newInProcessCoreClient(accessor, services),
-		version:  defaultVersion,
+		services:     services,
+		accessor:     accessor,
+		inproc:       newInProcessCoreClient(accessor, services),
+		sessionAuthz: newSessionAuthz(services),
+		version:      defaultVersion,
 	}
 }
 
