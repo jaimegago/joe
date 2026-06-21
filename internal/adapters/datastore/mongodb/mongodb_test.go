@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -308,6 +309,54 @@ func TestConnect_PingFailure(t *testing.T) {
 	// Error must mention ping.
 	if err.Error() == "" {
 		t.Error("expected non-empty error message from ping failure")
+	}
+}
+
+func TestConnect_PingFailure_NoCredentialLeak(t *testing.T) {
+	// A connection to a closed port with an embedded-credential URI must fail,
+	// and the returned error must not contain the credential portion.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	const user = "leakuser"
+	const password = "leakpassw0rd"
+
+	a := New()
+	src := store.Component{
+		Config: mustMarshal(t, map[string]any{
+			"uri":      "mongodb://" + user + ":" + password + "@127.0.0.1:27099/testdb",
+			"database": "testdb",
+		}),
+	}
+	err := a.Connect(ctx, src)
+	if err == nil {
+		t.Skip("Connect() succeeded unexpectedly (MongoDB running on :27099?) — skipping leak check")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, password) {
+		t.Errorf("ping error leaked password: %q", msg)
+	}
+	if strings.Contains(msg, user+":") {
+		t.Errorf("ping error leaked userinfo: %q", msg)
+	}
+	// The redacted host should still be present for diagnostics.
+	if !strings.Contains(msg, "127.0.0.1:27099") {
+		t.Errorf("ping error missing redacted host for diagnostics: %q", msg)
+	}
+}
+
+func TestStatus_ConnectedMessage_NoCredentialLeak(t *testing.T) {
+	// The Status message formats the stored URI; the credential must be redacted.
+	const password = "statuspassw0rd"
+	a := NewWithRunner(&mockRunner{})
+	a.config = Config{URI: "mongodb://admin:" + password + "@db.internal:27017/prod"}
+
+	msg := a.Status().Message
+	if strings.Contains(msg, password) {
+		t.Errorf("Status message leaked password: %q", msg)
+	}
+	if !strings.Contains(msg, "db.internal:27017") {
+		t.Errorf("Status message missing redacted host: %q", msg)
 	}
 }
 
