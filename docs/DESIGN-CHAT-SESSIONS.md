@@ -52,6 +52,10 @@ Two session models run in parallel (see comparison table in the design discussio
   `linked_incident_id`, captains, and `system_regime`. Exposed at
   `/api/v1/agent-sessions` (`internal/api/sessions.go`) and driven by regime
   declare/resolve + the captain gate.
+  - **Superseded by §12 (2026-06-20):** the three-type model
+    (`incident`/`investigation`/`other`) collapses to two types
+    (`default`/`incident`); incident participation is the `linked_incident_id`
+    pointer, not a `type` value, and the `investigation` type is removed. See §12.3.
 
 The leak, precisely:
 - `internal/api/webui.go:184` `handleListSessions` → `Sessions.ListRecent(ctx, limit)` — no principal filter.
@@ -182,10 +186,18 @@ phase it — security first.
 - **Storage (§8.2):** flat, owner-scoped message table keyed to `agent_sessions` now;
   `agent_runs`→`run_steps` convergence (durable agentic trace in history) is the
   committed endgame that retires the flat table. Not a launch-week change.
+  - **Superseded by §12 (2026-06-20):** the transcript is a permanent, first-class
+    store; `agent_runs`→`run_steps` does **not** retire the flat transcript table.
+    The run model remains the system of record for agentic *execution* only. See §12.4.
 - **Route (§8.1):** keep `/api/v1/sessions`, backed by the new model.
 - **Incident link (§8.6):** reference **+** participation — set `linked_incident_id`,
   promote to `type='investigation'`, allow posting to the incident via the existing
   `findings` table. No captaincy in this feature.
+  - **Superseded by §12 (2026-06-20):** incidents come into existence by
+    promote-in-place (an existing `default` session is promoted to the incident
+    master in one transaction), reversing the as-built mint-fresh
+    `DeclareIncidentRegime`; the `investigation` type is removed and participation
+    is expressed solely by `linked_incident_id`. See §12.3.
 - **Sequencing (§8.7):** security-first, phased (see §11).
 - **Title (§8.3):** heuristic title immediately + async LLM upgrade, user-overridable.
 - **Legacy backfill (§8.5):** dev DB — drop or quarantine; don't invent owners.
@@ -370,4 +382,448 @@ phase it — security first.
 
 **Later — convergence & extensions.**
 - Chat through the run model (durable tool-call trace in history) → retire flat table.
+  - **Superseded by §12 (2026-06-20):** the flat transcript table is permanent and is
+    **not** retired; the run model remains the durable system of record for agentic
+    execution only and never absorbs the transcript. See §12.4.
 - Per-principal sharing; fork-a-public-session-to-continue; admin audited oversight view.
+
+## 12. Clean-room redesign (B001)
+
+> Status: **clean-room redesign, settled 2026-06-20.** This section is a from-scratch
+> redesign of the session subsystem, produced by re-deriving requirements from first
+> principles (actors → threats → ontology → storage → API → lifecycle) and then
+> reconciling the result against the as-built system. **Where this section conflicts
+> with any earlier section of this document, this section wins.** It supersedes the
+> specific earlier decisions called out below (and at each superseded location:
+> §2 type discriminator, §10 storage, §10 incident link, "Later — convergence").
+> Items flagged "reconciliation note" are deliberate open convergence deltas to be
+> resolved in the diff/convergence layer, not here.
+
+> **Amendment — team-wide read model (2026-06-21).** A later review reversed the
+> private-by-default posture an earlier fold-in had baked into this section. **Session
+> read access is now team-wide by default: any authenticated principal may read any
+> session,** analogous to how a whole team can see its pull/merge requests. **Privacy
+> between team members is explicitly a non-goal.** The security spine is **integrity and
+> accountability, not secrecy**: what stays gated is **mutation and governance**, never
+> reading. The PR/MR analogy is **visibility-only** — **no git-like session mechanics
+> exist anywhere in this design**: no fork, no branch, no merge, no diff between
+> sessions, no checkout, no version history. The points this amendment reverses are
+> marked *(superseded within §12, 2026-06-21)* at each location below, with the original
+> text retained per this section's supersession convention; the new model text follows
+> each marker. Affected subsections: §12.1, §12.2, §12.4, §12.7, §12.8, §12.9, and the
+> new §12.10.
+
+### 12.1 Actors and trust boundary
+
+- **Five actors.**
+  - **Owner** — the human authenticated principal who created the session; the *sole
+    mutator*.
+  - **Team member (other authenticated principal)** — read-only on **any** session.
+    *(Supersedes within §12, 2026-06-21, the prior "read-only on shared sessions"; read
+    is team-wide — see the amendment banner above §12.1. Reading is the default for any
+    authenticated principal, not a per-session grant.)*
+  - **Admin / operator** — governed, audited, cross-tenant.
+  - **Autonomous agent** — acts *within* a session, never owns one; its writes are
+    attributed under its own principal, but the session's `creator_principal` stays
+    the human.
+  - **Unauthenticated** — no access.
+- **`creator_principal` is always a human and always the context-resolved
+  authenticated principal.** It is *never* accepted from a request body. This kills
+  the spoofable-creator defect by construction.
+- **One seam per operation.** Every session operation crosses exactly one authz seam
+  with a resolved principal; effective permission is one computed decision per
+  resource class.
+
+### 12.2 Threat model (each threat is an actor crossing a boundary)
+
+> *Amended 2026-06-21 (team-wide read).* Cross-tenant **read**, **sharing escalation**,
+> and **content exfiltration via projection** are **no longer threats**: universal
+> authenticated read is the intended model, there is no sharing write-path to escalate,
+> and there is nothing to exfiltrate between teammates. Metadata-first projection
+> survives only as a payload/performance choice, never as a confidentiality control. The
+> three bullets so marked below are *(superseded within §12, 2026-06-21)*; the surviving
+> threats are about integrity and accountability, not secrecy.
+
+- **Ownership forgery** — mitigated by context-derived `creator_principal` (§12.1).
+- **Cross-tenant read / cross-tenant mutate-delete** — mitigated by the single seam
+  (§12.7) plus the per-user/admin route split (§12.8). *(Superseded within §12,
+  2026-06-21: cross-tenant **read** is removed as a threat and is now the intended
+  model; only cross-tenant **mutate/delete by a non-owner** survives — mitigated by
+  write-own enforcement plus the admin-route split.)*
+- **Sharing escalation** — the sharing write-path is designed closed; only the owner
+  sets visibility. *(Superseded within §12, 2026-06-21: removed — there is no sharing
+  write-path and no visibility to set.)*
+- **Content exfiltration via projection** — list/metadata views must project away raw
+  transcript content and must treat auto-derived titles as content-bearing.
+  *(Superseded within §12, 2026-06-21: removed as a privacy threat for team members;
+  metadata-first projection may be retained elsewhere only as a payload/performance
+  choice, not as a confidentiality control.)*
+- **Operator action without attribution** — every admin and sweeper transition writes
+  an audit row naming the actor.
+- **Unbounded growth** — the retention pipeline (§12.5).
+- **Agent-within-session escalation** — agent writes are message/run content only,
+  never session-control fields or lifecycle state.
+
+- **Surviving threats (post-amendment), consolidated:** ownership/accountability forgery
+  (mitigated by context-derived `creator_principal`); cross-tenant mutate or delete by a
+  non-owner (mitigated by write-own enforcement and the admin-route split); operator or
+  sweeper action without attribution (mitigated by audit on every transition); unbounded
+  growth (mitigated by the retention pipeline); agent-within-session escalation beyond
+  message/run content into session-control or lifecycle fields.
+
+### 12.3 Ontology (supersedes the three-type model)
+
+- **Two session types only: `default` and `incident`.** The as-built third type
+  `investigation` is collapsed: participation in an incident is expressed by the
+  `linked_incident_id` pointer (a fact/relationship), not a type.
+  - *Reconciliation note:* today the stored literal for an ordinary chat is `'other'`,
+    and link-to-incident currently *also* flips `type` to `'investigation'` with zero
+    runtime divergence from `'other'`. The redesign removes the `investigation` type
+    value. *(Supersedes the §2 type discriminator and the §10 incident-link decision.)*
+- **Incident comes into existence by PROMOTE-IN-PLACE, not mint-fresh.** This
+  explicitly reverses the as-built `DeclareIncidentRegime` behavior (which inserts a
+  fresh `type=incident` row). Declaring an incident promotes an existing `default`
+  session into the incident master in **one transaction**: flip `type` to `incident`,
+  set `incident_state=declared`, attach the declarer as captain, flip the global
+  regime.
+  - **Both UI entry paths resolve to a promote.** A principal already in a session
+    promotes *that* session. A principal elsewhere is routed to the sessions tab and
+    asked whether to promote an existing session or start a new (empty) one — and
+    "start new" is *create-empty-then-promote*, so even the empty case is a promoted
+    regular session.
+- **Consequence (recorded, accepted):** the session's `creator_principal` (original
+  human owner) and the captain (declarer) may differ. Creator stays the owner; captain
+  is the incident lead.
+- **The incident model otherwise stands as already documented:** one global single-row
+  regime, one master incident session, one captain bound to it; linked sessions point
+  inward at the incident via `linked_incident_id`.
+
+### 12.4 Storage (single source of truth)
+
+- **One session table** (clean `agent_sessions`), **one transcript table** FK'd to it.
+- **THE TRANSCRIPT IS A PERMANENT, FIRST-CLASS STORE.** This reverses the locked
+  decision (§10) that `agent_runs`→`run_steps` is the committed endgame that retires
+  the flat message table. *(Supersedes the §10 storage decision and the
+  "Later — convergence" retire-flat-table item.)*
+  - *Rationale:* a human-facing transcript (user/assistant turns) and an agentic
+    execution trace (reasoning, tool intent/result, solicitations, world handles) are
+    genuinely different shapes. `run_steps` has no message kind and cannot represent
+    flat turns; forcing one into the other is the conflation that produced three
+    coexisting message representations. The run model remains the durable system of
+    record for agentic **execution**; it never absorbs the transcript. The
+    previously-deferred `chat_messages`→`run_steps` convergence and its unresolved
+    message-kind schema gap are closed as a **non-problem**.
+- **Lifecycle expressed by timestamps, not a redundant state enum column:**
+  `trashed_at` / `trashed_by` / `purge_after`, and `archived_at` / `archived_by` /
+  `archive_ref`. **Active = all null.**
+- **Session types:** `type ∈ {default, incident}`; `incident_state` is non-null **if
+  and only if** `type=incident`; `linked_incident_id` is the participation pointer.
+- **`linked_incident_id` is `ON DELETE SET NULL`, not cascade.** Linked sessions are
+  independent `default` conversations owned by possibly-other principals; purging an
+  incident *severs the link* (linked sessions revert to plain `default` sessions) and
+  must never destroy them. Cascade-as-a-unit applies only to a session's own dependent
+  rows: its transcript (`ON DELETE CASCADE`) and its captain binding.
+- **`retention_class` becomes the per-session resolution of the active admin retention
+  policy** — no longer inert.
+- **No `visibility` column.** *(Amended 2026-06-21, team-wide read.)* Team-wide read
+  makes per-session visibility inert, so the session table carries **no `visibility`
+  column**; the as-built `visibility` column is dropped (§12.9). `retention_class`, the
+  lifecycle timestamps, `linked_incident_id ON DELETE SET NULL`, transcript
+  `ON DELETE CASCADE`, and the permanent-transcript decision are all **unchanged** by
+  this amendment.
+- **Legacy `sessions` / `session_messages` tables are retired,** gated on the
+  learn-from-sessions fate decision (`docs/backlog/learn-from-sessions-fate.md`), since
+  those tables are that feature's only data source.
+
+### 12.5 Retention and lifecycle pipeline (one pipeline, not parallel mechanisms)
+
+- **One admin-configured retention policy** defines an inactivity window and a terminal
+  action, chosen per deployment: `trash_then_purge` or `archive`. Scaffolded so v1
+  ships behind a clean seam.
+- **One background sweeper is the only automated driver,** timestamp-driven against
+  `last_activity_at`:
+  - `trash_then_purge` sets `trashed_at`/`purge_after`; a later pass purges trashed
+    sessions past `purge_after`.
+  - `archive` sets `archived_at`/`archive_ref` and moves the transcript to cold storage.
+  - The same sweeper also drains abandoned `auth_login_flows` rows.
+- **Manual transitions reuse the same state transitions the sweeper applies:** owner
+  soft-delete = manual entry to trashed; owner/admin restore; admin purge = manual fire
+  of terminal purge; admin archive/restore. **No divergent code paths.**
+- **macOS-trash semantics:** soft delete puts a session into trash (recoverable); hard
+  delete (purge) trashes and empties in one operation. Owners can soft-delete and
+  restore their own sessions; **PURGE IS ADMIN-ONLY.**
+  - *Accepted tradeoff:* a user's soft-deleted sensitive transcript sits in trash —
+    admin-visible and admin-restorable — until the sweeper or an admin purges it. A
+    GDPR-style erasure routes through **admin purge**, not a new owner capability.
+- **Two configurable knobs, both in the retention policy:** the inactivity window
+  (default **OFF** / effectively infinite — nothing auto-expires until an admin opts
+  in) and trash-grace (default **30 days**). Auto-expiration is default-off by design
+  for the regulated posture.
+- **Every transition** (trash, restore, purge, archive, unarchive, incident
+  link-sever) writes an audit row naming actor and session. The sweeper acts under a
+  **boot-minted service principal** so automated expirations are attributed. Manual
+  admin purge surfaces a **manifest-with-hard-stop** (count of messages and linked
+  children about to be irreversibly destroyed) then explicit confirm; the sweeper's
+  automated purge is governed by the policy the admin already approved and does **not**
+  re-prompt.
+
+### 12.6 Archive backend (scaffolded behind a provider seam)
+
+- **v1 ships filesystem export:** archived sessions are serialized to versioned files
+  under a configured path, hot rows removed, restore parses them back; `archive_ref`
+  holds the file locator. An object-store (S3-compatible) provider is a designed-for
+  later addition behind the **same seam**, not built in v1.
+- **The serialized artifact carries a schema version;** restore must *refuse or
+  migrate* a version it does not understand rather than mis-parse. The artifact is
+  self-contained: session metadata plus full transcript in one file, so restore needs
+  nothing but the file.
+
+### 12.7 Authorization seam (dedicated, per resource class)
+
+> *Amended 2026-06-21 (team-wide read).* The **`sessionAccess` seam and its
+> single-decision-per-resource-class property are unchanged**; only the **read
+> relationship broadens**. Relationships now resolve to: **owner** (creator; the *only*
+> principal that may mutate the session), **team member** (any other authenticated
+> principal — may read any session, may not mutate it), **admin** (governance and
+> cross-tenant mutation), and **unauthenticated** (no access). Non-owners are strictly
+> read-only on sessions they do not own. **Reading is not a grant — it is the default
+> for any authenticated principal.** A team member who wants to act on what they read
+> simply **starts a separate, independent session of their own**; there is **no fork,
+> branch, or copy** of the session they read. `creator_principal` stays context-derived,
+> now justified by **accountability** (who actually ran this) rather than secrecy. The
+> shared-viewer-as-a-distinct-grant framing and the `share` action are removed (below).
+
+- **Sessions get their OWN single enforcement seam,** separate from the component
+  RBAC/accessor seam. Session-relationship logic never touches zones or policies;
+  component RBAC never learns session ownership. The single-enforcement-site invariant
+  holds *within each resource class*.
+- **One function, `sessionAccess(principal, sessionID, action) -> decision`,**
+  evaluated once below the transport. It resolves the session, derives the principal's
+  relationship (owner / team-member / admin / none — see the amendment note above
+  §12.7), and returns allow/deny plus the resolved relationship so handlers do not
+  re-query. **No route reimplements ownership.**
+- **Relationship resolution:**
+  - **owner** = `creator_principal` equals principal.
+  - **team member** = principal authenticated **AND** not owner — **read-only on any
+    session** (read is the default, not a grant). *(Supersedes within §12, 2026-06-21,
+    the prior `shared-viewer` = "session is shared/public AND authenticated AND not
+    owner"; visibility no longer gates read.)*
+  - **admin** = principal carries the existing dynamic admin capability — reuse the
+    **D-0011 check, do not reimplement**. Admin is cross-tenant and audited.
+  - **none** = deny.
+- **The sweeper principal is a system actor** that bypasses relationship resolution for
+  its policy-authorized transitions, attributed in audit; it is neither owner nor admin.
+- **Action vocabulary over sessions:** `read`, `write` (rename, link, send-message),
+  `soft_delete`, `restore`, and admin-only `purge`, `archive`, `unarchive`,
+  `configure_retention`. *(Supersedes within §12, 2026-06-21: the `share` action is
+  removed — there is no visibility toggle.)*
+
+### 12.8 API contract (one per-user namespace, one admin namespace)
+
+- **The parallel `/api/v1/agent-sessions` namespace is removed;** it was a Phase-1
+  scope-isolation workaround and the home of the team-global, spoofable-creator CRUD.
+  Its captain / findings / runs sub-resources re-home under the surviving
+  `/api/v1/sessions` path. *(Amended 2026-06-21: the **duplicate namespace** and the
+  **spoofable creator** are removed, but its **team-global read** is now the intended
+  model, not a defect — see §12.9.)*
+- **Per-user routes under `/api/v1/sessions`,** all behind `sessionAccess`, resolve to
+  owner / team-member / none. *(Supersedes within §12, 2026-06-21: the prior "resolve
+  only to owner / shared-viewer / none and **cannot return another principal's session
+  regardless of caller**" is removed for **reads** — per-user read routes **can and
+  should** return another principal's session, because read is team-wide. Mutation
+  routes remain owner-only.)*
+  - **list** — the team-wide list with a `mine` filter (no longer an owner-scoped
+    list); **get**; **get messages** — any authenticated principal may read any session;
+    **create** (creator = resolved principal); **patch** (owner, title); **soft-delete**
+    (owner, to trash); **restore** (owner); **list own trash**; **promote-incident** (the
+    promote-in-place transition); **link-incident** (owner).
+  - *(Supersedes within §12, 2026-06-21: the separate **list shared** route and the
+    **share** / visibility-setting endpoint are **removed** — there is no visibility
+    toggle.)*
+- **Admin routes under `/api/v1/admin/sessions`,** all `requireAdmin` and audited,
+  cross-tenant — mirroring the component-governance admin surface:
+  - list all (filter by principal/type/state); get and get-messages (ordinary content
+    reads — see the admin-read amendment below); purge (manifest-with-hard-stop); archive
+    and restore-archive; list all trash; retention-policy get and put.
+- **Defense in depth:** cross-tenant **governance and mutation** requires **BOTH** the
+  admin route prefix **AND** an admin relationship from `sessionAccess`; a per-user
+  route can never be elevated to an admin relationship. *(Amended 2026-06-21: this
+  applies to **governance and cross-tenant mutation only** — cross-tenant **read** is
+  the intended model and is not gated by the admin prefix.)*
+- **Admin transcript read returns the metadata projection by default** (roles,
+  timestamps, counts, titles) and requires an explicit `include=content` query
+  parameter to return raw message bodies, so browsing the console does not incidentally
+  pull raw transcripts into a list view. Because `chat_messages.content` is stored
+  un-redacted, an admin content read writes a distinct audit verb
+  (`session.content.read`).
+  - *(Superseded within §12, 2026-06-21: the **content-projection privacy gate**, the
+    **`include=content` deliberate-reveal requirement**, and the **`session.content.read`
+    audit verb** are all **removed**. Admin content reads are **ordinary reads**;
+    metadata-first rendering survives only as a payload/performance choice. See §12.10.)*
+
+### 12.9 Reconciliation notes (open convergence deltas)
+
+These are recorded as deltas to be resolved in the diff/convergence layer, **not now**.
+
+- **Reversals of §10 (deliberate).** This section reverses §10 on two points: the
+  transcript is permanent (`run_steps` does not retire it, §12.4), and incidents are
+  promote-in-place (not mint-fresh, §12.3). Both are deliberate.
+- **Team-wide read agrees with the as-built behavior** *(added 2026-06-21).* One
+  namespace already exposed sessions team-globally — the B001 inventory verified that the
+  `agent-sessions` namespace had **no owner filter** on read. Under the team-wide read
+  model that former *divergence becomes the intended model*, not a defect to correct.
+- **Still removed (unchanged by the amendment):** the as-built spoofable
+  `creator_principal` taken from the request body, and the duplicate
+  `/api/v1/agent-sessions` namespace, both remain removed (§12.1, §12.8).
+- **Per-session visibility scaffolding is removed, not wired** *(amended 2026-06-21).*
+  The B001 inventory verified a `visibility` column and an unwired
+  `UpdateSessionVisibility` path with **no caller**. The earlier fold-in would have
+  *wired* this; the team-wide read model **removes it** instead (§12.4, §12.8) — there is
+  no visibility to set.
+- **Governance-and-mutation vs. universal read is the only surviving axis** *(supersedes
+  within §12, 2026-06-21, the prior "admin governance vs. sharing visibility" and
+  "agreement with §8.1 / §10" bullets).* There is **no sharing-visibility axis anymore**:
+  read is universal for any authenticated principal. The one distinction still worth
+  preserving is **governance-and-mutation gating versus universal read** — the admin
+  governance console (§12.8) governs and mutates cross-tenant; it is **not** a privacy
+  boundary over reading. The earlier framing of sharing as private-by-default and
+  owner-controlled, and the recorded "agreement with §8.1 / §10" on that basis, are
+  withdrawn: the team-wide read model intentionally diverges from a private-by-default
+  reading of §8.1 / §10 (the namespace collapse still agrees).
+
+### 12.10 UI surface (per-user and admin)
+
+> *Added 2026-06-21 as part of the team-wide read amendment.* This subsection records the
+> UI consequences of universal authenticated read. It introduces **no** version-control
+> affordances of any kind — no fork, branch, merge, diff, checkout, or version history.
+
+- **Per-user surface.**
+  - The **sessions page** shows the **team-wide list** with a **`mine` filter**.
+  - Opening a session owned by another principal is a **read-only viewer**.
+  - The user **delete** action is **soft-delete to trash** (never hard delete).
+  - A per-user **trash view** shows the user's own trashed sessions with the **remaining
+    time before purge** and a **restore** action; trashed sessions are removed from the
+    normal team list.
+  - There is **no share or visibility control**, and **no fork, branch, or copy
+    affordance of any kind**.
+  - A **global declare-incident control** lives in top-level chrome and is **always
+    reachable**. Triggered **outside** a session it routes to the sessions area and
+    presents a **promote-or-start-new** disambiguation, where **start-new is
+    create-empty-then-promote**. A secondary **promote-this-session-to-incident**
+    affordance lives in the **chat view**. Both resolve to the **promote-in-place**
+    transition (§12.3). The incident regime and **captain banner** is **reused, not
+    rebuilt**.
+- **Admin surface.**
+  - A **sessions console** alongside the existing component-governance admin pages.
+  - A **cross-tenant list** filterable by **principal, type, and state**.
+  - **Purge** with a **manifest-and-hard-stop** confirm naming the **message and
+    linked-child counts** to be destroyed.
+  - **Archive** and **restore-archive**; an **all-trash** view.
+  - A **retention-policy editor** exposing the **inactivity-window** knob (default
+    **off**) and the **trash-grace** knob (default **30 days**), plus the
+    **terminal-action selector** (**trash-then-purge** or **archive**).
+  - **Admin content viewing is an ordinary content read** — **no privacy confirm** and
+    **no special audit verb** (§12.8). **Metadata-first** rendering in the list is a
+    **payload/performance** choice only.
+
+## 13. B001 implementation convergence ledger
+
+This is the **canonical implementation sequence** for the §12 redesign: §12 remains the
+design spec, and this section is the **execution sequence against it**. Each node below is
+an **independent Claude Code build session against the live tree**, driven by **§12 as the
+source of truth**, and every node **begins with a read-only verification phase that
+re-derives file locations before changing anything**. Nodes are ordered **backend before
+UI**, and **backend enforcement is never modified within a UI node**. This is a
+**status-and-next-action ledger, not a design narrative**.
+
+### 13.1 Node ledger
+
+**B002 — Storage schema rewrite.**
+- *Depends on:* B001 closed.
+- *Scope:* Schema-replace the session tables (nothing is deployed, no data to preserve):
+  collapse the type enum to two values `default` and `incident`, remove `investigation`,
+  rename the ordinary-chat literal to `default`, change `linked_incident_id` to
+  `ON DELETE SET NULL`, add the lifecycle timestamp columns `trashed_at` / `trashed_by` /
+  `purge_after` / `archived_at` / `archived_by` / `archive_ref`, drop the `visibility`
+  column, keep `retention_class` but redefine it as the per-session resolution of the admin
+  retention policy, and keep the transcript table as the permanent first-class store. **Hard
+  constraint:** do **NOT** drop the legacy `sessions` / `session_messages` tables — they are
+  retained as the future learn-from-sessions feature's data source per the backlog decision.
+- *Acceptance:* Schema matches §12.4; the `incident_state` ⇒ `type=incident` CHECK is
+  preserved; build and tests green; legacy tables still present.
+
+**B003 — Session authorization seam.**
+- *Depends on:* B002.
+- *Scope:* A dedicated `sessionAccess` decision function, separate from the component RBAC
+  accessor, evaluated once below the transport, computing the relationship (owner /
+  team-member / admin / none) and returning allow/deny plus the resolved relationship; reuse
+  the existing dynamic admin capability check, do not reimplement it; no routes wired yet.
+- *Acceptance:* Break-tests on each relationship; team-member resolves to read-only; creator
+  is context-derived so the spoofable-creator path is structurally impossible.
+
+**B004 — Incident promote-in-place.**
+- *Depends on:* B002.
+- *Scope:* Rework incident declaration from minting a fresh incident-typed row to an in-place
+  transition that takes an existing session id and, in one transaction, flips its `type` to
+  `incident`, sets `incident_state` to `declared`, attaches the declarer as captain, and
+  flips the global regime; rework link-to-incident to set `linked_incident_id` only, with no
+  type flip. Fold in the one-line fix of the stale callable-but-unwired comment in the
+  session gate package.
+- *Acceptance:* Declaration promotes an existing session; no mint-fresh path remains; the
+  captain gate behavior is unchanged, proven by a break-test, since the gate keys on
+  `type=incident` and on being the active incident session and neither changes.
+
+**B005 — Per-user API on the new seam.**
+- *Depends on:* B003, B004.
+- *Scope:* Collapse to a single per-user sessions namespace with team-wide read plus a `mine`
+  filter, context-derived create, owner-only mutate, soft-delete and restore and own-trash
+  list, promote-incident, and link-incident, all routed through `sessionAccess`; remove the
+  parallel team-global namespace and re-home its captain findings and runs sub-resources
+  under the surviving path.
+- *Acceptance:* Creator forgery is gone; any authenticated principal can read any session;
+  no route reimplements ownership logic.
+
+**B006 — Admin API namespace.**
+- *Depends on:* B005.
+- *Scope:* An admin sessions namespace, all admin-gated and audited, with cross-tenant list,
+  purge with a manifest-and-hard-stop, archive and restore-archive, all-trash list, and
+  retention-policy get and put.
+- *Acceptance:* Cross-tenant mutation requires both the admin route prefix and an admin
+  relationship; every transition writes an audit row.
+
+**B007 — Retention sweeper and archive provider.**
+- *Depends on:* B002, B006.
+- *Scope:* A single policy-driven background sweeper under a boot-minted service principal
+  that applies the policy terminal action of trash-then-purge or archive against
+  `last_activity_at` and also drains abandoned `auth_login_flows` rows; a filesystem-export
+  archive behind a provider seam emitting a versioned self-contained artifact.
+- *Acceptance:* Sweeper actions are attributed in audit; inactivity window defaults off and
+  trash-grace defaults to thirty days; archive export and restore round-trip; restore refuses
+  an unknown artifact version.
+
+**B008 — UI surfaces.**
+- *Depends on:* B005, B006, B007.
+- *Scope:* The per-user surface (team-wide list with a `mine` filter, read-only viewer for
+  other principals' sessions, soft-delete to trash, a trash view with remaining time and
+  restore, a global declare-incident control in top-level chrome with a
+  promote-or-start-new disambiguation where start-new is create-empty-then-promote, a
+  secondary promote-this-session affordance in the chat view, the reused incident and captain
+  banner, and no share or visibility or fork or branch or copy affordance) and the admin
+  console (cross-tenant list, purge confirm, archive and restore, all-trash, retention-policy
+  editor). **No backend enforcement is modified in this node.**
+- *Acceptance:* Matches §12.10; no git-like affordances present.
+
+### 13.2 Cleanup and artifacts (tracked, not blocking nodes)
+
+These are tracked items, **not blocking nodes**:
+
+- Reword the §12.5 accepted-tradeoff text that still uses privacy framing so it fits the
+  team-public model — keep the admin-purge-routes-erasure point, drop the
+  sensitive-and-admin-visible framing.
+- The three B001 inventory reports are landed under `docs/investigations` as the dated
+  as-built reference.
+- The learn-from-sessions feature is a decided future feature with its legacy tables retained
+  per `docs/backlog`.
+
+**The legacy-table drop is intentionally absent from every node above and is gated on that
+future feature.**
