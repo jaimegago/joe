@@ -10,15 +10,19 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 )
 
-// TestMigration022_UpDownUp_RoundTrip runs the full chain up (including 022),
-// steps the migrations above 022 down then 022 itself (reverting 024 and 023,
-// the heads, then 022), and re-applies. Migration 022 adds the chat_messages
-// table and the agent_sessions title/visibility columns. This asserts:
+// TestMigration022_UpDownUp_RoundTrip isolates migration 022 (the chat_messages
+// table plus the agent_sessions title/visibility columns). Migration 025 later
+// rewrites agent_sessions — it removes the visibility column and collapses the
+// type domain — so the 022-era shape (visibility column, 'other' type) only
+// exists at the 022 boundary, not at full HEAD. The test therefore steps DOWN to
+// 022 to assert its artifacts, steps one more to assert 022's down, then steps
+// back up to HEAD. Asserts:
 //
-//   - After up: chat_messages exists; agent_sessions has title + visibility;
-//     visibility defaults to 'private'.
-//   - After Steps(-3): chat_messages and both columns are gone.
-//   - After re-up: everything is back and chat_messages is empty.
+//   - At the 022 boundary: chat_messages exists; agent_sessions has title +
+//     visibility; visibility defaults to 'private'.
+//   - After reverting 022: chat_messages and both columns are gone.
+//   - After re-up to HEAD: chat_messages exists again and is empty (025 keeps
+//     the permanent transcript table; it never reseeds it).
 func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 	s, err := New(DatabaseConfig{Driver: DriverSQLite, DSN: ":memory:"}, (*observability.Metrics)(nil))
 	if err != nil {
@@ -26,21 +30,9 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// 1) Up to latest (includes 022).
+	// 1) Up to latest (includes 025, which removes visibility from agent_sessions).
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate up #1: %v", err)
-	}
-	if !tableExists(t, s, "chat_messages") {
-		t.Fatal("after up: chat_messages table must exist")
-	}
-	if !columnExists(t, s, "agent_sessions", "title") {
-		t.Error("after up: agent_sessions.title must exist")
-	}
-	if !columnExists(t, s, "agent_sessions", "visibility") {
-		t.Error("after up: agent_sessions.visibility must exist")
-	}
-	if got := insertSessionAndReadVisibility(t, s, "vis-default"); got != "private" {
-		t.Errorf("after up: visibility default = %q, want 'private'", got)
 	}
 
 	// Build a fresh migrator against the same DB so we can step down.
@@ -57,10 +49,28 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step down to just below 022: reverts 024 (read promotions) and 023
-	// (source→component, the heads), then 022.
+	// 2) Step down to the 022 boundary: reverts 025 (session rewrite — restores
+	// the visibility column + 'other' type), 024 (read promotions), 023
+	// (source→component). 022 is now the head.
 	if err := m.Steps(-3); err != nil {
-		t.Fatalf("Steps(-3): %v", err)
+		t.Fatalf("Steps(-3) to 022 boundary: %v", err)
+	}
+	if !tableExists(t, s, "chat_messages") {
+		t.Fatal("at 022: chat_messages table must exist")
+	}
+	if !columnExists(t, s, "agent_sessions", "title") {
+		t.Error("at 022: agent_sessions.title must exist")
+	}
+	if !columnExists(t, s, "agent_sessions", "visibility") {
+		t.Error("at 022: agent_sessions.visibility must exist")
+	}
+	if got := insertSessionAndReadVisibility(t, s, "vis-default"); got != "private" {
+		t.Errorf("at 022: visibility default = %q, want 'private'", got)
+	}
+
+	// 3) Step down one more: reverts 022 itself.
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("Steps(-1) to revert 022: %v", err)
 	}
 	if tableExists(t, s, "chat_messages") {
 		t.Error("after down: chat_messages must be dropped")
@@ -72,7 +82,7 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 		t.Error("after down: agent_sessions.title must be dropped")
 	}
 
-	// 3) Up again: re-applies 022.
+	// 4) Up again to HEAD: re-applies 022 (and 023/024/025 above it).
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("Up #2: %v", err)
 	}

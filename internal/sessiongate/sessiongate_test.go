@@ -45,7 +45,7 @@ func TestCheck_NormalRegime_AllowsAllClasses(t *testing.T) {
 	e := newGateEnv(t)
 	// Make a plain investigation session (any non-incident kind works).
 	sess := sessionmodel.AgentSession{
-		ID: uuid.NewString(), Type: sessionmodel.SessionTypeInvestigation,
+		ID: uuid.NewString(), Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := e.repo.CreateSession(e.ctx, sess); err != nil {
@@ -82,7 +82,7 @@ func TestCheck_IncidentRegime_Matrix(t *testing.T) {
 	linked := captainSessionID
 	investigationID := uuid.NewString()
 	if _, err := e.repo.CreateSession(e.ctx, sessionmodel.AgentSession{
-		ID: investigationID, Type: sessionmodel.SessionTypeInvestigation,
+		ID: investigationID, Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob", LinkedIncidentID: &linked,
 	}); err != nil {
 		t.Fatalf("create investigation: %v", err)

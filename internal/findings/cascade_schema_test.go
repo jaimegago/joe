@@ -11,21 +11,25 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// TestCascadeSchema_TwoLevelExpunge_Change3_Findings extends the §6-C
-// structural guard with the findings table:
+// TestCascadeSchema_IncidentDeleteSeversLinks_Findings extends the §12.4
+// severance guard with the findings table:
 //
 //	incident I  -- target_session_id of finding_for_I
-//	├── investigation J1  -- source_session_id of finding_for_I,
-//	│                         and target_session_id of finding_for_J1
-//	├── investigation J2  -- referenced_investigation_session_id of
-//	│                         finding_for_I
-//	└── (cascade)
+//	├── linked session J1  -- source_session_id of finding_for_I,
+//	│                          and target_session_id of finding_for_J1
+//	├── linked session J2  -- referenced_investigation_session_id of
+//	│                          finding_for_I
+//	└── (link severed on delete)
 //
-// After DELETE FROM agent_sessions WHERE id = I, every finding row tied to
-// I, J1, or J2 (via ANY of its three FKs) must be gone. This guards
-// against a future schema change that drops ON DELETE CASCADE on any one
-// of the three FKs.
-func TestCascadeSchema_TwoLevelExpunge_Change3_Findings(t *testing.T) {
+// After DELETE FROM agent_sessions WHERE id = I:
+//   - finding_for_I is gone (target_session_id = I cascades; a finding's FK to a
+//     deleted session is still ON DELETE CASCADE).
+//   - J1 and J2 SURVIVE (linked_incident_id ON DELETE SET NULL, §12.4), so
+//     finding_for_J1 (target = J1, source = J2) SURVIVES.
+//
+// This REPLACES the as-built two-level-expunge guard, which expected BOTH
+// findings gone because J1/J2 used to cascade away with the incident.
+func TestCascadeSchema_IncidentDeleteSeversLinks_Findings(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	sessRepo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
@@ -44,7 +48,7 @@ func TestCascadeSchema_TwoLevelExpunge_Change3_Findings(t *testing.T) {
 	for _, id := range []string{j1ID, j2ID} {
 		linked := incidentID
 		if _, err := sessRepo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeInvestigation,
+			ID: id, Type: sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice", LinkedIncidentID: &linked,
 		}); err != nil {
 			t.Fatalf("create investigation %s: %v", id, err)
@@ -88,15 +92,28 @@ func TestCascadeSchema_TwoLevelExpunge_Change3_Findings(t *testing.T) {
 		t.Fatalf("delete incident: %v", err)
 	}
 
-	// Both findings gone: finding_for_I via target_session_id cascade,
-	// finding_for_J1 via target_session_id (J1) cascade (J1 itself was
-	// expunged via linked_incident_id two-level cascade).
+	// finding_for_I is gone (target_session_id = I cascaded). finding_for_J1
+	// SURVIVES because J1 and J2 survive the incident delete (link severed, not
+	// cascaded). So exactly one finding remains, and it is finding_for_J1.
 	all, _ = repo.ListFindings(ctx)
-	if len(all) != 0 {
-		t.Errorf("post-delete findings count = %d, want 0 (cascade failed)", len(all))
+	if len(all) != 1 {
+		t.Errorf("post-delete findings count = %d, want 1 (only finding_for_I cascades; J1/J2 survive)", len(all))
 		for _, f := range all {
 			t.Logf("survived: %+v", f)
 		}
+	} else if all[0].ID != findingForJ1.ID {
+		t.Errorf("surviving finding = %q, want finding_for_J1 %q", all[0].ID, findingForJ1.ID)
+	}
+
+	// J1 and J2 survived with their links severed to NULL.
+	var linked int
+	if err := s.DB().QueryRow(
+		`SELECT count(*) FROM agent_sessions WHERE id IN (?,?) AND linked_incident_id IS NULL`,
+		j1ID, j2ID).Scan(&linked); err != nil {
+		t.Fatalf("count severed links: %v", err)
+	}
+	if linked != 2 {
+		t.Errorf("severed (NULL link) sessions = %d, want 2", linked)
 	}
 }
 
@@ -152,8 +169,8 @@ func TestCascadeSchema_FindingCascadeOnEachFK(t *testing.T) {
 			s := newTestStore(t)
 			ctx := context.Background()
 			repo := findings.NewRepository(s.DB(), store.DriverSQLite)
-			doomed := newTestSession(t, s, sessionmodel.SessionTypeInvestigation)
-			other := newTestSession(t, s, sessionmodel.SessionTypeInvestigation)
+			doomed := newTestSession(t, s, sessionmodel.SessionTypeDefault)
+			other := newTestSession(t, s, sessionmodel.SessionTypeDefault)
 
 			f := tc.setFKs(t, s, doomed, other)
 			if _, err := repo.PostFinding(ctx, f); err != nil {

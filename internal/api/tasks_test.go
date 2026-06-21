@@ -318,7 +318,7 @@ func TestTaskOwnership_CrossUserSessionRejected(t *testing.T) {
 	srv, mux := setupTaskServer(t, &recordingLLM{answer: "ok"})
 
 	if _, err := srv.services.SessionModel.CreateSession(context.Background(), sessionmodel.AgentSession{
-		ID: "owned-by-alice", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: alice,
+		ID: "owned-by-alice", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: alice,
 	}); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestTaskAutoTitle_DoesNotOverwriteExistingTitle(t *testing.T) {
 
 	custom := "User Picked This Name"
 	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
-		ID: "titled", Type: sessionmodel.SessionTypeOther, CreatorPrincipal: alice, Title: &custom,
+		ID: "titled", Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: alice, Title: &custom,
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}

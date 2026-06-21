@@ -196,17 +196,9 @@ type webUISession struct {
 	Summary      string `json:"summary,omitempty"`
 	MessageCount int    `json:"message_count"`
 	Title        string `json:"title,omitempty"`
-	// Visibility ('private' | 'public') is always present — NOT omitempty. The
-	// server always sets a non-empty value (the store defaults "" -> "private"),
-	// so omitempty never actually fired; making it explicit keeps the rule
-	// uniform with read_only ("security-relevant response fields are always
-	// present") so a future negative client check (e.g. !public) can't read an
-	// absent field as a meaningful, fail-open value.
-	Visibility string `json:"visibility"`
-	// ReadOnly is true when the caller is not the owner and is viewing the
-	// session only because it is public (DESIGN-CHAT-SESSIONS.md §10 access
-	// matrix: non-owner public = read-only). The owner-scoped list/create/
-	// rename/visibility paths leave it false — i.e. the caller owns the session.
+	// ReadOnly is true when the caller is not the owner (team-wide read model,
+	// §12: any authenticated principal may read any session, but only the owner
+	// may write). The owner-scoped list/create/rename paths leave it false.
 	//
 	// NOT omitempty on purpose: read_only must ALWAYS be present so the client can
 	// gate owner-only controls (the visibility toggle, rename) on a POSITIVE owner
@@ -247,7 +239,6 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 		StartedAt:    s.CreatedAt.Format(time.RFC3339),
 		LastActivity: s.LastActivityAt.Format(time.RFC3339),
 		MessageCount: messageCount,
-		Visibility:   s.Visibility,
 	}
 	if s.LinkedIncidentID != nil {
 		out.LinkedIncidentID = *s.LinkedIncidentID
@@ -364,11 +355,10 @@ func (h *webUIHandler) handleCreateSession(w http.ResponseWriter, r *http.Reques
 	now := time.Now().UTC()
 	created, err := h.server.services.SessionModel.CreateSession(r.Context(), sessionmodel.AgentSession{
 		ID:               uid.New(),
-		Type:             sessionmodel.SessionTypeOther,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatedAt:        now,
 		LastActivityAt:   now,
 		CreatorPrincipal: principal,
-		Visibility:       sessionmodel.VisibilityPrivate,
 	})
 	if err != nil {
 		writeInternalError(w, err, "create session")
@@ -618,8 +608,10 @@ func (h *webUIHandler) handleLinkIncident(w http.ResponseWriter, r *http.Request
 		writeInternalError(w, err, "link session to incident")
 		return
 	}
+	// Two-type model (§12.3): linkage is the linked_incident_id pointer alone —
+	// no type flip (the 'investigation' type was removed). The session stays a
+	// plain 'default' conversation that participates via the pointer.
 	sess.LinkedIncidentID = &incident.ID
-	sess.Type = sessionmodel.SessionTypeInvestigation
 
 	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
 }

@@ -166,7 +166,7 @@ func TestCaptain_RCAP2_FirstHumanBecomesCaptain(t *testing.T) {
 func TestCaptain_B4_NonIncidentAttachIsInformational(t *testing.T) {
 	e := newCaptainEnv(t, 60)
 	sess := sessionmodel.AgentSession{
-		ID: uuid.NewString(), Type: sessionmodel.SessionTypeInvestigation,
+		ID: uuid.NewString(), Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := e.sess.CreateSession(e.ctx, sess); err != nil {

@@ -6,34 +6,24 @@ import (
 	"testing"
 )
 
-// TestInvariant_ExpungeNoSoftDeleteIdentifiers is the named structural
-// guard for PHASE-0-SESSION-MODEL.md §5b-5 — incident deletion is
-// TRUE EXPUNGE, not a tombstone. Phase 1 carries no soft-delete
-// column anywhere in the schema; the only retention seam is the
-// retention_class TEXT on agent_sessions (a label, not a tombstone
-// flag).
+// TestInvariant_NoLegacyTombstoneIdentifiers is the surviving remnant of the
+// former §5b-5 true-expunge guard. The §5b-5 "no soft-delete column anywhere"
+// invariant is SUPERSEDED by the redesign (DESIGN-CHAT-SESSIONS.md §12.4/§12.5):
+// session lifecycle is now timestamp-driven, with an explicit soft-delete (trash)
+// and archive stage. Migration 025 introduces those columns deliberately
+// (trashed_at / trashed_by / purge_after / archived_at / archived_by /
+// archive_ref). The old guard forbade `archived_at`, so it was relaxed in the
+// same diff that added the lifecycle (as the guard's own instructions required).
 //
-// This test walks every file under migrations/*.sql (via the same
-// embed.FS the migrator uses, so it can't drift out of sync) and
-// asserts ZERO occurrences of the identifiers `deleted_at`,
-// `archived_at`, or `tombstone`. The match is case-insensitive
-// substring so column casing variations are caught.
+// What survives is a NAMING guard: the redesign names its soft-delete columns
+// `trashed_at` and `archived_at`, never `deleted_at` or `tombstone`. This test
+// keeps those two legacy identifiers out of the schema so the lifecycle naming
+// stays consistent. The match is case-insensitive substring.
 //
-// The guard is ABSOLUTE — there is no allowlist. Any future
-// appearance of those identifiers fails the build with an
-// explanatory message. To add one legitimately:
-//  1. Update PHASE-0-SESSION-MODEL.md §5b-5 explicitly to permit
-//     soft-delete and document the new lifecycle.
-//  2. Update this test to relax the constraint with a documented
-//     justification.
-//
-// Both edits must happen in the same diff so the design intent
-// survives review.
-//
-// Lives in package `store` (not store_test) so it can access the
-// unexported migrationsFS variable directly.
-func TestInvariant_ExpungeNoSoftDeleteIdentifiers(t *testing.T) {
-	forbidden := []string{"deleted_at", "archived_at", "tombstone"}
+// Lives in package `store` (not store_test) so it can access the unexported
+// migrationsFS variable directly.
+func TestInvariant_NoLegacyTombstoneIdentifiers(t *testing.T) {
+	forbidden := []string{"deleted_at", "tombstone"}
 
 	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -58,13 +48,11 @@ func TestInvariant_ExpungeNoSoftDeleteIdentifiers(t *testing.T) {
 			// Identify the offending line(s) for a useful error.
 			for i, line := range strings.Split(string(data), "\n") {
 				if strings.Contains(strings.ToLower(line), needle) {
-					t.Errorf("§5b-5 violation: migration %s line %d contains forbidden "+
-						"identifier %q.\n  line: %s\n\n"+
-						"Phase 1 deletion is TRUE EXPUNGE (incident + linked investigations "+
-						"cascade away). No soft-delete column may appear. The only retention "+
-						"seam is retention_class TEXT on agent_sessions. To legitimately add "+
-						"a soft-delete mechanism, update PHASE-0-SESSION-MODEL.md §5b-5 and "+
-						"relax this guard in the same diff.",
+					t.Errorf("lifecycle-naming violation: migration %s line %d contains "+
+						"forbidden identifier %q.\n  line: %s\n\n"+
+						"The session lifecycle (DESIGN-CHAT-SESSIONS.md §12.4/§12.5) names its "+
+						"soft-delete and archive columns `trashed_at` and `archived_at` — never "+
+						"`deleted_at` or `tombstone`. Use the §12.4 column names for consistency.",
 						path, i+1, needle, strings.TrimSpace(line))
 				}
 			}

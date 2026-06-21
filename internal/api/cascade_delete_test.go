@@ -182,7 +182,7 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 	for _, id := range []string{j1ID, j2ID} {
 		linked := incidentID
 		if _, err := sessRepo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeInvestigation,
+			ID: id, Type: sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice", LinkedIncidentID: &linked,
 		}); err != nil {
 			t.Fatalf("create investigation %s: %v", id, err)
@@ -243,9 +243,14 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Post-delete: every child row tied to I, J1, J2 must be gone.
-	// Two-level cascade: deleting I cascades J1/J2 via linked_incident_id,
-	// which cascades their children via the run/session FKs.
+	// Post-delete (§12.4 severance, NOT two-level cascade): deleting incident I
+	// destroys ONLY I and its OWN children. J1/J2 are independent 'default'
+	// sessions linked via linked_incident_id, which is ON DELETE SET NULL — they
+	// SURVIVE with their links severed, and so do all their children.
+	//
+	// Every check query is `... IN (?,?,?)` over [I, J1, J2] (sessions) or
+	// [I-run, J1-run, J2-run] (runs); after the delete exactly the two J entries
+	// remain, so each table goes from 3 to 2 (not 0).
 	for _, c := range checks {
 		var ids []string
 		if c.idsFor == "sessions" {
@@ -253,9 +258,25 @@ func TestCascadeDelete_IncidentAndLinkedInvestigations(t *testing.T) {
 		} else {
 			ids = runIDs
 		}
-		if got := countTied(t, storeHandle, c.query, ids...); got != c.wantPos {
-			t.Errorf("post-delete %s count = %d, want %d — §5b-5 cascade failed", c.name, got, c.wantPos)
+		if got := countTied(t, storeHandle, c.query, ids...); got != 2 {
+			t.Errorf("post-delete %s count = %d, want 2 (I expunged; J1/J2 survive — links severed, not cascaded)", c.name, got)
 		}
+	}
+
+	// The incident itself and its own children are gone...
+	if got := countTied(t, storeHandle,
+		`SELECT count(*) FROM agent_sessions WHERE id = ?`, incidentID); got != 0 {
+		t.Errorf("incident post-delete count = %d, want 0", got)
+	}
+	if got := countTied(t, storeHandle,
+		`SELECT count(*) FROM agent_runs WHERE id = ?`, runIDs[0]); got != 0 {
+		t.Errorf("incident run post-delete count = %d, want 0 (own-children cascade failed)", got)
+	}
+	// ...and J1/J2 survive with linked_incident_id severed to NULL.
+	if got := countTied(t, storeHandle,
+		`SELECT count(*) FROM agent_sessions WHERE id IN (?,?) AND linked_incident_id IS NULL`,
+		j1ID, j2ID); got != 2 {
+		t.Errorf("severed (NULL link) linked sessions = %d, want 2", got)
 	}
 }
 
@@ -270,7 +291,7 @@ func TestCascadeDelete_OrphanInvestigation(t *testing.T) {
 	sibling := uuid.NewString()
 	for _, id := range []string{orphan, sibling} {
 		if _, err := sessRepo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeInvestigation,
+			ID: id, Type: sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice",
 		}); err != nil {
 			t.Fatalf("create session %s: %v", id, err)
@@ -323,7 +344,7 @@ func TestCascadeDelete_ResolveDoesNotCascade(t *testing.T) {
 	for _, id := range []string{j1, j2} {
 		linked := incidentID
 		if _, err := sessRepo.CreateSession(ctx, sessionmodel.AgentSession{
-			ID: id, Type: sessionmodel.SessionTypeInvestigation,
+			ID: id, Type: sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice", LinkedIncidentID: &linked,
 		}); err != nil {
 			t.Fatalf("create investigation: %v", err)

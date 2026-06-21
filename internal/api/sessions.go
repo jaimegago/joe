@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 )
 
@@ -46,12 +47,15 @@ func (s *Server) registerSessionModelRoutes(mux *http.ServeMux, prefix string) {
 }
 
 type createSessionRequest struct {
-	ID               string                      `json:"id,omitempty"`
-	Type             sessionmodel.SessionType    `json:"type"`
-	IncidentState    *sessionmodel.IncidentState `json:"incident_state,omitempty"`
-	CreatorPrincipal string                      `json:"creator_principal"`
-	LinkedIncidentID *string                     `json:"linked_incident_id,omitempty"`
-	RetentionClass   *string                     `json:"retention_class,omitempty"`
+	ID            string                      `json:"id,omitempty"`
+	Type          sessionmodel.SessionType    `json:"type"`
+	IncidentState *sessionmodel.IncidentState `json:"incident_state,omitempty"`
+	// NOTE: creator_principal is intentionally NOT a request field. The creator
+	// is the context-resolved authenticated principal (§12.1) and is never
+	// accepted from the request body — that closes the spoofable-creator defect
+	// by construction.
+	LinkedIncidentID *string `json:"linked_incident_id,omitempty"`
+	RetentionClass   *string `json:"retention_class,omitempty"`
 }
 
 func (h *sessionsHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -63,11 +67,14 @@ func (h *sessionsHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	if !isValidSessionType(req.Type) {
 		writeBadRequest(w, nil, "create session",
-			"type is required and must be one of: incident, investigation, other")
+			"type is required and must be one of: default, incident")
 		return
 	}
-	if req.CreatorPrincipal == "" {
-		writeBadRequest(w, nil, "create session", "creator_principal is required")
+	// Creator is the context-derived authenticated principal (§12.1), never
+	// client-supplied. A request with no resolvable principal cannot create.
+	creatorPrincipal := string(rbac.PrincipalFromContext(r.Context()))
+	if creatorPrincipal == "" {
+		writeBadRequest(w, nil, "create session", "no authenticated principal in context")
 		return
 	}
 	// Incident sessions must carry an incident_state; non-incident must not.
@@ -89,7 +96,7 @@ func (h *sessionsHandler) create(w http.ResponseWriter, r *http.Request) {
 		ID:               req.ID,
 		Type:             req.Type,
 		IncidentState:    req.IncidentState,
-		CreatorPrincipal: req.CreatorPrincipal,
+		CreatorPrincipal: creatorPrincipal,
 		LinkedIncidentID: req.LinkedIncidentID,
 		RetentionClass:   req.RetentionClass,
 	}
@@ -116,7 +123,7 @@ func (h *sessionsHandler) list(w http.ResponseWriter, r *http.Request) {
 	if typeFilter != "" {
 		if !isValidSessionType(sessionmodel.SessionType(typeFilter)) {
 			writeBadRequest(w, nil, "list sessions",
-				"type filter must be one of: incident, investigation, other")
+				"type filter must be one of: default, incident")
 			return
 		}
 		sessions, err = h.repo.ListSessionsByType(r.Context(), sessionmodel.SessionType(typeFilter))
@@ -177,9 +184,8 @@ func (h *sessionsHandler) delete(w http.ResponseWriter, r *http.Request) {
 
 func isValidSessionType(t sessionmodel.SessionType) bool {
 	switch t {
-	case sessionmodel.SessionTypeIncident,
-		sessionmodel.SessionTypeInvestigation,
-		sessionmodel.SessionTypeOther:
+	case sessionmodel.SessionTypeDefault,
+		sessionmodel.SessionTypeIncident:
 		return true
 	}
 	return false

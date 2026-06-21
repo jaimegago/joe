@@ -24,7 +24,7 @@ func TestCascadeSchema_WarningWithSourceInvestigation_Cascades(t *testing.T) {
 	repo := warnings.NewRepository(s.DB(), store.DriverSQLite)
 
 	sess := sessionmodel.AgentSession{
-		ID: uuid.NewString(), Type: sessionmodel.SessionTypeInvestigation,
+		ID: uuid.NewString(), Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := sessRepo.CreateSession(ctx, sess); err != nil {
@@ -79,7 +79,7 @@ func TestCascadeSchema_WarningWithoutSourceInvestigation_Independent(t *testing.
 
 	// Create and delete an unrelated session.
 	sess := sessionmodel.AgentSession{
-		ID: uuid.NewString(), Type: sessionmodel.SessionTypeInvestigation,
+		ID: uuid.NewString(), Type: sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "alice",
 	}
 	if _, err := sessRepo.CreateSession(ctx, sess); err != nil {

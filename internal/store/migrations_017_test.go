@@ -55,8 +55,8 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 	// agent_read_promotions table) now sit above 017, so reverting 017 requires
 	// first reverting them. Stepping -8 lands the schema just below 017, which is
 	// what this test exercises.
-	if err := m.Steps(-8); err != nil {
-		t.Fatalf("Steps(-8): %v", err)
+	if err := m.Steps(-9); err != nil {
+		t.Fatalf("Steps(-9): %v", err)
 	}
 	// After the down, the four new tables must be gone.
 	for _, table := range []string{

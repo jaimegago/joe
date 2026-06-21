@@ -124,7 +124,7 @@ func TestCaptainGate_EndToEnd(t *testing.T) {
 
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -169,7 +169,7 @@ func TestCaptainGate_RefusalNeverCallsInner(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -274,7 +274,7 @@ func TestPhaseG_LoopPathNonCaptainMutationRefused(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -328,7 +328,7 @@ func TestPhaseG_LoopPathNonCaptainReadsStillSucceed(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -357,7 +357,7 @@ func TestPhaseG_GateRefusalRecordedInAuditTrail(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -423,7 +423,7 @@ func TestFloorPrecedesIncidentGate(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}
@@ -471,7 +471,7 @@ func TestFloorDownGateStillRefuses(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	investigation := sessionmodel.AgentSession{
 		ID:               uuid.NewString(),
-		Type:             sessionmodel.SessionTypeInvestigation,
+		Type:             sessionmodel.SessionTypeDefault,
 		CreatorPrincipal: "bob",
 		LinkedIncidentID: &captainSess,
 	}

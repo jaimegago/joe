@@ -18,7 +18,7 @@ import (
 //
 //   - After up: the principals table accepts a row and its status CHECK rejects
 //     an unknown status value.
-//   - After Steps(-4): the principals table is gone.
+//   - After Steps(-5): the principals table is gone.
 //   - After re-up: the table exists again and is empty (the migration creates
 //     but does not seed it).
 func TestMigration021_UpDownUp_RoundTrip(t *testing.T) {
@@ -60,8 +60,8 @@ func TestMigration021_UpDownUp_RoundTrip(t *testing.T) {
 	// promotions, the head), 023 (source→component), 022 (chat sessions), then
 	// 021, dropping principals. None of 022..024 touches principals, so
 	// reverting them first is inert to this probe.
-	if err := m.Steps(-4); err != nil {
-		t.Fatalf("Steps(-4): %v", err)
+	if err := m.Steps(-5); err != nil {
+		t.Fatalf("Steps(-5): %v", err)
 	}
 	if tableExists(t, s, "principals") {
 		t.Error("after down: principals table must be dropped")

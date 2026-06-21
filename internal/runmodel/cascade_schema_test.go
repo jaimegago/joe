@@ -11,9 +11,9 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// TestCascadeSchema_TwoLevelExpunge_Change2 extends the §6-C structural
-// guard introduced in internal/sessionmodel/cascade_schema_test.go to cover
-// the child tables added by Change 2:
+// TestCascadeSchema_IncidentDeleteSeversLinks_Runs extends the §12.4 severance
+// guard (see internal/sessionmodel/cascade_schema_test.go) across the run-model
+// child tables:
 //
 //	agent_runs, run_steps, run_solicitations, run_world_handles,
 //	tool_idempotency_keys, action_ledger
@@ -21,17 +21,19 @@ import (
 // Layout:
 //
 //	incident I
-//	├── linked investigation J1
+//	├── linked session J1
 //	│   └── run + step + solicitation + world handle + idempotency key
 //	│       + action ledger entry
-//	├── linked investigation J2
+//	├── linked session J2
 //	│   └── (same)
 //	└── (same on I itself)
 //
-// After DELETE FROM agent_sessions WHERE id = I, every row across every
-// child table tied to I, J1, or J2 must be gone. The cascade is one SQL
-// statement — the schema does the work.
-func TestCascadeSchema_TwoLevelExpunge_Change2(t *testing.T) {
+// After DELETE FROM agent_sessions WHERE id = I, only I's OWN run-chain is
+// destroyed (its agent_runs row and all run-keyed children cascade). J1 and J2
+// SURVIVE with linked_incident_id severed to NULL (§12.4: linked_incident_id is
+// ON DELETE SET NULL, not CASCADE), and so do their entire run-chains. This
+// REPLACES the as-built two-level-expunge guard.
+func TestCascadeSchema_IncidentDeleteSeversLinks_Runs(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	sessRepo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
@@ -57,7 +59,7 @@ func TestCascadeSchema_TwoLevelExpunge_Change2(t *testing.T) {
 		linked := incidentID
 		if _, err := sessRepo.CreateSession(ctx, sessionmodel.AgentSession{
 			ID:               id,
-			Type:             sessionmodel.SessionTypeInvestigation,
+			Type:             sessionmodel.SessionTypeDefault,
 			CreatorPrincipal: "alice",
 			LinkedIncidentID: &linked,
 		}); err != nil {
@@ -139,14 +141,26 @@ func TestCascadeSchema_TwoLevelExpunge_Change2(t *testing.T) {
 		t.Fatalf("delete incident: %v", err)
 	}
 
-	// 5. Every session row tied to I / J1 / J2 is gone (two-level cascade).
-	mustCount(`SELECT count(*) FROM agent_sessions WHERE id IN (?,?,?)`, 0, incidentID, j1ID, j2ID)
+	// 5. I is gone; J1 and J2 SURVIVE with their links severed to NULL.
+	mustCount(`SELECT count(*) FROM agent_sessions WHERE id = ?`, 0, incidentID)
+	mustCount(`SELECT count(*) FROM agent_sessions WHERE id IN (?,?)`, 2, j1ID, j2ID)
+	mustCount(`SELECT count(*) FROM agent_sessions WHERE id IN (?,?) AND linked_incident_id IS NULL`, 2, j1ID, j2ID)
 
-	// 6. Every child row from every Change-2 table is gone.
-	mustCount(`SELECT count(*) FROM agent_runs WHERE id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
-	mustCount(`SELECT count(*) FROM run_steps WHERE run_id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
-	mustCount(`SELECT count(*) FROM run_solicitations WHERE run_id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
-	mustCount(`SELECT count(*) FROM run_world_handles WHERE run_id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
-	mustCount(`SELECT count(*) FROM tool_idempotency_keys WHERE run_id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
-	mustCount(`SELECT count(*) FROM action_ledger WHERE run_id IN (?,?,?)`, 0, runIDs[0], runIDs[1], runIDs[2])
+	// 6. I's OWN run-chain (runIDs[0]) is fully cascaded away...
+	incRun := runIDs[0]
+	mustCount(`SELECT count(*) FROM agent_runs WHERE id = ?`, 0, incRun)
+	mustCount(`SELECT count(*) FROM run_steps WHERE run_id = ?`, 0, incRun)
+	mustCount(`SELECT count(*) FROM run_solicitations WHERE run_id = ?`, 0, incRun)
+	mustCount(`SELECT count(*) FROM run_world_handles WHERE run_id = ?`, 0, incRun)
+	mustCount(`SELECT count(*) FROM tool_idempotency_keys WHERE run_id = ?`, 0, incRun)
+	mustCount(`SELECT count(*) FROM action_ledger WHERE run_id = ?`, 0, incRun)
+
+	// ...but J1's and J2's run-chains (runIDs[1], runIDs[2]) survive intact.
+	j1Run, j2Run := runIDs[1], runIDs[2]
+	mustCount(`SELECT count(*) FROM agent_runs WHERE id IN (?,?)`, 2, j1Run, j2Run)
+	mustCount(`SELECT count(*) FROM run_steps WHERE run_id IN (?,?)`, 2, j1Run, j2Run)
+	mustCount(`SELECT count(*) FROM run_solicitations WHERE run_id IN (?,?)`, 2, j1Run, j2Run)
+	mustCount(`SELECT count(*) FROM run_world_handles WHERE run_id IN (?,?)`, 2, j1Run, j2Run)
+	mustCount(`SELECT count(*) FROM tool_idempotency_keys WHERE run_id IN (?,?)`, 2, j1Run, j2Run)
+	mustCount(`SELECT count(*) FROM action_ledger WHERE run_id IN (?,?)`, 2, j1Run, j2Run)
 }
