@@ -360,9 +360,18 @@ Status: ✅ Complete — 40+ adapters, all 19 graph edge types wired, test cover
 - Background sync coordinator: `internal/knowledge/sync/syncer.go` — polls `knowledge_sources` table, respects per-source `sync_interval_minutes`
 - Deduplication via SHA256 content hash (avoids unnecessary re-embeddings)
 
-7.4 ✅ DONE: LLM-derived insights (Tier 3)
+7.4 ⚠️ DORMANT / ORPHANED: LLM-derived insights (Tier 3)
 
-- `internal/knowledge/learning/extractor.go`: Analyzes completed sessions, extracts patterns/failure modes/insights via LLM
+> **Correction (2026-06-20):** this milestone was marked DONE, but the capability
+> never shipped as a live feature. `internal/knowledge/learning/extractor.go`
+> exists and its tests pass, but it is **orphaned** — nothing constructs or calls
+> it, it reads the **legacy** `session_messages` table (not the live
+> `agent_sessions`/`chat_messages` store), and its write path is ungoverned (no
+> principal, no audit). The historical milestone is retained for the record; the
+> current state is authoritative in
+> [docs/investigations/learn-from-sessions-current-state.md](investigations/learn-from-sessions-current-state.md).
+
+- `internal/knowledge/learning/extractor.go`: Analyzes completed sessions, extracts patterns/failure modes/insights via LLM — **written but never wired**
 - Stores entries with provenance metadata (`session_id`, `extracted_at`)
 - Deduplicates via `source_type + source_id`; LLM cannot create/modify Tier 1
 
@@ -373,7 +382,7 @@ Status: ✅ Complete — 40+ adapters, all 19 graph edge types wired, test cover
 - Core tool: `internal/tools/core/knowledge_search.go` — `search_knowledge` (T1), registered for both User Agent and Core Agent
 - Core Agent tool: `save_knowledge_entry` (T2) registered in `internal/coreagent/agent.go`
 
-Status: ✅ Complete — knowledge tiers enforced, Confluence/Notion sync live, semantic search operational, session learning wired
+Status: ✅ Complete (knowledge tiers enforced, Confluence/Notion sync live, semantic search operational) — **except 7.4: session learning is dormant/orphaned, never wired** (see [current-state record](investigations/learn-from-sessions-current-state.md))
 
 ---
 

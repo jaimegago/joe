@@ -1756,6 +1756,15 @@ The Knowledge Store captures tribal knowledge, runbooks, and learned insights wi
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+> **Not wired (2026-06-20).** The Tier 3 "Patterns extracted from sessions" /
+> "Learned from session" capability above describes the *intended* design, not a
+> live one. The extractor that would produce these (`internal/knowledge/learning/`)
+> is dormant and orphaned — never called, reading the legacy `session_messages`
+> table, writing ungoverned. No session-derived Tier 3 entries are produced today.
+> See [docs/investigations/learn-from-sessions-current-state.md](investigations/learn-from-sessions-current-state.md).
+> (The Tier 1 "Human-approved session learnings" line depends on the same dormant
+> pipeline.)
+
 **Schema:**
 
 ```
@@ -2351,11 +2360,11 @@ All new adapters in this phase are read-only (T1) by default. Any mutation capab
 - [x] Knowledge items table (tiers: curated, synced, derived) — SQLite-backed, migration 004
 - [x] Tier 1: Human-curated notes attached to nodes (immutability enforced at service layer)
 - [x] Tier 2: Synced sources (Confluence, Notion adapters with background sync coordinator)
-- [x] Tier 3: LLM-derived insights from sessions (provenance metadata, deduplication)
+- [~] Tier 3: LLM-derived insights from sessions — **code written but dormant/orphaned, never wired** (reads the legacy `session_messages` table, ungoverned write path); see [current-state record](investigations/learn-from-sessions-current-state.md)
 - [x] Knowledge retrieval integrated into User Agent context via `search_knowledge` tool (T1)
 - [x] Embeddings for semantic search (cosine similarity, tier/confidence filtering)
 - [x] 10 API endpoints: entries CRUD, semantic search, source management, manual sync trigger
-- [x] **Milestone: Joe references runbooks and past learnings**
+- [x] **Milestone: Joe references runbooks** (and, by design, past learnings — but the session-derived "past learnings" half is **not wired**; the extractor is dormant/orphaned — see [current-state record](investigations/learn-from-sessions-current-state.md))
 
 ### Phase 8: Documentation Co-Pilot ✅ COMPLETE
 
