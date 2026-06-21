@@ -755,24 +755,51 @@ func TestWebUIDeleteSession_OwnerOnly(t *testing.T) {
 		t.Fatalf("seed message: %v", err)
 	}
 
-	// Non-owner cannot delete.
+	// Non-owner cannot soft-delete.
 	if other := reqAsPrincipal(mux, "DELETE", "/api/v1/sessions/"+id, bob, nil); other.Code != http.StatusNotFound {
 		t.Fatalf("cross-user delete: got %d, want 404", other.Code)
 	}
-	if sess, _ := srv.services.SessionModel.GetSession(ctx, id); sess == nil {
-		t.Fatal("session was deleted by a non-owner")
+	sess, _ := srv.services.SessionModel.GetSession(ctx, id)
+	if sess == nil || sess.TrashedAt != nil {
+		t.Fatal("session was trashed by a non-owner")
 	}
 
-	// Owner deletes.
+	// Owner soft-deletes to trash (B007a): 204, but the session is NOT physically
+	// gone — it is trashed (recoverable), its transcript is preserved, and it
+	// drops out of the active team list.
 	if w := reqAsPrincipal(mux, "DELETE", "/api/v1/sessions/"+id, alice, nil); w.Code != http.StatusNoContent {
-		t.Fatalf("owner delete: got %d, want 204", w.Code)
+		t.Fatalf("owner soft-delete: got %d, want 204", w.Code)
 	}
-	if sess, _ := srv.services.SessionModel.GetSession(ctx, id); sess != nil {
-		t.Error("session still present after owner delete")
+	sess, _ = srv.services.SessionModel.GetSession(ctx, id)
+	if sess == nil {
+		t.Fatal("session physically removed by a soft-delete — must be trashed, not purged")
 	}
-	// Cascade: the message is gone too.
-	if msgs, _ := srv.services.SessionModel.ListChatMessages(ctx, id); len(msgs) != 0 {
-		t.Errorf("messages not cascade-deleted: %d remain", len(msgs))
+	if sess.TrashedAt == nil || sess.TrashedBy == nil || *sess.TrashedBy != alice {
+		t.Errorf("after soft-delete: trashed_at=%v trashed_by=%v, want set with trashed_by=alice", sess.TrashedAt, sess.TrashedBy)
+	}
+	// The transcript is preserved (soft-delete is not a purge).
+	if msgs, _ := srv.services.SessionModel.ListChatMessages(ctx, id); len(msgs) != 1 {
+		t.Errorf("messages after soft-delete = %d, want 1 (preserved, not cascade-deleted)", len(msgs))
+	}
+	// Trashed session is removed from the active team list.
+	list := reqAsPrincipal(mux, "GET", "/api/v1/sessions", alice, nil)
+	var listed struct {
+		Sessions []map[string]any `json:"sessions"`
+	}
+	json.NewDecoder(list.Body).Decode(&listed)
+	for _, s := range listed.Sessions {
+		if s["id"] == id {
+			t.Error("trashed session still appears in the active team list")
+		}
+	}
+
+	// Owner restores it back to active.
+	if w := reqAsPrincipal(mux, "POST", "/api/v1/sessions/"+id+"/restore", alice, nil); w.Code != http.StatusOK {
+		t.Fatalf("owner restore: got %d, want 200", w.Code)
+	}
+	sess, _ = srv.services.SessionModel.GetSession(ctx, id)
+	if sess == nil || sess.TrashedAt != nil || sess.TrashedBy != nil || sess.PurgeAfter != nil {
+		t.Errorf("after restore: lifecycle columns not cleared: %+v", sess)
 	}
 }
 

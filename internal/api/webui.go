@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionauthz"
@@ -514,9 +518,14 @@ func (h *webUIHandler) handleUpdateSession(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
 }
 
-// handleDeleteSession deletes a session the caller owns (DELETE /sessions/{id}).
-// Owner-checked, 404-on-miss. The chat_messages FK is ON DELETE CASCADE, so the
-// session's messages are expunged with it (migration 022).
+// handleDeleteSession soft-deletes a session the caller owns to trash (DELETE
+// /sessions/{id}, §12.5 macOS-trash). This is the audited 'soft_delete' (trash)
+// transition (B007a): it sets trashed_at/trashed_by and a purge_after deadline
+// derived from the retention policy's trash-grace, and writes the
+// session.trash audit row in the SAME transaction as the column write (§12.5
+// every transition is audited; same-tx effect↔audit coupling). The session is
+// NOT physically removed — it is recoverable via restore until the sweeper or an
+// admin purges it. Owner-checked through the seam, 404-on-non-owner.
 func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
@@ -535,14 +544,12 @@ func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, err, "get session")
 		return
 	}
-	// Authorize the delete through the single session seam (§12.7). The
-	// owner-delete action is 'soft_delete' in the §12.7 vocabulary; the handler
-	// still performs a hard DeleteSession until trash semantics land (B007) —
-	// only the authorization is routed through the seam here. 404-on-non-owner
-	// posture preserved.
+	// Authorize the soft-delete (owner-mutate 'soft_delete') through the single
+	// session seam (§12.7). 404-on-non-owner posture preserved (a non-owner's
+	// session is indistinguishable from a missing one).
 	decision, err := h.server.sessionAccess(r.Context(), principal, sessionID, sessionauthz.ActionSoftDelete)
 	if err != nil {
-		writeInternalError(w, err, "authorize session delete")
+		writeInternalError(w, err, "authorize session soft-delete")
 		return
 	}
 	if sess == nil || !decision.Allowed {
@@ -550,12 +557,132 @@ func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.server.services.SessionModel.DeleteSession(r.Context(), sessionID); err != nil {
-		writeInternalError(w, err, "delete session")
+	// purge_after = now + trash-grace from the active retention policy (§12.5):
+	// a manual soft-delete enters trash with the same grace deadline the sweeper
+	// would apply. A missing policy degrades to no deadline rather than failing
+	// the delete.
+	purgeAfter := h.server.trashGraceDeadline(r.Context())
+
+	ev := sessionLifecycleEvent(principal, audit.ActionSessionTrash, sessionID)
+	if err := h.server.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
+		return h.server.services.SessionModel.TrashSessionTx(r.Context(), tx, sessionID, string(principal), purgeAfter)
+	}); err != nil {
+		writeInternalError(w, err, "soft-delete session")
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRestoreSession restores a trashed session the caller owns back to active
+// (POST /sessions/{id}/restore, §12.5). Audited 'restore' transition: clears the
+// trash columns and writes the session.restore audit row in the same
+// transaction. Owner-checked through the seam (action=restore), 404-on-non-owner.
+// Returns 409 if the session is not currently trashed.
+func (h *webUIHandler) handleRestoreSession(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "session store not available")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing session id")
+		return
+	}
+
+	principal := rbac.PrincipalFromContext(r.Context())
+	sess, err := h.server.services.SessionModel.GetSession(r.Context(), sessionID)
+	if err != nil {
+		writeInternalError(w, err, "get session")
+		return
+	}
+	decision, err := h.server.sessionAccess(r.Context(), principal, sessionID, sessionauthz.ActionRestore)
+	if err != nil {
+		writeInternalError(w, err, "authorize session restore")
+		return
+	}
+	if sess == nil || !decision.Allowed {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
+
+	ev := sessionLifecycleEvent(principal, audit.ActionSessionRestore, sessionID)
+	if err := h.server.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
+		return h.server.services.SessionModel.RestoreSessionTx(r.Context(), tx, sessionID)
+	}); err != nil {
+		if errors.Is(err, sessionmodel.ErrSessionNotTrashed) {
+			writeError(w, http.StatusConflict, errorCodeConflict, "session is not in trash")
+			return
+		}
+		writeInternalError(w, err, "restore session")
+		return
+	}
+
+	sess.TrashedAt, sess.TrashedBy, sess.PurgeAfter = nil, nil, nil
+	writeJSON(w, http.StatusOK, sessionToWebUI(*sess, 0))
+}
+
+// handleListOwnTrash lists the caller's own trashed sessions (GET
+// /sessions/trash, §12.8). Owner-scoped by construction (filters on the resolved
+// principal), so no per-row seam check is needed — a caller only ever sees their
+// own trash, with the remaining time before purge carried per row (purge_after).
+func (h *webUIHandler) handleListOwnTrash(w http.ResponseWriter, r *http.Request) {
+	if h.server.services.SessionModel == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	principal := string(rbac.PrincipalFromContext(r.Context()))
+	rows, err := h.server.services.SessionModel.ListTrashedSessions(r.Context(), &principal, limit)
+	if err != nil {
+		writeInternalError(w, err, "list own trash")
+		return
+	}
+
+	out := make([]webUISession, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, sessionToWebUI(row.AgentSession, row.MessageCount))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": out, "count": len(out)})
+}
+
+// trashGraceDeadline computes the §12.5 purge_after deadline (now + the retention
+// policy's trash-grace window) for a manual soft-delete. Returns nil when no
+// policy is configured (or the store is unavailable) so a soft-delete still
+// succeeds — it just enters trash with no auto-purge deadline.
+func (s *Server) trashGraceDeadline(ctx context.Context) *time.Time {
+	if s.services.SessionModel == nil {
+		return nil
+	}
+	p, err := s.services.SessionModel.GetRetentionPolicy(ctx)
+	if err != nil || p == nil || p.TrashGraceDays <= 0 {
+		return nil
+	}
+	deadline := time.Now().UTC().Add(time.Duration(p.TrashGraceDays) * 24 * time.Hour)
+	return &deadline
+}
+
+// sessionLifecycleEvent builds the §12.5 audit row for a per-user owner lifecycle
+// transition (trash / restore). It carries KindSessionLifecycle (owner action,
+// not admin surface) and names the actor and target session.
+func sessionLifecycleEvent(principal rbac.Principal, action, sessionID string) audit.Event {
+	blob, _ := json.Marshal(audit.Details{Target: "session:" + sessionID})
+	return audit.Event{
+		Principal: string(principal),
+		Action:    action,
+		Decision:  audit.DecisionAllow,
+		Reason:    "owner_lifecycle_transition",
+		Kind:      audit.KindSessionLifecycle,
+		Context:   string(blob),
+	}
 }
 
 // handleLinkIncident attaches the caller's chat session to the currently-active
@@ -722,10 +849,14 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	// separate GET /sessions/shared route is removed (no visibility concept).
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
+	// List own trash (§12.8). The literal "trash" segment takes precedence over
+	// the {id} wildcard in Go's ServeMux, so it coexists with GET /sessions/{id}.
+	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/trash", prefix), h.handleListOwnTrash)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}", prefix), h.handleGetSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)
 	mux.HandleFunc(fmt.Sprintf("PATCH %s/sessions/{id}", prefix), h.handleUpdateSession)
 	mux.HandleFunc(fmt.Sprintf("DELETE %s/sessions/{id}", prefix), h.handleDeleteSession)
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/restore", prefix), h.handleRestoreSession)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/link-incident", prefix), h.handleLinkIncident)
 
 	// Alerts aggregation

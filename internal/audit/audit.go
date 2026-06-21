@@ -388,8 +388,20 @@ const (
 	ActionSessionUnarchive = "session.unarchive"
 	// ActionSessionConfigureRetention records an admin retention-policy edit (PUT
 	// /api/v1/admin/sessions/retention-policy): the §12.5 inactivity-window /
-	// trash-grace / terminal-action knobs. Effect (policy store) deferred to B007.
+	// trash-grace / terminal-action knobs. B007a gives it its real effect (the
+	// retention-policy store), with the row written in the policy-write transaction.
 	ActionSessionConfigureRetention = "session.configure_retention"
+	// ActionSessionTrash records a PER-USER owner soft-delete to trash (DELETE
+	// /api/v1/sessions/{id}): the §12.5 manual entry to the trashed state. Unlike
+	// the admin govern verbs above, this is an owner action on the per-user
+	// surface, so it carries KindSessionLifecycle (not KindAdminAccess). B007a
+	// gives the per-user DELETE its real soft-delete effect; the row is written in
+	// the trash transition's transaction (§12.5: every transition is audited).
+	ActionSessionTrash = "session.trash"
+	// ActionSessionRestore records a PER-USER owner restore from trash (POST
+	// /api/v1/sessions/{id}/restore): the §12.5 manual restore. Owner action on the
+	// per-user surface; KindSessionLifecycle; written in the restore transaction.
+	ActionSessionRestore = "session.restore"
 )
 
 // KindAdminAccess is every event on the RBAC admin HTTP surface
@@ -402,6 +414,17 @@ const (
 // accessor's decision point but not mutations of the authorization
 // CONFIGURATION the accessor reads — this kind is that missing surface.
 const KindAdminAccess Kind = "admin_access"
+
+// KindSessionLifecycle is every PER-USER session lifecycle transition
+// (DESIGN-CHAT-SESSIONS.md §12.5): the owner soft-delete (session.trash) and
+// restore (session.restore), and — when B007b lands — the background sweeper's
+// automated expirations under the boot-minted service principal. It is the
+// session-lifecycle parallel of KindAdminAccess: the admin govern verbs
+// (session.purge / archive / unarchive / configure_retention) stay under
+// KindAdminAccess because they live on the admin HTTP surface, while the
+// owner/sweeper transitions get their own kind. The audit_log.kind CHECK admits
+// this value as of migration 027.
+const KindSessionLifecycle Kind = "session_lifecycle"
 
 // Details is the typed JSON shape for the audit_log.context column on
 // configuration-mutation rows. It is the shape Stream G locked for LLM

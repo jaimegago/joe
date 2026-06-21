@@ -92,6 +92,73 @@ type ChatMessage struct {
 	CreatedAt time.Time
 }
 
+// TerminalAction is the §12.5 retention terminal-action selector: what the
+// sweeper (B007b) does to a session past its inactivity window. The domain is
+// exactly two values, mirrored by the migration-026 CHECK.
+type TerminalAction string
+
+const (
+	// TerminalActionTrashThenPurge trashes a session, then purges it after the
+	// trash-grace window (§12.5). The default.
+	TerminalActionTrashThenPurge TerminalAction = "trash_then_purge"
+	// TerminalActionArchive archives a session to cold storage via the archive
+	// provider seam (§12.6). The provider is B007b; the policy may already select
+	// this terminal action.
+	TerminalActionArchive TerminalAction = "archive"
+)
+
+// RetentionPolicy is the single admin-configured retention policy (§12.5,
+// migration 026 — one row, id=1). It is a configuration surface, not a per-class
+// table: retention_class on a session is the per-session RESOLUTION of this
+// policy (§12.4, see RetentionResolution), not a foreign key into it.
+type RetentionPolicy struct {
+	// InactivityDays is the §12.5 inactivity window the sweeper (B007b) measures
+	// against last_activity_at. nil = OFF / effectively infinite (the default):
+	// nothing auto-expires until an admin opts in.
+	InactivityDays *int
+	// TrashGraceDays is how long a trashed session waits before purge under
+	// trash_then_purge (§12.5 default 30). The per-user soft-delete stamps
+	// purge_after = trashed_at + TrashGraceDays.
+	TrashGraceDays int
+	// TerminalAction is the §12.5 terminal-action selector.
+	TerminalAction TerminalAction
+	// UpdatedAt / UpdatedBy record the last admin edit (nil until first edited).
+	UpdatedAt *time.Time
+	UpdatedBy *string
+}
+
+// PurgeManifest is the §12.5 "manifest-with-hard-stop" preview for an admin
+// purge: the count of messages and linked children about to be irreversibly
+// destroyed/severed, surfaced before the explicit confirm. The linked children
+// are NOT destroyed — purging an incident SEVERS their linked_incident_id (ON
+// DELETE SET NULL, §12.4); the count names how many will revert to plain
+// 'default' sessions.
+type PurgeManifest struct {
+	// MessageCount is the transcript rows that will be cascade-deleted with the
+	// session (chat_messages FK ON DELETE CASCADE).
+	MessageCount int
+	// LinkedChildCount is the sessions whose linked_incident_id points at this
+	// session and will be SEVERED (set NULL), not destroyed.
+	LinkedChildCount int
+}
+
+// RetentionResolution is a session's per-session resolution of the active admin
+// retention policy (§12.4 "retention_class becomes the per-session resolution of
+// the active admin retention policy — no longer inert"). The sweeper (B007b)
+// reads it to decide a session's terminal fate; B007a uses Class to stamp the
+// session's retention_class column, proving the column is wired.
+type RetentionResolution struct {
+	// Class is the canonical per-session class label — the policy's terminal
+	// action ('trash_then_purge' or 'archive'). This is what gets written to the
+	// session's retention_class column.
+	Class string
+	// InactivityDays / TrashGraceDays / TerminalAction are the effective policy
+	// knobs that apply to the session.
+	InactivityDays *int
+	TrashGraceDays int
+	TerminalAction TerminalAction
+}
+
 // RegimeMode is the system-wide regime — §R1.
 type RegimeMode string
 

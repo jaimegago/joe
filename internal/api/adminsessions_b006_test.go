@@ -72,10 +72,15 @@ func countAudit(t *testing.T, s *store.Store, action string) int {
 
 // TestB006_AdminGovernCrossTenant proves an admin acting through
 // /api/v1/admin/sessions on a session they do NOT own is PERMITTED the govern
-// actions (cross-tenant), with RBAC enabled and a genuine admin capability. The
-// store effects are deferred to B007, so the authorized+audited decision reports
-// 501 pending — never a silent success. Each govern action writes exactly one
-// append-only audit row; the cross-tenant reads write none.
+// actions (cross-tenant), with RBAC enabled and a genuine admin capability. After
+// B007a the effects split:
+//   - purge: manifest-with-hard-stop (no-confirm preview is 200 + no audit +
+//     session survives; confirmed is 200 + 1 audit + session gone);
+//   - configure_retention: a real policy write (200 + 1 audit);
+//   - archive / restore-archive: still 501 pending (they depend on the B007b
+//     archive provider), authorized + audited (1 decision row each).
+//
+// Cross-tenant reads write no audit.
 func TestB006_AdminGovernCrossTenant(t *testing.T) {
 	const alice = "user:alice@example.com"
 	ts, sessRepo, _, st := newAdminSessionsServer(t)
@@ -95,19 +100,18 @@ func TestB006_AdminGovernCrossTenant(t *testing.T) {
 		r.Body.Close()
 	}
 
-	// GOVERN actions (effect deferred): authorized + audited → 501 pending.
-	govern := []struct {
+	// Provider-dependent govern actions still pending: authorized + audited → 501.
+	pending := []struct {
 		path   string
 		action string
 	}{
-		{"/api/v1/admin/sessions/" + sid + "/purge", audit.ActionSessionPurge},
 		{"/api/v1/admin/sessions/" + sid + "/archive", audit.ActionSessionArchive},
 		{"/api/v1/admin/sessions/" + sid + "/restore-archive", audit.ActionSessionUnarchive},
 	}
-	for _, g := range govern {
+	for _, g := range pending {
 		r := doRequest(t, http.MethodPost, ts.URL+g.path, b006AdminPrincipal, nil)
 		if r.StatusCode != http.StatusNotImplemented {
-			t.Errorf("admin POST %s = %d, want 501 (authorized, effect pending B007)", g.path, r.StatusCode)
+			t.Errorf("admin POST %s = %d, want 501 (effect depends on B007b provider)", g.path, r.StatusCode)
 		}
 		r.Body.Close()
 		if n := countAudit(t, st, g.action); n != 1 {
@@ -115,20 +119,43 @@ func TestB006_AdminGovernCrossTenant(t *testing.T) {
 		}
 	}
 
-	// configure_retention (policy-scoped PUT): authorized + audited → 501.
+	// configure_retention (policy-scoped PUT): real effect now → 200 + 1 audit.
 	r := doRequest(t, http.MethodPut, ts.URL+"/api/v1/admin/sessions/retention-policy", b006AdminPrincipal,
 		map[string]any{"inactivity_window": "off", "trash_grace_days": 30, "terminal_action": "trash_then_purge"})
-	if r.StatusCode != http.StatusNotImplemented {
-		t.Errorf("admin PUT retention-policy = %d, want 501 (authorized, effect pending B007)", r.StatusCode)
+	if r.StatusCode != http.StatusOK {
+		t.Errorf("admin PUT retention-policy = %d, want 200 (real effect)", r.StatusCode)
 	}
 	r.Body.Close()
 	if n := countAudit(t, st, audit.ActionSessionConfigureRetention); n != 1 {
 		t.Errorf("audit rows for configure_retention = %d, want exactly 1", n)
 	}
 
-	// The session survives every (effect-deferred) govern call.
+	// purge preview (no confirm): manifest hard stop → 200, NO audit, session
+	// survives.
+	rp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal, nil)
+	if rp.StatusCode != http.StatusOK {
+		t.Errorf("purge preview = %d, want 200 (manifest hard stop)", rp.StatusCode)
+	}
+	rp.Body.Close()
+	if n := countAudit(t, st, audit.ActionSessionPurge); n != 0 {
+		t.Errorf("purge preview wrote %d audit rows, want 0 (nothing governed yet)", n)
+	}
 	if sess, _ := sessRepo.GetSession(context.Background(), sid); sess == nil {
-		t.Fatal("session destroyed by an effect-deferred govern action")
+		t.Fatal("purge preview destroyed the session (must be a hard stop)")
+	}
+
+	// purge confirmed: expunge → 200, exactly 1 audit row, session gone.
+	rc := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal,
+		map[string]any{"confirm": true})
+	if rc.StatusCode != http.StatusOK {
+		t.Errorf("purge confirmed = %d, want 200 (expunge)", rc.StatusCode)
+	}
+	rc.Body.Close()
+	if n := countAudit(t, st, audit.ActionSessionPurge); n != 1 {
+		t.Errorf("purge confirmed audit rows = %d, want exactly 1", n)
+	}
+	if sess, _ := sessRepo.GetSession(context.Background(), sid); sess != nil {
+		t.Fatal("session survived a confirmed purge")
 	}
 }
 
@@ -192,10 +219,12 @@ func TestB006_AdminRelationshipUnreachableFromPerUser(t *testing.T) {
 		r.Body.Close()
 	}
 
-	// ADMIN route: the SAME admin govern action on the SAME session → 501
-	// (admin relationship resolved, decision authorized, effect deferred).
-	if r := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal, nil); r.StatusCode != http.StatusNotImplemented {
-		t.Errorf("admin admin-route purge = %d, want 501 (admin relationship resolved)", r.StatusCode)
+	// ADMIN route: the SAME admin govern action on the SAME session → 200 manifest
+	// (admin relationship resolved; the no-confirm purge returns the hard-stop
+	// manifest rather than 501). The opposite outcome from the per-user 404 above
+	// is what proves the admin relationship resolves only behind the admin prefix.
+	if r := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal, nil); r.StatusCode != http.StatusOK {
+		t.Errorf("admin admin-route purge = %d, want 200 (admin relationship resolved, manifest hard stop)", r.StatusCode)
 		r.Body.Close()
 	} else {
 		r.Body.Close()
@@ -214,13 +243,13 @@ func (failingAuditRepo) InsertTx(context.Context, *sql.Tx, audit.Event) error {
 	return errors.New("forced audit failure")
 }
 
-// TestB006_GovernAuditFailureFailsClosed proves the decision↔audit coupling: when
-// the audit insert fails, the govern route returns 500 and does NOT report the
-// 501 pending success. (In B006 every govern effect is deferred to B007, so there
-// is no store mutation to roll back yet; the coupling proven here is that the
-// authorized DECISION cannot be reported without its durable row. When B007 adds
-// the real transitions, the same row moves into the effect's transaction via
-// mutateWithAudit, upgrading this to same-tx rollback.)
+// TestB006_GovernAuditFailureFailsClosed proves the SAME-TX effect↔audit
+// coupling B007a upgraded from B006's decision↔audit coupling: a CONFIRMED purge
+// runs its expunge and its audit row in one transaction (mutateWithAudit), so a
+// forced audit-insert failure returns 500, does NOT report success, AND rolls the
+// expunge back — the session survives. (B006 could only prove the decision was
+// not reported without its row, because the effect was deferred; here the effect
+// itself is rolled back.)
 func TestB006_GovernAuditFailureFailsClosed(t *testing.T) {
 	const alice = "user:alice@example.com"
 	s, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
@@ -250,11 +279,19 @@ func TestB006_GovernAuditFailureFailsClosed(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	sid := createDefaultSession(t, sessRepo, alice)
-	r := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal, nil)
+	// Confirmed purge: reaches the audited effect. The failing audit insert rolls
+	// the whole transaction back.
+	r := doRequest(t, http.MethodPost, ts.URL+"/api/v1/admin/sessions/"+sid+"/purge", b006AdminPrincipal,
+		map[string]any{"confirm": true})
 	if r.StatusCode != http.StatusInternalServerError {
 		t.Errorf("govern with failing audit = %d, want 500 (fail-closed, no silent success)", r.StatusCode)
 	}
 	r.Body.Close()
+	// Same-tx rollback: the expunge was rolled back with the failed audit row, so
+	// the session is still present.
+	if sess, _ := sessRepo.GetSession(context.Background(), sid); sess == nil {
+		t.Error("session was purged despite the audit failure — effect↔audit coupling is not same-tx")
+	}
 }
 
 // TestB006_RBACDisabledAsymmetry documents the deliberate gate/seam asymmetry: with
@@ -297,18 +334,36 @@ func TestB006_RBACDisabledAsymmetry(t *testing.T) {
 	rg.Body.Close()
 }
 
-// TestB006_DeferredReadRoutesReportPending proves the read-class deferred surfaces
-// (all-trash list, retention-policy get) return 501 pending rather than a 200 with
-// fabricated empty data — their backing stores land in B007.
+// TestB006_DeferredReadRoutesReportPending proves the read-class surfaces that
+// B006 deferred (all-trash list, retention-policy get) now return REAL data in
+// B007a, while the only genuinely-deferred govern routes — archive and
+// restore-archive, which need the B007b provider — still report 501 pending
+// rather than a fabricated success.
 func TestB006_DeferredReadRoutesReportPending(t *testing.T) {
-	ts, _, _, _ := newAdminSessionsServer(t)
+	const alice = "user:alice@example.com"
+	ts, sessRepo, _, _ := newAdminSessionsServer(t)
+	sid := createDefaultSession(t, sessRepo, alice)
+
+	// B007a-backed reads: real data, 200.
 	for _, path := range []string{
 		"/api/v1/admin/sessions/trash",
 		"/api/v1/admin/sessions/retention-policy",
 	} {
 		r := doRequest(t, http.MethodGet, ts.URL+path, b006AdminPrincipal, nil)
+		if r.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200 (B007a store)", path, r.StatusCode)
+		}
+		r.Body.Close()
+	}
+
+	// Provider-dependent govern routes: still honestly pending (501), not faked.
+	for _, path := range []string{
+		"/api/v1/admin/sessions/" + sid + "/archive",
+		"/api/v1/admin/sessions/" + sid + "/restore-archive",
+	} {
+		r := doRequest(t, http.MethodPost, ts.URL+path, b006AdminPrincipal, nil)
 		if r.StatusCode != http.StatusNotImplemented {
-			t.Errorf("GET %s = %d, want 501 (store deferred to B007)", path, r.StatusCode)
+			t.Errorf("POST %s = %d, want 501 (depends on B007b archive provider)", path, r.StatusCode)
 		}
 		r.Body.Close()
 	}
@@ -367,11 +422,11 @@ func TestB006_DualDeclareSingleBackendSurface(t *testing.T) {
 }
 
 // TestB006_PerUserMutatesUnaudited pins the §12 audit scope: per-user owner-mutate
-// actions (rename, link) are NOT audited — §12 audits admin + sweeper + lifecycle
-// transitions only, and rename/link are none of those. (Owner soft-delete becomes
-// an audited trash transition in B007 when the soft-delete EFFECT lands; the
-// current per-user DELETE is a hard-delete placeholder and is likewise unaudited
-// here.) This guards against accidentally over-auditing the per-user surface.
+// actions that are NOT lifecycle transitions (rename, link) are NOT audited — §12
+// audits admin + sweeper + lifecycle transitions only, and rename/link are none of
+// those. (Owner soft-delete and restore ARE audited lifecycle transitions as of
+// B007a — proven separately in the lifecycle tests; this test deliberately exercises
+// only rename.) This guards against accidentally over-auditing the per-user surface.
 func TestB006_PerUserMutatesUnaudited(t *testing.T) {
 	const alice = "user:alice@example.com"
 	ts, sessRepo, _, st := newAdminSessionsServer(t)

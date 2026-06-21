@@ -13,12 +13,14 @@ import (
 // TestInvariant_SessionMutationGoesThroughSeam is the load-bearing structural
 // guard for DESIGN-CHAT-SESSIONS.md §12.7 / ledger node B003: the dedicated
 // session-authorization seam (internal/sessionauthz, reached from the api layer
-// via (*Server).sessionAccess) is the SINGLE enforcement point for session
+// via (*Server).sessionAccess for per-user routes and (*Server).sessionAccessAdmin
+// for the admin namespace) is the SINGLE enforcement point for session
 // authorization. Concretely, no production code may mutate a session in the
-// session-model store — UpdateSessionTitle, LinkSessionToIncident, or
-// DeleteSession on sessionmodel.Repository — outside the allowlist below, and
-// every user-initiated owner-mutate handler in that allowlist must ALSO call
-// (*Server).sessionAccess in the same function.
+// session-model store — UpdateSessionTitle, LinkSessionToIncident, DeleteSession,
+// or the B007a lifecycle mutators TrashSessionTx / RestoreSessionTx /
+// PurgeSessionTx on sessionmodel.Repository — outside the allowlist below, and
+// every user-initiated mutate handler in that allowlist must ALSO call the seam
+// (sessionAccess or sessionAccessAdmin) in the same function.
 //
 // Modelled on the incident-exit guard (regime_invariant_test.go) and the
 // ungoverned-adapter guard (access_guard_test.go); it reuses their funcDeclName
@@ -38,20 +40,30 @@ import (
 //
 // The former (*sessionsHandler).delete exception (the legacy
 // /api/v1/agent-sessions team-global delete, with no ownership check) was
-// REMOVED with its whole namespace in B005, so it is no longer allowlisted; the
-// surviving session-delete path is the seam-gated per-user
-// (*webUIHandler).handleDeleteSession below.
+// REMOVED with its whole namespace in B005, so it is no longer allowlisted. The
+// surviving owner-delete path is the seam-gated per-user
+// (*webUIHandler).handleDeleteSession, which in B007a is a SOFT-delete (trash)
+// via TrashSessionTx; the only route-reachable hard delete is the admin
+// (*adminSessionsHandler).handlePurge, gated by the admin seam.
 //
 // Adding any entry expands the surface that can mutate a session without the
 // seam and must be justified against §12.7 in the same commit.
 func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 
-	// Session-model mutation methods this guard pins.
+	// Session-model mutation methods this guard pins. DeleteSession is kept even
+	// though no production route still calls it (B007a moved the per-user delete to
+	// soft-delete): pinning it with zero call sites enforces that the raw
+	// ungoverned hard delete cannot be re-wired to a non-allowlisted route. The
+	// B007a lifecycle mutators (TrashSessionTx / RestoreSessionTx / PurgeSessionTx)
+	// are pinned too, so every session lifecycle mutation must go through the seam.
 	mutationMethods := map[string]bool{
 		"UpdateSessionTitle":    true,
 		"LinkSessionToIncident": true,
 		"DeleteSession":         true,
+		"TrashSessionTx":        true,
+		"RestoreSessionTx":      true,
+		"PurgeSessionTx":        true,
 	}
 
 	type site struct {
@@ -108,7 +120,10 @@ func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 				if !ok {
 					return true
 				}
-				if sel.Sel.Name == "sessionAccess" {
+				// Both seam entry points count: the per-user instance
+				// (sessionAccess) and the admin instance (sessionAccessAdmin,
+				// B006/B007a — the only place a real admin relationship resolves).
+				if sel.Sel.Name == "sessionAccess" || sel.Sel.Name == "sessionAccessAdmin" {
 					seamGated[key] = true
 					return true
 				}
@@ -146,7 +161,19 @@ func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 			fileRel:     filepath.FromSlash("internal/api/webui.go"),
 			fnName:      "(*webUIHandler).handleDeleteSession",
 			requireSeam: true,
-			reason:      "per-user delete — owner-mutate 'soft_delete' through the seam",
+			reason:      "per-user soft-delete (trash) — owner-mutate 'soft_delete' through the seam (B007a)",
+		},
+		{
+			fileRel:     filepath.FromSlash("internal/api/webui.go"),
+			fnName:      "(*webUIHandler).handleRestoreSession",
+			requireSeam: true,
+			reason:      "per-user restore — owner-mutate 'restore' through the seam (B007a)",
+		},
+		{
+			fileRel:     filepath.FromSlash("internal/api/adminsessions.go"),
+			fnName:      "(*adminSessionsHandler).handlePurge",
+			requireSeam: true,
+			reason:      "admin purge — admin-govern 'purge' through the admin seam (sessionAccessAdmin, B007a)",
 		},
 		{
 			fileRel:     filepath.FromSlash("internal/api/webui.go"),
