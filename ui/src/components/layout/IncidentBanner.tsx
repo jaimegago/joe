@@ -10,7 +10,7 @@ export function IncidentBanner() {
   const { data } = useRegime();
   if (data?.mode !== 'incident') return null;
 
-  const who = data.declaredByPrincipal ?? 'an operator';
+  const captain = data.declaredByPrincipal ?? 'an operator';
   const when = formatDeclaredAt(data.declaredAt);
 
   return (
@@ -20,8 +20,12 @@ export function IncidentBanner() {
     >
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>
-        <span className="font-semibold">System is in incident mode</span> — declared by {who}
-        {when ? ` at ${when}` : ''}. Writes may be blocked.
+        {/* The declarer is the incident CAPTAIN, who may differ from a given
+            session's creator (§12.3) — label it as such so the two roles are
+            never conflated. */}
+        <span className="font-semibold">System is in incident mode</span> — incident captain{' '}
+        {captain}
+        {when ? ` (declared at ${when})` : ''}. Writes may be blocked.
       </span>
     </div>
   );

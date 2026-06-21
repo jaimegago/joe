@@ -12,12 +12,10 @@ const base: Session = {
   id: 's1',
   started_at: '2026-06-06T10:00:00Z',
   message_count: 2,
-  visibility: 'private',
 };
 const owner = (over?: Partial<Session>): Session => ({ ...base, read_only: false, ...over });
 const reader = (over?: Partial<Session>): Session => ({
   ...base,
-  visibility: 'public',
   read_only: true,
   ...over,
 });
@@ -105,8 +103,8 @@ describe('useSession (integration)', () => {
     mockFetch.mockResolvedValue(owner());
     const { qc, result } = render('s1');
     await waitFor(() => expect(result.current.status).toBe('owner'));
-    result.current.applyUpdate(owner({ id: 's2', visibility: 'public' }));
+    result.current.applyUpdate(owner({ id: 's2', title: 'renamed' }));
     // Lands on s2 (the authoritative id from the response), not the hook's s1.
-    expect(qc.getQueryData(['session', 's2'])).toMatchObject({ visibility: 'public' });
+    expect(qc.getQueryData(['session', 's2'])).toMatchObject({ title: 'renamed' });
   });
 });

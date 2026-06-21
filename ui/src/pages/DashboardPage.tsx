@@ -14,9 +14,17 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 
 export function DashboardPage() {
-  const componentsQ = useQuery({ queryKey: ['components'], queryFn: fetchComponents, refetchInterval: 30_000 });
+  const componentsQ = useQuery({
+    queryKey: ['components'],
+    queryFn: fetchComponents,
+    refetchInterval: 30_000,
+  });
   const alertsQ = useQuery({ queryKey: ['alerts'], queryFn: fetchAlerts, refetchInterval: 30_000 });
-  const sessionsQ = useQuery({ queryKey: ['sessions', 5], queryFn: () => fetchSessions(5), refetchInterval: 30_000 });
+  const sessionsQ = useQuery({
+    queryKey: ['sessions', 'all', 5],
+    queryFn: () => fetchSessions({ limit: 5 }),
+    refetchInterval: 30_000,
+  });
 
   const components = componentsQ.data ?? [];
   const alerts = alertsQ.data ?? [];
@@ -51,13 +59,25 @@ export function DashboardPage() {
           <MetricsCard
             title="Components"
             value={componentsQ.isLoading ? '…' : connectedCount}
-            subLabel={componentsQ.isLoading ? 'loading' : errorCount > 0 ? `${errorCount} error${errorCount > 1 ? 's' : ''}` : 'All healthy'}
+            subLabel={
+              componentsQ.isLoading
+                ? 'loading'
+                : errorCount > 0
+                  ? `${errorCount} error${errorCount > 1 ? 's' : ''}`
+                  : 'All healthy'
+            }
             colorClass={errorCount > 0 ? 'text-destructive' : 'text-green-600'}
           />
           <MetricsCard
             title="Active Alerts"
             value={alertsQ.isLoading ? '…' : alerts.length}
-            subLabel={alertsQ.isLoading ? 'loading' : criticalAlerts > 0 ? `${criticalAlerts} critical` : 'None critical'}
+            subLabel={
+              alertsQ.isLoading
+                ? 'loading'
+                : criticalAlerts > 0
+                  ? `${criticalAlerts} critical`
+                  : 'None critical'
+            }
             colorClass={criticalAlerts > 0 ? 'text-destructive' : undefined}
           />
           <MetricsCard
@@ -82,7 +102,11 @@ export function DashboardPage() {
               <CardTitle className="text-sm font-medium">Recent Sessions</CardTitle>
             </CardHeader>
             <CardContent>
-              {sessionsQ.isLoading ? <LoadingSpinner size="sm" /> : <RecentSessions sessions={sessions} />}
+              {sessionsQ.isLoading ? (
+                <LoadingSpinner size="sm" />
+              ) : (
+                <RecentSessions sessions={sessions} />
+              )}
             </CardContent>
           </Card>
         </div>

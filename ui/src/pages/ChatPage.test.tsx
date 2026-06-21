@@ -10,7 +10,12 @@ import type { ZoneAccess, Session } from '@/api/types';
 import { useChat } from '@/hooks/useChat';
 import { useRegime } from '@/hooks/useRegime';
 import { ApiRequestError } from '@/api/client';
-import { fetchSession, updateSessionTitle, linkSessionToIncident } from '@/api/chat';
+import {
+  fetchSession,
+  updateSessionTitle,
+  linkSessionToIncident,
+  promoteSessionToIncident,
+} from '@/api/chat';
 
 // ChatPage renders the access-pending empty state instead of the chat surface
 // for a zero-zone, RBAC-enabled, non-admin user, and gates owner-only controls
@@ -23,6 +28,7 @@ vi.mock('@/api/chat', () => ({
   fetchSession: vi.fn(),
   updateSessionTitle: vi.fn(),
   linkSessionToIncident: vi.fn(),
+  promoteSessionToIncident: vi.fn(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -32,11 +38,13 @@ const mockUseRegime = vi.mocked(useRegime);
 const mockFetchSession = vi.mocked(fetchSession);
 const mockUpdateTitle = vi.mocked(updateSessionTitle);
 const mockLinkIncident = vi.mocked(linkSessionToIncident);
+const mockPromote = vi.mocked(promoteSessionToIncident);
 
-// setRegime stubs useRegime; only the `mode` field of `data` is read by ChatPage.
-function setRegime(mode: 'normal' | 'incident') {
+// setRegime stubs useRegime; ChatPage reads `mode` (incident-active gate) and, for
+// an incident session, `declaredByPrincipal` (the captain).
+function setRegime(mode: 'normal' | 'incident', declaredByPrincipal: string | null = null) {
   mockUseRegime.mockReturnValue({
-    data: { mode, declaredAt: null, declaredByPrincipal: null, declaredKind: null },
+    data: { mode, declaredAt: null, declaredByPrincipal, declaredKind: null },
   } as ReturnType<typeof useRegime>);
 }
 
@@ -239,7 +247,6 @@ describe('ChatPage URL sync', () => {
       id: 's-new',
       started_at: '2026-06-06T10:00:00Z',
       message_count: 0,
-      visibility: 'private',
       read_only: false,
     });
   });
@@ -314,7 +321,6 @@ describe('ChatPage last-session restore', () => {
       id: 's-prev',
       started_at: '2026-06-06T10:00:00Z',
       message_count: 2,
-      visibility: 'private',
       read_only: false,
     });
   });
@@ -402,7 +408,6 @@ describe('ChatPage incident linkage (Phase 4)', () => {
     id: 's1',
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
-    visibility: 'private',
     read_only: false,
   };
 
@@ -449,12 +454,89 @@ describe('ChatPage incident linkage (Phase 4)', () => {
   });
 });
 
+describe('ChatPage promote-this-session affordance (§12.10)', () => {
+  const owned: Session = {
+    id: 's1',
+    started_at: '2026-06-06T10:00:00Z',
+    message_count: 2,
+    read_only: false,
+  };
+
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    mockPromote.mockReset();
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    setChat('s1');
+  });
+
+  it('promote-this-session invokes the promote-incident route when no incident is active', async () => {
+    setRegime('normal');
+    mockFetchSession.mockResolvedValue(owned);
+    mockPromote.mockResolvedValue({
+      session_id: 's1',
+      captain_id: 'cap1',
+      declared_by: 'user:bob',
+    });
+    renderPage();
+
+    const declare = await screen.findByRole('button', { name: /declare incident/i });
+    const user = userEvent.setup();
+    await user.click(declare);
+
+    await waitFor(() => expect(mockPromote).toHaveBeenCalledWith('s1'));
+  });
+
+  it('hides the chat-view declare control while an incident is already active', async () => {
+    setRegime('incident');
+    mockFetchSession.mockResolvedValue(owned);
+    renderPage();
+
+    // The session loads (copy-link owner control renders); the in-chat declare
+    // button must not, since there is already an active incident.
+    expect(await screen.findByRole('button', { name: /copy link/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /declare incident/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatPage incident participants — creator vs captain (§12.3)', () => {
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    setChat('s1');
+  });
+
+  it('renders the creator and the captain as distinct principals on an incident session', async () => {
+    // Owner viewing (read_only=false → creator is the caller, user:bob), linked to
+    // an incident whose captain (the regime declarer) is a DIFFERENT principal.
+    setRegime('incident', 'user:carol');
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      read_only: false,
+      linked_incident_id: 'inc-1',
+    });
+    renderPage();
+
+    expect(await screen.findByText(/created by/i)).toHaveTextContent('bob');
+    const captain = screen.getByText(/incident captain/i);
+    expect(captain).toHaveTextContent('carol');
+    // The two roles are distinct principals — never conflated.
+    expect(captain).not.toHaveTextContent('bob');
+  });
+});
+
 describe('ChatPage inline title rename', () => {
   const owned: Session = {
     id: 's1',
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
-    visibility: 'private',
     title: 'Old title',
     read_only: false,
   };

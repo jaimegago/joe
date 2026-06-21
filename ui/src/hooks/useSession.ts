@@ -73,7 +73,7 @@ export function nextTitlePollMs(args: {
 }
 
 // useSession is the single source of truth for the in-view session's METADATA
-// (title, visibility, ownership). It owns the ['session', id] query, derives an
+// (title, ownership, incident linkage). It owns the ['session', id] query, derives an
 // explicit status, and runs a robust bounded title-await. It deliberately knows
 // nothing about routing, the transcript, or last-session restore — those stay in
 // ChatPage/useChat.

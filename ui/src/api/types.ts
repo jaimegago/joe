@@ -18,6 +18,9 @@ import type {
   ChatMessageSchema,
   ToolCallSchema,
   SessionSchema,
+  RetentionPolicySchema,
+  PurgeManifestSchema,
+  PurgePreviewSchema,
   AlertSchema,
   CurrentUserSchema,
   ZoneAccessSchema,
@@ -67,6 +70,9 @@ export type Admin = z.infer<typeof AdminSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 export type Session = z.infer<typeof SessionSchema>;
+export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>;
+export type PurgeManifest = z.infer<typeof PurgeManifestSchema>;
+export type PurgePreview = z.infer<typeof PurgePreviewSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
 export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 export type ZoneAccess = z.infer<typeof ZoneAccessSchema>;

@@ -552,9 +552,13 @@ phase it — security first.
 - **macOS-trash semantics:** soft delete puts a session into trash (recoverable); hard
   delete (purge) trashes and empties in one operation. Owners can soft-delete and
   restore their own sessions; **PURGE IS ADMIN-ONLY.**
-  - *Accepted tradeoff:* a user's soft-deleted sensitive transcript sits in trash —
-    admin-visible and admin-restorable — until the sweeper or an admin purges it. A
-    GDPR-style erasure routes through **admin purge**, not a new owner capability.
+  - *Accepted tradeoff (reworded 2026-06-21, team-public model):* a soft-deleted
+    session sits in trash, admin-restorable, until the sweeper or an admin purges it.
+    Soft-delete is a recoverable lifecycle state, not an erasure: because the session
+    model is team-public (§12.1, §12.7), trash adds reversibility, not a new
+    confidentiality boundary, and purge — not soft-delete — is what makes removal final.
+    A GDPR-style erasure therefore routes through **admin purge**, not a new owner
+    capability.
 - **Two configurable knobs, both in the retention policy:** the inactivity window
   (default **OFF** / effectively infinite — nothing auto-expires until an admin opts
   in) and trash-grace (default **30 days**). Auto-expiration is default-off by design
