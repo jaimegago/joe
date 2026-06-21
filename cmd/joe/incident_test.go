@@ -87,7 +87,7 @@ func TestRunIncidentDeclare(t *testing.T) {
 	server := regimeServer(t, false)
 	deps := incidentDeps(t, server)
 	var stdout, stderr bytes.Buffer
-	code := runWithDeps(context.Background(), []string{"incident", "declare", "--reason", "db outage"}, &stdout, &stderr, deps)
+	code := runWithDeps(context.Background(), []string{"incident", "declare", "--session", "sess-1", "--reason", "db outage"}, &stdout, &stderr, deps)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d (stderr: %s)", code, stderr.String())
 	}

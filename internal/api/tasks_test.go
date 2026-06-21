@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/config"
@@ -931,8 +933,17 @@ func TestUserTaskExecutorFloor_ErrorsIs(t *testing.T) {
 // regime is active and the floor is down.
 func declareTestIncident(t *testing.T, srv *Server) {
 	t.Helper()
+	// Promote-in-place (§12.3): create alice's 'default' session, then promote
+	// it to the incident master — declaration no longer mints a fresh row.
+	const principal = "user:alice@example.com"
+	sid := uuid.NewString()
+	if _, err := srv.services.SessionModel.CreateSession(context.Background(), sessionmodel.AgentSession{
+		ID: sid, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: principal,
+	}); err != nil {
+		t.Fatalf("create default session: %v", err)
+	}
 	if _, _, err := srv.services.SessionModel.DeclareIncidentRegime(
-		context.Background(), "user:alice@example.com", sessionmodel.RegimeKindHuman); err != nil {
+		context.Background(), principal, sid, sessionmodel.RegimeKindHuman); err != nil {
 		t.Fatalf("declare incident regime: %v", err)
 	}
 }

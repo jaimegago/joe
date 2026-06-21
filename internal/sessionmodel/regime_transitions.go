@@ -13,17 +13,21 @@ import (
 )
 
 // DeclareIncidentRegime is the single-transaction (§R7) declare path:
-// creates an incident session, sets system_regime to incident, attaches
-// the principal as captain. Calls into DeclareIncidentRegimeWithHook with
-// no fault-injection hook.
-func (r *SQLRepository) DeclareIncidentRegime(ctx context.Context, principal string, declaredKind RegimeKind) (string, string, error) {
-	return r.DeclareIncidentRegimeWithHook(ctx, principal, declaredKind, nil)
+// PROMOTES an existing 'default' session IN PLACE to the incident master
+// (§12.3) — it does NOT mint a fresh incident row. In one transaction it
+// flips the designated session's type to 'incident', sets incident_state to
+// 'declared', flips system_regime to incident, and attaches the declaring
+// principal as captain. The promoted session keeps its original id and its
+// original creator_principal, so the creator (owner) and the captain
+// (declarer) may differ (§12.3 "Consequence, recorded, accepted"). Calls
+// into DeclareIncidentRegimeWithHook with no fault-injection hook.
+func (r *SQLRepository) DeclareIncidentRegime(ctx context.Context, principal, sessionID string, declaredKind RegimeKind) (string, string, error) {
+	return r.DeclareIncidentRegimeWithHook(ctx, principal, sessionID, declaredKind, nil)
 }
 
-// DeclareIncidentRegimeWithHook is the test seam used by Change 5's
+// DeclareIncidentRegimeWithHook is the test seam used by the
 // single-transaction rollback assertion. hookAfterCaptainAttach, if
 // non-nil, is invoked AFTER the captain insert but BEFORE COMMIT. If it
-// if non-nil, is invoked AFTER the captain insert but BEFORE COMMIT. If it
 // returns a non-nil error, the entire transaction rolls back. Lets tests
 // prove the single-transaction property without needing a natural failure
 // point post-captain-attach. Production code calls DeclareIncidentRegime
@@ -31,12 +35,15 @@ func (r *SQLRepository) DeclareIncidentRegime(ctx context.Context, principal str
 // rollback test in internal/api/regime_test.go.
 func (r *SQLRepository) DeclareIncidentRegimeWithHook(
 	ctx context.Context,
-	principal string,
+	principal, sessionID string,
 	declaredKind RegimeKind,
 	hookAfterCaptainAttach func(*sql.Tx) error,
-) (sessionID, captainID string, err error) {
+) (promotedID, captainID string, err error) {
 	if principal == "" {
 		return "", "", fmt.Errorf("declare incident regime: principal required")
+	}
+	if sessionID == "" {
+		return "", "", fmt.Errorf("declare incident regime: session id required (promote-in-place takes an existing session)")
 	}
 	if declaredKind == "" {
 		declaredKind = RegimeKindHuman
@@ -54,7 +61,9 @@ func (r *SQLRepository) DeclareIncidentRegimeWithHook(
 		}
 	}()
 
-	// Precondition: regime must currently be normal.
+	// Precondition 1: regime must currently be normal. This is the
+	// "no second concurrent incident" guard (§12.3 one global single-row
+	// regime, one master incident session).
 	var currentMode string
 	if err = tx.QueryRowContext(ctx, `SELECT mode FROM system_regime WHERE id = 1`).Scan(&currentMode); err != nil {
 		return "", "", fmt.Errorf("declare incident regime: read current regime: %w", err)
@@ -64,18 +73,51 @@ func (r *SQLRepository) DeclareIncidentRegimeWithHook(
 		return "", "", err
 	}
 
-	// 1. Create incident session in state 'declared'.
-	sessionID = uuid.NewString()
+	// Precondition 2: the designated session must exist and must not
+	// already be an incident — a session is promoted at most once
+	// (§12.3 promote-in-place, no double-promotion).
+	var existingType string
+	scanErr := tx.QueryRowContext(ctx, store.Rebind(r.driver,
+		`SELECT type FROM agent_sessions WHERE id = ?`), sessionID).Scan(&existingType)
+	if errors.Is(scanErr, sql.ErrNoRows) {
+		err = ErrNotFound
+		return "", "", err
+	}
+	if scanErr != nil {
+		err = fmt.Errorf("declare incident regime: read target session: %w", scanErr)
+		return "", "", err
+	}
+	if SessionType(existingType) == SessionTypeIncident {
+		err = ErrSessionAlreadyIncident
+		return "", "", err
+	}
+
+	// 1. Promote the session IN PLACE: type -> incident, incident_state ->
+	// declared, and clear linked_incident_id. Clearing the link is required
+	// by the migration-025 CHECK (linked_incident_id IS NULL OR type <>
+	// 'incident'): a session that was participating in a (now-resolved)
+	// incident sheds that pointer when it becomes a master incident itself.
+	// creator_principal is left UNTOUCHED so the original owner is preserved
+	// (§12.3 creator vs captain may differ). The WHERE guards type <>
+	// 'incident' as belt-and-suspenders against a concurrent promote.
 	now := time.Now().UTC()
 	declared := string(IncidentStateDeclared)
-	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
-		INSERT INTO agent_sessions
-			(id, type, incident_state, created_at, last_activity_at,
-			 creator_principal, linked_incident_id, retention_class)
-		VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`),
-		sessionID, string(SessionTypeIncident), declared,
-		now.Format(time.RFC3339), now.Format(time.RFC3339), principal); err != nil {
-		return "", "", fmt.Errorf("declare incident regime: insert session: %w", err)
+	res, perr := tx.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions
+		SET type = ?, incident_state = ?, linked_incident_id = NULL,
+		    last_activity_at = ?
+		WHERE id = ? AND type <> 'incident'`),
+		string(SessionTypeIncident), declared,
+		now.Format(time.RFC3339), sessionID)
+	if perr != nil {
+		err = fmt.Errorf("declare incident regime: promote session: %w", perr)
+		return "", "", err
+	}
+	// Defensive: a 0-row update would mean the session was promoted out from
+	// under us between the SELECT and the UPDATE. Treat as already-incident.
+	if n, aerr := res.RowsAffected(); aerr == nil && n == 0 {
+		err = ErrSessionAlreadyIncident
+		return "", "", err
 	}
 
 	// 2. Flip regime to incident.

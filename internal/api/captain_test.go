@@ -52,11 +52,8 @@ func TestCaptainAPI_AttachHeartbeatTransferConfirm(t *testing.T) {
 	ts, sessRepo, runRepo := newCaptainServer(t, 60)
 	ctx := context.Background()
 
-	// alice declares an incident.
-	sessionID, _, err := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
-	}
+	// alice declares an incident (promote-in-place, §12.3).
+	sessionID := declareIncident(t, sessRepo, "alice")
 	// Start a run for the transfer solicitation to live on.
 	run, err := runRepo.CreateRun(ctx, runmodel.Run{
 		ID: "run-1", SessionID: sessionID, State: runmodel.RunStateRunning,
@@ -130,7 +127,7 @@ func TestCaptainAPI_TransferUnreachableDirectConfirm(t *testing.T) {
 	ts, sessRepo, runRepo := newCaptainServer(t, 2)
 	ctx := context.Background()
 
-	sessionID, _, _ := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
+	sessionID := declareIncident(t, sessRepo, "alice")
 	run, _ := runRepo.CreateRun(ctx, runmodel.Run{
 		ID: "run-1", SessionID: sessionID, State: runmodel.RunStateRunning,
 	})
@@ -210,10 +207,7 @@ func TestCaptainAPI_TransferConfirmCancelBindToParties(t *testing.T) {
 	ts, sessRepo, runRepo := newCaptainServer(t, 60)
 	ctx := context.Background()
 
-	sessionID, _, err := sessRepo.DeclareIncidentRegime(ctx, "alice", sessionmodel.RegimeKindHuman)
-	if err != nil {
-		t.Fatalf("declare: %v", err)
-	}
+	sessionID := declareIncident(t, sessRepo, "alice")
 	run, err := runRepo.CreateRun(ctx, runmodel.Run{
 		ID: "run-1", SessionID: sessionID, State: runmodel.RunStateRunning,
 	})

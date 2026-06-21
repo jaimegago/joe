@@ -572,10 +572,11 @@ func (h *webUIHandler) handleDeleteSession(w http.ResponseWriter, r *http.Reques
 }
 
 // handleLinkIncident attaches the caller's chat session to the currently-active
-// incident (POST /sessions/{id}/link-incident, DESIGN-CHAT-SESSIONS.md §11
-// Phase 4). Per the §10 incident-link decision (reference + participation) it
-// records linked_incident_id and promotes the session to type='investigation'
-// so it participates in the incident — captaincy is out of scope. Owner-checked
+// incident (POST /sessions/{id}/link-incident, DESIGN-CHAT-SESSIONS.md §12.3).
+// Under the two-type model participation is the linked_incident_id pointer
+// ALONE — there is no type flip (the 'investigation' type was removed), so the
+// session stays a plain 'default' conversation; captaincy is out of scope.
+// Owner-checked
 // with the same 404-on-miss posture as the other mutators (another user's
 // session is indistinguishable from a missing one). Returns 409 when there is
 // no active incident to link to. Linking is idempotent: re-linking to the same

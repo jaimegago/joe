@@ -83,8 +83,15 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional body: { "declared_kind": "human" | "joe" }. Default human.
+	// Body: { "session_id": "...", "declared_kind": "human" | "joe" }.
+	// session_id designates the existing 'default' session to PROMOTE IN
+	// PLACE (§12.3) — declaration no longer mints a fresh incident row.
+	// declared_kind defaults to human. (The create-empty-then-promote
+	// fallback for a caller with no session in hand is per-user-API / UI
+	// orchestration, B005/B008 — it creates a default session and then
+	// calls this endpoint with its id.)
 	var req struct {
+		SessionID    string `json:"session_id,omitempty"`
 		DeclaredKind string `json:"declared_kind,omitempty"`
 	}
 	if r.Body != nil && r.ContentLength > 0 {
@@ -139,25 +146,44 @@ func (h *regimeHandler) declare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// session_id is required: declaration is promote-in-place (§12.3), so a
+	// declare always designates an existing 'default' session to promote.
+	// Checked AFTER authorization so a denied caller gets 403 (not 400) and
+	// the session identifier is never probed by an unauthorized principal.
+	if req.SessionID == "" {
+		writeBadRequest(w, nil, "declare regime",
+			"session_id is required — incident declaration promotes an existing session in place")
+		return
+	}
+
 	// Phase F bug #3 fix: write the durable audit row BEFORE the mutable
-	// system_regime / session_captains rows are touched, so the "who
-	// declared this incident and when" record survives a later resolve
-	// (which nulls system_regime.declared_by_principal and cascade-deletes
-	// session_captains).
+	// session / system_regime / session_captains rows are touched, so the
+	// "who declared this incident and when" record survives a later resolve
+	// (which nulls system_regime.declared_by_principal and detaches the
+	// captain).
 	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionDeclareIncident,
 		audit.DecisionAllow, "transition_recorded",
-		map[string]string{"declared_kind": string(declaredKind)}); err != nil {
+		map[string]string{"declared_kind": string(declaredKind), "session_id": req.SessionID}); err != nil {
 		// Transition is mutating → fail-closed. The mutable rows are
 		// untouched.
 		writeInternalError(w, err, "declare regime audit (allow)")
 		return
 	}
 
-	sessionID, captainID, err := h.repo.DeclareIncidentRegime(r.Context(), string(principal), declaredKind)
+	sessionID, captainID, err := h.repo.DeclareIncidentRegime(r.Context(), string(principal), req.SessionID, declaredKind)
 	if err != nil {
-		if errors.Is(err, sessionmodel.ErrRegimeAlreadyIncident) {
+		switch {
+		case errors.Is(err, sessionmodel.ErrRegimeAlreadyIncident):
 			writeError(w, http.StatusConflict, "conflict",
 				"regime is already incident — resolve the current incident before declaring another")
+			return
+		case errors.Is(err, sessionmodel.ErrNotFound):
+			writeError(w, http.StatusNotFound, errorCodeNotFound,
+				"session to promote not found")
+			return
+		case errors.Is(err, sessionmodel.ErrSessionAlreadyIncident):
+			writeError(w, http.StatusConflict, "conflict",
+				"session is already an incident — cannot promote it again")
 			return
 		}
 		writeInternalError(w, err, "declare regime")
