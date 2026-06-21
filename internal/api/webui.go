@@ -268,10 +268,20 @@ func messageToWebUI(m sessionmodel.ChatMessage) webUIMessage {
 	return out
 }
 
-// handleListSessions returns the caller's own sessions (owner-scoped). This is
-// the §11 Phase 1 isolation fix: the legacy handler called ListRecent with no
-// principal filter, so any logged-in user could enumerate every user's chat
-// history. Now it filters by the caller's principal.
+// handleListSessions returns the team-wide session list with an optional `mine`
+// filter (DESIGN-CHAT-SESSIONS.md §12.8, team-wide read amendment 2026-06-21).
+// This collapses the as-built owner-scoped vs "shared with you" two-route split
+// into ONE route:
+//   - default (no filter): the TEAM-WIDE list — every session, since any
+//     authenticated principal may read any session. Each row is stamped
+//     read_only per ownership (a non-owner is read-only on a session it does not
+//     own) and carries shared_by (the owner) on rows the caller does not own, so
+//     the UI can label and gate them without a second request.
+//   - ?mine=true: the caller-scoped list (the session creator's own sessions),
+//     all read_only=false.
+//
+// There is NO visibility concept (B002 removed it); read is the default for any
+// authenticated principal, not a per-session grant.
 func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	if h.server.services.SessionModel == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
@@ -286,7 +296,17 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 	}
 
 	principal := string(rbac.PrincipalFromContext(r.Context()))
-	rows, err := h.server.services.SessionModel.ListSessionsByCreator(r.Context(), principal, limit)
+	mine := r.URL.Query().Get("mine") == "true"
+
+	var (
+		rows []sessionmodel.ChatSessionRow
+		err  error
+	)
+	if mine {
+		rows, err = h.server.services.SessionModel.ListSessionsByCreator(r.Context(), principal, limit)
+	} else {
+		rows, err = h.server.services.SessionModel.ListRecentSessions(r.Context(), limit)
+	}
 	if err != nil {
 		writeInternalError(w, err, "list sessions")
 		return
@@ -294,46 +314,13 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 
 	sessions := make([]webUISession, 0, len(rows))
 	for _, row := range rows {
-		sessions = append(sessions, sessionToWebUI(row.AgentSession, row.MessageCount))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"sessions": sessions,
-		"count":    len(sessions),
-	})
-}
-
-// handleListSharedSessions returns the "shared with you" list: every session
-// owned by a principal other than the caller (org-wide read model — all sessions
-// are readable). Each row is flagged read_only=true and carries shared_by (the
-// owner's principal) so the UI can label it "read-only · shared by <owner>".
-// The caller's own sessions are excluded (they appear in their own list); writes
-// stay owner-only, so these are read-only entry points into another user's chat.
-func (h *webUIHandler) handleListSharedSessions(w http.ResponseWriter, r *http.Request) {
-	if h.server.services.SessionModel == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "count": 0})
-		return
-	}
-
-	limit := 20
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-
-	principal := string(rbac.PrincipalFromContext(r.Context()))
-	rows, err := h.server.services.SessionModel.ListSessionsByOthers(r.Context(), principal, limit)
-	if err != nil {
-		writeInternalError(w, err, "list shared sessions")
-		return
-	}
-
-	sessions := make([]webUISession, 0, len(rows))
-	for _, row := range rows {
 		s := sessionToWebUI(row.AgentSession, row.MessageCount)
-		s.ReadOnly = true
-		s.SharedBy = row.CreatorPrincipal
+		// Team-wide read: rows the caller does not own are read-only viewers. The
+		// `mine` list is owner-scoped, so every row there is the caller's own.
+		if row.CreatorPrincipal != principal {
+			s.ReadOnly = true
+			s.SharedBy = row.CreatorPrincipal
+		}
 		sessions = append(sessions, s)
 	}
 
@@ -730,11 +717,10 @@ func (s *Server) registerWebUIRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/node/{id}", prefix), h.handleGetNode)
 	mux.HandleFunc(fmt.Sprintf("GET %s/graph/node/{id}/related", prefix), h.handleGetRelatedNodes)
 
-	// Sessions
+	// Sessions — one per-user surface (§12.8). The team-wide list with a `mine`
+	// filter replaces the as-built owner-scoped + "shared with you" split; the
+	// separate GET /sessions/shared route is removed (no visibility concept).
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions", prefix), h.handleListSessions)
-	// Literal "/sessions/shared" is more specific than "/sessions/{id}", so the
-	// Go 1.22 mux routes it here regardless of registration order.
-	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/shared", prefix), h.handleListSharedSessions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions", prefix), h.handleCreateSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}", prefix), h.handleGetSession)
 	mux.HandleFunc(fmt.Sprintf("GET %s/sessions/{id}/messages", prefix), h.handleGetSessionMessages)

@@ -30,15 +30,17 @@ import (
 // skipped — that DeleteSession is not a chat-session mutation and is out of this
 // invariant's scope.
 //
-// Two allowlisted call sites are deliberately NOT seam-gated, each a recorded
+// One allowlisted call site is deliberately NOT seam-gated, a recorded
 // exception rather than a silent gap:
 //   - (*taskHandler).generateTitleAsync — the LLM auto-title path is a SYSTEM
 //     actor (no human request principal to authorize), the §12.7 sweeper-style
 //     bypass. It must never grow a user-facing mutation.
-//   - (*sessionsHandler).delete — the legacy /api/v1/agent-sessions team-global
-//     delete, which carries NO ownership check today and is REMOVED with its
-//     whole namespace in B005. It is pinned here so it cannot multiply before
-//     B005 deletes it.
+//
+// The former (*sessionsHandler).delete exception (the legacy
+// /api/v1/agent-sessions team-global delete, with no ownership check) was
+// REMOVED with its whole namespace in B005, so it is no longer allowlisted; the
+// surviving session-delete path is the seam-gated per-user
+// (*webUIHandler).handleDeleteSession below.
 //
 // Adding any entry expands the surface that can mutate a session without the
 // seam and must be justified against §12.7 in the same commit.
@@ -157,12 +159,6 @@ func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 			fnName:      "(*taskHandler).generateTitleAsync",
 			requireSeam: false,
 			reason:      "LLM auto-title is a system actor (no request principal); §12.7 sweeper-style bypass",
-		},
-		{
-			fileRel:     filepath.FromSlash("internal/api/sessions.go"),
-			fnName:      "(*sessionsHandler).delete",
-			requireSeam: false,
-			reason:      "legacy /agent-sessions team-global delete (no ownership check); removed with the namespace in B005",
 		},
 	}
 

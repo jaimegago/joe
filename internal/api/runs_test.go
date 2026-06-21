@@ -72,7 +72,7 @@ func declareIncident(t *testing.T, sessRepo sessionmodel.Repository, principal s
 // startRun posts a new run for the given session and returns the run id.
 func startRun(t *testing.T, ts *httptest.Server, sessionID, principal string) string {
 	t.Helper()
-	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/agent-sessions/"+sessionID+"/runs", principal, nil)
+	resp := doRequest(t, http.MethodPost, ts.URL+"/api/v1/sessions/"+sessionID+"/runs", principal, nil)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("start run status = %d, want 201", resp.StatusCode)
 	}
@@ -85,19 +85,19 @@ func startRun(t *testing.T, ts *httptest.Server, sessionID, principal string) st
 	return run.ID
 }
 
-// --- §D3 single-threaded: second POST /agent-sessions/{id}/runs is 409 ---
+// --- §D3 single-threaded: second POST /sessions/{id}/runs is 409 ---
 
 func TestRunsAPI_D3_SingleThreadedRejected(t *testing.T) {
 	ts, sessRepo, _ := newRunsServer(t)
 	sessionID := declareIncident(t, sessRepo, "alice")
 
-	r1 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/agent-sessions/"+sessionID+"/runs", "alice", nil)
+	r1 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/sessions/"+sessionID+"/runs", "alice", nil)
 	if r1.StatusCode != http.StatusCreated {
 		t.Fatalf("first run status = %d, want 201", r1.StatusCode)
 	}
 	r1.Body.Close()
 
-	r2 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/agent-sessions/"+sessionID+"/runs", "alice", nil)
+	r2 := doRequest(t, http.MethodPost, ts.URL+"/api/v1/sessions/"+sessionID+"/runs", "alice", nil)
 	if r2.StatusCode != http.StatusConflict {
 		body, _ := readBody(r2)
 		t.Fatalf("second run status = %d, want 409 (§D3 single-threaded). body=%s",

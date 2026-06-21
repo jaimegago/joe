@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/seams"
 )
@@ -56,8 +57,9 @@ func (s *Server) registerRunRoutes(mux *http.ServeMux, prefix string) {
 	}
 	h := &runsHandler{repo: s.services.RunModel}
 
-	// Session-scoped: start a run.
-	mux.HandleFunc(fmt.Sprintf("POST %s/agent-sessions/{id}/runs", prefix), h.startRun)
+	// Session-scoped: start a run. Re-homed under /sessions in B005 (§12.8) —
+	// the legacy /agent-sessions namespace was removed.
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/runs", prefix), h.startRun)
 
 	// Run-scoped: SITREP, steps, transitions.
 	mux.HandleFunc(fmt.Sprintf("GET %s/runs/{id}", prefix), h.getSITREP)
@@ -79,7 +81,7 @@ func (s *Server) registerRunRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/solicitations/{id}/resolve", prefix), h.resolveSolicitation)
 }
 
-// --- POST /agent-sessions/{id}/runs ---
+// --- POST /sessions/{id}/runs ---
 
 type startRunRequest struct {
 	ID string `json:"id,omitempty"` // optional; server generates if absent
@@ -89,6 +91,15 @@ func (h *runsHandler) startRun(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
 		writeBadRequest(w, nil, "start run", "missing session id")
+		return
+	}
+	// Route-level authorization (§12.8 re-home): the session-scoped run start is
+	// agentic execution within a session (§12.2 agent-within-session), not a
+	// session read/write action, so it is NOT routed through the sessionAccess
+	// seam; it carries an authenticated-principal floor — an unresolved principal
+	// cannot start a run.
+	if rbac.PrincipalFromContext(r.Context()) == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
 		return
 	}
 	var req startRunRequest
