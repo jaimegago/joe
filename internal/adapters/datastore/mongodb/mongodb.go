@@ -103,7 +103,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	r := &realMongoRunner{c: c}
 	if err := r.ping(ctx); err != nil {
 		_ = c.Disconnect(ctx)
-		return fmt.Errorf("ping MongoDB at %s: %w", cfg.URI, err)
+		return fmt.Errorf("ping MongoDB at %s: %w", adapters.RedactURI(cfg.URI), err)
 	}
 
 	a.runner = r
@@ -132,7 +132,7 @@ func (a *Adapter) Status() adapters.Status {
 	if a.connected {
 		return adapters.Status{
 			Connected: true,
-			Message:   fmt.Sprintf(statusConnectedFmt, a.config.URI),
+			Message:   fmt.Sprintf(statusConnectedFmt, adapters.RedactURI(a.config.URI)),
 		}
 	}
 	return adapters.Status{
