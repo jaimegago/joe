@@ -1,8 +1,10 @@
 # DESIGN — Sessions View (two-view split: incidents vs conversations)
 
-Status: **P0 landed (this node) — derived predicate + read-model projection +
-this doc. No UI.** P1–P3 and the deferred "filter to mine" item are planned
-below, not built.
+Status: **P0–P2 landed.** P0 = derived predicate + read-model projection + this
+doc. P1 = the two-view split UI (Conversations vs Incidents, clusters, active-
+vs-resolved styling). P2 = the shared keyword-filter + sort controls,
+**client-side interim** (§2.1). P3 (paging) and the deferred "filter to mine"
+item are planned below, not built.
 
 This document is a sibling of `docs/DESIGN-CHAT-SESSIONS.md` and inherits its
 storage model (migration 025, the §12 clean-room schema). Where this prompt's
@@ -81,13 +83,48 @@ paging unit is the master row, regardless of how children are counted.
   owners, incident clusters with children grouped. Includes the
   **active-vs-resolved cluster styling distinction** (a resolved cluster reads
   as terminal/dimmed; an active cluster reads as live).
-- **P2.** Sort-by-date + keyword-filter, applied **uniformly to both views'
-  rows**. Children are fixed detail under their master; **list operations
-  target master rows, not children**.
+- **P2 — landed (client-side interim).** Sort-by-date + keyword-filter, applied
+  **uniformly to both views' rows** via one shared control. Children are fixed
+  detail under their master; **list operations target master rows, not
+  children**. Implemented as pure functions client-side — correct **only while
+  the list is unpaged** (see §2.1).
 - **P3.** Per-tab, per-row paging. Resolves the deferred paging-unit question
   (is the page measured in master rows, or in master-rows-plus-children?) with
   real constraints then in hand. P0's read model is built so **either**
   resolution works — children already ride in the master row payload (§1.5).
+
+### 2.1 P2 is client-side — the known P3 revisit
+
+P2's sort + filter are **client-side pure functions** (`ui/src/lib/sessionFilterSort.ts`,
+composed onto `groupSessions`: fetched rows → `groupSessions` → `filterGrouped`
+→ `sortGrouped`). This is correct **only because the list is unpaged today**:
+the query returns a single capped top-N (`LIMIT 50`, no `OFFSET`/cursor,
+`internal/sessionmodel/repository.go:532`) in `ORDER BY last_activity_at DESC`
+order, so the entire list already lives on the client and a local filter/sort
+sees every row.
+
+**This MUST move server-side as part of P3.** Once paging lands, a client-side
+filter/sort would only filter/sort the rows of the *current page*, not the whole
+history — silently wrong. The reconciliation is explicit and recorded here and
+in a code comment at the top of `ui/src/lib/sessionFilterSort.ts`; it is the
+known-revisit, not a surprise. P3's paging-unit decision
+(`docs/backlog/sessions-view-paging.md`) and this server-side migration are the
+same body of work.
+
+Semantics implemented (so P3 can reproduce them server-side):
+
+- **Filter** — case-insensitive substring over the session **title only** (the
+  visible label: title → summary → fallback; never message content). The
+  conversation view filters per row. The incident view filters at the
+  **cluster level**: a cluster shows iff the master's title OR any child's title
+  matches, and a matched cluster always renders **whole** (master + all
+  children) — never partial. (Conversation rows are degenerate single clusters,
+  so both reduce to the same predicate.) Empty query is a no-op.
+- **Sort** — newest activity first (default; matches the server's existing
+  order), oldest activity first, or title A–Z. The conversation view sorts rows;
+  the incident view sorts **masters** (clusters move as units), and each
+  master's children keep their fixed sub-order and ride along — sort never
+  reorders a child relative to its master.
 
 ## 3. Deferred (NOT a numbered phase)
 
