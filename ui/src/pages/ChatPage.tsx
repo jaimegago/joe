@@ -80,11 +80,6 @@ export function ChatPage() {
     chat.startNewSession();
   };
 
-  // Remember the session in view so the next return to /chat reopens it.
-  useEffect(() => {
-    if (activeSessionId) saveLastSession(activeSessionId);
-  }, [activeSessionId]);
-
   // Session metadata + explicit lifecycle status, owned by useSession (header,
   // sharing controls, read-only viewer, and the title auto-update all derive
   // from this one seam). locallyCreated marks an id this tab just minted so a
@@ -98,17 +93,33 @@ export function ChatPage() {
   const readOnly = isReader;
   const sessionGone = status === 'gone';
 
-  // If a session we *restored* turns out to be gone (deleted since), forget it
-  // and fall back to a blank chat rather than stranding the user on a dead URL.
-  // Driven by the explicit status, and the locallyCreated exemption keeps it
-  // from tripping on a freshly-created session.
+  // Remember the session in view so the next return to /chat reopens it — but
+  // ONLY a session we own. A read-only view of someone else's session must never
+  // become the sticky Chat default: restoring it would strand the user on a
+  // session they cannot continue (and, for an empty shared session, on a blank
+  // dead-end they can't escape via the Chat tab). isOwner is a confirmed-positive
+  // signal, so an unresolved or read-only session is simply not remembered.
   useEffect(() => {
-    if (activeSessionId != null && activeSessionId === restoredId.current && status === 'gone') {
+    if (activeSessionId && isOwner) saveLastSession(activeSessionId);
+  }, [activeSessionId, isOwner]);
+
+  // If a session we *restored* turns out to be unusable — deleted since ('gone')
+  // or read-only because it belongs to another principal ('reader') — forget it
+  // and fall back to a blank chat rather than stranding the user on a dead-end
+  // URL. Only a RESTORED id is bounced (restoredId), so directly opening a shared
+  // read-only link still works; and the locallyCreated exemption (via status)
+  // keeps this from tripping on a freshly-created session.
+  useEffect(() => {
+    if (
+      activeSessionId != null &&
+      activeSessionId === restoredId.current &&
+      (status === 'gone' || isReader)
+    ) {
       restoredId.current = null;
       clearLastSession();
       navigate('/chat', { replace: true });
     }
-  }, [status, activeSessionId, navigate]);
+  }, [status, isReader, activeSessionId, navigate]);
 
   // The app-wide regime drives the "attach to incident" affordance: a chat can
   // only be linked while an incident is active (the server 409s otherwise).
