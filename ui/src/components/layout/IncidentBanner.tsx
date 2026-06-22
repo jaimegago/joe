@@ -15,9 +15,16 @@ export function IncidentBanner() {
   const when = formatDeclaredAt(data.declaredAt);
 
   return (
+    // sticky top-0 keeps the banner pinned to the top of the content column while
+    // the chat transcript (and the full-height ChatPage, which can push the page
+    // into a window scroll) scrolls beneath it — so an operator never loses the
+    // incident indicator by scrolling (INCIDENT-CHROME-AFFORDANCES defect 4).
+    // Layout-only; visibility is still driven solely by the regime mode above.
+    // z-30 keeps it above chat content; it sits inside the ml-60 column so it
+    // never overlaps the sidebar.
     <div
       role="alert"
-      className="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+      className="sticky top-0 z-30 flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
     >
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>
