@@ -22,7 +22,7 @@ const (
 )
 
 // IncidentState is the §5b-1 lifecycle. Non-incident sessions carry no
-// incident_state (enforced by CHECK in migration 009).
+// incident_state (enforced by CHECK in migration 025).
 type IncidentState string
 
 const (
