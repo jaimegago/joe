@@ -352,6 +352,39 @@ describe('ChatPage last-session restore', () => {
     expect(sessionStorage.getItem('joe.chat.lastSession')).toBeNull();
   });
 
+  it('forgets a restored session that is read-only (another principal owns it) and falls back to /chat', async () => {
+    // The "stuck on someone else's session" bug: a read-only foreign session got
+    // saved as the last session and the Chat tab kept reopening it — a dead-end
+    // the user could not write to (and, when empty, could not escape). A restored
+    // session that resolves read_only=true is now forgotten, same as a 404.
+    sessionStorage.setItem('joe.chat.lastSession', 's-shared');
+    mockFetchSession.mockResolvedValue({
+      id: 's-shared',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 0,
+      read_only: true,
+    });
+    renderAt('/chat');
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
+    expect(sessionStorage.getItem('joe.chat.lastSession')).toBeNull();
+  });
+
+  it('does not remember a directly-opened read-only session (it must not become the sticky default)', async () => {
+    // Viewing someone else's session directly stays put (the shared link works),
+    // but it must never be saved as the last session — otherwise the next Chat
+    // tab click would strand the user on it.
+    mockFetchSession.mockResolvedValue({
+      id: 's-shared',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 0,
+      read_only: true,
+    });
+    renderAt('/chat/s-shared');
+    await waitFor(() => expect(mockFetchSession).toHaveBeenCalled());
+    expect(screen.getByTestId('loc')).toHaveTextContent('/chat/s-shared');
+    expect(sessionStorage.getItem('joe.chat.lastSession')).toBeNull();
+  });
+
   it('does not reset a directly-opened session that errors (no restore)', async () => {
     // A session error on a URL the user opened directly (not restored) must
     // never bounce them to a blank "New chat" — this is what regressed the
