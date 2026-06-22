@@ -173,11 +173,22 @@ export function useChat(initialSessionId?: string) {
     }
   }
 
-  // Persisted history is loaded ONCE per session (staleTime: Infinity, no
-  // window-focus refetch) and never invalidated. Because it is frozen at
-  // session-open, it can never overlap the live turns appended afterwards —
-  // this is how we avoid the streamed turn duplicating its persisted copy
-  // without a post-completion message-list refetch.
+  // Persisted history is loaded once per MOUNT and frozen for that mount's
+  // lifetime (staleTime: Infinity, no window-focus refetch). Because it is
+  // frozen at session-open, it can never overlap the live turns appended
+  // afterwards — this is how we avoid the streamed turn duplicating its
+  // persisted copy without a post-completion message-list refetch.
+  //
+  // refetchOnMount: 'always' is the one deliberate exception: it re-reads the
+  // server every time the session is (re)opened, ignoring the cached snapshot a
+  // prior mount left behind. Without it, reopening a session via in-app routing
+  // serves stale cached history — so a turn that streamed into liveItems on an
+  // earlier mount and was then dropped when that mount unmounted (e.g. the user
+  // navigated away mid-stream) stays invisible until a hard reload wipes the
+  // cache, even though it persisted server-side. The refetch is mount-scoped, so
+  // it never fires mid-mount and thus never duplicates a currently-live turn:
+  // liveItems do not survive a remount, so the refreshed history can't overlap
+  // them.
   //
   // We fetch history for any session that existed before this mount — never for
   // one created locally this mount (see locallyCreatedId above).
@@ -186,6 +197,7 @@ export function useChat(initialSessionId?: string) {
     queryFn: () => fetchMessages(sessionId!),
     enabled: sessionId != null && sessionId !== locallyCreatedId,
     staleTime: Infinity,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 
