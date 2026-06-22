@@ -40,11 +40,26 @@ const mockUpdateTitle = vi.mocked(updateSessionTitle);
 const mockLinkIncident = vi.mocked(linkSessionToIncident);
 const mockPromote = vi.mocked(promoteSessionToIncident);
 
-// setRegime stubs useRegime; ChatPage reads `mode` (incident-active gate) and, for
-// an incident session, `declaredByPrincipal` (the captain).
-function setRegime(mode: 'normal' | 'incident', declaredByPrincipal: string | null = null) {
+// setRegime stubs useRegime; ChatPage reads `mode` (regime gate), the captain
+// (`declaredByPrincipal`), and the active incident master's id/title
+// (`incidentSessionId`/`incidentTitle`) — the affordance function needs the
+// master id to tell a session linked to the ACTIVE incident from one linked to a
+// now-resolved one.
+function setRegime(
+  mode: 'normal' | 'incident',
+  declaredByPrincipal: string | null = null,
+  active: { incidentSessionId?: string | null; incidentTitle?: string | null } = {}
+) {
   mockUseRegime.mockReturnValue({
-    data: { mode, declaredAt: null, declaredByPrincipal, declaredKind: null },
+    data: {
+      mode,
+      declaredAt: null,
+      declaredByPrincipal,
+      declaredKind: null,
+      incidentSessionId: active.incidentSessionId ?? null,
+      incidentState: null,
+      incidentTitle: active.incidentTitle ?? null,
+    },
   } as ReturnType<typeof useRegime>);
 }
 
@@ -485,7 +500,7 @@ describe('ChatPage incident linkage (Phase 4)', () => {
   });
 
   it('shows a "Linked to incident" badge and no attach button once linked', async () => {
-    setRegime('incident');
+    setRegime('incident', null, { incidentSessionId: 'inc-1' });
     mockFetchSession.mockResolvedValue({ ...ownedUnlinked, linked_incident_id: 'inc-1' });
     renderPage();
 
@@ -542,6 +557,100 @@ describe('ChatPage promote-this-session affordance (§12.10)', () => {
   });
 });
 
+// These pin the INCIDENT-CHROME-AFFORDANCES defects directly at the chat header:
+// an incident-type session (active OR resolved) must never offer attach/declare;
+// a resolved master is a terminal record (resolved badge only); a linked session
+// names and links to its master.
+describe('ChatPage incident affordance matrix (INCIDENT-CHROME-AFFORDANCES)', () => {
+  beforeEach(() => {
+    mockUseAuth.mockReset();
+    mockUseChat.mockReset();
+    mockUseRegime.mockReset();
+    mockFetchSession.mockReset();
+    mockPromote.mockReset();
+    mockLinkIncident.mockReset();
+    setAuth({ rbacEnabled: false, isAdmin: true, zones: [] });
+    setChat('s1');
+  });
+
+  it('an active incident master offers neither attach nor declare (defects 1 & 3b)', async () => {
+    setRegime('incident', 'user:bob', { incidentSessionId: 's1' });
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      read_only: false,
+      type: 'incident',
+      incident_state: 'declared',
+    });
+    renderPage();
+
+    // The incident-session badge confirms the master loaded.
+    expect(await screen.findByText(/incident session/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /declare incident/i })).not.toBeInTheDocument();
+  });
+
+  it('a resolved incident master shows a resolved badge and no resolve/declare/attach (defects 1, 5)', async () => {
+    // Post-resolve: regime is back to normal, the master is type=incident state=resolved.
+    setRegime('normal');
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      read_only: false,
+      type: 'incident',
+      incident_state: 'resolved',
+    });
+    renderPage();
+
+    expect(await screen.findByText(/incident · resolved/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /declare incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /resolve incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark mitigated/i })).not.toBeInTheDocument();
+  });
+
+  it('a linked session names and links to its incident master (defect 2)', async () => {
+    setRegime('incident', 'user:carol', { incidentSessionId: 'inc-1', incidentTitle: 'DB outage' });
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      read_only: false,
+      type: 'default',
+      linked_incident_id: 'inc-1',
+      linked_incident_title: 'DB outage',
+    });
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: /linked to db outage/i });
+    expect(link).toHaveAttribute('href', '/chat/inc-1');
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+  });
+
+  it('a session linked to a now-resolved incident shows a muted linked badge and no attach', async () => {
+    // A different incident is active now; this session is linked to the OLD,
+    // resolved one — it must not offer attach (re-linking is a deferred node).
+    setRegime('incident', 'user:carol', { incidentSessionId: 'inc-new' });
+    mockFetchSession.mockResolvedValue({
+      id: 's1',
+      started_at: '2026-06-06T10:00:00Z',
+      message_count: 2,
+      read_only: false,
+      type: 'default',
+      linked_incident_id: 'inc-old',
+      linked_incident_title: 'Old outage',
+    });
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: /linked to old outage/i });
+    expect(link).toHaveAttribute('href', '/chat/inc-old');
+    expect(screen.queryByRole('button', { name: /attach to incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /declare incident/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('ChatPage incident participants — creator vs captain (§12.3)', () => {
   beforeEach(() => {
     mockUseAuth.mockReset();
@@ -555,7 +664,7 @@ describe('ChatPage incident participants — creator vs captain (§12.3)', () =>
   it('renders the creator and the captain as distinct principals on an incident session', async () => {
     // Owner viewing (read_only=false → creator is the caller, user:bob), linked to
     // an incident whose captain (the regime declarer) is a DIFFERENT principal.
-    setRegime('incident', 'user:carol');
+    setRegime('incident', 'user:carol', { incidentSessionId: 'inc-1' });
     mockFetchSession.mockResolvedValue({
       id: 's1',
       started_at: '2026-06-06T10:00:00Z',
