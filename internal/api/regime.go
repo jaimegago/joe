@@ -105,6 +105,12 @@ type regimeReadResponse struct {
 	sessionmodel.Regime
 	IncidentSessionID string `json:"IncidentSessionID,omitempty"`
 	IncidentState     string `json:"IncidentState,omitempty"`
+	// IncidentTitle is the active incident master's human title, so an unlinked
+	// default session can name its attach target ("Attach to «title»",
+	// INCIDENT-CHROME-AFFORDANCES defect 2 / matrix row 2). A read-only
+	// projection of the master's existing title column — no schema change. Empty
+	// in normal mode or when the master is untitled.
+	IncidentTitle string `json:"IncidentTitle,omitempty"`
 }
 
 func (h *regimeHandler) read(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +128,9 @@ func (h *regimeHandler) read(w http.ResponseWriter, r *http.Request) {
 			out.IncidentSessionID = inc.ID
 			if inc.IncidentState != nil {
 				out.IncidentState = string(*inc.IncidentState)
+			}
+			if inc.Title != nil {
+				out.IncidentTitle = *inc.Title
 			}
 		}
 	}
