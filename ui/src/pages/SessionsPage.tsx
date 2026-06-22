@@ -13,7 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SessionRow, type SessionRowActions } from '@/components/sessions/SessionRow';
 import { IncidentClusterList } from '@/components/sessions/IncidentClusterList';
+import { SessionListControls } from '@/components/sessions/SessionListControls';
 import { groupSessions } from '@/lib/sessionGrouping';
+import { applyViewControls, DEFAULT_SORT, type SortKey } from '@/lib/sessionFilterSort';
 import { sessionLabel } from '@/lib/sessionLabel';
 import {
   fetchSessions,
@@ -59,6 +61,13 @@ export function SessionsPage() {
   // (docs/DESIGN-SESSIONS-VIEW.md §2 / §3): the incident view shows all owners,
   // and "filter to mine" on incidents is the explicitly deferred item.
   const [mineOnly, setMineOnly] = useState(false);
+  // Keyword filter + sort are CLIENT-SIDE, view-local UI state (P2). The state is
+  // shared across the Conversations and Incidents tabs (one control set, applied
+  // to whichever view is active) and is NOT mirrored to the URL — switching tabs
+  // keeps the current filter/sort, which is acceptable per the P2 plan. See
+  // applyViewControls for why these are correct only while the list is unpaged.
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>(DEFAULT_SORT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Session | null>(null);
@@ -187,6 +196,11 @@ export function SessionsPage() {
   // clusters. The membership predicate is read from each row's incident_involved
   // flag inside groupSessions — never re-derived here.
   const grouped = groupSessions(sessionsQ.data ?? []);
+  // Apply the shared keyword-filter + sort to the grouped output. Both views read
+  // from this one pipeline (fetched rows → groupSessions → filter → sort), so the
+  // Conversations and Incidents tabs use the identical filter/sort implementation.
+  const visible = applyViewControls(grouped, query, sort);
+  const filtering = query.trim().length > 0;
   const trashed = trashQ.data ?? [];
   const loading = view === 'trash' ? trashQ.isLoading : sessionsQ.isLoading;
 
@@ -247,7 +261,7 @@ export function SessionsPage() {
           ) : (
             <>
               <TabsContent value="conversations">
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex items-center gap-2">
                   <Button
                     size="sm"
                     variant={mineOnly ? 'default' : 'outline'}
@@ -256,20 +270,36 @@ export function SessionsPage() {
                   >
                     Mine only
                   </Button>
+                  <div className="flex-1">
+                    <SessionListControls
+                      query={query}
+                      onQueryChange={setQuery}
+                      sort={sort}
+                      onSortChange={setSort}
+                    />
+                  </div>
                 </div>
-                {grouped.conversations.length === 0 ? (
+                {visible.conversations.length === 0 ? (
                   <EmptyState
                     icon={MessageSquare}
-                    title={mineOnly ? 'You have no conversations' : 'No conversations yet'}
+                    title={
+                      filtering
+                        ? 'No conversations match your filter'
+                        : mineOnly
+                          ? 'You have no conversations'
+                          : 'No conversations yet'
+                    }
                     description={
-                      mineOnly
-                        ? 'Conversations you create appear here.'
-                        : 'Chat sessions across your team that are not part of an incident appear here.'
+                      filtering
+                        ? 'No conversation title matches your search. Clear the filter to see all.'
+                        : mineOnly
+                          ? 'Conversations you create appear here.'
+                          : 'Chat sessions across your team that are not part of an incident appear here.'
                     }
                   />
                 ) : (
                   <ul className="divide-y rounded-md border">
-                    {grouped.conversations.map((s) => (
+                    {visible.conversations.map((s) => (
                       <li key={s.id}>
                         <SessionRow {...rowActions} session={s} declareMode={declareMode} />
                       </li>
@@ -279,7 +309,15 @@ export function SessionsPage() {
               </TabsContent>
 
               <TabsContent value="incidents">
-                <IncidentClusterList {...rowActions} clusters={grouped.clusters} />
+                <div className="mb-4">
+                  <SessionListControls
+                    query={query}
+                    onQueryChange={setQuery}
+                    sort={sort}
+                    onSortChange={setSort}
+                  />
+                </div>
+                <IncidentClusterList {...rowActions} clusters={visible.clusters} />
               </TabsContent>
 
               <TabsContent value="trash">
