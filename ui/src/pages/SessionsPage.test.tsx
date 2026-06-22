@@ -77,7 +77,7 @@ describe('SessionsPage', () => {
     mockFetchTrash.mockResolvedValue([]);
   });
 
-  it('lists the team-wide sessions labelled by title with a fallback for untitled ones', async () => {
+  it('lists the team-wide conversations labelled by title with a fallback for untitled ones', async () => {
     mockFetch.mockResolvedValue(owned);
     renderPage();
 
@@ -85,7 +85,7 @@ describe('SessionsPage', () => {
     expect(screen.getByText('Untitled session')).toBeInTheDocument();
     expect(screen.getByText(/4 messages/)).toBeInTheDocument();
     expect(screen.getByText(/1 message$/)).toBeInTheDocument();
-    // Default view is the team-wide list (mine=false).
+    // Default view is the Conversations view, team-wide (mine=false).
     expect(mockFetch).toHaveBeenCalledWith({ mine: false, limit: 50 });
   });
 
@@ -111,21 +111,21 @@ describe('SessionsPage', () => {
     expect(screen.queryByLabelText('Delete session')).not.toBeInTheDocument();
   });
 
-  it('the "Mine" filter narrows to the caller\'s own sessions', async () => {
+  it('the "Mine only" toggle on Conversations narrows to the caller\'s own sessions', async () => {
     mockFetch.mockResolvedValue(owned);
     renderPage();
     await screen.findByText('Payment Service Crashloop');
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('tab', { name: 'Mine' }));
+    await user.click(screen.getByRole('button', { name: /mine only/i }));
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalledWith({ mine: true, limit: 50 }));
   });
 
-  it('shows the empty state when there are no sessions', async () => {
+  it('shows the empty state when there are no conversations', async () => {
     mockFetch.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText('No sessions yet')).toBeInTheDocument();
+    expect(await screen.findByText('No conversations yet')).toBeInTheDocument();
   });
 
   it('renames a session through the inline editor', async () => {
@@ -231,5 +231,101 @@ describe('SessionsPage', () => {
     // create-empty THEN promote-in-place: two existing primitives sequenced in the UI.
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     await waitFor(() => expect(mockPromote).toHaveBeenCalledWith('new1'));
+  });
+
+  // A mixed list spanning both views: one plain conversation, one active master
+  // with a linked child, and one resolved master.
+  const mixed: Session[] = [
+    {
+      id: 'conv1',
+      started_at: '2026-06-06T10:00:00Z',
+      last_activity_at: '2026-06-06T11:00:00Z',
+      title: 'Routine capacity check',
+      message_count: 2,
+      read_only: false,
+      type: 'default',
+      incident_involved: false,
+    },
+    {
+      id: 'master-active',
+      started_at: '2026-06-06T09:00:00Z',
+      last_activity_at: '2026-06-06T10:30:00Z',
+      title: 'DB pool exhaustion',
+      message_count: 9,
+      read_only: false,
+      type: 'incident',
+      incident_state: 'being_worked',
+      incident_involved: true,
+    },
+    {
+      id: 'child1',
+      started_at: '2026-06-06T09:15:00Z',
+      last_activity_at: '2026-06-06T09:45:00Z',
+      title: 'Replica lag dig',
+      message_count: 3,
+      read_only: false,
+      type: 'default',
+      linked_incident_id: 'master-active',
+      linked_incident_title: 'DB pool exhaustion',
+      incident_involved: true,
+    },
+    {
+      id: 'master-resolved',
+      started_at: '2026-06-05T08:00:00Z',
+      last_activity_at: '2026-06-05T12:00:00Z',
+      title: 'Cert rotation outage',
+      message_count: 14,
+      read_only: false,
+      type: 'incident',
+      incident_state: 'resolved',
+      incident_involved: true,
+    },
+  ];
+
+  it('the Conversations view shows only incident-free rows, never masters or linked children', async () => {
+    mockFetch.mockResolvedValue(mixed);
+    renderPage();
+
+    expect(await screen.findByText('Routine capacity check')).toBeInTheDocument();
+    // No incident-involved row leaks into Conversations.
+    expect(screen.queryByText('DB pool exhaustion')).not.toBeInTheDocument();
+    expect(screen.queryByText('Replica lag dig')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cert rotation outage')).not.toBeInTheDocument();
+  });
+
+  it('the Incidents view clusters masters with their children and names the master on a child', async () => {
+    mockFetch.mockResolvedValue(mixed);
+    renderPage();
+    await screen.findByText('Routine capacity check');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Incidents' }));
+
+    // Both masters and the child render in the incident view...
+    expect(await screen.findByText('DB pool exhaustion')).toBeInTheDocument();
+    expect(screen.getByText('Replica lag dig')).toBeInTheDocument();
+    expect(screen.getByText('Cert rotation outage')).toBeInTheDocument();
+    // ...the plain conversation does not.
+    expect(screen.queryByText('Routine capacity check')).not.toBeInTheDocument();
+
+    // The child names AND links to its master.
+    const childLink = screen.getByRole('link', { name: /linked to incident DB pool exhaustion/i });
+    expect(childLink).toHaveAttribute('href', '/chat/master-active');
+
+    // Active vs resolved clusters read distinctly: the active master shows its
+    // lifecycle state, the resolved one its terminal state.
+    expect(screen.getByText(/Incident · Being worked/i)).toBeInTheDocument();
+    expect(screen.getByText(/Incident · Resolved/i)).toBeInTheDocument();
+  });
+
+  it('switching to Incidents fetches the full team-wide list (all owners, not mine)', async () => {
+    mockFetch.mockResolvedValue(mixed);
+    renderPage();
+    await screen.findByText('Routine capacity check');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Incidents' }));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith({ mine: false, limit: 50 }));
   });
 });

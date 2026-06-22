@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { Header } from '@/components/layout/Header';
@@ -10,8 +10,11 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { SessionRow, type SessionRowActions } from '@/components/sessions/SessionRow';
+import { IncidentClusterList } from '@/components/sessions/IncidentClusterList';
+import { groupSessions } from '@/lib/sessionGrouping';
+import { sessionLabel } from '@/lib/sessionLabel';
 import {
   fetchSessions,
   fetchTrash,
@@ -23,34 +26,17 @@ import {
 } from '@/api/chat';
 import { ApiRequestError } from '@/api/client';
 import type { Session } from '@/api/types';
-import {
-  MessageSquare,
-  Plus,
-  Pencil,
-  Trash2,
-  Check,
-  X,
-  AlertTriangle,
-  Eye,
-  RotateCcw,
-} from 'lucide-react';
+import { MessageSquare, Plus, Trash2, AlertTriangle, RotateCcw, ShieldAlert } from 'lucide-react';
 
 // Browse limit for the sessions list — generous enough to show a working
-// history without paging, which is a later nicety.
+// history without paging, which is a later phase (P3).
 const SESSIONS_LIMIT = 50;
 
-type View = 'all' | 'mine' | 'trash';
-
-function sessionLabel(s: Session): string {
-  return s.title ?? s.summary ?? 'Untitled session';
-}
-
-// formatOwner renders a principal ("user:alice@example.com") as the bare identity
-// for the "owned by" label. Falls back when the owner is absent.
-function formatOwner(principal?: string): string {
-  if (!principal) return 'another user';
-  return principal.replace(/^user:/, '');
-}
+// The primary axis is now the two-view split (docs/DESIGN-SESSIONS-VIEW.md §1.2):
+// Conversations (incident-free) and Incidents (clustered), with Trash retained
+// as-is. The old flat "All sessions" listing is replaced by these two views; the
+// former "Mine" tab becomes a toggle on the Conversations view.
+type View = 'conversations' | 'incidents' | 'trash';
 
 // remainingBeforePurge renders the §12.5 trash-grace countdown from purge_after.
 // No purge_after means the trash-then-purge policy has no grace window configured
@@ -68,14 +54,27 @@ export function SessionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const declareMode = searchParams.get('declare') != null;
 
-  const [view, setView] = useState<View>('all');
+  const [view, setView] = useState<View>('conversations');
+  // mineOnly is the retained "Mine" filter, scoped to the Conversations view
+  // (docs/DESIGN-SESSIONS-VIEW.md §2 / §3): the incident view shows all owners,
+  // and "filter to mine" on incidents is the explicitly deferred item.
+  const [mineOnly, setMineOnly] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Session | null>(null);
 
+  // Conversations honor the Mine toggle (server-narrowed, exactly as the old
+  // Mine tab). Incidents always fetch the full team-wide list (all owners) so
+  // clusters are complete regardless of who owns each member.
+  const mineActive = view === 'conversations' && mineOnly;
   const sessionsQ = useQuery({
-    queryKey: ['sessions', view === 'mine' ? 'mine' : 'all', SESSIONS_LIMIT],
-    queryFn: () => fetchSessions({ mine: view === 'mine', limit: SESSIONS_LIMIT }),
+    queryKey: [
+      'sessions',
+      view === 'incidents' ? 'all' : 'conversations',
+      mineActive,
+      SESSIONS_LIMIT,
+    ],
+    queryFn: () => fetchSessions({ mine: mineActive, limit: SESSIONS_LIMIT }),
     enabled: view !== 'trash',
   });
 
@@ -170,7 +169,24 @@ export function SessionsPage() {
     renameMut.mutate({ id, title });
   };
 
-  const sessions = sessionsQ.data ?? [];
+  // The shared row action/edit-state bundle threaded into both views' rows.
+  const rowActions: SessionRowActions = {
+    editingId,
+    draftTitle,
+    setDraftTitle,
+    onStartEdit: startEdit,
+    onCommitEdit: commitEdit,
+    onCancelEdit: () => setEditingId(null),
+    onDelete: setPendingDelete,
+    onPromote: (id) => promoteMut.mutate(id),
+    renamePending: renameMut.isPending,
+    promotePending: promoteMut.isPending,
+  };
+
+  // The single P0-driven split: conversations (incident-free) vs incident
+  // clusters. The membership predicate is read from each row's incident_involved
+  // flag inside groupSessions — never re-derived here.
+  const grouped = groupSessions(sessionsQ.data ?? []);
   const trashed = trashQ.data ?? [];
   const loading = view === 'trash' ? trashQ.isLoading : sessionsQ.isLoading;
 
@@ -198,8 +214,8 @@ export function SessionsPage() {
                   Declare an incident
                 </p>
                 <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                  Promote one of your sessions below to the incident master, or start a brand-new
-                  incident on a fresh session.
+                  Promote one of your conversations below to the incident master, or start a
+                  brand-new incident on a fresh session.
                 </p>
                 <div className="mt-3 flex gap-2">
                   <Button
@@ -221,8 +237,8 @@ export function SessionsPage() {
 
         <Tabs value={view} onValueChange={(v) => setView(v as View)}>
           <TabsList className="mb-4">
-            <TabsTrigger value="all">All sessions</TabsTrigger>
-            <TabsTrigger value="mine">Mine</TabsTrigger>
+            <TabsTrigger value="conversations">Conversations</TabsTrigger>
+            <TabsTrigger value="incidents">Incidents</TabsTrigger>
             <TabsTrigger value="trash">Trash</TabsTrigger>
           </TabsList>
 
@@ -230,42 +246,40 @@ export function SessionsPage() {
             <LoadingPage />
           ) : (
             <>
-              <TabsContent value="all">
-                <SessionList
-                  sessions={sessions}
-                  emptyTitle="No sessions yet"
-                  emptyDescription="Chat sessions across your team appear here."
-                  declareMode={declareMode}
-                  editingId={editingId}
-                  draftTitle={draftTitle}
-                  setDraftTitle={setDraftTitle}
-                  onStartEdit={startEdit}
-                  onCommitEdit={commitEdit}
-                  onCancelEdit={() => setEditingId(null)}
-                  onDelete={setPendingDelete}
-                  onPromote={(id) => promoteMut.mutate(id)}
-                  renamePending={renameMut.isPending}
-                  promotePending={promoteMut.isPending}
-                />
+              <TabsContent value="conversations">
+                <div className="mb-4 flex items-center justify-between">
+                  <Button
+                    size="sm"
+                    variant={mineOnly ? 'default' : 'outline'}
+                    aria-pressed={mineOnly}
+                    onClick={() => setMineOnly((v) => !v)}
+                  >
+                    Mine only
+                  </Button>
+                </div>
+                {grouped.conversations.length === 0 ? (
+                  <EmptyState
+                    icon={MessageSquare}
+                    title={mineOnly ? 'You have no conversations' : 'No conversations yet'}
+                    description={
+                      mineOnly
+                        ? 'Conversations you create appear here.'
+                        : 'Chat sessions across your team that are not part of an incident appear here.'
+                    }
+                  />
+                ) : (
+                  <ul className="divide-y rounded-md border">
+                    {grouped.conversations.map((s) => (
+                      <li key={s.id}>
+                        <SessionRow {...rowActions} session={s} declareMode={declareMode} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </TabsContent>
 
-              <TabsContent value="mine">
-                <SessionList
-                  sessions={sessions}
-                  emptyTitle="You have no sessions"
-                  emptyDescription="Sessions you create appear here."
-                  declareMode={declareMode}
-                  editingId={editingId}
-                  draftTitle={draftTitle}
-                  setDraftTitle={setDraftTitle}
-                  onStartEdit={startEdit}
-                  onCommitEdit={commitEdit}
-                  onCancelEdit={() => setEditingId(null)}
-                  onDelete={setPendingDelete}
-                  onPromote={(id) => promoteMut.mutate(id)}
-                  renamePending={renameMut.isPending}
-                  promotePending={promoteMut.isPending}
-                />
+              <TabsContent value="incidents">
+                <IncidentClusterList {...rowActions} clusters={grouped.clusters} />
               </TabsContent>
 
               <TabsContent value="trash">
@@ -281,7 +295,18 @@ export function SessionsPage() {
                       <li key={s.id} className="flex items-center gap-3 px-4 py-3">
                         <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{sessionLabel(s)}</p>
+                          <div className="flex items-center gap-2 truncate font-medium">
+                            <span className="truncate">{sessionLabel(s)}</span>
+                            {/* Trashed incident-involved sessions keep their
+                                marker so trash is not split by view (P1 leaves
+                                trash behavior unchanged). */}
+                            {s.incident_involved && (
+                              <Badge variant="outline" className="shrink-0 text-muted-foreground">
+                                <ShieldAlert className="mr-1 h-3 w-3" aria-hidden="true" />
+                                Incident
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {remainingBeforePurge(s.purge_after)}
                             {' · '}
@@ -330,179 +355,4 @@ function promoteErrorMessage(e: Error): string {
     return 'An incident is already active — resolve it before declaring another.';
   }
   return e.message;
-}
-
-interface SessionListProps {
-  sessions: Session[];
-  emptyTitle: string;
-  emptyDescription: string;
-  declareMode: boolean;
-  editingId: string | null;
-  draftTitle: string;
-  setDraftTitle: (t: string) => void;
-  onStartEdit: (s: Session) => void;
-  onCommitEdit: (id: string) => void;
-  onCancelEdit: () => void;
-  onDelete: (s: Session) => void;
-  onPromote: (id: string) => void;
-  renamePending: boolean;
-  promotePending: boolean;
-}
-
-// SessionList renders the team-wide list. A row the caller owns (read_only !==
-// true) gets the owner controls (rename, move-to-trash, and — in declare mode —
-// promote-to-incident); a row owned by another principal is a read-only viewer,
-// badged and owner-attributed via shared_by.
-function SessionList({
-  sessions,
-  emptyTitle,
-  emptyDescription,
-  declareMode,
-  editingId,
-  draftTitle,
-  setDraftTitle,
-  onStartEdit,
-  onCommitEdit,
-  onCancelEdit,
-  onDelete,
-  onPromote,
-  renamePending,
-  promotePending,
-}: SessionListProps) {
-  if (sessions.length === 0) {
-    return <EmptyState icon={MessageSquare} title={emptyTitle} description={emptyDescription} />;
-  }
-  return (
-    <ul className="divide-y rounded-md border">
-      {sessions.map((s) => {
-        const isEditing = editingId === s.id;
-        const isOwner = s.read_only !== true;
-        // The incident MASTER (the session the incident was declared on) is marked
-        // by type, not by linked_incident_id — promote-in-place clears its pointer
-        // (§12.3). A LINKED participant keeps its pointer. They are distinct badges.
-        const isIncidentMaster = s.type === 'incident';
-        const isLinked = s.linked_incident_id != null;
-        const activity = s.last_activity_at ?? s.started_at;
-        return (
-          <li key={s.id} className="flex items-center gap-3 px-4 py-3">
-            <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              {isEditing ? (
-                <form
-                  className="flex items-center gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    onCommitEdit(s.id);
-                  }}
-                >
-                  <Input
-                    autoFocus
-                    value={draftTitle}
-                    onChange={(e) => setDraftTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') onCancelEdit();
-                    }}
-                    className="h-8"
-                    aria-label="Session title"
-                  />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0"
-                    disabled={renamePending}
-                    aria-label="Save title"
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0"
-                    onClick={onCancelEdit}
-                    aria-label="Cancel rename"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </form>
-              ) : (
-                <Link to={`/chat/${s.id}`} className="block min-w-0">
-                  {/* A div, not a <p>: the Badge renders a <div>, which is
-                      invalid (and a hydration error) nested inside a <p>. */}
-                  <div className="flex items-center gap-2 truncate font-medium">
-                    <span className="truncate hover:underline">{sessionLabel(s)}</span>
-                    {!isOwner && (
-                      <Badge variant="outline" className="shrink-0">
-                        <Eye className="mr-1 h-3 w-3" aria-hidden="true" />
-                        Read-only
-                      </Badge>
-                    )}
-                    {isIncidentMaster && (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-amber-400 bg-amber-100 font-semibold text-amber-900 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-200"
-                      >
-                        <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
-                        Incident Session
-                      </Badge>
-                    )}
-                    {isLinked && (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
-                      >
-                        <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
-                        Linked to incident
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {!isOwner && `owned by ${formatOwner(s.shared_by)} · `}
-                    {formatDistanceToNow(new Date(activity), { addSuffix: true })}
-                    {' · '}
-                    {s.message_count} {s.message_count === 1 ? 'message' : 'messages'}
-                  </p>
-                </Link>
-              )}
-            </div>
-            {!isEditing && isOwner && (
-              <div className="flex shrink-0 items-center gap-1">
-                {declareMode && !isIncidentMaster && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
-                    onClick={() => onPromote(s.id)}
-                    disabled={promotePending}
-                  >
-                    <AlertTriangle className="mr-1 h-3 w-3" />
-                    Promote to incident
-                  </Button>
-                )}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8"
-                  onClick={() => onStartEdit(s)}
-                  aria-label="Rename session"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => onDelete(s)}
-                  aria-label="Delete session"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
