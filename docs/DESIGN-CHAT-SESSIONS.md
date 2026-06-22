@@ -824,8 +824,9 @@ These are tracked items, **not blocking nodes**:
 - Reword the §12.5 accepted-tradeoff text that still uses privacy framing so it fits the
   team-public model — keep the admin-purge-routes-erasure point, drop the
   sensitive-and-admin-visible framing.
-- The three B001 inventory reports are landed under `docs/investigations` as the dated
-  as-built reference.
+- The three B001 inventory reports were never produced and are **not** present under
+  `docs/investigations`; landing the dated as-built snapshots remains open doc-debt. (The
+  B001 findings themselves are captured inline above — see §10 and the §12 notes.)
 - The learn-from-sessions feature is a decided future feature with its legacy tables retained
   per `docs/backlog`.
 
