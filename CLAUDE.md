@@ -42,6 +42,8 @@ npm run lint
 npm run test
 ```
 
+**Verify UI features in the running app before claiming them done.** Green Vitest is necessary but not sufficient: the suite mocks the API boundary, so it cannot catch the recurring bug class here — boundary/integration bugs (react-query cache across mounts, navigation timing, real backend response shapes like `read_only`). Boot the real `joe` binary, open the UI, and click through the flows that historically break (navigate away mid-stream then reopen; open a session as a read-only non-owner; hard reload; multi-principal in separate browser profiles). Use the `/run` and `/verify` skills to drive the real stack.
+
 ## Repo-Specific Conventions
 
 - `joe` subcommands: `joe mcp`, `joe slack`, `joe panic`, `joe unlock`, `joe review`
