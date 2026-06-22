@@ -377,7 +377,11 @@ function SessionList({
       {sessions.map((s) => {
         const isEditing = editingId === s.id;
         const isOwner = s.read_only !== true;
-        const isIncident = s.linked_incident_id != null;
+        // The incident MASTER (the session the incident was declared on) is marked
+        // by type, not by linked_incident_id — promote-in-place clears its pointer
+        // (§12.3). A LINKED participant keeps its pointer. They are distinct badges.
+        const isIncidentMaster = s.type === 'incident';
+        const isLinked = s.linked_incident_id != null;
         const activity = s.last_activity_at ?? s.started_at;
         return (
           <li key={s.id} className="flex items-center gap-3 px-4 py-3">
@@ -424,7 +428,9 @@ function SessionList({
                 </form>
               ) : (
                 <Link to={`/chat/${s.id}`} className="block min-w-0">
-                  <p className="flex items-center gap-2 truncate font-medium">
+                  {/* A div, not a <p>: the Badge renders a <div>, which is
+                      invalid (and a hydration error) nested inside a <p>. */}
+                  <div className="flex items-center gap-2 truncate font-medium">
                     <span className="truncate hover:underline">{sessionLabel(s)}</span>
                     {!isOwner && (
                       <Badge variant="outline" className="shrink-0">
@@ -432,16 +438,25 @@ function SessionList({
                         Read-only
                       </Badge>
                     )}
-                    {isIncident && (
+                    {isIncidentMaster && (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-amber-400 bg-amber-100 font-semibold text-amber-900 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-200"
+                      >
+                        <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                        Incident Session
+                      </Badge>
+                    )}
+                    {isLinked && (
                       <Badge
                         variant="outline"
                         className="shrink-0 border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
                       >
                         <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
-                        Incident
+                        Linked to incident
                       </Badge>
                     )}
-                  </p>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {!isOwner && `owned by ${formatOwner(s.shared_by)} · `}
                     {formatDistanceToNow(new Date(activity), { addSuffix: true })}
@@ -453,7 +468,7 @@ function SessionList({
             </div>
             {!isEditing && isOwner && (
               <div className="flex shrink-0 items-center gap-1">
-                {declareMode && !isIncident && (
+                {declareMode && !isIncidentMaster && (
                   <Button
                     size="sm"
                     variant="outline"

@@ -16,6 +16,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useRegime } from '@/hooks/useRegime';
 import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSession';
 import { updateSessionTitle, linkSessionToIncident, promoteSessionToIncident } from '@/api/chat';
+import { resolveIncident, advanceIncidentState, type IncidentWorkState } from '@/api/regime';
 import { ApiRequestError } from '@/api/client';
 import {
   Plus,
@@ -25,6 +26,7 @@ import {
   Check,
   X,
   FileQuestion,
+  ShieldCheck,
 } from 'lucide-react';
 
 export function ChatPage() {
@@ -86,10 +88,18 @@ export function ChatPage() {
   // transient read-after-write 404 on it is treated as benign, never a dead
   // state. Ownership is a POSITIVE signal (status === 'owner', i.e. the server
   // returned read_only=false) so anything unconfirmed fails CLOSED.
-  const { status, session, isOwner, isReader, isLinkedToIncident, applyUpdate } = useSession(
-    activeSessionId,
-    { locallyCreated: activeSessionId != null && activeSessionId === chat.locallyCreatedId }
-  );
+  const {
+    status,
+    session,
+    isOwner,
+    isReader,
+    isLinkedToIncident,
+    isIncidentSession,
+    incidentState,
+    applyUpdate,
+  } = useSession(activeSessionId, {
+    locallyCreated: activeSessionId != null && activeSessionId === chat.locallyCreatedId,
+  });
   const readOnly = isReader;
   const sessionGone = status === 'gone';
 
@@ -126,6 +136,14 @@ export function ChatPage() {
   const { data: regime } = useRegime();
   const incidentActive = regime?.mode === 'incident';
 
+  // The incident captain (declarer) and admins drive the lifecycle/resolve
+  // controls on the incident master session. The backend is the final authority
+  // (regime-control resolve capability) and 403s anyone else; this just decides
+  // whether to render the controls. We gate on the captain identity from the
+  // regime — "the incident starter can resolve" — plus admins as a backstop.
+  const isCaptain = regime?.declaredByPrincipal != null && regime.declaredByPrincipal === principal;
+  const canManageIncident = isIncidentSession && (isCaptain || isAdmin);
+
   // Each mutation takes the id to act on as a variable (captured at click time)
   // and, on success, hands the full response to applyUpdate, which writes it to
   // the cache for the session it ACTUALLY changed (updated.id), not the session
@@ -159,6 +177,43 @@ export function ChatPage() {
           : e.message
       ),
   });
+
+  // Incident lifecycle controls (§5b-1), shown on the incident master to its
+  // captain/admin. invalidateIncidentViews refreshes everything the regime and
+  // session state feed: the banner, this session's metadata, and the lists.
+  const invalidateIncidentViews = () => {
+    void qc.invalidateQueries({ queryKey: ['regime'] });
+    if (activeSessionId) void qc.invalidateQueries({ queryKey: ['session', activeSessionId] });
+    void qc.invalidateQueries({ queryKey: ['sessions'] });
+  };
+
+  const advanceIncidentMut = useMutation({
+    mutationFn: ({ id, state }: { id: string; state: IncidentWorkState }) =>
+      advanceIncidentState(id, state),
+    onSuccess: (_data, { state }) => {
+      toast.success(
+        state === 'believed_mitigated' ? 'Incident marked mitigated' : 'Incident marked in progress'
+      );
+      invalidateIncidentViews();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resolveIncidentMut = useMutation({
+    mutationFn: () => resolveIncident(),
+    onSuccess: () => {
+      toast.success('Incident resolved — system back to normal mode');
+      invalidateIncidentViews();
+    },
+    onError: (e: Error) =>
+      toast.error(
+        e instanceof ApiRequestError && e.status === 409
+          ? 'The incident must be marked mitigated before it can be resolved.'
+          : e.message
+      ),
+  });
+
+  const incidentMutPending = advanceIncidentMut.isPending || resolveIncidentMut.isPending;
 
   // Inline title editing in the header (the same rename available on the
   // Sessions list, brought to the chat itself). Owner-only; the draft is local
@@ -291,6 +346,59 @@ export function ChatPage() {
                 Linked to incident
               </Badge>
             )}
+            {isIncidentSession && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 bg-amber-100 font-semibold text-amber-900 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-200"
+              >
+                <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
+                Incident Session
+                {incidentState ? ` · ${incidentStateLabel(incidentState)}` : ''}
+              </Badge>
+            )}
+            {/* Incident lifecycle controls: only on the incident master, only for
+                the captain/admin. Resolve is reachable only once mitigated (§R4),
+                so the control steps the incident there first. */}
+            {canManageIncident && incidentState === 'declared' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                onClick={() =>
+                  activeSessionId &&
+                  advanceIncidentMut.mutate({ id: activeSessionId, state: 'being_worked' })
+                }
+                disabled={incidentMutPending}
+              >
+                Mark in progress
+              </Button>
+            )}
+            {canManageIncident && incidentState === 'being_worked' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+                onClick={() =>
+                  activeSessionId &&
+                  advanceIncidentMut.mutate({ id: activeSessionId, state: 'believed_mitigated' })
+                }
+                disabled={incidentMutPending}
+              >
+                Mark mitigated
+              </Button>
+            )}
+            {canManageIncident && incidentState === 'believed_mitigated' && (
+              <Button
+                variant="default"
+                size="sm"
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => resolveIncidentMut.mutate()}
+                disabled={incidentMutPending}
+              >
+                <ShieldCheck className="mr-1 h-3 w-3" aria-hidden="true" />
+                Resolve incident
+              </Button>
+            )}
             {showOwnerControls && (
               <>
                 {incidentActive && !isLinkedToIncident && (
@@ -360,6 +468,26 @@ export function ChatPage() {
       </div>
     </div>
   );
+}
+
+// incidentStateLabel renders an incident lifecycle state as a short human label
+// for the badge. An unknown value falls through to the raw string so the badge
+// never renders blank.
+function incidentStateLabel(state: string): string {
+  switch (state) {
+    case 'declared':
+      return 'Declared';
+    case 'being_worked':
+      return 'Being worked';
+    case 'believed_mitigated':
+      return 'Mitigated';
+    case 'resolved':
+      return 'Resolved';
+    case 'reviewed':
+      return 'Reviewed';
+    default:
+      return state;
+  }
 }
 
 // formatPrincipal renders a principal ("user:alice@example.com") as the bare
