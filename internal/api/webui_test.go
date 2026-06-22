@@ -1066,6 +1066,93 @@ func TestWebUIGetSession_LinkedIncidentTitle(t *testing.T) {
 	}
 }
 
+// TestWebUIListSessions_IncidentProjection is the LIST sibling of
+// TestWebUIGetSession_LinkedIncidentTitle: it decodes the real GET /sessions
+// JSON and asserts the P0 read-model projection
+// (docs/DESIGN-SESSIONS-VIEW.md §4) — the incident_involved flag and, on a
+// linked child, the master id + title — so the bare-badge defect is closed on
+// the list, not just the per-id GET.
+func TestWebUIListSessions_IncidentProjection(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	// A plain conversation (incident-free), a titled incident master, and a
+	// child linked to that master.
+	plain := createSessionAs(t, mux, alice)
+	child := createSessionAs(t, mux, alice)
+	title := "DB pool exhaustion"
+	declared := sessionmodel.IncidentStateDeclared
+	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "inc-master", Type: sessionmodel.SessionTypeIncident, IncidentState: &declared,
+		CreatorPrincipal: bob, Title: &title,
+	}); err != nil {
+		t.Fatalf("seed incident master: %v", err)
+	}
+	if err := srv.services.SessionModel.LinkSessionToIncident(ctx, child, "inc-master"); err != nil {
+		t.Fatalf("link child: %v", err)
+	}
+
+	w := reqAsPrincipal(mux, "GET", "/api/v1/sessions", alice, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list sessions: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Sessions []struct {
+			ID                  string `json:"id"`
+			Type                string `json:"type"`
+			IncidentInvolved    bool   `json:"incident_involved"`
+			LinkedIncidentID    string `json:"linked_incident_id"`
+			LinkedIncidentTitle string `json:"linked_incident_title"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	byID := map[string]struct {
+		ID                  string `json:"id"`
+		Type                string `json:"type"`
+		IncidentInvolved    bool   `json:"incident_involved"`
+		LinkedIncidentID    string `json:"linked_incident_id"`
+		LinkedIncidentTitle string `json:"linked_incident_title"`
+	}{}
+	for _, s := range resp.Sessions {
+		byID[s.ID] = s
+	}
+
+	// The plain conversation: incident-free, no master.
+	if got := byID[plain]; got.IncidentInvolved {
+		t.Errorf("plain session incident_involved = true, want false")
+	}
+	// The master: incident-involved by type, no linked master of its own.
+	master, ok := byID["inc-master"]
+	if !ok {
+		t.Fatalf("master not in list")
+	}
+	if !master.IncidentInvolved {
+		t.Errorf("master incident_involved = false, want true")
+	}
+	if master.LinkedIncidentID != "" {
+		t.Errorf("master linked_incident_id = %q, want empty", master.LinkedIncidentID)
+	}
+	// The child: incident-involved by link, carrying the master id AND title so
+	// the badge is titled, not bare.
+	c, ok := byID[child]
+	if !ok {
+		t.Fatalf("child not in list")
+	}
+	if !c.IncidentInvolved {
+		t.Errorf("child incident_involved = false, want true")
+	}
+	if c.LinkedIncidentID != "inc-master" {
+		t.Errorf("child linked_incident_id = %q, want inc-master", c.LinkedIncidentID)
+	}
+	if c.LinkedIncidentTitle != title {
+		t.Errorf("child linked_incident_title = %q, want %q", c.LinkedIncidentTitle, title)
+	}
+}
+
 // TestWebUIChatOwnership_MessagesRoundTrip is the owner happy-path: messages
 // persisted to a session come back in order, in the legacy flat JSON shape the
 // chat UI consumes (numeric id from seq, role, content), and only to the owner.

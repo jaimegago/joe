@@ -218,14 +218,25 @@ type webUISession struct {
 	// browse list and chat header use its presence to show an incident badge.
 	LinkedIncidentID string `json:"linked_incident_id,omitempty"`
 	// LinkedIncidentTitle is the human title of the linked incident MASTER
-	// session, resolved on the per-id GET so the chat header can render a
-	// "Linked to «master title»" navigable badge (INCIDENT-CHROME-AFFORDANCES
-	// defect 2) without a second round-trip. A read-only projection of the
-	// master's existing title column — no schema change. Empty when unlinked,
-	// when the master could not be resolved, or when the master is untitled; the
-	// client falls back to the id in that case. Set ONLY on the per-id GET (it
-	// would be an N+1 on the list projection).
+	// session, so the chat header (per-id GET) and the sessions list can render a
+	// "Linked to «master title»" navigable badge without a second round-trip. A
+	// read-only projection of the master's existing title column — no schema
+	// change. Empty when unlinked, when the master could not be resolved, or when
+	// the master is untitled; the client falls back to the id in that case.
+	//
+	// Set on the per-id GET (resolved via GetSession) AND on the LIST projection
+	// (resolved by a self-join, NOT an N+1 — see ListRecentSessions /
+	// ListSessionsByCreator). The two surfaces share this field name so the
+	// sessions-view UI consumes one shape (docs/DESIGN-SESSIONS-VIEW.md §4).
 	LinkedIncidentTitle string `json:"linked_incident_title,omitempty"`
+	// IncidentInvolved is the load-bearing computed property that splits the
+	// sessions UI into the incident view vs the conversation view
+	// (docs/DESIGN-SESSIONS-VIEW.md §1.1): true iff this session is an incident
+	// master (type='incident') OR a participant linked to one
+	// (linked_incident_id set). Derived in sessionToWebUI from the row's own
+	// columns — no query. Always present (NOT omitempty) so the client reads it as
+	// a positive signal and a missing field never silently means "incident-free".
+	IncidentInvolved bool `json:"incident_involved"`
 	// Type discriminates an ordinary session ('default') from the single master
 	// session of an active incident ('incident') — §12.3. The promote-in-place
 	// transition clears the master's linked_incident_id, so type is the ONLY
@@ -286,6 +297,9 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 		MessageCount: messageCount,
 		Type:         string(s.Type),
 	}
+	// incident_involved is the §1.1 split predicate, derived from this row's own
+	// columns (no query): an incident master OR a session linked to one.
+	out.IncidentInvolved = s.Type == sessionmodel.SessionTypeIncident || s.LinkedIncidentID != nil
 	if s.LinkedIncidentID != nil {
 		out.LinkedIncidentID = *s.LinkedIncidentID
 	}
@@ -369,6 +383,10 @@ func (h *webUIHandler) handleListSessions(w http.ResponseWriter, r *http.Request
 	sessions := make([]webUISession, 0, len(rows))
 	for _, row := range rows {
 		s := sessionToWebUI(row.AgentSession, row.MessageCount)
+		// Name the linked master so a child row renders a titled (not bare) incident
+		// badge — resolved by the list query's self-join, not a per-row GET. Empty
+		// for masters and unlinked sessions (no parent to name).
+		s.LinkedIncidentTitle = row.LinkedIncidentTitle
 		// Team-wide read: rows the caller does not own are read-only viewers. The
 		// `mine` list is owner-scoped, so every row there is the caller's own.
 		if row.CreatorPrincipal != principal {
