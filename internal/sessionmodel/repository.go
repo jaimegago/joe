@@ -521,12 +521,14 @@ func (r *SQLRepository) UpdateIncidentState(ctx context.Context, sessionID strin
 func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
 	query := `
 		SELECT ` + sessionColumnsPrefixed + `,
-		       COUNT(m.id) AS message_count
+		       COUNT(m.id) AS message_count,
+		       p.title AS master_title
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
+		LEFT JOIN agent_sessions p ON p.id = s.linked_incident_id
 		WHERE s.creator_principal = ?
 		  AND s.trashed_at IS NULL AND s.archived_at IS NULL
-		GROUP BY s.id
+		GROUP BY s.id, p.title
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
 		query += "\n\t\tLIMIT ?"
@@ -546,22 +548,7 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 	}
 	defer rows.Close()
 
-	var out []ChatSessionRow
-	for rows.Next() {
-		var count int
-		// scanSession reads the session columns; the join's trailing
-		// message_count is captured by passing &count as the final scan dest.
-		s, err := scanSession(func(dest ...any) error {
-			return rows.Scan(append(dest, &count)...)
-		})
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			out = append(out, ChatSessionRow{AgentSession: *s, MessageCount: count})
-		}
-	}
-	return out, rows.Err()
+	return scanChatSessionRows(rows)
 }
 
 // ListRecentSessions returns EVERY session, newest activity first, capped at
@@ -573,11 +560,13 @@ func (r *SQLRepository) ListSessionsByCreator(ctx context.Context, principal str
 func (r *SQLRepository) ListRecentSessions(ctx context.Context, limit int) ([]ChatSessionRow, error) {
 	query := `
 		SELECT ` + sessionColumnsPrefixed + `,
-		       COUNT(m.id) AS message_count
+		       COUNT(m.id) AS message_count,
+		       p.title AS master_title
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
+		LEFT JOIN agent_sessions p ON p.id = s.linked_incident_id
 		WHERE s.trashed_at IS NULL AND s.archived_at IS NULL
-		GROUP BY s.id
+		GROUP BY s.id, p.title
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
 		query += "\n\t\tLIMIT ?"
@@ -597,20 +586,7 @@ func (r *SQLRepository) ListRecentSessions(ctx context.Context, limit int) ([]Ch
 	}
 	defer rows.Close()
 
-	var out []ChatSessionRow
-	for rows.Next() {
-		var count int
-		s, err := scanSession(func(dest ...any) error {
-			return rows.Scan(append(dest, &count)...)
-		})
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			out = append(out, ChatSessionRow{AgentSession: *s, MessageCount: count})
-		}
-	}
-	return out, rows.Err()
+	return scanChatSessionRows(rows)
 }
 
 // ListSessionsByOthers returns every session owned by a principal other than
@@ -624,12 +600,14 @@ func (r *SQLRepository) ListRecentSessions(ctx context.Context, limit int) ([]Ch
 func (r *SQLRepository) ListSessionsByOthers(ctx context.Context, principal string, limit int) ([]ChatSessionRow, error) {
 	query := `
 		SELECT ` + sessionColumnsPrefixed + `,
-		       COUNT(m.id) AS message_count
+		       COUNT(m.id) AS message_count,
+		       p.title AS master_title
 		FROM agent_sessions s
 		LEFT JOIN chat_messages m ON m.session_id = s.id
+		LEFT JOIN agent_sessions p ON p.id = s.linked_incident_id
 		WHERE s.creator_principal != ?
 		  AND s.trashed_at IS NULL AND s.archived_at IS NULL
-		GROUP BY s.id
+		GROUP BY s.id, p.title
 		ORDER BY s.last_activity_at DESC`
 	if limit > 0 {
 		query += "\n\t\tLIMIT ?"
@@ -649,20 +627,7 @@ func (r *SQLRepository) ListSessionsByOthers(ctx context.Context, principal stri
 	}
 	defer rows.Close()
 
-	var out []ChatSessionRow
-	for rows.Next() {
-		var count int
-		s, err := scanSession(func(dest ...any) error {
-			return rows.Scan(append(dest, &count)...)
-		})
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			out = append(out, ChatSessionRow{AgentSession: *s, MessageCount: count})
-		}
-	}
-	return out, rows.Err()
+	return scanChatSessionRows(rows)
 }
 
 // --- Chat messages (interim flat store, migration 022) ---
@@ -765,6 +730,41 @@ const sessionColumns = `id, type, incident_state, created_at, last_activity_at,
 const sessionColumnsPrefixed = `s.id, s.type, s.incident_state, s.created_at, s.last_activity_at,
 	       s.creator_principal, s.linked_incident_id, s.retention_class, s.title,
 	       s.trashed_at, s.trashed_by, s.purge_after, s.archived_at, s.archived_by, s.archive_ref`
+
+// scanChatSessionRows drains the chat-list query result into ChatSessionRow
+// values. Each SELECT it consumes lists the canonical session columns
+// (sessionColumnsPrefixed), then the LEFT JOIN message count, then the linked
+// master's title (the p.title self-join) — in that order. The two trailing
+// columns are captured by appending their scan dests after the session columns.
+//
+// Those queries GROUP BY (s.id, p.title), not s.id alone: under Postgres a
+// joined column is not functionally dependent on the grouped table's PK, so
+// p.title must be in the GROUP BY. The pair groups identically to s.id because
+// p is joined 1:1 by its own PK (p.id = s.linked_incident_id), so the message
+// COUNT is unaffected.
+func scanChatSessionRows(rows *sql.Rows) ([]ChatSessionRow, error) {
+	var out []ChatSessionRow
+	for rows.Next() {
+		var (
+			count       int
+			masterTitle sql.NullString
+		)
+		s, err := scanSession(func(dest ...any) error {
+			return rows.Scan(append(dest, &count, &masterTitle)...)
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			row := ChatSessionRow{AgentSession: *s, MessageCount: count}
+			if masterTitle.Valid {
+				row.LinkedIncidentTitle = masterTitle.String
+			}
+			out = append(out, row)
+		}
+	}
+	return out, rows.Err()
+}
 
 func scanSession(scan func(...any) error) (*AgentSession, error) {
 	var (

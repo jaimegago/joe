@@ -74,6 +74,12 @@ type AgentSession struct {
 type ChatSessionRow struct {
 	AgentSession
 	MessageCount int
+	// LinkedIncidentTitle is the title of this session's linked incident MASTER
+	// (the row whose id == this row's LinkedIncidentID), resolved by the list
+	// queries' self-join so a linked child can render a titled incident badge
+	// without a per-row lookup (docs/DESIGN-SESSIONS-VIEW.md §5). Empty for an
+	// incident master, an unlinked session, or an untitled master.
+	LinkedIncidentTitle string
 }
 
 // ChatMessage is one row of the interim chat_messages table (migration 022):
