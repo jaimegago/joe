@@ -237,8 +237,22 @@ export const SessionSchema = z.object({
   read_only: z.boolean().optional(),
   // linked_incident_id is the active incident this session is attached to
   // (§12.3 participation pointer), or absent when unlinked. Its presence drives
-  // the incident badge on the session row and chat header.
+  // the "Linked to incident" badge on a participant session.
   linked_incident_id: z.string().optional(),
+  // type discriminates an ordinary session ('default') from the single master
+  // session of an active incident ('incident') — §12.3. The promote-in-place
+  // transition CLEARS the master's linked_incident_id, so type is the only thing
+  // that marks the session where the incident was declared; the "Incident
+  // Session" badge and the resolve/lifecycle controls key off it. Always sent;
+  // optional+default keeps a stale cached row parsing as a plain session.
+  type: z.enum(['default', 'incident']).optional().default('default'),
+  // incident_state is the lifecycle position of an incident master (declared →
+  // being_worked → believed_mitigated → resolved → reviewed). Absent on a
+  // 'default' session. Resolve is only reachable from 'believed_mitigated', so
+  // the chat header drives the lifecycle controls off it.
+  incident_state: z
+    .enum(['declared', 'being_worked', 'believed_mitigated', 'resolved', 'reviewed'])
+    .optional(),
   // shared_by is the OWNER (creator_principal) of a team-wide-list row the caller
   // does not own — the server stamps it on the non-owned rows of GET /sessions so
   // the UI can attribute and read-only-gate them without a second request. It is
@@ -326,12 +340,20 @@ export const RegimeSchema = z
     DeclaredAt: z.string().nullable().optional(),
     DeclaredByPrincipal: z.string().nullable().optional(),
     DeclaredKind: z.string().nullable().optional(),
+    // IncidentSessionID / IncidentState identify the active incident MASTER
+    // session (the one promote-in-place clears linked_incident_id on, leaving it
+    // otherwise unmarked). The banner uses them to deep-link to that session and
+    // reflect progress toward resolution. Null in normal mode.
+    IncidentSessionID: z.string().nullable().optional(),
+    IncidentState: z.string().nullable().optional(),
   })
   .transform((r) => ({
     mode: r.Mode,
     declaredAt: r.DeclaredAt ?? null,
     declaredByPrincipal: r.DeclaredByPrincipal ?? null,
     declaredKind: r.DeclaredKind ?? null,
+    incidentSessionId: r.IncidentSessionID ?? null,
+    incidentState: r.IncidentState ?? null,
   }));
 
 // Panic / safe mode status — GET /api/v1/panic/status.

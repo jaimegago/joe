@@ -217,6 +217,19 @@ type webUISession struct {
 	// attached to (Phase 4 incident linkage), or empty when unlinked. The
 	// browse list and chat header use its presence to show an incident badge.
 	LinkedIncidentID string `json:"linked_incident_id,omitempty"`
+	// Type discriminates an ordinary session ('default') from the single master
+	// session of an active incident ('incident') — §12.3. The promote-in-place
+	// transition clears the master's linked_incident_id, so type is the ONLY
+	// signal that marks the session where the incident was declared; the UI keys
+	// the "Incident Session" badge and the resolve/lifecycle controls on it.
+	// Always present (every row has a type).
+	Type string `json:"type"`
+	// IncidentState is the §5b-1 lifecycle position of an incident master
+	// (declared → being_worked → believed_mitigated → resolved → reviewed). Empty
+	// for a 'default' session (the CHECK in migration 009 keeps it null there).
+	// The UI drives the incident lifecycle controls off it — resolve is only
+	// reachable from 'believed_mitigated'.
+	IncidentState string `json:"incident_state,omitempty"`
 	// SharedBy is the owning principal of a public session surfaced in another
 	// user's "shared with you" list (DESIGN-CHAT-SESSIONS.md §10 sharing
 	// extension). It is the one place the owner identity is intentionally
@@ -262,9 +275,13 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 		StartedAt:    s.CreatedAt.Format(time.RFC3339),
 		LastActivity: s.LastActivityAt.Format(time.RFC3339),
 		MessageCount: messageCount,
+		Type:         string(s.Type),
 	}
 	if s.LinkedIncidentID != nil {
 		out.LinkedIncidentID = *s.LinkedIncidentID
+	}
+	if s.IncidentState != nil {
+		out.IncidentState = string(*s.IncidentState)
 	}
 	// purge_after is surfaced whenever it is set (a trashed row under the
 	// trash-then-purge policy) so both the per-user and admin trash views can

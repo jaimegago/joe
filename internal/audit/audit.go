@@ -100,8 +100,14 @@ const (
 // Action-verb constants for transition rows. Accessor rows use the
 // rbac.Action string directly (read, query, mutate, delete).
 const (
-	ActionDeclareIncident        = "declare_incident"
-	ActionResolveIncident        = "resolve_incident"
+	ActionDeclareIncident = "declare_incident"
+	ActionResolveIncident = "resolve_incident"
+	// ActionAdvanceIncident records a pre-resolve incident lifecycle transition
+	// (declared → being_worked → believed_mitigated) driven by the human resolve
+	// path. Written with kind KindRegimeTransition; the row's context carries the
+	// target_state and session_id. A state change, so it fails CLOSED like the
+	// declare/resolve verbs.
+	ActionAdvanceIncident        = "advance_incident"
 	ActionCaptainAttach          = "captain_attach"
 	ActionCaptainTransferBegin   = "captain_transfer_begin"
 	ActionCaptainTransferConfirm = "captain_transfer_confirm"

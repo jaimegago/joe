@@ -27,6 +27,12 @@ export interface UseSessionResult {
   isOwner: boolean;
   isReader: boolean;
   isLinkedToIncident: boolean;
+  // isIncidentSession is true when THIS session is the incident master (the one
+  // promoted in place, §12.3) — distinct from isLinkedToIncident, which marks a
+  // participant. The "Incident Session" badge and the resolve/lifecycle controls
+  // key off it. incidentState is its lifecycle position (undefined otherwise).
+  isIncidentSession: boolean;
+  incidentState: Session['incident_state'];
   // applyUpdate writes a mutation's full response into the cache for the session
   // it actually changed (updated.id is authoritative), then refreshes the lists.
   // Keying on updated.id — not the hook's current id — is what keeps a toggle
@@ -147,6 +153,8 @@ export function useSession(
     isOwner: status === 'owner',
     isReader: status === 'reader',
     isLinkedToIncident: data?.linked_incident_id != null,
+    isIncidentSession: data?.type === 'incident',
+    incidentState: data?.incident_state,
     applyUpdate,
   };
 }

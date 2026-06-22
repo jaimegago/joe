@@ -1,4 +1,5 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useRegime } from '@/hooks/useRegime';
 
 // IncidentBanner is the app-shell-wide active-incident indicator
@@ -27,6 +28,18 @@ export function IncidentBanner() {
         {captain}
         {when ? ` (declared at ${when})` : ''}. Writes may be blocked.
       </span>
+      {/* Deep-link to the incident master session, where the captain/admin finds
+          the lifecycle and resolve controls. The id is only present while an
+          incident is active (the regime read resolves the active master). */}
+      {data.incidentSessionId && (
+        <Link
+          to={`/chat/${data.incidentSessionId}`}
+          className="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-amber-400 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-600 dark:hover:bg-amber-900"
+        >
+          Go to incident
+          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Link>
+      )}
     </div>
   );
 }

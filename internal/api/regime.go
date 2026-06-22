@@ -85,6 +85,26 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	// and rebuild the control plane §12 says to reuse. The consolidation is at the
 	// SURFACE: one transition, one call site, two thin transports.
 	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/promote-incident", prefix), h.promoteSessionIncident)
+	// Pre-resolve incident lifecycle transition (§5b-1): walk the active incident
+	// master declared → being_worked → believed_mitigated. Resolve refuses until
+	// believed_mitigated (ErrIncidentNotMitigated), so this is the human path the
+	// UI uses to get there. Same regime-control-zone authorization as resolve.
+	mux.HandleFunc(fmt.Sprintf("POST %s/sessions/{id}/incident-state", prefix), h.advanceIncidentState)
+}
+
+// regimeReadResponse is the GET /regime body: the single-row system regime,
+// plus the id and lifecycle state of the active incident master session when one
+// exists. The embedded Regime has no JSON tags, so its exported fields promote to
+// the top level (Mode, DeclaredAt, ...) — the legacy shape the UI banner already
+// parses. IncidentSessionID lets the UI deep-link to the session where the
+// incident was declared (it is otherwise unmarked once promote-in-place clears
+// its linked_incident_id); IncidentState mirrors that session's lifecycle so the
+// banner can reflect progress toward resolution. Both omitempty: absent in normal
+// mode.
+type regimeReadResponse struct {
+	sessionmodel.Regime
+	IncidentSessionID string `json:"IncidentSessionID,omitempty"`
+	IncidentState     string `json:"IncidentState,omitempty"`
 }
 
 func (h *regimeHandler) read(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +113,19 @@ func (h *regimeHandler) read(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "get regime")
 		return
 	}
-	writeJSON(w, http.StatusOK, reg)
+	out := regimeReadResponse{Regime: *reg}
+	// Surface the active incident master so the UI can mark and navigate to it.
+	// A read must never fail because the incident lookup did — degrade to the
+	// bare regime (the banner still renders from Mode/DeclaredBy).
+	if reg.Mode == sessionmodel.RegimeModeIncident {
+		if inc, incErr := h.repo.ActiveIncidentSession(r.Context()); incErr == nil && inc != nil {
+			out.IncidentSessionID = inc.ID
+			if inc.IncidentState != nil {
+				out.IncidentState = string(*inc.IncidentState)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // declare is the §R2 human path: declare an incident regime. R-CAP1 — the
@@ -287,6 +319,119 @@ func (h *regimeHandler) promoteInPlace(w http.ResponseWriter, r *http.Request, p
 		"captain_id":  captainID,
 		"declared_by": string(principal),
 	})
+}
+
+// advanceIncidentState walks the active incident master through its pre-resolve
+// lifecycle (§5b-1): declared → being_worked → believed_mitigated. resolve
+// (POST /regime/resolve) refuses until the incident reaches believed_mitigated
+// (ErrIncidentNotMitigated), so this is the human-driven path the UI uses to get
+// there. It carries the SAME regime-control-zone authorization as resolve
+// (ActionResolveIncident) — advancing toward resolution is part of the resolve
+// authority, NOT the session seam (§12.7). The terminal states 'resolved' and
+// 'reviewed' are deliberately unreachable here: 'resolved' is owned by the
+// single-call-site ResolveIncidentRegime (Invariant 4 / no-auto-resolve), and
+// 'reviewed' is post-resolution.
+func (h *regimeHandler) advanceIncidentState(w http.ResponseWriter, r *http.Request) {
+	if h.policy == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
+			"RBAC not configured — incident state transitions unavailable")
+		return
+	}
+	principal := rbac.PrincipalFromContext(r.Context())
+	if principal == rbac.Unknown {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "principal not resolved")
+		return
+	}
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeBadRequest(w, nil, "advance incident", "missing session id")
+		return
+	}
+
+	// Body: { "state": "being_worked" | "believed_mitigated" }.
+	var req struct {
+		State string `json:"state"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeBadRequest(w, err, "advance incident", "invalid request body")
+			return
+		}
+	}
+	state, ok := parsePreResolveState(w, req.State)
+	if !ok {
+		return
+	}
+
+	// Same authorization as resolve: the regime-control zone's resolve capability.
+	// Checked before the session is probed so an unauthorized caller gets 403, not
+	// 404/409, and never learns the incident's state.
+	if !h.policy.HasZoneAccess(r.Context(), rbac.NewPrincipalSet(principal), "regime-control", rbac.ActionResolveIncident) {
+		if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionAdvanceIncident,
+			audit.DecisionDeny, "no_grant",
+			map[string]string{"target_state": string(state), "session_id": sessionID}); err != nil {
+			writeInternalError(w, err, "advance incident audit (deny)")
+			return
+		}
+		writeError(w, http.StatusForbidden, "forbidden",
+			"principal lacks can_resolve_incident (regime-control zone)")
+		return
+	}
+
+	// The target must be the active incident master. Reject a 'default' session or
+	// an already-terminal incident so the lifecycle controls cannot mutate the
+	// wrong session.
+	sess, err := h.repo.GetSession(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, sessionmodel.ErrNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+			return
+		}
+		writeInternalError(w, err, "advance incident")
+		return
+	}
+	if sess.Type != sessionmodel.SessionTypeIncident {
+		writeError(w, http.StatusConflict, "conflict", "session is not an incident")
+		return
+	}
+	if sess.IncidentState != nil &&
+		(*sess.IncidentState == sessionmodel.IncidentStateResolved ||
+			*sess.IncidentState == sessionmodel.IncidentStateReviewed) {
+		writeError(w, http.StatusConflict, "conflict", "incident is already resolved")
+		return
+	}
+
+	// Durable allow-audit BEFORE the mutation (Phase F ordering): the transition is
+	// mutating, so a failed audit aborts it.
+	if err := h.writeRegimeAudit(r.Context(), principal, audit.ActionAdvanceIncident,
+		audit.DecisionAllow, "transition_recorded",
+		map[string]string{"target_state": string(state), "session_id": sessionID}); err != nil {
+		writeInternalError(w, err, "advance incident audit (allow)")
+		return
+	}
+	if err := h.repo.UpdateIncidentState(r.Context(), sessionID, state); err != nil {
+		writeInternalError(w, err, "advance incident")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id":     sessionID,
+		"incident_state": string(state),
+	})
+}
+
+// parsePreResolveState validates the target state for advanceIncidentState. Only
+// the two pre-resolve work states are reachable: 'declared' is the post-promote
+// entry (not a forward move), and 'resolved'/'reviewed' are owned by the resolve
+// path. Anything else is a 400.
+func parsePreResolveState(w http.ResponseWriter, raw string) (sessionmodel.IncidentState, bool) {
+	switch sessionmodel.IncidentState(raw) {
+	case sessionmodel.IncidentStateBeingWorked, sessionmodel.IncidentStateBelievedMitigated:
+		return sessionmodel.IncidentState(raw), true
+	default:
+		writeBadRequest(w, nil, "advance incident",
+			"state must be 'being_worked' or 'believed_mitigated'")
+		return "", false
+	}
 }
 
 // resolve is the §R4 human path: transition the active incident session
