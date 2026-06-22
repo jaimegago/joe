@@ -291,6 +291,45 @@ describe('useChat streaming lifecycle', () => {
     expect(fetchMessagesMock).toHaveBeenCalledWith('s-test');
   });
 
+  it('reopening a route session re-reads the server instead of serving a stale cached transcript', async () => {
+    // Regression: a turn that streamed into liveItems on one mount and was then
+    // dropped when that mount unmounted (the user navigated away mid-stream)
+    // stayed invisible on reopen, because staleTime: Infinity froze the prior
+    // mount's cached snapshot and reopening via in-app routing never refetched.
+    // It only reappeared after a hard reload wiped the cache — even though it
+    // persisted server-side. refetchOnMount: 'always' re-reads on every reopen.
+    // A single shared QueryClient across both renders reproduces the cache.
+    const fetchMessagesMock = vi.mocked(fetchMessages);
+    const { Wrapper } = createWrapper();
+
+    const firstSnapshot: ChatMessage[] = [
+      { id: 1, session_id: 's-existing', role: 'user', content: 'hi', created_at: '2026-06-06T00:00:00Z' },
+      { id: 2, session_id: 's-existing', role: 'assistant', content: 'first reply', created_at: '2026-06-06T00:00:01Z' },
+    ];
+    // The server later holds two more rows: a turn that streamed on the first
+    // mount, was lost when it unmounted, but persisted server-side.
+    const secondSnapshot: ChatMessage[] = [
+      ...firstSnapshot,
+      { id: 3, session_id: 's-existing', role: 'user', content: 'second message', created_at: '2026-06-06T00:00:02Z' },
+      { id: 4, session_id: 's-existing', role: 'assistant', content: 'second reply', created_at: '2026-06-06T00:00:03Z' },
+    ];
+    fetchMessagesMock.mockResolvedValueOnce(firstSnapshot);
+    fetchMessagesMock.mockResolvedValueOnce(secondSnapshot);
+
+    // 1) Open the existing session from the route; its transcript loads and the
+    //    query caches under ['messages', 's-existing'].
+    const first = render(<Harness initialSessionId="s-existing" />, { wrapper: Wrapper });
+    await waitFor(() => expect(screen.getByText('first reply')).toBeInTheDocument());
+    first.unmount();
+
+    // 2) Reopen the same session from the route against the shared client. The
+    //    stale cache holds only the first snapshot; refetchOnMount forces a
+    //    re-read, so the turn persisted while we were away now renders.
+    render(<Harness initialSessionId="s-existing" />, { wrapper: Wrapper });
+    await waitFor(() => expect(screen.getByText('second reply')).toBeInTheDocument());
+    expect(fetchMessagesMock).toHaveBeenCalledTimes(2);
+  });
+
   it('resets the per-turn token counter to 0 at the start of a second message', async () => {
     const { Wrapper } = createWrapper();
     render(<Harness />, { wrapper: Wrapper });
