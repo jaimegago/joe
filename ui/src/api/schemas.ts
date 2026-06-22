@@ -239,6 +239,12 @@ export const SessionSchema = z.object({
   // (§12.3 participation pointer), or absent when unlinked. Its presence drives
   // the "Linked to incident" badge on a participant session.
   linked_incident_id: z.string().optional(),
+  // linked_incident_title is the human title of the linked incident MASTER,
+  // resolved server-side on the per-id GET so the chat header can render a
+  // navigable "Linked to «master title»" badge (INCIDENT-CHROME-AFFORDANCES
+  // defect 2). Absent when unlinked, on the list projection, or when the master
+  // is untitled — the UI falls back to the id in that case.
+  linked_incident_title: z.string().optional(),
   // type discriminates an ordinary session ('default') from the single master
   // session of an active incident ('incident') — §12.3. The promote-in-place
   // transition CLEARS the master's linked_incident_id, so type is the only thing
@@ -346,6 +352,10 @@ export const RegimeSchema = z
     // reflect progress toward resolution. Null in normal mode.
     IncidentSessionID: z.string().nullable().optional(),
     IncidentState: z.string().nullable().optional(),
+    // IncidentTitle is the active master's human title, so an unlinked default
+    // session can name its attach target ("Attach to «title»"). Null in normal
+    // mode or when the master is untitled.
+    IncidentTitle: z.string().nullable().optional(),
   })
   .transform((r) => ({
     mode: r.Mode,
@@ -354,6 +364,7 @@ export const RegimeSchema = z
     declaredKind: r.DeclaredKind ?? null,
     incidentSessionId: r.IncidentSessionID ?? null,
     incidentState: r.IncidentState ?? null,
+    incidentTitle: r.IncidentTitle ?? null,
   }));
 
 // Panic / safe mode status — GET /api/v1/panic/status.

@@ -217,6 +217,15 @@ type webUISession struct {
 	// attached to (Phase 4 incident linkage), or empty when unlinked. The
 	// browse list and chat header use its presence to show an incident badge.
 	LinkedIncidentID string `json:"linked_incident_id,omitempty"`
+	// LinkedIncidentTitle is the human title of the linked incident MASTER
+	// session, resolved on the per-id GET so the chat header can render a
+	// "Linked to «master title»" navigable badge (INCIDENT-CHROME-AFFORDANCES
+	// defect 2) without a second round-trip. A read-only projection of the
+	// master's existing title column — no schema change. Empty when unlinked,
+	// when the master could not be resolved, or when the master is untitled; the
+	// client falls back to the id in that case. Set ONLY on the per-id GET (it
+	// would be an N+1 on the list projection).
+	LinkedIncidentTitle string `json:"linked_incident_title,omitempty"`
 	// Type discriminates an ordinary session ('default') from the single master
 	// session of an active incident ('incident') — §12.3. The promote-in-place
 	// transition clears the master's linked_incident_id, so type is the ONLY
@@ -437,6 +446,16 @@ func (h *webUIHandler) handleGetSession(w http.ResponseWriter, r *http.Request) 
 
 	out := sessionToWebUI(*sess, len(messages))
 	out.ReadOnly = sess.CreatorPrincipal != principal
+	// Resolve the linked incident master's title so the chat header can name and
+	// link to it (defect 2). Best-effort: a failed or missing master lookup must
+	// not fail the session read — the client falls back to the id. Works whether
+	// the master is still active or already resolved (the link pointer survives
+	// resolution).
+	if sess.LinkedIncidentID != nil {
+		if master, mErr := h.server.services.SessionModel.GetSession(r.Context(), *sess.LinkedIncidentID); mErr == nil && master != nil && master.Title != nil {
+			out.LinkedIncidentTitle = *master.Title
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

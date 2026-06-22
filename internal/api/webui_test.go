@@ -1024,6 +1024,48 @@ func TestWebUILinkIncident(t *testing.T) {
 	}
 }
 
+// TestWebUIGetSession_LinkedIncidentTitle verifies the per-id GET resolves the
+// linked incident MASTER's title into linked_incident_title (defect 2), so the
+// chat header can render a navigable "Linked to «master title»" badge without a
+// second request. It survives the master's resolution (the link pointer does).
+func TestWebUIGetSession_LinkedIncidentTitle(t *testing.T) {
+	const alice, bob = "user:alice@example.com", "user:bob@example.com"
+	srv, mux := setupWebUIServer(t)
+	ctx := context.Background()
+
+	chatID := createSessionAs(t, mux, alice)
+
+	// Seed a TITLED incident master and link the chat session to it directly
+	// (the link store call, bypassing the active-incident guard so this test
+	// exercises projection, not the link route).
+	title := "DB pool exhaustion"
+	declared := sessionmodel.IncidentStateDeclared
+	if _, err := srv.services.SessionModel.CreateSession(ctx, sessionmodel.AgentSession{
+		ID: "inc-titled", Type: sessionmodel.SessionTypeIncident, IncidentState: &declared,
+		CreatorPrincipal: bob, Title: &title,
+	}); err != nil {
+		t.Fatalf("seed incident: %v", err)
+	}
+	if err := srv.services.SessionModel.LinkSessionToIncident(ctx, chatID, "inc-titled"); err != nil {
+		t.Fatalf("link session: %v", err)
+	}
+
+	got := reqAsPrincipal(mux, "GET", "/api/v1/sessions/"+chatID, alice, nil)
+	if got.Code != http.StatusOK {
+		t.Fatalf("get session: got %d, want 200: %s", got.Code, got.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(got.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["linked_incident_id"] != "inc-titled" {
+		t.Errorf("linked_incident_id = %v, want inc-titled", body["linked_incident_id"])
+	}
+	if body["linked_incident_title"] != title {
+		t.Errorf("linked_incident_title = %v, want %q", body["linked_incident_title"], title)
+	}
+}
+
 // TestWebUIChatOwnership_MessagesRoundTrip is the owner happy-path: messages
 // persisted to a session come back in order, in the legacy flat JSON shape the
 // chat UI consumes (numeric id from seq, role, content), and only to the owner.
