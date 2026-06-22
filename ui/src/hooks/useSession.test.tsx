@@ -12,6 +12,7 @@ const base: Session = {
   id: 's1',
   started_at: '2026-06-06T10:00:00Z',
   message_count: 2,
+  type: 'default',
 };
 const owner = (over?: Partial<Session>): Session => ({ ...base, read_only: false, ...over });
 const reader = (over?: Partial<Session>): Session => ({

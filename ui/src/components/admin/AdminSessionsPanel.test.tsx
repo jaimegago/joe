@@ -43,6 +43,7 @@ const active: Session = {
   title: 'Active session',
   message_count: 5,
   creator_principal: 'user:alice@example.com',
+  type: 'default',
 };
 
 function renderPanel() {
@@ -91,6 +92,7 @@ describe('AdminSessionsPanel', () => {
         title: 'Trashed one',
         message_count: 1,
         purge_after: '2026-07-01T10:00:00Z',
+        type: 'default',
       },
     ]);
     renderPanel();
@@ -142,6 +144,7 @@ describe('AdminSessionsPanel', () => {
         message_count: 8,
         creator_principal: 'user:bob',
         archived_at: '2026-06-01T10:00:00Z',
+        type: 'default',
       },
     ]);
     mockRestoreArchive.mockResolvedValue();
