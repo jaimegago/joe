@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Badge, badgeVariants } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ZeroZoneEmptyState } from '@/components/chat/ZeroZoneEmptyState';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -18,6 +19,8 @@ import { loadLastSession, saveLastSession, clearLastSession } from '@/lib/lastSe
 import { updateSessionTitle, linkSessionToIncident, promoteSessionToIncident } from '@/api/chat';
 import { resolveIncident, advanceIncidentState, type IncidentWorkState } from '@/api/regime';
 import { ApiRequestError } from '@/api/client';
+import { incidentAffordance } from '@/lib/incidentAffordance';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   Link as LinkIcon,
@@ -27,6 +30,7 @@ import {
   X,
   FileQuestion,
   ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react';
 
 export function ChatPage() {
@@ -88,18 +92,12 @@ export function ChatPage() {
   // transient read-after-write 404 on it is treated as benign, never a dead
   // state. Ownership is a POSITIVE signal (status === 'owner', i.e. the server
   // returned read_only=false) so anything unconfirmed fails CLOSED.
-  const {
-    status,
-    session,
-    isOwner,
-    isReader,
-    isLinkedToIncident,
-    isIncidentSession,
-    incidentState,
-    applyUpdate,
-  } = useSession(activeSessionId, {
-    locallyCreated: activeSessionId != null && activeSessionId === chat.locallyCreatedId,
-  });
+  const { status, session, isOwner, isReader, incidentState, applyUpdate } = useSession(
+    activeSessionId,
+    {
+      locallyCreated: activeSessionId != null && activeSessionId === chat.locallyCreatedId,
+    }
+  );
   const readOnly = isReader;
   const sessionGone = status === 'gone';
 
@@ -131,18 +129,34 @@ export function ChatPage() {
     }
   }, [status, isReader, activeSessionId, navigate]);
 
-  // The app-wide regime drives the "attach to incident" affordance: a chat can
-  // only be linked while an incident is active (the server 409s otherwise).
   const { data: regime } = useRegime();
-  const incidentActive = regime?.mode === 'incident';
+
+  // The SINGLE source of truth for the incident chrome affordance: it is decided
+  // from the viewed session's incident ROLE crossed with the global regime, never
+  // from the regime alone (INCIDENT-CHROME-AFFORDANCES). Computed only once the
+  // session metadata has loaded — until then no incident control renders.
+  // Ownership/captaincy are layered on the actionable results below; the function
+  // itself never sees them.
+  const affordance = session
+    ? incidentAffordance({
+        sessionType: session.type ?? 'default',
+        incidentState: session.incident_state ?? null,
+        linkedIncidentId: session.linked_incident_id ?? null,
+        linkedIncidentTitle: session.linked_incident_title ?? null,
+        regimeMode: regime?.mode === 'incident' ? 'incident' : 'normal',
+        activeMasterId: regime?.incidentSessionId ?? null,
+        activeMasterTitle: regime?.incidentTitle ?? null,
+      })
+    : null;
 
   // The incident captain (declarer) and admins drive the lifecycle/resolve
   // controls on the incident master session. The backend is the final authority
   // (regime-control resolve capability) and 403s anyone else; this just decides
   // whether to render the controls. We gate on the captain identity from the
-  // regime — "the incident starter can resolve" — plus admins as a backstop.
+  // regime — "the incident starter can resolve" — plus admins as a backstop, and
+  // only on the ACTIVE incident master ('manage') — a resolved master is terminal.
   const isCaptain = regime?.declaredByPrincipal != null && regime.declaredByPrincipal === principal;
-  const canManageIncident = isIncidentSession && (isCaptain || isAdmin);
+  const canManageIncident = affordance?.kind === 'manage' && (isCaptain || isAdmin);
 
   // Each mutation takes the id to act on as a variable (captured at click time)
   // and, on success, hands the full response to applyUpdate, which writes it to
@@ -337,16 +351,27 @@ export function ChatPage() {
         actions={
           <div className="flex items-center gap-2">
             {readOnly && <Badge variant="secondary">Read-only</Badge>}
-            {isLinkedToIncident && (
-              <Badge
-                variant="outline"
-                className="border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200"
+            {/* Rows 3 & 4: a navigable "Linked to «master»" badge that names the
+                incident master (defect 2) and links to it. Amber while it is the
+                ACTIVE incident; muted once that incident has resolved (no re-link —
+                that is a deferred node). Renders for any viewer, not just the owner. */}
+            {affordance?.kind === 'linked' && (
+              <Link
+                to={`/chat/${affordance.masterId}`}
+                className={cn(
+                  badgeVariants({ variant: 'outline' }),
+                  affordance.resolved
+                    ? 'border-muted-foreground/30 text-muted-foreground hover:bg-muted'
+                    : 'border-amber-300 text-amber-900 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-950'
+                )}
               >
                 <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" />
-                Linked to incident
-              </Badge>
+                Linked to {affordance.masterTitle ?? 'incident'}
+              </Link>
             )}
-            {isIncidentSession && (
+            {/* Row 5: the ACTIVE incident master — the "Incident Session" badge with
+                its lifecycle state. */}
+            {affordance?.kind === 'manage' && (
               <Badge
                 variant="outline"
                 className="border-amber-400 bg-amber-100 font-semibold text-amber-900 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-200"
@@ -356,9 +381,17 @@ export function ChatPage() {
                 {incidentState ? ` · ${incidentStateLabel(incidentState)}` : ''}
               </Badge>
             )}
-            {/* Incident lifecycle controls: only on the incident master, only for
-                the captain/admin. Resolve is reachable only once mitigated (§R4),
-                so the control steps the incident there first. */}
+            {/* Row 6: a resolved incident master is a terminal historical record —
+                a resolved badge ONLY (no resolve, no reopen control anywhere). */}
+            {affordance?.kind === 'resolved' && (
+              <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground">
+                <CheckCircle2 className="mr-1 h-3 w-3" aria-hidden="true" />
+                Incident · Resolved
+              </Badge>
+            )}
+            {/* Incident lifecycle controls: only on the ACTIVE incident master
+                ('manage'), only for the captain/admin. Resolve is reachable only
+                once mitigated (§R4), so the control steps the incident there first. */}
             {canManageIncident && incidentState === 'declared' && (
               <Button
                 variant="outline"
@@ -401,7 +434,10 @@ export function ChatPage() {
             )}
             {showOwnerControls && (
               <>
-                {incidentActive && !isLinkedToIncident && (
+                {/* Row 2: attach this unlinked default session to the ACTIVE
+                    incident master. Owner-gated here; never rendered on an
+                    incident-type session (the affordance function forbids it). */}
+                {affordance?.kind === 'attach' && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -410,9 +446,13 @@ export function ChatPage() {
                   >
                     <AlertTriangle className="mr-1 h-3 w-3" />
                     Attach to incident
+                    {affordance.masterTitle ? `: ${affordance.masterTitle}` : ''}
                   </Button>
                 )}
-                {!incidentActive && activeSessionId && (
+                {/* Row 1: declare a fresh incident on this unlinked default session.
+                    Only when the global regime is normal — never on an incident-type
+                    session, so a resolved master no longer offers it (defects 1, 5). */}
+                {affordance?.kind === 'declare' && activeSessionId && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -439,7 +479,7 @@ export function ChatPage() {
           </div>
         }
       />
-      {isLinkedToIncident && incidentActive && (
+      {affordance?.kind === 'linked' && !affordance.resolved && (
         <IncidentParticipants
           creator={isOwner ? (principal ?? 'you') : session?.shared_by}
           captain={regime?.declaredByPrincipal ?? null}
