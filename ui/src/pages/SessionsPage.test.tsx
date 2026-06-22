@@ -42,6 +42,7 @@ const owned: Session[] = [
     title: 'Payment Service Crashloop',
     message_count: 4,
     read_only: false,
+    type: 'default',
   },
   {
     id: 's2',
@@ -49,6 +50,7 @@ const owned: Session[] = [
     last_activity_at: '2026-06-05T09:30:00Z',
     message_count: 1,
     read_only: false,
+    type: 'default',
   },
 ];
 
@@ -96,6 +98,7 @@ describe('SessionsPage', () => {
         message_count: 7,
         read_only: true,
         shared_by: 'user:alice@example.com',
+        type: 'default',
       },
     ]);
     renderPage();
@@ -167,12 +170,14 @@ describe('SessionsPage', () => {
         title: 'Old debugging session',
         message_count: 3,
         purge_after: '2026-07-01T10:00:00Z',
+        type: 'default',
       },
     ]);
     mockRestore.mockResolvedValue({
       id: 't1',
       started_at: '2026-06-01T10:00:00Z',
       message_count: 3,
+      type: 'default',
     });
     renderPage();
 
@@ -210,6 +215,7 @@ describe('SessionsPage', () => {
       started_at: '2026-06-06T12:00:00Z',
       message_count: 0,
       read_only: false,
+      type: 'default',
     });
     mockPromote.mockResolvedValue({
       session_id: 'new1',

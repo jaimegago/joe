@@ -142,6 +142,7 @@ describe('ChatPage owner controls (org-wide read model)', () => {
     // The server marks an owned session read_only=false explicitly; owner
     // controls gate on this positive signal.
     read_only: false,
+    type: 'default',
   };
 
   beforeEach(() => {
@@ -194,6 +195,7 @@ describe('ChatPage owner controls (org-wide read model)', () => {
       id: 's1',
       started_at: '2026-06-06T10:00:00Z',
       message_count: 2,
+      type: 'default',
       // read_only deliberately omitted
     });
     renderPage();
@@ -248,6 +250,7 @@ describe('ChatPage URL sync', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 0,
       read_only: false,
+      type: 'default',
     });
   });
 
@@ -322,6 +325,7 @@ describe('ChatPage last-session restore', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 2,
       read_only: false,
+      type: 'default',
     });
   });
 
@@ -363,6 +367,7 @@ describe('ChatPage last-session restore', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 0,
       read_only: true,
+      type: 'default',
     });
     renderAt('/chat');
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
@@ -378,6 +383,7 @@ describe('ChatPage last-session restore', () => {
       started_at: '2026-06-06T10:00:00Z',
       message_count: 0,
       read_only: true,
+      type: 'default',
     });
     renderAt('/chat/s-shared');
     await waitFor(() => expect(mockFetchSession).toHaveBeenCalled());
@@ -442,6 +448,7 @@ describe('ChatPage incident linkage (Phase 4)', () => {
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
     read_only: false,
+    type: 'default',
   };
 
   beforeEach(() => {
@@ -493,6 +500,7 @@ describe('ChatPage promote-this-session affordance (§12.10)', () => {
     started_at: '2026-06-06T10:00:00Z',
     message_count: 2,
     read_only: false,
+    type: 'default',
   };
 
   beforeEach(() => {
@@ -554,6 +562,7 @@ describe('ChatPage incident participants — creator vs captain (§12.3)', () =>
       message_count: 2,
       read_only: false,
       linked_incident_id: 'inc-1',
+      type: 'default',
     });
     renderPage();
 
@@ -572,6 +581,7 @@ describe('ChatPage inline title rename', () => {
     message_count: 2,
     title: 'Old title',
     read_only: false,
+    type: 'default',
   };
 
   beforeEach(() => {
