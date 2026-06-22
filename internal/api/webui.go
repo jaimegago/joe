@@ -226,7 +226,7 @@ type webUISession struct {
 	Type string `json:"type"`
 	// IncidentState is the §5b-1 lifecycle position of an incident master
 	// (declared → being_worked → believed_mitigated → resolved → reviewed). Empty
-	// for a 'default' session (the CHECK in migration 009 keeps it null there).
+	// for a 'default' session (the CHECK in migration 025 keeps it null there).
 	// The UI drives the incident lifecycle controls off it — resolve is only
 	// reachable from 'believed_mitigated'.
 	IncidentState string `json:"incident_state,omitempty"`
@@ -766,7 +766,7 @@ func (h *webUIHandler) handleLinkIncident(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
 		return
 	}
-	// An incident session itself cannot carry linked_incident_id (migration-009
+	// An incident session itself cannot carry linked_incident_id (migration-025
 	// CHECK), so refuse rather than emit a write the DB would reject.
 	if sess.Type == sessionmodel.SessionTypeIncident {
 		writeError(w, http.StatusConflict, errorCodeConflict, "an incident session cannot be linked to an incident")
