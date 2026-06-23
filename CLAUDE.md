@@ -6,8 +6,10 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 
 ## Architectural Invariants
 
-- Single `joe` binary: bare `joe` (or `joe --config ...`) starts the server (HTTP API + Core Agent + adapters + graph); subcommands (mcp, slack, panic, unlock, review, skills, zone, admin) dispatch ahead of it. The server entrypoint lives in `cmd/joe/server.go`; the CLI dispatcher in `cmd/joe/main.go`
-- Graph store is SQLite-backed (20 edge types) — no Cayley
+> Before re-deciding anything architectural, consult [`docs/DECISIONS.md`](docs/DECISIONS.md) — the normative, append-only decision log (newest-on-top); where it conflicts with prose here, the log is the source of truth.
+
+- Single `joe` binary: bare `joe` (or `joe --config ...`) starts the server (HTTP API + Core Agent + adapters + graph); subcommands (mcp, slack, skills, incident, panic, unlock) dispatch ahead of it. The server entrypoint lives in `cmd/joe/server.go`; the CLI dispatcher in `cmd/joe/main.go`
+- Graph store is SQLite-backed (19 edge types) — no Cayley
 - Action Safety Framework: T1 (read-only, auto) / T2 (write, confirm) / T3 (dangerous, policy-gated)
 - Write floor (`internal/safety/floor.go`): boot-resolved, runtime-immutable read-only value (observation mode or sticky safe-mode/panic) — once up, nothing in the binary lowers it; recovery is restart, never a live down-transition
 - Denial precedence is floor > incident > RBAC, ordered by resolvability depth and enforced by check order in the executor (`internal/tools/executor.go`) — not by per-check return values
@@ -46,7 +48,7 @@ npm run test
 
 ## Repo-Specific Conventions
 
-- `joe` subcommands: `joe mcp`, `joe slack`, `joe panic`, `joe unlock`, `joe review`
+- `joe` subcommands: `joe mcp`, `joe slack`, `joe skills`, `joe incident`, `joe panic`, `joe unlock`
 - Core tools (in `internal/tools/core/`) reach the server's API via `internal/client/`; shared tools (in `internal/tools/shared/`) are Go-native
 - Category-based observability API: `POST /api/v1/observe/{metrics,logs,traces,alerts,k8s}` resolves backend via graph edges
 - RBAC enforcement middleware fires only on paths with a componentID (`/api/v1/{adapter}/{componentID}/...`)
@@ -57,6 +59,7 @@ npm run test
 
 ## Reference Documents
 
+- `docs/backlog/INDEX.md` — open-work entry point: the index of active backlog items (finished items move to `docs/backlog/done/`)
 - `docs/joe-architecture.md` — Full architecture with diagrams
 - `docs/joe-dataflow.md` — Data flow details, .joe/ file processing
 - `docs/joe-prompt.md` — Prompt for coding LLMs to generate .joe/ files
