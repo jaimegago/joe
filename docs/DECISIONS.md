@@ -10,6 +10,31 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0032 — Volatile, growth-driven counts are expressed structurally in CLAUDE.md, never as fixed figures
+
+- Date: 2026-06-24
+- Status: accepted
+- Session: claude-md-drift-correction
+- Decision: counts that grow as the codebase grows — graph edge types,
+  database migrations, and similar — are NOT stated as hardcoded numbers in
+  `CLAUDE.md`. They are expressed structurally instead: a pointer to the
+  declaring file plus a description of how the set is defined (e.g. "the
+  relation constants declared in `internal/graph/relations.go`, plus inline
+  literals that bypass them" rather than "19 edge types"; "the migration files
+  on disk in the migrations directory" rather than a count). A raw number, if
+  retained at all, must never be presented as the authoritative total, because
+  such figures restale on the next commit that grows the set.
+- Basis: this session (`claude-md-drift-correction`) found `CLAUDE.md` carrying
+  a stale "19 edge types" figure while `internal/graph/relations.go` declares
+  the named constants and `internal/coreagent/` emits further edge types as
+  inline string literals into the free-form TEXT `graph_edges.relation` column
+  (no CHECK constraint) — so no single count is complete. The same drift class
+  recurs for migration counts as files accrete under the migrations directory.
+  The fix replaced these counts with structural descriptions and pointers.
+- Supersedes: none.
+
+---
+
 ## D-0031 — Session-tracking convention: a slug threads chat sessions, Claude Code sessions, commits, and decisions
 
 - Date: 2026-06-23
