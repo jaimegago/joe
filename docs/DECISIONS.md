@@ -10,6 +10,68 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0034 — The review-agent subsystem (and `joe review`) is removed
+
+- Date: 2026-06-09 (enacting commit `779c53f`)
+- Status: accepted
+- Session: jpk-retirement
+- Logged retroactively: this entry was created **2026-06-24**; the decision was
+  enacted on the Date above and is reconstructed here from git history because no
+  decision entry was logged at the time (gap flagged in the retired
+  `JOE_PROJECT_KNOWLEDGE.md` §1.1).
+- Decision: remove the orphaned, two-binary-era **review-agent subsystem** —
+  `internal/review/` (`ReviewAgent`, `Service`, `Repository`, `ReviewJob`), the
+  **`joe review`** subcommand, the review webhook + job-queue REST routes
+  (`POST /webhooks/{github,gitlab}`, `{POST,GET} /reviews`), and
+  `prompts.ReviewSystem`. The proposed-infra-change review use case will be
+  re-solved later via **MCP-exposed tools**, not this subsystem. **Preserved**
+  (shared with the agentic/MCP path): the GitHub-PR / GitLab-MR *operation*
+  routes, handlers, client/accessor methods (`internal/access/vcs.go`), and the
+  github/gitlab core tools. The unused `review_jobs` table and migration
+  `007_review_jobs` were deliberately **kept** (option A) because `023` mutates
+  the column and deleting `007` would break replay — their true end state belongs
+  to the git-filter-repo history scrub (`docs/security-findings-punchlist.md` §D).
+- Basis: commit `779c53f` ("refactor: remove orphaned two-binary-era review-agent
+  subsystem", 2026-06-09); the subcommand's resulting absence from the
+  `cmd/joe/main.go` dispatcher; `docs/security-findings-punchlist.md` §C/§D
+  (removal manifest + retained-table rationale).
+- Supersedes: none — no logged decision ever established the review-agent
+  subsystem (it was Phase 10 "Code Review Integration" work, never a `D-00xx`
+  entry), so there is nothing to supersede.
+
+---
+
+## D-0033 — Collapse of `joe-core` into a single `joe` binary
+
+- Date: 2026-06-03 (enacting commit `5f9dbd7`)
+- Status: accepted
+- Session: jpk-retirement
+- Logged retroactively: this entry was created **2026-06-24**; the decision was
+  enacted on the Date above and is reconstructed here from git history because no
+  decision entry was logged at the time (gap explicitly flagged in the retired
+  `JOE_PROJECT_KNOWLEDGE.md` §1.1, which noted "there is no single dedicated
+  D-00xx decision entry recording the final joe-core→single-binary collapse").
+- Decision: collapse the two-binary split — the separate `cmd/joe-core` daemon
+  plus the `joe` CLI as a thin SSE client — into a **single `joe` binary** that
+  runs the server by default with subcommands dispatched ahead of it. Provider
+  keys now live in the one process that runs `joe`; there is no keyless thin
+  client. (The earlier `cmd/joe-mcp` / `cmd/joe-slack` binaries had already
+  become subcommands.)
+- Basis: commit `5f9dbd7` ("refactor: collapse joe-core into single joe binary",
+  2026-06-03) — the sole commit that deletes `cmd/joe-core` (`git log
+  --diff-filter=D -- cmd/joe-core` returns only `5f9dbd7`); the present tree has
+  `cmd/joe/` as the only `cmd/` entry, matching `CLAUDE.md`'s single-binary
+  invariant.
+- Supersedes: **D-0003** — its two-binary architecture premise (the
+  `joe-core → CLI` SSE streaming boundary and the CLI-as-thin-streaming-client
+  model). Note the SSE streaming transport itself survives (front-ends still
+  stream the loop over `POST /api/v1/tasks/stream`), and the in-process
+  tool-execution boundary that retired delegation was a separate step (Phase E,
+  D-0008); this entry records the structural binary collapse, which D-0003 did
+  not anticipate.
+
+---
+
 ## D-0032 — Volatile, growth-driven counts are expressed structurally in CLAUDE.md, never as fixed figures
 
 - Date: 2026-06-24
