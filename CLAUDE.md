@@ -4,6 +4,8 @@
 
 Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform engineers. A single binary — `joe` — runs the Core daemon (HTTP API on :7777) as its default behavior, with subcommands (`joe mcp`, `joe slack`, etc.) riding alongside. Joe is AI-agnostic — the code supports and validates two LLM providers, `claude` and `gemini` (see `internal/llmfactory/factory.go` and `internal/config/validation.go`) — and builds a graph of infrastructure relationships backed by SQLite.
 
+**License posture:** Joe is a personal, open-source portfolio project licensed **Apache-2.0** (`LICENSE` at the repo root is ground truth), distributed today as build-from-source only (no release binaries or install tooling). This is independent of the separate `joe-sre-skills` starter repo, which is MIT.
+
 ## Architectural Invariants
 
 > Before re-deciding anything architectural, consult [`docs/DECISIONS.md`](docs/DECISIONS.md) — the normative, append-only decision log (newest-on-top); where it conflicts with prose here, the log is the source of truth.
