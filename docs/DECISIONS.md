@@ -10,6 +10,38 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0031 — Session-tracking convention: a slug threads chat sessions, Claude Code sessions, commits, and decisions
+
+- Date: 2026-06-23
+- Status: accepted
+- Session: pm-spine-wiring
+- Decision: adopt a single session-tracking spine so a unit of work is
+  traceable end to end. The mechanism:
+  a. SLUG AS THE JOIN KEY. One slug ties together the chat session, the Claude
+     Code session, the implementing commit(s), and the decision entry for a unit
+     of work. For feature work the slug derives from the backlog filename (e.g.
+     `cross-incident-relink` ← `docs/backlog/cross-incident-relink.md`); for
+     infrastructure work with no backlog file it is hand-minted (e.g.
+     `pm-spine-wiring`).
+  b. DECISION ENTRIES CARRY A SESSION FIELD. Every entry in this log records a
+     `Session:` field naming the slug under which the decision was made, so a
+     decision points back at the session that produced it.
+  c. COMMITS BEGIN WITH THE SLUG. Each implementing commit message begins with
+     the slug, so `git log` is filterable by session and a commit points back at
+     its session and decision.
+  d. BACKLOG IS THE OPEN-WORK HOME. `docs/backlog/` holds open work, one file per
+     item, summarized in `docs/backlog/INDEX.md` (the open-work entry point);
+     finished items move to `docs/backlog/done/`. New backlog files use a title
+     line, then a status line, then the body.
+- Basis: this session (`pm-spine-wiring`) wired the spine — the root
+  `DECISIONS.md` pointer, the `docs/DECISIONS.md` and `docs/backlog/INDEX.md`
+  references in `CLAUDE.md`, and the demotion of the git-ignored
+  `JOE_PROJECT_KNOWLEDGE.md` from log-signpost to current-state narrative. The
+  `Session:` field on this entry is the first application of the convention.
+- Supersedes: none.
+
+---
+
 ## D-0030 — The component promotion endpoint: the single governed read-only-to-armed transition that owns credential entry (A003 Stream P)
 
 - Date: 2026-06-16
