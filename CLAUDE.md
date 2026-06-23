@@ -2,14 +2,14 @@
 
 ## Project Identity
 
-Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform engineers. A single binary — `joe` — runs the Core daemon (HTTP API on :7777) as its default behavior, with subcommands (`joe mcp`, `joe slack`, etc.) riding alongside. Joe is AI-agnostic (Claude, OpenAI, Ollama) and builds a graph of infrastructure relationships backed by SQLite.
+Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform engineers. A single binary — `joe` — runs the Core daemon (HTTP API on :7777) as its default behavior, with subcommands (`joe mcp`, `joe slack`, etc.) riding alongside. Joe is AI-agnostic — the code supports and validates two LLM providers, `claude` and `gemini` (see `internal/llmfactory/factory.go` and `internal/config/validation.go`) — and builds a graph of infrastructure relationships backed by SQLite.
 
 ## Architectural Invariants
 
 > Before re-deciding anything architectural, consult [`docs/DECISIONS.md`](docs/DECISIONS.md) — the normative, append-only decision log (newest-on-top); where it conflicts with prose here, the log is the source of truth.
 
 - Single `joe` binary: bare `joe` (or `joe --config ...`) starts the server (HTTP API + Core Agent + adapters + graph); subcommands (mcp, slack, skills, incident, panic, unlock) dispatch ahead of it. The server entrypoint lives in `cmd/joe/server.go`; the CLI dispatcher in `cmd/joe/main.go`
-- Graph store is SQLite-backed (19 edge types) — no Cayley
+- Graph store is SQLite-backed — no Cayley. Edge types: the named set is the relation constants declared in `internal/graph/relations.go`, but `graph_edges.relation` is free-form TEXT with no CHECK constraint, so further types enter as inline string literals (e.g. in `internal/coreagent/`) that bypass the constant set — the declared constants are authoritative as names, but no fixed count is authoritative as the total
 - Action Safety Framework: T1 (read-only, auto) / T2 (write, confirm) / T3 (dangerous, policy-gated)
 - Write floor (`internal/safety/floor.go`): boot-resolved, runtime-immutable read-only value (observation mode or sticky safe-mode/panic) — once up, nothing in the binary lowers it; recovery is restart, never a live down-transition
 - Denial precedence is floor > incident > RBAC, ordered by resolvability depth and enforced by check order in the executor (`internal/tools/executor.go`) — not by per-check return values
@@ -18,6 +18,7 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 - Technical layer organization (`internal/llm/`, `internal/tools/`, `internal/graph/`) is intentional — Joe is a single-purpose tool, not a multi-domain business app
 - Core Agent autonomy levels: Autonomous (deterministic) -> LLM+Auto (high-confidence) -> Needs Human (queued as clarifications)
 - All LLM prompt strings live in `internal/prompts/` — not scattered across packages
+- Chat sessions are a core subsystem (first-class owned/shareable/incident-linked sessions); its as-built specification is normative in [`docs/DESIGN-CHAT-SESSIONS.md`](docs/DESIGN-CHAT-SESSIONS.md) — consult it before changing session behavior
 
 ## Applicable Skills
 
