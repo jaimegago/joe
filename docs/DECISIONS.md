@@ -10,6 +10,31 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0035 — The session-tracking convention and volatile-count rule are fully specified in `docs/pm-convention.md`
+
+- Date: 2026-06-24
+- Status: accepted
+- Session: pm-convention-capture
+- Decision: the session-tracking slug convention (established in D-0031) and the
+  volatile-count rule (established in D-0032) are now fully specified in
+  `docs/pm-convention.md`, which documents the single slug that joins chat
+  (claude.ai) sessions, Claude Code sessions, git commits, and decision-log
+  entries, along with the artifacts, read paths, sync-freshness discipline, and
+  build-prompt acceptance criteria of the convention. In addition, the claude.ai
+  project instructions that operationalize this convention are version-controlled
+  at `docs/claude_joe_project_instructions.md` as a pure paste-source: that file
+  is the master, and the claude.ai project's instructions field is a manual
+  paste-deployment of it (the file leads, the field follows; convention changes
+  are made to the file first, committed, then re-pasted into the field).
+- Basis: the new files `docs/pm-convention.md` and
+  `docs/claude_joe_project_instructions.md`, added in the
+  `pm-convention-capture` commit; D-0031 (slug convention) and D-0032
+  (volatile-count rule), which this entry specifies in full rather than alters.
+- Supersedes: none — this entry specifies and operationalizes D-0031 and D-0032;
+  it does not overturn them.
+
+---
+
 ## D-0034 — The review-agent subsystem (and `joe review`) is removed
 
 - Date: 2026-06-09 (enacting commit `779c53f`)

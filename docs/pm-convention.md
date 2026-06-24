@@ -1,0 +1,30 @@
+Project Management and Session-Tracking Convention
+
+Purpose. A single slug joins four layers: chat (claude.ai) sessions, Claude Code sessions, git commits, and decision-log entries. The slug lets any one layer be traced to the others. Chat reasons and emits prompts; Claude Code executes and writes; git records implementation; the decision log records rationale; the backlog records open work.
+
+The slug. For feature work the slug is the backlog filename without extension. For infrastructure or bootstrap work with no backlog file, the slug is a short hand-minted kebab-case string. The slug appears in four places: the backlog filename, the first line of the Claude Code prompt as "Session: slug", the prefix of the commit message, and the Session field of any decision-log entry. A two-digit suffix (slug-01, slug-02) is added only when one chat thread spawns multiple Claude Code build sessions. The chat is also renamed to "slug — short description" as a human navigation aid; this title is convenience only and is not part of the machine join.
+
+When a slug is minted. A chat acquires a slug the first time it dispatches Claude Code to write something that gets committed. Read-only investigations that only report back in chat get no slug. Investigations that write a committed findings file do get a slug. Assignment is late: the chat stays untagged through the organic exploration phase and acquires the slug only at the first committing prompt.
+
+Artifacts and their nature.
+CLAUDE.md is current state and invariants. It is autoloaded by Claude Code every session and synced into the chat project. It is kept thin: invariants, commands, conventions, and pointers, never volatile counts or task lists.
+docs/DECISIONS.md is the append-only decision log. Newest entries on top. Each entry carries an ID, date, decision, basis, a Supersedes field, a Status field, and a Session field. Re-litigated decisions are not edited; a new entry supersedes the old one and the old one stays visible as trail. Synced into the chat project.
+docs/backlog/INDEX.md is a derived worklist: one row per backlog file with slug, title, and status. It is a pure function of the directory, regenerable by script, and must never be hand-maintained as a source of truth. Synced into the chat project.
+docs/backlog/slug.md is the per-thread item detail. Format: first line title, second line status of open or in-progress, then body. Not synced; read on demand.
+docs/backlog/done/ holds finished items, moved there on completion and excluded from INDEX.
+git log is the implementation record, with the slug in each commit message. Not synced into the chat project, since the GitHub source carries file contents but not commit history.
+docs/claude_joe_project_instructions.md is the version-controlled master of the claude.ai project instructions. It is a pure paste-source: its entire contents are pasted into the project's instructions field, which cannot read from git directly. The file leads and the field follows; convention changes are made to the file first, committed, then re-pasted into the field.
+
+Build-prompt acceptance criteria. Every Claude Code build prompt instructs, as acceptance criteria: begin the commit message with the slug; if a decision was made or changed, append a decision-log entry with the Session field set to the slug; if an invariant, command, or convention changed, update CLAUDE.md; if deferred work remains, write or update the backlog file; whenever a backlog file changes, regenerate INDEX.md; on thread completion, move the backlog file to done; and push the commit to origin/main. A commit that is not pushed is invisible to the synced project, so the push is part of done.
+
+Volatile-count rule. Growth-driven counts such as edge types and migrations are never stated as fixed numbers in CLAUDE.md, because they restale on the next change. They are expressed structurally or as pointers to the source of truth in code.
+
+Read paths. The chat reads CLAUDE.md, DECISIONS.md, and INDEX.md from the synced GitHub source. Claude Code reads CLAUDE.md, autoloaded, which points it to the decision log and backlog. These are two distinct read paths for two distinct agents.
+
+Sync-freshness discipline. The GitHub source is a manual snapshot of the pushed state, not live. The chain is commit, push, sync, then readable. Sync before strategizing, especially after recent Claude Code work has landed. A stale snapshot makes the chat reason confidently on superseded state, which is worse than no access, so freshness is treated as load-bearing.
+
+Prioritization. Asking the chat what to work on next is answered in two passes. The coarse pass uses the synced spine: current state, decisions, and the open-item titles and status in INDEX. The sharp pass reads the bodies of the top candidate backlog files, which are not synced and must be provided on demand.
+
+Human residue. The steps that cannot be automated and remain manual: copy-pasting prompts and outputs between chat and Claude Code; one sync before a strategic session; confirming a minted slug; pasting a chat title; deciding which backlog items are dead when triage flags candidates; and all judgment.
+
+Provenance and status. The slug convention is recorded in D-0031; the volatile-count rule in D-0032. The project instructions that operationalize this convention are version-controlled at docs/claude_joe_project_instructions.md. As of this writing the convention has been exercised only on bootstrap sessions, not yet on ordinary feature work. Extraction of this convention into a Claude Code skill is deliberately deferred until it has proven out over several real sessions.
