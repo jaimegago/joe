@@ -12,6 +12,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/buildinfo"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observability"
@@ -55,7 +56,6 @@ type Server struct {
 	// sessionAccessAdmin (this instance) AFTER the requireAdmin prefix gate, so
 	// cross-tenant governance requires BOTH. No per-user route holds it.
 	sessionAuthzAdmin *sessionauthz.Seam
-	version           string
 }
 
 // New creates a new API server with access to core services.
@@ -82,7 +82,6 @@ func New(services *core.Services) *Server {
 		inproc:            newInProcessCoreClient(accessor, services),
 		sessionAuthz:      newPerUserSessionAuthz(services),
 		sessionAuthzAdmin: newAdminSessionAuthz(services),
-		version:           defaultVersion,
 	}
 }
 
@@ -105,11 +104,6 @@ func newPolicyEngine(services *core.Services) *rbac.PolicyEngine {
 		return nil
 	}
 	return rbac.NewPolicyEngine(services.RBAC)
-}
-
-// SetVersion overrides the version string returned by the status endpoint.
-func (s *Server) SetVersion(v string) {
-	s.version = v
 }
 
 // RegisterRoutes registers all API routes on the given mux
@@ -170,6 +164,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 // registerStatusRoutes registers status and health check routes
 func (s *Server) registerStatusRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("GET %s/status", prefix), s.handleStatus)
+	// The authoritative build-identity surface. Namespaced under /api/v1 for
+	// consistency with /status; serializes the full buildinfo.Info including the
+	// boot-computed ui_digest.
+	mux.HandleFunc(fmt.Sprintf("GET %s/version", prefix), s.handleVersion)
 }
 
 // registerGraphRoutes registers graph query routes.
@@ -401,9 +399,17 @@ func (h *sourceHandler) handlePromotionCandidates(w http.ResponseWriter, r *http
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  statusOK,
-		"version": s.version,
+		"version": buildinfo.Get().Version,
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// handleVersion serves the authoritative build-identity surface: the full
+// buildinfo.Info (version, commit, build_time, ui_digest). This is the single
+// place an external caller reads ui_digest; /status keeps its slim shape and
+// does not carry the digest.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, buildinfo.Get())
 }
 
 func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {

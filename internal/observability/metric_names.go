@@ -49,6 +49,11 @@ const (
 	MetricHTTPErrors            = "http.server.errors"
 	MetricHTTPDuration          = "http.server.duration"
 	MetricHTTPInFlight          = "http.server.in_flight"
+	// MetricBuildInfo is the build-identity gauge. The dotted name renders as
+	// joe_build_info under the Prometheus exporter (dots become underscores);
+	// the leading "joe" prefix follows the conventional <namespace>_build_info
+	// pattern. Value is a constant 1; the build identity is carried in labels.
+	MetricBuildInfo = "joe.build.info"
 )
 
 const (
@@ -64,4 +69,10 @@ const (
 	AttrHTTPRoute   = "http.route"
 	AttrHTTPStatus  = "http.status_code"
 	AttrSourceType  = "type"
+
+	// Labels for the joe_build_info gauge.
+	AttrBuildVersion  = "version"
+	AttrBuildCommit   = "commit"
+	AttrBuildTime     = "build_time"
+	AttrBuildUIDigest = "ui_digest"
 )

@@ -6,6 +6,18 @@
 # staged build output is gitignored.
 EMBED_UI_DIR := internal/webui/dist
 
+# Build-truth injected into internal/buildinfo via ldflags -X (addressed by full
+# import path). A plain `go build` with none of these still compiles and reports
+# the unset defaults ("dev"), so "dev" only ever marks a deliberately unset
+# build. VERSION uses git describe with tags, always, and the dirty marker.
+BUILDINFO_PKG := github.com/jaimegago/joe/internal/buildinfo
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X $(BUILDINFO_PKG).Version=$(VERSION) \
+           -X $(BUILDINFO_PKG).Commit=$(COMMIT) \
+           -X $(BUILDINFO_PKG).BuildTime=$(BUILD_TIME)
+
 # Run joe (the server daemon) - start this first
 run-joe:
 	go run ./cmd/joe
@@ -31,7 +43,7 @@ run: run-joe
 build: build-joe
 
 build-joe: build-ui
-	go build -o joe ./cmd/joe
+	go build -ldflags "$(LDFLAGS)" -o joe ./cmd/joe
 
 # Build the production web UI and stage it into the embed directory. Old
 # staged output is cleared first (it is gitignored) while the committed

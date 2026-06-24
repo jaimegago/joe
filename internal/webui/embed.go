@@ -32,6 +32,15 @@ const apiPathPrefix = "/api/v1"
 //go:embed all:dist
 var distFS embed.FS
 
+// DistFS returns the embedded UI filesystem rooted at the served dist
+// directory — the exact subtree Handler serves from (so paths are "index.html",
+// "assets/...", with no leading "dist/"). buildinfo.Init walks this to compute
+// the boot-time ui_digest from the same bytes the binary serves, which is why
+// the digest cannot disagree with what is embedded.
+func DistFS() (fs.FS, error) {
+	return fs.Sub(distFS, "dist")
+}
+
 // Handler returns an http.Handler that serves the embedded SPA build: real
 // files for hashed assets and root-level statics, index.html (with SPA
 // deep-link fallback) for navigation paths, and 404 for missing assets.

@@ -31,6 +31,7 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
+	"github.com/jaimegago/joe/internal/buildinfo"
 	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
@@ -63,11 +64,6 @@ import (
 	"github.com/jaimegago/joe/internal/warnings"
 	"github.com/jaimegago/joe/internal/webui"
 )
-
-// version is set at build time via ldflags:
-//
-//	go build -ldflags "-X main.version=1.2.3" ./cmd/joe
-var version string
 
 type coreAgentRunner interface {
 	core.CoreAgent
@@ -308,6 +304,17 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		return 1
 	}
 	slog.Info("database ready", "path", dbCfg.DSN)
+
+	// Compute the ui_digest once from the embedded UI bytes this binary serves,
+	// so buildinfo.Get() (read by /api/v1/version, /api/v1/status, and the
+	// joe_build_info gauge) reports a digest that cannot disagree with what is
+	// embedded. The injected fields (version/commit/build_time) are already set
+	// by the linker; only the digest is derived here.
+	if uiFS, fsErr := webui.DistFS(); fsErr != nil {
+		slog.Warn("could not open embedded UI for build digest", "error", fsErr)
+	} else if err := buildinfo.Init(uiFS); err != nil {
+		slog.Warn("could not compute embedded UI build digest", "error", err)
+	}
 
 	// Wire the append-only audit log (Identity Phase F, migration 015).
 	// Every authorization decision the accessor makes and every
@@ -767,9 +774,6 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 
 	// Register API routes
 	apiServer := deps.newAPIServer(services)
-	if version != "" {
-		apiServer.SetVersion(version)
-	}
 	apiServer.RegisterRoutes(mux)
 
 	// Build the service-account resolver — the single machine-authentication
@@ -1201,8 +1205,24 @@ func registerBusinessMetricsDefault(services *core.Services) error {
 			return len(services.Adapters.List())
 		},
 	}
-	_, err := services.Metrics.RegisterBusinessMetrics(businessProvider)
-	return err
+	if _, err := services.Metrics.RegisterBusinessMetrics(businessProvider); err != nil {
+		return err
+	}
+
+	// joe_build_info: one constant-1 gauge per binary, build identity in labels
+	// (read from the single source of build truth). Registered here in the
+	// metrics-setup layer, under the same metrics-enabled gate as the business
+	// gauges, per the CLAUDE.md instrumentation invariant.
+	bi := buildinfo.Get()
+	if _, err := services.Metrics.RegisterBuildInfo(observability.BuildInfo{
+		Version:   bi.Version,
+		Commit:    bi.Commit,
+		BuildTime: bi.BuildTime,
+		UIDigest:  bi.UIDigest,
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func defaultStartMetricsServer(server *http.Server) error {

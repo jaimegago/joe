@@ -600,6 +600,49 @@ type GraphMetricsSummary struct {
 	NodesByType map[string]int
 }
 
+// BuildInfo carries the build-identity labels for the joe_build_info gauge.
+// One label-set per running binary; the ui_digest label is what makes a stale
+// embed visible across replicas.
+type BuildInfo struct {
+	Version   string
+	Commit    string
+	BuildTime string
+	UIDigest  string
+}
+
+// RegisterBuildInfo registers the joe_build_info gauge: a constant value of 1
+// whose labels (version, commit, build_time, ui_digest) carry the build
+// identity. It is registered once at metrics-setup time beside the business
+// gauges, never in a request handler's business path. The returned func
+// unregisters the observable callback.
+func (m *Metrics) RegisterBuildInfo(info BuildInfo) (func() error, error) {
+	// No unit is set deliberately: with the Prometheus exporter, a "1" unit
+	// renders a "_ratio" suffix (joe_build_info_ratio). Omitting the unit keeps
+	// the conventional name joe_build_info exactly.
+	gauge, err := m.meter.Int64ObservableGauge(
+		MetricBuildInfo,
+		metric.WithDescription("Build identity of the running joe binary; constant 1, identity carried in labels"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	registration, err := m.meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		observer.ObserveInt64(gauge, 1, metric.WithAttributes(
+			attribute.String(AttrBuildVersion, info.Version),
+			attribute.String(AttrBuildCommit, info.Commit),
+			attribute.String(AttrBuildTime, info.BuildTime),
+			attribute.String(AttrBuildUIDigest, info.UIDigest),
+		))
+		return nil
+	}, gauge)
+	if err != nil {
+		return nil, err
+	}
+
+	return registration.Unregister, nil
+}
+
 // BusinessMetricsProvider supplies data for business metrics gauges.
 type BusinessMetricsProvider struct {
 	ComponentsByType func(ctx context.Context) (map[string]int, error)

@@ -157,10 +157,36 @@ jobs:
           version: v2.12.2
           args: --timeout=5m
 
+  # Exercise the release path in snapshot mode ONLY — a full local build that
+  # proves the ldflags -X injection into internal/buildinfo works and the build
+  # is green. No release, no tag-triggered publishing, no artifact upload
+  # (the config also sets release.disable). Distribution stays build-from-source.
+  goreleaser-build:
+    name: GoReleaser Snapshot Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # goreleaser derives the version from git describe, so it needs the
+          # full history and tags, not a shallow checkout.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Run GoReleaser (snapshot build, no publish)
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: build --snapshot --clean
+
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, e2e-tests, lint]
+    needs: [unit-tests, integration-tests, e2e-tests, lint, goreleaser-build]
     if: always()
     steps:
       - name: Check test results
@@ -168,7 +194,8 @@ jobs:
           if [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.e2e-tests.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ]; then
+             [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.goreleaser-build.result }}" != "success" ]; then
             echo "::error::One or more test jobs failed"
             exit 1
           fi

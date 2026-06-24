@@ -136,6 +136,35 @@ func TestHandleStatus(t *testing.T) {
 	}
 }
 
+func TestHandleVersion(t *testing.T) {
+	server, _ := setupTestServer(t)
+	mux := setupMux(t, server)
+
+	req := httptest.NewRequest("GET", "/api/v1/version", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// The full buildinfo.Info is serialized: version/commit/build_time/ui_digest.
+	// On the test build the injected fields carry their unset defaults.
+	for _, field := range []string{"version", "commit", "build_time", "ui_digest"} {
+		if _, ok := body[field]; !ok {
+			t.Errorf("missing %q field in version response", field)
+		}
+	}
+	if body["version"] != "dev" {
+		t.Errorf("version = %v, want dev (unset build)", body["version"])
+	}
+}
+
 func TestHandleGraphQuery(t *testing.T) {
 	tests := []struct {
 		name       string
