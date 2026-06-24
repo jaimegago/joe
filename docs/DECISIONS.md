@@ -10,6 +10,55 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0036 — Build-truth is a single `internal/buildinfo` source; freshness is a boot-computed embed-FS digest, not injected
+
+- Date: 2026-06-24
+- Status: accepted
+- Session: build-version-instrumentation
+- Decision: the binary now has one source of build truth, `internal/buildinfo`.
+  It declares package-level (non-const, string) `Version`/`Commit`/`BuildTime`
+  variables that are the **sole ldflags `-X` injection targets, addressed by full
+  import path** (`github.com/jaimegago/joe/internal/buildinfo.Version`, etc.); the
+  prior `main.version` → `Server.SetVersion` path is retired and `defaultVersion`
+  removed. A plain `go build` with no ldflags still compiles and reports the unset
+  defaults (`dev`/`none`/`unknown`), so `dev` only ever marks a deliberately unset
+  build. The freshness field `ui_digest` is **NOT** injected: it is a sha256 over
+  the embedded UI filesystem, **computed once at boot** from the exact bytes the
+  binary serves (`webui.DistFS()` → `buildinfo.Init`). Self-derivation was chosen
+  over a build-time injection because the digest then cannot be absent on a real
+  boot and cannot disagree with what is embedded, and an external harness holding
+  the same `dist` files can recompute it byte-for-byte with no shared secret (the
+  canonical serialization is documented on `buildinfo.Compute`: sorted relative
+  paths, per file write the path bytes then the content bytes into one running
+  sha256, lowercase hex). A dedicated `GET /api/v1/version` endpoint serializes the
+  full `buildinfo.Info` (version/commit/build_time/ui_digest) and is the single
+  place `ui_digest` is read; `GET /api/v1/status` is repointed to read its version
+  from `buildinfo` (slim shape unchanged, no digest). A single `joe_build_info`
+  Prometheus gauge (constant `1`, identity in labels) is registered in the
+  metrics-setup layer beside the business gauges; the `ui_digest` label makes a
+  stale embed visible across replicas. Distribution posture is unchanged —
+  **build-from-source only** — but a `.goreleaser.yaml` scaffold plus a CI
+  `goreleaser build --snapshot --clean` job now validate the release path and prove
+  the injection works, with no release, tag-publishing, or artifact upload
+  (`release.disable: true`). Flipping goreleaser to publish is a separate posture
+  change with its own decision entry when taken.
+- Basis: the new `internal/buildinfo` package and its tests; the repointed
+  `internal/api` handlers (`handleStatus`, new `handleVersion`) and removed
+  `Server.version`/`SetVersion`/`defaultVersion`; `internal/observability`
+  `RegisterBuildInfo` + the `joe.build.info` instrument (rendered `joe_build_info`,
+  unit intentionally omitted to avoid a `_ratio` suffix) verified by a real
+  Prometheus-exporter scrape test; the Makefile `LDFLAGS` wiring; the new
+  `.goreleaser.yaml` and the `goreleaser-build` CI job in
+  `.github/workflows/tests.yml`; all under the `build-version-instrumentation`
+  commit. The boot-injection verification was confirmed live: a binary built with
+  `-X` reported the injected `version`/`commit` and a computed `ui_digest` over
+  `GET /api/v1/version`.
+- Supersedes: the `main.version`/`SetVersion` version-reporting path and the
+  `defaultVersion` constant referenced in earlier prose; no prior decision entry
+  governed build versioning.
+
+---
+
 ## D-0035 — The session-tracking convention and volatile-count rule are fully specified in `docs/pm-convention.md`
 
 - Date: 2026-06-24

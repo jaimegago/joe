@@ -4,7 +4,7 @@
 
 Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform engineers. A single binary — `joe` — runs the Core daemon (HTTP API on :7777) as its default behavior, with subcommands (`joe mcp`, `joe slack`, etc.) riding alongside. Joe is AI-agnostic — the code supports and validates two LLM providers, `claude` and `gemini` (see `internal/llmfactory/factory.go` and `internal/config/validation.go`) — and builds a graph of infrastructure relationships backed by SQLite.
 
-**License posture:** Joe is a personal, open-source portfolio project licensed **Apache-2.0** (`LICENSE` at the repo root is ground truth), distributed today as build-from-source only (no release binaries or install tooling). This is independent of the separate `joe-sre-skills` starter repo, which is MIT.
+**License posture:** Joe is a personal, open-source portfolio project licensed **Apache-2.0** (`LICENSE` at the repo root is ground truth), distributed today as **build-from-source only** (no release binaries or install tooling). Release tooling is **scaffolded and CI-validated but not publishing**: a `.goreleaser.yaml` exists and CI runs `goreleaser build --snapshot --clean` to prove the build/injection, but it never releases, tags, or uploads artifacts (`release.disable: true`); flipping it to publish is a deliberate posture change with its own decision entry. This is independent of the separate `joe-sre-skills` starter repo, which is MIT.
 
 ## Architectural Invariants
 
@@ -17,6 +17,7 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 - Denial precedence is floor > incident > RBAC, ordered by resolvability depth and enforced by check order in the executor (`internal/tools/executor.go`) — not by per-check return values
 - LLM can create/update Tier 3 knowledge, but cannot touch Tier 1 (curated)
 - OpenTelemetry instrumentation goes in middleware/decorators, NOT in business logic
+- Build truth has a single source, `internal/buildinfo`: every consumer (the `GET /api/v1/status` and `GET /api/v1/version` handlers, the `joe_build_info` gauge) reads it via `buildinfo.Get()`. The ldflags `-X` injection targets are that package's `Version`/`Commit`/`BuildTime` vars **addressed by full import path** (e.g. `github.com/jaimegago/joe/internal/buildinfo.Version`); no other package declares build-identity vars, and `dev`/`none`/`unknown` appear only on a deliberately unset build. The `ui_digest` field is **not** injected — it is computed once at boot from the embedded UI FS (`webui.DistFS()` → `buildinfo.Init`), so it cannot disagree with the bytes the binary serves
 - Technical layer organization (`internal/llm/`, `internal/tools/`, `internal/graph/`) is intentional — Joe is a single-purpose tool, not a multi-domain business app
 - Core Agent autonomy levels: Autonomous (deterministic) -> LLM+Auto (high-confidence) -> Needs Human (queued as clarifications)
 - All LLM prompt strings live in `internal/prompts/` — not scattered across packages
@@ -39,6 +40,8 @@ go vet ./...
 gofmt -s -w .
 ```
 
+Release-shaped build (embeds the UI and injects build truth into `internal/buildinfo` via ldflags `-X`): `make build`. A plain `go build ./...` still compiles and reports the unset `dev` defaults. CI validates the release path without publishing: `goreleaser build --snapshot --clean`.
+
 Integration tests: `go test -tags=integration ./...`
 
 Frontend (`ui/`):
@@ -54,6 +57,7 @@ npm run test
 - `joe` subcommands: `joe mcp`, `joe slack`, `joe skills`, `joe incident`, `joe panic`, `joe unlock`
 - Core tools (in `internal/tools/core/`) reach the server's API via `internal/client/`; shared tools (in `internal/tools/shared/`) are Go-native
 - Category-based observability API: `POST /api/v1/observe/{metrics,logs,traces,alerts,k8s}` resolves backend via graph edges
+- Build-identity surface: `GET /api/v1/version` serializes the full `buildinfo.Info` (`version`/`commit`/`build_time`/`ui_digest`) and is the single place `ui_digest` is read; `GET /api/v1/status` reports only `version` (no digest). The `joe_build_info` Prometheus gauge (constant `1`, build identity in labels, registered in the metrics-setup layer beside the business gauges) carries the same fields; its `ui_digest` label makes a stale UI embed visible across replicas. `ui_digest` is a sha256 over the embedded UI bytes the binary serves, recomputable byte-for-byte by an external harness per the canonical serialization documented on `buildinfo.Compute`
 - RBAC enforcement middleware fires only on paths with a componentID (`/api/v1/{adapter}/{componentID}/...`)
 - The registered-external-system entity is a "component" (`store.Component`, `components` table). "source" was renamed per D-0021; the unrelated `knowledge_sources` concept keeps its name
 - Panic state persisted to the `cluster_panic_state` DB row (single row, id=1) via `internal/store/panic_store.go` — there is no `panic.state` file; safe mode blocks T2/T3 tools in executor

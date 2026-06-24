@@ -15,6 +15,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred |
 | [`azure-credential-provider-and-connect`](azure-credential-provider-and-connect.md) | Backlog — Azure credential provider + Connect implementation (deferred from A003) | deferred from A003 |
+| [`build-version-instrumentation`](build-version-instrumentation.md) | Build & version instrumentation — deferred fast-follows | open |
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
@@ -22,6 +23,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open |
+| [`health-readiness-surface`](health-readiness-surface.md) | Health and readiness probe surface (/livez, /readyz) | open |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |
 | [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and former-employer decoupling | open |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |

@@ -1,11 +1,12 @@
 package api
 
 const (
-	// API version and status values.
-	defaultVersion = "dev"
-	apiVersion     = "v1"      // Current API version for route paths
-	apiPrefix      = "/api/v1" // Full API path prefix
-	statusOK       = "ok"
+	// API version and status values. The reported build version now comes from
+	// internal/buildinfo (read by handleStatus / handleVersion), not a constant
+	// here.
+	apiVersion = "v1"      // Current API version for route paths
+	apiPrefix  = "/api/v1" // Full API path prefix
+	statusOK   = "ok"
 
 	// HTTP Content-Type header value.
 	contentTypeJSON = "application/json"

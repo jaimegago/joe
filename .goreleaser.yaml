@@ -1,0 +1,57 @@
+# GoReleaser configuration — SCAFFOLD ONLY, NOT PUBLISHING.
+#
+# Joe's distribution posture is build-from-source only (see LICENSE / CLAUDE.md).
+# This file exists so the release path is scaffolded and CI-validated: CI runs
+# `goreleaser build --snapshot --clean`, a full local build that proves the
+# ldflags -X injection into internal/buildinfo works and the build is green. It
+# does NOT release, tag-publish, or upload artifacts. `release.disable: true`
+# below is a second belt-and-braces guard on top of only ever invoking the
+# `build` subcommand in CI.
+#
+# Flipping this to actually publish is a deliberate distribution-posture change
+# tracked in docs/backlog/build-version-instrumentation.md (its own posture flip
+# and decision-log entry when taken).
+version: 2
+
+project_name: joe
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: joe
+    main: ./cmd/joe
+    binary: joe
+    # modernc.org/sqlite is pure Go, so CGO is off and cross-compilation is clean.
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # The SAME three injections the Makefile uses, addressed by full import path.
+    # A plain build with none of these still reports the "dev" defaults.
+    ldflags:
+      - -s -w
+      - -X github.com/jaimegago/joe/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/jaimegago/joe/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/jaimegago/joe/internal/buildinfo.BuildTime={{ .Date }}
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+archives:
+  - id: joe
+    formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+
+# No release. Posture is build-from-source only; CI exercises the `build`
+# subcommand in snapshot mode and never the `release` subcommand.
+release:
+  disable: true
