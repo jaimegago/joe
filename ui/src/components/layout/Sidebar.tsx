@@ -1,6 +1,5 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard,
   Database,
   MessageSquare,
   MessagesSquare,
@@ -10,6 +9,7 @@ import {
   Cpu,
   LogOut,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuth } from '@/auth/AuthContext';
@@ -18,7 +18,7 @@ import { DeclareIncidentButton } from '@/components/incident/DeclareIncidentButt
 
 interface NavItem {
   to: string;
-  icon: typeof LayoutDashboard;
+  icon: LucideIcon;
   label: string;
   end: boolean;
   adminOnly?: boolean;
@@ -28,7 +28,6 @@ interface NavItem {
 // The full-graph visualization isn't a daily-use view, but the route is kept
 // reachable by direct URL for demos that explain Joe's dependency graph DB.
 const navItems: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/components', icon: Database, label: 'Components', end: false },
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
   { to: '/sessions', icon: MessagesSquare, label: 'Sessions', end: false },

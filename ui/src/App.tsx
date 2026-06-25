@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AppShell } from '@/components/layout/AppShell';
@@ -8,7 +8,6 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { AuthGate } from '@/auth/AuthGate';
 import { RequireAdmin } from '@/auth/RequireAdmin';
 
-const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const GraphPage = lazy(() => import('@/pages/GraphPage').then(m => ({ default: m.GraphPage })));
 const ComponentsPage = lazy(() => import('@/pages/ComponentsPage').then(m => ({ default: m.ComponentsPage })));
 const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
@@ -38,7 +37,7 @@ export function App() {
           <AuthGate>
             <Routes>
               <Route path="/" element={<AppShell />}>
-                <Route index element={<Suspense fallback={<LoadingPage />}><DashboardPage /></Suspense>} />
+                <Route index element={<Navigate to="/chat" replace />} />
                 <Route path="graph" element={<Suspense fallback={<LoadingPage />}><GraphPage /></Suspense>} />
                 <Route path="components" element={<Suspense fallback={<LoadingPage />}><ComponentsPage /></Suspense>} />
                 <Route path="chat" element={<Suspense fallback={<LoadingPage />}><ChatPage /></Suspense>} />

@@ -10,6 +10,42 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0038 — Chat is the default landing surface; the fabricated-data dashboard was retired pending a purpose-built one
+
+- Date: 2026-06-25
+- Status: accepted
+- Session: launch-ui-polish
+- Decision: the web UI's default/index route (`/`) now redirects to the chat
+  interface, so a fresh post-login load lands on **chat**, not a dashboard. The
+  prior landing/dashboard page was **removed entirely** — page, route, and
+  sidebar navigation entry — because it presented data that does not exist in the
+  running system: its "Active Alerts" widgets read `GET /api/v1/alerts`, which is
+  a stub that returns an empty list with a `TODO` (no Alertmanager/Grafana
+  aggregation is wired), so the surface misrepresented a non-functional feature
+  as real. The page's remaining widgets were backed by genuinely wired data
+  (components via `GET /api/v1/components`, recent sessions via the sessions API),
+  but that data is **already independently surfaced** on the Components and
+  Sessions pages, so removing the aggregate dashboard loses no real-data surface.
+  The dashboard sub-components and the orphaned `ui/src/api/alerts.ts` client
+  were deleted with it. A proper, purpose-built dashboard is **deferred**, not
+  abandoned (tracked in `docs/backlog/launch-ui-polish.md`).
+- Basis: `ui/src/App.tsx` index route is now `<Navigate to="/chat" replace />`
+  (no `DashboardPage` import/route); `ui/src/components/layout/Sidebar.tsx` no
+  longer lists a Dashboard nav entry; `ui/src/pages/DashboardPage.tsx`,
+  `ui/src/components/dashboard/`, and `ui/src/api/alerts.ts` are deleted; the
+  stub handler `handleGetAlerts` in `internal/api/webui.go` (returns
+  `{"alerts": [], "count": 0}` with a `TODO`) confirms the alerts surface had no
+  real backing. Verified live against the rebuilt embedded UI: a fresh load
+  redirects `/` → `/chat` and no dashboard or alerts surface is reachable by
+  default; UI lint/tests and `go build`/`vet`/`test` green; `make build`
+  re-embedded the UI.
+- Supersedes: the Phase 12 dashboard as the default landing experience (the
+  `RecentSessions`/`AlertsList`/`ComponentsHealth`/`MetricsCard` dashboard
+  composition). Per D-0032 no widget or route count is recorded here as a fixed
+  figure.
+
+---
+
 ## D-0037 — Chat token badge is a context-window utilization figure (input X of window Y), closing the D-0015 deferred "used X of Y" fast-follow
 
 - Date: 2026-06-25

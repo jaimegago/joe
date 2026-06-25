@@ -34,7 +34,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Admin')).toBeInTheDocument();
     expect(screen.getByText('LLM Settings')).toBeInTheDocument();
     // Non-admin entries always render.
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Chat')).toBeInTheDocument();
   });
 
   it('hides admin-only entries when the caller is not an admin', () => {
@@ -42,7 +42,7 @@ describe('Sidebar', () => {
     renderSidebar();
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
     expect(screen.queryByText('LLM Settings')).not.toBeInTheDocument();
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Chat')).toBeInTheDocument();
   });
 
   it('does not flash admin entries before the current-user query resolves', () => {
