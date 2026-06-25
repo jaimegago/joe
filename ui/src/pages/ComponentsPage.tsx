@@ -15,11 +15,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fetchComponents, testComponent, deleteComponent, promoteComponent } from '@/api/components';
+import { fetchComponents, testComponent, deleteComponent, promoteComponent, createComponent } from '@/api/components';
 import type { PromoteRequest } from '@/api/components';
 import { fetchZones } from '@/api/security';
 import { ApiRequestError } from '@/api/client';
 import { PromoteComponentForm } from '@/components/admin/PromoteComponentForm';
+import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
+import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { STATUS_CONFIG } from '@/lib/constants';
 import type { Component } from '@/api/types';
@@ -52,6 +54,7 @@ export function ComponentsPage() {
   const [selected, setSelected] = useState<Component | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [promoteTarget, setPromoteTarget] = useState<Component | null>(null);
+  const [showRegisterComponent, setShowRegisterComponent] = useState(false);
 
   const meQ = useCurrentUser();
   const isAdmin = meQ.data?.is_admin === true;
@@ -111,6 +114,42 @@ export function ComponentsPage() {
     },
   });
 
+  // Register (create) is an admin-only inline affordance (moved here from the
+  // retired Admin "Components" tab, session admin-nav-consolidation). It is gated
+  // client-side on isAdmin to match the server-side governed create endpoint,
+  // which remains the real enforcement.
+  const registerComponentMut = useMutation({
+    mutationFn: (data: { id: string; type: string; name: string }) => createComponent(data),
+    onSuccess: (comp) => {
+      // The component is registered INERT — credential-less, in the unassigned
+      // zone, under the read-only floor. Point the operator at the next
+      // governance steps rather than implying it is ready to use.
+      toast.success(
+        `Component "${comp.id}" registered (inert). Assign it a zone (below) and promote it to supply credentials before it can act.`
+      );
+      setShowRegisterComponent(false);
+      // A new registration lands unassigned; refresh the dependent lists so it
+      // surfaces in the unassigned pool and the component views.
+      void qc.invalidateQueries({ queryKey: ['components'] });
+      void qc.invalidateQueries({ queryKey: ['unassigned'] });
+      void qc.invalidateQueries({ queryKey: ['component-zones'] });
+    },
+    onError: (e: Error) => {
+      // Duplicate id is a 409 from the governed create endpoint. The
+      // credential-rejection 400 is defended against here even though this form
+      // sends no config and so cannot trigger it.
+      if (e instanceof ApiRequestError && e.status === 409) {
+        toast.error('A component with that ID already exists. Choose a different ID.');
+        return;
+      }
+      if (e instanceof ApiRequestError && e.status === 400) {
+        toast.error(`Registration rejected: ${e.message}`);
+        return;
+      }
+      toast.error(e.message);
+    },
+  });
+
   const components = componentsQ.data ?? [];
   const zones = zonesQ.data ?? [];
 
@@ -136,10 +175,17 @@ export function ComponentsPage() {
       <Header
         title="Components"
         actions={
-          <Button variant="outline" size="sm" onClick={() => void componentsQ.refetch()}>
-            <RefreshCw className="mr-1 h-3 w-3" />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => void componentsQ.refetch()}>
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Refresh
+            </Button>
+            {isAdmin && (
+              <Button size="sm" onClick={() => setShowRegisterComponent(true)}>
+                + Register Component
+              </Button>
+            )}
+          </div>
         }
       />
       <PageContainer>
@@ -280,12 +326,27 @@ export function ComponentsPage() {
                     {selectedLive.armed ? 'Re-arm' : 'Promote'}
                   </Button>
                 )}
-                <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
-                  Remove
-                </Button>
+                {isAdmin && (
+                  <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
+                    Remove
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Admin-only zone-assignment console, relocated inline from the retired
+            Admin "Components" tab (session admin-nav-consolidation). Gated
+            client-side on isAdmin to match the server-side governed endpoints,
+            which remain the real enforcement. */}
+        {isAdmin && (
+          <div className="mt-8">
+            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+              Zone assignments
+            </h2>
+            <ComponentZoneAssign />
+          </div>
         )}
 
         <ConfirmDialog
@@ -311,6 +372,13 @@ export function ComponentsPage() {
             isLoading={promoteMut.isPending}
           />
         )}
+
+        <ComponentRegisterForm
+          open={showRegisterComponent}
+          onOpenChange={setShowRegisterComponent}
+          onSubmit={(data) => registerComponentMut.mutate(data)}
+          isLoading={registerComponentMut.isPending}
+        />
       </PageContainer>
     </>
   );
