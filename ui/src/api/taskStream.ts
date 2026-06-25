@@ -81,6 +81,14 @@ export const FinalEventSchema = z.object({
   // unobtrusive notice that the message was shortened to fit the budget.
   tool_results_truncated: z.number().default(0),
   user_message_truncated: z.boolean().default(false),
+  // context_window_tokens is the active provider/model's total context-window
+  // capacity in tokens — the denominator for the per-turn context-utilization
+  // badge ("input X of window Y"). The server reads it from the same
+  // capabilities registry it prunes history against, so it is the window the
+  // turn's input actually has to fit. Additive/optional like the fields above;
+  // the server omits it only when zero, so it defaults to 0 here and the UI
+  // treats 0 as "unknown" and falls back to a bare token count.
+  context_window_tokens: z.number().default(0),
   // Turn-level write-failure code (Item 8): the first per-tool denial code
   // seen this turn ('zone_denial' | 'incident_mode'). A denied write does NOT
   // terminate the loop, so this rides on an otherwise-completed turn and is

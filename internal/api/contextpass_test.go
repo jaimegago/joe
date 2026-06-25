@@ -179,7 +179,10 @@ func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
 	if _, err := agent.Run(context.Background(), session, strings.Repeat("Q", 40000)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	resp := finalizeTaskResponse("t1", "s1", "completed", "", "done", nil, session, time.Second)
+	resp := finalizeTaskResponse("t1", "s1", "completed", "", "done", nil, session, 200000, time.Second)
+	if resp.ContextWindowTokens != 200000 {
+		t.Errorf("context_window_tokens = %d, want 200000", resp.ContextWindowTokens)
+	}
 	if resp.ToolResultsTruncated != 2 {
 		t.Errorf("tool_results_truncated = %d, want 2", resp.ToolResultsTruncated)
 	}
@@ -197,7 +200,7 @@ func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
 	if _, err := cleanAgent.Run(context.Background(), cleanSession, "small"); err != nil {
 		t.Fatalf("clean Run: %v", err)
 	}
-	resp2 := finalizeTaskResponse("t2", "s2", "completed", "", "ok", nil, cleanSession, time.Second)
+	resp2 := finalizeTaskResponse("t2", "s2", "completed", "", "ok", nil, cleanSession, 200000, time.Second)
 	if resp2.ToolResultsTruncated != 0 || resp2.UserMessageTruncated {
 		t.Errorf("clean turn: tool_results_truncated=%d user_message_truncated=%v, want 0/false",
 			resp2.ToolResultsTruncated, resp2.UserMessageTruncated)
@@ -216,7 +219,7 @@ func TestFinalizeTaskResponse_TrimFlags(t *testing.T) {
 		{Role: "assistant", Content: strings.Repeat("b", 40)},
 		{Role: "user", Content: strings.Repeat("c", 40)},
 	})
-	resp := finalizeTaskResponse("t1", "s1", "completed", "", "answer", nil, trimmed, time.Second)
+	resp := finalizeTaskResponse("t1", "s1", "completed", "", "answer", nil, trimmed, 200000, time.Second)
 	if !resp.HistoryTrimmed || resp.MessagesDropped == 0 {
 		t.Errorf("trimmed turn: history_trimmed=%v messages_dropped=%d, want true/>0", resp.HistoryTrimmed, resp.MessagesDropped)
 	}
@@ -226,7 +229,7 @@ func TestFinalizeTaskResponse_TrimFlags(t *testing.T) {
 	clean.TokenBudget = 100000
 	clean.MaxMessages = 100
 	clean.AddMessages(context.Background(), []llm.Message{{Role: "user", Content: "hi"}})
-	resp2 := finalizeTaskResponse("t2", "s2", "completed", "", "answer", nil, clean, time.Second)
+	resp2 := finalizeTaskResponse("t2", "s2", "completed", "", "answer", nil, clean, 200000, time.Second)
 	if resp2.HistoryTrimmed || resp2.MessagesDropped != 0 {
 		t.Errorf("clean turn: history_trimmed=%v messages_dropped=%d, want false/0", resp2.HistoryTrimmed, resp2.MessagesDropped)
 	}

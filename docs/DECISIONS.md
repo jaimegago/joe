@@ -10,6 +10,52 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0037 — Chat token badge is a context-window utilization figure (input X of window Y), closing the D-0015 deferred "used X of Y" fast-follow
+
+- Date: 2026-06-25
+- Status: accepted
+- Session: context-usage-display
+- Decision: the per-assistant-turn chat badge now reads as **context-window
+  utilization** — "input X of window Y · N% of context" — instead of the bare
+  per-turn token count that read as stuck. The numerator **X is the turn's real
+  input tokens** (the figure that actually fills the context window), not
+  input+output: utilization is input-against-Y so the comparison is meaningful.
+  The denominator **Y is the active provider/model's context-window capacity
+  read from the capabilities registry** (`internal/llmusage` `LookupCapabilities`
+  → `ModelCapabilities.ContextWindowTokens`) — the SAME capacity the per-turn
+  input-token budget is already computed against for history pruning
+  (`ComputeInputTokenBudget` in `internal/api/tasks.go` `buildTaskRun`), not a
+  new or separately-derived source. Y is surfaced as an additive,
+  `omitempty`-compatible `context_window_tokens` field on the task response
+  struct and the SSE `final` event wire schema, consistent with how
+  `total_tokens` and the history-pruning flags already ride that event (D-0003).
+  When the lookup returns the conservative unknown-model default (D-0015(d)), the
+  badge renders **against that default rather than hiding the figure or
+  special-casing it**; during streaming, before the `final` event carries Y, the
+  badge falls back to a bare climbing input count. This is a **display-semantics +
+  denominator-surfacing change only**: token recording, the agent loop, the usage
+  subsystem, and the underlying counters' running-sum-while-streaming /
+  snap-to-final-total behavior are unchanged.
+- Basis: the new `taskResponse.ContextWindowTokens` field and the
+  `finalizeTaskResponse` capacity parameter wired from `prepared.caps.ContextWindowTokens`
+  at both call sites (`internal/api/tasks.go`, `internal/api/tasks_stream.go`);
+  the additive `context_window_tokens` field on `FinalEventSchema`
+  (`ui/src/api/taskStream.ts`); the input-only `inputTokens` running counter and
+  `contextWindow` denominator on `AssistantTurn` (`ui/src/hooks/useChat.ts`) and
+  the relabelled badge (`ui/src/components/chat/AssistantTurnView.tsx`); Go and
+  Vitest tests green; the embedded UI rebuilt (`make build`). Verified live
+  against the rebuilt binary: the `final` SSE event carries
+  `context_window_tokens` = the registry window for the active model (200,000 for
+  the registered Claude Sonnet row, 100,000 for an unregistered model via the
+  conservative default), so Y is the same window history is pruned to fit.
+- Supersedes: nothing. Closes the D-0015 Status-section deferred fast-follow
+  ("per-turn budget-consumption telemetry — 'used X of Y', verification gap 4")
+  that D-0015 explicitly left open. Per D-0032 no authoritative context-window
+  number is recorded here as a fixed figure — the capabilities registry
+  (`internal/llmusage/capabilities.go`) remains the single source for the window.
+
+---
+
 ## D-0036 — Build-truth is a single `internal/buildinfo` source; freshness is a boot-computed embed-FS digest, not injected
 
 - Date: 2026-06-24
