@@ -80,19 +80,32 @@ export function Sidebar() {
         <DeclareIncidentButton />
       </div>
 
-      {/* Logout is only meaningful when RBAC is enforced; in permit-all local
-          dev there is no credential to drop, so the control stays hidden. */}
-      {rbacEnabled && (
+      {/* Identity footer. The ADMIN badge is the persistent admin indicator,
+          driven by the same /me is_admin flag RequireAdmin gates on (isAdmin
+          above), so it is rendered whenever the caller is an admin — including
+          permit-all local dev, where there is no principal to display. Non-admin
+          and unauthenticated callers render no badge. Logout stays RBAC-only: in
+          permit-all local dev there is no credential to drop. */}
+      {(rbacEnabled || isAdmin) && (
         <div className="border-t p-3">
-          {principal && (
-            <p className="mb-2 truncate px-3 text-xs text-muted-foreground" title={principal}>
-              {principal}
-            </p>
+          <div className="mb-2 flex items-center gap-2 px-3">
+            {principal && (
+              <p className="truncate text-xs text-muted-foreground" title={principal}>
+                {principal}
+              </p>
+            )}
+            {isAdmin && (
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
+                ADMIN
+              </span>
+            )}
+          </div>
+          {rbacEnabled && (
+            <Button variant="ghost" size="sm" className="w-full justify-start gap-3" onClick={logout}>
+              <LogOut className="h-4 w-4" />
+              Log out
+            </Button>
           )}
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-3" onClick={logout}>
-            <LogOut className="h-4 w-4" />
-            Log out
-          </Button>
         </div>
       )}
     </aside>
