@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { SessionRow, type SessionRowActions } from '@/components/sessions/SessionRow';
 import { IncidentClusterList } from '@/components/sessions/IncidentClusterList';
 import { SessionListControls } from '@/components/sessions/SessionListControls';
+import { AdminSessionsPanel } from '@/components/admin/AdminSessionsPanel';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { groupSessions } from '@/lib/sessionGrouping';
 import { applyViewControls, DEFAULT_SORT, type SortKey } from '@/lib/sessionFilterSort';
 import { sessionLabel } from '@/lib/sessionLabel';
@@ -38,7 +40,12 @@ const SESSIONS_LIMIT = 50;
 // Conversations (incident-free) and Incidents (clustered), with Trash retained
 // as-is. The old flat "All sessions" listing is replaced by these two views; the
 // former "Mine" tab becomes a toggle on the Conversations view.
-type View = 'conversations' | 'incidents' | 'trash';
+//
+// 'governance' is the admin-only cross-tenant console (the former Admin
+// "Sessions" tab), surfaced inline here for admins only (session
+// admin-nav-consolidation). It renders AdminSessionsPanel, which owns its own
+// admin-gated queries; server-side gating is unchanged.
+type View = 'conversations' | 'incidents' | 'trash' | 'governance';
 
 // remainingBeforePurge renders the §12.5 trash-grace countdown from purge_after.
 // No purge_after means the trash-then-purge policy has no grace window configured
@@ -55,6 +62,9 @@ export function SessionsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const declareMode = searchParams.get('declare') != null;
+
+  const meQ = useCurrentUser();
+  const isAdmin = meQ.data?.is_admin === true;
 
   const [view, setView] = useState<View>('conversations');
   // mineOnly is the retained "Mine" filter, scoped to the Conversations view
@@ -84,7 +94,7 @@ export function SessionsPage() {
       SESSIONS_LIMIT,
     ],
     queryFn: () => fetchSessions({ mine: mineActive, limit: SESSIONS_LIMIT }),
-    enabled: view !== 'trash',
+    enabled: view !== 'trash' && view !== 'governance',
   });
 
   const trashQ = useQuery({
@@ -254,6 +264,9 @@ export function SessionsPage() {
             <TabsTrigger value="conversations">Conversations</TabsTrigger>
             <TabsTrigger value="incidents">Incidents</TabsTrigger>
             <TabsTrigger value="trash">Trash</TabsTrigger>
+            {/* Admin-only governance console, inlined from the retired Admin
+                "Sessions" tab (session admin-nav-consolidation). */}
+            {isAdmin && <TabsTrigger value="governance">Governance</TabsTrigger>}
           </TabsList>
 
           {loading ? (
@@ -366,6 +379,12 @@ export function SessionsPage() {
                   </ul>
                 )}
               </TabsContent>
+
+              {isAdmin && (
+                <TabsContent value="governance">
+                  <AdminSessionsPanel />
+                </TabsContent>
+              )}
             </>
           )}
         </Tabs>
