@@ -10,6 +10,36 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0040 — Credentials is an admin-only surface placed under the Admin nav subgroup (corrects D-0039)
+
+- Date: 2026-06-25
+- Status: accepted
+- Session: admin-nav-consolidation-01
+- Decision: the Credentials surface is **not** a top-level nav entry. It is a
+  plain admin-only child of the expandable Admin nav subgroup, alongside Zones,
+  Policies, Autonomous Reads, Skills, Admins, Users, and LLM Settings. It has no
+  operator-visible subset — a non-admin cannot list it because its backing
+  `GET /api/v1/admin/credential-status` endpoint is `requireAdmin`-gated — so it
+  needs no inline-admin treatment and behaves like the other admin-only children:
+  it renders only when `is_admin`. After this change the top-level nav entries are
+  exactly Chat, Sessions, Components. This is a navigation-grouping correction
+  only: the `/credentials` route stays `RequireAdmin`-wrapped, the page is
+  unchanged, and server-side gating is untouched.
+- Basis: `ui/src/components/layout/Sidebar.tsx` now lists `/credentials` inside
+  the `adminNav` array (the Admin subgroup children), with no separate top-level
+  Credentials entry; `ui/src/App.tsx:53` keeps the `/credentials` route under
+  `RequireAdmin`; `internal/api/admin.go:138` registers credential-status under
+  the admin prefix and `internal/api/credential_status_test.go` asserts non-admins
+  get 403. Verified live against the rebuilt embedded UI (`make build`) with a
+  real admin and a real non-admin principal: admin sees top-level Chat, Sessions,
+  Components and Credentials as a child of the Admin subgroup; non-admin sees no
+  Credentials entry and no Admin subgroup.
+- Supersedes: only the Credentials-placement point of D-0039 (the "Credentials
+  stays a top-level entry" bullet, and the corresponding "top-level admin-gated
+  Credentials entry" wording in its Basis). The rest of D-0039 stands.
+
+---
+
 ## D-0039 — Admin surface consolidated: operator entries flat with inline admin affordances, admin-only surfaces under one Admin nav subgroup, in-page Admin tab row removed
 
 - Date: 2026-06-25
