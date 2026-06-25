@@ -68,7 +68,7 @@ export function RetentionPolicyEditor() {
       <div>
         <h3 className="text-sm font-semibold">Retention policy</h3>
         <p className="text-xs text-muted-foreground">
-          The single retention policy the background sweeper applies (§12.5).
+          The single retention policy the background sweeper applies.
         </p>
       </div>
 
