@@ -28,27 +28,31 @@ function renderSidebar() {
 describe('Sidebar', () => {
   beforeEach(() => mockUseCurrentUser.mockReset());
 
-  it('renders admin-only entries when the caller is an admin', () => {
+  it('renders admin-only entries and the ADMIN badge when the caller is an admin', () => {
     mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<typeof useCurrentUser>);
     renderSidebar();
     expect(screen.getByText('Admin')).toBeInTheDocument();
     expect(screen.getByText('LLM Settings')).toBeInTheDocument();
+    // The persistent admin indicator shows whenever is_admin is true.
+    expect(screen.getByText('ADMIN')).toBeInTheDocument();
     // Non-admin entries always render.
     expect(screen.getByText('Chat')).toBeInTheDocument();
   });
 
-  it('hides admin-only entries when the caller is not an admin', () => {
+  it('hides admin-only entries and the ADMIN badge when the caller is not an admin', () => {
     mockUseCurrentUser.mockReturnValue({ data: { is_admin: false } } as ReturnType<typeof useCurrentUser>);
     renderSidebar();
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
     expect(screen.queryByText('LLM Settings')).not.toBeInTheDocument();
+    expect(screen.queryByText('ADMIN')).not.toBeInTheDocument();
     expect(screen.getByText('Chat')).toBeInTheDocument();
   });
 
-  it('does not flash admin entries before the current-user query resolves', () => {
+  it('does not flash admin entries or the ADMIN badge before the current-user query resolves', () => {
     mockUseCurrentUser.mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
     renderSidebar();
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
     expect(screen.queryByText('LLM Settings')).not.toBeInTheDocument();
+    expect(screen.queryByText('ADMIN')).not.toBeInTheDocument();
   });
 });
