@@ -47,21 +47,12 @@ const operatorNav: NavItem[] = [
   { to: '/components', icon: Database, label: 'Components', end: false },
 ];
 
-// Credentials is a top-level entry but admin-only: its backing
-// /api/v1/admin/credential-status endpoint is server-gated to admins, so it is
-// shown only when the caller is an admin (unchanged from prior behaviour). It is
-// an operator-facing troubleshooting surface ("is Joe's credential resolution
-// healthy?"), so it sits top-level rather than inside the Admin subgroup.
-const credentialsNav: NavItem = {
-  to: '/credentials',
-  icon: KeyRound,
-  label: 'Credentials',
-  end: false,
-};
-
 // Admin-only surfaces with NO operator view, grouped under the expandable Admin
 // subgroup. Each is its own route (the former in-page Admin tab row was removed).
-// Rendered only when the caller is an admin.
+// Rendered only when the caller is an admin. Credentials lives here too (session
+// admin-nav-consolidation-01, correcting D-0039): its backing
+// /api/v1/admin/credential-status endpoint is server-gated to admins and it has
+// no operator-visible subset, so it is a plain admin-only child like the rest.
 const adminNav: NavItem[] = [
   { to: '/admin/zones', icon: Boxes, label: 'Zones', end: false },
   { to: '/admin/policies', icon: Scale, label: 'Policies', end: false },
@@ -69,6 +60,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/skills', icon: Puzzle, label: 'Skills', end: false },
   { to: '/admin/admins', icon: UserCog, label: 'Admins', end: false },
   { to: '/admin/users', icon: Users, label: 'Users', end: false },
+  { to: '/credentials', icon: KeyRound, label: 'Credentials', end: false },
   { to: '/llm-settings', icon: Cpu, label: 'LLM Settings', end: false },
 ];
 
@@ -113,8 +105,6 @@ export function Sidebar() {
         {operatorNav.map((item) => (
           <NavRow key={item.to} item={item} />
         ))}
-
-        {isAdmin && <NavRow item={credentialsNav} />}
 
         {isAdmin && (
           <div className="pt-2">

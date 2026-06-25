@@ -40,8 +40,16 @@ describe('Sidebar', () => {
     expect(screen.getByText('Admins')).toBeInTheDocument();
     expect(screen.getByText('Users')).toBeInTheDocument();
     expect(screen.getByText('LLM Settings')).toBeInTheDocument();
-    // Credentials is a top-level admin-gated entry, not an Admin-subgroup child.
+    // Credentials is an admin-only Admin-subgroup child (session
+    // admin-nav-consolidation-01): it renders for admins, and structurally it
+    // shares the subgroup container with the other admin children (e.g. Zones)
+    // rather than sitting in the top-level operator nav.
     expect(screen.getByText('Credentials')).toBeInTheDocument();
+    const credentialsParent = screen.getByText('Credentials').closest('a')?.parentElement;
+    const zonesParent = screen.getByText('Zones').closest('a')?.parentElement;
+    expect(credentialsParent).toBe(zonesParent);
+    const chatParent = screen.getByText('Chat').closest('a')?.parentElement;
+    expect(credentialsParent).not.toBe(chatParent);
     // The persistent admin indicator shows whenever is_admin is true.
     expect(screen.getByText('ADMIN')).toBeInTheDocument();
     // Operator entries always render; Components and Sessions appear exactly
