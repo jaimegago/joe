@@ -73,7 +73,7 @@ export function GraphPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       <Header title="Infrastructure Graph" />
       <div className="flex-1 overflow-hidden">
         <InfraGraph graph={graph} onRefresh={() => void refetch()} />

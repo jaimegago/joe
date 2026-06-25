@@ -6,8 +6,14 @@ import { SafeModeBanner } from './SafeModeBanner';
 
 export function AppShell() {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background">
       <Sidebar />
+      {/* The shell column is a fixed-viewport-height (h-screen) flex column:
+          the banner strips take their natural height and <main> fills exactly
+          the space that remains. A full-height page (chat, graph) sizes to
+          <main> with h-full, so its pinned chat input stays on-screen whether or
+          not a banner is present — the page never assumes the whole viewport.
+          Document-tall pages scroll inside <main>, not the window. */}
       <div className="ml-60 flex flex-1 flex-col">
         {/* Three app-shell strips. Safe mode and incident mode are independent
             flags; both can show at once, and safe mode renders first (above) as
@@ -19,7 +25,7 @@ export function AppShell() {
         <SafeModeBanner />
         <ObservationBanner />
         <IncidentBanner />
-        <main className="flex-1">
+        <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
