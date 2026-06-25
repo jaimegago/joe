@@ -30,7 +30,20 @@ interface AssistantTurnViewProps {
 export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
   const isFailed = turn.status === 'failed';
   const isStreaming = turn.status === 'streaming';
-  const showTokens = turn.tokens > 0 || isStreaming;
+  // Context-utilization badge: input tokens (X) against the model's context
+  // window (Y). X is the per-turn input count — the figure that fills the
+  // window — climbing while streaming and snapping to the server total at the
+  // end. Y arrives on the final event from the capabilities registry; until
+  // then (and if the server omits it) it is 0 and we render a bare input count.
+  const used = turn.inputTokens;
+  const capacity = turn.contextWindow;
+  const showTokens = used > 0 || isStreaming;
+  const tokenLabel =
+    capacity > 0
+      ? `${used.toLocaleString()} of ${capacity.toLocaleString()} tokens · ${Math.round(
+          (used / capacity) * 100
+        )}% of context`
+      : `${used.toLocaleString()} tokens`;
   // A denied write does not fail the turn (the LLM still answers), so surface
   // its specific reason as a dedicated notice on the completed turn. On a
   // failed turn the failure box already carries the mapped message.
@@ -123,11 +136,14 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
           </div>
         )}
 
-        {/* Per-turn token counter — climbs with each step, snaps to the total. */}
+        {/* Per-turn context-utilization badge — input tokens climb with each
+            step and snap to the server total; once the final event lands it
+            reads as "X of Y tokens · N% of context" against the model's
+            context window. */}
         {showTokens && (
           <div className="px-1">
             <Badge variant="secondary" className="text-xs" data-testid="turn-tokens">
-              {turn.tokens.toLocaleString()} tokens
+              {tokenLabel}
             </Badge>
           </div>
         )}

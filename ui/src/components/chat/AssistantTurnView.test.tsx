@@ -12,6 +12,8 @@ function turn(overrides: Partial<AssistantTurn>): AssistantTurn {
     finalAnswer: 'Here is what I found.',
     status: 'completed',
     tokens: 10,
+    inputTokens: 8,
+    contextWindow: 0,
     ...overrides,
   };
 }
@@ -33,6 +35,22 @@ describe('AssistantTurnView write-failure notice', () => {
   it('renders no notice when there is no write-failure code', () => {
     render(<AssistantTurnView turn={turn({})} />);
     expect(screen.queryByTestId('write-failure-notice')).not.toBeInTheDocument();
+  });
+});
+
+describe('AssistantTurnView context-utilization badge', () => {
+  it('renders input tokens against the context window with a percentage', () => {
+    render(<AssistantTurnView turn={turn({ inputTokens: 30000, contextWindow: 200000 })} />);
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent(
+      '30,000 of 200,000 tokens · 15% of context'
+    );
+  });
+
+  it('falls back to a bare input-token count when the window is unknown (0)', () => {
+    render(<AssistantTurnView turn={turn({ inputTokens: 1234, contextWindow: 0 })} />);
+    const badge = screen.getByTestId('turn-tokens');
+    expect(badge).toHaveTextContent('1,234 tokens');
+    expect(badge).not.toHaveTextContent('of context');
   });
 });
 

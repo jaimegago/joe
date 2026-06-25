@@ -68,6 +68,7 @@ function makeFinal(over: Partial<FinalEvent>): FinalEvent {
     messages_dropped: 0,
     tool_results_truncated: 0,
     user_message_truncated: false,
+    context_window_tokens: 0,
     ...over,
   };
 }
@@ -95,24 +96,26 @@ describe('useChat streaming lifecycle', () => {
     installStreamMock();
   });
 
-  it('renders a multi-step turn: final answer, tool calls from both steps, and a token counter that sums steps and matches the final total', async () => {
+  it('renders a multi-step turn: final answer, tool calls from both steps, and an input-token counter that sums steps and matches the final total', async () => {
     const { Wrapper } = createWrapper();
     render(<Harness />, { wrapper: Wrapper });
 
     await sendMessage('investigate');
     expect(screen.getByText('investigate')).toBeInTheDocument(); // optimistic user msg
 
-    // Step 1 lands: 10+5 = 15 tokens, tool "k8s".
+    // Step 1 lands: input 10 (the badge counts input only — the figure that
+    // fills the context window), tool "k8s".
     act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5, tool: 'k8s' })));
-    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('15 tokens');
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('10 tokens');
     expect(screen.getByText('k8s')).toBeInTheDocument();
 
-    // Step 2 lands: +20+10 → running 45, tool "metrics".
+    // Step 2 lands: +20 input → running 30, tool "metrics".
     act(() => captured[0].onStep(makeStep(2, { input: 20, output: 10, tool: 'metrics' })));
-    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('45 tokens');
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('30 tokens');
     expect(screen.getByText('metrics')).toBeInTheDocument();
 
-    // Final: authoritative total 30+15 = 45 (matches the running sum).
+    // Final: authoritative input total 30 (matches the running input sum). No
+    // context window on this event, so the badge stays a bare input count.
     act(() => {
       captured[0].onFinal(
         makeFinal({
@@ -124,10 +127,33 @@ describe('useChat streaming lifecycle', () => {
     });
 
     await waitFor(() => expect(screen.getByText('the answer')).toBeInTheDocument());
-    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('45 tokens');
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('30 tokens');
     // Both steps' tools remain visible in the settled turn.
     expect(screen.getByText('k8s')).toBeInTheDocument();
     expect(screen.getByText('metrics')).toBeInTheDocument();
+  });
+
+  it('renders the context-utilization figure (X of Y) when the final carries a context window', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    await sendMessage('investigate');
+    act(() => {
+      captured[0].onFinal(
+        makeFinal({
+          final_answer: 'the answer',
+          total_tokens: { input_tokens: 50000, output_tokens: 15 },
+          context_window_tokens: 200000,
+        })
+      );
+      resolvers[0]();
+    });
+
+    await waitFor(() => expect(screen.getByText('the answer')).toBeInTheDocument());
+    // Input X against window Y, with the fill percentage (50000 / 200000 = 25%).
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent(
+      '50,000 of 200,000 tokens · 25% of context'
+    );
   });
 
   it('renders the history-trimmed notice when the final reports history_trimmed', async () => {
@@ -303,15 +329,39 @@ describe('useChat streaming lifecycle', () => {
     const { Wrapper } = createWrapper();
 
     const firstSnapshot: ChatMessage[] = [
-      { id: 1, session_id: 's-existing', role: 'user', content: 'hi', created_at: '2026-06-06T00:00:00Z' },
-      { id: 2, session_id: 's-existing', role: 'assistant', content: 'first reply', created_at: '2026-06-06T00:00:01Z' },
+      {
+        id: 1,
+        session_id: 's-existing',
+        role: 'user',
+        content: 'hi',
+        created_at: '2026-06-06T00:00:00Z',
+      },
+      {
+        id: 2,
+        session_id: 's-existing',
+        role: 'assistant',
+        content: 'first reply',
+        created_at: '2026-06-06T00:00:01Z',
+      },
     ];
     // The server later holds two more rows: a turn that streamed on the first
     // mount, was lost when it unmounted, but persisted server-side.
     const secondSnapshot: ChatMessage[] = [
       ...firstSnapshot,
-      { id: 3, session_id: 's-existing', role: 'user', content: 'second message', created_at: '2026-06-06T00:00:02Z' },
-      { id: 4, session_id: 's-existing', role: 'assistant', content: 'second reply', created_at: '2026-06-06T00:00:03Z' },
+      {
+        id: 3,
+        session_id: 's-existing',
+        role: 'user',
+        content: 'second message',
+        created_at: '2026-06-06T00:00:02Z',
+      },
+      {
+        id: 4,
+        session_id: 's-existing',
+        role: 'assistant',
+        content: 'second reply',
+        created_at: '2026-06-06T00:00:03Z',
+      },
     ];
     fetchMessagesMock.mockResolvedValueOnce(firstSnapshot);
     fetchMessagesMock.mockResolvedValueOnce(secondSnapshot);
@@ -330,11 +380,11 @@ describe('useChat streaming lifecycle', () => {
     expect(fetchMessagesMock).toHaveBeenCalledTimes(2);
   });
 
-  it('resets the per-turn token counter to 0 at the start of a second message', async () => {
+  it('resets the per-turn input-token counter to 0 at the start of a second message', async () => {
     const { Wrapper } = createWrapper();
     render(<Harness />, { wrapper: Wrapper });
 
-    // First turn accumulates 15 and completes.
+    // First turn accumulates input 10 and completes.
     await sendMessage('first');
     act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5 })));
     act(() => {
@@ -347,7 +397,7 @@ describe('useChat streaming lifecycle', () => {
       resolvers[0]();
     });
     await waitFor(() => expect(screen.getByText('first answer')).toBeInTheDocument());
-    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('15 tokens');
+    expect(screen.getByTestId('turn-tokens')).toHaveTextContent('10 tokens');
 
     // Second turn: a fresh counter starts at 0 before any step accumulates.
     await sendMessage('second');
@@ -355,10 +405,10 @@ describe('useChat streaming lifecycle', () => {
     expect(badges).toHaveLength(2);
     expect(badges[1]).toHaveTextContent('0 tokens');
 
-    // Then it accumulates independently of the first turn.
+    // Then it accumulates independently of the first turn (input only).
     act(() => captured[1].onStep(makeStep(1, { input: 4, output: 3 })));
     badges = screen.getAllByTestId('turn-tokens');
-    expect(badges[0]).toHaveTextContent('15 tokens'); // first turn unchanged
-    expect(badges[1]).toHaveTextContent('7 tokens');
+    expect(badges[0]).toHaveTextContent('10 tokens'); // first turn unchanged
+    expect(badges[1]).toHaveTextContent('4 tokens');
   });
 });

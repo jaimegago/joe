@@ -76,6 +76,18 @@ type taskResponse struct {
 	// result, so only user_message_truncated drives a dedicated UI notice.
 	ToolResultsTruncated int  `json:"tool_results_truncated,omitempty"`
 	UserMessageTruncated bool `json:"user_message_truncated,omitempty"`
+	// ContextWindowTokens is the active provider/model's total context-window
+	// capacity in tokens — the denominator for the chat UI's context-utilization
+	// badge ("input X of window Y"). It is read from the SAME capabilities
+	// registry (llmusage.LookupCapabilities → ModelCapabilities.ContextWindowTokens)
+	// and the SAME resolved capacity the per-turn input-token budget is computed
+	// against (ComputeInputTokenBudget, see buildTaskRun), so the figure the UI
+	// renders is the window history is actually pruned to fit — not a second,
+	// separately-derived number. Additive, optional (omitempty), consistent with
+	// the other history-pruning fields above. In practice never zero: the registry
+	// returns the conservative non-zero default (D-0015(d)) for an unknown model,
+	// and the UI renders against that default rather than hiding the figure.
+	ContextWindowTokens int `json:"context_window_tokens,omitempty"`
 	// ErrorCode is the turn-level write-failure classification: the first
 	// per-tool denial code observed across this turn's steps (Item 8). It lets
 	// the chat UI surface a specific "why the write failed" message even though
@@ -199,7 +211,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	// Persist the raw (un-redacted) conversation, then build the redacted
 	// response — matching prior behavior where the store keeps the raw answer.
 	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, start)
-	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, duration)
+	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
 
 	slog.Info("task completed",
 		"task_id", taskID,
@@ -620,7 +632,7 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 // finalizeTaskResponse builds the wire response from the collected steps,
 // deriving tools-used and applying defense-in-depth secret redaction to the
 // final answer (the redaction operates on the response copy only).
-func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, duration time.Duration) taskResponse {
+func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, contextWindowTokens int, duration time.Duration) taskResponse {
 	outSteps := make([]taskStep, len(steps))
 	toolsUsedSet := map[string]struct{}{}
 	for i, s := range steps {
@@ -655,6 +667,7 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 			InputTokens:  session.TotalInputTokens,
 			OutputTokens: session.TotalOutputTokens,
 		},
+		ContextWindowTokens:  contextWindowTokens,
 		DurationMs:           int(duration.Milliseconds()),
 		Error:                errMsg,
 		HistoryTrimmed:       session.HistoryTrimmed(),

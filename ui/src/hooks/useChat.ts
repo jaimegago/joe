@@ -41,7 +41,22 @@ export interface AssistantTurn {
   status: TurnStatus;
   failureLabel?: string;
   errorMessage?: string;
+  // tokens is the per-turn running sum of input+output usage, snapped to the
+  // authoritative server total on the final event. Retained as the underlying
+  // counter (its accumulate/snap behavior is unchanged); the badge now renders
+  // the context-utilization figure from inputTokens/contextWindow instead.
   tokens: number;
+  // inputTokens is the per-turn running sum of INPUT usage only — the figure
+  // that actually fills the context window — snapped to the server's
+  // authoritative input total on the final event. It is the numerator X of the
+  // context-utilization badge (X of Y). Same accumulate-then-snap mechanism as
+  // tokens, applied to the input dimension alone.
+  inputTokens: number;
+  // contextWindow is the active model's total context-window capacity in tokens
+  // (denominator Y of the utilization badge), carried on the final event from
+  // the server's capabilities registry. 0 until the final event lands (and when
+  // the server omits it); the view falls back to a bare input-token count then.
+  contextWindow: number;
   // historyTrimmed is true when this turn's history pruning dropped earlier
   // messages from the model's context (token budget or count backstop). The
   // view renders a single unobtrusive notice when it is set.
@@ -132,7 +147,14 @@ function historyToItems(messages: ChatMessage[]): DisplayItem[] {
     return {
       kind: 'assistant',
       id: `h-${m.id}`,
-      turn: { steps: [], finalAnswer: m.content, status: 'completed', tokens: 0 },
+      turn: {
+        steps: [],
+        finalAnswer: m.content,
+        status: 'completed',
+        tokens: 0,
+        inputTokens: 0,
+        contextWindow: 0,
+      },
     };
   });
 }
@@ -226,7 +248,14 @@ export function useChat(initialSessionId?: string) {
         {
           kind: 'assistant',
           id: turnId,
-          turn: { steps: [], finalAnswer: '', status: 'streaming', tokens: 0 },
+          turn: {
+            steps: [],
+            finalAnswer: '',
+            status: 'streaming',
+            tokens: 0,
+            inputTokens: 0,
+            contextWindow: 0,
+          },
         },
       ]);
 
@@ -262,6 +291,8 @@ export function useChat(initialSessionId?: string) {
                 t.tokens +
                 step.llm_response.usage.input_tokens +
                 step.llm_response.usage.output_tokens,
+              // Running sum of INPUT-only usage — the badge's numerator X.
+              inputTokens: t.inputTokens + step.llm_response.usage.input_tokens,
             })),
           onFinal: (final) =>
             updateTurn(turnId, (t) => {
@@ -279,8 +310,12 @@ export function useChat(initialSessionId?: string) {
                 errorMessage: failed
                   ? (specific ?? final.error ?? STATUS_LABELS[final.status])
                   : undefined,
-                // Snap the counter to the authoritative server total.
+                // Snap the counters to the authoritative server totals.
                 tokens: final.total_tokens.input_tokens + final.total_tokens.output_tokens,
+                inputTokens: final.total_tokens.input_tokens,
+                // Denominator Y of the context-utilization badge, from the
+                // server's capabilities registry (0 when the server omits it).
+                contextWindow: final.context_window_tokens,
                 historyTrimmed: final.history_trimmed,
                 userMessageTruncated: final.user_message_truncated,
                 writeFailureCode: final.error_code,
