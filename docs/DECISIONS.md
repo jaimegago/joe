@@ -10,6 +10,69 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0039 — Admin surface consolidated: operator entries flat with inline admin affordances, admin-only surfaces under one Admin nav subgroup, in-page Admin tab row removed
+
+- Date: 2026-06-25
+- Status: accepted
+- Session: admin-nav-consolidation
+- Decision: the Web UI's admin surface, previously split between admin-only
+  top-level left-nav items AND an in-page tab row inside a single `/admin`
+  tab-host page (which duplicated each other), is consolidated into one model:
+  - **Operator surfaces are flat top-level nav entries** — Chat, Sessions,
+    Components — visible to every authenticated caller. The two that have both an
+    operator view and admin actions (Components, Sessions) appear **exactly once**
+    as the operator entry and reveal their admin affordances **inline**,
+    conditionally rendered on the `/me` `is_admin` flag (one source of truth, no
+    second gate). For Components the inline admin affordances are create
+    (Register), promote, and delete, plus the zone-assignment console; for
+    Sessions it is the governance console (cross-tenant list, retention policy,
+    purge/archive/restore) surfaced as an admin-only Governance tab. A non-admin
+    sees only the operator view.
+  - **Admin-only surfaces with no operator view live under one expandable Admin
+    nav subgroup**, rendered only when `is_admin`: Zones, Policies, Autonomous
+    Reads, Skills, Admins, Users, and LLM Settings. The in-page Admin tab row and
+    its tab-host shell are **removed entirely**; each former tab's surface is now
+    its own standalone `/admin/<name>` route (with `/admin` redirecting to the
+    first child), so every former capability stays reachable. Components and
+    Sessions are **not** children of the Admin subgroup — they are operator
+    entries with inline admin actions, so they are not duplicated.
+  - **Credentials** stays a top-level entry (not folded into the Admin subgroup)
+    but remains admin-gated, because its backing `GET /api/v1/admin/credential-status`
+    endpoint is server-gated to admins; it therefore shows only to admins, as
+    before.
+  - **Users** (the principals registry, an admin-only surface with no operator
+    view) is folded into the Admin subgroup. The original consolidation brief
+    omitted it from the Admin-children set; it is included to preserve the
+    existing capability — trusting the live tree over the brief.
+  Server-side gating is **unchanged** throughout: this is a client-navigation and
+  admin-control-placement change only. The client-side `is_admin` gates are
+  defense-in-depth that mirror the unchanged server `requireAdmin` enforcement.
+- Basis: `ui/src/components/layout/Sidebar.tsx` renders flat operator entries,
+  a top-level admin-gated Credentials entry, and one expandable Admin subgroup of
+  admin-only children (gated on `useCurrentUser().data.is_admin`); `ui/src/App.tsx`
+  defines `/admin/{zones,policies,autonomous-reads,skills,admins,users}` and
+  `/llm-settings` routes under `RequireAdmin`, `/admin` → `/admin/zones`, and no
+  longer imports `AdminPage`; `ui/src/pages/AdminPage.tsx` (the tab-host) is
+  deleted and its tabs live in `ui/src/pages/admin/*`; `ui/src/pages/ComponentsPage.tsx`
+  renders Register + ComponentZoneAssign and gates create/promote/delete on
+  `is_admin`; `ui/src/pages/SessionsPage.tsx` adds an `is_admin`-gated Governance
+  tab mounting `AdminSessionsPanel`; server `requireAdmin` gates in
+  `internal/api/admin.go` and `internal/api/adminsessions.go` are untouched.
+  Verified live against the rebuilt embedded UI (`make build`) with a real admin
+  principal (alice@example.com, OIDC) and a real non-admin principal
+  (bob@example.com): admin sees the flat operator entries + Admin subgroup with
+  every former tab reachable by route, no in-page tab row, and inline admin
+  controls on Components and Sessions; non-admin sees only the operator views with
+  no admin controls and is redirected away from `/admin/*`. UI lint/tests and
+  `go build`/`vet`/`test` green. Per D-0032 no nav-item or tab count is recorded
+  here as a fixed figure — the sets are named structurally.
+- Supersedes: the split admin model — admin-only top-level nav items
+  (`/admin`, `/users`, `/credentials`, `/llm-settings`) alongside the in-page
+  `/admin` tab row — established across the Phase 12 / RBAC / session-governance
+  UI work.
+
+---
+
 ## D-0038 — Chat is the default landing surface; the fabricated-data dashboard was retired pending a purpose-built one
 
 - Date: 2026-06-25
