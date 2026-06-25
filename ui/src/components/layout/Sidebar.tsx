@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Database,
@@ -5,8 +6,15 @@ import {
   MessagesSquare,
   ShieldCheck,
   Users,
+  UserCog,
   KeyRound,
   Cpu,
+  Boxes,
+  Scale,
+  Eye,
+  Puzzle,
+  ChevronDown,
+  ChevronRight,
   LogOut,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -21,21 +29,67 @@ interface NavItem {
   icon: LucideIcon;
   label: string;
   end: boolean;
-  adminOnly?: boolean;
 }
+
+// Navigation model (session admin-nav-consolidation, see docs/DECISIONS.md):
+// operator surfaces are flat top-level entries; the admin-only surfaces that
+// have no operator view live under a single expandable Admin subgroup. Surfaces
+// with an operator view (Components, Sessions) appear ONCE as top-level operator
+// entries and reveal their admin affordances INLINE when the caller is an admin
+// — they are deliberately NOT duplicated under the Admin subgroup.
 
 // The Graph page (/graph route in App.tsx) is intentionally NOT listed here.
 // The full-graph visualization isn't a daily-use view, but the route is kept
 // reachable by direct URL for demos that explain Joe's dependency graph DB.
-const navItems: NavItem[] = [
-  { to: '/components', icon: Database, label: 'Components', end: false },
+const operatorNav: NavItem[] = [
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
   { to: '/sessions', icon: MessagesSquare, label: 'Sessions', end: false },
-  { to: '/admin', icon: ShieldCheck, label: 'Admin', end: false, adminOnly: true },
-  { to: '/users', icon: Users, label: 'Users', end: false, adminOnly: true },
-  { to: '/credentials', icon: KeyRound, label: 'Credentials', end: false, adminOnly: true },
-  { to: '/llm-settings', icon: Cpu, label: 'LLM Settings', end: false, adminOnly: true },
+  { to: '/components', icon: Database, label: 'Components', end: false },
 ];
+
+// Credentials is a top-level entry but admin-only: its backing
+// /api/v1/admin/credential-status endpoint is server-gated to admins, so it is
+// shown only when the caller is an admin (unchanged from prior behaviour). It is
+// an operator-facing troubleshooting surface ("is Joe's credential resolution
+// healthy?"), so it sits top-level rather than inside the Admin subgroup.
+const credentialsNav: NavItem = {
+  to: '/credentials',
+  icon: KeyRound,
+  label: 'Credentials',
+  end: false,
+};
+
+// Admin-only surfaces with NO operator view, grouped under the expandable Admin
+// subgroup. Each is its own route (the former in-page Admin tab row was removed).
+// Rendered only when the caller is an admin.
+const adminNav: NavItem[] = [
+  { to: '/admin/zones', icon: Boxes, label: 'Zones', end: false },
+  { to: '/admin/policies', icon: Scale, label: 'Policies', end: false },
+  { to: '/admin/autonomous-reads', icon: Eye, label: 'Autonomous Reads', end: false },
+  { to: '/admin/skills', icon: Puzzle, label: 'Skills', end: false },
+  { to: '/admin/admins', icon: UserCog, label: 'Admins', end: false },
+  { to: '/admin/users', icon: Users, label: 'Users', end: false },
+  { to: '/llm-settings', icon: Cpu, label: 'LLM Settings', end: false },
+];
+
+function navLinkClasses({ isActive }: { isActive: boolean }): string {
+  return cn(
+    'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    isActive
+      ? 'bg-accent text-accent-foreground'
+      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+  );
+}
+
+function NavRow({ item }: { item: NavItem }) {
+  const Icon = item.icon;
+  return (
+    <NavLink to={item.to} end={item.end} className={navLinkClasses}>
+      <Icon className="h-4 w-4" />
+      {item.label}
+    </NavLink>
+  );
+}
 
 export function Sidebar() {
   const meQ = useCurrentUser();
@@ -44,7 +98,10 @@ export function Sidebar() {
   // surfaces admin entries there too. Until the query resolves, isAdmin is
   // false so admin-only entries never flash before status is known.
   const isAdmin = meQ.data?.is_admin === true;
-  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+
+  // The Admin subgroup is open by default so its children are discoverable; the
+  // header toggles it. It only renders for admins.
+  const [adminOpen, setAdminOpen] = useState(true);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 flex w-60 flex-col border-r bg-background">
@@ -52,25 +109,38 @@ export function Sidebar() {
         <span className="text-lg font-bold tracking-tight">Joe</span>
         <span className="ml-1 text-xs text-muted-foreground">infra copilot</span>
       </div>
-      <nav className="flex-1 space-y-1 p-3">
-        {visibleItems.map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-              )
-            }
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </NavLink>
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        {operatorNav.map((item) => (
+          <NavRow key={item.to} item={item} />
         ))}
+
+        {isAdmin && <NavRow item={credentialsNav} />}
+
+        {isAdmin && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setAdminOpen((v) => !v)}
+              aria-expanded={adminOpen}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span className="flex-1 text-left">Admin</span>
+              {adminOpen ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </button>
+            {adminOpen && (
+              <div className="mt-1 space-y-1 border-l pl-3">
+                {adminNav.map((item) => (
+                  <NavRow key={item.to} item={item} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Global, always-reachable declare-incident control (§12.10). Routes to the
