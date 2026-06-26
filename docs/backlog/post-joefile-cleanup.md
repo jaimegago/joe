@@ -1,64 +1,79 @@
-Backlog — Deeper register_source/D-0021 doc prose drift (beyond the tool-name correction)
+Backlog — Residual `joe-architecture.md` architectural drift (D-0021 rename + removed `.joe/` ingestion)
 Status: open
 
-Surfaced by the `post-joefile-cleanup` sweep. Part B of that sweep was scoped to a
-**name-only** correction of the renamed-away `register_source` → `register_component`
-tool in the human docs (landed: [docs/security-in-layers.md](../security-in-layers.md)
-and [docs/joe-architecture.md](../joe-architecture.md)). While correcting the names,
-the surrounding prose was found to also describe **behavior that no longer matches
-the live tool**. That semantic drift was deliberately NOT rewritten in-place (per the
-sweep's "correct the name, do not silently rewrite the semantics" rule) and is parked
-here for a separate decision.
+Originally surfaced by the `post-joefile-cleanup` sweep and narrowed by the
+`post-joefile-cleanup-02` documentation-truth sweep. That sweep corrected every
+**verifiable, cleanly-mapped fact** of the deferred drift in both target docs:
 
-## The drift (name corrected, behavior still stale)
+- **RESOLVED — tier/mutability misclassification** ([docs/security-in-layers.md](../security-in-layers.md)).
+  The "Core Agent Tools" table now lists `register_component` with `Can Mutate? = No`
+  and the Action-Safety tier table places it under **T1 (read-class, records to Joe's
+  own store, no managed-system mutation)** — matching the live `ActionRead` classification
+  ([internal/safety/tier.go:201](../../internal/safety/tier.go:201)) and the no-reclassify
+  break-test ([internal/coreagent/register_component_governance_test.go:95](../../internal/coreagent/register_component_governance_test.go:95)).
+- **RESOLVED — parameter signature** ([docs/joe-architecture.md](../joe-architecture.md)).
+  The "Source Tools" block now shows `register_component(name, type, config)`, matching the
+  live required parameters ([internal/coreagent/agent.go:422](../../internal/coreagent/agent.go:422)).
+- **RESOLVED — `list_sources` rename** ([docs/joe-architecture.md](../joe-architecture.md)).
+  Renamed to `list_components` in the "Source Tools" block, matching the live tool
+  ([internal/tools/core/listcomponents.go:26](../../internal/tools/core/listcomponents.go:26)).
+- **RESOLVED — `.joe/` residue in the security doc** ([docs/security-in-layers.md](../security-in-layers.md)).
+  Dropped the ".joe/ file processing" onboarding phrase, the ".joe/ file processing" graph-mutation
+  table row, and the `joefile_service.go` key-file pointer (the `.joe/` ingestion path was deleted
+  in the `joefile-removal` session, commit `0c9e741`).
 
-1. **Tier/mutability misclassification — `docs/security-in-layers.md`.**
-   The "Core Agent Tools" table (~line 98) lists the tool with **`Can Mutate? = YES`**
-   and the Action-Safety tier table (~line 151) places it under **`T2 — Record`**
-   (a mutate-class action). The live tool is classified **`ActionRead`** with
-   `NeedsDurability: true` ([internal/safety/tier.go:201](../../internal/safety/tier.go:201)),
-   and a governance break-test pins that it must NEVER be reclassified to Mutate
-   ([internal/coreagent/register_component_governance_test.go:95](../../internal/coreagent/register_component_governance_test.go:95)).
-   The doc's "YES / T2" framing contradicts the as-built classification (recording a
-   discovered component to Joe's own store is a Read that merely declares durability,
-   not a managed-system mutation — see the comment at
-   [internal/coreagent/agent.go:488](../../internal/coreagent/agent.go:488)).
+## What remains open (deeper, flagged — not a name/signature/residue fix)
 
-2. **Stale parameter signature + sibling-tool block — `docs/joe-architecture.md`.**
-   The "Source Tools" ASCII block (~line 855) shows
-   `register_component(type, url, name, env, ...) → store source`, but the live tool's
-   required parameters are `name, type, config`
-   ([internal/coreagent/agent.go:422](../../internal/coreagent/agent.go:422)) — there is
-   no `url`/`env`. The same block still names `update_source` and `list_sources`
-   (the latter renamed to `list_components` under D-0021) and points at a
-   `internal/tools/sources/` path; this is broader D-0021 rename drift, not just the
-   one tool.
+These were deliberately **not** rewritten because each requires reworking an architectural
+description that no longer matches the system, not a mechanical correction — parked for a
+separate decision (the same call the original backlog framed: reconcile fully, or treat these
+as point-in-time design records allowed to lag the code).
 
-3. **Adjacent `.joe/`-removal drift (related, out of this sweep's Part B).**
-   `docs/security-in-layers.md` line 101 still says the LLM calls these tools "during
-   onboarding and **.joe/ file processing**" and line 108 documents a "`.joe/` file
-   processing" mutation path with `joefile_service.go`. The `.joe/` ingestion path was
-   deleted in the `joefile-removal` session (commit `0c9e741`), so this prose is also
-   stale. Noted here for completeness since it sits in the same table.
+1. **Removed/never-registered tool + nonexistent package path — `docs/joe-architecture.md`
+   "Source Tools" block (~line 855).** The block header still points at
+   `internal/tools/sources/` (no such package — the live tools are split across
+   `internal/coreagent/` for `register_component` and `internal/tools/core/` for
+   `list_components`), and it still lists `update_source(id, ...)`, a tool with **no live
+   counterpart** (D-0021 renamed only `register_source`→`register_component` and
+   `list_sources`→`list_components`; there is no `update_source`/`update_component` LLM tool
+   anywhere in the live tree). Correcting these is a structural rewrite of the block, not a
+   rename to a known live name.
 
-## Open work (the decision)
+2. **Pervasive `.joe/` ingestion architecture — `docs/joe-architecture.md`.** Beyond the
+   localized security-doc residue (now scrubbed), `joe-architecture.md` documents the removed
+   `.joe/` ingestion path as a **first-class subsystem** across many sections: onboarding /
+   refresh flowcharts (~lines 57, 147, 499, 515, 522), a clarification example (~line 582), a
+   `.joe/` Processing pseudo-code block citing `internal/discovery/joefile.go` (~lines 927,
+   936–948), the `joe_file_cache` DB-schema rows (~lines 1699–1702), a `discovery.go # .joe/
+   processing` file-tree comment (~line 2022), and the Phase-3 completion checklist listing the
+   `sources` table + `joe_file_cache` (~line 2297). The `.joe/` path was deleted in the
+   `joefile-removal` session (commit `0c9e741`, plus migration 029 dropping the cache), so all
+   of this is stale — but scrubbing it coherently means rewriting onboarding flows, the
+   discovery architecture, and the DB-schema section, which is out of scope for a residue scrub.
 
-Decide whether `docs/security-in-layers.md` and `docs/joe-architecture.md` should be
-brought fully in line with the as-built register_component tool and the D-0021 rename
-(re-tier it to a Read/T1-with-durability framing, fix the parameter signature, rename
-the sibling `list_sources`→`list_components` and the `internal/tools/sources/` pointer,
-and scrub the residual `.joe/` references) — or whether these layered-security/architecture
-docs are treated as point-in-time design records that are allowed to lag the code. The
-sweep corrected only the tool **name**; the semantics above remain a deliberate, recorded
-deferral.
+3. **`list_sources` in the historical Phase-3 checklist — `docs/joe-architecture.md`
+   (~line 2301).** A stale `list_sources` name sits inside a point-in-time "Phase 3 ✅ COMPLETE"
+   record, adjacent to the likewise-stale `sources` table and `joe_file_cache` entries. Left as
+   part of the historical-record question in (2) rather than edited in isolation.
+
+## The decision
+
+Decide whether `docs/joe-architecture.md` should be brought fully in line with the as-built
+system (restructure the "Source Tools" block to the real two-tool, two-package layout and drop
+`update_source`; scrub the `.joe/` ingestion subsystem documentation and the `joe_file_cache`
+schema; rename the Phase-3 checklist `list_sources`) — or whether this architecture doc is
+treated as a point-in-time design record allowed to lag the code.
 
 ## Evidence
 
-Live tool: [internal/coreagent/agent.go:401-441](../../internal/coreagent/agent.go:401)
-(name `register_component`, params `name/type/config`); classification
-[internal/safety/tier.go:201](../../internal/safety/tier.go:201) and the
-no-reclassify break-test
+Live source-family tools: `register_component`
+([internal/coreagent/agent.go:414](../../internal/coreagent/agent.go:414), params
+`name/type/config` at [:422](../../internal/coreagent/agent.go:422)) and `list_components`
+([internal/tools/core/listcomponents.go:26](../../internal/tools/core/listcomponents.go:26)) —
+no `update_*` source tool exists. Classification:
+[internal/safety/tier.go:201](../../internal/safety/tier.go:201) (`ActionRead` +
+`NeedsDurability`) with the no-reclassify break-test
 [internal/coreagent/register_component_governance_test.go](../../internal/coreagent/register_component_governance_test.go).
-The source→component rename is **D-0021**; the `.joe/` removal is the `joefile-removal`
-session (commit `0c9e741`). The name-only correction is the `post-joefile-cleanup`
-sweep (this session).
+The source→component rename is **D-0021**; the `.joe/` removal is the `joefile-removal` session
+(commit `0c9e741`, migration 029). The name/signature/classification/security-residue corrections
+are the `post-joefile-cleanup-02` sweep.

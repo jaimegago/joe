@@ -95,22 +95,21 @@ Every component that can change state, classified by blast radius.
 | `graph_add_node` | **YES** | Graph store | None | None |
 | `graph_add_edge` | **YES** | Graph store | None | None |
 | `graph_update_node` | **YES** | Graph store | None | None |
-| `register_component` | **YES** | Source store | None | None |
+| `register_component` | No | Joe's own component store (read-class per D-0018/D-0019 — records a discovered component to Joe's store, no managed-system mutation; `internal/safety/tier.go`) | None | None |
 | `save_onboarding_fact` | **YES** | Fact store | None | None |
 
-All defined in `internal/coreagent/agent.go:119-499`. The LLM calls these freely during onboarding and .joe/ file processing.
+All defined in `internal/coreagent/agent.go:119-499`. The LLM calls these freely during onboarding.
 
 ### Graph Mutations (indirect paths)
 
 | Path | Trigger | What It Changes | Authorization | Notification |
 |------|---------|-----------------|---------------|--------------|
 | Refresh loop | Timer (5 min) | Adds/removes nodes and edges to match infra state | None (autonomous) | None |
-| `.joe/` file processing | Git refresh | LLM interprets YAML → graph mutations | None | None |
 | Clarification answers | Human answers question | Applies stored graph operations | Implicit (human answered) | None |
 | Onboarding | Human triggers via API | LLM generates graph mutations | None | None |
 | Graph delta reconciliation | Refresh | Deletes stale nodes/edges | None (autonomous) | None |
 
-Key files: `internal/coreagent/graphdelta.go:118-145`, `internal/coreagent/joefile_service.go`, `internal/coreagent/git_refresh.go`
+Key files: `internal/coreagent/graphdelta.go:118-145`, `internal/coreagent/git_refresh.go`
 
 ### API Endpoints That Mutate State
 
@@ -147,8 +146,8 @@ Every tool and API action is classified into one of three tiers:
 
 | Tier | Label | Description | Default | Example |
 |------|-------|-------------|---------|---------|
-| **T1** | **Observe** | Read-only. Cannot change any state. | Allowed | `read_file`, `git_log`, `k8s_get`, `graph_query` |
-| **T2** | **Record** | Changes Joe's internal state (graph, facts, sources). Does not touch external systems. | Requires opt-in | `graph_add_node`, `register_component`, `save_onboarding_fact` |
+| **T1** | **Observe** | Read-only. Does not mutate the managed system. | Allowed | `read_file`, `git_log`, `k8s_get`, `graph_query`, `register_component` (read-class; records to Joe's own store, no managed-system mutation — `internal/safety/tier.go`) |
+| **T2** | **Record** | Changes Joe's internal state (graph, facts, sources). Does not touch external systems. | Requires opt-in | `graph_add_node`, `save_onboarding_fact` |
 | **T3** | **Act** | Changes external systems (files, infrastructure, deployments). | Denied by default, per-action opt-in | `write_file`, `run_command(kubectl)`, future: `k8s_scale`, `pagerduty_ack` |
 
 Classification is hardcoded per tool at registration time. The LLM cannot change a tool's tier.

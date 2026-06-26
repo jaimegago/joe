@@ -854,9 +854,9 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │  Source Tools (internal/tools/sources/)                     │   │
 │  │  ────────────                                               │   │
-│  │  register_component(type, url, name, env, ...) → store source│   │
+│  │  register_component(name, type, config) → store component   │   │
 │  │  update_source(id, ...)                      → update       │   │
-│  │  list_sources(type?, env?)                   → sources      │   │
+│  │  list_components(type?) → components                        │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
