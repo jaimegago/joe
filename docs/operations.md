@@ -7,33 +7,29 @@ administration. For the security architecture behind these, see
 All HTTP examples below assume a service-account bearer token in `$JOE_API_KEY`
 (see [configuration.md](configuration.md#authentication)).
 
-## Action safety tiers
+## Action safety
 
-Every tool Joe can execute is classified into one of three tiers. The tier
-determines confirmation behavior and safe-mode restrictions.
+Every tool Joe can execute is classified on a binary **Read/Mutate** axis at
+registration. Reads (queries, Joe's own graph/model maintenance, notifications
+to humans) always run. Mutates (writes to files, infrastructure, deployments,
+external PR/MR threads) are **denied by default** and require a per-action
+opt-in in the safety policy's `act` section. An unknown tool is treated as a
+mutation and denied.
 
-| Tier | Name    | Examples                                        | Safe Mode  |
-| ---- | ------- | ----------------------------------------------- | ---------- |
-| T1   | Observe | `read_file`, `k8s_get`, `graph_query`           | ✅ Allowed |
-| T2   | Record  | `write_file`, `graph_add_node`                  | ❌ Blocked |
-| T3   | Act     | `run_command` (mutations), `kubectl apply`      | ❌ Blocked |
+This section covers only what an operator edits. For the full action-safety
+model — the classification rules, the write floor, and how the executor gates
+every call — [security-in-layers.md](security-in-layers.md) is the authority.
 
-Tier behavior is configured in `~/.joe/safety-policy.yaml`. Joe's own tools
-cannot read or modify this file. When the file is absent, Joe uses the most
-restrictive default: all T2 enabled (internal state is safe), all T3 disabled.
+Policy lives in `~/.joe/safety-policy.yaml`. Joe's own tools cannot read or
+modify this file (the entire `~/.joe/` directory is excluded from every file
+tool at compile time). When the file is absent, Joe uses the most restrictive
+default: every mutating action disabled.
 
 ```yaml
 # ~/.joe/safety-policy.yaml
 version: 1
 
-# T2 — internal state mutations
-record:
-  graph_mutations: true
-  source_registration: true
-  onboarding_facts: true
-  autonomous_refresh: true
-
-# T3 — external system mutations (disabled by default; explicit opt-in)
+# Mutating actions are denied by default; enable per action (explicit opt-in).
 act:
   write_file:
     enabled: false
@@ -85,10 +81,10 @@ kill -USR1 <joe-pid>
 
 ### What happens
 
-1. `joe` writes `~/.joe/panic.state` and exits with code 2
-2. On restart, `joe` reads `panic.state` and boots in **safe mode**
-3. In safe mode, only T1 (read-only) tools are allowed — no writes or mutations
-4. Joe logs a warning on every startup until safe mode is cleared
+1. `joe` records the panic to the single `cluster_panic_state` DB row (id=1) and exits with code 2
+2. On restart, `joe` reads that row and boots in **safe mode**, raising the write floor
+3. In safe mode, only reads are allowed — every mutating action is blocked
+4. Joe logs a warning on every startup until the panic row is cleared
 
 ### Check status
 
@@ -100,17 +96,18 @@ curl http://localhost:7777/api/v1/panic/status \
 
 ### Resume normal operation
 
-A reason is required for the audit log:
+Recovery is a host operation, not an HTTP call. The write floor is sealed at
+boot and nothing in the running process can lower it, so there is no unlock
+endpoint. On the host where Joe runs, clear the panic row, then restart:
 
 ```bash
-# CLI
 joe unlock --reason "false alarm — incident resolved"
-
-# HTTP
-curl -X POST http://localhost:7777/api/v1/unlock \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"reason": "false alarm — incident resolved"}'
 ```
+
+`joe unlock` opens the database directly and clears the `cluster_panic_state`
+row; it does not contact or signal a running daemon. The cleared state takes
+effect on the next start, when the floor is re-resolved from the now-clear row.
+A reason is optional and, when given, is recorded to the log.
 
 ## Incident regime
 
@@ -119,12 +116,14 @@ gates actions during an active incident.
 
 ```bash
 joe incident status                         # is a regime active, and who declared it
-joe incident declare --reason "payment outage"
+joe incident declare --session <id> --reason "payment outage"
 joe incident resolve --reason "mitigated"
 ```
 
-Declare/resolve authorize server-side against the `regime-control` zone. Incident
-history lives in the append-only audit log (there is no `list` history endpoint).
+Declare promotes an existing chat session in place to the incident master, so
+`--session <id>` is required (`--kind` defaults to `human`). Declare/resolve
+authorize server-side against the `regime-control` zone. Incident history lives
+in the append-only audit log (there is no `list` history endpoint).
 
 ## RBAC administration
 
@@ -158,12 +157,12 @@ curl -X POST http://localhost:7777/api/v1/admin/zones \
   -d '{"id":"staging","name":"Staging","allowed_actions":["read","query","mutate"]}'
 ```
 
-**Assign a source to a zone:**
+**Assign a component to a zone:**
 
 ```bash
-curl -X POST http://localhost:7777/api/v1/admin/source-zones \
+curl -X POST http://localhost:7777/api/v1/admin/component-zones \
   -H "Authorization: Bearer $JOE_API_KEY" \
-  -d '{"source_id":"k8s-prod","zone_id":"prod-readonly","assigned_by":"alice","reason":"initial setup"}'
+  -d '{"component_id":"k8s-prod","zone_id":"prod-readonly","assigned_by":"alice","reason":"initial setup"}'
 ```
 
 **Grant a principal access to a zone:**
