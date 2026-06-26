@@ -173,7 +173,7 @@ Machine callers authenticate with a service-account bearer token; humans log in
 via OIDC. Manage zones and policies from the Web UI admin panel or the admin REST
 API (`/api/v1/admin/...`) — the single audited writer to RBAC state. See
 [docs/operations.md](docs/operations.md) for the admin recipes and
-[docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) for the spec.
+[docs/security-in-layers.md](docs/security-in-layers.md) for the security model.
 
 ---
 
@@ -322,9 +322,7 @@ joe/
 - [docs/integrations.md](docs/integrations.md) — MCP server and Slack bot setup
 - [docs/joe-architecture.md](docs/joe-architecture.md) — Full architecture and component diagrams
 - [docs/web-ui.md](docs/web-ui.md) — Web UI specification
-- [docs/security-in-layers.md](docs/security-in-layers.md) — Action Safety Framework and Panic Mode spec
-- [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview
-- [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
+- [docs/security-in-layers.md](docs/security-in-layers.md) — Security authority: Action Safety Framework, RBAC, read posture, Panic Mode
 - [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design
 - [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
 - [test/README.md](test/README.md) — Test harness layout (`test/mocks`, `test/integration`, `test/e2e`)
