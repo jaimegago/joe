@@ -205,9 +205,15 @@ then light fixes, then annotations, then mechanical cleanups.
    content into `security-in-layers.md`, and update the CLAUDE.md "Reference Documents" pointers. Clears
    the bulk of §0. (Touches only these three docs + CLAUDE.md pointers; no code.)
 
-2. **`docs-reconcile-narrative-ops`** — Major rewrites of the stale current-state NARRATIVE docs:
+2. **`docs-reconcile-narrative-ops`** — 🔶 IN PROGRESS. Major rewrites of the stale current-state NARRATIVE docs:
    `operations.md` (tiers/panic-file/source-zones/incident-signature), `web-ui.md` (auth/component/action-axis/file-map).
-   One coherent "make current-state ops + UI docs match the tree" unit.
+   One coherent "make current-state ops + UI docs match the tree" unit, split across two sessions.
+   - `operations.md` — ✅ DONE (session `docs-reconcile-narrative-ops-01`): targeted-major rewrite — five
+     corrections applied (T1/T2/T3 → binary Read/Mutate + pointer to `security-in-layers.md`; panic
+     `~/.joe/panic.state` → `cluster_panic_state` DB row + host-CLI `joe unlock` recovery, no HTTP unlock
+     endpoint; `/api/v1/admin/source-zones`+`source_id` → `/component-zones`+`component_id`; `joe incident
+     declare` now shows required `--session <id>`). Default-zones table + panic-triggers preserved untouched.
+   - `web-ui.md` — ⏳ PENDING (session `docs-reconcile-narrative-ops-02`). Item 2 is NOT complete until this lands.
 
 3. **`docs-reconcile-narrative-light`** — ✅ DONE (session `docs-reconcile-narrative-light`). Surgical
    single-claim fixes that didn't need a full rewrite; all six applied, none skipped. Outcomes:
