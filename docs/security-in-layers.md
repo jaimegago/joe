@@ -95,7 +95,7 @@ Every component that can change state, classified by blast radius.
 | `graph_add_node` | **YES** | Graph store | None | None |
 | `graph_add_edge` | **YES** | Graph store | None | None |
 | `graph_update_node` | **YES** | Graph store | None | None |
-| `register_source` | **YES** | Source store | None | None |
+| `register_component` | **YES** | Source store | None | None |
 | `save_onboarding_fact` | **YES** | Fact store | None | None |
 
 All defined in `internal/coreagent/agent.go:119-499`. The LLM calls these freely during onboarding and .joe/ file processing.
@@ -148,7 +148,7 @@ Every tool and API action is classified into one of three tiers:
 | Tier | Label | Description | Default | Example |
 |------|-------|-------------|---------|---------|
 | **T1** | **Observe** | Read-only. Cannot change any state. | Allowed | `read_file`, `git_log`, `k8s_get`, `graph_query` |
-| **T2** | **Record** | Changes Joe's internal state (graph, facts, sources). Does not touch external systems. | Requires opt-in | `graph_add_node`, `register_source`, `save_onboarding_fact` |
+| **T2** | **Record** | Changes Joe's internal state (graph, facts, sources). Does not touch external systems. | Requires opt-in | `graph_add_node`, `register_component`, `save_onboarding_fact` |
 | **T3** | **Act** | Changes external systems (files, infrastructure, deployments). | Denied by default, per-action opt-in | `write_file`, `run_command(kubectl)`, future: `k8s_scale`, `pagerduty_ack` |
 
 Classification is hardcoded per tool at registration time. The LLM cannot change a tool's tier.

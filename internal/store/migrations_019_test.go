@@ -45,13 +45,12 @@ func TestMigration019_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// Step the migrations above 019 down, then 019: reverts 024 (read
-	// promotions), 023 (source→component), 022 (chat sessions), 021
-	// (principals), 020 (the admin-audit kind widening), then 019, all of which
-	// now sit above 019. Stepping -6 lands the schema just below 019, isolating
-	// 019's down migration as this test intends; the table must be gone.
-	if err := m.Steps(-11); err != nil {
-		t.Fatalf("Steps(-11): %v", err)
+	// Step every migration above 019 down, then 019 itself. The step count is
+	// derived from HEAD, so the schema lands at version 018 (just below 019) no
+	// matter how many migrations sit on top, isolating 019's down migration as
+	// this test intends; the table must be gone.
+	if err := m.Steps(stepsDownTo(t, 18)); err != nil {
+		t.Fatalf("step down to version 018 (revert 019): %v", err)
 	}
 	if tableExists(t, s, "llm_context_budget") {
 		t.Error("llm_context_budget still exists after down")

@@ -52,13 +52,12 @@ func TestMigration020_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step the migrations above 020 down, then 020: reverts 024 (read
-	// promotions, the head), 023 (source→component), 022 (chat sessions), 021
-	// (the principals table), then 020. The schema lands just below 020,
-	// isolating 020's down migration as this test intends; none of 021..024
-	// touches audit_log so reverting them first is inert to these probes.
-	if err := m.Steps(-10); err != nil {
-		t.Fatalf("Steps(-10): %v", err)
+	// 2) Step every migration above 020 down, then 020 itself. The schema lands
+	// at version 019, isolating 020's down migration as this test intends; none
+	// of the migrations above 020 touches audit_log so reverting them first is
+	// inert to these probes.
+	if err := m.Steps(stepsDownTo(t, 19)); err != nil {
+		t.Fatalf("step down to version 019: %v", err)
 	}
 	if kindAdmitted(t, s, "admin_access") {
 		t.Error("after down: audit_log CHECK must reject 'admin_access' again")

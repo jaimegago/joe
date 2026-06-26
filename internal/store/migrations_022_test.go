@@ -49,11 +49,11 @@ func TestMigration022_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step down to the 022 boundary: reverts 025 (session rewrite — restores
-	// the visibility column + 'other' type), 024 (read promotions), 023
-	// (source→component). 022 is now the head.
-	if err := m.Steps(-7); err != nil {
-		t.Fatalf("Steps(-7) to 022 boundary: %v", err)
+	// 2) Step down to the 022 boundary: reverts every migration above 022 (025's
+	// session rewrite restores the visibility column + 'other' type, etc.),
+	// leaving 022 applied as the head.
+	if err := m.Steps(stepsDownTo(t, 22)); err != nil {
+		t.Fatalf("step down to 022 boundary: %v", err)
 	}
 	if !tableExists(t, s, "chat_messages") {
 		t.Fatal("at 022: chat_messages table must exist")

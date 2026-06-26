@@ -479,16 +479,6 @@ func TestExecuteTool(t *testing.T) {
 	}
 }
 
-// ── Discovery Engine ─────────────────────────────────────────────────────────
-
-func TestDiscoverInfrastructure(t *testing.T) {
-	svc := makeTestServices(t)
-	engine := NewEngine(svc, &mockLLMAdapter{}, slog.Default(), nil)
-	if err := engine.DiscoverInfrastructure(context.Background(), 1); err != nil {
-		t.Errorf("DiscoverInfrastructure() error = %v", err)
-	}
-}
-
 // ── Refresher internals ──────────────────────────────────────────────────────
 
 func TestRefresher_Refresh_EmptyStore(t *testing.T) {

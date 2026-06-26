@@ -10,6 +10,49 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0044 — Migration round-trip tests derive their down/up step count from the live migration set at runtime, never as a hardcoded distance-from-top literal (extends D-0032 into test code)
+
+- Date: 2026-06-26
+- Status: accepted
+- Session: post-joefile-cleanup
+- Decision: the per-migration up/down/up round-trip tests in `internal/store`
+  (`TestMigration017..026_027_*RoundTrip`) MUST NOT encode the number of `Steps`
+  to walk down from HEAD as a fixed integer literal. The count is derived at
+  runtime from the embedded migration set via two shared test helpers in
+  `internal/store/migrations_steps_test.go`: `headVersion(t)` reads the highest
+  version present in `migrationsFS` (the same `embed.FS` the migrator runs
+  against), and `stepsDownTo(t, anchor)` returns `-(headVersion - anchor)` — the
+  negative step count that reverts every migration strictly above a **fixed
+  anchor version** the test names. The anchor is the version the schema must land
+  AT (one below the migration under test, or that migration's own boundary for
+  the 022 case, which then takes a relative `Steps(-1)` to revert itself). Because
+  the anchor is a fixed known version that never shifts and HEAD is derived,
+  adding a future migration on top changes the head and re-bumps every step
+  automatically: **zero edits to these tests**. No round-trip test may carry a raw
+  distance-from-top step literal, in code or in its narrating comments.
+- Basis: this is the D-0032 principle — "volatile, growth-driven counts are
+  expressed structurally, never as fixed figures" — carried from `CLAUDE.md` prose
+  into test code. Before this change eight tests hardcoded the literal distance
+  from HEAD: `017` `Steps(-13)`, `018` `Steps(-12)`, `019` `Steps(-11)`, `020`
+  `Steps(-10)`, `021` `Steps(-9)`, `022` `Steps(-7)`, `025` `Steps(-5)`,
+  `026_027` `Steps(-4)` — each a count of how many migrations sit above the target,
+  which the `read-posture-latch` (028) and `joefile-removal` (029) sessions had to
+  hand-bump migration-by-migration, and whose narrating comments had already
+  drifted (e.g. `017` said "Stepping -8 lands the schema just below 017" while the
+  literal was `-13`, and named `024` as "the head" when HEAD was `029`). The fix
+  replaces each literal with `m.Steps(stepsDownTo(t, <anchor>))` over the fixed
+  anchors 16/17/18/19/20/22/24/25 and rewrites the drifted comments to be
+  version-agnostic. Verified: `go test ./internal/store/` green; and a temporary
+  hypothetical migration `030` added on top kept every round-trip test green with
+  **no edit** to any step count, demonstrating the zero-edit property directly.
+  The `022` boundary test keeps its trailing relative `Steps(-1)` (revert 022 from
+  its own boundary) — that is anchored, not distance-from-top, so it does not move.
+- Supersedes: none — extends D-0032 (and D-0035, which operationalized it) from
+  `CLAUDE.md` prose into the migration round-trip test code; no prior decision
+  governed these test step counts.
+
+---
+
 ## D-0043 — The read posture governs human-facing transport reads only; the agent:core autonomous read surface stays a separate axis governed solely by auto_promote_read + grants (corrects a coupling introduced by D-0041)
 
 - Date: 2026-06-26
