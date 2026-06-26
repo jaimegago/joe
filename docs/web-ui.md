@@ -19,101 +19,110 @@ This document specifies the web frontend for Joe. It is designed to be used as i
 
 ## Project Structure
 
+This map reflects the as-built `ui/src` tree (not the original implementation
+sketch — the build added several API clients, hooks, and pages the sketch omitted).
+
 ```
 ui/
 ├── src/
-│   ├── api/                      # API client layer
-│   │   ├── client.ts             # Fetch wrapper with auth, error handling
-│   │   ├── types.ts              # TypeScript types matching joecored API
+│   ├── api/                      # API client layer + typed wire schemas
+│   │   ├── client.ts             # Fetch wrapper: session cookie + break-glass bearer, 401 handling
+│   │   ├── schemas.ts            # Zod wire schemas (source of truth for shapes)
+│   │   ├── types.ts              # Types derived from the Zod schemas (z.infer)
 │   │   ├── graph.ts              # Graph API calls
-│   │   ├── sources.ts            # Sources API calls
-│   │   ├── security.ts           # Zones, policies API calls
-│   │   └── chat.ts               # Chat/session API calls
+│   │   ├── components.ts         # Components API calls (register / test / promote)
+│   │   ├── security.ts           # Zones, component-zones, policies, principals, admins, read-promotions
+│   │   ├── chat.ts               # Chat/session API calls
+│   │   ├── taskStream.ts         # POST /api/v1/tasks/stream SSE client (step/final frames)
+│   │   ├── adminSessions.ts      # Admin session-archive / retention API
+│   │   ├── currentUser.ts        # GET /api/v1/me (who am I / admin / rbac-enabled)
+│   │   ├── authConfig.ts         # GET /api/v1/auth/config (public OIDC capability)
+│   │   ├── tokenStorage.ts       # break-glass bearer persistence (sessionStorage only)
+│   │   ├── regime.ts             # incident / operational-regime API
+│   │   ├── panic.ts              # panic / safe-mode status API
+│   │   ├── mutateStatus.ts       # write-floor / mutate-enabled status
+│   │   ├── credentialStatus.ts   # per-component credential arming status
+│   │   ├── skills.ts             # skills registry API
+│   │   └── llm.ts                # LLM provider/usage settings API
+│   │
+│   ├── auth/                     # Authentication context + route gating
+│   │   ├── AuthContext.tsx       # useAuth(): OIDC + break-glass state, /me, global 401 handling
+│   │   ├── AuthGate.tsx          # loading / authed / unauthed gate
+│   │   ├── LoginPage.tsx         # logged-out shell (OIDC button + break-glass token)
+│   │   └── RequireAdmin.tsx      # admin-only route guard
 │   │
 │   ├── components/
 │   │   ├── ui/                   # shadcn/ui components (auto-generated)
-│   │   │   ├── button.tsx
-│   │   │   ├── card.tsx
-│   │   │   ├── dialog.tsx
-│   │   │   ├── input.tsx
-│   │   │   ├── select.tsx
-│   │   │   ├── table.tsx
-│   │   │   └── ...
 │   │   │
-│   │   ├── layout/               # Layout components
-│   │   │   ├── AppShell.tsx      # Main layout with sidebar
-│   │   │   ├── Sidebar.tsx       # Navigation sidebar
-│   │   │   ├── Header.tsx        # Top header with user info
-│   │   │   └── PageContainer.tsx # Page wrapper
+│   │   ├── layout/               # AppShell, Sidebar, Header, PageContainer,
+│   │   │                         #   IncidentBanner, ObservationBanner, SafeModeBanner
 │   │   │
-│   │   ├── graph/                # Infrastructure graph components
-│   │   │   ├── InfraGraph.tsx    # Main graph canvas
-│   │   │   ├── nodes/            # Custom node types
-│   │   │   │   ├── ServiceNode.tsx
-│   │   │   │   ├── DatabaseNode.tsx
-│   │   │   │   ├── K8sNode.tsx
-│   │   │   │   └── GenericNode.tsx
-│   │   │   ├── edges/            # Custom edge types
-│   │   │   │   └── DependencyEdge.tsx
-│   │   │   ├── NodeDetails.tsx   # Selected node detail panel
-│   │   │   ├── GraphControls.tsx # Zoom, filter, layout controls
-│   │   │   └── GraphLegend.tsx   # Node type legend
+│   │   ├── graph/                # InfraGraph, NodeDetails, GraphControls, GraphLegend,
+│   │   │                         #   nodes/GenericNode, edges/DependencyEdge
 │   │   │
-│   │   ├── dashboard/            # Dashboard components
-│   │   │   ├── MetricsCard.tsx   # Single metric display
-│   │   │   ├── AlertsList.tsx    # Active alerts
-│   │   │   ├── SourcesHealth.tsx # Sources status overview
-│   │   │   └── RecentSessions.tsx# Recent chat sessions
+│   │   ├── admin/                # ZonesTable, ZoneForm, ComponentZoneAssign, UnassignedComponents,
+│   │   │                         #   ComponentRegisterForm, PromoteComponentForm, PoliciesTable,
+│   │   │                         #   PolicyForm, PrincipalsTable, AdminsTable, AdminForm,
+│   │   │                         #   CredentialStatusTable, ReadPromotionsTable, SkillsTable,
+│   │   │                         #   AdminSessionsPanel, RetentionPolicyEditor
 │   │   │
-│   │   ├── admin/                # Admin UI components
-│   │   │   ├── ZonesTable.tsx    # Security zones list
-│   │   │   ├── ZoneForm.tsx      # Create/edit zone
-│   │   │   ├── SourceZoneAssign.tsx # Assign source to zone
-│   │   │   ├── PoliciesTable.tsx # RBAC policies list
-│   │   │   ├── PolicyForm.tsx    # Create/edit policy
-│   │   │   └── UnassignedSources.tsx # Sources needing assignment
+│   │   ├── chat/                 # ChatWindow, MessageList, UserBubble, AssistantTurnView,
+│   │   │                         #   ChatInput, ToolCallDisplay, Markdown, ZeroZoneEmptyState
 │   │   │
-│   │   ├── chat/                 # Chat interface components
-│   │   │   ├── ChatWindow.tsx    # Main chat container
-│   │   │   ├── MessageList.tsx   # Message history
-│   │   │   ├── MessageBubble.tsx # Single message
-│   │   │   ├── ChatInput.tsx     # Input with send button
-│   │   │   └── ToolCallDisplay.tsx # Show tool executions
+│   │   ├── sessions/             # SessionRow, SessionListControls, IncidentClusterList
 │   │   │
-│   │   └── common/               # Shared components
-│   │       ├── LoadingSpinner.tsx
-│   │       ├── ErrorBoundary.tsx
-│   │       ├── EmptyState.tsx
-│   │       └── ConfirmDialog.tsx
+│   │   ├── incident/             # DeclareIncidentButton
+│   │   │
+│   │   ├── llm/                  # ProvidersTab, SettingsTab, UsageTab, UsageTable
+│   │   │
+│   │   └── common/               # LoadingSpinner, ErrorBoundary, EmptyState, ConfirmDialog
 │   │
 │   ├── pages/                    # Route pages
 │   │   ├── GraphPage.tsx         # Infrastructure graph view
-│   │   ├── DashboardPage.tsx     # Overview dashboard
-│   │   ├── SourcesPage.tsx       # Sources management
-│   │   ├── AdminPage.tsx         # Security zones & policies
+│   │   ├── ComponentsPage.tsx    # Components management
 │   │   ├── ChatPage.tsx          # Web REPL / chat interface
 │   │   ├── SessionsPage.tsx      # Session history
-│   │   └── SettingsPage.tsx      # User settings
+│   │   ├── UsersPage.tsx         # Identity registry (principals)
+│   │   ├── CredentialStatusPage.tsx # Per-component credential status
+│   │   ├── LLMSettingsPage.tsx   # LLM providers / usage
+│   │   └── admin/                # ZonesAdminPage, PoliciesAdminPage, AdminsAdminPage,
+│   │                             #   AutonomousReadsAdminPage, SkillsAdminPage
 │   │
-│   ├── hooks/                    # Custom React hooks
-│   │   ├── useGraph.ts           # Graph data fetching
-│   │   ├── useSources.ts         # Sources data
+│   ├── hooks/                    # Custom React hooks (TanStack Query)
+│   │   ├── useGraph.ts           # Graph data
+│   │   ├── useComponents.ts      # Components data
 │   │   ├── useZones.ts           # Security zones
 │   │   ├── usePolicies.ts        # RBAC policies
+│   │   ├── usePrincipals.ts      # Identity registry
 │   │   ├── useChat.ts            # Chat/session state
-│   │   └── useAuth.ts            # Authentication state
+│   │   ├── useSession.ts         # Single-session metadata
+│   │   ├── useCurrentUser.ts     # GET /api/v1/me
+│   │   ├── useAuthConfig.ts      # public OIDC capability
+│   │   ├── useRegime.ts          # incident regime
+│   │   ├── usePanicStatus.ts     # panic / safe-mode
+│   │   ├── useMutateStatus.ts    # write-floor status
+│   │   ├── useCredentialStatus.ts# credential arming
+│   │   ├── useReadPromotions.ts  # autonomous-read toggles
+│   │   ├── useAdminSessions.ts   # admin session archive
+│   │   ├── useSkills.ts          # skills registry
+│   │   └── useLLM.ts             # LLM settings
 │   │
 │   ├── lib/                      # Utilities
 │   │   ├── utils.ts              # General utilities (cn, etc.)
 │   │   ├── graph-layout.ts       # Graph layout algorithms
-│   │   └── constants.ts          # App constants
+│   │   ├── constants.ts          # App constants
+│   │   ├── sessionFilterSort.ts  # Session list filter/sort
+│   │   ├── sessionGrouping.ts    # Incident clustering
+│   │   ├── sessionLabel.ts       # Session display labels
+│   │   ├── incidentAffordance.ts # Incident UI affordances
+│   │   ├── lastSession.ts        # Last-session restore
+│   │   ├── principals.ts         # Principal helpers
+│   │   ├── llm-limits.ts         # LLM limit helpers
+│   │   └── usage.ts              # Usage helpers
 │   │
-│   ├── App.tsx                   # Root component with providers
+│   ├── App.tsx                   # Root component with providers + routing
 │   ├── main.tsx                  # Entry point
 │   └── index.css                 # Global styles + Tailwind
-│
-├── public/
-│   └── favicon.ico
 │
 ├── package.json
 ├── tsconfig.json
@@ -231,8 +240,8 @@ export interface Graph {
   edges: GraphEdge[];
 }
 
-// Source types
-export interface Source {
+// Component types
+export interface Component {
   id: string;             // "grafana/xyz-prod"
   type: string;           // "grafana", "kubernetes", "prometheus", etc.
   zone?: string;          // Security zone ID, null if unassigned
@@ -245,19 +254,17 @@ export interface Source {
 // Security types
 export interface SecurityZone {
   id: string;
+  name: string;
   description: string;
-  actions: ('Read' | 'Query' | 'Mutate' | 'Delete')[];
-  constraints?: {
-    require_approval?: ('Mutate' | 'Delete')[];
-  };
-  sourceCount?: number;   // Number of sources in this zone
+  allowed_actions: ('Read' | 'Mutate')[];  // binary action axis (D-0020)
+  sourceCount?: number;   // Number of components in this zone
 }
 
-export interface SourceZoneAssignment {
-  sourceId: string;
-  zoneId: string;
-  assignedBy: string;
-  assignedAt: string;
+export interface ComponentZoneAssignment {
+  component_id: string;
+  zone_id: string;
+  assigned_by: string;
+  assigned_at: string;
   reason?: string;
 }
 
@@ -375,7 +382,7 @@ Overview of system health, recent activity, and quick stats.
 │  ┌─────┐  Dashboard                                                     │
 │  │ Nav │                                                                │
 │  │     │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐           │
-│  │     │  │ Sources      │ │ Alerts       │ │ Sessions     │           │
+│  │     │  │ Components    │ │ Alerts       │ │ Sessions     │           │
 │  │     │  │ 12 connected │ │ 2 active     │ │ 5 today      │           │
 │  │     │  │ 1 error      │ │ 0 critical   │ │              │           │
 │  │     │  └──────────────┘ └──────────────┘ └──────────────┘           │
@@ -389,7 +396,7 @@ Overview of system health, recent activity, and quick stats.
 │  │     │  └────────────────────────────────┘ └─────────────────────────┘│
 │  │     │                                                                │
 │  │     │  ┌─────────────────────────────────────────────────────────────┐│
-│  │     │  │ Sources Health                                              ││
+│  │     │  │ Components Health                                           ││
 │  │     │  │ ● k8s/prod-main    ● grafana/main   ○ prometheus/prod      ││
 │  │     │  │ ● k8s/staging      ● loki/prod      ● argocd/main          ││
 │  │     │  └─────────────────────────────────────────────────────────────┘│
@@ -401,21 +408,21 @@ Overview of system health, recent activity, and quick stats.
 - Summary cards with key metrics
 - Active alerts list with severity indicators
 - Recent sessions with quick access
-- Sources health status grid
+- Components health status grid
 - Auto-refresh every 30 seconds
 
 **API Calls:**
-- `GET /api/v1/sources` → sources list with status
+- `GET /api/v1/components` → components list with status
 - `GET /api/v1/alerts` → active alerts
 - `GET /api/v1/sessions?limit=5` → recent sessions
 
 ### 3. Admin Page (Security Zones)
 
-Manage security zones, source assignments, and RBAC policies. Requires admin authentication.
+Manage security zones, component assignments, and RBAC policies. Requires admin authentication.
 
 **URL:** `/admin`
 
-**Tabs:** Zones | Sources | Policies
+**Tabs:** Zones | Components | Policies
 
 **Zones Tab:**
 ```
@@ -423,17 +430,16 @@ Manage security zones, source assignments, and RBAC policies. Requires admin aut
 │  Security Zones                                          [+ Create Zone]│
 ├─────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │ Zone            │ Actions              │ Sources │ Actions         ││
+│  │ Zone            │ Allowed Actions      │ Comps   │ Actions         ││
 │  ├─────────────────────────────────────────────────────────────────────┤│
-│  │ prod-readonly   │ Read, Query          │ 8       │ [Edit] [Delete] ││
-│  │ prod-write      │ Read, Query, Mutate  │ 3       │ [Edit] [Delete] ││
-│  │ dev-full        │ Read, Query, Mutate, │ 12      │ [Edit] [Delete] ││
-│  │                 │ Delete               │         │                 ││
+│  │ prod-readonly   │ Read                 │ 8       │ [Edit] [Delete] ││
+│  │ prod-write      │ Read, Mutate         │ 3       │ [Edit] [Delete] ││
+│  │ dev-full        │ Read, Mutate         │ 12      │ [Edit] [Delete] ││
 │  │ unassigned ⚠️    │ Read                 │ 2       │ [View]          ││
 │  └─────────────────────────────────────────────────────────────────────┘│
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │ ⚠️ 2 Unassigned Sources (require admin action)                      ││
+│  │ ⚠️ 2 Unassigned Components (require admin action)                   ││
 │  │                                                                     ││
 │  │ grafana/xyz-experiment       [Assign Zone ▼]                       ││
 │  │ k8s/new-cluster              [Assign Zone ▼]                       ││
@@ -441,12 +447,12 @@ Manage security zones, source assignments, and RBAC policies. Requires admin aut
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Sources Tab:**
+**Components Tab:**
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Source Zone Assignments                              [Filter by Zone ▼]│
+│  Component Zone Assignments                           [Filter by Zone ▼]│
 ├─────────────────────────────────────────────────────────────────────────┤
-│  │ Source              │ Type       │ Zone          │ Assigned By      ││
+│  │ Component           │ Type       │ Zone          │ Assigned By      ││
 │  ├─────────────────────────────────────────────────────────────────────┤│
 │  │ k8s/prod-main       │ kubernetes │ prod-readonly │ admin@co.com     ││
 │  │ grafana/main        │ grafana    │ prod-readonly │ admin@co.com     ││
@@ -472,9 +478,9 @@ Manage security zones, source assignments, and RBAC policies. Requires admin aut
 
 **Features:**
 - CRUD for security zones
-- Assign/reassign sources to zones
+- Assign/reassign components to zones
 - CRUD for RBAC policies
-- Highlight unassigned sources with warning
+- Highlight unassigned components with warning
 - Confirmation dialogs for destructive actions
 - Audit log of changes (who changed what, when)
 
@@ -483,10 +489,10 @@ Manage security zones, source assignments, and RBAC policies. Requires admin aut
 - `POST /api/v1/admin/zones`
 - `PUT /api/v1/admin/zones/{id}`
 - `DELETE /api/v1/admin/zones/{id}`
-- `GET /api/v1/admin/source-zones`
-- `GET /api/v1/admin/source-zones/unassigned`
-- `POST /api/v1/admin/source-zones`
-- `DELETE /api/v1/admin/source-zones/{sourceId}`
+- `GET /api/v1/admin/component-zones`
+- `GET /api/v1/admin/unassigned`
+- `POST /api/v1/admin/component-zones`
+- `DELETE /api/v1/admin/component-zones/{componentID}`
 - `GET /api/v1/admin/policies`
 - `POST /api/v1/admin/policies`
 - `DELETE /api/v1/admin/policies/{id}`
@@ -544,21 +550,21 @@ Web-based chat interface to interact with Joe.
 - `GET /api/v1/sessions/{id}/messages` → load session history
 - `POST /api/v1/sessions` → create new session
 
-### 5. Sources Page
+### 5. Components Page
 
-View and manage connected infrastructure sources.
+View and manage connected infrastructure components.
 
-**URL:** `/sources`
+**URL:** `/components`
 
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Sources                                    [+ Add Source] [Refresh]    │
+│  Components                              [+ Add Component] [Refresh]    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Filter: [All Types ▼] [All Zones ▼] [All Status ▼]                    │
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │ Source              │ Type       │ Zone          │ Status │ Actions ││
+│  │ Component           │ Type       │ Zone          │ Status │ Actions ││
 │  ├─────────────────────────────────────────────────────────────────────┤│
 │  │ ● k8s/prod-main     │ kubernetes │ prod-readonly │ ● OK   │ [View]  ││
 │  │ ● grafana/main      │ grafana    │ prod-readonly │ ● OK   │ [View]  ││
@@ -581,11 +587,11 @@ View and manage connected infrastructure sources.
 ```
 
 **API Calls:**
-- `GET /api/v1/sources`
-- `GET /api/v1/sources/{id}`
-- `POST /api/v1/sources` (register new)
-- `DELETE /api/v1/sources/{id}`
-- `POST /api/v1/sources/{id}/test` (test connection)
+- `GET /api/v1/components`
+- `GET /api/v1/components/{id}`
+- `POST /api/v1/components` (register new)
+- `DELETE /api/v1/components/{id}`
+- `POST /api/v1/components/{id}/test` (test connection)
 
 ---
 
@@ -639,16 +645,33 @@ Node structure:
 
 ## Authentication Flow
 
-1. User visits app → check for token in localStorage
-2. If no token → redirect to `/login`
-3. Login page → POST credentials to `/api/v1/auth/login`
-4. On success → store token in localStorage, redirect to `/`
-5. API client includes `Authorization: Bearer {token}` on all requests
-6. On 401 response → clear token, redirect to `/login`
+Authentication is OIDC-based (authorization-code + PKCE) with a server-side
+session. The human session is carried by an HttpOnly cookie — the browser never
+holds a bearer token in `localStorage` for that flow.
+
+1. The logged-out shell reads the public `GET /api/v1/auth/config` to learn whether
+   OIDC is configured; that flag decides whether the login view offers the OIDC button.
+2. Sign-in is a full-page navigation to `GET /api/v1/auth/login`, which 302-redirects
+   the browser to the configured IdP (not a `fetch` — the IdP round-trip cannot happen
+   inside one).
+3. The IdP redirects back to `GET /api/v1/auth/callback`, which verifies the ID token,
+   mints a server-side session, and sets the HttpOnly session cookie.
+4. The API client sends that cookie on every request (`credentials: 'include'`). There
+   is no `Authorization: Bearer` header and no token in `localStorage` for the human
+   session.
+5. Current-user state (principal, `is_admin`, `rbac_enabled`, reachable zones) comes
+   from `GET /api/v1/me`; a 401 from any request transitions the app to logged-out.
+6. Logout is `POST /api/v1/auth/logout`, which revokes the server-side session and
+   clears the cookie.
+
+A separate dev / break-glass bearer-token login also exists: that token is held in
+memory on the API client and persisted in `sessionStorage` only (never `localStorage`,
+never a cookie) and is sent as `Authorization: Bearer`. The cookie (human) and bearer
+(break-glass) paths coexist on the same client.
 
 For admin routes (`/admin/*`):
-- Check if user has admin role
-- If not admin → show "Access Denied" or redirect
+- Admin authority comes from the `is_admin` flag on `GET /api/v1/me`.
+- Non-admins are kept out of admin surfaces (the `RequireAdmin` route guard).
 
 ---
 
@@ -699,7 +722,7 @@ npm run preview
 2. **Dashboard** (Day 2)
    - Dashboard page with mock data
    - Metric cards
-   - Sources health grid
+   - Components health grid
    - Connect to real API
 
 3. **Graph Page** (Day 3-4)
@@ -709,16 +732,16 @@ npm run preview
    - Graph controls (zoom, filter)
    - Connect to graph API
 
-4. **Sources Page** (Day 5)
-   - Sources list with filtering
-   - Source detail view
+4. **Components Page** (Day 5)
+   - Components list with filtering
+   - Component detail view
    - Status indicators
 
 5. **Admin Page** (Day 6-7)
    - Zones management
-   - Source zone assignments
+   - Component zone assignments
    - Policies management
-   - Unassigned sources alert
+   - Unassigned components alert
 
 6. **Chat Page** (Day 8)
    - Message list
