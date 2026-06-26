@@ -99,7 +99,7 @@ P2's sort + filter are **client-side pure functions** (`ui/src/lib/sessionFilter
 composed onto `groupSessions`: fetched rows → `groupSessions` → `filterGrouped`
 → `sortGrouped`). This is correct **only because the list is unpaged today**:
 the query returns a single capped top-N (`LIMIT 50`, no `OFFSET`/cursor,
-`internal/sessionmodel/repository.go:532`) in `ORDER BY last_activity_at DESC`
+`internal/sessionmodel/repository.go:534`) in `ORDER BY last_activity_at DESC`
 order, so the entire list already lives on the client and a local filter/sort
 sees every row.
 
@@ -184,27 +184,27 @@ for the list surface.
 
 ### 6.A — list endpoint contract
 
-- Handler: `handleListSessions`, `internal/api/webui.go:339`. Route
-  `GET /api/v1/sessions` (`internal/api/webui.go:910`).
+- Handler: `handleListSessions`, `internal/api/webui.go:353`. Route
+  `GET /api/v1/sessions` (`internal/api/webui.go:928`).
 - Read model: `webUISession` (`internal/api/webui.go:197`), projected by
-  `sessionToWebUI` (`internal/api/webui.go:281`). Fields currently returned:
+  `sessionToWebUI` (`internal/api/webui.go:292`). Fields currently returned:
   `id`, `started_at`, `last_activity_at`, `summary`, `message_count`, `title`,
   `read_only` (always present), `linked_incident_id` (when linked), `type`
   (always), `incident_state` (incident only), `shared_by` (non-owned rows, set
-  in the handler at `internal/api/webui.go:376`). `purge_after` only on trashed
+  in the handler at `internal/api/webui.go:394`). `purge_after` only on trashed
   rows. The list did NOT carry `linked_incident_title` before P0.
 - **Paging: none.** There is only a `limit` cap (default 20,
-  `internal/api/webui.go:345`), emitted as a bare SQL `LIMIT ?` with no `OFFSET`
-  and no cursor (`internal/sessionmodel/repository.go:531`, `:582`). The full
+  `internal/api/webui.go:359`), emitted as a bare SQL `LIMIT ?` with no `OFFSET`
+  and no cursor (`internal/sessionmodel/repository.go:534`, `:572`). The full
   capped top-N is returned in one shot. P3 introduces paging from scratch.
 - **Sort:** `ORDER BY s.last_activity_at DESC` (newest activity first), imposed
-  in SQL — `internal/sessionmodel/repository.go:530` (mine /
-  `ListSessionsByCreator`) and `:581` (team-wide / `ListRecentSessions`). The
+  in SQL — `internal/sessionmodel/repository.go:532` (mine /
+  `ListSessionsByCreator`) and `:570` (team-wide / `ListRecentSessions`). The
   default unfiltered list calls `ListRecentSessions`; `?mine=true` calls
-  `ListSessionsByCreator` (`internal/api/webui.go:359`–`363`).
-- Per-id GET: `handleGetSession`, `internal/api/webui.go:418`. Same
+  `ListSessionsByCreator` (`internal/api/webui.go:367`–`376`).
+- Per-id GET: `handleGetSession`, `internal/api/webui.go:436`. Same
   `sessionToWebUI` projection, plus `read_only` from the owner check
-  (`:448`) and `linked_incident_title` resolved (`:454`–`458`).
+  (`:466`) and `linked_incident_title` resolved (`:472`–`476`).
 
 ### 6.B — master→children query cost
 
@@ -220,10 +220,10 @@ for the list surface.
 ### 6.C — linked-master title resolution (the original defect)
 
 - Per-id GET resolves it via `GetSession(*sess.LinkedIncidentID).Title` →
-  `out.LinkedIncidentTitle`, `internal/api/webui.go:454`–`456`. **Confirmed.**
+  `out.LinkedIncidentTitle`, `internal/api/webui.go:473`–`474`. **Confirmed.**
 - The LIST projection did NOT carry it: `sessionToWebUI` sets
-  `linked_incident_id` (`internal/api/webui.go:289`–`291`) but never
-  `linked_incident_title`; the struct comment at `internal/api/webui.go:226`
+  `linked_incident_id` (`internal/api/webui.go:303`–`304`) but never
+  `linked_incident_title`; the struct comment at `internal/api/webui.go:227`
   explicitly noted it was "Set ONLY on the per-id GET (it would be an N+1 on the
   list projection)." This is the **bare-badge defect** P0 closes (via §5's
   self-join, which is not an N+1). **Confirmed.**

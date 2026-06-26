@@ -428,11 +428,9 @@ To clear the panic state (so the next boot resolves the floor down):
 
 ```bash
 joe unlock --reason "investigated panic, false alarm - operator error"
-# or
-curl -X POST http://localhost:7777/api/v1/unlock \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"reason": "root cause identified and fixed"}'
 ```
+
+Unlock is CLI-only — there is no `POST /api/v1/unlock` HTTP endpoint; recovery is a local operator action.
 
 Unlock requires an authenticated caller and a mandatory `reason` (audited). Clearing the panic state plus a restart returns Joe to normal operation.
 
@@ -442,7 +440,7 @@ Unlock requires an authenticated caller and a mandatory `reason` (audited). Clea
 |----------|--------|-------------|
 | `/api/v1/panic` | POST | Trigger emergency shutdown (record panic state) |
 | `/api/v1/panic/status` | GET | Report panic / floor state |
-| `/api/v1/unlock` | POST | Clear panic state (requires reason) |
+| `joe unlock` (CLI) | — | Clear panic state (requires reason) — CLI-only, no HTTP endpoint |
 | `/api/v1/mutate-status` | GET | Report the boot-resolved write floor and its reason |
 
 ### 7.6 Safety guarantees

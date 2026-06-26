@@ -19,7 +19,7 @@ llm:
   current: claude-sonnet            # key from llm.available — the active model
   available:
     claude-sonnet:
-      provider: claude              # claude | gemini | ollama
+      provider: claude              # claude | gemini
       model: claude-sonnet-4-20250514
     gemini-flash:
       provider: gemini
