@@ -1,5 +1,5 @@
 # Docs reconciliation sweep — total read-only audit of `docs/` against the live tree
-Status: in-progress
+Status: done
 
 Slug: `docs-reconcile-sweep`. A read-only Phase-1 audit that inventoried, classified, and
 claim-verified every file under `docs/` against the live code tree. This file is a **plan**,
@@ -200,10 +200,24 @@ bundled with rewrites. Ordering favors retiring/​consolidating the stale secur
 the highest-risk and the source of the §0 claimed-but-unbuilt findings), then the substantive rewrites,
 then light fixes, then annotations, then mechanical cleanups.
 
-1. **`docs-reconcile-security-consolidation`** — Resolve the three-way security-doc conflict (§4).
-   Decide DELETE-vs-relabel for `JOE_SECURITY.md` and `JOE_RBAC_IMPLEMENTATION.md`, fold any unique-true
-   content into `security-in-layers.md`, and update the CLAUDE.md "Reference Documents" pointers. Clears
-   the bulk of §0. (Touches only these three docs + CLAUDE.md pointers; no code.)
+1. **`docs-reconcile-security-consolidation`** — ✅ DONE (session `docs-reconcile-security-consolidation`).
+   Decision: **DELETE both** (recorded as **D-0046**), not relabel. `docs/JOE_SECURITY.md` and
+   `docs/JOE_RBAC_IMPLEMENTATION.md` were `git rm`'d after a hard absence gate confirmed every claimed
+   mechanism is absent from the live tree: for `JOE_SECURITY.md` — no `joe-security`/`joecored` binary
+   (`cmd/` holds only `joe`), no `internal/security{,svc}/` package, no `writeProtectedTables`/`CanWriteTable`
+   table guard, no `security.mode` embedded/remote config, no T3 dry-run+countdown path (axis is binary
+   Read/Mutate, `internal/safety/tier.go`, D-0020); for `JOE_RBAC_IMPLEMENTATION.md` — no
+   `internal/rbac/auth`+`authz` subtree (`internal/rbac/` is flat), no LDAP/Entra/AWS-IAM/GCP/mTLS providers,
+   no Constraint engine (TimeWindow/IPWhitelist/MFA), no `RBACToolMiddleware`, no two-binary split. No
+   unique-and-true content to fold forward; `security-in-layers.md` is the sole security authority.
+   Inbound navigational references repaired/removed: `README.md` (one "for the spec" line + two docs-index
+   bullets), `CLAUDE.md` (two Reference-Documents bullets removed, `security-in-layers.md` bullet broadened
+   to "sole security authority"), `operations.md` (two pointers), `break-glass-access.md` (two pointers),
+   `case-study-kiro-incident.md` (a §3.3 cross-ref + two References entries), `security-in-layers.md` (its
+   own two back-pointers), and `read-posture-latch.md` (audit-target list). The
+   `case-study-kiro-incident.md` banner clause that wrongly denied `~/.joe/safety-policy.yaml` exists was
+   corrected (see item 5's known-defect note, now resolved). The point-in-time mentions in this audit file
+   are intentional PM-SPINE records and were left as-is.
 
 2. **`docs-reconcile-narrative-ops`** — ✅ COMPLETE. Major rewrites of the stale current-state NARRATIVE docs:
    `operations.md` (tiers/panic-file/source-zones/incident-signature), `web-ui.md` (auth/component/action-axis/file-map).
@@ -276,13 +290,13 @@ then light fixes, then annotations, then mechanical cleanups.
    banner sits at the very top of the file (above the opening fence) to render as a blockquote and keep
    the fenced body unchanged. PM-SPINE investigation findings left untouched. No decision-log entry
    (executes the audited plan, no new decision).
-   - **Known defect pending (found in session `docs-reconcile-narrative-ops-02`):** the
-     `case-study-kiro-incident.md` banner added by this session contains one wrong clause — it asserts there is
-     no `~/.joe/safety-policy.yaml`, but that file is real (`internal/safety/policy.go` declares
+   - **Known defect — ✅ RESOLVED (session `docs-reconcile-security-consolidation`):** the
+     `case-study-kiro-incident.md` banner added by this session contained one wrong clause — it asserted there
+     was no `~/.joe/safety-policy.yaml`, but that file is real (`internal/safety/policy.go` declares
      `PolicyFileName = "safety-policy.yaml"` and documents the `~/.joe/safety-policy.yaml` default location).
-     Only the *tier-based content* that clause referenced is stale (collapsed to binary Read/Mutate by D-0020);
-     the file path itself is correct. This banner clause is to be corrected in session
-     `docs-reconcile-security-consolidation`.
+     The clause was corrected to state the file is real but the T1/T2/T3 tier content it described is gone
+     (collapsed to binary Read/Mutate by D-0020). Only that clause changed; the rest of the banner and body
+     were left untouched.
 
 6. **`docs-reconcile-artifact-cleanup`** — ✅ DONE (session `docs-reconcile-artifact-cleanup`). Pure
    cleanup, no doc content. Outcome differed from the audit's premise: a fresh `git ls-files` scan over

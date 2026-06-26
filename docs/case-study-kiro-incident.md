@@ -1,6 +1,6 @@
 # Case Study: AWS Kiro Incident (December 2025)
 
-> **SUPERSEDED — as-of record.** This case study reads as current-state prose but describes mechanisms that no longer reflect Joe: the T1/T2/T3 Observe/Record/Act tiers are now the binary Read/Mutate axis (D-0020); the process is the single `joe` binary, not `joecored`; there is no `~/.joe/safety-policy.yaml`; and blast-radius and circuit-breaker are designed-not-built, not live controls. It is retained as an as-of point-in-time record, not a description of current behavior. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+> **SUPERSEDED — as-of record.** This case study reads as current-state prose but describes mechanisms that no longer reflect Joe: the T1/T2/T3 Observe/Record/Act tiers are now the binary Read/Mutate axis (D-0020); the process is the single `joe` binary, not `joecored`; `~/.joe/safety-policy.yaml` is real (`internal/safety/policy.go`), but the T1/T2/T3 tier content this study describes around it is gone, collapsed to the binary Read/Mutate model by D-0020; and blast-radius and circuit-breaker are designed-not-built, not live controls. It is retained as an as-of point-in-time record, not a description of current behavior. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
 
 How Joe's safety architecture prevents the class of failure that caused a 13-hour AWS outage.
 
@@ -103,7 +103,7 @@ This notification is **blocking** — the human sees it in the REPL and has 3 se
 
 Critically: RBAC permissions do not bypass the safety layer. Even an SRE with full production access still sees the T3 notification, still gets the dry-run, and still must wait through the blocking window. Two layers (RBAC + Safety) are independent — passing one does not bypass the other.
 
-See: `docs/security-in-layers.md` §3.3 (Hardcoded Enforcement Points), `docs/JOE_SECURITY.md` (Security Layers diagram)
+See: `docs/security-in-layers.md` §3.3 (Hardcoded Enforcement Points)
 
 ### Failure 4: No Rate Limiting on Mutations
 
@@ -179,7 +179,5 @@ The critical design difference: **Joe's safety rules are deterministic, not prob
 
 - Financial Times: "AWS suffered outages after engineers let AI coding tools make changes" (Feb 20, 2026)
 - The Register: "Amazon's vibe-coding tool Kiro reportedly vibed too hard" (Feb 20, 2026)
-- `docs/security-in-layers.md` — Full safety framework specification
-- `docs/JOE_SECURITY.md` — RBAC and security layers
-- `docs/JOE_RBAC_IMPLEMENTATION.md` — Middleware implementation reference
+- `docs/security-in-layers.md` — Full safety framework specification (the security authority: Action Safety Framework, RBAC, read posture, Panic Mode)
 - `docs/joe-architecture.md` — Action Safety Framework architectural decisions

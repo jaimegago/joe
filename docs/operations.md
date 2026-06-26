@@ -2,7 +2,7 @@
 
 Operator-facing controls: action safety tiers, emergency shutdown, and RBAC
 administration. For the security architecture behind these, see
-[security-in-layers.md](security-in-layers.md) and [JOE_SECURITY.md](JOE_SECURITY.md).
+[security-in-layers.md](security-in-layers.md).
 
 All HTTP examples below assume a service-account bearer token in `$JOE_API_KEY`
 (see [configuration.md](configuration.md#authentication)).
@@ -181,5 +181,5 @@ curl http://localhost:7777/api/v1/admin/unassigned \
 ```
 
 The `principal` is a service-account principal (`svc:<name>`) or an OIDC user
-identity. See [JOE_RBAC_IMPLEMENTATION.md](JOE_RBAC_IMPLEMENTATION.md) for the
-full RBAC spec.
+identity. See [security-in-layers.md](security-in-layers.md) for the full RBAC
+model.

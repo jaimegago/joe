@@ -534,5 +534,3 @@ GET/POST              /api/v1/admin/sessions/...          # Cross-tenant session
 - Go secure coding: https://owasp.org/www-project-go-secure-coding-practices-guide/
 - [`docs/DECISIONS.md`](DECISIONS.md) — normative decision log (D-0018 write floor / panic; D-0020 binary axis; D-0022 denial precedence; D-0041/D-0043 read posture)
 - [`docs/joe-architecture.md`](joe-architecture.md) — system architecture
-- [`docs/JOE_SECURITY.md`](JOE_SECURITY.md) — security architecture overview
-- [`docs/JOE_RBAC_IMPLEMENTATION.md`](JOE_RBAC_IMPLEMENTATION.md) — RBAC middleware spec

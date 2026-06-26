@@ -10,6 +10,46 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0046 — `docs/JOE_SECURITY.md` and `docs/JOE_RBAC_IMPLEMENTATION.md` deleted, not relabeled; `docs/security-in-layers.md` is the sole security authority
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-reconcile-security-consolidation
+- Decision: both `docs/JOE_SECURITY.md` and `docs/JOE_RBAC_IMPLEMENTATION.md` are
+  **deleted**, not relabeled or rewritten. `docs/security-in-layers.md` is the
+  single authoritative security doc. The inbound navigational pointers were
+  repaired to point there or removed: `README.md` (the "for the spec" line plus
+  two documentation-index bullets), `CLAUDE.md` (two Reference-Documents bullets
+  removed, the `security-in-layers.md` bullet broadened to name it the sole
+  authority), `docs/operations.md` (two pointers), `docs/break-glass-access.md`
+  (two pointers), `docs/case-study-kiro-incident.md` (a §3.3 cross-ref and two
+  References entries), `docs/security-in-layers.md` (its own two back-pointers),
+  and `docs/backlog/read-posture-latch.md` (the audit-target list). The
+  point-in-time audit records in `docs/backlog/docs-reconcile-sweep.md` that note
+  the docs existed are left intact.
+- Basis: `JOE_SECURITY.md` was stale present-tense prose for an architecture the
+  build diverged from — a separate `joe-security` binary, embedded/remote security
+  modes, a `writeProtectedTables`/`CanWriteTable` compiled table guard, and a T3
+  dry-run+countdown mutation path — none of which exist in the live tree (verified
+  this session: `cmd/` holds only `joe`; no `internal/security{,svc}/` package; the
+  table-guard symbols, the `security.mode` config key, and any dry-run/countdown
+  mutation path all grep to zero; the action axis is the binary Read/Mutate of
+  `internal/safety/tier.go` per D-0020). `JOE_RBAC_IMPLEMENTATION.md` was a
+  pre-implementation RFC for an unbuilt two-binary (`joecored`/`joe-local`),
+  middleware-chain RBAC with `internal/rbac/auth`+`authz` subtrees, eight identity
+  providers (LDAP/Entra/AWS-IAM/GCP/mTLS/…), and a role/group Constraint engine
+  (TimeWindow/IPWhitelist/MFA) — none of which exist (verified: `internal/rbac/` is
+  flat; the providers, the constraint engine, and `RBACToolMiddleware` all grep to
+  zero). The audit found no unique-and-true content in either doc that
+  `security-in-layers.md` lacks, so nothing was folded forward — a clean delete plus
+  reference repair, not a content migration. Recorded in the docs-reconcile sweep as
+  §5 item 1 (DELETE-vs-relabel; DELETE chosen).
+- Supersedes: retires `docs/JOE_SECURITY.md` and `docs/JOE_RBAC_IMPLEMENTATION.md`;
+  `docs/security-in-layers.md` (D-0018/D-0020/D-0022/D-0041/D-0043) already
+  supersedes their accurate content.
+
+---
+
 ## D-0045 — `docs/testing-strategy.md` deleted, not rewritten; the as-built `test/` tree plus CLAUDE.md "Build / Test / Lint" are the testing authority
 
 - Date: 2026-06-27

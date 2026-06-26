@@ -1,6 +1,6 @@
 # Break-Glass Access — Joe
 
-How an authorized operator reaches Joe when the normal OIDC human-login path is unavailable. This is an operator how-to, not a design spec: it tells you how to configure a break-glass credential, grant it admin, use it, confirm it is actually enforced, and review its use in the audit log. For the identity and authentication design behind it, see [joe-identity-design.md](joe-identity-design.md); for the security overview, see [JOE_SECURITY.md](JOE_SECURITY.md).
+How an authorized operator reaches Joe when the normal OIDC human-login path is unavailable. This is an operator how-to, not a design spec: it tells you how to configure a break-glass credential, grant it admin, use it, confirm it is actually enforced, and review its use in the audit log. For the identity and authentication design behind it, see [joe-identity-design.md](joe-identity-design.md); for the security overview, see [security-in-layers.md](security-in-layers.md).
 
 ---
 
@@ -161,5 +161,5 @@ Break-glass is an internal-tool capability, not an internet-facing one; keep its
 ## See also
 
 - [joe-identity-design.md](joe-identity-design.md) — the identity and authentication design that break-glass is part of.
-- [JOE_SECURITY.md](JOE_SECURITY.md) — the security architecture overview.
+- [security-in-layers.md](security-in-layers.md) — the security architecture overview.
 - [case-study-kiro-incident.md](case-study-kiro-incident.md) — the safety framing behind why credential use is audited.
