@@ -10,6 +10,68 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0043 — The read posture governs human-facing transport reads only; the agent:core autonomous read surface stays a separate axis governed solely by auto_promote_read + grants (corrects a coupling introduced by D-0041)
+
+- Date: 2026-06-26
+- Status: accepted
+- Session: read-posture-latch-02
+- Decision: the install-wide **read posture** (D-0041) is a **human read-sharing
+  posture**. It governs the **human-facing transport read decision** only. The
+  **autonomous `agent:core` read surface** — the background refresh path that
+  resolves each component's adapter to read it — is a **separate axis**, governed
+  **solely by `auto_promote_read` (per-component-type promotion) plus grants**, as
+  it was before D-0041. The two axes are separated **at engine construction**: the
+  agent:core refresh engine is built **without** the read-posture resolver
+  (`rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)`), so the
+  `team_flat` admit is **structurally unreachable** on the refresh path — it is
+  not merely disabled by a principal-type exclusion branch inside the admit. The
+  transport engine continues to carry the resolver
+  (`rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)`),
+  unchanged from D-0041. **Consequence:** flipping the install read posture
+  between `team_flat` and `zoned` **cannot change what `agent:core` can read** —
+  the operator-controlled promotion surface is the sole authority for the
+  autonomous read surface, in every posture.
+- Basis: D-0041 wired `NewPolicyEngineWithGovernance` (with the read-posture
+  resolver) into **both** engine-build sites in `cmd/joe/server.go` — the
+  transport engine and the agent:core refresh engine. Verified live before the
+  fix: the refresh path stamps the `svc:agent:core` principal on the Start ctx and
+  resolves each component via `access.ResolveAdapter(..., rbac.ActionRead)`
+  (`internal/coreagent/refresh.go` `resolveAdapter`), reaching the engine's
+  `Decide` with a **non-empty principal set on ActionRead**; the `team_flat` admit
+  (`internal/rbac/policy.go`, `if e.posture != nil && action == ActionRead &&
+  len(principals) > 0`) sits **before** the `auto_promote_read` branch and admits
+  any non-empty principal set with **no svc-principal exclusion** — so under the
+  launch-default `team_flat` posture the refresh engine admitted `agent:core` to
+  read **every** component **before** `auto_promote_read` was consulted, silently
+  overriding the operator-controlled promotion surface. The fix swaps the refresh
+  site to `NewPolicyEngineWithPromote` — the pre-existing constructor that sets the
+  posture seam nil, yielding **byte-identical grant-plus-promote behaviour**
+  (`internal/rbac/policy.go`); nothing other than the refresh engine consumed the
+  posture resolver (the `refreshEngine` local feeds only its `access.New`
+  accessor), so removing it changes nothing beyond the autonomous read surface it
+  was wrongly widening. Tests: the axis-separation break-test
+  `TestReadPosture_AxisSeparation_RefreshEngineIgnoresPosture` in
+  `internal/rbac/policy_readposture_test.go` proves a `team_flat`-carrying
+  transport engine admits `agent:core` on a non-promoted component
+  (`team_flat_read`) while the promote-only refresh engine **denies** it
+  (`no_grant`), that flipping the posture `team_flat`↔`zoned` does not change the
+  refresh decision, and that a promoted type is admitted via `auto_promote_read`
+  with no posture involvement. The prior-build transport `team_flat` tests, the
+  `zoned` byte-identical regression, the nil-resolver behaviour-neutral test, and
+  the floor-denies-mutate-independent-of-posture break-test all remain green.
+- Supersedes: corrects D-0041 — it does not revert the read posture, it bounds its
+  scope to human-facing transport reads and re-establishes the D-0041-era
+  separation between the human read posture and the A001-COREGOV `auto_promote_read`
+  surface. Closes a launch-relevant coupling under the fix-before-launch
+  discipline: a default-`team_flat` install must not silently widen the autonomous
+  read surface past what the operator promoted. A deferred follow-on (whether
+  `team_flat` on the transport engine should admit `user:` principals only and
+  leave all `svc:` named API-key principals grant-based — it currently admits any
+  non-empty principal set, `svc:` included) is recorded in
+  `docs/backlog/read-posture-latch.md`.
+
+---
+
 ## D-0042 — Delete the `.joe/` repository-ingestion path (runtime no-op, stale two-binary docs, Phase-1 residue)
 
 - Date: 2026-06-26

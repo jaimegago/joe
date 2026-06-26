@@ -204,3 +204,80 @@ func TestReadPosture_NilResolver_BehaviourNeutral(t *testing.T) {
 		t.Errorf("nil-resolver engine must never produce the team_flat_read reason, got %q", dec.Reason)
 	}
 }
+
+// TestReadPosture_AxisSeparation_RefreshEngineIgnoresPosture is the read-posture-latch-02
+// break-test (D-0042). It proves the human read posture and the autonomous
+// agent:core read surface are SEPARATE axes, separated at engine construction:
+//
+//   - The transport engine is built WITH the read-posture resolver
+//     (NewPolicyEngineWithGovernance), exactly as cmd/joe/server.go builds it.
+//   - The refresh engine is built WITHOUT it (NewPolicyEngineWithPromote),
+//     exactly as cmd/joe/server.go now builds the agent:core refresh path.
+//
+// For the SAME agent:core principal reading the SAME non-promoted component:
+//   - the transport engine admits it under team_flat (team_flat_read) — that is
+//     the human posture widening the transport read, unchanged from the prior
+//     build;
+//   - the refresh engine DENIES it (no_grant), because the posture resolver never
+//     reaches it; auto_promote_read plus grants is its complete read authority.
+//
+// And flipping the install posture between team_flat and zoned does NOT change
+// any agent:core read outcome on the refresh engine — it has no posture seam to
+// consult — so the autonomous read surface is posture-independent.
+func TestReadPosture_AxisSeparation_RefreshEngineIgnoresPosture(t *testing.T) {
+	db := openTestDB(t)
+	repo := rbac.NewRepository(db, "sqlite")
+	ctx := context.Background()
+
+	// k8s-dev is unassigned (zone "unassigned" allows ["read"]); no grant. Its
+	// type is NOT promoted, so auto_promote_read does not admit agent:core.
+	promote := &fakePromote{
+		idToType: map[string]string{"k8s-dev": "kubernetes"},
+		promoted: map[string]bool{"kubernetes": false},
+	}
+	posture := &fakePosture{posture: rbac.PostureTeamFlat}
+
+	transport := rbac.NewPolicyEngineWithGovernance(repo, promote, posture) // human-facing
+	refresh := rbac.NewPolicyEngineWithPromote(repo, promote)               // agent:core, no posture
+
+	core := rbac.NewPrincipalSet(agentCore(t))
+
+	// Transport engine under team_flat: the posture admits agent:core's read.
+	td := transport.Decide(ctx, core, "k8s-dev", rbac.ActionRead)
+	if !td.Allowed || td.Reason != rbac.ReasonTeamFlatRead {
+		t.Fatalf("transport engine under team_flat should admit via team_flat_read, got {allow=%v reason=%q}", td.Allowed, td.Reason)
+	}
+
+	// Refresh engine: the posture cannot reach it. A non-promoted component is
+	// denied — auto_promote_read plus grants is the complete read authority.
+	rd := refresh.Decide(ctx, core, "k8s-dev", rbac.ActionRead)
+	if rd.Allowed {
+		t.Fatalf("refresh engine must DENY agent:core on a non-promoted component regardless of posture; got allow (reason %q)", rd.Reason)
+	}
+	if rd.Reason != rbac.ReasonNoGrant {
+		t.Errorf("refresh-engine denial should be no_grant, got %q", rd.Reason)
+	}
+	if rd.Reason == rbac.ReasonTeamFlatRead {
+		t.Fatalf("refresh engine must NEVER produce the team_flat_read reason — it has no posture resolver")
+	}
+
+	// Flipping the install posture team_flat <-> zoned does not change ANY
+	// agent:core read outcome on the refresh engine: the decision is identical
+	// because the refresh engine never consults the posture.
+	for _, p := range []string{rbac.PostureTeamFlat, rbac.PostureZoned} {
+		posture.posture = p
+		got := refresh.Decide(ctx, core, "k8s-dev", rbac.ActionRead)
+		if got != rd {
+			t.Fatalf("posture flip to %q changed the refresh decision: %+v != %+v (autonomous read surface must be posture-independent)", p, got, rd)
+		}
+	}
+
+	// And once the type is promoted, the refresh engine admits via auto_promote_read —
+	// proving auto_promote_read remains the authority for the autonomous surface,
+	// still with no posture involvement.
+	promote.promoted["kubernetes"] = true
+	pd := refresh.Decide(ctx, core, "k8s-dev", rbac.ActionRead)
+	if !pd.Allowed || pd.Reason != rbac.ReasonAutoPromoteRead {
+		t.Fatalf("refresh engine should admit a promoted type via auto_promote_read, got {allow=%v reason=%q}", pd.Allowed, pd.Reason)
+	}
+}
