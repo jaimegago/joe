@@ -217,11 +217,17 @@ then light fixes, then annotations, then mechanical cleanups.
 4. **`docs-reconcile-testing-strategy`** — Decide DELETE vs rewrite-against-as-built for `testing-strategy.md`
    (the won't-compile doc). Isolated because it's a delete-or-rebuild judgment call, kept off the other rewrites.
 
-5. **`docs-reconcile-historical-annotations`** — Add as-of/superseded banners (no content rewrite):
-   `DESIGN-CHAT-SESSIONS.md` (demote §1–§11), `joe-identity-design.md` (as-built banner),
-   `case-study-kiro-incident.md` (pre-D-0020 banner), and the two investigations
-   (`rbac-disabled-bootstrap-claim.md`, `identity-wiring-and-runtime-config.md` → "superseded by D-0027").
-   All annotation-only, PM-SPINE-safe.
+5. **`docs-reconcile-historical-annotations`** — ✅ DONE (session `docs-reconcile-historical-annotations`).
+   Annotation-only; all five banners landed, each a single top-of-file blockquote with the body left
+   byte-for-byte unchanged (2 insertions / 0 deletions per file): `DESIGN-CHAT-SESSIONS.md`
+   (**SUPERSEDED**, demotes §1–§11, points to §12+), `joe-identity-design.md` (**AS-BUILT**),
+   `case-study-kiro-incident.md` (**SUPERSEDED**, pre-D-0020), and the two investigations
+   (`rbac-disabled-bootstrap-claim.md`, `identity-wiring-and-runtime-config.md`, both **SUPERSEDED** by
+   D-0027). No file skipped. Phase-1 placement note: the two investigation files carry no markdown `#`
+   H1 — each is a single fenced code block whose first line is the `INVESTIGATION:` title — so their
+   banner sits at the very top of the file (above the opening fence) to render as a blockquote and keep
+   the fenced body unchanged. PM-SPINE investigation findings left untouched. No decision-log entry
+   (executes the audited plan, no new decision).
 
 6. **`docs-reconcile-artifact-cleanup`** — ✅ DONE (session `docs-reconcile-artifact-cleanup`). Pure
    cleanup, no doc content. Outcome differed from the audit's premise: a fresh `git ls-files` scan over
