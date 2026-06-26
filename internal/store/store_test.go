@@ -391,89 +391,6 @@ func TestSessionRepository(t *testing.T) {
 	})
 }
 
-func TestCacheRepository(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	t.Run("set and get", func(t *testing.T) {
-		cache := &store.JoeFileCache{
-			FilePath:    "/repo/.joe/context.md",
-			ContentHash: "abc123",
-			ParsedData:  json.RawMessage(`{"service": "payments"}`),
-		}
-		if err := s.Cache.Set(ctx, cache); err != nil {
-			t.Fatalf("Set() error = %v", err)
-		}
-
-		got, err := s.Cache.Get(ctx, "/repo/.joe/context.md")
-		if err != nil {
-			t.Fatalf("Get() error = %v", err)
-		}
-		if got == nil {
-			t.Fatal("Get() returned nil")
-		}
-		if got.ContentHash != "abc123" {
-			t.Errorf("ContentHash = %q, want %q", got.ContentHash, "abc123")
-		}
-	})
-
-	t.Run("get missing returns nil", func(t *testing.T) {
-		got, err := s.Cache.Get(ctx, "/nonexistent")
-		if err != nil {
-			t.Fatalf("Get() error = %v", err)
-		}
-		if got != nil {
-			t.Errorf("Get() = %v, want nil", got)
-		}
-	})
-
-	t.Run("upsert overwrites", func(t *testing.T) {
-		cache := &store.JoeFileCache{
-			FilePath:    "/repo/.joe/context.md",
-			ContentHash: "def456",
-			ParsedData:  json.RawMessage(`{"service": "payments-v2"}`),
-		}
-		if err := s.Cache.Set(ctx, cache); err != nil {
-			t.Fatalf("Set() error = %v", err)
-		}
-
-		got, _ := s.Cache.Get(ctx, "/repo/.joe/context.md")
-		if got.ContentHash != "def456" {
-			t.Errorf("ContentHash = %q, want %q", got.ContentHash, "def456")
-		}
-	})
-
-	t.Run("delete", func(t *testing.T) {
-		if err := s.Cache.Delete(ctx, "/repo/.joe/context.md"); err != nil {
-			t.Fatalf("Delete() error = %v", err)
-		}
-
-		got, _ := s.Cache.Get(ctx, "/repo/.joe/context.md")
-		if got != nil {
-			t.Error("expected nil after delete")
-		}
-	})
-
-	t.Run("delete all", func(t *testing.T) {
-		s.Cache.Set(ctx, &store.JoeFileCache{
-			FilePath: "/a", ContentHash: "h1", ParsedData: json.RawMessage(`{}`),
-		})
-		s.Cache.Set(ctx, &store.JoeFileCache{
-			FilePath: "/b", ContentHash: "h2", ParsedData: json.RawMessage(`{}`),
-		})
-
-		if err := s.Cache.DeleteAll(ctx); err != nil {
-			t.Fatalf("DeleteAll() error = %v", err)
-		}
-
-		a, _ := s.Cache.Get(ctx, "/a")
-		b, _ := s.Cache.Get(ctx, "/b")
-		if a != nil || b != nil {
-			t.Error("expected nil after DeleteAll")
-		}
-	})
-}
-
 func TestFactRepository(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
@@ -695,27 +612,6 @@ func TestRepositoryErrorPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("cache operations with minimal parsed data", func(t *testing.T) {
-		cache := &store.JoeFileCache{
-			FilePath:    "/test/minimal",
-			ContentHash: "minimal",
-			ParsedData:  json.RawMessage(`{}`), // minimal valid JSON
-		}
-		if err := s.Cache.Set(ctx, cache); err != nil {
-			t.Fatalf("Set() with minimal ParsedData error = %v", err)
-		}
-		got, err := s.Cache.Get(ctx, "/test/minimal")
-		if err != nil {
-			t.Fatalf("Get() error = %v", err)
-		}
-		if got == nil {
-			t.Error("expected non-nil result")
-		}
-		if string(got.ParsedData) != "{}" {
-			t.Errorf("ParsedData = %q, want {}", string(got.ParsedData))
-		}
-	})
-
 	t.Run("fact repository with empty component_id", func(t *testing.T) {
 		fact := &store.OnboardingFact{
 			FactType:    "test",
@@ -899,37 +795,6 @@ func TestPanicStore_StateTransitions(t *testing.T) {
 	}
 	if info != nil {
 		t.Errorf("PanicInfo() = %+v after clear, want nil", info)
-	}
-}
-
-func TestCacheRepository_WithToolCallsAndProcessedAt(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	now := time.Now().Truncate(time.Second)
-	cache := &store.JoeFileCache{
-		FilePath:    "/repo/.joe/toolcalls.md",
-		ContentHash: "tc123",
-		ParsedData:  json.RawMessage(`{"service":"payments"}`),
-		ToolCalls:   json.RawMessage(`[{"name":"graph_query","args":{}}]`),
-		ProcessedAt: now,
-	}
-	if err := s.Cache.Set(ctx, cache); err != nil {
-		t.Fatalf("Set() with ToolCalls error = %v", err)
-	}
-
-	got, err := s.Cache.Get(ctx, "/repo/.joe/toolcalls.md")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if got == nil {
-		t.Fatal("Get() returned nil")
-	}
-	if string(got.ToolCalls) != `[{"name":"graph_query","args":{}}]` {
-		t.Errorf("ToolCalls = %s, want original value", got.ToolCalls)
-	}
-	if got.ProcessedAt.IsZero() {
-		t.Error("ProcessedAt should not be zero")
 	}
 }
 

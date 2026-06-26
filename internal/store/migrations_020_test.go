@@ -57,8 +57,8 @@ func TestMigration020_UpDownUp_RoundTrip(t *testing.T) {
 	// (the principals table), then 020. The schema lands just below 020,
 	// isolating 020's down migration as this test intends; none of 021..024
 	// touches audit_log so reverting them first is inert to these probes.
-	if err := m.Steps(-9); err != nil {
-		t.Fatalf("Steps(-9): %v", err)
+	if err := m.Steps(-10); err != nil {
+		t.Fatalf("Steps(-10): %v", err)
 	}
 	if kindAdmitted(t, s, "admin_access") {
 		t.Error("after down: audit_log CHECK must reject 'admin_access' again")

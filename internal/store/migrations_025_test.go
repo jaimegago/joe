@@ -124,8 +124,8 @@ func TestMigration025_SessionSchemaRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
-	if err := m.Steps(-4); err != nil {
-		t.Fatalf("Steps(-4) revert 025: %v", err)
+	if err := m.Steps(-5); err != nil {
+		t.Fatalf("Steps(-5) revert 025: %v", err)
 	}
 	if !columnExists(t, s, "agent_sessions", "visibility") {
 		t.Error("after reverting 025: visibility column must be restored")

@@ -2137,9 +2137,7 @@ joe/
 │
 ├── docs/
 │   ├── architecture.md         # This file
-│   ├── web-ui.md               # Web UI specification
-│   ├── joe-dataflow.md
-│   └── joe-prompt.md
+│   └── web-ui.md               # Web UI specification
 │
 ├── go.mod
 ├── go.sum

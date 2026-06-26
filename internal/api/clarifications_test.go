@@ -286,9 +286,9 @@ func TestClarificationsAPI(t *testing.T) {
 
 		c4 := &store.Clarification{
 			ID:       "clar-4",
-			Type:     store.ClarificationAmbiguousJoeFile,
+			Type:     store.ClarificationServicePurpose,
 			Context:  json.RawMessage(`{}`),
-			Question: "Ambiguous joe file?",
+			Question: "What is this service for?",
 		}
 		storeInst.Clarifications.Create(ctx, c4)
 

@@ -57,11 +57,10 @@ type Clarification struct {
 
 // ClarificationType constants.
 const (
-	ClarificationNewService       = "new_service"
-	ClarificationEdgeConfirm      = "edge_confirm"
-	ClarificationAmbiguousJoeFile = "ambiguous_joe_file"
-	ClarificationNewComponent     = "new_component"
-	ClarificationServicePurpose   = "service_purpose"
+	ClarificationNewService     = "new_service"
+	ClarificationEdgeConfirm    = "edge_confirm"
+	ClarificationNewComponent   = "new_component"
+	ClarificationServicePurpose = "service_purpose"
 )
 
 // ClarificationStatus constants.
@@ -70,16 +69,6 @@ const (
 	ClarificationAnswered  = "answered"
 	ClarificationDismissed = "dismissed"
 )
-
-// JoeFileCache represents cached .joe/ file parsing and executed tool calls.
-type JoeFileCache struct {
-	FilePath    string          `json:"file_path"`
-	ContentHash string          `json:"content_hash"`
-	ParsedData  json.RawMessage `json:"parsed_data"`
-	ToolCalls   json.RawMessage `json:"tool_calls,omitempty"` // []llm.ToolCall as JSON
-	ProcessedAt time.Time       `json:"processed_at,omitempty"`
-	ParsedAt    time.Time       `json:"parsed_at"`
-}
 
 // OnboardingFact represents user-provided context.
 type OnboardingFact struct {

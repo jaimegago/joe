@@ -30,7 +30,6 @@ type Store struct {
 	Components     ComponentRepository
 	Sessions       SessionRepository
 	Clarifications ClarificationRepository
-	Cache          CacheRepository
 	Facts          FactRepository
 	Knowledge      knowledge.Repository
 	Metrics        *observability.Metrics
@@ -160,7 +159,6 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 		Components:     &sqlComponentRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Sessions:       &sqlSessionRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Clarifications: &sqlClarificationRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Cache:          &sqlCacheRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Facts:          &sqlFactRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Knowledge:      knowledge.NewRepository(db, cfg.Driver, metrics),
 		Metrics:        metrics,

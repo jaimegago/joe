@@ -12,7 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// Engine handles onboarding and .joe/ file processing
+// Engine handles onboarding input processing
 type Engine struct {
 	services *core.Services
 	llm      llm.LLMAdapter

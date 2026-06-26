@@ -30,10 +30,7 @@ func (f *fakeGitAdapter) ReadFile(_ context.Context, path string) (string, error
 }
 
 func (f *fakeGitAdapter) ListFiles(_ context.Context, dir string) ([]git.FileInfo, error) {
-	if dir == ".joe" {
-		return f.files, nil
-	}
-	return nil, nil
+	return f.files, nil
 }
 
 func (f *fakeGitAdapter) Log(_ context.Context, limit int) ([]git.CommitInfo, error) {
@@ -47,24 +44,18 @@ func (f *fakeGitAdapter) Diff(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
 
+// TestRefreshGitComponentBasic verifies the git_repo node is built from HEAD
+// commit identity (hash, date, author) on every refresh.
 func TestRefreshGitComponentBasic(t *testing.T) {
 	graphStore := setupGraphStore(t)
-	cache := newFakeCache()
-	fakeLLM := &fakeLLM{}
-	joeFileService := NewJoeFileService(cache, fakeLLM, slog.Default(), nil)
 
 	refresher := &Refresher{
-		services:       &core.Services{Graph: graphStore},
-		joeFileService: joeFileService,
-		logger:         slog.Default(),
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
 	}
 
 	source := &store.Component{ID: "src-git-1", Type: store.ComponentTypeGit, Name: "test-repo"}
 	adapter := &fakeGitAdapter{
-		files: []git.FileInfo{
-			{Path: ".joe/manifest.yaml", IsDir: false},
-			{Path: ".joe/components.yaml", IsDir: false},
-		},
 		logs: []git.CommitInfo{
 			{Hash: "abc123", Author: "alice", Message: "fix: update deployment"},
 		},
@@ -91,52 +82,16 @@ func TestRefreshGitComponentBasic(t *testing.T) {
 		t.Fatalf("node ID = %q, want git/src-git-1/repo", nodes[0].ID)
 	}
 
-	if joePresent, ok := nodes[0].Metadata["joe_dir_present"].(bool); !ok || !joePresent {
-		t.Fatalf("joe_dir_present = %v, want true", joePresent)
-	}
-
 	if headCommit, ok := nodes[0].Metadata["head_commit"].(string); !ok || headCommit != "abc123" {
 		t.Fatalf("head_commit = %q, want abc123", headCommit)
 	}
 
+	if author, ok := nodes[0].Metadata["latest_author"].(string); !ok || author != "alice" {
+		t.Fatalf("latest_author = %q, want alice", author)
+	}
+
 	if len(edges) != 0 {
 		t.Fatalf("edges count = %d, want 0", len(edges))
-	}
-}
-
-func TestRefreshGitComponentNoJoeFiles(t *testing.T) {
-	graphStore := setupGraphStore(t)
-	cache := newFakeCache()
-	fakeLLM := &fakeLLM{}
-	joeFileService := NewJoeFileService(cache, fakeLLM, slog.Default(), nil)
-
-	refresher := &Refresher{
-		services:       &core.Services{Graph: graphStore},
-		joeFileService: joeFileService,
-		logger:         slog.Default(),
-	}
-
-	source := &store.Component{ID: "src-git-2", Type: store.ComponentTypeGit, Name: "test-repo"}
-	adapter := &fakeGitAdapter{
-		files: []git.FileInfo{
-			{Path: "README.md", IsDir: false},
-		},
-		logs: []git.CommitInfo{
-			{Hash: "def456", Author: "bob", Message: "docs: update readme"},
-		},
-	}
-
-	if err := refresher.refreshGitComponent(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshGitComponent error: %v", err)
-	}
-
-	nodes, _, err := LoadGraphStateForComponent(context.Background(), graphStore, source.ID)
-	if err != nil {
-		t.Fatalf("LoadGraphStateForComponent error: %v", err)
-	}
-
-	if joePresent, ok := nodes[0].Metadata["joe_dir_present"].(bool); !ok || joePresent {
-		t.Fatalf("joe_dir_present = %v, want false", joePresent)
 	}
 }
 

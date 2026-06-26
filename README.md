@@ -321,7 +321,6 @@ joe/
 - [docs/operations.md](docs/operations.md) — Safety tiers, emergency shutdown, RBAC admin
 - [docs/integrations.md](docs/integrations.md) — MCP server and Slack bot setup
 - [docs/joe-architecture.md](docs/joe-architecture.md) — Full architecture and component diagrams
-- [docs/joe-dataflow.md](docs/joe-dataflow.md) — Data flow and `.joe/` file processing
 - [docs/web-ui.md](docs/web-ui.md) — Web UI specification
 - [docs/security-in-layers.md](docs/security-in-layers.md) — Action Safety Framework and Panic Mode spec
 - [docs/JOE_SECURITY.md](docs/JOE_SECURITY.md) — Security architecture overview

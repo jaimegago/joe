@@ -1,0 +1,11 @@
+-- joefile-removal: drop the orphaned .joe/ file ingestion cache.
+--
+-- The .joe/ repository-ingestion path (JoeFileService + its git-refresh tool-call
+-- executor) is deleted. That path was the sole consumer of joe_file_cache: it
+-- stored per-file content hashes and interpreted tool calls. With the feature
+-- gone the table has no reader or writer, so it is dropped here.
+--
+-- No foreign keys reference joe_file_cache (it was a standalone, file_path-keyed
+-- cache), so the drop is unconditional. The table was created in migration 001
+-- and extended (tool_calls, processed_at columns) in migration 003.
+DROP TABLE IF EXISTS joe_file_cache;
