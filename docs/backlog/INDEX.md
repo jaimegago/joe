@@ -38,3 +38,4 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred |
 | [`tilde-expansion-helper-unification`](tilde-expansion-helper-unification.md) | Backlog — Unify the tilde-expansion helpers | deferred |
+| [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |
