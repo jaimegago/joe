@@ -106,11 +106,10 @@ past):**
     webhook endpoints, schema diagram, and any of the removed direct-HTTP route
     descriptions (lines ~133-134 ascii diagram, ~210-228 HTTP API reference block:
     the removed k8s/git/aws GET routes).
-  - `docs/joe-dataflow.md` — **doubly stale, higher priority:** line 32 diagram
-    and lines ~360-367 worked example show `CORE TOOL → HTTP to joecored → GET
-    .../k8s/...`. Wrong twice — the route is gone AND the HTTP-to-joecored hop
-    no longer exists (single-binary collapse made the tool path in-process). This
-    actively misdescribes current architecture, not just a removed route name.
+  - `docs/joe-dataflow.md` — **RESOLVED by deletion (D-0042, session
+    joefile-removal):** the whole doc was dominated by the deleted `.joe/`
+    ingestion model and the retired two-binary `joecored` world, so it was
+    removed wholesale rather than patched.
 - **Accurate, leave:** `docs/joe-architecture.md:1925` `review_jobs:` schema
   diagram — the table still exists (migration option A kept it). Accurate until/
   unless the table is dropped in the history scrub (Stream C).

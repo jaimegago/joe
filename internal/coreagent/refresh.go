@@ -47,14 +47,13 @@ import (
 
 // Refresher handles background refresh of the graph
 type Refresher struct {
-	services       *core.Services
-	llm            llm.LLMAdapter
-	joeFileService *JoeFileService
-	logger         *slog.Logger
-	metrics        *observability.Metrics
-	interval       time.Duration
-	cancel         context.CancelFunc
-	doneCh         chan struct{}
+	services *core.Services
+	llm      llm.LLMAdapter
+	logger   *slog.Logger
+	metrics  *observability.Metrics
+	interval time.Duration
+	cancel   context.CancelFunc
+	doneCh   chan struct{}
 	// accessor is the guarded seam (A001-COREGOV CC-05) through which the
 	// refresh resolves each component's adapter under the agent:core principal
 	// (carried on the refresh ctx by CC-02) at rbac.ActionRead. It is wired at
@@ -80,15 +79,13 @@ func (r *Refresher) SetAccessor(accessor *access.Accessor) {
 
 // NewRefresher creates a new background refresher
 func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger, metrics *observability.Metrics) *Refresher {
-	joeFileService := NewJoeFileService(services.Store.Cache, llmAdapter, logger, metrics)
 	return &Refresher{
-		services:       services,
-		llm:            llmAdapter,
-		joeFileService: joeFileService,
-		logger:         logger.With("component", "refresher"),
-		metrics:        observability.EnsureMetrics(metrics),
-		interval:       5 * time.Minute,
-		doneCh:         make(chan struct{}),
+		services: services,
+		llm:      llmAdapter,
+		logger:   logger.With("component", "refresher"),
+		metrics:  observability.EnsureMetrics(metrics),
+		interval: 5 * time.Minute,
+		doneCh:   make(chan struct{}),
 	}
 }
 

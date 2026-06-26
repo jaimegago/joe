@@ -71,8 +71,6 @@ npm run test
 - `docs/pm-convention.md` — the project-management and session-tracking convention (the slug that joins chat, Claude Code, commits, and decisions)
 - `docs/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
 - `docs/joe-architecture.md` — Full architecture with diagrams
-- `docs/joe-dataflow.md` — Data flow details, .joe/ file processing
-- `docs/joe-prompt.md` — Prompt for coding LLMs to generate .joe/ files
 - `docs/security-in-layers.md` — Action Safety Framework, Emergency Shutdown
 - `docs/JOE_SECURITY.md` — Security architecture overview (RBAC + Safety)
 - `docs/JOE_RBAC_IMPLEMENTATION.md` — RBAC middleware spec

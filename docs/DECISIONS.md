@@ -10,6 +10,48 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0042 — Delete the `.joe/` repository-ingestion path (runtime no-op, stale two-binary docs, Phase-1 residue)
+
+- Date: 2026-06-26
+- Status: accepted
+- Session: joefile-removal
+- Decision: remove the `.joe/` repository-ingestion feature entirely — Joe no
+  longer reads, interprets, or ingests any repo-authored `.joe/` directory or
+  files. Deleted: the `JoeFileService` (`internal/coreagent/joefile_service.go`)
+  and its interpretation system prompt (`internal/prompts/joefile.go`); the
+  `.joe`-specific behavior in the git refresh path
+  (`internal/coreagent/git_refresh.go`) — the `ProcessJoeFiles` call, the
+  tool-call executor and its `graph_add_node` / `graph_add_edge` /
+  `save_onboarding_fact` dispatchers, and the `joe_dir_present` node-metadata
+  write; the `JoeFileService` field and construction on the `Refresher`; and the
+  now-orphaned file cache (`internal/store/cache.go`, the `JoeFileCache` model,
+  the `joe_file_cache` table dropped by migration `029_drop_joe_file_cache`).
+  **Preserved, untouched:** the `git_repo` node is still built from HEAD commit
+  identity (hash, date, author) on every refresh — only its `.joe`-derived
+  metadata stops being written; the general onboarding/Facts store and its
+  `POST /api/v1/onboarding` route (user-typed input, unrelated to `.joe`); and
+  the graph `AddNode`/`AddEdge` store primitives (only the `.joe`-sourced callers
+  were removed). Already-persisted `joe_dir_present` metadata in live databases
+  is left in place — the write simply stops; no historical scrub.
+- Basis: the path was a **runtime no-op**. The git adapter's `ListFiles(ctx, ".joe")`
+  descends into the `.joe` subtree and returns bare basenames
+  (`entry.Name`, e.g. `manifest.yaml`) — `internal/adapters/git/read.go:91-93` —
+  but `ProcessJoeFiles` fed those basenames straight to `ReadFile`, which
+  resolves `tree.File(path)` from the **repository root**
+  (`internal/adapters/git/read.go:30-35`); `tree.File("manifest.yaml")` never
+  matches `.joe/manifest.yaml`, so every read failed and the interpreter was
+  never reached. The only tests that "passed" used a fake git adapter that
+  returned full paths from `ListFiles` and keyed `ReadFile` by that same full
+  path, masking the mismatch. The feature's supporting docs
+  (`docs/joe-dataflow.md`, `docs/joe-prompt.md`, now deleted) described the
+  retired two-binary `joecored` world (superseded by D-0033) and the pre-rename
+  "sources" model (superseded by D-0021), confirming the path as unmaintained
+  Phase-1 residue.
+- Supersedes: none — the `.joe/` ingestion model predates this decision log (it
+  is Phase-1 work with no introducing D-entry).
+
+---
+
 ## D-0041 — Install-wide read posture: team_flat is the launch default, zoned is the full-mode read path, orthogonal to the write floor, flipped by an audited admin act
 
 - Date: 2026-06-26

@@ -59,8 +59,8 @@ func TestMigration018_UpDownUp_RoundTrip(t *testing.T) {
 	// (principals), 020 (admin-audit kind widening), 019 (the LLM context-budget
 	// table), then 018 — 019..024 now sit above 018. Stepping -7 lands the
 	// schema just below 018, isolating 018's down migration as this test intends.
-	if err := m.Steps(-11); err != nil {
-		t.Fatalf("Steps(-11): %v", err)
+	if err := m.Steps(-12); err != nil {
+		t.Fatalf("Steps(-12): %v", err)
 	}
 	if kindAdmitted(t, s, "auth_login") {
 		t.Error("after down: audit_log CHECK must reject 'auth_login' again")

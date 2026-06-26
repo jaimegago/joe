@@ -673,6 +673,5 @@ Status: ✅ Complete (knowledge tiers enforced, Confluence/Notion sync live, sem
 
 For architectural decisions and rationale, see:
 - [docs/joe-architecture.md](docs/joe-architecture.md) - Architecture overview
-- [docs/joe-dataflow.md](docs/joe-dataflow.md) - Data flow and .joe/ processing
 - [docs/security-in-layers.md](docs/security-in-layers.md) - Security posture and Action Safety Framework
 - [CLAUDE.md](CLAUDE.md) - Phase planning and standards

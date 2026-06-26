@@ -2,8 +2,8 @@ package coreagent
 
 // final_coverage_test.go — targeted tests to push coverage above 90%.
 // Covers remaining uncovered branches in buildMetricsInEdges, buildAlertsInEdges,
-// selectorMatches, extractWorkloadInfo, executeJoeFileToolCalls, Loki/Tempo/Jaeger
-// non-service-node paths, and applyRegistryDelta error paths.
+// selectorMatches, extractWorkloadInfo, Loki/Tempo/Jaeger non-service-node paths,
+// and applyRegistryDelta error paths.
 
 import (
 	"context"
@@ -13,11 +13,9 @@ import (
 	"time"
 
 	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
-	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/store"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -311,189 +309,6 @@ func TestExtractWorkloadInfo_WithVolumesAndEnvFrom(t *testing.T) {
 }
 
 // ============================================================
-// executeJoeFileToolCalls: unknown tool, direct invocation
-// ============================================================
-
-func TestExecuteJoeFileToolCalls_AllBranches(t *testing.T) {
-	gs := setupGraphStore(t)
-	svc := makeTestServices(t)
-	svc.Graph = gs
-
-	r := &Refresher{
-		services: svc,
-		logger:   slog.Default(),
-	}
-	ctx := context.Background()
-
-	toolCalls := []llm.ToolCall{
-		{
-			ID:   "call-1",
-			Name: "graph_add_node",
-			Args: map[string]any{
-				"node_id":   "service/test-exec",
-				"node_type": "service",
-				"metadata":  map[string]any{"team": "platform"},
-			},
-		},
-		{
-			ID:   "call-2",
-			Name: "graph_add_edge",
-			Args: map[string]any{
-				"from":     "service/test-exec",
-				"to":       "database/orders",
-				"relation": "uses",
-			},
-		},
-		{
-			ID:   "call-3",
-			Name: "save_onboarding_fact",
-			Args: map[string]any{
-				"fact_type": "ownership",
-				"subject":   "test-exec",
-				"content":   "Owned by platform team",
-			},
-		},
-		{
-			ID:   "call-4",
-			Name: "unknown_tool_xyz",
-			Args: map[string]any{},
-		},
-	}
-
-	if err := r.executeJoeFileToolCalls(ctx, toolCalls, "src-git-exec"); err != nil {
-		t.Fatalf("executeJoeFileToolCalls error: %v", err)
-	}
-
-	// Verify node was added.
-	node, err := gs.GetNode(ctx, "service/test-exec")
-	if err != nil {
-		t.Fatalf("GetNode: %v", err)
-	}
-	if node.Type != "service" {
-		t.Errorf("node.Type = %q, want service", node.Type)
-	}
-}
-
-func TestExecuteJoeFileToolCalls_AddNodeMissingArgs(t *testing.T) {
-	gs := setupGraphStore(t)
-	r := &Refresher{
-		services: &core.Services{Graph: gs},
-		logger:   slog.Default(),
-	}
-	ctx := context.Background()
-
-	// Missing node_id and node_type — should log warning but not return error.
-	toolCalls := []llm.ToolCall{
-		{
-			ID:   "call-bad",
-			Name: "graph_add_node",
-			Args: map[string]any{}, // missing required fields
-		},
-	}
-
-	if err := r.executeJoeFileToolCalls(ctx, toolCalls, "src-git-bad"); err != nil {
-		t.Fatalf("executeJoeFileToolCalls should not propagate error, got: %v", err)
-	}
-}
-
-func TestExecuteJoeFileToolCalls_AddEdgeMissingArgs(t *testing.T) {
-	gs := setupGraphStore(t)
-	r := &Refresher{
-		services: &core.Services{Graph: gs},
-		logger:   slog.Default(),
-	}
-	ctx := context.Background()
-
-	toolCalls := []llm.ToolCall{
-		{
-			ID:   "call-bad-edge",
-			Name: "graph_add_edge",
-			Args: map[string]any{"from": "a"}, // missing to and relation
-		},
-	}
-
-	if err := r.executeJoeFileToolCalls(ctx, toolCalls, "src-git-bad-edge"); err != nil {
-		t.Fatalf("executeJoeFileToolCalls should not propagate error, got: %v", err)
-	}
-}
-
-func TestExecuteJoeFileToolCalls_SaveFactMissingArgs(t *testing.T) {
-	gs := setupGraphStore(t)
-	svc := makeTestServices(t)
-	svc.Graph = gs
-
-	r := &Refresher{
-		services: svc,
-		logger:   slog.Default(),
-	}
-	ctx := context.Background()
-
-	toolCalls := []llm.ToolCall{
-		{
-			ID:   "call-bad-fact",
-			Name: "save_onboarding_fact",
-			Args: map[string]any{"fact_type": "ownership"}, // missing subject and content
-		},
-	}
-
-	if err := r.executeJoeFileToolCalls(ctx, toolCalls, "src-git-bad-fact"); err != nil {
-		t.Fatalf("executeJoeFileToolCalls should not propagate error, got: %v", err)
-	}
-}
-
-// ============================================================
-// refreshGitComponent: ProcessJoeFiles error branch (joe_dir_present = false)
-// ============================================================
-
-type errListGitAdapter struct {
-	fakeGitAdapter
-	listErr error
-}
-
-func (e *errListGitAdapter) ListFiles(_ context.Context, dir string) ([]gitadapter.FileInfo, error) {
-	if dir == ".joe" {
-		return nil, e.listErr
-	}
-	return nil, nil
-}
-
-func TestRefreshGitComponent_ProcessJoeFilesError(t *testing.T) {
-	gs := setupGraphStore(t)
-	cache := newFakeCache()
-	fakeLLMInst := &fakeLLM{}
-	joeFileService := NewJoeFileService(cache, fakeLLMInst, slog.Default(), nil)
-
-	refresher := &Refresher{
-		services:       &core.Services{Graph: gs},
-		joeFileService: joeFileService,
-		logger:         slog.Default(),
-	}
-
-	source := &store.Component{ID: "src-git-err", Type: store.ComponentTypeGit, Name: "err-repo"}
-	adapter := &errListGitAdapter{
-		listErr: errors.New("permission denied"),
-	}
-
-	// Should not return an error — the git refresh logs the warning and continues.
-	if err := refresher.refreshGitComponent(context.Background(), source, adapter); err != nil {
-		t.Fatalf("refreshGitComponent should not error on ProcessJoeFiles failure, got: %v", err)
-	}
-
-	nodes, _, err := LoadGraphStateForComponent(context.Background(), gs, source.ID)
-	if err != nil {
-		t.Fatalf("LoadGraphStateForComponent error: %v", err)
-	}
-	if len(nodes) != 1 {
-		t.Fatalf("nodes = %d, want 1", len(nodes))
-	}
-	// joe_dir_present should be false on error.
-	joePresent, _ := nodes[0].Metadata["joe_dir_present"].(bool)
-	if joePresent {
-		t.Error("joe_dir_present should be false when ProcessJoeFiles errors")
-	}
-}
-
-// ============================================================
 // Loki/Tempo/Jaeger: non-service-node skip branch
 // ============================================================
 
@@ -710,98 +525,6 @@ func TestRefreshJaegerComponent_LoadGraphStateError(t *testing.T) {
 	err := r.refreshJaegerComponent(context.Background(), src, &fakeJaegerAdapter{})
 	if err == nil {
 		t.Error("expected error when LoadGraphStateForComponent fails")
-	}
-}
-
-// ============================================================
-// ProcessJoeFiles: cache unmarshal error → fall through to LLM
-// ============================================================
-
-// errCache is like fakeCache but returns errors on Get
-type errSetCache struct {
-	fakeCache
-	setErr error
-}
-
-func (c *errSetCache) Set(_ context.Context, _ *store.JoeFileCache) error {
-	return c.setErr
-}
-
-func TestProcessJoeFiles_CacheSetError(t *testing.T) {
-	// cache.Set error should be non-fatal
-	cache := &errSetCache{
-		fakeCache: *newFakeCache(),
-		setErr:    errors.New("disk full"),
-	}
-	fakeLLMInst := &fakeLLM{
-		returnCalls: []llm.ToolCall{
-			{ID: "t1", Name: "graph_add_node", Args: map[string]any{"node_id": "svc/x", "node_type": "service"}},
-		},
-	}
-	service := NewJoeFileService(cache, fakeLLMInst, slog.Default(), nil)
-
-	gitA := &fakeGitAdapterWithContent{
-		files: []gitadapter.FileInfo{
-			{Path: ".joe/manifest.yaml", IsDir: false},
-		},
-		fileContent: map[string]string{
-			".joe/manifest.yaml": "joe_version: '1.0'",
-		},
-	}
-
-	toolCalls, err := service.ProcessJoeFiles(context.Background(), gitA, "src-cache-err")
-	if err != nil {
-		t.Fatalf("ProcessJoeFiles error: %v", err)
-	}
-	// LLM call returned 1 tool call; cache Set errored but we still get results
-	if len(toolCalls) != 1 {
-		t.Errorf("want 1 tool call even with cache Set error, got %d", len(toolCalls))
-	}
-}
-
-func TestProcessJoeFiles_CacheUnmarshalError_FallsBackToLLM(t *testing.T) {
-	// Cache returns a hit (hash matches) but ToolCalls has invalid JSON.
-	// ProcessJoeFiles should fall through to LLM interpretation.
-	fileContent := "joe_version: '1.0'\nrepo:\n  name: api"
-	hash := computeContentHash(fileContent)
-
-	cache := newFakeCache()
-	// Seed cache with WRONG hash to force hash mismatch → cache miss → LLM called
-	// Actually we need the hash to match but JSON to be invalid.
-	// The code checks: cached != nil && cached.ContentHash == hash && cached.ToolCalls != nil
-	// Then does json.Unmarshal. If Unmarshal fails, toolCalls = nil (falls to LLM).
-	_ = cache.Set(context.Background(), &store.JoeFileCache{
-		FilePath:    ".joe/api.yaml",
-		ContentHash: hash,
-		ToolCalls:   []byte("{{bad json that cannot unmarshal}}"),
-	})
-
-	fakeLLMInst := &fakeLLM{
-		returnCalls: []llm.ToolCall{
-			{ID: "from-llm", Name: "graph_add_node", Args: map[string]any{"node_id": "svc/api", "node_type": "service"}},
-		},
-	}
-	service := NewJoeFileService(cache, fakeLLMInst, slog.Default(), nil)
-
-	gitA := &fakeGitAdapterWithContent{
-		files: []gitadapter.FileInfo{
-			{Path: ".joe/api.yaml", IsDir: false},
-		},
-		fileContent: map[string]string{
-			".joe/api.yaml": fileContent,
-		},
-	}
-
-	toolCalls, err := service.ProcessJoeFiles(context.Background(), gitA, "src-bad-cache")
-	if err != nil {
-		t.Fatalf("ProcessJoeFiles error: %v", err)
-	}
-	// LLM was called because cache unmarshal failed
-	if fakeLLMInst.chatCalls == 0 {
-		t.Error("expected LLM to be called after cache unmarshal failure")
-	}
-	if len(toolCalls) != 1 {
-		t.Errorf("want 1 tool call from LLM fallback, got %d", len(toolCalls))
 	}
 }
 
