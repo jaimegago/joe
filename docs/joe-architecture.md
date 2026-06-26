@@ -224,7 +224,7 @@ Both loops compose the **same** tool-executor governance (`internal/captaingate/
 
 ### Review Agent (infrastructure-aware code review — Phase 10)
 
-Triggered by webhook or `joe review owner/repo#123`, the Review Agent fetches a PR/MR diff, identifies affected resources, queries the graph (what depends on this?), knowledge (relevant runbooks/incidents), and live state, then produces an infrastructure-aware review. Its read tools are Read class; posting a comment (`github_comment`/`gitlab_comment`) or requesting changes (`github_request_changes`) are Mutate-class actions gated by their `act` policy keys.
+Triggered by webhook or API call (there is no `joe review` CLI subcommand — review is webhook/API-only), the Review Agent fetches a PR/MR diff, identifies affected resources, queries the graph (what depends on this?), knowledge (relevant runbooks/incidents), and live state, then produces an infrastructure-aware review. Its read tools are Read class; posting a comment (`github_comment`/`gitlab_comment`) or requesting changes (`github_request_changes`) are Mutate-class actions gated by their `act` policy keys.
 
 ---
 

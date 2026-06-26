@@ -209,10 +209,32 @@ then light fixes, then annotations, then mechanical cleanups.
    `operations.md` (tiers/panic-file/source-zones/incident-signature), `web-ui.md` (auth/component/action-axis/file-map).
    One coherent "make current-state ops + UI docs match the tree" unit.
 
-3. **`docs-reconcile-narrative-light`** — Surgical single-claim fixes that don't need a full rewrite:
-   `joe-architecture.md` (`joe review`), `configuration.md` (`ollama`), `observability.md` (logs/CLI framing),
-   `joe-skills-design.md` (Gemini-only/T3), `security-in-layers.md` (unlock curl), `DESIGN-SESSIONS-VIEW.md`
-   (line-citation refresh). Each is a few-line edit; safe to batch.
+3. **`docs-reconcile-narrative-light`** — ✅ DONE (session `docs-reconcile-narrative-light`). Surgical
+   single-claim fixes that didn't need a full rewrite; all six applied, none skipped. Outcomes:
+   - `joe-architecture.md` — **applied**: removed the `joe review owner/repo#123` CLI example (no `review`
+     case in `cmd/joe/main.go`), reframed the Review Agent trigger as webhook/API-only.
+   - `configuration.md` — **applied**: dropped `ollama` from the provider comment (validation accepts only
+     `claude`/`gemini`), leaving `claude | gemini`.
+   - `observability.md` — **applied**: removed the logs claim from the header sentence (OTel wiring has only
+     `TracerProvider`+`MeterProvider`, no log exporter — `internal/observability/otel.go`), traces+metrics
+     only; trimmed the stale `Joe CLI` ASCII-diagram box to `joe`. Line-9 "Why OpenTelemetry?" bullet left
+     as-is (it describes the OTel framework's signal coverage, not a Joe pipeline claim).
+   - `joe-skills-design.md` — **applied**: "currently Gemini" → "Claude or Gemini" (both validated
+     providers); "T3 mutation notification" → "Mutate-action notification" (D-0020 binary Read/Mutate).
+   - `security-in-layers.md` — **applied**: removed the §7.4 `curl POST /api/v1/unlock` example (route is
+     gone — `internal/api/panic_test.go` asserts its absence; `joe unlock` is the recovery path) and
+     re-annotated the §7.5 endpoint-table row as CLI-only with no HTTP endpoint.
+   - `DESIGN-SESSIONS-VIEW.md` — **applied** (citation refresh): re-derived every drifted `internal/api/webui.go`
+     and `internal/sessionmodel/repository.go` `file:line` against the live tree (handlers shifted +14, the
+     two list queries shifted; migration-025 citations unchanged). The P0 **status header was already
+     correct** ("P0–P2 landed") — the audit lead had already flipped it from the false-positive unbuilt flag;
+     P0 mechanisms re-confirmed present (master-title self-join `repository.go:525`/`:528`, linked-incident
+     index `025_session_schema_rewrite.up.sql:94`), so no header edit was needed. One residual nuance: the
+     §6.C struct-comment citation now points at `webui.go:227`, whose live comment text was itself rewritten
+     by P0 (now documents the fixed both-surfaces state); only the line number was refreshed, the historical
+     past-tense narrative quote was left as-is per the line-number-only scope.
+
+   No decision-log entry (executes the audited plan, no new decision).
 
 4. **`docs-reconcile-testing-strategy`** — Decide DELETE vs rewrite-against-as-built for `testing-strategy.md`
    (the won't-compile doc). Isolated because it's a delete-or-rebuild judgment call, kept off the other rewrites.

@@ -1,6 +1,6 @@
 # Observability with OpenTelemetry
 
-Joe uses OpenTelemetry for comprehensive observability - traces, metrics, and logs.
+Joe uses OpenTelemetry for observability - traces and metrics.
 
 ## Why OpenTelemetry?
 
@@ -14,7 +14,7 @@ Joe uses OpenTelemetry for comprehensive observability - traces, metrics, and lo
 
 ```
 ┌─────────────┐
-│   Joe CLI   │
+│     joe     │
 └──────┬──────┘
        │
        v
