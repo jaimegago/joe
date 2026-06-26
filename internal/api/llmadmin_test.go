@@ -25,6 +25,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -95,6 +96,7 @@ func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *l
 	settingsRepo := llmsettings.NewRepository(s.DB(), s.Driver())
 	settingsSvc := llmsettings.NewMutationService(settingsRepo, auditRepo)
 	promoteReadsSvc := promotereads.NewMutationService(promotereads.NewRepository(s.DB(), s.Driver()), auditRepo)
+	readPostureSvc := readposture.NewMutationService(readposture.NewRepository(s.DB(), s.Driver()), auditRepo)
 	sessionLimitsProvider := llmsettings.NewSessionLimitsProvider(settingsRepo, agentloop.NewStaticSessionLimits(), nil)
 	costLimitsProvider := llmsettings.NewCostLimitsProvider(settingsRepo, llmusage.NewStaticCostLimits(), nil)
 	contextBudgetProvider := llmsettings.NewContextBudgetProvider(settingsRepo, agentloop.NewStaticContextBudget(), nil)
@@ -119,6 +121,7 @@ func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *l
 	services.LLMUsage = usageRepo
 	services.LLMSettings = settingsSvc
 	services.PromoteReads = promoteReadsSvc
+	services.ReadPosture = readPostureSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
 	services.CostLimitsProvider = costLimitsProvider
 	services.ContextBudgetProvider = contextBudgetProvider

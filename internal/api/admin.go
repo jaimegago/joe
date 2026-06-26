@@ -12,6 +12,7 @@ import (
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -129,6 +130,12 @@ func (s *Server) registerAdminRoutes(mux *http.ServeMux, prefix string) {
 	// component-type enum and the mutation service writes value+audit atomically.
 	mux.HandleFunc(fmt.Sprintf("GET %s/read-promotions", admin), h.listReadPromotions)
 	mux.HandleFunc(fmt.Sprintf("POST %s/read-promotions", admin), h.setReadPromotion)
+
+	// read-posture-latch — the install-wide read posture (team_flat | zoned). GET
+	// reads the current posture; POST flips it. Both admin-gated; the setter
+	// validates the value and the mutation service writes value+audit atomically.
+	mux.HandleFunc(fmt.Sprintf("GET %s/read-posture", admin), h.getReadPosture)
+	mux.HandleFunc(fmt.Sprintf("POST %s/read-posture", admin), h.setReadPosture)
 
 	// D-0026 unit 3 — per-component credential authz/connectivity status surface.
 	// A passive Describe listing (no backend contact), a deliberate live Probe,
@@ -1020,5 +1027,75 @@ func (h *adminHandler) setReadPromotion(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"component_type": req.ComponentType,
 		"enabled":        req.Enabled,
+	})
+}
+
+// --- read-posture-latch endpoints ---
+//
+// The install-wide read posture (team_flat | zoned) is the single deliberate
+// operator latch that moves an install from flat read (every authenticated
+// principal reads every component) to grant-based zoned read (the full-mode read
+// path). GET reads it; POST flips it. Both admin-gated; the flip is audited by
+// the mutation service in the same transaction as the value write.
+
+// getReadPosture returns the current install-wide read posture. Admin-gated;
+// read-class audit (fail-open).
+func (h *adminHandler) getReadPosture(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	if h.server.services == nil || h.server.services.ReadPosture == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "read-posture service not available")
+		return
+	}
+	posture, err := h.server.services.ReadPosture.Repo().ReadPosture(r.Context())
+	if err != nil {
+		writeInternalError(w, err, "get read posture")
+		return
+	}
+	// Read-class audit: the posture governs authorization, so the access is
+	// recorded (parallel to the other admin .read verbs). Fail-open per §4.
+	_ = h.recordAdminAudit(r.Context(), audit.ActionAdminReadPostureRead, audit.DecisionAllow,
+		"admin_read", audit.Details{Target: "read_posture"}, "admin:read_posture.read")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"posture": posture,
+	})
+}
+
+type setReadPostureRequest struct {
+	Posture string `json:"posture"`
+}
+
+// setReadPosture flips the install-wide read posture. Admin-gated; the value is
+// validated against the two recognised postures (unknown values are rejected 400
+// before any write). The mutation service commits the posture and its audit row
+// in one transaction (fail-closed). The audit row is written by the mutation
+// service itself, so the handler writes none of its own — same division the
+// read-promotion setter and the principal disable/enable handlers use.
+func (h *adminHandler) setReadPosture(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
+	var req setReadPostureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, err, "set read posture", "invalid request body")
+		return
+	}
+	if !readposture.IsValidPosture(req.Posture) {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
+			fmt.Sprintf("invalid posture %q (want %q or %q)",
+				req.Posture, readposture.PostureTeamFlat, readposture.PostureZoned))
+		return
+	}
+	if h.server.services == nil || h.server.services.ReadPosture == nil {
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "read-posture service not available")
+		return
+	}
+	if err := h.server.services.ReadPosture.SetPosture(r.Context(), req.Posture); err != nil {
+		writeInternalError(w, err, "set read posture")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"posture": req.Posture,
 	})
 }

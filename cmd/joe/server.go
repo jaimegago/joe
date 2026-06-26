@@ -54,6 +54,7 @@ import (
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionarchive"
@@ -363,6 +364,17 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	promoteReadsRepo := promotereads.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	promoteReadsSvc := promotereads.NewMutationService(promoteReadsRepo, auditRepo)
 
+	// read-posture-latch: the install-wide read posture (table read_posture,
+	// migration 028). readPostureRepo is the live read seam the policy engine
+	// consults for the team_flat read admit (resolved per decision, no cache);
+	// readPostureSvc is the SOLE write path, committing each posture flip with its
+	// admin_access audit row atomically (mirrors promoteReadsSvc). The engine is
+	// built WITH this resolver below (NewPolicyEngineWithGovernance), so a
+	// fresh/upgraded install defaults to team_flat until an operator flips it to
+	// zoned via the admin REST surface.
+	readPostureRepo := readposture.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	readPostureSvc := readposture.NewMutationService(readPostureRepo, auditRepo)
+
 	// Wire session-model repository (tables created by migration 009).
 	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
@@ -463,6 +475,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.LLMUsage = llmUsageRepo
 	services.LLMSettings = llmSettingsSvc
 	services.PromoteReads = promoteReadsSvc
+	services.ReadPosture = readPostureSvc
 	services.SessionLimitsProvider = sessionLimitsProvider
 	services.CostLimitsProvider = costLimitsProvider
 	services.ContextBudgetProvider = contextBudgetProvider
@@ -681,19 +694,21 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// CC-02) at ActionRead — denying any ungranted/unpromoted component before
 	// its adapter, and thus its credential, is resolved.
 	//
-	// CRITICAL: this accessor's engine MUST be the promote-aware engine CC-04
-	// wired (NewPolicyEngineWithPromote over the auto_promote_reads resolver),
-	// not a bare NewPolicyEngine — otherwise agent:core reads deny-all even for
-	// promoted types. The transport policyEngine below is built after the Core
-	// Agent starts, so we build the refresh engine here the SAME way, from the
-	// SAME rbacRepo + promoteReadsRepo under the SAME cfg.RBACEnabled() predicate.
-	// A nil engine (RBAC disabled) makes the accessor permit every decision,
-	// matching the transport path. The accessor is principal-agnostic; it becomes
-	// "the agent:core accessor" purely by being consumed under the CC-02 ctx.
+	// CRITICAL: this accessor's engine MUST be the governance-aware engine
+	// (NewPolicyEngineWithGovernance over the auto_promote_reads resolver AND the
+	// read-posture resolver), not a bare NewPolicyEngine — otherwise agent:core
+	// reads deny-all even for promoted types, and the team_flat read admit never
+	// fires on the refresh path. The transport policyEngine below is built after
+	// the Core Agent starts, so we build the refresh engine here the SAME way,
+	// from the SAME rbacRepo + promoteReadsRepo + readPostureRepo under the SAME
+	// cfg.RBACEnabled() predicate. A nil engine (RBAC disabled) makes the accessor
+	// permit every decision, matching the transport path. The accessor is
+	// principal-agnostic; it becomes "the agent:core accessor" purely by being
+	// consumed under the CC-02 ctx.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok {
 		var refreshEngine *rbac.PolicyEngine
 		if cfg.RBACEnabled() {
-			refreshEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
+			refreshEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
 		}
 		refreshAccessor := access.New(services.Adapters, services.Graph, refreshEngine, auditRepo)
 		concrete.SetRefreshAccessor(refreshAccessor)
@@ -814,12 +829,13 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	oidcConfigured := cfg.Auth.OIDC.Configured()
 	var policyEngine *rbac.PolicyEngine
 	if cfg.RBACEnabled() {
-		// A001-COREGOV CC-04: build the engine WITH the auto_promote_reads
-		// resolver so the agent:core + ActionRead dynamic admit predicate is
-		// live. The predicate is still behaviour-neutral on the main path: no
-		// caller routes agent:core reads through this engine until CC-05, so
-		// wiring the resolver here only arms the predicate for that later unit.
-		policyEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
+		// Build the engine WITH both live governance resolvers (read-posture-latch):
+		// the auto_promote_reads resolver (A001-COREGOV CC-04) so the agent:core +
+		// ActionRead dynamic admit predicate is live, AND the read-posture resolver
+		// so the team_flat read admit is live per decision. With a fresh/upgraded
+		// install seeded team_flat, every authenticated principal reads every
+		// component until an operator flips the posture to zoned.
+		policyEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
 	}
 	// Stream G phase G5: surface the RBAC-enabled signal to handlers.
 	// Set once here at the engine-build site so the accessor's

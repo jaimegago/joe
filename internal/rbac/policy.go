@@ -21,6 +21,19 @@ type PolicyEngine struct {
 	// methods on the broad Repository so the many Repository fakes need no
 	// change — the lowest-coupling of the two seams CC-04 offered.
 	promote PromoteReadsResolver
+	// posture is the OPTIONAL install-wide read-posture resolver
+	// (read-posture-latch). When non-nil it powers the team_flat read admit:
+	// for ActionRead, when the live posture is team_flat, ANY authenticated
+	// principal is admitted with no materialized grant, resolved live per
+	// decision. When nil (every caller using NewPolicyEngine /
+	// NewPolicyEngineWithPromote — all existing call sites and test fakes) the
+	// admit is inert and Decide behaves exactly as the grant-based (zoned)
+	// decision did before; this is the behaviour-neutral default that keeps the
+	// posture admit out of the decision path until it is deliberately wired at
+	// the engine-build site (cmd/joe/server.go) via NewPolicyEngineWithGovernance.
+	// A SEPARATE narrow interface (not a method on the broad Repository) so the
+	// many Repository fakes need no change, exactly as PromoteReadsResolver is.
+	posture ReadPostureResolver
 }
 
 // PromoteReadsResolver is the minimal live-read seam the auto_promote_reads
@@ -38,6 +51,35 @@ type PromoteReadsResolver interface {
 	IsPromoted(ctx context.Context, componentType string) (bool, error)
 }
 
+// Read-posture values (read-posture-latch). These are the SAME literals
+// internal/readposture defines (PostureTeamFlat / PostureZoned) and the
+// migration-028 CHECK pins; the engine compares the resolver's returned string
+// against them. Kept as plain literals here (not imported from readposture) so
+// internal/rbac does not import internal/readposture — readposture imports rbac
+// for these constants and PrincipalFromContext, and the reverse import would
+// close a cycle. readposture's guard asserts the two sets stay in sync.
+const (
+	// PostureTeamFlat: any authenticated principal is admitted for a read
+	// action on any component the resolved zone permits to be read, regardless
+	// of grant. The launch default.
+	PostureTeamFlat = "team_flat"
+	// PostureZoned: the grant-based read decision (the full-mode read path) —
+	// byte-identical to the pre-posture zone+grant behaviour.
+	PostureZoned = "zoned"
+)
+
+// ReadPostureResolver is the minimal live-read seam the team_flat read admit
+// needs (read-posture-latch): resolve the install-wide read posture per
+// decision. Satisfied by internal/readposture.Repository and injected only at
+// the engine-build site. The read is live per decision (no cache), so flipping
+// the posture takes effect on the NEXT decision with no restart.
+type ReadPostureResolver interface {
+	// ReadPosture returns the current install-wide read posture
+	// (PostureTeamFlat or PostureZoned). An absent/unset value resolves to
+	// PostureTeamFlat, the launch default.
+	ReadPosture(ctx context.Context) (string, error)
+}
+
 // NewPolicyEngine creates a new PolicyEngine. The auto_promote_reads predicate
 // is OFF (resolver nil): this constructor's engines decide exactly as they did
 // before CC-04. Use NewPolicyEngineWithPromote to enable the predicate.
@@ -52,6 +94,18 @@ func NewPolicyEngine(repo Repository) *PolicyEngine {
 // site keeps NewPolicyEngine and is unaffected.
 func NewPolicyEngineWithPromote(repo Repository, promote PromoteReadsResolver) *PolicyEngine {
 	return &PolicyEngine{repo: repo, promote: promote}
+}
+
+// NewPolicyEngineWithGovernance creates a PolicyEngine with BOTH live governance
+// seams wired (read-posture-latch): the auto_promote_reads predicate (promote)
+// and the install-wide read posture (posture). It is the governance-complete
+// constructor the engine-build site in cmd/joe/server.go uses so agent:core
+// auto-promotion AND the team_flat read admit are both live. A nil resolver for
+// either seam is equivalent to leaving that seam inert; passing both nil is
+// equivalent to NewPolicyEngine. Every other call site keeps NewPolicyEngine /
+// NewPolicyEngineWithPromote and is unaffected.
+func NewPolicyEngineWithGovernance(repo Repository, promote PromoteReadsResolver, posture ReadPostureResolver) *PolicyEngine {
+	return &PolicyEngine{repo: repo, promote: promote, posture: posture}
 }
 
 // Decision carries the resolved zone and a structured reason alongside the
@@ -120,6 +174,17 @@ const (
 	// mutate. The distinct reason keeps an auto-promoted read distinguishable
 	// from an ordinary grant or admin allow in the audit trail.
 	ReasonAutoPromoteRead = "auto_promote_read"
+
+	// ReasonTeamFlatRead: the install-wide read posture is team_flat, the
+	// action is ActionRead, and the principal set is non-empty (an
+	// authenticated caller). The read is admitted with no materialized grant —
+	// the grant-less pattern the admin short-circuit and auto_promote read
+	// admit established — and is read-only by construction: the admit fires for
+	// ActionRead exclusively, so it can NEVER admit a mutate. The distinct
+	// reason keeps a team_flat-admitted read distinguishable from an ordinary
+	// grant, an admin allow, or an auto_promote read in the audit trail
+	// (read-posture-latch).
+	ReasonTeamFlatRead = "team_flat_read"
 )
 
 // IsAllowed returns true if ANY principal in the set may perform action on
@@ -145,6 +210,13 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, c
 //     (the stricter interpretation, see docs/DECISIONS.md D-0011). A zone
 //     classified readonly stays readonly even for an admin; the zone
 //     classification is a property of the zone, not of the principal.
+//     2a. read-posture-latch: for ActionRead by an authenticated caller, if the
+//     live install-wide read posture is team_flat, admit with
+//     ReasonTeamFlatRead — no grant required. Bound by the step-2 zone gate
+//     (the posture widens WHO may read, never WHICH actions a zone allows) and
+//     scoped to ActionRead (never a mutate). Skipped under the zoned posture
+//     (or a nil resolver), where the decision below is byte-identical to the
+//     pre-posture behaviour.
 //  3. If any principal in the set holds dynamic admin status
 //     (admin_principals row), permit with ReasonAdminCapability — no
 //     per-zone grant required. Phase H: this closes the
@@ -176,6 +248,38 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, comp
 	// NOT widen this — see D-0011.
 	if !zone.Allows(action) {
 		return Decision{Allowed: false, Zone: zoneID, Reason: ReasonActionNotInZone}
+	}
+
+	// team_flat read admit (read-posture-latch). Consulted LIVE per decision
+	// from durable storage and bound by the SAME zone.Allows gate above (a zone
+	// that forbids read still forbids it — the posture widens WHO may read a
+	// permitted action, not WHICH actions a zone permits, exactly as admin and
+	// auto_promote do not bypass allowed_actions). It admits ONLY when:
+	//   - a posture resolver is wired (nil in every non-build-site engine —
+	//     inert, so those engines keep the grant-based zoned decision), AND
+	//   - the action is ActionRead — so the admit can NEVER widen a mutate for
+	//     any posture; the read/mutate split is independent and unconditional,
+	//     and the write floor + write-RBAC govern mutates regardless of posture,
+	//     AND
+	//   - the principal set is non-empty (an authenticated caller —
+	//     unauthenticated callers never reach the engine; they are rejected at
+	//     the edge), AND
+	//   - the live posture is team_flat.
+	// Under team_flat this admit is the dominant reason a read is allowed, so it
+	// sits ahead of the auto_promote and admin/grant logic below — all of which
+	// are moot when every authenticated principal may already read. A
+	// posture-resolve error does NOT admit: it falls through to the grant-based
+	// logic (the zoned path), the safe (narrower) direction. When the posture is
+	// zoned, this block is skipped and the decision below is byte-identical to
+	// the pre-posture behaviour.
+	if e.posture != nil && action == ActionRead && len(principals) > 0 {
+		posture, perr := e.posture.ReadPosture(ctx)
+		if perr != nil {
+			slog.Warn("rbac: read-posture resolve failed, falling back to grant-based (zoned) logic",
+				"component_id", componentID, "error", perr)
+		} else if posture == PostureTeamFlat {
+			return Decision{Allowed: true, Zone: zoneID, Reason: ReasonTeamFlatRead}
+		}
 	}
 
 	// auto_promote_reads dynamic admit predicate (A001-COREGOV CC-04).

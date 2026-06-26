@@ -60,8 +60,8 @@ func TestMigration021_UpDownUp_RoundTrip(t *testing.T) {
 	// promotions, the head), 023 (source→component), 022 (chat sessions), then
 	// 021, dropping principals. None of 022..024 touches principals, so
 	// reverting them first is inert to this probe.
-	if err := m.Steps(-7); err != nil {
-		t.Fatalf("Steps(-7): %v", err)
+	if err := m.Steps(-8); err != nil {
+		t.Fatalf("Steps(-8): %v", err)
 	}
 	if tableExists(t, s, "principals") {
 		t.Error("after down: principals table must be dropped")
