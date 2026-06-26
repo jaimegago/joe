@@ -1,5 +1,7 @@
 # Case Study: AWS Kiro Incident (December 2025)
 
+> **SUPERSEDED — as-of record.** This case study reads as current-state prose but describes mechanisms that no longer reflect Joe: the T1/T2/T3 Observe/Record/Act tiers are now the binary Read/Mutate axis (D-0020); the process is the single `joe` binary, not `joecored`; there is no `~/.joe/safety-policy.yaml`; and blast-radius and circuit-breaker are designed-not-built, not live controls. It is retained as an as-of point-in-time record, not a description of current behavior. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+
 How Joe's safety architecture prevents the class of failure that caused a 13-hour AWS outage.
 
 ---

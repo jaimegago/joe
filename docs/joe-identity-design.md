@@ -1,5 +1,7 @@
 # Joe — User Identity & Authentication Design
 
+> **AS-BUILT.** The "design, pre-implementation" framing below is stale: every Phase A through G mechanism shipped — the guarded accessor in `internal/access/`, OIDC plus server-side sessions, `svc:` keys, loopback removal, and the audit triggers in migration 015. The reasoning here remains accurate and is preserved as the rationale of record, but the inline `file:line` citations predate the build and no longer point at current line numbers, so they must not be treated as current. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+
 Status: design, pre-implementation. Target: CC implementation.
 Scope: replace single-principal authn with real multi-principal identity, move RBAC enforcement below the transport, remove the loopback, make audit first-class, fix the captain gate.
 

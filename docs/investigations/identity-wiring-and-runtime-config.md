@@ -1,3 +1,5 @@
+> **SUPERSEDED — point-in-time record.** This investigation's load-bearing verdict — that engine-nil is a reachable runtime state — is reversed by D-0027 (refuse-to-start), under which that state cannot be reached at runtime, because Joe refuses to boot unless the policy engine would be constructed non-nil. The findings below are kept as a point-in-time record whose verdict no longer holds. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+
 ```
 INVESTIGATION: Identity wiring and runtime configurability of the RBAC policy engine
 Scope: read-only diagnosis. Every claim carries file:line evidence. Anything not

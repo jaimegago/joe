@@ -1,3 +1,5 @@
+> **SUPERSEDED — point-in-time record.** This investigation concluded that `rbac_disabled` is an indefinitely-runnable standing allow-all posture (engine-nil whenever no identity is configured). D-0027 (refuse-to-start) reverses that: the engine-nil / allow-all state is now unreachable at runtime, because Joe refuses to boot unless the policy engine would be constructed non-nil. The findings below are kept as a point-in-time record whose conclusion no longer holds. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+
 ```
 ================================================================================
 INVESTIGATION: Is rbac_disabled a transient bootstrap state, or a supported

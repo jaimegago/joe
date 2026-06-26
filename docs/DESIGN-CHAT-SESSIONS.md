@@ -1,5 +1,7 @@
 # Design: First-Class Chat Sessions (Web UI)
 
+> **SUPERSEDED — sections 1 through 11 only.** The Phase 1 through 5 narrative below — including the dropped per-session visibility column and the other early storage choices — is historical design rationale that section 12 reverses. The normative as-built session model is section 12 (ontology), sections 12.4 through 12.8 (storage, authz, admin, archive), and section 13 (convergence ledger), all verified against migration 025. Read from section 12 onward for current behavior; treat sections 1 through 11 as background only. Annotated 2026-06-26, session docs-reconcile-historical-annotations.
+
 > Status: **decisions locked 2026-06-06** — see §10 for the resolved calls and §11
 > for the phased plan. **Phase 1 (ownership & isolation), Phase 2 (browse tab +
 > titles), Phase 3 (binary private/public sharing), Phase 4 (incident linkage), and
