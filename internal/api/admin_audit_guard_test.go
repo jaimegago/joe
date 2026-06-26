@@ -118,8 +118,11 @@ var auditedSeamMutations = map[string]map[string]bool{
 //
 //   - h.server.services.PromoteReads.SetPromoted → promotereads.MutationService
 //     (A001-COREGOV CC-04: read_promotion.set row, atomic with the flag write)
+//   - h.server.services.ReadPosture.SetPosture → readposture.MutationService
+//     (read-posture-latch: read_posture.set row, atomic with the posture write)
 var auditedServiceMutations = map[string]map[string]bool{
 	"PromoteReads": {"SetPromoted": true},
+	"ReadPosture":  {"SetPosture": true},
 }
 
 // callsAuditedRepoMutation reports whether the call is an audited mutation on

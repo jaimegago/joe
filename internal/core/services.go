@@ -20,6 +20,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/sessionarchive"
@@ -128,6 +129,14 @@ type Services struct {
 	// SetPromoted, which commits the flag and its audit row in one transaction.
 	// nil in unit-test harnesses that don't exercise the promotion surface.
 	PromoteReads *promotereads.MutationService
+	// ReadPosture is the storage-backed install-wide read-posture service
+	// (read-posture-latch, migration 028). Owns the single global posture scalar
+	// (team_flat | zoned) that the policy engine consults LIVE for the team_flat
+	// read admit. The admin REST surface (GET/POST /api/v1/admin/read-posture)
+	// reads through its Repo() and writes through SetPosture, which commits the
+	// posture and its audit row in one transaction. nil in unit-test harnesses
+	// that don't exercise the posture surface.
+	ReadPosture *readposture.MutationService
 	// SessionLimitsProvider is the storage-backed agentloop.SessionLimits
 	// the per-task agent construction reads from. Built once at startup
 	// and shared across tasks so a per-task agent construction does not

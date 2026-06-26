@@ -86,8 +86,8 @@ func TestMigration026_027_RetentionAndAuditKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
-	if err := m.Steps(-2); err != nil {
-		t.Fatalf("Steps(-2) revert 027+026: %v", err)
+	if err := m.Steps(-3); err != nil {
+		t.Fatalf("Steps(-3) revert 027+026: %v", err)
 	}
 	if tableExists(t, s, "session_retention_policy") {
 		t.Error("after reverting 026: session_retention_policy must be gone")

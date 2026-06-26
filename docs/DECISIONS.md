@@ -10,6 +10,76 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0041 — Install-wide read posture: team_flat is the launch default, zoned is the full-mode read path, orthogonal to the write floor, flipped by an audited admin act
+
+- Date: 2026-06-26
+- Status: accepted
+- Session: read-posture-latch
+- Decision: a single persisted, install-wide **read posture** governs the RBAC
+  read decision, with two values:
+  - **`team_flat`** — any authenticated principal is ALLOWED for a read action on
+    any component, regardless of grant. This is the **launch default**: a fresh
+    install and an install upgraded from a build predating this posture both
+    inherit `team_flat` (the migration seeds it) and behave identically until an
+    operator deliberately opts in to `zoned`. It is the team-public read model
+    already settled for sessions (DESIGN-CHAT-SESSIONS.md §12 team-wide read
+    amendment: privacy between teammates is a non-goal; the spine is integrity and
+    accountability, not secrecy).
+  - **`zoned`** — the grant-based read decision (the **full-mode read path**):
+    exactly the pre-existing zone+grant behaviour, byte-identical to before this
+    posture existed. Naming the existing behaviour, not changing it.
+  - The `team_flat` admit sits **after** the zone-allows-action gate, so a zone
+    that forbids the read action still denies — the posture widens **WHO** may
+    perform a read the zone already permits, never **WHICH** actions a zone allows
+    (the same stricter interpretation D-0011 applies to admin). It fires for
+    **ActionRead only** and requires a non-empty (authenticated) principal set;
+    unauthenticated callers are rejected at the edge and never reach the engine.
+  - The posture is **orthogonal to the write floor**. The write floor and
+    write-RBAC govern mutates exactly as before, independent of read posture: a
+    `team_flat` install with the floor up still denies every mutate. The posture
+    has no input to the executor's floor check by construction.
+  - The posture is read **live per request** from durable storage (no boot cache),
+    so a change takes effect on the next decision with no restart.
+  - **Flipping the posture is an admin-gated, audited operator act** on the admin
+    REST surface (`GET`/`POST /api/v1/admin/read-posture`), reusing the existing
+    admin-audit machinery and §4 failure posture, with a new action verb
+    (`read_posture.set`, mutating/fail-closed; `read_posture.read`, read-class/
+    fail-open) added to the existing `admin_access` vocabulary. The flip is the
+    single deliberate operator act that moves an install from flat read to zoned
+    read.
+  - **Migration property:** an upgraded install inherits `team_flat` and behaves
+    identically to today until an operator opts in to `zoned`.
+- Basis: the read posture is modelled on the existing grant-less read-admit
+  branches (the Phase-H admin short-circuit and the CC-04 auto_promote read
+  admit). New code: `internal/readposture/` (the durable singleton scalar +
+  sole audited write path, mirroring `internal/promotereads`), migration
+  `internal/store/migrations/028_read_posture.up.sql` (singleton row seeded
+  `team_flat`, mirroring the `llm_settings` shape), the `team_flat` admit and
+  `ReasonTeamFlatRead`/`PostureTeamFlat`/`PostureZoned`/`ReadPostureResolver` in
+  `internal/rbac/policy.go` (live resolver seam, no cache), the
+  `NewPolicyEngineWithGovernance` constructor wired at both engine-build sites in
+  `cmd/joe/server.go`, the `read_posture.set`/`read_posture.read` verbs in
+  `internal/audit/audit.go`, and the admin handlers in `internal/api/admin.go`.
+  Tests: the `team_flat` break-test (ungranted read allowed, mutate never widened)
+  and the `zoned` byte-identical regression in
+  `internal/rbac/policy_readposture_test.go`; the default-is-`team_flat` and
+  atomic-audit tests in `internal/readposture/readposture_test.go`; the
+  admin-gated + audited + non-admin-refused tests in
+  `internal/api/readposture_admin_test.go`; and the floor-denies-mutate-
+  independent-of-posture break-test in
+  `internal/tools/executor_readposture_floor_test.go`. The refuse-to-start-
+  without-governance invariant (JOE-IDBOOT) and all prior RBAC regressions remain
+  green.
+- Supersedes: nothing. This makes the read decision a deliberate operator choice
+  and names the prior grant-based behaviour `zoned`; it does not change the
+  `zoned` decision, the write floor, or the mutate axis. The deferred work (hide
+  the zone/policy/source-zone admin UI from the launch build; reframe public docs
+  so zones and grant-based read are the full-mode era concept; the v2 zoned-flip
+  UI; roles and groups for full RBAC v2) is tracked in
+  `docs/backlog/read-posture-latch.md`.
+
+---
+
 ## D-0040 — Credentials is an admin-only surface placed under the Admin nav subgroup (corrects D-0039)
 
 - Date: 2026-06-25

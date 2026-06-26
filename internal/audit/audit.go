@@ -316,6 +316,26 @@ const (
 	// promotion topology. Read-class (fail-open), so it is in isFailOpen below.
 	ActionAdminReadPromoteRead = "read_promotion.read"
 
+	// --- read-posture-latch admin action verbs ---
+	//
+	// The install-wide read posture (table read_posture, migration 028) is the
+	// single deliberate operator latch that moves an install from team_flat
+	// (every authenticated principal reads every component) to zoned (the
+	// grant-based full-mode read path). Both verbs carry kind KindAdminAccess
+	// like the rest of the admin surface; the audit_log.kind CHECK already admits
+	// that kind (migration 020), so no schema change is needed for these actions.
+
+	// ActionAdminReadPostureSet records an admin flipping the install-wide read
+	// posture (POST /api/v1/admin/read-posture). Decision "allow"; mutating
+	// (fail-closed) — not added to isFailOpen. The {target, before, after}
+	// context records the prior and new posture string. The mutation service
+	// writes this row in the SAME transaction as the value change.
+	ActionAdminReadPostureSet = "read_posture.set"
+	// ActionAdminReadPostureRead records an admin reading the current read
+	// posture (GET /api/v1/admin/read-posture) — a read of the authz-governing
+	// posture. Read-class (fail-open), so it is in isFailOpen below.
+	ActionAdminReadPostureRead = "read_posture.read"
+
 	// --- A003 Stream G governed-registration action verbs ---
 	//
 	// Component registration is a governed surface: CREATE/DELETE on
@@ -621,8 +641,9 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 // purposes of the §4 failure split. Read-class: the infra read verbs "read"
 // and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
 // D-0013 admin-surface read verbs (zone.read, policy.read, component_zone.read,
-// admin.read, principal.read) and the D-0026 credential-status read verb
-// (credential_status.read).
+// admin.read, principal.read), the D-0026 credential-status read verb
+// (credential_status.read), the CC-04 read-promotion read verb
+// (read_promotion.read), and the read-posture read verb (read_posture.read).
 // Mutate-class: everything else, including all transition verbs, the admin
 // mutations (zone.create, zone.update, zone.delete, policy.grant,
 // policy.revoke, component_zone.assign, component_zone.unassign, admin.grant,
@@ -641,7 +662,7 @@ func isFailOpen(action string) bool {
 	case "read", "query",
 		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
 		ActionAdminAdminRead, ActionAdminPrincipalRead, ActionAdminCredentialStatusRead,
-		ActionAdminReadPromoteRead:
+		ActionAdminReadPromoteRead, ActionAdminReadPostureRead:
 		return true
 	default:
 		return false
