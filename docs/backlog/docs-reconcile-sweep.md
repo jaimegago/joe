@@ -205,15 +205,27 @@ then light fixes, then annotations, then mechanical cleanups.
    content into `security-in-layers.md`, and update the CLAUDE.md "Reference Documents" pointers. Clears
    the bulk of §0. (Touches only these three docs + CLAUDE.md pointers; no code.)
 
-2. **`docs-reconcile-narrative-ops`** — 🔶 IN PROGRESS. Major rewrites of the stale current-state NARRATIVE docs:
+2. **`docs-reconcile-narrative-ops`** — ✅ COMPLETE. Major rewrites of the stale current-state NARRATIVE docs:
    `operations.md` (tiers/panic-file/source-zones/incident-signature), `web-ui.md` (auth/component/action-axis/file-map).
-   One coherent "make current-state ops + UI docs match the tree" unit, split across two sessions.
+   One coherent "make current-state ops + UI docs match the tree" unit, split across two sessions; both have now landed.
    - `operations.md` — ✅ DONE (session `docs-reconcile-narrative-ops-01`): targeted-major rewrite — five
      corrections applied (T1/T2/T3 → binary Read/Mutate + pointer to `security-in-layers.md`; panic
      `~/.joe/panic.state` → `cluster_panic_state` DB row + host-CLI `joe unlock` recovery, no HTTP unlock
      endpoint; `/api/v1/admin/source-zones`+`source_id` → `/component-zones`+`component_id`; `joe incident
      declare` now shows required `--session <id>`). Default-zones table + panic-triggers preserved untouched.
-   - `web-ui.md` — ⏳ PENDING (session `docs-reconcile-narrative-ops-02`). Item 2 is NOT complete until this lands.
+   - `web-ui.md` — ✅ DONE (session `docs-reconcile-narrative-ops-02`): targeted-major rewrite — three in-place
+     corrections + a wholesale file-map rebuild. (1) auth model: `POST /api/v1/auth/login` + localStorage-bearer
+     → OIDC auth-code+PKCE with a server-side HttpOnly session cookie (`GET /api/v1/auth/login` →
+     `/auth/callback` → `/auth/logout`, current-user from `/api/v1/me`; break-glass bearer noted as
+     `sessionStorage`-only, never localStorage); (2) component rename (D-0021): `Source`/`/api/v1/sources`/
+     `SourceZoneAssignment`/`source-zones` → `Component`/`/api/v1/components`/`ComponentZoneAssignment`/
+     `component-zones`+`component_id`, across types, routes, the Admin/Components pages, and the
+     implementation-order list; (3) action axis: four-action `SecurityZone.actions` Read/Query/Mutate/Delete →
+     binary `allowed_actions: ('Read'|'Mutate')[]` (D-0020), incl. the zones-tab table; (4) the frontend file
+     map was rebuilt from the live `ui/src` tree (real `api/components.ts`/`pages/ComponentsPage.tsx`/
+     `hooks/useComponents.ts`/`useCurrentUser.ts` + previously-omitted `adminSessions.ts`/`regime.ts`/`skills.ts`/
+     `panic.ts`/`auth/` etc.). The `POST /api/v1/tasks/stream` SSE section was confirmed correct and left
+     untouched. **Item 2 is now COMPLETE.**
 
 3. **`docs-reconcile-narrative-light`** — ✅ DONE (session `docs-reconcile-narrative-light`). Surgical
    single-claim fixes that didn't need a full rewrite; all six applied, none skipped. Outcomes:
@@ -256,6 +268,13 @@ then light fixes, then annotations, then mechanical cleanups.
    banner sits at the very top of the file (above the opening fence) to render as a blockquote and keep
    the fenced body unchanged. PM-SPINE investigation findings left untouched. No decision-log entry
    (executes the audited plan, no new decision).
+   - **Known defect pending (found in session `docs-reconcile-narrative-ops-02`):** the
+     `case-study-kiro-incident.md` banner added by this session contains one wrong clause — it asserts there is
+     no `~/.joe/safety-policy.yaml`, but that file is real (`internal/safety/policy.go` declares
+     `PolicyFileName = "safety-policy.yaml"` and documents the `~/.joe/safety-policy.yaml` default location).
+     Only the *tier-based content* that clause referenced is stale (collapsed to binary Read/Mutate by D-0020);
+     the file path itself is correct. This banner clause is to be corrected in session
+     `docs-reconcile-security-consolidation`.
 
 6. **`docs-reconcile-artifact-cleanup`** — ✅ DONE (session `docs-reconcile-artifact-cleanup`). Pure
    cleanup, no doc content. Outcome differed from the audit's premise: a fresh `git ls-files` scan over
