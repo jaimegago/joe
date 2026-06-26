@@ -86,8 +86,10 @@ func TestMigration026_027_RetentionAndAuditKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
-	if err := m.Steps(-4); err != nil {
-		t.Fatalf("Steps(-4) revert 027+026: %v", err)
+	// Step every migration above 026 down, then 027 and 026; the schema lands at
+	// version 025.
+	if err := m.Steps(stepsDownTo(t, 25)); err != nil {
+		t.Fatalf("step down to version 025 (revert 027+026): %v", err)
 	}
 	if tableExists(t, s, "session_retention_policy") {
 		t.Error("after reverting 026: session_retention_policy must be gone")

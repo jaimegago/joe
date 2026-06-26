@@ -47,16 +47,13 @@ func TestMigration017_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step the migrations above 017 down, then 017 itself: reverts 024, 023,
-	// 022, 021, 020, 019, 018, then 017. Migrations 018 (Stream H3, the
-	// auth_login kind), 019 (the LLM context-budget table), 020 (D-0013, the
-	// admin-audit kind widening), 021 (the principals table), 022 (chat
-	// sessions), 023 (source→component rename), and 024 (A001-COREGOV CC-04, the
-	// agent_read_promotions table) now sit above 017, so reverting 017 requires
-	// first reverting them. Stepping -8 lands the schema just below 017, which is
-	// what this test exercises.
-	if err := m.Steps(-13); err != nil {
-		t.Fatalf("Steps(-13): %v", err)
+	// 2) Step every migration above 017 down, then 017 itself: all the migrations
+	// stacked above 017 must be reverted before 017 can come off. The step count
+	// is derived from HEAD, so the schema lands at version 016 (just below 017)
+	// no matter how many migrations sit on top — which is what this test
+	// exercises.
+	if err := m.Steps(stepsDownTo(t, 16)); err != nil {
+		t.Fatalf("step down to version 016 (revert 017): %v", err)
 	}
 	// After the down, the four new tables must be gone.
 	for _, table := range []string{

@@ -375,7 +375,7 @@ Core Services run inside `joecored` and are accessed via HTTP API:
 │                                                                      │
 │  ✅ IMPLEMENTED Tools (for LLM reasoning):                          │
 │  • graph_add_node, graph_add_edge, graph_update_node                │
-│  • register_source, save_onboarding_fact                            │
+│  • register_component, save_onboarding_fact                         │
 │  • Background refresh with configurable interval                    │
 │  • Graceful start/stop lifecycle management                         │
 │                                                                      │
@@ -854,7 +854,7 @@ Confirmed. Added edge: payment-svc → user-db (calls, confirmed)
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │  Source Tools (internal/tools/sources/)                     │   │
 │  │  ────────────                                               │   │
-│  │  register_source(type, url, name, env, ...)  → store source │   │
+│  │  register_component(type, url, name, env, ...) → store source│   │
 │  │  update_source(id, ...)                      → update       │   │
 │  │  list_sources(type?, env?)                   → sources      │   │
 │  └─────────────────────────────────────────────────────────────┘   │

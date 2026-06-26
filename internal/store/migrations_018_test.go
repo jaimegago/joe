@@ -16,8 +16,8 @@ import (
 // CHECK back to the 017 enum. This asserts:
 //
 //   - After up: an 'auth_login' row is admitted by the CHECK.
-//   - After Steps(-1): the CHECK rejects 'auth_login' again, while the
-//     017-era kind 'llm_settings_mutation' is still admitted (the down only
+//   - After stepping down past 018: the CHECK rejects 'auth_login' again, while
+//     the 017-era kind 'llm_settings_mutation' is still admitted (the down only
 //     removes auth_login, nothing else).
 //   - After re-up: 'auth_login' is admitted again, and both append-only
 //     triggers are present on the rebuilt table.
@@ -54,13 +54,12 @@ func TestMigration018_UpDownUp_RoundTrip(t *testing.T) {
 		t.Fatalf("NewWithInstance: %v", err)
 	}
 
-	// 2) Step the migrations above 018 down, then 018: reverts 024 (read
-	// promotions), 023 (source→component), 022 (chat sessions), 021
-	// (principals), 020 (admin-audit kind widening), 019 (the LLM context-budget
-	// table), then 018 — 019..024 now sit above 018. Stepping -7 lands the
-	// schema just below 018, isolating 018's down migration as this test intends.
-	if err := m.Steps(-12); err != nil {
-		t.Fatalf("Steps(-12): %v", err)
+	// 2) Step every migration above 018 down, then 018 itself. The step count is
+	// derived from HEAD, so the schema lands at version 017 (just below 018) no
+	// matter how many migrations sit on top, isolating 018's down migration as
+	// this test intends.
+	if err := m.Steps(stepsDownTo(t, 17)); err != nil {
+		t.Fatalf("step down to version 017 (revert 018): %v", err)
 	}
 	if kindAdmitted(t, s, "auth_login") {
 		t.Error("after down: audit_log CHECK must reject 'auth_login' again")
