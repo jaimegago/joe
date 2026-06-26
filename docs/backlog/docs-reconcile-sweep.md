@@ -254,8 +254,16 @@ then light fixes, then annotations, then mechanical cleanups.
 
    No decision-log entry (executes the audited plan, no new decision).
 
-4. **`docs-reconcile-testing-strategy`** — Decide DELETE vs rewrite-against-as-built for `testing-strategy.md`
-   (the won't-compile doc). Isolated because it's a delete-or-rebuild judgment call, kept off the other rewrites.
+4. **`docs-reconcile-testing-strategy`** — ✅ DONE (session `docs-reconcile-testing-strategy`).
+   Decision: **DELETE** (recorded as **D-0045**). `docs/testing-strategy.md` was `git rm`'d — its code
+   samples would not compile against the live tree (`internal/useragent`, `internal/tools/local`, a
+   `joecored` binary, wrong constructors, two-binary harness) and its structure was superseded by the
+   as-built `test/{mocks,integration,e2e}` harness. Three inbound navigational references were repaired:
+   `README.md:251` ("See … for the full strategy" → redirected to the `test/` tree + CLAUDE.md
+   **Build / Test / Lint**), `README.md` docs-index bullet (→ `test/README.md`), and `test/README.md`
+   References entry (→ CLAUDE.md). CLAUDE.md carried no pointer to the file, so no CLAUDE.md edit was
+   needed. The two remaining mentions of `testing-strategy.md` in this audit file (the §3 table row and
+   the §4 conflict note) are intentional point-in-time PM-SPINE records and were left as-is.
 
 5. **`docs-reconcile-historical-annotations`** — ✅ DONE (session `docs-reconcile-historical-annotations`).
    Annotation-only; all five banners landed, each a single top-of-file blockquote with the body left

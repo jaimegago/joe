@@ -10,6 +10,32 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0045 — `docs/testing-strategy.md` deleted, not rewritten; the as-built `test/` tree plus CLAUDE.md "Build / Test / Lint" are the testing authority
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-reconcile-testing-strategy
+- Decision: `docs/testing-strategy.md` is **deleted**, not rewritten. The
+  authority for how Joe is tested is the real `test/` tree — `test/mocks/`,
+  `test/integration/`, `test/e2e/` (plus `test/fixtures/`) — together with the
+  **Build / Test / Lint** section of `CLAUDE.md`. The three inbound navigational
+  pointers were repaired to point there: `README.md` (the "See … for the full
+  strategy" line and the documentation-index bullet) and the References entry in
+  `test/README.md` now redirect to the `test/` harness and CLAUDE.md instead of
+  the deleted file.
+- Basis: the doc's code samples would not compile against the live tree — it
+  referenced a nonexistent `internal/useragent` (the loop is `internal/agentloop/`),
+  `internal/tools/local` (real: `internal/tools/core` + `internal/tools/shared`),
+  a `joecored` binary (there is one `joe` binary), and wrong constructors
+  (`api.New()`/`NewWithStore` vs the as-built `api.New(services)`), all on a
+  two-binary harness that no longer exists. Its structure was superseded by the
+  as-built `test/{mocks,integration,e2e}` harness, verified present in-tree this
+  session. Recorded in the docs-reconcile sweep as §5 item 4 (REWRITE-or-DELETE;
+  DELETE chosen).
+- Supersedes: retires `docs/testing-strategy.md` (no prior decision governed it).
+
+---
+
 ## D-0044 — Migration round-trip tests derive their down/up step count from the live migration set at runtime, never as a hardcoded distance-from-top literal (extends D-0032 into test code)
 
 - Date: 2026-06-26
