@@ -282,6 +282,6 @@ func TestRegression_Issue123_ConfigReload(t *testing.T) {
 
 ## References
 
-- [Testing Strategy](../docs/testing-strategy.md) - Detailed strategy
+- [CLAUDE.md](../CLAUDE.md) - Build / Test / Lint commands (project test authority)
 - [Go Testing](https://go.dev/doc/tutorial/add-a-test) - Go test basics
 - [Table Driven Tests](https://go.dev/wiki/TableDrivenTests) - Test patterns

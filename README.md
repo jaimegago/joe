@@ -248,7 +248,7 @@ go build ./...                   # build check
 go vet ./...                     # lint
 ```
 
-See [docs/testing-strategy.md](docs/testing-strategy.md) for the full strategy.
+See the [`test/`](test/) tree (`test/mocks`, `test/integration`, `test/e2e`) and the **Build / Test / Lint** section of [CLAUDE.md](CLAUDE.md) for the full test harness and commands.
 
 ---
 
@@ -327,7 +327,7 @@ joe/
 - [docs/JOE_RBAC_IMPLEMENTATION.md](docs/JOE_RBAC_IMPLEMENTATION.md) — RBAC spec
 - [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design
 - [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
-- [docs/testing-strategy.md](docs/testing-strategy.md) — Testing strategy (unit, integration, E2E)
+- [test/README.md](test/README.md) — Test harness layout (`test/mocks`, `test/integration`, `test/e2e`)
 
 ---
 
