@@ -1,5 +1,5 @@
 # Docs reconciliation sweep — total read-only audit of `docs/` against the live tree
-Status: open
+Status: in-progress
 
 Slug: `docs-reconcile-sweep`. A read-only Phase-1 audit that inventoried, classified, and
 claim-verified every file under `docs/` against the live code tree. This file is a **plan**,
@@ -223,8 +223,17 @@ then light fixes, then annotations, then mechanical cleanups.
    (`rbac-disabled-bootstrap-claim.md`, `identity-wiring-and-runtime-config.md` → "superseded by D-0027").
    All annotation-only, PM-SPINE-safe.
 
-6. **`docs-reconcile-artifact-cleanup`** — Pure cleanup, no doc content: `git rm --cached docs/.DS_Store`
-   and add to `.gitignore`. Separate so a delete never rides alongside a rewrite.
+6. **`docs-reconcile-artifact-cleanup`** — ✅ DONE (session `docs-reconcile-artifact-cleanup`). Pure
+   cleanup, no doc content. Outcome differed from the audit's premise: a fresh `git ls-files` scan over
+   the full OS/editor artifact set found **`docs/.DS_Store` was never tracked** (it's covered by the
+   existing `.DS_Store` `.gitignore` rule and has no git history) — the §0/§2/§4 "confirmed tracked"
+   note was a false positive. The **only** tracked artifact was **`.vscode/settings.json`**, which holds
+   hand-authored shared config (Go build tags + a ~200-term curated `cSpell.words` dictionary), surfaced
+   per the Phase-1.3 review gate; the operator chose to untrack it. Actions taken: `git rm --cached
+   .vscode/settings.json` (left on disk; `.vscode/` was already ignored). `.gitignore` extended with the
+   missing artifact patterns under OS/editor headers: `._*` (AppleDouble) under macOS; a new Windows
+   block (`Thumbs.db`, `Desktop.ini`); and `*.swn`, `*~`, `*.sublime-workspace`, `*.sublime-project`
+   under the IDE/editor header. No duplicate lines added; no decision-log entry (mechanical hygiene).
 
 INDEX.md regeneration is handled per-session as items move; no standalone session needed.
 
