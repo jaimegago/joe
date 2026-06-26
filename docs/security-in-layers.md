@@ -2,6 +2,8 @@
 
 This document captures Joe's security posture, known gaps, remediation plan, and — critically — the **Action Safety Framework** that governs what Joe is allowed to change and under what conditions.
 
+Joe runs as a single `joe` binary: bare `joe` starts the server (HTTP API on `:7777`, Core Agent, adapters, graph); subcommands (`joe mcp`, `joe slack`, `joe panic`, `joe unlock`, …) dispatch ahead of it. There is no separate daemon — the earlier two-binary `joecored` split is retired. Where this document and [`docs/DECISIONS.md`](DECISIONS.md) conflict, the decision log is the source of truth.
+
 This is a living document — update it as fixes land.
 
 ---
@@ -12,171 +14,153 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 ### Invariants (hardcoded, true at every trust stage)
 
-1. **Joe must always announce changes.** Even when authorized — including in autonomous healing — Joe must notify the human before and after any mutation. Announcement is non-negotiable across all stages of trust progression. Autonomous healing does not mean silent healing.
+1. **Joe must always announce mutations.** Even when authorized, Joe notifies the human before and after any managed-system mutation. The tool executor enforces a blocking pre-execution notification (cancellable) and a post-execution summary for every mutating action — this is compiled in, not an LLM instruction.
 
-2. **Safety config is outside Joe's reach.** Joe must not be able to read, write, or influence its own safety configuration. The policy files and protected tables live outside Joe's tool sandbox.
+2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The safety policy (`~/.joe/safety-policy.yaml`) and the entire `~/.joe/` directory are excluded from every file tool at compile time (`internal/safety/invariants.go`).
 
-3. **Autonomy is bounded by deterministic guardrails.** Even within authorized mutation classes, hardcoded limits — blast radius caps, rate limits, environment scope restrictions, credential boundaries — apply unconditionally. These guardrails are not LLM-instructed; they are compiled-in floors that no configuration can lower.
+3. **The write floor is boot-resolved and runtime-immutable.** Joe resolves a read-only "write floor" once at boot (observation mode or a sticky safe-mode/panic state). Nothing in the running binary can lower it — recovery is a restart, never a live down-transition (`internal/safety/floor.go`, D-0018).
 
 ### Policy structure (how humans express trust)
 
-4. **Humans authorize every class of mutation.** Joe never executes a mutation outside the classes humans have explicitly opted into via safety policy. Within an authorized class, Joe may decide *which specific action* fits the situation, but the class itself is always human-authored.
+4. **Humans authorize every mutating action.** Joe never executes a managed-system mutation that a human has not explicitly opted into via the safety policy's `act` section. Within an authorized action, Joe may decide *which specific call* fits the situation, but enabling the action is always a human act.
 
-5. **Default is deny.** Every mutation capability starts disabled. Humans opt in per-action-class, not opt out. This is what makes incremental trust progression possible.
+5. **Default is deny.** Every mutating capability starts disabled. Humans opt in per action, not opt out. An unknown/unregistered tool is classified as a mutation and denied by default.
 
 6. **Allowlists, not blocklists.** We enumerate what's permitted, never what's forbidden.
 
 ---
 
-## Part 1: Current State (as of Phase 5.5)
+## Part 1: Current State
 
 ### What We Do Right
 
 | Area | Detail |
 |------|--------|
-| SQL injection | All queries use parameterized statements (`?` placeholders) via `database/sql` |
-| Command injection | `run_command` uses `exec.CommandContext` (no shell), plus allowlist of permitted commands |
-| Default bind | joecored binds to `localhost:7777` by default |
+| SQL injection | All queries use parameterized statements (`?`/`$n` placeholders) via `database/sql` |
+| Command injection | `run_command` uses `exec.CommandContext` (no shell), plus an allowlist of permitted commands |
+| Default bind | The `joe` server binds to `localhost:7777` by default |
 | API keys | LLM keys loaded from environment variables, not config files |
-| Output limits | `run_command` truncates stdout/stderr to 256 KB; `read_file` caps at 1 MB |
+| Output limits | `run_command` truncates stdout/stderr; `read_file` caps file size |
 | URL encoding | Client uses `url.PathEscape` / `url.QueryEscape` for all HTTP calls |
-| Adapters are read-only | K8s, Git, AWS adapters expose only read/list/describe operations — no create/delete/update |
-| Core tools are read-only | All tools that call joecored via HTTP are query-only |
-| Action tier enforcement | Every tool classified T1/T2/T3; executor gate checks policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
-| Safety policy | Loaded once at startup from `~/.joe/safety-policy.yaml`; immutable at runtime; default-deny for T3 (`internal/safety/policy.go`) |
-| Self-protection invariants | Joe cannot read/write `~/.joe/`, cannot run joe/joecored/kill — hardcoded, no override (`internal/safety/invariants.go`) |
-| Path sandboxing | `write_file` enforces `allowed_directories` from safety policy; symlink-aware, case-insensitive on macOS/Windows |
+| Adapters are read-only | K8s, Git, AWS, Azure, observability, datastore, GitOps adapters expose only read/list/describe operations. The only mutating adapters are the doc-publish path (Git commit/push, Confluence, Notion) and the code-review path (GitHub/GitLab comment + request-changes) |
+| Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
+| Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
+| Safety policy | Loaded once at startup from `~/.joe/safety-policy.yaml`; immutable at runtime; default-deny for mutating actions (`internal/safety/policy.go`) |
+| Self-protection invariants | Joe cannot read/write `~/.joe/`, cannot run `joe`/`kill`/`pkill`/`killall` — hardcoded, no override (`internal/safety/invariants.go`) |
+| Path sandboxing | `write_file` enforces `allowed_directories` from the safety policy; symlink-aware, case-insensitive on macOS/Windows |
 | Subcommand allowlists | kubectl/helm/argocd restricted to read-only subcommands; compiled-in, not configurable by LLM (`internal/tools/local/runcmd/subcommands.go`) |
-| T3 notification contract | Blocking 3-second countdown before T3 actions with Ctrl+C cancel; post-execution summary for T2/T3 (`internal/repl/notifier.go`) |
-| API authentication | Bearer token middleware on all `/api/v1/` routes; configurable via `server.api_key` or `JOE_API_KEY` env (`internal/api/middleware.go`) |
-| Request size limits | `http.MaxBytesReader` wraps all request bodies (default 1 MB) (`internal/api/middleware.go`) |
-| Secure home resolution | `paths.JoeDirPath()` uses `os/user.Current()` (via `secure_unix.go`/`secure_windows.go`), bypasses `HOME` env var to prevent path manipulation |
+| Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
+| API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
+| Request size limits | `http.MaxBytesReader` wraps all request bodies (`internal/api/middleware.go`) |
+| RBAC | Zone-scoped access control: zones carry an action ceiling, components are assigned to zones, grants map principals to zones (`internal/rbac/`) |
+| Emergency shutdown | Panic/safe-mode persisted to the `cluster_panic_state` DB row; safe mode raises the write floor on the next boot (`internal/store/panic_store.go`, `internal/safety/panic.go`) |
+| Secure home resolution | `paths.JoeDirPath()` uses `os/user.Current()` (via `secure_unix.go`/`secure_windows.go`), bypassing the `HOME` env var to prevent path manipulation |
 
 ---
 
-## Part 2: Full Mutation Audit
+## Part 2: Mutation Audit
 
-Every component that can change state, classified by blast radius.
+Every place Joe can change state, by axis. The organizing question is the one the action classification asks: **does this operation mutate the managed system** (live infrastructure + the code/config that governs it)?
 
-### Local Tools (joe binary — User Agent side)
+### Local tools (run in the `joe` process, user-facing task loop)
 
-| Tool | Can Mutate? | What It Changes | Authorization | Notification | Blast Radius |
-|------|-------------|-----------------|---------------|--------------|--------------|
-| `write_file` | **YES** | Files within `allowed_directories` only | T3 policy gate + path sandbox | T3: before (blocking) + after | **Local filesystem (sandboxed)** |
-| `run_command` | **YES** | Depends on allowlist + subcommand validation | T3 policy gate + command allowlist + subcommand allowlist | T3: before (blocking) + after | **Local + remote infra (restricted)** |
-| `read_file` | No | — | T1 (always allowed) | — | Read-only (blocks `~/.joe/`) |
-| `local_git_status` | No | — | T1 | — | Read-only |
-| `local_git_diff` | No | — | T1 | — | Read-only |
-| `echo` | No | — | T1 | — | Harmless |
-| `ask_user` | No | — | T1 | — | Harmless |
+| Tool | Mutates managed system? | What it changes | Authorization | Notification |
+|------|-------------------------|-----------------|---------------|--------------|
+| `write_file` | **YES (Mutate)** | Files within `allowed_directories` only | `act.write_file.enabled` + path sandbox | Before (blocking) + after |
+| `run_command` | **YES (Mutate)** | Depends on allowlist + subcommand validation | `act.run_command.enabled` + command allowlist + subcommand allowlist | Before (blocking) + after |
+| `read_file` | No (Read) | — | Always allowed (blocks `~/.joe/`) | — |
+| `local_git_status` / `local_git_diff` | No (Read) | — | Always allowed | — |
+| `ask_user` | No (Read) | — | Always allowed | — |
 
-**`write_file` detail** (`internal/tools/local/writefile/writefile.go`):
+**`write_file` detail** (`internal/tools/local/writefile/writefile.go`): disabled by default; blocks `~/.joe/` (hardcoded invariant, symlink-aware, case-insensitive); when `allowed_directories` is set, writes are restricted to those dirs; blocking pre-execution notification with cancel.
 
-- T3 action — disabled by default in safety policy.
-- Self-protection: blocks `~/.joe/` (hardcoded invariant, symlink-aware, case-insensitive).
-- Path sandboxing: if `allowed_directories` configured in policy, writes restricted to those dirs only.
-- T3 notification: 3-second blocking countdown in REPL before execution, Ctrl+C to cancel.
+**`run_command` detail** (`internal/tools/local/runcmd/runcmd.go`): default allowlist is read-only only (`ls, cat, head, tail, grep, find, wc`); kubectl/helm/argocd are **excluded** from the default and must be added explicitly in `safety-policy.yaml`. When enabled, mutation-capable commands enforce compiled-in subcommand allowlists (kubectl: get/describe/logs/top/explain/…; helm: list/status/get/history/…; argocd read-only verbs). `joe`, `kill`, `pkill`, `killall` are blocked by hardcoded invariant.
 
-**`run_command` detail** (`internal/tools/local/runcmd/runcmd.go`):
+### Joe's own model maintenance — classified as Read (not a managed-system mutation)
 
-- Default allowlist (read-only only): `ls, cat, head, tail, grep, find, wc`.
-- kubectl/helm/argocd **excluded** from default allowlist — must be explicitly added in `safety-policy.yaml`.
-- When enabled, mutation-capable commands enforce **compiled-in subcommand allowlists** (`internal/tools/local/runcmd/subcommands.go`):
-  - kubectl: get, describe, logs, top, explain, api-resources, api-versions, version, cluster-info, config, auth
-  - helm: list, status, get, history, show, search, version, env, repo, template, dependency
-  - argocd: app list/get/diff/manifests/logs/history/resources, cluster/repo/version (read-only)
-- Self-protection: `joe`, `joecored`, `kill`, `pkill`, `killall` blocked (hardcoded invariant).
-- Flag-aware parsing: leading flags (e.g., `-n default`) are skipped to find the actual subcommand.
+Per D-0018/D-0019/D-0020, a "write" is an operation that mutates the *managed system*. The tools below only record observed state into Joe's own graph/store/knowledge — the managed system is in the same state after they run — so on the action axis they are **reads**, not mutations. They are always allowed and never frozen by the write floor or the incident gate (Joe must keep its own model current even in safe mode).
 
-### Core Agent Tools (joecored — autonomous)
+| Tool | Writes to | Classification |
+|------|-----------|----------------|
+| `graph_add_node`, `graph_add_edge`, `graph_update_node` | Joe's knowledge graph | Read (idempotent UPSERTs) |
+| `register_component` | Joe's component store | Read (non-idempotent insert; carries a per-run durability key) |
+| `save_onboarding_fact` | Joe's facts store | Read (durability key) |
+| `save_knowledge_entry`, `generate_doc_draft` | Joe's knowledge / proposal store | Read (durability key) |
+| `detect_doc_drift` | — (read-only comparison) | Read |
 
-| Tool | Can Mutate? | What It Changes | Authorization | Notification |
-|------|-------------|-----------------|---------------|--------------|
-| `graph_add_node` | **YES** | Graph store | None | None |
-| `graph_add_edge` | **YES** | Graph store | None | None |
-| `graph_update_node` | **YES** | Graph store | None | None |
-| `register_component` | No | Joe's own component store (read-class per D-0018/D-0019 — records a discovered component to Joe's store, no managed-system mutation; `internal/safety/tier.go`) | None | None |
-| `save_onboarding_fact` | **YES** | Fact store | None | None |
+These tools are registered Read in `internal/safety/tier.go`. The classification is the load-bearing claim: it is *why* the LLM may maintain Joe's graph autonomously without a mutation gate, while still being unable to touch live infrastructure.
 
-All defined in `internal/coreagent/agent.go:119-499`. The LLM calls these freely during onboarding.
+> **D-0020 note.** Some of these inserts (e.g. `register_component`, `save_knowledge_entry`) generate row identity server-side and are not idempotent on retry. They declare `NeedsDurability`, so the durable executor persists a per-run idempotency key and dedups a crash-resume replay. This is independent of the Read/Mutate axis — "does this need crash-resume" is a different question than "does this mutate the managed system."
 
-### Graph Mutations (indirect paths)
+### Managed-system mutations
 
-| Path | Trigger | What It Changes | Authorization | Notification |
-|------|---------|-----------------|---------------|--------------|
-| Refresh loop | Timer (5 min) | Adds/removes nodes and edges to match infra state | None (autonomous) | None |
-| Clarification answers | Human answers question | Applies stored graph operations | Implicit (human answered) | None |
-| Onboarding | Human triggers via API | LLM generates graph mutations | None | None |
-| Graph delta reconciliation | Refresh | Deletes stale nodes/edges | None (autonomous) | None |
+| Tool | What it changes | Policy key (in `act`) | Notification |
+|------|-----------------|-----------------------|--------------|
+| `write_file` | Local files (sandboxed) | `write_file` | Before + after |
+| `run_command` | Local + remote infra (restricted) | `run_command` | Before + after |
+| `publish_doc_update_confluence` / `_notion` / `_git` | External docs (Confluence page, Notion page, Git repo) | `confluence_publish` / `notion_publish` / `git_push` | Before + after |
+| `github_comment` / `gitlab_comment` | External PR/MR thread | `github_comment` / `gitlab_comment` | Before + after |
+| `github_request_changes` | External GitHub review (gates merge) | `github_request_changes` | Before + after |
 
-Key files: `internal/coreagent/graphdelta.go:118-145`, `internal/coreagent/git_refresh.go`
+All managed-system mutations are denied unless their `act` policy key is enabled. Unknown tools default to Mutate and are denied.
 
-### API Endpoints That Mutate State
+### API endpoints that mutate Joe's own state
 
-| Endpoint | Method | Mutation | Authorization | Notification |
-|----------|--------|----------|---------------|--------------|
-| `/api/v1/sources` | POST | Creates source + registers adapter | Bearer token (if configured) | None |
-| `/api/v1/sources/{id}` | DELETE | Removes source + disconnects adapter | Bearer token (if configured) | None |
-| `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies graph ops | Bearer token (if configured) | None |
-| `/api/v1/clarifications/{id}/dismiss` | POST | Marks dismissed | Bearer token (if configured) | None |
-| `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | Bearer token (if configured) | None |
-| `/api/v1/refresh` | POST | Triggers full graph reconciliation | Bearer token (if configured) | None |
+| Endpoint | Method | Mutation | Authorization |
+|----------|--------|----------|---------------|
+| `/api/v1/components` | POST | Creates a component + registers its adapter | Edge auth |
+| `/api/v1/components/{id}` | DELETE | Removes a component + disconnects its adapter | Edge auth |
+| `/api/v1/components/{id}/promote` | POST | Arms a component (readonly → armed) | Edge auth |
+| `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies stored graph ops | Edge auth |
+| `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | Edge auth |
+| `/api/v1/refresh` | POST | Triggers graph reconciliation | Edge auth |
+| `/api/v1/admin/*` | various | Zones, policies, read-posture, read-promotions, sessions | Admin-gated + audited |
 
-All endpoints are behind `BearerAuth` middleware when `server.api_key` is set. Request bodies limited to 1 MB via `MaxRequestBody` middleware.
+All `/api/v1/` routes sit behind edge auth middleware; admin routes additionally require the admin gate and write an append-only audit row. Request bodies are limited by `MaxRequestBody` middleware.
 
-### Adapters (joecored backend)
+### Adapters
 
-| Adapter | Can Mutate External Systems? | Detail |
-|---------|------------------------------|--------|
-| K8s | **No** | Only `ListResources`, `GetResource`, `GetPodLogs` |
-| Git | **No** | Only `ReadFile`, `ListFiles`, `Log`, `Diff`. Can `Pull` but not commit/push |
-| AWS | **No** | Only `Describe*` and `List*` API calls |
-
-Adapters are currently safe. But future adapters (Phase 6+) for Prometheus, PagerDuty, Alertmanager could introduce mutations (create silence, acknowledge incident, etc.).
+| Adapter family | Can mutate external systems? | Detail |
+|----------------|------------------------------|--------|
+| K8s, AWS, Azure, datastore, observability, GitOps, networking, security/runtime, registries | **No** | Read/list/describe/query only |
+| Git (read path) | **No** | `ReadFile`, `ListFiles`, `Log`, `Diff` (can `Pull`, never commit/push) |
+| Git (doc-publish path) | **Yes** | `CommitAndPush`, gated behind `act.git_push` and the doc-proposal approval flow |
+| GitHub / GitLab | **Yes** | Comment + request-changes, gated behind their `act` keys |
 
 ---
 
 ## Part 3: Action Safety Framework
 
-This is the design for how Joe handles mutations. It must be implemented as a hardcoded enforcement layer, not as LLM instructions or soft guidelines.
+This is how Joe handles mutations. It is implemented as a hardcoded enforcement layer, not as LLM instructions or soft guidelines.
 
-### 3.1 Action Classification
+### 3.1 Action classification — a binary Read/Mutate axis
 
-Every tool and API action is classified into one of three tiers:
+Every tool is classified into one of **two** classes (`internal/safety/tier.go`):
 
-| Tier | Label | Description | Default | Example |
-|------|-------|-------------|---------|---------|
-| **T1** | **Observe** | Read-only. Does not mutate the managed system. | Allowed | `read_file`, `git_log`, `k8s_get`, `graph_query`, `register_component` (read-class; records to Joe's own store, no managed-system mutation — `internal/safety/tier.go`) |
-| **T2** | **Record** | Changes Joe's internal state (graph, facts, sources). Does not touch external systems. | Requires opt-in | `graph_add_node`, `save_onboarding_fact` |
-| **T3** | **Act** | Changes external systems (files, infrastructure, deployments). | Denied by default, per-action opt-in | `write_file`, `run_command(kubectl)`, future: `k8s_scale`, `pagerduty_ack` |
+| Class | Description | Default | Examples |
+|-------|-------------|---------|----------|
+| **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `read_file`, `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
+| **Mutate** (`ActionMutate`) | Mutates the managed system (files, infrastructure, deployments, external PR/MR threads, published docs). | Denied by default; per-action opt-in via the `act` policy | `write_file`, `run_command`, `publish_doc_update_*`, `github_comment`, `github_request_changes` |
 
-Classification is hardcoded per tool at registration time. The LLM cannot change a tool's tier.
+This **replaces the former three-tier scheme** (Observe/Record/Act, T1/T2/T3). Per **D-0020** (collapse to a binary axis; see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. The old "Record" band (internal-state mutations) is gone: those operations are now Reads, because they do not change the managed system.
 
-### 3.2 Policy File
+Classification is hardcoded per tool at registration time. The LLM cannot change a tool's class. **Unknown tools are classified Mutate and denied by default.**
 
-Policy lives in a file that Joe **cannot access**:
+### 3.2 Policy file
+
+The safety policy lives in a file Joe **cannot access**:
 
 ```
 ~/.joe/safety-policy.yaml       # Human-editable only
 ```
 
-This path must be:
-- **Excluded** from `read_file` and `write_file` allowed directories
-- **Not readable** by any tool the LLM can invoke
-- **Loaded once** at startup by joe/joecored, not re-readable at runtime by the agent
+This path is excluded from `read_file`/`write_file` at compile time, is not readable by any LLM-invokable tool, and is loaded **once** at startup (never re-read at runtime by the agent).
 
 ```yaml
 # ~/.joe/safety-policy.yaml
 version: 1
 
-# T2: Internal state mutations
-record:
-  graph_mutations: true          # Allow graph add/update/delete
-  source_registration: true      # Allow registering new sources
-  onboarding_facts: true         # Allow saving onboarding facts
-  autonomous_refresh: true       # Allow background refresh to mutate graph
-
-# T3: External system mutations — each must be explicitly enabled
+# act: managed-system mutations — each is denied unless explicitly enabled.
 act:
   write_file:
     enabled: false
@@ -184,7 +168,7 @@ act:
 
   run_command:
     enabled: true
-    allowed_commands:             # Override the compiled-in allowlist
+    allowed_commands:            # Overrides the compiled-in read-only allowlist
       - ls
       - cat
       - head
@@ -192,826 +176,357 @@ act:
       - grep
       - find
       - wc
-    # kubectl, helm, argocd deliberately excluded from default
-    # To enable: add them here and accept the risk
+    # kubectl, helm, argocd deliberately excluded — add them here to accept the risk.
 
-  # Future adapters
-  k8s_write:
-    enabled: false               # scale, apply, delete
-  pagerduty_ack:
-    enabled: false
-  alertmanager_silence:
-    enabled: false
-  git_push:
-    enabled: false
+  # Doc-publish and code-review mutations (default false):
+  git_push:            { enabled: false }
+  confluence_publish:  { enabled: false }
+  notion_publish:      { enabled: false }
+  github_comment:      { enabled: false }
+  github_request_changes: { enabled: false }
 ```
 
-### 3.3 Hardcoded Enforcement Points
+> **`record:` is a retained compatibility shim.** The policy struct still parses a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) for backward compatibility with existing policy files. It is **inert**: since Joe's model-maintenance tools are now classified Read, the executor's `CheckAccess` consults only the `act` section. The `record` keys no longer gate anything (D-0018/D-0019/D-0020).
 
-These checks are compiled into the binary. They cannot be bypassed by configuration, LLM reasoning, or prompt injection.
+### 3.3 Hardcoded enforcement points
 
-**1. Tool executor gate** (`internal/tools/` — both local and core):
+These checks are compiled into the binary and cannot be bypassed by configuration, LLM reasoning, or prompt injection.
+
+**1. Tool executor gate** (`internal/tools/executor.go`, `Execute`). For every tool call, in order:
 
 ```
-Before every tool.Execute():
-  1. Look up tool's tier (T1/T2/T3)
-  2. If T1: proceed
-  3. If T2: check policy.record.<category> == true, else reject
-  4. If T3: check policy.act.<tool>.enabled == true, else reject
-  5. If T3 and enabled: notify human BEFORE execution
-  6. After execution: notify human of result
+1. Classify the tool (Read or Mutate).
+2. Write floor (D-0018): if the floor is up AND the tool is Mutate → deny.
+   Checked FIRST among the denials (precedence floor > incident > RBAC).
+3. Zone/component scope: if the call targets a component_id outside the
+   caller's authorized zones → deny.
+4. Namespace scope: if a K8s call targets a namespace outside scope → deny.
+5. Safety policy CheckAccess: a Mutate tool requires its act.<key>.enabled == true,
+   else deny. (Reads always pass.)
+6. Mutate only: blocking pre-execution notification (human can cancel).
+7. Execute.
+8. Mutate only: post-execution notification (summary of result).
 ```
 
-**2. Self-protection invariants** (hardcoded, no config override):
+The **incident** half of the precedence sits one layer up, in the §C captain-session gate (`internal/captaingate/`), which checks the same floor before its own gate (see §3.4).
+
+**2. Self-protection invariants** (`internal/safety/invariants.go`, hardcoded, no config override):
 
 | Invariant | Enforcement |
 |-----------|-------------|
-| Joe cannot read its own safety policy | `~/.joe/safety-policy.yaml` excluded from all file tool paths at compile time |
-| Joe cannot write to `~/.joe/` | `~/.joe/` excluded from `write_file` allowed directories at compile time |
-| Joe cannot modify its own config | `~/.joe/config.yaml` excluded from `write_file` at compile time |
-| Joe cannot run joe/joecored commands | `joe` and `joecored` excluded from `run_command` allowlist at compile time |
-| Joe cannot kill its own process | `kill`, `pkill`, `killall` excluded from `run_command` at compile time |
+| Joe cannot read/write its safety policy | `~/.joe/safety-policy.yaml` excluded from all file tools |
+| Joe cannot read/write its skills policy | `~/.joe/skills-policy.yaml` excluded |
+| Joe cannot write to `~/.joe/` | The whole directory is excluded (symlink-aware, case-insensitive) |
+| Joe cannot run the `joe` binary | `joe` blocked from `run_command` |
+| Joe cannot kill processes | `kill`, `pkill`, `killall` blocked |
 
-These are **not configurable**. They are constants in the source code.
+These are constants in source, not configurable.
 
-**3. Notification contract** (hardcoded for all T2 and T3 actions):
-
-```
-For T3 (Act) actions:
-  BEFORE: "[Joe] I'm about to <action>. Proceeding in 3s... (Ctrl+C to cancel)"
-  AFTER:  "[Joe] Done: <action summary with details>"
-
-For T2 (Record) actions:
-  AFTER:  "[Joe] Updated graph: added node service/payment-api" (in session log)
-```
-
-T3 notifications are **blocking** — the human sees them in the REPL and can interrupt. This is not a soft guideline for the LLM; it's enforced by the tool executor before calling `Execute()`.
-
-### 3.4 run_command Argument Validation
-
-Even when a command is in the allowlist, certain argument patterns must be blocked for mutation-capable commands. This applies if/when a human enables `kubectl`, `helm`, or `argocd`:
-
-```yaml
-# Hardcoded argument blocklist for kubectl (when enabled)
-kubectl:
-  blocked_subcommands:
-    - delete
-    - apply
-    - patch
-    - scale
-    - drain
-    - cordon
-    - taint
-    - edit
-    - replace
-    - rollout
-  allowed_subcommands:          # Allowlist mode — only these work
-    - get
-    - describe
-    - logs
-    - top
-    - explain
-    - api-resources
-    - version
-```
-
-The default for mutation-capable commands is **subcommand allowlist mode**: only explicitly permitted subcommands are allowed, everything else is denied.
-
-### 3.5 Future Adapter Mutations (Phase 6+)
-
-When we add adapters that can mutate external systems, each mutation method must:
-
-1. Be registered as a T3 action
-2. Have a corresponding `policy.act.<adapter>_<action>.enabled` flag
-3. Default to `false`
-4. Enforce the notification contract
-5. Be individually configurable (not blanket "enable all PagerDuty actions")
-
-Examples of future T3 actions:
-
-| Adapter | Action | Policy Key |
-|---------|--------|------------|
-| K8s | Scale deployment | `act.k8s_scale` |
-| K8s | Apply manifest | `act.k8s_apply` |
-| PagerDuty | Acknowledge incident | `act.pagerduty_ack` |
-| PagerDuty | Resolve incident | `act.pagerduty_resolve` |
-| Alertmanager | Create silence | `act.alertmanager_silence` |
-| Git | Commit | `act.git_commit` |
-| Git | Push | `act.git_push` |
-
-### 3.6 Environment-Level Operation Blocking
-
-Operations that affect an entire namespace or cluster are categorically more dangerous than single-resource mutations. A single `kubectl delete namespace payments` has unbounded blast radius compared to `kubectl delete pod payment-svc-7f8b9c-x2k4`.
-
-**Deterministic rule (hardcoded, not LLM-instructed):**
-
-Any operation that targets an entire namespace, cluster, or environment is **always blocked** unless the specific environment is explicitly allow-listed in the safety policy. This applies regardless of the user's RBAC permissions or the action's T3 policy flag.
-
-**Detection heuristics (compiled-in):**
-
-| Pattern | Example | Action |
-|---------|---------|--------|
-| Namespace-scoped delete without resource name | `kubectl delete namespace payments` | **BLOCKED** |
-| Wildcard resource selectors | `kubectl delete pods --all -n payments` | **BLOCKED** |
-| Environment recreation | `terraform destroy` on a workspace | **BLOCKED** |
-| Bulk resource deletion | Operation affecting >N resources (configurable threshold) | **BLOCKED** unless allow-listed |
-
-**Policy configuration:**
-
-```yaml
-# In ~/.joe/safety-policy.yaml
-environment_operations:
-  # Maximum resources a single operation can affect
-  max_blast_radius: 10
-
-  # Environments where environment-level operations are allowed (empty = none)
-  # Even when allow-listed, T3 notification contract still applies
-  allow_environment_ops:
-    - dev        # Only dev environments can be fully recreated
-    # staging and prod are never allow-listed for bulk operations
-```
-
-**Key distinction from `MaxResourcesAffected`:** The blast radius limit (`max_blast_radius`) is a hard cap on any single tool execution. Environment-level blocking goes further — it pattern-matches on the *intent* of the operation (targeting a whole namespace/cluster) and blocks it even if the current resource count is below the threshold.
-
-### 3.7 Mutation Rate Limiting (Circuit Breaker)
-
-An LLM in a reasoning loop can chain multiple destructive actions faster than a human can review them. Even with T3 notifications, a runaway sequence of mutations (e.g., scale down service A → delete configmap B → restart deployment C) can cause cascading damage before the human processes the first notification.
-
-**Deterministic rule (hardcoded):**
-
-A circuit breaker tracks mutation frequency. If more than N mutations occur within M minutes, all further mutations are suspended until a human explicitly resets the breaker. This is independent of and in addition to the per-action T3 approval flow.
-
-**Behavior:**
+**3. Notification contract** (hardcoded for every mutating action, `internal/safety/notifier.go`):
 
 ```
-Mutation 1: kubectl scale deployment/payment-svc --replicas=5
-  → T3 notification → human approves → executes → counter: 1
-
-Mutation 2: kubectl rollout restart deployment/payment-svc
-  → T3 notification → human approves → executes → counter: 2
-
-Mutation 3: kubectl delete configmap payment-config
-  → T3 notification → human approves → executes → counter: 3
-
-Mutation 4: (within window)
-  → CIRCUIT BREAKER TRIPPED
-  → "⚠ Safety: 3 mutations executed in 2 minutes.
-     Further mutations suspended. Review recent changes
-     and type 'joe safety reset' to continue."
+BEFORE (blocking, cancellable): "[Joe] About to <action>. Proceeding... (cancel to abort)"
+AFTER:                          "[Joe] Done: <action summary>"
 ```
 
-**Policy configuration:**
+The pre-execution notification is enforced by the executor before calling `Execute()` — it is not a soft guideline for the LLM.
 
-```yaml
-# In ~/.joe/safety-policy.yaml
-circuit_breaker:
-  max_mutations: 5           # Max T3 mutations within the window
-  window_minutes: 10         # Rolling window duration
-  cooldown_minutes: 5        # Minimum wait after trip before reset
-  auto_reset: false          # Require manual reset (recommended)
-```
+### 3.4 Denial precedence: floor > incident > RBAC (D-0022)
 
-**Implementation notes:**
-- Counter tracks T3 (Act) actions only, not T2 (Record)
-- Counter is per-session in joe local, global in joecored
-- The breaker trips *before* the Nth+1 action executes, not after
-- `joe safety status` shows current counter and window
-- `joe safety reset` resets the counter (requires interactive confirmation)
+When more than one gate would deny a mutation, the executor surfaces the reason ordered by **how readily the caller can resolve it**:
 
-### 3.8 Credential Isolation (No Permission Inheritance)
+1. **Write floor** — the least readily fixable (recovery is a restart, or clearing a panic state). Checked first.
+2. **Incident gate** — the §C captain-session gate: in incident regime, only the incident's captain session may attempt a mutation; non-captain sessions are refused (deny-only — the gate never *grants* authority). Enforced in `internal/captaingate/`.
+3. **RBAC** — zone scope / safety policy. The accessor's RBAC check runs unchanged *after* the incident gate (gate-then-accessor).
 
-AI agents must never inherit the calling user's infrastructure credentials directly. If a user has cluster-admin on a production cluster and Joe inherits that credential, Joe can do anything the user can — including operations that Joe's safety policy is designed to prevent.
+Enforcement short-circuits at the first failing check, so for a mutation that trips both the floor and a zone violation, only the floor error is produced.
 
-**Deterministic rule (architectural constraint):**
+### 3.5 Read authorization: the install-wide read posture (D-0041, D-0043)
 
-Joe's service account credentials are separate from and more restrictive than the user's credentials. Joe never proxies the user's kubeconfig, cloud credentials, or git tokens for infrastructure operations. Instead:
+Reads are governed by a single persisted, install-wide **read posture** with two values (`internal/readposture/`, `internal/rbac/policy.go`):
 
-1. **joecored uses its own service account** with pre-scoped permissions
-2. **RBAC maps user intent to Joe's capabilities**, not to the user's permissions
-3. **Joe's credentials are configured by operators**, not inherited at runtime
+- **`team_flat`** — the **launch default**. Any authenticated principal may read any component, regardless of grant. This is the team-public read model already settled for chat sessions (privacy between teammates is a non-goal; the spine is integrity and accountability, not secrecy). A fresh install and an upgraded install both inherit `team_flat` until an operator deliberately opts in to `zoned`.
+- **`zoned`** — the grant-based read decision (the **full-mode read path**): the zone+grant behaviour described in §8, byte-identical to before the posture existed.
 
-**What this means in practice:**
+Key properties:
 
-```
-WRONG (Kiro model):
-  User has cluster-admin → AI inherits cluster-admin → AI can delete anything
+- The `team_flat` admit sits **after** the zone-allows-action gate. It widens **WHO** may perform a read the zone already permits; it never changes **WHICH** actions a zone allows. It fires for the read action only and requires a non-empty (authenticated) principal set.
+- The posture is **orthogonal to the write floor.** A `team_flat` install with the floor up still denies every mutate — read posture has no input to the executor's floor check.
+- The posture governs **human-facing transport reads only.** The autonomous `agent:core` read surface (background refresh) is a **separate axis**, governed solely by `auto_promote_read` (per-component-type promotion) plus grants. The two are separated at engine construction: the transport policy engine carries the read-posture resolver (`NewPolicyEngineWithGovernance`); the refresh engine does not (`NewPolicyEngineWithPromote`, posture seam nil). Flipping the posture cannot change what `agent:core` can read (D-0043).
+- The posture is read **live per request** (no boot cache). Flipping it is an **admin-gated, audited operator act** on `GET`/`POST /api/v1/admin/read-posture`.
 
-RIGHT (Joe model):
-  User has cluster-admin (their own kubectl still works)
-  User talks to Joe → Joe uses joe-svc-account (read-only + scoped mutations)
-  Joe's RBAC checks: "Can this user ask Joe to do X?"
-  Joe's Safety checks: "Is X permitted by policy?"
-  Joe's credentials: "Can Joe's service account actually execute X?"
-```
+### 3.6 Protected security configuration
 
-**Three independent permission boundaries:**
+**Critical invariant:** LLM tools cannot modify Joe's security configuration. This is enforced **architecturally**, not by a table-name guard inside the tool path:
 
-| Boundary | Controls | Enforcement |
-|----------|----------|-------------|
-| User's RBAC | What the user can *ask* Joe to do | Middleware (pre-LLM) |
-| Safety Policy | What Joe is *allowed* to do | Executor gate (post-LLM) |
-| Joe's Service Account | What Joe *can* do at the infrastructure level | Cloud/K8s IAM |
+- The security tables — `security_zones`, `component_zone_assignments`, `rbac_policies`, `read_posture`, `auto_promote_reads`, the admin-principal set — are mutated **only** through the admin REST surface (`/api/v1/admin/*`), which is admin-gated and writes an append-only audit row.
+- The LLM's tools have **no raw-SQL write path** to those tables. Joe's model-maintenance tools (`graph_add_*`, `register_component`, `save_*`) write only to operational tables (graph, components, facts, knowledge) via their typed repositories.
+- The safety policy and the `~/.joe/` directory are self-protected from the file tools (§3.3).
 
-All three must allow an operation for it to proceed. This is defense in depth — even if RBAC is misconfigured, Joe's service account permissions limit the blast radius. Even if the service account is over-provisioned, the safety policy blocks unauthorized mutations.
+So an LLM — even under prompt injection — has no tool that reaches the security configuration; changing it requires an authenticated admin call on a surface no LLM tool can invoke.
 
-**Configuration guidance:**
+### 3.7 Roadmap mutations (not yet built)
 
-Joe's service account should follow least-privilege:
-- K8s: `ClusterRole` with only the verbs Joe needs (get, list, watch by default; scale, patch only for enabled healing actions)
-- AWS: IAM role with only Describe/List permissions (no Create/Delete/Modify unless explicitly needed)
-- Git: Read-only deploy key (no push unless `act.git_push` is enabled and a separate push-capable key is configured)
+The executor today enforces the floor, zone/namespace scope, the safety policy, and the notification contract. The following deterministic controls are **designed but not yet implemented**; they are tracked in Part 5 and must not be assumed active:
+
+- **Environment-level operation blocking** — deterministic pattern-matching that blocks namespace/cluster-scoped destructive operations (e.g. `kubectl delete namespace`, `--all` selectors, `terraform destroy`) regardless of policy flags, unless the specific environment is allow-listed.
+- **Mutation circuit breaker** — a rolling-window rate limiter on mutating actions that trips after a threshold and suspends further mutations until a human resets it.
+- **Credential isolation enforcement** — validation that Joe never uses caller-provided infrastructure credentials, only its own pre-scoped service account.
+
+These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Until they land, the live guarantees are: managed-system mutation is denied by default, gated per action, floor-blocked in observation/safe mode, scope-checked against zones, and announced before and after.
 
 ---
 
 ## Part 4: Gaps by Layer (non-mutation security)
 
-### Layer 1: Network Boundary (joecored HTTP API)
+### Layer 1: Network boundary (`joe` HTTP API)
 
 | Gap | Severity | Status | Detail |
-| ----- | -------- | ------ | ------ |
-| ~~No authentication~~ | ~~CRITICAL~~ | **FIXED** | Bearer token middleware on all `/api/v1/` routes (`internal/api/middleware.go`) |
-| ~~No rate limiting~~ | ~~HIGH~~ | **FIXED** | Rate limiting middleware added in Phase 6.5 (`internal/api/middleware.go`) |
-| ~~No request size limits~~ | ~~HIGH~~ | **FIXED** | `http.MaxBytesReader` wraps all request bodies, default 1 MB (`internal/api/middleware.go`) |
-| Plaintext HTTP | HIGH | Open | joe↔joecored traffic unencrypted; credentials in transit exposed |
-| No CORS / security headers | MEDIUM | Open | Missing `X-Content-Type-Options`, `X-Frame-Options`, etc. |
+| --- | -------- | ------ | ------ |
+| ~~No authentication~~ | ~~CRITICAL~~ | **FIXED** | Edge auth middleware on all `/api/v1/` routes (`internal/api/middleware.go`) |
+| ~~No request size limits~~ | ~~HIGH~~ | **FIXED** | `http.MaxBytesReader` wraps all request bodies |
+| Rate limiting | — | **Configurable** | Rate-limit middleware (`server.rate_limit_rps`/`burst`) |
+| Plaintext HTTP | HIGH | Partially addressed | TLS is configurable (`server.tls_*`); plaintext is the default for localhost binds |
+| CORS / security headers | MEDIUM | Partial | CORS middleware present; some response security headers still missing |
 
-**Key files:** `cmd/joecored/main.go`, `internal/api/server.go`, `internal/api/middleware.go`
+**Key files:** `cmd/joe/server.go`, `internal/api/server.go`, `internal/api/middleware.go`
 
-### Layer 2: Credential Storage
+### Layer 2: Credential storage
 
 | Gap | Severity | Status | Detail |
-| ----- | -------- | ------ | ------ |
-| Plaintext credentials in DB | CRITICAL | Open | `sources.config` JSON column stores AWS keys, Git tokens unencrypted |
-| SSH keys with empty passphrase | HIGH | Open | `git.go:158` loads SSH keys with `""` passphrase |
+| --- | -------- | ------ | ------ |
+| Credentials in DB | CRITICAL | Partially addressed | Component connection config stored in SQLite; credential encryption-at-rest is in progress (Phase 6.5) |
 | No credential rotation | MEDIUM | Open | Static credentials never refreshed or expired |
-| World-readable config | MEDIUM | Open | `~/.joe/config.yaml` uses default umask (typically 0644) |
+| World-readable config | MEDIUM | Open | `~/.joe/config.yaml` uses the default umask |
 
-**Key files:** `internal/adapters/git/git.go:169`, `internal/adapters/aws/aws.go:256-257`
-
-### Layer 3: LLM Tool Sandbox
+### Layer 3: LLM tool sandbox
 
 | Gap | Severity | Status | Detail |
-| ----- | -------- | ------ | ------ |
-| ~~No path sandboxing on `write_file`~~ | ~~CRITICAL~~ | **FIXED** | `write_file` enforces `allowed_directories` from safety policy + blocks `~/.joe/` |
-| No path sandboxing on `read_file` | HIGH | Open | LLM can read any file the process user can access (except `~/.joe/`) |
-| Prompt injection | CRITICAL | Open | User input flows unsanitized into LLM context, which then calls tools |
+| --- | -------- | ------ | ------ |
+| ~~No path sandboxing on `write_file`~~ | ~~CRITICAL~~ | **FIXED** | `write_file` enforces `allowed_directories` + blocks `~/.joe/` |
+| No path sandboxing on `read_file` | HIGH | Open | The LLM can read any file the process user can access (except `~/.joe/`) |
+| Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system without a human-enabled `act` key, and no tool that reaches security config — but the input channel itself is unsanitized |
 
-**Key files:** `internal/tools/local/readfile/readfile.go`, `internal/tools/local/writefile/writefile.go`, `internal/safety/invariants.go`
+**Key files:** `internal/tools/local/readfile/`, `internal/tools/local/writefile/`, `internal/safety/invariants.go`
 
 ### Layer 4: Authorization
 
 | Gap | Severity | Status | Detail |
-| ----- | -------- | ------ | ------ |
-| ~~No per-source access control~~ | ~~HIGH~~ | **FIXED** | Security zones + RBAC middleware enforce per-source access control (Phase 9.3) |
-| ~~No user identity model~~ | ~~HIGH~~ | **FIXED** | API key → principal identity mapping via `rbac.NewAPIKeyProvider` (Phase 9.3) |
-| No audit logging | MEDIUM | Open | No record of who did what, when |
+| --- | -------- | ------ | ------ |
+| ~~No per-component access control~~ | ~~HIGH~~ | **FIXED** | Zone-scoped RBAC + middleware enforce per-component access (`internal/rbac/`) |
+| ~~No user identity model~~ | ~~HIGH~~ | **FIXED** | API-key → principal mapping; OIDC where configured (`internal/rbac/`, `internal/api/authconfig.go`) |
+| Audit logging | — | **Present** | Admin acts and infra access write append-only audit rows (`internal/audit/`) |
 
 ---
 
 ## Part 5: Implementation Roadmap
 
-### Phase 5.5: Action Safety Framework — COMPLETE
+### Action Safety Framework — COMPLETE
 
-All six steps implemented and tested. Coverage: safety 95.4%, middleware 100%, tools 97.1%.
-
-**1. Action Safety Framework — core enforcement** ✅
-
-- Action tier classification (T1/T2/T3) with hardcoded registry: `internal/safety/tier.go`
+- Binary Read/Mutate classification with a hardcoded registry: `internal/safety/tier.go`
 - Safety policy loader from `~/.joe/safety-policy.yaml`: `internal/safety/policy.go`
-- Executor gate checks tier + policy before every `Execute()`: `internal/tools/executor.go`
-- Default-deny for unknown tools (classified as T3)
+- Executor gate (floor → scope → policy → notify) before every `Execute()`: `internal/tools/executor.go`
+- Default-deny for unknown tools (classified Mutate)
+- Self-protection invariants + path sandboxing: `internal/safety/invariants.go`, `internal/tools/local/writefile/`
+- `run_command` subcommand validation: `internal/tools/local/runcmd/subcommands.go`
+- Mutation notification contract: `internal/safety/notifier.go`
+- Edge auth + request size limits: `internal/api/middleware.go`
 
-**2. Self-protection invariants + path sandboxing** ✅
+### Security architecture — COMPLETE
 
-- `~/.joe/` blocked for all read/write operations (hardcoded, symlink-aware, case-insensitive): `internal/safety/invariants.go`
-- `write_file` enforces `allowed_directories` from safety policy: `internal/tools/local/writefile/writefile.go`
-- `..` traversal normalized via `filepath.Clean`, symlinks resolved via `filepath.EvalSymlinks`
-- Secure home directory resolution bypasses `HOME` env var: `internal/paths/secure_unix.go`, `internal/paths/secure_windows.go`
+- Write floor (observation + safe mode), boot-resolved and immutable: `internal/safety/floor.go` (D-0018)
+- Emergency shutdown / panic mode, persisted to the `cluster_panic_state` DB row: `internal/safety/panic.go`, `internal/store/panic_store.go`
+- Zone-scoped RBAC, admin API, audit: `internal/rbac/`, `internal/api/admin.go`, `internal/audit/`
+- Install-wide read posture (`team_flat` launch default / `zoned` full-mode): `internal/readposture/`, `internal/rbac/policy.go` (D-0041, D-0043)
+- Incident regime + §C captain-session gate: `internal/captaingate/`, `internal/sessiongate/`
 
-**3. run_command subcommand validation** ✅
+### Still open
 
-- kubectl/helm/argocd removed from default allowlist (read-only commands only)
-- Compiled-in subcommand allowlists for mutation-capable commands: `internal/tools/local/runcmd/subcommands.go`
-- Flag-aware parsing skips leading flags to find actual subcommand
-- `joe`, `joecored`, `kill`, `pkill`, `killall` blocked by hardcoded invariant
-
-**4. T3 notification contract** ✅
-
-- `ActionNotifier` interface with `NotifyBefore`/`NotifyAfter`: `internal/safety/notifier.go`
-- REPL notifier with 3-second blocking countdown + Ctrl+C cancel: `internal/repl/notifier.go`
-- Executor calls `NotifyBefore` for T3 (blocking), `NotifyAfter` for T2 and T3
-- `NoopNotifier` for tests, `LogNotifier` for joecored
-
-**5. API key authentication** ✅
-
-- `BearerAuth` middleware on all `/api/v1/` routes: `internal/api/middleware.go`
-- Token from `config.yaml` `server.api_key` or `JOE_API_KEY` env var
-- Client sends `Authorization: Bearer <token>` on all requests: `internal/client/client.go`
-- Graceful degradation: auth disabled when no key configured (logs warning)
-
-**6. Request size limits** ✅
-
-- `MaxRequestBody` middleware wraps all request bodies with `http.MaxBytesReader`: `internal/api/middleware.go`
-- Default limit: 1 MB (`DefaultMaxRequestBytes`)
-- `Chain()` helper composes middleware in order
-
-### Do in Phase 6
-
-**7. Credential encryption at rest**
-**8. TLS support for joe↔joecored**
-**9. Rate limiting middleware**
-**10. Security headers**
-**11. Mutation audit log** — structured log of all T2/T3 actions with timestamp, tool, args, result
-**12. Environment-level operation blocking** — deterministic detection and blocking of namespace/cluster-scoped destructive operations (§3.6)
-**13. Mutation circuit breaker** — rolling window rate limiter on T3 actions with manual reset (§3.7)
-**14. Credential isolation enforcement** — validate that joecored never uses user-provided credentials for infrastructure operations; service account separation (§3.8)
-
-### Phase 9 (multi-user) — COMPLETE
-
-**12. RBAC / per-source authorization** ✅ — security zones, RBAC middleware, Admin API (`internal/rbac/`)
-**13. Emergency shutdown / panic mode** ✅ — `internal/safety/panic.go`, `safemode.go`, `unlock.go`
-**14. Credential rotation** — still open
+- **Credential encryption at rest** and rotation
+- **Environment-level operation blocking** — deterministic block of namespace/cluster-scoped destructive operations (§3.7)
+- **Mutation circuit breaker** — rolling-window rate limiter on mutating actions with manual reset (§3.7)
+- **Credential isolation enforcement** — verify Joe never uses caller-provided infra credentials (§3.7)
+- **`read_file` path sandboxing**
+- Response security headers; TLS-by-default for non-localhost binds
 
 ---
 
-## Part 6: Infrastructure Healing — From Observer to Operator
+## Part 6: Infrastructure Healing — From Observer to Operator (design direction)
 
-The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control.
+The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control. Today Joe ships as a read-first copilot; the healing actions below are the forward direction, each gated by a per-action `act` policy key, the write floor, zone scope, and (in incident regime) the captain gate.
 
-This is how the Core Safety Principles work together: invariants 1–3 hold at every stage of the progression below, while policy structure 4–6 is what humans use to move Joe along it. Autonomous healing is not a violation of the principles — it is the principles working as designed.
+This is how the Core Safety Principles compose: invariants 1–3 hold at every stage of the progression, while policy structure 4–6 is what humans use to move Joe along it.
 
-### 6.1 Trust Progression
-
-Joe's relationship with infrastructure follows a natural progression:
+### 6.1 Trust progression
 
 ```
-Stage 1: Observe (T1)          Stage 2: Read-Only Tools (T3 read)
-─────────────────────          ─────────────────────────────────
-Joe reads everything,          Human enables kubectl/helm/argocd
-changes nothing.               in safety-policy.yaml. Subcommand
-"Why is payment-api slow?"     allowlists restrict to get/describe/
-→ Joe explains the cause.      logs. Joe queries infra directly.
+Stage 1: Observe                 Stage 2: Read-only infra tools
+─────────────────                ──────────────────────────────
+Joe reads everything,            Human enables kubectl/helm/argocd in
+changes nothing.                 safety-policy.yaml. Subcommand allowlists
+"Why is payment-api slow?"       restrict to get/describe/logs. Joe queries
+→ Joe explains the cause.        infra directly, still mutating nothing.
 
-Stage 3: Supervised Healing    Stage 4: Autonomous Healing
-───────────────────────────    ────────────────────────────
-Human enables specific T3      Human enables broader T3 actions.
-mutation actions (e.g.,        Joe heals known patterns without
-k8s_scale). Joe announces      prompting, still announces before
-before acting, human can       and after. Audit log captures
-Ctrl+C to cancel.              everything.
+Stage 3: Supervised healing      Stage 4: Autonomous healing
+───────────────────────────      ────────────────────────────
+Human enables specific           Human enables broader mutating actions.
+mutating actions (e.g.           Joe heals known patterns without prompting,
+k8s_scale). Joe announces        still announcing before and after. Audit
+before acting; the human         log captures everything; the circuit breaker
+can cancel.                      (§3.7) bounds runaway sequences.
 ```
 
-At every stage, Joe is deciding *which specific action* to take within the classes humans have authorized. The class boundary is always human-authored; the situational judgment within it is Joe's. This is what principle 4 codifies.
+At every stage Joe decides *which specific action* to take within the classes humans have authorized. The class boundary is always human-authored; the situational judgment within it is Joe's (principle 4).
 
-### 6.2 Healing Actions by Adapter
+### 6.2 Healing actions by adapter (planned)
 
-When humans choose to enable healing, each action is individually toggled. There is no "enable all mutations" switch.
+When humans choose to enable healing, each action is individually toggled — there is no "enable all mutations" switch. Examples of planned mutating actions, each with its own `act` policy key: K8s scale/restart/cordon/apply; Alertmanager silence; PagerDuty ack/resolve; Git commit/push; Helm upgrade. The doc-publish and code-review mutations (Part 2) are the first such actions already implemented.
 
-| Adapter | Healing Action | Policy Key | What Joe Does |
-| ------- | -------------- | ---------- | ------------- |
-| **K8s** | Scale deployment | `act.k8s_scale` | Increase replicas when CPU/memory pressure detected |
-| **K8s** | Restart rollout | `act.k8s_restart` | `kubectl rollout restart` for stuck deployments |
-| **K8s** | Cordon node | `act.k8s_cordon` | Isolate unhealthy node, let pods reschedule |
-| **K8s** | Apply manifest | `act.k8s_apply` | Apply known-good config from git |
-| **Alertmanager** | Create silence | `act.alertmanager_silence` | Silence alert while fixing root cause |
-| **PagerDuty** | Acknowledge | `act.pagerduty_ack` | Acknowledge incident while investigating |
-| **PagerDuty** | Resolve | `act.pagerduty_resolve` | Resolve incident after confirming fix |
-| **Git** | Commit | `act.git_commit` | Commit config changes to repo |
-| **Git** | Push | `act.git_push` | Push fix to trigger GitOps pipeline |
-| **Helm** | Upgrade | `act.helm_upgrade` | Upgrade release with new values |
+### 6.3 Graph-driven healing
 
-### 6.3 Graph-Driven Healing
+Joe's healing is informed by the knowledge graph, not blind command execution. Before acting, Joe traverses relationships to understand blast radius — e.g. recognizing that scaling a service won't help when the real cause is a saturated database it depends on. This is the difference between Joe and a runbook executor: Joe reasons about *why* something is broken and whether a proposed fix will actually help.
 
-Joe's healing is not blind command execution — it's informed by the knowledge graph. Before acting, Joe traverses relationships to understand blast radius:
+### 6.4 Healing safety guarantees
 
-```
-Example: "payment-api is slow"
-
-Joe's graph traversal:
-  payment-api (service)
-    ──runs_on──► payment-deploy (deployment, 2 replicas, 95% CPU)
-      ──runs_on──► node-ip-10-0-1-42 (node, healthy)
-    ──depends_on──► payment-db (RDS, 100% CPU)
-      ──metrics_in──► prometheus (high query latency)
-    ──paged_via──► pagerduty (incident #4521, unacked)
-
-Joe's reasoning:
-  "payment-api is slow because payment-db RDS is at 100% CPU.
-   Scaling payment-api replicas won't help — it'll add more
-   load to the already-saturated database. The root cause is
-   likely the missing index from last week's migration.
-
-   What I can do now:
-   1. Acknowledge PagerDuty incident #4521 (act.pagerduty_ack)
-   2. Scale payment-db read replicas (if act.aws_rds_scale enabled)
-
-   What requires human action:
-   1. Add the missing database index
-   2. Review the migration that removed it"
-```
-
-This is the key difference between Joe and a simple runbook executor: Joe understands *why* something is broken and can reason about whether a proposed fix will actually help or make things worse.
-
-### 6.4 Healing Safety Guarantees
-
-Even with healing enabled, the hardcoded safety invariants remain:
-
-1. **T3 notification contract is always enforced** — Joe announces before and after every mutation. For REPL users, this is a blocking 3-second window with Ctrl+C to cancel.
-
-2. **Subcommand allowlists are compiled in** — Enabling `kubectl` in the policy doesn't unlock `kubectl delete`. Mutation subcommands require their own dedicated policy keys (e.g., `act.k8s_scale`).
-
-3. **Self-protection invariants never change** — Joe cannot modify its own config, safety policy, or process, regardless of what healing actions are enabled.
-
-4. **Audit log captures everything** — Every T2 and T3 action is logged with timestamp, tool, arguments, and result. This is the record of what Joe did and why.
-
-5. **Per-action granularity** — A team can enable `k8s_scale` and `alertmanager_silence` while keeping `k8s_apply` and `k8s_delete` disabled. Each mutation is a separate trust decision.
-
-6. **Environment-level operations are always blocked** — Operations targeting entire namespaces, clusters, or environments (e.g., `kubectl delete namespace`, `terraform destroy`) are rejected by deterministic pattern matching regardless of policy flags, unless the specific environment is explicitly allow-listed in `environment_operations.allow_environment_ops` (§3.6).
-
-7. **Mutation circuit breaker prevents runaway sequences** — A rolling-window rate limiter on T3 actions trips after a configurable threshold (default: 5 mutations in 10 minutes), suspending all further mutations until a human explicitly resets it. This catches LLM reasoning loops that chain destructive actions faster than humans can review (§3.7).
-
-8. **Joe never inherits user credentials** — Joe's infrastructure access uses its own service account with pre-scoped permissions, never the calling user's kubeconfig or cloud credentials. Even if a user has cluster-admin, Joe's operations are bounded by its service account's IAM/RBAC (§3.8).
-
-### 6.5 Example: Enabling Healing in safety-policy.yaml
-
-```yaml
-# ~/.joe/safety-policy.yaml — a team that trusts Joe with scaling and alerting
-version: 1
-
-record:
-  graph_mutations: true
-  source_registration: true
-  onboarding_facts: true
-  autonomous_refresh: true
-
-act:
-  write_file:
-    enabled: false
-
-  run_command:
-    enabled: true
-    allowed_commands:
-      - ls
-      - cat
-      - head
-      - tail
-      - grep
-      - find
-      - wc
-      - kubectl              # Read-only subcommands enforced by compiled-in allowlist
-
-  # Healing actions this team has opted into:
-  k8s_scale:
-    enabled: true            # Joe can scale deployments
-  k8s_restart:
-    enabled: true            # Joe can rollout restart
-  alertmanager_silence:
-    enabled: true            # Joe can silence alerts while fixing
-  pagerduty_ack:
-    enabled: true            # Joe can ack incidents
-
-  # Healing actions this team has NOT opted into:
-  k8s_apply:
-    enabled: false           # No applying manifests
-  k8s_cordon:
-    enabled: false           # No node isolation
-  pagerduty_resolve:
-    enabled: false           # Human resolves incidents
-  git_push:
-    enabled: false           # No pushing to repos
-  helm_upgrade:
-    enabled: false           # No helm upgrades
-```
+Even with healing enabled, the hardcoded invariants remain: every mutating action announces before and after; subcommand allowlists are compiled in (enabling `kubectl` does not unlock `kubectl delete`); self-protection invariants never change; per-action granularity means each mutation is a separate trust decision; and the write floor blocks every mutation in observation or safe mode regardless of which actions are enabled. The environment-level block and circuit breaker (§3.7) are the planned additions that bound blast radius and runaway sequences.
 
 ---
 
 ## Part 7: Emergency Shutdown (Panic Mode)
 
-Joe needs a kill switch. When something goes wrong—runaway automation, unexpected behavior, or human error—operators must be able to immediately halt all Joe operations.
+Joe has a kill switch. When something goes wrong — runaway automation, unexpected behavior, or human error — operators can immediately halt all mutating operations.
 
-### 7.1 Panic Triggers
+### 7.1 Panic triggers
 
-Multiple ways to trigger emergency stop:
-
-| Method | Command / Endpoint | Use Case |
+| Method | Command / Endpoint | Use case |
 |--------|-------------------|----------|
-| REPL command | `/panic` | User in active session sees problem |
-| CLI command | `joe panic` | Operator not in active session |
+| CLI command | `joe panic` | Operator at a shell |
 | API endpoint | `POST /api/v1/panic` | Automation, external monitoring |
-| Signal | `SIGUSR1` to joecored | Unix-native, works when API unreachable |
-| Dead man's switch | Heartbeat timeout | joecored loses contact with control plane |
+| Signal | `SIGUSR1` to the `joe` server process | Unix-native, works when the API is unreachable |
 
-### 7.2 Panic Sequence
+### 7.2 Panic state — a DB row, not a file
 
-When panic is triggered:
+Panic state has exactly one home: the **`cluster_panic_state` DB row** (single row, id=1, created by migration 008; `internal/store/panic_store.go`). There is **no `~/.joe/panic.state` file** (D-0018 consolidation). Panic entry writes the row via `SetPanicked`; boot reads it via `IsPanicked`.
 
-```
-1. IMMEDIATE (< 100ms)
-   ├── Stop accepting new requests (HTTP 503)
-   ├── Set global panic flag (atomic bool)
-   └── Log panic event with trigger source
+When panic is triggered, Joe records the panic state (trigger source, reason, timestamp) to that row and stops accepting mutating work. Because the state is persisted, a restart sees it.
 
-2. IN-FLIGHT OPERATIONS (< 1s)
-   ├── Cancel all running tool contexts
-   ├── Abort LLM streaming responses
-   └── Interrupt background refresh loop
+### 7.3 Safe mode = the write floor, raised at boot
 
-3. ROLLBACK (best effort)
-   ├── If mid-transaction, attempt rollback
-   └── Record incomplete operations to audit log
+There is no separate "safe mode" runtime toggle. When boot finds a panic state present in the DB row, `ResolveWriteFloor` raises the **write floor** with reason `safe_mode` (`internal/safety/floor.go`). The floor:
 
-4. NOTIFY (< 5s)
-   ├── Log panic completion with state dump
-   ├── Send alert via configured channels (Slack, PagerDuty)
-   └── Write panic state to ~/.joe/panic.state
+- denies every managed-system mutation (the Mutate set), independent of policy or RBAC;
+- is **runtime-immutable** — nothing in the running binary lowers it;
+- is recovered only by clearing the panic state and **restarting** (recovery is a restart, never a live down-transition).
 
-5. EXIT
-   └── Process exits with code 2 (panic exit)
-       Orchestrator (systemd, k8s) will restart in safe mode
-```
+Reads continue normally in safe mode — Joe stays a useful read-only copilot while locked.
 
-### 7.3 Safe Mode
+> The separate `JOE_MODE=observation` env var raises the same floor with reason `observation` — a calm, intended read-only resting posture (not panic). A present panic state wins over the observation env var.
 
-After a panic, joecored restarts in **safe mode**:
+### 7.4 Unlock procedure
 
-```yaml
-# ~/.joe/panic.state (written on panic, read on startup)
-triggered_at: "2025-02-21T14:32:01Z"
-trigger_source: "api"  # repl | cli | api | signal | heartbeat
-trigger_user: "jaime@company.com"
-reason: "runaway scaling detected"
-incomplete_operations:
-  - tool: k8s_scale
-    args: {deployment: payment-svc, replicas: 50}
-    status: cancelled
-```
-
-**Safe mode restrictions:**
-- T1 (Observe) operations only — all mutations disabled
-- Background refresh paused
-- Core Agent autonomous operations suspended
-- Explicit unlock required to resume normal operation
-
-### 7.4 Unlock Procedure
-
-To exit safe mode:
+To clear the panic state (so the next boot resolves the floor down):
 
 ```bash
-# CLI unlock with reason (logged to audit)
 joe unlock --reason "investigated panic, false alarm - operator error"
-
-# Or via API
+# or
 curl -X POST http://localhost:7777/api/v1/unlock \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"reason": "investigated panic, root cause identified and fixed"}'
+  -d '{"reason": "root cause identified and fixed"}'
 ```
 
-Unlock requirements:
-- Authenticated user with appropriate RBAC permissions
-- Reason field mandatory (audit trail)
-- Unlock event logged with user identity and reason
-- Incomplete operations from panic shown to user before unlock
+Unlock requires an authenticated caller and a mandatory `reason` (audited). Clearing the panic state plus a restart returns Joe to normal operation.
 
-### 7.5 Implementation
-
-**Panic package:** `internal/safety/panic.go`
-
-```
-internal/safety/
-├── panic.go           # Panic trigger, state management
-├── panic_state.go     # State file read/write
-├── safemode.go        # Safe mode enforcement
-└── unlock.go          # Unlock handler
-```
-
-**Key components:**
-
-1. **Global panic flag** — Atomic bool checked by:
-   - HTTP middleware (reject requests if panicked)
-   - Tool executor (cancel if panicked)
-   - Core Agent (stop refresh if panicked)
-
-2. **Context cancellation** — All operations use contexts derived from a root panic context. Triggering panic cancels the root context, propagating to all in-flight operations.
-
-3. **State persistence** — Panic state written to disk before exit, read on startup to detect if previous run panicked.
-
-4. **Signal handler** — SIGUSR1 registered at startup, triggers panic sequence.
-
-### 7.6 API Endpoints
+### 7.5 API endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/panic` | POST | Trigger emergency shutdown |
-| `/api/v1/panic/status` | GET | Check if in safe mode |
-| `/api/v1/unlock` | POST | Exit safe mode (requires reason) |
+| `/api/v1/panic` | POST | Trigger emergency shutdown (record panic state) |
+| `/api/v1/panic/status` | GET | Report panic / floor state |
+| `/api/v1/unlock` | POST | Clear panic state (requires reason) |
+| `/api/v1/mutate-status` | GET | Report the boot-resolved write floor and its reason |
 
-**Panic request:**
-```json
-POST /api/v1/panic
-{
-  "reason": "runaway scaling detected"  // optional but recommended
-}
-```
+### 7.6 Safety guarantees
 
-**Status response:**
-```json
-GET /api/v1/panic/status
-{
-  "safe_mode": true,
-  "triggered_at": "2025-02-21T14:32:01Z",
-  "trigger_source": "api",
-  "trigger_user": "jaime@company.com",
-  "reason": "runaway scaling detected",
-  "incomplete_operations": [...]
-}
-```
-
-### 7.7 REPL Integration
-
-```
-> /panic
-⚠️  EMERGENCY SHUTDOWN
-
-This will immediately:
-- Cancel all in-flight operations
-- Stop accepting new requests  
-- Exit joecored (will restart in safe mode)
-
-Type 'CONFIRM PANIC' to proceed, or press Enter to cancel: CONFIRM PANIC
-
-🛑 Panic triggered. joecored shutting down...
-   Cancelled 2 in-flight operations
-   State saved to ~/.joe/panic.state
-   
-Reconnect after restart. Joe will be in safe mode (read-only).
-Use 'joe unlock --reason "..."' to resume normal operation.
-```
-
-### 7.8 Safety Guarantees
-
-1. **Panic always works** — No dependencies on LLM, external services, or database. Pure in-memory flag + signal handling.
-
-2. **Panic is fast** — Target <1s from trigger to process exit.
-
-3. **Panic is audited** — Trigger event, incomplete operations, and unlock all logged.
-
-4. **Panic survives restart** — State persisted to disk, safe mode enforced on next startup.
-
-5. **Panic requires explicit recovery** — No automatic unlock. Human must acknowledge and provide reason.
-
-6. **Panic is idempotent** — Multiple panic triggers are safe (no-op if already panicking).
+1. **Panic state is durable** — persisted to the DB row, enforced as the write floor on the next boot.
+2. **Recovery is explicit** — no automatic unlock; a human must clear the state and provide a reason.
+3. **The floor cannot be lowered at runtime** — the lowering operation does not exist in the binary; recovery is a restart.
+4. **Reads survive** — safe mode blocks mutations only; Joe stays observable.
 
 ---
 
-## Risk Matrix (updated post-Phase 5.5)
+## Part 8: Security Zones and Protected Configuration
 
-```
-           Impact
-           HIGH ┃ Cred Storage  │ Prompt Inj.   │ No TLS
-                ┃ (Layer 2)     │ (Layer 3)     │ (Layer 1)
-                ┃               │               │
-           MED  ┃ No RBAC       │ read_file     │ No Rate Limit
-                ┃ (Layer 4)     │ no sandbox    │ (Layer 1)
-                ┃               │ (Layer 3)     │
-           LOW  ┃ No Audit      │ Sec Headers   │
-                ┃ (Layer 4)     │ (Layer 1)     │
-                ┗━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━
-                  LOW             MEDIUM          HIGH
-                                Likelihood
+### 8.1 Security zones (the `zoned` full-mode read/write model)
 
-Resolved in Phase 5.5:
-  - No Auth (Layer 1) → Bearer token middleware
-  - No Request Size Limits (Layer 1) → MaxBytesReader 1 MB
-  - File Tools unsandboxed (Layer 3) → write_file allowed_directories + self-protection
-  - run_command unrestricted (Layer 3) → subcommand allowlists + self-protection
-```
+Zones decouple RBAC policy from individual components. Admins define zones with an **action ceiling**, then assign components to zones. Grants map principals to zones. There are **no roles and no groups** — this is zone-scoped access control, and grants are action-less (the action ceiling lives on the zone, not on the grant).
 
----
+The action vocabulary (`internal/rbac/zones.go`): `read`, `query`, `mutate`, `delete`, plus the componentless capabilities `declare_incident` / `resolve_incident`.
 
-## Part 8: Security Zones and Protected Tables
+Default zones seeded by migration 006:
 
-### 8.1 Security Zones
-
-Security zones decouple RBAC policies from dynamic sources. Admins define zones with allowed actions, then assign sources to zones.
-
-**Zone Definitions:**
-```yaml
-security_zones:
-  prod-readonly:
-    description: "Production systems - read only"
-    actions: [Read, Query]
-    
-  prod-write:
-    description: "Production systems - with write access"
-    actions: [Read, Query, Mutate]
-    constraints:
-      require_approval: [Mutate]
-      
-  dev-full:
-    description: "Development - full access"
-    actions: [Read, Query, Mutate, Delete]
-    
-  unassigned:
-    description: "Default zone for new sources"
-    actions: [Read]  # Most restrictive
-```
+| Zone | Allowed actions |
+|------|-----------------|
+| `prod-readonly` | `read`, `query` |
+| `prod-write` | `read`, `query`, `mutate` |
+| `dev-full` | `read`, `query`, `mutate`, `delete` |
+| `unassigned` | `read` (default for new components — most restrictive) |
 
 **Flow:**
-1. Joe registers source (e.g., `grafana/xyz-prod`) → goes to `sources` table (LLM can write)
-2. Zone lookup: no assignment found → defaults to `unassigned` (read-only)
-3. Joe notifies: "New source registered, needs zone assignment"
-4. Admin assigns zone via Admin API → goes to `source_zone_assignments` table (LLM cannot write)
-5. Subsequent requests respect the assigned zone
+1. Joe registers a component → `components` table.
+2. No zone assignment found → defaults to `unassigned` (read-only).
+3. An admin assigns a zone via the admin API → `component_zone_assignments` table.
+4. Subsequent requests respect the assigned zone.
 
-**Permission Evaluation:**
+**Permission evaluation (mutate example, under `zoned`):**
 ```
-Tool execution: grafana_create_dashboard
-Target source: grafana/xyz-prod
-Zone: prod-readonly
-Required action: Mutate
-Zone allows: [Read, Query]
-Result: DENIED
+Tool: a mutating tool on grafana/xyz-prod
+Component zone: prod-readonly  → ceiling [read, query]
+Required action: mutate
+Result: DENIED (zone does not permit mutate)
 ```
 
-### 8.2 Protected Tables
+Under the launch-default `team_flat` posture, *read* decisions short-circuit to allow for any authenticated principal (§3.5); *mutate* decisions are unaffected and still evaluate against the zone ceiling, the safety policy, and the write floor.
 
-**Critical invariant:** LLM tools cannot modify security configuration.
+> **Launch note (read-posture-latch).** The zone/policy/component-zone admin surface is the **full-mode (`zoned`) era** model. At launch the install ships `team_flat`, and the zone-administration UI is de-emphasized; zones become operative when an operator opts in to `zoned`. See `docs/backlog/read-posture-latch.md` and D-0041/D-0043.
 
-| Table | LLM Can Read | LLM Can Write | Purpose |
-|-------|--------------|---------------|---------|
-| `sources` | ✅ | ✅ | Connection details |
-| `sessions`, `graph_*`, `knowledge_*` | ✅ | ✅ | Operational data |
-| `security_zones` | ✅ | ❌ **NO** | Zone definitions |
-| `source_zone_assignments` | ✅ | ❌ **NO** | Source → Zone mapping |
-| `rbac_policies` | ✅ | ❌ **NO** | User/group permissions |
-| `audit_log` | ✅ | ⚠️ Append only | Immutable audit trail |
+### 8.2 Protected configuration
 
-**Enforcement (hardcoded in `internal/safety/invariants.go`):**
-```go
-var writeProtectedTables = map[string]bool{
-    "security_zones":          true,
-    "source_zone_assignments": true,
-    "rbac_policies":           true,
-}
+**Critical invariant:** LLM tools cannot modify security configuration. As described in §3.6, this is enforced **architecturally** — the security tables are reachable only through the admin REST surface, and no LLM-invokable tool has a raw-SQL write path to them.
 
-var appendOnlyTables = map[string]bool{
-    "audit_log": true,
-}
+| Table | LLM tool can read | LLM tool can write | Mutated via |
+|-------|-------------------|--------------------|-------------|
+| `components` | ✅ (queries) | ✅ (register_component) | Component tools + admin |
+| `graph_*`, `knowledge_*`, facts | ✅ | ✅ | Model-maintenance tools (Read class) |
+| `security_zones` | — | ❌ **never** | Admin API only (audited) |
+| `component_zone_assignments` | — | ❌ **never** | Admin API only (audited) |
+| `rbac_policies` | — | ❌ **never** | Admin API only (audited) |
+| `read_posture`, `auto_promote_reads` | — | ❌ **never** | Admin API only (audited) |
+| audit rows | — | append-only | Audit layer |
 
-func CanWriteTable(table string, operation string) bool {
-    if writeProtectedTables[table] {
-        return false
-    }
-    if appendOnlyTables[table] && operation != "INSERT" {
-        return false
-    }
-    return true
-}
-```
+> There is intentionally **no** `CanWriteTable`/`writeProtectedTables` guard inside the tool executor. Earlier drafts of this document described one; it was never the mechanism. Protection comes from the tool surface itself: the LLM's tools write only operational data through typed repositories, and security configuration is a different surface (admin REST, admin-gated, audited).
 
-This check runs in the tool executor BEFORE any SQL operation. It is:
-- **Compiled** — not configurable at runtime
-- **Hardcoded** — not bypassable by LLM reasoning or prompt injection
-- **Universal** — applies to all tools, all code paths
+### 8.3 Deployment
 
-### 8.3 Pluggable Security Architecture
+Joe runs as a **single `joe` process** with one SQLite database. Security enforcement (write floor, safety policy, zone RBAC, read posture, incident gate) is in-process. The admin REST surface is admin-gated and audited.
 
-Joe supports two deployment modes:
-
-**Mode 1: Embedded (default)**
-- Single joecored process, single DB
-- Protected tables enforced by hardcoded invariants
-- Admin API in joecored (requires admin auth)
-- Suitable for: development, small teams
-
-**Mode 2: Remote (hardened)**
-- Separate `joe-security` process with own `security.db`
-- joecored queries joe-security for policy decisions
-- Even if joecored is compromised (RCE), cannot write to security.db
-- Suitable for: production, compliance, multi-tenant
-
-**Configuration:**
-```yaml
-security:
-  mode: embedded  # or 'remote'
-  endpoint: "joe-security:7778"  # for remote mode
-```
-
-See `docs/JOE_SECURITY.md` for full architecture details.
+> An earlier draft described an optional second `joe-security` process with its own `security.db` for hardened/remote deployments. That mode is **not built** — there is no `cmd/joe-security` or `internal/securitysvc` in the tree. If a future hardened split is pursued, it gets its own decision entry.
 
 ### 8.4 Admin API
 
-Separate from LLM-accessible API. Requires admin authentication.
+The admin surface is separate from the LLM-accessible API and requires admin authentication. Every write is audited.
 
 ```
-POST /api/v1/admin/zones              # Create/update zones
-POST /api/v1/admin/source-zones       # Assign source to zone
-GET  /api/v1/admin/source-zones/unassigned  # List unassigned sources
-POST /api/v1/admin/policies           # Manage RBAC policies
+GET/POST/PATCH/DELETE /api/v1/admin/zones              # Zones (action ceilings)
+GET/POST/DELETE       /api/v1/admin/component-zones    # Component → zone assignments
+GET                   /api/v1/admin/unassigned         # Components with no zone
+GET/POST/DELETE       /api/v1/admin/policies           # Principal → zone grants
+GET/POST              /api/v1/admin/read-posture        # team_flat | zoned (D-0041)
+GET/POST              /api/v1/admin/read-promotions     # Per-type autonomous-read promotion
+GET/POST/DELETE       /api/v1/admin/admins              # Admin principals
+GET/POST              /api/v1/admin/principals/...       # Principal enable/disable
+GET                   /api/v1/admin/credential-status    # Credential authz/connectivity (D-0026)
+GET/POST              /api/v1/admin/sessions/...          # Cross-tenant session governance
 ```
-
-In embedded mode: routes in joecored, separate auth
-In remote mode: routes in joe-security only
 
 ---
 
@@ -1019,5 +534,7 @@ In remote mode: routes in joe-security only
 
 - OWASP Top 10: https://owasp.org/www-project-top-ten/
 - Go secure coding: https://owasp.org/www-project-go-secure-coding-practices-guide/
-- `docs/joe-architecture.md` — system architecture
-- `docs/next-steps-plan.md` — implementation phases
+- [`docs/DECISIONS.md`](DECISIONS.md) — normative decision log (D-0018 write floor / panic; D-0020 binary axis; D-0022 denial precedence; D-0041/D-0043 read posture)
+- [`docs/joe-architecture.md`](joe-architecture.md) — system architecture
+- [`docs/JOE_SECURITY.md`](JOE_SECURITY.md) — security architecture overview
+- [`docs/JOE_RBAC_IMPLEMENTATION.md`](JOE_RBAC_IMPLEMENTATION.md) — RBAC middleware spec

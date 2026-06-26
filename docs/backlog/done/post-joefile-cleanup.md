@@ -1,5 +1,5 @@
 Backlog — Residual `joe-architecture.md` architectural drift (D-0021 rename + removed `.joe/` ingestion)
-Status: open
+Status: done — closed by the `arch-doc-staleness` session, which took "the decision" below (reconcile fully) and rewrote `docs/joe-architecture.md` end-to-end: the "Source Tools" block and `update_source` are gone (now `register_component`/`list_components`), the `.joe/` ingestion subsystem and `joe_file_cache` schema are scrubbed, and the Phase-3 historical checklist no longer names `sources`/`list_sources`/`joe_file_cache`. See [done/arch-doc-staleness.md](arch-doc-staleness.md).
 
 Originally surfaced by the `post-joefile-cleanup` sweep and narrowed by the
 `post-joefile-cleanup-02` documentation-truth sweep. That sweep corrected every
