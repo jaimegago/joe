@@ -694,25 +694,36 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// CC-02) at ActionRead — denying any ungranted/unpromoted component before
 	// its adapter, and thus its credential, is resolved.
 	//
-	// CRITICAL: this accessor's engine MUST be the governance-aware engine
-	// (NewPolicyEngineWithGovernance over the auto_promote_reads resolver AND the
-	// read-posture resolver), not a bare NewPolicyEngine — otherwise agent:core
-	// reads deny-all even for promoted types, and the team_flat read admit never
-	// fires on the refresh path. The transport policyEngine below is built after
-	// the Core Agent starts, so we build the refresh engine here the SAME way,
-	// from the SAME rbacRepo + promoteReadsRepo + readPostureRepo under the SAME
-	// cfg.RBACEnabled() predicate. A nil engine (RBAC disabled) makes the accessor
-	// permit every decision, matching the transport path. The accessor is
-	// principal-agnostic; it becomes "the agent:core accessor" purely by being
-	// consumed under the CC-02 ctx.
+	// CRITICAL: this accessor's engine is the promote-aware engine
+	// (NewPolicyEngineWithPromote over the auto_promote_reads resolver), not a
+	// bare NewPolicyEngine — otherwise agent:core reads deny-all even for promoted
+	// types. It is deliberately built WITHOUT the read-posture resolver
+	// (read-posture-latch-02, D-0043): the read posture is a HUMAN read-sharing
+	// posture governing the human-facing transport reads only; the autonomous
+	// agent:core read surface is a SEPARATE axis governed solely by
+	// auto_promote_read plus grants. Wiring the posture resolver here would let the
+	// default team_flat posture admit agent:core to read every component before
+	// auto_promote_read is consulted, silently overriding the operator-controlled
+	// promotion surface. The two axes are separated at construction — the refresh
+	// engine never receives a posture resolver, so the team_flat admit is
+	// structurally unreachable on this path, not merely disabled by discipline.
+	// Flipping the install read posture between team_flat and zoned therefore
+	// cannot change what agent:core can read.
+	//
+	// The transport policyEngine below is built the SAME way from the SAME
+	// rbacRepo + promoteReadsRepo under the SAME cfg.RBACEnabled() predicate, plus
+	// the read-posture resolver it (and only it) carries. A nil engine (RBAC
+	// disabled) makes the accessor permit every decision, matching the transport
+	// path. The accessor is principal-agnostic; it becomes "the agent:core
+	// accessor" purely by being consumed under the CC-02 ctx.
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok {
 		var refreshEngine *rbac.PolicyEngine
 		if cfg.RBACEnabled() {
-			refreshEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
+			refreshEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
 		}
 		refreshAccessor := access.New(services.Adapters, services.Graph, refreshEngine, auditRepo)
 		concrete.SetRefreshAccessor(refreshAccessor)
-		slog.Info("core agent: refresh adapter resolution floored through the access guard (agent:core, ActionRead)")
+		slog.Info("core agent: refresh adapter resolution floored through the access guard (agent:core, ActionRead; promote-aware, no read posture)")
 	}
 
 	// Mint the Core Agent's internal boot identity (agent:core) once and stamp
@@ -833,8 +844,15 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		// the auto_promote_reads resolver (A001-COREGOV CC-04) so the agent:core +
 		// ActionRead dynamic admit predicate is live, AND the read-posture resolver
 		// so the team_flat read admit is live per decision. With a fresh/upgraded
-		// install seeded team_flat, every authenticated principal reads every
+		// install seeded team_flat, every authenticated HUMAN principal reads every
 		// component until an operator flips the posture to zoned.
+		//
+		// The read-posture resolver is wired ONLY here, on the human-facing
+		// transport engine — NOT on the agent:core refresh engine built above
+		// (read-posture-latch-02, D-0043). The read posture governs human-facing
+		// transport reads; the autonomous agent:core read surface is a separate
+		// axis governed solely by auto_promote_read plus grants. Keeping the
+		// posture resolver off the refresh engine makes that separation structural.
 		policyEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
 	}
 	// Stream G phase G5: surface the RBAC-enabled signal to handlers.

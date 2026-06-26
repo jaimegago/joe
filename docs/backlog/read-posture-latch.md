@@ -1,6 +1,6 @@
 Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces
 
-Status: in-progress — the posture mechanism, the admin flip endpoint, and the audit trail have landed (D-0041). This file tracks the deferred work that the launch default (`team_flat`) lets us postpone.
+Status: in-progress — the posture mechanism, the admin flip endpoint, and the audit trail have landed (D-0041); the axis-coupling between the read posture and the agent:core autonomous read surface introduced by D-0041 was corrected (D-0043): the posture governs human-facing transport reads only. This file tracks the deferred work that the launch default (`team_flat`) lets us postpone.
 
 ## Context
 
@@ -37,3 +37,15 @@ deferred out of the launch build without losing any capability.
   era ergonomic at scale — tracked in [`rbac-v2`](rbac-v2.md) and the related
   [`full-mode-rbac-track`](full-mode-rbac-track.md); this item is the read-posture
   framing of why that work is deferrable behind the `team_flat` launch default.
+- **Decide whether `team_flat` should admit `user:` principals only (transport
+  scope of the admit).** Current behavior (verified read-posture-latch-02): the
+  `team_flat` admit on the **transport** engine fires for **any** non-empty
+  principal set on `ActionRead` — there is no principal-type check, so it admits
+  named `svc:` API-key principals as well as `user:` principals. The follow-on
+  decision is whether `team_flat` should be a **human** read-sharing posture that
+  admits `user:` principals only and leaves all `svc:` named API-key principals on
+  the grant-based path (so a machine integration's read surface stays explicitly
+  granted regardless of the human posture). This is purely the transport-engine
+  question; the agent:core autonomous read surface is already off the posture axis
+  (D-0043). Not changed in this build — recorded here as the verified starting
+  point for the decision.
