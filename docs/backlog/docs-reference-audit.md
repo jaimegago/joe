@@ -4,8 +4,13 @@ Status: open
 ## Summary
 
 Audited **13** reference documents under `docs/reference/` against the live tree
-(re-derived from code, not from memory or `DECISIONS.md`). Total checkable claims
-classified: **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
+(re-derived from code, not from memory or `DECISIONS.md`). The original audit
+classified **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
+
+**Campaign progress:** the actioning campaign rewrites one doc per session. Open
+MISALIGNED entries remaining (recomputed by summing the per-file counts of the
+still-open sections below): **50**. Resolved so far:
+`operational-modes-ui-status.md` (17, in `docs-reference-audit-01`).
 
 This is an **audit only** — no doc or code was changed. Each MISALIGNED claim below
 carries the doc location, the authoritative code location, a one-line discrepancy,
@@ -54,11 +59,18 @@ rename is correctly applied in the reference docs (no stale registered-system
 
 ---
 
-## docs/reference/operational-modes-ui-status.md  — MISALIGNED: 17
+## docs/reference/operational-modes-ui-status.md  — MISALIGNED: 17 — RESOLVED in docs-reference-audit-01
 
-This doc predates the D-0018 write-floor refactor. Its central §1 thesis (that no
-global read-only posture exists) and its entire panic/safe-mode mechanism describe
-deleted code. Most cited UI line numbers have also drifted.
+This doc predated the D-0018 write-floor refactor. Its central §1 thesis (that no
+global read-only posture exists) and its entire panic/safe-mode mechanism described
+deleted code; most cited UI line numbers had also drifted. The doc was rewritten in
+`docs-reference-audit-01` against the live tree — observation mode documented as the
+boot-resolved write-floor read-only posture, panic state placed in the
+`cluster_panic_state` DB row, the typed `WriteFloorError` and four-code write-failure
+set (pointed at `internal/api/constants.go` per D-0032), the captain prefix corrected
+to `/api/v1/sessions/{id}/captain/*`, the three AppShell banners inventoried, and the
+T1/T2/T3 vocabulary replaced by the binary Read/Mutate axis (D-0020). All 17 entries
+below are addressed; they are retained for traceability.
 
 1. DOC `:25,109-112,116,120,189,364-368` — panic state persisted to a
    `<joeDir>/panic.state` file via `internal/safety/panic_state.go`.

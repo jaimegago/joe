@@ -7,176 +7,197 @@ gaps only — no fixes proposed.
 cites `file:line`. Doc/memory/prior-doc claims were re-verified against code; drift and
 discrepancies are recorded in the final section rather than silently reconciled.
 
-**Note on prior work:** no standalone `incident-mode-status` investigation exists
-in the tree. A prior version of *this* file existed (covering only panic/incident/captain,
-three axes) and was used as a starting point; it has since drifted on the panic/safe-mode
-axis (a UI banner and a typed denial now exist that it recorded as absent). All of its
-claims were re-verified here; drift is logged in §5.
+**Note on prior work:** an earlier version of this file predated the D-0018 write-floor
+refactor. It denied that any daemon-wide read-only posture existed and described a
+file-based panic/safe-mode mechanism (a `panic.state` file, a `safeModeActive` atomic,
+a live `ActivateSafeMode` setter) that has since been deleted. This version
+(`docs-reference-audit-01`) was re-derived against the live tree: observation mode is now
+a real boot-resolved read-only posture, panic state lives only in the
+`cluster_panic_state` DB row, and the typed denial is the reason-carrying
+`WriteFloorError`. All claims were re-verified here; the supersession is logged in §9.
 
-## The four axes
+## The axes
 
-The task frames up to four operational axes. The first three are runtime states that can
-flip mid-session; the fourth is the baseline posture. They are **independent and
-composable**, not one enum.
+Joe exposes two **independent and composable** operational axes, not one enum:
 
-| # | Axis | Entered via | State lives in |
-|---|------|-------------|----------------|
-| 1 | Read mode (read-only vs read-write) | — (**no such flag exists**, see §1) | — |
-| 2 | Panic / safe mode | `joe panic`, `kill -USR1`, `POST /api/v1/panic` | `internal/safety` + persisted file + cluster row |
-| 3 | Incident regime + captain gate | `POST /api/v1/regime/declare`; gate in `internal/captaingate` + `internal/sessiongate` | `system_regime` / `session_captains` tables |
-| 4 | Normal | none of the above active | absence of 2/3; baseline posture is RBAC (see §4) |
+| # | Axis | Reasons / states | Entered via | State lives in |
+|---|------|------------------|-------------|----------------|
+| 1 | **Write floor** (boot-resolved) | `full` (down) / `observation` / `safe_mode` (up) | `JOE_MODE=observation` (observation); `joe panic`, `kill -USR1`, `POST /api/v1/panic` (safe_mode) | boot-sealed `WriteFloor` value + `cluster_panic_state` DB row |
+| 2 | **Incident regime + captain gate** | `normal` / `incident` | `POST /api/v1/regime/declare`; captain gate in `internal/captaingate` + `internal/sessiongate` | `system_regime` / `session_captains` tables |
 
-All `/api/v1` routes sit behind `auth.EdgeAuth` ([cmd/joe/server.go:776-789](../../cmd/joe/server.go));
-the source-keyed `rbac.EnforcementMiddleware` ([cmd/joe/server.go:787](../../cmd/joe/server.go))
-only fires on paths carrying a `sourceID`. The read endpoints below carry no `sourceID`,
-so they are gated by **authentication only**, not per-zone RBAC. `apiPrefix = "/api/v1"`
-([internal/api/constants.go:7](../../internal/api/constants.go)).
+The write floor is a **single** boot-resolved value with a `reason` (D-0018): `observation`
+and `safe_mode` are two reasons of the *same* floor and are mutually exclusive — a boot
+resolves to exactly one ([internal/safety/floor.go:45-54](../../internal/safety/floor.go)).
+The incident axis is independent: an install can be in incident mode with the floor down,
+or in safe mode with no incident. "Full / normal" is the absence of both (§4).
 
----
-
-## 1. Axis 1 — Read mode (`operational_mode` flag): **ABSENT**
-
-**Resolved answer: the flag does not exist in the current code, and never has in this
-repo's git history.**
-
-- No `operational_mode` / `OperationalMode` / `ReadMode` / `read_mode` / `ReadOnlyMode` /
-  `ReadWriteMode` identifier exists anywhere in the tree (`grep -rniI` over all `.go`,
-  `.ts`, `.tsx` returns nothing for those tokens). The only `read_only` hits are unrelated:
-  the **session-sharing** field `read_only` on `GET /sessions/{id}` (non-owner viewing a
-  shared chat) [ui/src/api/schemas.ts:126-129](../../ui/src/api/schemas.ts), which is a
-  per-session viewer flag, not a daemon-wide read/write posture.
-- No git history for the flag: `git log -S "operational_mode" --all` and
-  `git log -S "ReadMode" --all` both return zero commits.
-- The server `Config` struct has no read-mode field
-  ([internal/config/config.go](../../internal/config/config.go) — grep for `Mode` finds
-  only `EmbeddingModel`, comments, no operational-mode toggle).
-- System-prompt assembly does **not** branch on a read mode. All prompt strings live in
-  `internal/prompts/` (`joefile.go`, `knowledge.go`, `observe.go`, `prompts.go`,
-  `zones.go`); none reference a read/write operational mode (grep for
-  `read_only`/`operational`/`read mode` over `internal/prompts/` returns only incidental
-  comment text [internal/prompts/zones.go:142](../../internal/prompts/zones.go)).
-- No `OASIS` launch config carries it either — `OASIS`/`oasis` references are eval-suite
-  scenarios and `oasisctl` API-compat notes only
-  ([internal/api/tasks.go:863](../../internal/api/tasks.go)),
-  not a daemon read-mode setting.
-
-**Where the read/write *concept* actually lives now** (subsumed, not a global flag):
-
-- **RBAC per-zone actions.** The closest analog to "read-only vs read-write" is the
-  per-zone allowed-action set. `ActionRead` covers read-only (T1) observations
-  ([internal/rbac/zones.go:11](../../internal/rbac/zones.go)); a zone grants some subset of
-  actions. This is **per-zone and per-caller**, not a single system-wide posture.
-- **Safety tier defaults.** `safety.DefaultPolicy()` gates T2/T3 confirmation
-  ([internal/safety/policy.go:60-63](../../internal/safety/policy.go)); T1 is always
-  read-only ([internal/safety/tier.go:7](../../internal/safety/tier.go)). Again, this is a
-  per-tool tiering policy, not a reportable read/write switch.
-
-**Read path for axis 1 — PARTIAL (RBAC posture only, no global read mode).**
-
-- There is **no** endpoint that reports a global "current read mode."
-- The nearest readable signal is `GET /api/v1/me`, which returns the caller's reachable
-  zones and each zone's `allowed_actions`
-  ([internal/api/currentuser.go:29-52](../../internal/api/currentuser.go)), plus
-  `rbac_enabled` ([currentuser.go:37](../../internal/api/currentuser.go)). This tells a
-  client what the *caller* may do per zone — not whether the daemon is globally read-only.
-- **Source of truth:** the per-principal RBAC grants the policy engine reads for every
-  decision, surfaced on `/me` ([currentuser.go:44-51](../../internal/api/currentuser.go)).
-  Survives restart: YES (DB-backed RBAC policies).
-
-**Flag existence: ABSENT.** **Read path (global read mode): ABSENT** (only a per-zone RBAC
-posture via `/me` is readable).
+All `/api/v1` routes sit behind `auth.EdgeAuth`; the source-keyed
+`rbac.EnforcementMiddleware` only fires on paths carrying a `componentID`. The read
+endpoints below (`/mutate-status`, `/panic/status`, `/regime`, `/me`) carry no
+`componentID`, so they are gated by **authentication only**, not per-zone RBAC.
+`apiPrefix = "/api/v1"` ([internal/api/constants.go:8](../../internal/api/constants.go)).
 
 ---
 
-## 2. Axis 2 — Panic / safe mode — read path **PRESENT**
+## 1. Axis 1a — Write floor / observation mode — read path **PRESENT**
+
+**Resolved answer: a daemon-wide, boot-resolved, runtime-immutable read-only posture
+exists (observation mode), and it is readable via a dedicated endpoint.** This corrects
+the prior version of this doc, which denied any global read-only posture.
+
+- **The posture is the write floor.** `WriteFloor` is a boot-resolved, runtime-immutable
+  value exposing only `Up()` and `Reason()`
+  ([internal/safety/floor.go:28-37](../../internal/safety/floor.go)). It is resolved
+  exactly once by the pure `ResolveWriteFloor(panicStatePresent, observationEnvSet)`
+  ([floor.go:45-54](../../internal/safety/floor.go)) and **sealed**: there is no setter,
+  package function, or method anywhere in the binary that lowers a resolved floor —
+  recovery is restart, never a live down-transition ([floor.go:22-37](../../internal/safety/floor.go)).
+- **Observation mode is set via `JOE_MODE=observation`.** `env.Mode = "JOE_MODE"` and
+  `env.ModeObservation = "observation"`
+  ([internal/env/keys.go:25,31](../../internal/env/keys.go)). When set, the floor boots up
+  with reason `FloorReasonObservation`
+  ([floor.go:16,49-50](../../internal/safety/floor.go)) — a "calm, intended read-only
+  resting posture; NOT panic/safe mode."
+- **Boot resolves and seals it.** `cmd/joe/server.go` reads the env var, calls
+  `ResolveWriteFloor`, logs the resulting reason, and seals the value into `Services`
+  ([cmd/joe/server.go:415-430,459](../../cmd/joe/server.go)). The same boot reads the
+  sticky panic state from the cluster store first; **panic wins over observation**, so a
+  panicked Joe boots `safe_mode`, never the calmer `observation`
+  ([floor.go:46-48](../../internal/safety/floor.go); [server.go:411-416](../../cmd/joe/server.go)).
+- **Read endpoint:** `GET /api/v1/mutate-status`.
+  - Registered: `registerMutateStatusRoutes`
+    ([internal/api/mutatestatus.go:38-45](../../internal/api/mutatestatus.go)), wired at
+    [internal/api/server.go:128](../../internal/api/server.go).
+  - Handler: `handleMutateStatus`
+    ([mutatestatus.go:64-70](../../internal/api/mutatestatus.go)) — both fields come from a
+    SINGLE read of the boot-sealed floor, so they cannot disagree.
+  - Response shape: `mutateStatusResponse{ can_mutate bool, reason string }` with explicit
+    snake_case JSON tags ([mutatestatus.go:50-58](../../internal/api/mutatestatus.go)).
+    `reason` is **always** one of `"full"` / `"observation"` / `"safe_mode"` — never the
+    empty string ([mutatestatus.go:15-27,78-89](../../internal/api/mutatestatus.go)).
+  - **Gating:** authentication only (no `componentID` in the path).
+- **Source of truth:** the boot-sealed `services.WriteFloor`
+  ([cmd/joe/server.go:459](../../cmd/joe/server.go)). **Survives restart: YES** — it is
+  re-derived deterministically at every boot from the `JOE_MODE` env var (observation) and
+  the `cluster_panic_state` DB row (safe_mode), so the posture is identical across restarts
+  given the same inputs.
+
+**The RBAC per-zone posture is a separate, finer-grained concept** — what a *given caller*
+may do in a *given zone* — and is unchanged. It is readable via `GET /api/v1/me`, which
+returns the caller's reachable zones with each zone's `allowed_actions` plus `rbac_enabled`
+([internal/api/currentuser.go:31,35-51](../../internal/api/currentuser.go)). This is
+per-principal and per-zone; the write floor is the install-wide read/write posture. The two
+are orthogonal: a `full`-floor install still denies writes the caller's zone forbids, and a
+`safe_mode`/`observation` floor denies *every* mutate regardless of zone grant.
+
+**Write-floor read path: PRESENT** (`/mutate-status`). **RBAC per-zone posture: PRESENT**
+(`/me`, per-zone not global).
+
+---
+
+## 2. Axis 1b — Panic / safe mode — read path **PRESENT**
+
+Panic/safe mode is the *other reason* the same write floor can be up. It is the sticky
+recovery state, distinct from the calm observation posture in §1.
 
 - **Read endpoint:** `GET /api/v1/panic/status`
-  - Registered: [internal/api/panic.go:26](../../internal/api/panic.go)
-    (`registerPanicRoutes`, prefix `/api/v1`), wired at
-    [internal/api/server.go:111](../../internal/api/server.go).
-  - Handler: `handlePanicStatus` [panic.go:98-122](../../internal/api/panic.go).
+  - Registered: `registerPanicRoutes`
+    ([internal/api/panic.go:28-40](../../internal/api/panic.go), `POST /api/v1/panic` +
+    `GET /api/v1/panic/status`), wired at
+    [internal/api/server.go:124](../../internal/api/server.go).
+  - Handler: `handlePanicStatus`
+    ([panic.go:96-116](../../internal/api/panic.go)).
   - Response shape: `panicStatusResponse{ safe_mode bool, triggered_at, trigger_source,
     trigger_reason }` with explicit snake_case JSON tags
-    [panic.go:39-44](../../internal/api/panic.go). When neither safe mode nor panic is
-    active it returns just `{safe_mode:false}` and omits the detail fields
-    [panic.go:99-102](../../internal/api/panic.go).
-  - **Gating:** authentication only (EdgeAuth chain). No `sourceID` in the path, so
-    `rbac.EnforcementMiddleware` does not fire; the handler performs no per-call RBAC.
-- **Source of truth:**
-  - In-memory: `safety.safeModeActive atomic.Bool`
-    [internal/safety/safemode.go:18](../../internal/safety/safemode.go) and
-    `safety.panicked atomic.Bool` [internal/safety/panic.go:31](../../internal/safety/panic.go).
-  - Persisted (local): `<joeDir>/panic.state`, `panicStateFile = "panic.state"`
-    [internal/safety/panic_state.go:13,29](../../internal/safety/panic_state.go);
-    `joeDir = paths.JoeDirPath()` = `~/.joe` (`JoeDir = ".joe"`)
-    [internal/paths/defaults.go:11,30](../../internal/paths/defaults.go).
-  - Persisted (cluster): `ClusterPanicStore` interface, DB-backed `cluster_panic_state`
-    row [internal/safety/panic.go:24-37](../../internal/safety/panic.go), registered at
-    startup [cmd/joe/server.go:410-411](../../cmd/joe/server.go).
-  - **Survives restart: YES.** Startup reads both the local `panic.state` file *and* the
-    cluster row and calls `safety.ActivateSafeMode()` if either is set
-    [cmd/joe/server.go:413-424](../../cmd/joe/server.go). The read endpoint reports from
-    the in-memory atomics first ([panic.go:99](../../internal/api/panic.go)) and reads the
-    file only to enrich `triggered_at`/`trigger_source`/`trigger_reason`
-    ([panic.go:110-121](../../internal/api/panic.go)).
+    ([panic.go:51-56](../../internal/api/panic.go)). When safe mode is off it returns just
+    `{safe_mode:false}` and omits the detail fields ([panic.go:98-101](../../internal/api/panic.go)).
+  - **`safe_mode` is computed from the boot-sealed floor**, not a mutable atomic:
+    `inSafeMode := h.floor.Reason() == safety.FloorReasonSafeMode`
+    ([panic.go:97](../../internal/api/panic.go)). The detail fields are enriched from the
+    panic DB row, never from disk ([panic.go:103-113](../../internal/api/panic.go)).
+  - **Gating:** authentication only (no `componentID` in the path).
+- **Source of truth — the `cluster_panic_state` DB row only (no file).** Panic state has a
+  single home: the `ClusterPanicStore` DB row
+  ([internal/safety/panic.go:31-43](../../internal/safety/panic.go)). `Trigger` sets the
+  process-global `panicked atomic.Bool` and persists the row via the boot-registered store
+  ([panic.go:45-76](../../internal/safety/panic.go)); boot reads `IsPanicked` from the row
+  to raise the floor ([cmd/joe/server.go:399,411-416](../../cmd/joe/server.go)).
+  - **There is no `panic.state` file and no `safemode.go` atomic.**
+    `internal/safety/panic_state.go` and `internal/safety/safemode.go` do not exist; git
+    `8da88d6` deleted the `panic.state` file. Two break-tests forbid their reintroduction:
+    `TestWriteFloor_NoRuntimeLoweringPath` fails if `safeModeActive` / `ActivateSafeMode` /
+    `DeactivateSafeMode` / `IsSafeModeActive` / `ErrSafeModeActive` / `Reset` reappear in
+    production code ([internal/safety/floor_guard_test.go:30-93](../../internal/safety/floor_guard_test.go)),
+    and `TestPanicState_SingleHomeNoFileConcept` fails if the `panic.state` file API or path
+    literal reappears ([floor_guard_test.go:130-192](../../internal/safety/floor_guard_test.go)).
+  - **Survives restart: YES.** The cluster row is sticky; boot reads it and raises the
+    `safe_mode` floor on the next startup. Recovery is `joe unlock` (which clears the row)
+    **plus a restart** — there is no live in-process clear
+    ([panic.go:31-43](../../internal/safety/panic.go); [server.go:417-427](../../cmd/joe/server.go)).
 
 ---
 
-## 3. Axis 3 — Incident regime + captain gate
+## 3. Axis 2 — Incident regime + captain gate
 
 ### 3a. Incident regime — read path **PRESENT**
 
 - **Read endpoint:** `GET /api/v1/regime`
-  - Registered: [internal/api/regime.go:54](../../internal/api/regime.go)
-    (`registerRegimeRoutes`), wired at [server.go:124](../../internal/api/server.go).
-    (Routes register only when `services.SessionModel` is non-nil
-    [regime.go:40-42](../../internal/api/regime.go).)
-  - Handler: `read` [regime.go:59-66](../../internal/api/regime.go) → `repo.GetRegime`.
-  - Response shape: `sessionmodel.Regime` serialized with **no JSON tags**, so wire keys
-    are the exported Go field names `{ Mode, DeclaredAt, DeclaredByPrincipal, DeclaredKind }`
-    [internal/sessionmodel/types.go:101-106](../../internal/sessionmodel/types.go). `Mode`
-    is `"normal"` or `"incident"` [types.go:87-88](../../internal/sessionmodel/types.go).
+  - Registered: `registerRegimeRoutes`
+    ([internal/api/regime.go:54](../../internal/api/regime.go)), wired at
+    [internal/api/server.go:147](../../internal/api/server.go). (Routes register only when
+    `services.SessionModel` is non-nil [regime.go:40-42](../../internal/api/regime.go).)
+  - Handler: `read` [regime.go:116-138](../../internal/api/regime.go) → `repo.GetRegime`.
+  - Response shape: `regimeReadResponse` embeds `sessionmodel.Regime` (serialized with
+    **no JSON tags**, so the wire keys are the exported Go field names
+    `{ Mode, DeclaredAt, DeclaredByPrincipal, DeclaredKind }`
+    [internal/sessionmodel/types.go:186-191](../../internal/sessionmodel/types.go)) plus the
+    incident-master fields `{ IncidentSessionID, IncidentState, IncidentTitle }`, all
+    `omitempty` and present only in incident mode
+    [regime.go:104-114,122-136](../../internal/api/regime.go). `Mode` is `"normal"` or
+    `"incident"` [types.go:172-173](../../internal/sessionmodel/types.go).
   - **Gating:** authentication only; the `read` handler performs no RBAC. (The
     `declare`/`resolve` *write* paths are RBAC-gated and seam-gated
     [regime.go:55-56](../../internal/api/regime.go), but those are not the read path.)
 - **Source of truth:** `system_regime` single-row table via `GetRegime`
-  [internal/sessionmodel/repository.go:622](../../internal/sessionmodel/repository.go).
+  [internal/sessionmodel/repository.go:858](../../internal/sessionmodel/repository.go).
   **Survives restart: YES** (SQLite-backed).
 
 ### 3b. Captain (who is the current captain) — read path **ABSENT**
 
 - **No GET / read endpoint exists for the current captain.** `registerCaptainRoutes`
-  registers only `POST` routes — `attach`, `heartbeat`, `transfer/begin|confirm|cancel`
-  [internal/api/captain.go:52-56](../../internal/api/captain.go). No `GET .../captain`
-  route exists.
-- The regime read endpoint does **not** include the captain: `Regime` has only
+  registers only `POST` routes under `/api/v1/sessions/{id}/captain/*` — `attach`,
+  `heartbeat`, `transfer/begin|confirm|cancel`
+  [internal/api/captain.go:49-60](../../internal/api/captain.go). (The legacy
+  `/agent-sessions` namespace was removed in B005, §12.8
+  [captain.go:21-22](../../internal/api/captain.go).) No `GET .../captain` route exists.
+- The regime read endpoint does **not** include the captain: the embedded `Regime` has only
   `Mode/DeclaredAt/DeclaredByPrincipal/DeclaredKind`
-  [types.go:101-106](../../internal/sessionmodel/types.go).
+  [types.go:186-191](../../internal/sessionmodel/types.go) (the read response adds incident
+  *session* fields, not the captain principal).
 - The repository *can* answer it — `GetActiveCaptain`
-  [repository.go:731](../../internal/sessionmodel/repository.go) and
-  `CurrentCaptainPrincipal` [repository.go:810](../../internal/sessionmodel/repository.go)
-  — but no API handler calls either; the only API-layer session-model read is `GetRegime`
-  ([regime.go:60](../../internal/api/regime.go)).
-- **Source of truth (not exposed):** `session_captains` table; the current captain is the
-  row with `DetachedAt == nil`
-  [types.go:135-154](../../internal/sessionmodel/types.go);
-  [repository.go:731](../../internal/sessionmodel/repository.go). SQLite, would survive
+  [repository.go:985](../../internal/sessionmodel/repository.go) and
+  `CurrentCaptainPrincipal` [repository.go:1064](../../internal/sessionmodel/repository.go)
+  — but no API handler calls either on a read path.
+- **Source of truth (not exposed):** `session_captains` table; SQLite, would survive
   restart — but is unreadable via any API.
 
 ---
 
-## 4. Axis 4 — Normal
+## 4. Full / normal mode
 
-- "Normal" is not a stored or independently readable state; it is the **absence** of
-  panic/safe mode and incident regime. The regime enum's normal value is
-  `RegimeModeNormal = "normal"`
-  [internal/sessionmodel/types.go:87](../../internal/sessionmodel/types.go), which `GET
-  /api/v1/regime` returns when no incident is active (Mode `"normal"`); and `GET
-  /api/v1/panic/status` returns `{safe_mode:false}` when not in safe mode
-  [internal/api/panic.go:99-102](../../internal/api/panic.go). A client infers "normal" by
-  reading those two endpoints and finding both clear.
-- The baseline posture that still applies in normal operation is the RBAC per-zone posture
-  from §1 (readable via `GET /api/v1/me`), not a dedicated read-mode flag.
+- "Full" (write floor down) and "normal" (no incident) are **not** stored or independently
+  readable states; each is the **absence** of the active reasons on its axis.
+- The write-floor axis reports `full` when the floor is down: `GET /api/v1/mutate-status`
+  returns `{can_mutate:true, reason:"full"}`
+  ([internal/api/mutatestatus.go:19,84-85](../../internal/api/mutatestatus.go)), and
+  `GET /api/v1/panic/status` returns `{safe_mode:false}`
+  ([internal/api/panic.go:98-101](../../internal/api/panic.go)).
+- The incident axis reports `normal` (`RegimeModeNormal = "normal"`
+  [internal/sessionmodel/types.go:172](../../internal/sessionmodel/types.go)) via
+  `GET /api/v1/regime` when no incident is active.
+- A client infers fully-normal operation by reading these endpoints and finding the floor
+  down and the regime normal. The baseline that still applies is the RBAC per-zone posture
+  from §1 (readable via `GET /api/v1/me`).
 
 ---
 
@@ -184,12 +205,12 @@ posture via `/me` is readable).
 
 | Axis | Read endpoint | Source of truth | Survives restart | Status |
 |------|---------------|-----------------|------------------|--------|
-| 1 Read mode (global flag) | none | n/a (flag absent) | n/a | **ABSENT** (flag never existed) |
-| 1 RBAC posture (nearest analog) | `GET /api/v1/me` ([currentuser.go:29-52](../../internal/api/currentuser.go)) | per-principal RBAC grants | YES (DB) | PARTIAL — per-zone, not global |
-| 2 Panic / safe mode | `GET /api/v1/panic/status` ([panic.go:26,98-122](../../internal/api/panic.go)) | atomics + `~/.joe/panic.state` + cluster row | YES (file + cluster row) | **PRESENT** |
-| 3a Incident regime | `GET /api/v1/regime` ([regime.go:54,59-66](../../internal/api/regime.go)) | `system_regime` table ([repository.go:622](../../internal/sessionmodel/repository.go)) | YES (DB) | **PRESENT** |
-| 3b Captain | none ([captain.go:52-56](../../internal/api/captain.go) — POST only) | `session_captains` table (unexposed) | YES (DB, unexposed) | **ABSENT** |
-| 4 Normal | inferred from 2 + 3a | absence of 2/3 | n/a | derived |
+| 1a Write floor / observation (global) | `GET /api/v1/mutate-status` ([mutatestatus.go:44,64-70](../../internal/api/mutatestatus.go)) | boot-sealed `WriteFloor` ([server.go:459](../../cmd/joe/server.go)) | YES (re-derived from `JOE_MODE` + DB row) | **PRESENT** |
+| 1 RBAC posture (per-zone, not global) | `GET /api/v1/me` ([currentuser.go:31,35-51](../../internal/api/currentuser.go)) | per-principal RBAC grants | YES (DB) | PRESENT — per-zone, not a global flag |
+| 1b Panic / safe mode | `GET /api/v1/panic/status` ([panic.go:28-40,96-116](../../internal/api/panic.go)) | `cluster_panic_state` DB row ([panic.go:31-43](../../internal/safety/panic.go)) | YES (DB row) | **PRESENT** |
+| 2a Incident regime | `GET /api/v1/regime` ([regime.go:54,116-138](../../internal/api/regime.go)) | `system_regime` table ([repository.go:858](../../internal/sessionmodel/repository.go)) | YES (DB) | **PRESENT** |
+| 2b Captain | none ([captain.go:49-60](../../internal/api/captain.go) — POST only) | `session_captains` table (unexposed) | YES (DB, unexposed) | **ABSENT** |
+| Full / normal | inferred from 1 + 2a | absence of the active reasons | n/a | derived |
 
 ---
 
@@ -197,93 +218,117 @@ posture via `/me` is readable).
 
 | Axis | UI fetches state? | UI renders indicator? | Evidence |
 |------|-------------------|------------------------|----------|
-| 1 Read mode (global) | n/a | n/a | No global read mode exists to fetch. |
-| 1 RBAC posture | **Yes** | **Partial** | `CurrentUserSchema` carries `allowed_actions` [ui/src/api/schemas.ts:141-150](../../ui/src/api/schemas.ts); `ChatPage` uses zone presence to gate the composer / show an "access pending" state [ui/src/pages/ChatPage.tsx:173-179](../../ui/src/pages/ChatPage.tsx). No dedicated read-only/read-write *indicator chip* for the daemon. |
-| 2 Panic / safe mode | **Yes** | **Yes (real, wired)** | `fetchPanicStatus` [ui/src/api/panic.ts:8](../../ui/src/api/panic.ts) → `usePanicStatus` (polls every 15s) [ui/src/hooks/usePanicStatus.ts:17-28](../../ui/src/hooks/usePanicStatus.ts) → `SafeModeBanner` renders a red banner only when `safeMode` is true [ui/src/components/layout/SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx), mounted in the app shell [ui/src/components/layout/AppShell.tsx:14](../../ui/src/components/layout/AppShell.tsx). `PanicStatusSchema` maps the snake_case wire keys [ui/src/api/schemas.ts:192-204](../../ui/src/api/schemas.ts). |
-| 3a Incident regime | **Yes** | **Yes (real, wired)** | `fetchRegime` [ui/src/api/regime.ts:7](../../ui/src/api/regime.ts) → `useRegime` (polls every 30s) [ui/src/hooks/useRegime.ts:10-21](../../ui/src/hooks/useRegime.ts) → `IncidentBanner` renders an amber banner only when `mode==='incident'` [ui/src/components/layout/IncidentBanner.tsx:9-28](../../ui/src/components/layout/IncidentBanner.tsx), mounted at [AppShell.tsx:15](../../ui/src/components/layout/AppShell.tsx). `RegimeSchema` maps the capitalized wire keys [ui/src/api/schemas.ts:171-183](../../ui/src/api/schemas.ts). |
-| 3b Captain | **No** | **No** | No `captain` references in `ui/src` other than a comment in `SafeModeBanner.tsx` (grep: only [SafeModeBanner.tsx:11](../../ui/src/components/layout/SafeModeBanner.tsx)). No api-client function, no component. |
+| 1a Write floor / observation | **Yes** | **Yes (real, wired)** | `fetchMutateStatus` [ui/src/api/mutateStatus.ts:10](../../ui/src/api/mutateStatus.ts) → `useMutateStatus` [ui/src/hooks/useMutateStatus.ts:13](../../ui/src/hooks/useMutateStatus.ts) → `ObservationBanner` renders a calm blue banner only when `reason === 'observation'` [ui/src/components/layout/ObservationBanner.tsx:25-50](../../ui/src/components/layout/ObservationBanner.tsx), mounted in the app shell [ui/src/components/layout/AppShell.tsx:26](../../ui/src/components/layout/AppShell.tsx). `MutateStatusSchema` maps `{can_mutate, reason}` with `reason` an enum [ui/src/api/schemas.ts:410-413](../../ui/src/api/schemas.ts). |
+| 1 RBAC posture | **Yes** | **Partial** | `CurrentUserSchema` carries `zones[].allowed_actions` via `ZoneAccessSchema` [ui/src/api/schemas.ts:328-345](../../ui/src/api/schemas.ts); the chat view uses zone presence to gate the composer / show an "access pending" state. No dedicated read-only/read-write *indicator chip* for the daemon — observation mode (above) is the global read-only signal instead. |
+| 1b Panic / safe mode | **Yes** | **Yes (real, wired)** | `usePanicStatus` → `SafeModeBanner` renders a red banner only when `safeMode` is true [ui/src/components/layout/SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx), mounted in the app shell [AppShell.tsx:25](../../ui/src/components/layout/AppShell.tsx). `PanicStatusSchema` maps the snake_case wire keys [ui/src/api/schemas.ts:388-400](../../ui/src/api/schemas.ts). |
+| 2a Incident regime | **Yes** | **Yes (real, wired)** | `useRegime` → `IncidentBanner` renders an amber banner only when `mode==='incident'` [ui/src/components/layout/IncidentBanner.tsx:10-52](../../ui/src/components/layout/IncidentBanner.tsx), mounted at [AppShell.tsx:27](../../ui/src/components/layout/AppShell.tsx). `RegimeSchema` maps the capitalized wire keys [ui/src/api/schemas.ts:354-379](../../ui/src/api/schemas.ts). |
+| 2b Captain | **No** | **No** | No api-client function and no component reads captain state. |
 
-### Specific indicators requested
+### App-shell banners (mounted)
 
-- **Read-only / read-write indicator — ABSENT** as a daemon-wide chip. There is no global
-  read-mode flag to indicate (§1). The UI does react to the *per-zone RBAC* posture
-  (access-pending empty state) [ChatPage.tsx:173-179](../../ui/src/pages/ChatPage.tsx), and
-  to *per-session* read-only sharing (a "Read-only" badge on shared sessions)
-  [ChatPage.tsx:245](../../ui/src/pages/ChatPage.tsx) — but neither is a daemon read-mode
-  indicator.
-- **Active-incident banner — PRESENT.** Real, bound to live state via
-  `useRegime`/`fetchRegime`, not a scaffold
-  [IncidentBanner.tsx:9-28](../../ui/src/components/layout/IncidentBanner.tsx);
-  [AppShell.tsx:15](../../ui/src/components/layout/AppShell.tsx).
+`AppShell` mounts **three** write-axis / incident banners, in order
+([ui/src/components/layout/AppShell.tsx:25-27](../../ui/src/components/layout/AppShell.tsx)):
+
+1. `SafeModeBanner` (red) — gates on `panicStatus.safeMode`
+   [SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx).
+2. `ObservationBanner` (blue) — gates on `mutateStatus.reason === 'observation'`
+   [ObservationBanner.tsx:25-50](../../ui/src/components/layout/ObservationBanner.tsx).
+3. `IncidentBanner` (amber) — gates on `regime.mode === 'incident'`
+   [IncidentBanner.tsx:10-52](../../ui/src/components/layout/IncidentBanner.tsx).
+
+Safe mode and observation are mutually exclusive (the floor carries one reason), so their
+two banners can never co-render; incident is an independent axis and can show alongside
+either ([AppShell.tsx:18-24](../../ui/src/components/layout/AppShell.tsx)).
+
+### Specific indicators
+
+- **Observation (global read-only) indicator — PRESENT.** Real, bound to live state via
+  `useMutateStatus`/`fetchMutateStatus`
+  [ObservationBanner.tsx:25-50](../../ui/src/components/layout/ObservationBanner.tsx);
+  [AppShell.tsx:26](../../ui/src/components/layout/AppShell.tsx). This is the daemon-wide
+  read-only chip the prior version of this doc said did not exist.
 - **Safe-mode / panic indicator — PRESENT.** Real, bound to live state via
-  `usePanicStatus`/`fetchPanicStatus`, not a scaffold
+  `usePanicStatus`/`fetchPanicStatus`
   [SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx);
-  [AppShell.tsx:14](../../ui/src/components/layout/AppShell.tsx). (This is the largest drift
-  from the prior version of this doc, which recorded it ABSENT.)
+  [AppShell.tsx:25](../../ui/src/components/layout/AppShell.tsx).
+- **Active-incident banner — PRESENT.** Real, bound to live state via `useRegime`/`fetchRegime`
+  [IncidentBanner.tsx:10-52](../../ui/src/components/layout/IncidentBanner.tsx);
+  [AppShell.tsx:27](../../ui/src/components/layout/AppShell.tsx).
+- **Captain indicator — ABSENT** (no read path to consume, §3b).
 
 ---
 
 ## 7. Failure feedback (mode-specific denial messaging)
 
-The shared dispatch lives in `classifyWriteFailure`, which maps a typed per-tool error to
-a stable `error_code` [internal/api/writefailure.go:36-51](../../internal/api/writefailure.go).
-Codes are defined at [internal/api/constants.go:26-28](../../internal/api/constants.go):
-`zone_denial`, `incident_mode`, `safe_mode`. The classifier is injected into the loop via
-`agentloop.WithToolErrorClassifier(classifyWriteFailure)`
-[internal/api/tasks.go:379](../../internal/api/tasks.go); `error_code` is emitted at both
-per-tool and turn level [tasks.go:85,121,585,637](../../internal/api/tasks.go). The UI
-maps codes to sentences in `writeFailureMessage`
-[ui/src/hooks/useChat.ts:64-75](../../ui/src/hooks/useChat.ts).
+The shared dispatch lives in `classifyWriteFailure`, which maps a typed per-tool error to a
+stable `error_code` ([internal/api/writefailure.go:49-73](../../internal/api/writefailure.go)).
+The classifier is injected into the loop via `agentloop.WithToolErrorClassifier`
+([writefailure.go:35-37](../../internal/api/writefailure.go)). The UI maps codes to
+sentences in `writeFailureMessage`
+([ui/src/hooks/useChat.ts:79-94](../../ui/src/hooks/useChat.ts)).
 
-### Read mode (RBAC posture) denial — **PRESENT (typed as `zone_denial`)**
+### Write-failure code inventory
+
+The codes are **declared in [internal/api/constants.go](../../internal/api/constants.go)**;
+that declaration block is authoritative for the exact set (per D-0032, this doc points at it
+rather than freezing a count here). As of this audit the typed write-failure codes are
+`zone_denial`, `incident_mode`, `safe_mode`, and `observation`
+([constants.go:27-30](../../internal/api/constants.go)), with `internal_error`
+([constants.go:15](../../internal/api/constants.go)) doubling as the fallback bucket. The
+UI `writeFailureMessage` switch handles all five plus an `undefined` default
+([useChat.ts:79-94](../../ui/src/hooks/useChat.ts)); the turn-level `writeFailureCode` field
+documents the same set [useChat.ts:68-72](../../ui/src/hooks/useChat.ts).
+
+**Precedence** (D-0019 decision 9: floor > incident > RBAC, ordered by resolvability depth)
+is enforced upstream by check order — the floor in `tools.Executor`/`captaingate`, the gate
+in `captaingate`, the RBAC accessor inside the tool — so exactly **one** typed error reaches
+the classifier; the branch order is documentation of intent, not the enforcement
+([writefailure.go:40-48](../../internal/api/writefailure.go)).
+
+### Write-floor denial (observation **or** safe_mode) — **PRESENT (typed `WriteFloorError`)**
+
+- The executor denies a `Mutate` when the floor is up by returning the single
+  reason-carrying `&safety.WriteFloorError{Reason: e.floor.Reason()}`
+  ([internal/tools/executor.go:215-219](../../internal/tools/executor.go)). The floor is
+  checked **first** among the denials (precedence above) and the reason rides out as data —
+  one branch, one error type, two presentations.
+- `WriteFloorError` carries `FloorReasonObservation` or `FloorReasonSafeMode`
+  ([internal/safety/floor.go:64-87](../../internal/safety/floor.go)); `errors.Is(err,
+  ErrWriteFloor)` is true for either reason ([floor.go:60-87](../../internal/safety/floor.go)).
+- `classifyWriteFailure` reads the reason via `errors.As` and emits `observation` or
+  `safe_mode` accordingly
+  ([writefailure.go:56-65](../../internal/api/writefailure.go)). The two never co-occur (the
+  floor resolves to one reason at boot, safe_mode winning).
+- UI: `safe_mode` → "System is in safe mode. Only read-only operations are permitted — run
+  `joe unlock` to resume writes."; `observation` → "Joe is in observation mode — it can read
+  and explain but will not make changes. This is the intended read-only posture."
+  ([useChat.ts:85-88](../../ui/src/hooks/useChat.ts)).
+
+### RBAC zone denial — **PRESENT (typed `zone_denial`)**
 
 - A write blocked because the caller lacks the zone action surfaces as
   `access.ErrPermissionDenied` → `zone_denial`
-  [writefailure.go:44-45](../../internal/api/writefailure.go) → "Access to this zone has
-  not been granted to you…" [useChat.ts:66-67](../../ui/src/hooks/useChat.ts). This is the
-  RBAC posture, not a "global read mode" denial (no such mode exists). Distinguishable from
-  a generic 403 by the `zone_denial` code.
+  ([writefailure.go:68-69](../../internal/api/writefailure.go)) → "Access to this zone has
+  not been granted to you…" ([useChat.ts:81-82](../../ui/src/hooks/useChat.ts)).
 
-### Safe mode allowing only Tier-1 — **PRESENT (typed)**
+### Incident captain gate denying a non-captain mutation — **PRESENT (typed `incident_mode`)**
 
-- The executor denies T2/T3 in safe mode with the typed sentinel
-  `safety.ErrSafeModeActive`
-  [internal/safety/safemode.go:14-16](../../internal/safety/safemode.go), returned at
-  [internal/tools/executor.go:226-232](../../internal/tools/executor.go).
-- `classifyWriteFailure` matches it via `errors.Is` → `safe_mode`
-  [writefailure.go:46-47](../../internal/api/writefailure.go).
-- UI maps `safe_mode` → "System is in safe mode. Only read-only operations are permitted —
-  run `joe unlock` to resume writes." [useChat.ts:70-71](../../ui/src/hooks/useChat.ts).
-- Distinguishable from a generic tool failure (typed code) and from `incident_mode` /
-  `zone_denial`. (This is drift from the prior doc, which recorded this as PARTIAL /
-  untyped string.)
-
-### Incident captain gate denying a non-captain mutation — **PRESENT (typed as `incident_mode`)**
-
-- The executor wrapper returns a typed `*captaingate.GateRefusalError` on refusal
-  [internal/captaingate/captaingate.go:61-76,164-178](../../internal/captaingate/captaingate.go);
-  the gate is wired into the user task loop
-  [internal/api/tasks.go:304](../../internal/api/tasks.go) and the Core Agent path
-  [cmd/joe/server.go:675](../../cmd/joe/server.go).
-- `classifyWriteFailure` maps it → `incident_mode`
-  [writefailure.go:42-43](../../internal/api/writefailure.go); UI → "System is in incident
-  mode. Writes are temporarily blocked." [useChat.ts:68-69](../../ui/src/hooks/useChat.ts).
-- **Caveat (granularity loss):** `sessiongate.Check` distinguishes four refusal outcomes —
-  regime mismatch, wrong session, pending-captain/null-authority, and non-captain principal
-  [internal/sessiongate/sessiongate.go:108-134](../../internal/sessiongate/sessiongate.go)
-  — and `GateRefusalError` carries the `CaptainSessionID` redirect target
-  [captaingate.go:61-76](../../internal/captaingate/captaingate.go). `classifyWriteFailure`
-  collapses them all into the single `incident_mode` code, discarding the
-  `CaptainSessionID`, so the user cannot tell "no captain attached yet" from "you are not
-  the captain."
+- The executor wrapper returns a typed `*captaingate.GateRefusalError` on refusal; the gate
+  is wired into the user task loop and the Core Agent path. `classifyWriteFailure` maps it →
+  `incident_mode` ([writefailure.go:66-67](../../internal/api/writefailure.go)); UI → "System
+  is in incident mode. Writes are temporarily blocked." ([useChat.ts:83-84](../../ui/src/hooks/useChat.ts)).
+- **Caveat (granularity loss):** `sessiongate.Check` distinguishes several refusal outcomes
+  (regime mismatch, wrong session, pending-captain/null-authority, non-captain principal),
+  and `GateRefusalError` carries the `CaptainSessionID` redirect target. `classifyWriteFailure`
+  collapses them all into the single `incident_mode` code, discarding the redirect, so the
+  user cannot tell "no captain attached yet" from "you are not the captain."
 
 ### Incident regime declare/resolve write denials
 
-- These return generic HTTP errors keyed on RBAC/seam state, not a mode-specific typed
-  code — e.g. `403` for missing capability / inert Joe-autonomous seam, `409` for
-  state-machine violations ([regime.go:55-56](../../internal/api/regime.go) register the
-  write paths; the handlers return RBAC/seam/conflict errors). These are the regime
-  *control* surface, not the agentic write path the captain gate governs.
+- These return generic HTTP errors keyed on RBAC/seam state, not a mode-specific typed code
+  — e.g. `403` for missing capability / inert Joe-autonomous seam, `409` for state-machine
+  violations ([regime.go:55-56](../../internal/api/regime.go) register the write paths).
+  These are the regime *control* surface, not the agentic write path the captain gate governs.
 
 ---
 
@@ -291,101 +336,100 @@ maps codes to sentences in `writeFailureMessage`
 
 **Axes whose current state cannot be read via an API:**
 
-1. **Read mode — no global flag and no global read-path** (§1). There is no
-   `operational_mode`/read-mode flag in code or git history; only a per-zone RBAC posture
-   is readable, via `GET /api/v1/me`
-   [internal/api/currentuser.go:29-52](../../internal/api/currentuser.go). "Is the daemon
-   globally read-only" is not answerable because the concept does not exist as a single
-   state.
-2. **Captain — no read endpoint at all.** Only `POST` mutation routes exist
-   [internal/api/captain.go:52-56](../../internal/api/captain.go); the repository can
-   answer "who is the captain" ([repository.go:731,810](../../internal/sessionmodel/repository.go))
+1. **Captain — no read endpoint at all.** Only `POST` mutation routes exist
+   [internal/api/captain.go:49-60](../../internal/api/captain.go); the repository can answer
+   "who is the captain" ([repository.go:985,1064](../../internal/sessionmodel/repository.go))
    but no handler exposes it. "Who is the current captain" is unanswerable by any client.
 
 **Axes with a read path but no UI indicator:**
 
-3. **Captain — no UI consumption** (and no read path to consume). No `ui/src` component or
-   api-client touches captain state (grep empty apart from a comment).
+2. **Captain — no UI consumption** (and no read path to consume). No `ui/src` component or
+   api-client touches captain state.
 
 **Failure-feedback gaps:**
 
-4. **Captain-gate refusal granularity is collapsed** — four distinct gate outcomes
-   [sessiongate.go:108-134](../../internal/sessiongate/sessiongate.go) reduce to one
-   `incident_mode` message [writefailure.go:42-43](../../internal/api/writefailure.go); the
-   `CaptainSessionID` redirect target is discarded before reaching the user.
+3. **Captain-gate refusal granularity is collapsed** — several distinct gate outcomes reduce
+   to one `incident_mode` message [writefailure.go:66-67](../../internal/api/writefailure.go);
+   the `CaptainSessionID` redirect target is discarded before reaching the user.
 
 **Closed since the prior version of this doc (no longer gaps):**
 
+- Global read-only posture — now PRESENT as observation mode, with a read endpoint
+  (`GET /api/v1/mutate-status`) and a wired UI banner
+  ([ObservationBanner.tsx:25-50](../../ui/src/components/layout/ObservationBanner.tsx)).
 - Panic / safe-mode UI indicator — now PRESENT
-  [SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx).
-- Safe-mode denial typing — now typed `safe_mode`
-  [safemode.go:14-16](../../internal/safety/safemode.go);
-  [writefailure.go:46-47](../../internal/api/writefailure.go).
+  ([SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx)).
+- Write-floor denial typing — now the typed, reason-carrying `WriteFloorError` → `safe_mode`
+  or `observation` ([writefailure.go:56-65](../../internal/api/writefailure.go)).
 
 **Coverage summary:**
 
 | Axis | Read API | Survives restart | UI fetch | UI indicator | Typed denial |
 |------|----------|------------------|----------|--------------|--------------|
-| 1 Read mode (global flag) | ABSENT (flag absent) | n/a | n/a | ABSENT | n/a |
-| 1 RBAC posture (analog) | PARTIAL (`/me`) | YES | YES | PARTIAL (gating, no chip) | PRESENT (`zone_denial`) |
-| 2 Panic / safe mode | PRESENT (`/panic/status`) | YES (file + cluster) | YES | PRESENT (banner) | PRESENT (`safe_mode`) |
-| 3a Incident regime | PRESENT (`/regime`) | YES (DB) | YES | PRESENT (banner) | PRESENT (`incident_mode`, via gate) |
-| 3b Captain | ABSENT | YES (DB, unexposed) | NO | NO | PRESENT (`incident_mode`, collapsed) |
-| 4 Normal | derived | n/a | derived | derived | n/a |
+| 1a Write floor / observation (global) | PRESENT (`/mutate-status`) | YES | YES | PRESENT (banner) | PRESENT (`observation`) |
+| 1 RBAC posture (per-zone) | PRESENT (`/me`) | YES | YES | PARTIAL (gating, no chip) | PRESENT (`zone_denial`) |
+| 1b Panic / safe mode | PRESENT (`/panic/status`) | YES (DB row) | YES | PRESENT (banner) | PRESENT (`safe_mode`) |
+| 2a Incident regime | PRESENT (`/regime`) | YES (DB) | YES | PRESENT (banner) | PRESENT (`incident_mode`, via gate) |
+| 2b Captain | ABSENT | YES (DB, unexposed) | NO | NO | PRESENT (`incident_mode`, collapsed) |
+| Full / normal | derived | n/a | derived | derived | n/a |
 
 ---
 
 ## 9. Code-vs-doc contradictions encountered
 
-1. **`operational_mode` flag — does not exist (contradicts the task's premise).** The task
-   background says the flag "was previously observed to branch the system-prompt assembly
-   and the exposed tool surface." No such flag exists in current code or anywhere in git
-   history (§1). The read/write concept is realized through RBAC per-zone actions and the
-   safety tier policy, neither of which is a single global mode. If it was ever observed, it
-   was in a different repo or an out-of-tree launch config, not this daemon.
+1. **Prior version of this doc denied the global read-only posture — SUPERSEDED.** The
+   earlier file's §1 thesis ("Read mode … ABSENT … the concept does not exist as a single
+   state") is now false: observation mode is a daemon-wide, boot-resolved, runtime-immutable
+   read-only posture set via `JOE_MODE=observation`
+   ([internal/env/keys.go:25,31](../../internal/env/keys.go);
+   [internal/safety/floor.go:16,45-54](../../internal/safety/floor.go)) and readable at
+   `GET /api/v1/mutate-status` ([internal/api/mutatestatus.go:44](../../internal/api/mutatestatus.go)).
+   It is not a mutable `operational_mode` flag — it is the boot-resolved write floor (D-0018).
 
-2. **Prior version of this doc is stale on the panic axis.** The earlier
-   `operational-modes-ui-status.md` recorded "Safe-mode / panic indicator — ABSENT" and
-   "Safe mode allowing only Tier-1 — PARTIAL (human-readable string, not typed)." Both have
-   since changed: a wired `SafeModeBanner`
-   [SafeModeBanner.tsx:13-38](../../ui/src/components/layout/SafeModeBanner.tsx) and a typed
-   `safety.ErrSafeModeActive` → `safe_mode` code
-   [safemode.go:14-16](../../internal/safety/safemode.go);
-   [writefailure.go:46-47](../../internal/api/writefailure.go) now exist (recent commits
-   `3b310ee`/`258fb3e`).
+2. **Prior version described a file-based panic/safe-mode mechanism — DELETED.** The earlier
+   file cited a `<joeDir>/panic.state` file (`internal/safety/panic_state.go`), a
+   `safeModeActive atomic.Bool` (`internal/safety/safemode.go`), and a live
+   `safety.ActivateSafeMode()` setter called at boot. None exist: panic state lives only in
+   the `cluster_panic_state` DB row ([internal/safety/panic.go:31-43](../../internal/safety/panic.go)),
+   safe-mode state is the boot-resolved `WriteFloor` reason
+   ([internal/safety/floor.go:17-19,45-54](../../internal/safety/floor.go)), and recovery is
+   `joe unlock` + restart with no live setter. Two break-tests forbid reintroducing the old
+   mechanism ([internal/safety/floor_guard_test.go:30-93,130-192](../../internal/safety/floor_guard_test.go)).
 
-3. **`cmd/joe-core` binary does not exist.** `MEMORY.md` states "Two binaries: `cmd/joe` +
-   `cmd/joe-core` (:7777)". The live tree has only `cmd/joe`; the server entrypoint is
-   [cmd/joe/server.go](../../cmd/joe/server.go), matching `CLAUDE.md`'s single-binary model.
-   The two-binary memory is stale drift.
+3. **Tier vocabulary (T1/T2/T3) is retired — replaced by the binary Read/Mutate axis
+   (D-0020).** The earlier file framed safety in terms of T1/T2/T3. The classification is now
+   binary: `ActionRead` (never mutates the managed system; always allowed) and `ActionMutate`
+   (denied by default, per-action opt-in)
+   ([internal/safety/tier.go:14-27](../../internal/safety/tier.go)). The former
+   Observe/Record/Act three-tier scheme was collapsed by D-0018/D-0019; the Record band is
+   gone and Joe's own model-maintenance tools are Reads ([tier.go:180-211](../../internal/safety/tier.go)).
 
-4. **Panic-state persistence has a cluster component not in CLAUDE.md/MEMORY.** Both docs
-   say panic state is persisted to `~/.joe/panic.state` (YAML) only. Code confirms that
-   file [panic_state.go:13,29](../../internal/safety/panic_state.go) but *also*
-   persists/reads a DB-backed `ClusterPanicStore` row
-   [safety/panic.go:24-37](../../internal/safety/panic.go);
-   [cmd/joe/server.go:410-424](../../cmd/joe/server.go). The persisted location is file
-   **plus** cluster row, not file alone.
+4. **Write-failure code set grew — now four typed codes.** The earlier file listed three
+   (`zone_denial`/`incident_mode`/`safe_mode`); the live set adds `observation`
+   ([internal/api/constants.go:27-30](../../internal/api/constants.go)). Per D-0032 this doc
+   points at that declaration as authoritative rather than fixing a count.
 
-5. **Deny-only captain-gate claim — VERIFIED, no contradiction.**
-   [captaingate.go:17](../../internal/captaingate/captaingate.go) asserts the gate is
-   DENY-ONLY. Confirmed: `sessiongate.Check` only ever returns `Decision{Allow: true|false}`
-   and never elevates RBAC
-   [sessiongate.go:84-136](../../internal/sessiongate/sessiongate.go); on allow the wrapper
-   does §B1 principal substitution but does not grant authority
-   [captaingate.go:164-178](../../internal/captaingate/captaingate.go).
+5. **Captain route prefix corrected.** The earlier file placed captain routes under
+   `/api/v1/agent-sessions/{id}/captain/*`; they live under `/api/v1/sessions/{id}/captain/*`
+   (the `/agent-sessions` namespace was removed in B005)
+   ([internal/api/captain.go:21-22,49-60](../../internal/api/captain.go)).
 
-6. **Endpoint paths — VERIFIED, no contradiction.** Task background names `POST
-   /api/v1/panic`, `joe unlock`, and `/regime/*`; all match code: panic/unlock at
-   [panic.go:25-27](../../internal/api/panic.go), regime at
-   [regime.go:54-56](../../internal/api/regime.go), captain under
-   `/api/v1/agent-sessions/{id}/captain/*` [captain.go:52-56](../../internal/api/captain.go).
+6. **Single binary — `cmd/joe-core` does not exist.** The live tree has only `cmd/joe`; the
+   server entrypoint is [cmd/joe/server.go](../../cmd/joe/server.go), matching `CLAUDE.md`'s
+   single-binary model.
 
-7. **Regime wire contract is fragile (observation, not a doc contradiction).** `GET
-   /api/v1/regime` serializes `sessionmodel.Regime` with **no JSON tags**, emitting
-   capitalized Go field names [types.go:101-106](../../internal/sessionmodel/types.go). The
-   UI schema compensates explicitly
-   [ui/src/api/schemas.ts:171-183](../../ui/src/api/schemas.ts), so the contract works today
-   but depends on the Go field names staying unchanged. By contrast `panicStatusResponse`
-   uses explicit snake_case tags [panic.go:39-44](../../internal/api/panic.go) — the two
-   read endpoints are inconsistent in their wire-key convention.
+7. **Deny-only captain gate — VERIFIED, no contradiction.** `captaingate` is DENY-ONLY: the
+   session gate only ever allows or denies and never elevates RBAC; on allow the wrapper does
+   principal substitution but grants no authority.
+
+8. **Regime wire contract is fragile (observation, not a doc contradiction).** `GET
+   /api/v1/regime` serializes the embedded `sessionmodel.Regime` with **no JSON tags**,
+   emitting capitalized Go field names
+   [internal/sessionmodel/types.go:186-191](../../internal/sessionmodel/types.go);
+   [internal/api/regime.go:97-114](../../internal/api/regime.go). The UI schema compensates
+   explicitly [ui/src/api/schemas.ts:354-379](../../ui/src/api/schemas.ts), so the contract
+   works today but depends on the Go field names staying unchanged. By contrast
+   `panicStatusResponse` and `mutateStatusResponse` use explicit snake_case tags
+   [internal/api/panic.go:51-56](../../internal/api/panic.go);
+   [internal/api/mutatestatus.go:50-58](../../internal/api/mutatestatus.go) — the read
+   endpoints are inconsistent in their wire-key convention.
