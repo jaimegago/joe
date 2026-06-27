@@ -10,6 +10,32 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0054 — Return-path routing conventions reverted: no title-level identifier; the slug in commits and the decision log is the sole join
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: revert-return-path
+- Decision: The return-path routing conventions added by D-0053 are **reverted**. The
+  spot-code and output-echo scheme — Claude Code echoing the full slug as its first output
+  line, and chat/session titles and pins leading with a derived uppercase spot-code — added
+  **no improvement over ad-hoc throwaway session titles** for live routing of a Claude Code
+  output back to the chat that issued it. Durable archaeology is already served by the
+  **slug in commit messages and the decision log**, so **no title-level identifier is
+  needed**. The "Return-path routing" section is removed from
+  `docs/project/pm-convention.md`, and the output-echo acceptance criterion and the
+  spot-code title paragraph are removed from
+  `docs/project/claude_joe_project_instructions.md`, restoring the build-prompt acceptance
+  criteria and the per-chat title instruction to their prior wording. Session titles revert
+  to ad-hoc, throwaway navigation aids with no machine meaning.
+- Basis: `docs/project/pm-convention.md` (the "Return-path routing" section deleted) and
+  `docs/project/claude_joe_project_instructions.md` (the output-echo criterion and spot-code
+  paragraph removed), both restored to their pre-D-0053 state in this session; both files
+  now diff clean against the commit preceding `4c02f60`.
+- Supersedes: D-0053 (the only committed return-path entry; the `return-path-conventions`
+  and `return-path-titles-fix` sessions both landed their changes under it).
+
+---
+
 ## D-0053 — Return-path routing: Claude Code echoes the full slug as its first output line; titles and pins lead with a derived uppercase spot-code, while the full slug stays authoritative in commits and the log
 
 - Date: 2026-06-27
