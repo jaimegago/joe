@@ -6,7 +6,282 @@ description: The YAML config and environment surface.
 
 # Configuration
 
-🚧 **Under construction.** This section will document Joe's YAML configuration and
-environment-variable surface. It is not written yet.
+This is the reference for Joe's configuration file and environment surface: every
+key, every environment variable, and the default each one resolves to. For a guided
+first run see the [Quickstart](../quickstart/); for the build-and-run procedure see
+[Install and Build](../install-and-build/); for *why* Joe is configured the way it is
+see [Concepts](../concepts/).
 
-In the meantime, see the [Overview](../overview/) and [Concepts](../concepts/).
+Joe needs **no configuration file** to run. It boots on built-in defaults; a config
+file becomes useful when you want to pin a model, run more than one model, enable OIDC
+login, or tune the server. The one thing Joe will not boot without is an identity
+configuration — at least one service account or a complete OIDC issuer (see
+[Install and Build](../install-and-build/)).
+
+## Config file location
+
+Joe reads its config file from the first of these that is set:
+
+1. the `--config <path>` flag,
+2. the `JOE_CONFIG` environment variable,
+3. `~/.joe/config.yaml` (the default).
+
+A missing config file is not an error. The file is YAML; provider API keys are never
+stored in it — they live only in the environment that runs the daemon.
+
+## Config file reference
+
+The block below shows every key with its real default. Keys whose value is currently
+inert are marked and collected under [Inert and reserved keys](#inert-and-reserved-keys).
+
+```yaml
+llm:
+  current: claude-sonnet              # key into llm.available — the active model
+  available:                          # default seeds exactly this one entry
+    claude-sonnet:
+      provider: claude                # one of: claude | gemini | openai-compat
+      model: claude-sonnet-4-20250514
+    gemini-flash:
+      provider: gemini
+      model: gemini-2.5-flash
+    local-llama:
+      provider: openai-compat         # generic OpenAI Chat Completions endpoint
+      model: llama3                   # the model name the endpoint expects
+      base_url: http://localhost:11434/v1  # REQUIRED for openai-compat; ignored otherwise
+  currency: USD                       # USD | EUR (EUR conversion is inert — see below)
+  usd_to_configured_rate: 0           # reserved; validated but unused (see below)
+
+server:
+  address: "localhost:7777"           # daemon listen address
+  service_accounts:                   # machine identities; each key → principal svc:<name>
+    - name: server                    # the "server" account is the key the joe CLI presents
+      key: "a-long-random-secret"
+    - name: ci
+      key: "another-secret"
+  tls_cert_file: ""                   # server TLS is enabled only when BOTH cert and key are set
+  tls_key_file: ""
+  tls_enabled: false                  # CLIENT-side flag: connect over HTTPS (not a server TLS switch)
+  rate_limit_rps: 0                   # per-IP requests/sec (0 = rate limiting disabled)
+  rate_limit_burst: 0                 # per-IP burst (no default; see below)
+  session_archive_dir: ""             # "" → ~/.joe/session-archive
+
+auth:                                 # human login (OIDC); optional
+  admin_email: ""                     # bootstrap admin identity ("" = bootstrap disabled)
+  session_ttl: 12h
+  post_login_redirect: "/"
+  oidc:                               # OIDC active only when issuer + client_id + redirect_url are all set
+    issuer: ""
+    client_id: ""
+    client_secret: ""
+    redirect_url: ""
+
+refresh:                              # NOTE: this whole block is currently inert (see below)
+  interval_minutes: 5
+  llm_budget:
+    max_calls_per_hour: 100
+    batch_threshold: 10
+    batch_timeout_sec: 30
+
+notifications:
+  desktop:
+    enabled: false
+    priority_threshold: medium        # low | medium | high | urgent
+  slack:
+    enabled: false
+    priority_threshold: high
+  quiet_hours:
+    enabled: false
+    start: "22:00"
+    end: "08:00"
+    timezone: Local
+
+logging:
+  level: info                         # debug | info | warn | error
+  file: ""                            # log file path ("" = stderr only)
+
+knowledge:
+  embedding_model: ""                 # "" → falls back to llm.current
+  semantic_top_k: 5
+  derived_min_confidence: 0.0
+  sync_enabled: false
+
+database:
+  driver: ""                          # "" → sqlite; "pgx" for PostgreSQL
+  dsn: ""                             # "" → default SQLite path ~/.joe/joe.db
+
+skills:
+  trusted_sources: []                 # repos auto-trusted for skill install ([] = allowlist off)
+  hot_reload_disabled: false
+```
+
+## Key reference
+
+### `llm`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `llm.current` | `claude-sonnet` | Key into `llm.available` selecting the active model. |
+| `llm.available` | one entry: `claude-sonnet → {provider: claude, model: claude-sonnet-4-20250514}` | Map of named model configurations. |
+| `llm.available.<name>.provider` | — | One of `claude`, `gemini`, `openai-compat`. |
+| `llm.available.<name>.model` | — | Model name the provider expects. |
+| `llm.available.<name>.base_url` | — | **Required** for `openai-compat`; ignored by native providers. |
+| `llm.currency` | `USD` | Allowed values `USD`, `EUR`. EUR conversion is inert — see [below](#inert-and-reserved-keys). |
+| `llm.usd_to_configured_rate` | unset | Validated (must be `> 0` when `currency` is not `USD`) but has no consumer — see [below](#inert-and-reserved-keys). |
+
+### `server`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `server.address` | `localhost:7777` | Daemon HTTP listen address (API and embedded web UI). |
+| `server.service_accounts` | empty | List of `{name, key}`; each key maps to principal `svc:<name>`. The account named `server` is the key the `joe` CLI and subcommands present. Duplicate or empty keys are a boot failure. |
+| `server.tls_cert_file` / `server.tls_key_file` | `""` | Server TLS is enabled only when **both** are set. |
+| `server.tls_enabled` | `false` | A **client-side** flag telling subcommands to connect over HTTPS — not a server TLS switch. |
+| `server.rate_limit_rps` | `0` | Per-IP sustained requests/sec. `0` (the default) disables rate limiting entirely. |
+| `server.rate_limit_burst` | unset | Per-IP burst size. No default is applied — see [below](#inert-and-reserved-keys). |
+| `server.session_archive_dir` | `~/.joe/session-archive` | Where the session archive provider writes artifacts. |
+
+### `auth`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `auth.admin_email` | `""` | Verified email bootstrapped to admin on first OIDC login. `""` disables bootstrap. Bootstrap is OIDC-only. |
+| `auth.session_ttl` | `12h` | Human session lifetime. |
+| `auth.post_login_redirect` | `/` | Path to redirect to after a successful login. |
+| `auth.oidc.issuer` / `client_id` / `client_secret` / `redirect_url` | `""` | OIDC login is active only when `issuer`, `client_id`, and `redirect_url` are all set; the login/callback/logout endpoints are registered only then. |
+
+### `notifications`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `notifications.desktop.enabled` | `false` | Enable desktop notifications. |
+| `notifications.desktop.priority_threshold` | `medium` | Minimum priority to notify (`low`/`medium`/`high`/`urgent`). |
+| `notifications.slack.enabled` | `false` | Enable Slack notifications. |
+| `notifications.slack.priority_threshold` | `high` | Minimum priority to notify. |
+| `notifications.quiet_hours.enabled` | `false` | Suppress notifications during quiet hours. |
+| `notifications.quiet_hours.start` / `end` | `22:00` / `08:00` | Quiet-hours window. |
+| `notifications.quiet_hours.timezone` | `Local` | Timezone the window is interpreted in. |
+
+### `logging`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `logging.level` | `info` | `debug` / `info` / `warn` / `error`. |
+| `logging.file` | `""` | Log file path; empty logs to stderr only. |
+
+### `knowledge`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `knowledge.embedding_model` | `""` | Model key for embeddings; empty falls back to `llm.current`. |
+| `knowledge.semantic_top_k` | `5` | Number of results returned by semantic search. |
+| `knowledge.derived_min_confidence` | `0.0` | Confidence threshold for surfacing derived knowledge. |
+| `knowledge.sync_enabled` | `false` | Enable background knowledge-source sync. |
+
+### `database`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `database.driver` | `sqlite` | `sqlite`, or `pgx` for PostgreSQL. |
+| `database.dsn` | `~/.joe/joe.db` (SQLite) | Database path or DSN. |
+
+### `skills`
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `skills.trusted_sources` | `[]` | Repositories auto-trusted for skill install; empty means the allowlist is off. |
+| `skills.hot_reload_disabled` | `false` | Disable the skills hot-reload watcher. |
+
+## Environment variables
+
+### Config overrides
+
+| Variable | Effect |
+| --- | --- |
+| `JOE_LLM_PROVIDER` | Overrides the active model's provider. |
+| `JOE_LLM_MODEL` | Overrides the active model's model name. |
+| `JOE_LOG_LEVEL` | Overrides `logging.level`. |
+| `JOE_SERVER_ADDRESS` | Overrides `server.address`. |
+| `JOE_API_KEY` | Sets the key of the reserved `server` service account (principal `svc:server`), creating it if absent. |
+| `JOE_DATABASE_DSN` | Overrides `database.dsn`. |
+
+### Boot and process
+
+| Variable | Effect |
+| --- | --- |
+| `JOE_CONFIG` | Config file path; below `--config`, above `~/.joe/config.yaml`. |
+| `JOE_MODE` | `observation` raises the write floor at boot (read-only posture). Any other value leaves it down. |
+
+### Provider API keys
+
+Provider keys live **only** in the environment that runs the daemon; client subcommands
+never read them.
+
+| Variable | Effect |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Provider key for `claude`. Required when a `claude` model is selected; boot is fatal without it. |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Either supplies the provider key for `gemini`. |
+| `OPENAI_API_KEY` | Provider key for `openai-compat`. **Optional** — keyless local endpoints leave it unset; validation gates on `base_url`, not this key. |
+
+### Client subcommands
+
+The `joe mcp` and `joe slack` subcommands are clients of a running daemon and read
+their connection settings from the environment.
+
+| Variable | Effect |
+| --- | --- |
+| `JOE_SERVER` | Base URL the client subcommands connect to (default `http://localhost:7777`). |
+| `JOE_API_KEY` | Bearer token the client subcommands present. |
+| `SLACK_BOT_TOKEN` | Slack bot token; required by `joe slack`. |
+| `SLACK_APP_TOKEN` | Slack app-level token (Socket Mode); required by `joe slack`. |
+
+### OpenTelemetry
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `OTEL_ENABLED` | `true` | Master switch for OpenTelemetry setup. |
+| `OTEL_TRACES_ENABLED` | `true` | Enable tracing instrumentation. |
+| `OTEL_TRACES_EXPORTER` | `none` | Trace exporter. The default `none` means spans are instrumented but not exported until you opt in. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTLP exporter endpoint. |
+| `OTEL_METRICS_ENABLED` | `true` | Enable metrics. |
+| `OTEL_METRICS_EXPORTER` | `prometheus` | Metrics exporter. |
+| `OTEL_METRICS_PORT` | `9090` | Port the Prometheus `/metrics` endpoint is served on — separate from the API port. |
+
+### Static credential references
+
+A static (env-var) credential reference for a component is an environment variable
+named `JOE_<SEGMENT>_<LABEL>`, where `<SEGMENT>` is the component type's fixed prefix
+segment and `<LABEL>` is your choice (e.g. `PROD`, `STAGING`). For example, a GitHub
+component references `JOE_GITHUB_PROD`. The segments are defined for the static
+credential types listed in [Integrations](../integrations/). The credential value lives
+only in that environment variable; promotion stores the variable *name*, never the value.
+
+## Provider configuration
+
+Joe is AI-agnostic. The accepted providers are exactly:
+
+- `claude` — native Anthropic adapter.
+- `gemini` — native Google adapter.
+- `openai-compat` — generic adapter for any server speaking the OpenAI Chat Completions
+  protocol, selected together with a per-model `base_url`.
+
+Any other `provider` value is rejected at config validation. A model using
+`openai-compat` must set `base_url`; native providers ignore it.
+
+## Inert and reserved keys
+
+These keys are parsed (and some are validated) but have **no effect** in the running
+binary today. They are documented here so they are not mistaken for operative knobs.
+
+| Key / area | Status |
+| --- | --- |
+| `llm.currency` (non-USD) and `llm.usd_to_configured_rate` | Validated at load — `usd_to_configured_rate` must be `> 0` when `currency` is not `USD` — but no recorder or cost gate consumes the rate, so non-USD cost reporting does not function. `currency` defaults to `USD`; there is no default rate. |
+| `server.rate_limit_burst` | No default is set, so the value is `0` unless you set it. Rate limiting is off by default (`rate_limit_rps` is `0`); when you enable it and leave the burst at or below `0`, the limiter clamps the burst to `1`. There is no "default 10". |
+| `refresh.interval_minutes` | Parsed and logged at boot, but the background refresh cadence is fixed and does not read this value. The interval is not currently configurable. |
+| `refresh.llm_budget.max_calls_per_hour` / `batch_threshold` / `batch_timeout_sec` | Parsed and defaulted (`100` / `10` / `30`) but no component consumes them. The refresh LLM budget is not currently enforced from config. |
+
+## Where to go next
+
+- A guided first run → [Quickstart](../quickstart/)
+- Build and run the daemon, and the full authentication posture → [Install and Build](../install-and-build/)
+- Connect Joe to your systems → [Integrations](../integrations/)
+- Why Joe is governed by construction → [Concepts](../concepts/)
