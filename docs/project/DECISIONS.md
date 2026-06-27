@@ -10,6 +10,59 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0049 — Retire-and-absorb two dated direct-HTTP-mutation investigation docs; their still-true invariants absorbed into `security-in-layers.md`
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-reference-audit-03
+- Decision: `docs/reference/direct-http-mutation-surface.md` and
+  `docs/reference/managed-system-egress-map.md` are **retired (deleted)** under a
+  retire-and-absorb disposition. Both were dated (2026-06-09) one-shot
+  investigations whose central premise — a vestigial direct-HTTP managed-system
+  mutation surface that bypasses the write floor — was removed by `540f5e5`
+  (`internal/api/vcs.go`, `internal/api/gitops.go`, `internal/client/vcs.go`, the
+  `/knowledge/proposals/{id}/publish` route, and the orphan
+  `accessor.GitLabRequestChanges` no longer exist). A read-only survivor check
+  partitioned every present-tense claim before deletion.
+  - **Absorbed into `security-in-layers.md`** (Part 2, "Managed-system mutations"):
+    the surviving managed-system mutation path is a single in-process seam — tool
+    executor → in-process core client → RBAC accessor → vendor adapter — with the
+    two enforcement seams at distinct layers: the write floor is checked **only** in
+    the executor (`internal/tools/executor.go:215`) and the accessor carries no
+    floor check (`internal/access/` references no write floor), while RBAC + the
+    audit row are written **only** by the accessor (`internal/access/access.go:132`),
+    which is the sole RBAC gate because the HTTP transport's
+    `rbac.EnforcementMiddleware` is a pass-through (`internal/rbac/middleware.go:81`).
+    There is no HTTP route that mutates a managed system post-`540f5e5`.
+  - **Dropped** (died with the docs): all bypass verdicts; the deleted-route,
+    handler, `registerVCSRoutes`, `internal/client/vcs.go`, and orphan-accessor
+    findings; the now-false "publish_doc_update gated under `confluence_publish` for
+    ALL targets" claim (the tool selects its policy key per target,
+    `internal/safety/tier.go:229-233`); the now-false "Core Agent refresh bypasses
+    the accessor" claim (refresh is governed through the accessor, CC-05); and every
+    `file:line` citation. Two still-true read-side properties (SELECT-only
+    datastore-query enforcement inside the adapter; the doc-drift detector's own
+    `http.Client` read egress) were judged findings/caveats rather than protective
+    mutation invariants and out of this retirement's scope, so they were **not**
+    absorbed.
+  - **Retirement mechanism** follows D-0047: the two docs were moved out of the repo
+    to `~/joe-launch-archive` (bytes survive privately; git records a deletion); no
+    in-repo graveyard.
+- Basis: `git show --stat 540f5e5` (route/handler/client removal); confirmed absence
+  of `internal/api/vcs.go`, `internal/api/gitops.go`, `internal/client/vcs.go`, the
+  `/publish` route in `internal/api/proposals.go`, and `GitLabRequestChanges`
+  anywhere in `internal/`; surviving mechanism verified at
+  `internal/tools/executor.go:215`, `internal/access/access.go:132` (+ no
+  `WriteFloor` reference in `internal/access/`), `internal/rbac/middleware.go:81`,
+  `internal/api/inproc_client.go:646,651,666`, `internal/api/publish.go:19`,
+  `internal/safety/tier.go:229-233`.
+- Supersedes: `docs/reference/direct-http-mutation-surface.md` and
+  `docs/reference/managed-system-egress-map.md` in full (deleted). Their open
+  audit findings (11 + 11) are marked RETIRED in
+  `docs/backlog/docs-reference-audit.md`; that campaign stays open.
+
+---
+
 ## D-0048 — Generic OpenAI-compatible adapter (`openai-compat`); provider set is config-driven via `base_url`; native `claude`/`gemini` retained
 
 - Date: 2026-06-27

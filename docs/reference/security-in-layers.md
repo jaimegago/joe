@@ -93,6 +93,13 @@ These tools are registered Read in `internal/safety/tier.go`. The classification
 
 These are the **only** mutating tools the binary registers. They live under `internal/tools/core/` (`publish_doc_update.go`, `github_comment.go`, `gitlab_comment.go`, `github_request_changes.go`) and are wired in `internal/tools/default.go`. All managed-system mutations are denied unless their `act` policy key is enabled. Unknown tools default to Mutate and are denied.
 
+**Enforcement path — a single in-process seam.** These four tools reach managed systems through one in-process path: tool executor → in-process core client → RBAC accessor → vendor adapter. There is **no HTTP route that mutates a managed system** — the former direct-HTTP `vcs`/`gitops`/proposal-publish routes were removed in `540f5e5`, so the agentic tool path is the sole managed-system mutation surface. The two enforcement seams sit at distinct layers and do not overlap:
+
+- The **write floor is checked only in the executor** (`internal/tools/executor.go:215` — floor up + `ActionMutate` → deny). The accessor carries **no** floor check (the `internal/access/` package references no write floor), so the executor is the only place the floor gates a mutation.
+- **RBAC and the append-only audit row are written only by the accessor** (`internal/access/access.go:132`, `permit`). The accessor is the **sole** RBAC gate on this path: the HTTP transport's `rbac.EnforcementMiddleware` is a pass-through (`internal/rbac/middleware.go:81`, `return next`), so authorization is enforced at the accessor, not on the transport.
+
+The VCS tools route through the accessor in-process (`internal/api/inproc_client.go:646,651,666`); `publish_doc_update` dispatches through `publishProposalToTarget` (`internal/api/publish.go:19`) after the executor floor gate and human proposal approval.
+
 ### API endpoints that mutate Joe's own state
 
 | Endpoint | Method | Mutation | Authorization |

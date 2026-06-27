@@ -9,9 +9,11 @@ classified **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
 
 **Campaign progress:** the actioning campaign rewrites one doc per session. Open
 MISALIGNED entries remaining (recomputed by summing the per-file counts of the
-still-open sections below): **44**. Resolved so far:
+still-open sections below): **22**. Resolved so far:
 `operational-modes-ui-status.md` (17, in `docs-reference-audit-01`);
-`security-in-layers.md` (6, in `docs-reference-audit-02`).
+`security-in-layers.md` (6, in `docs-reference-audit-02`). Retired (doc deleted,
+survivors absorbed) so far: `direct-http-mutation-surface.md` (11) and
+`managed-system-egress-map.md` (11), both in `docs-reference-audit-03`.
 
 This is an **audit only** — no doc or code was changed. Each MISALIGNED claim below
 carries the doc location, the authoritative code location, a one-line discrepancy,
@@ -173,12 +175,23 @@ below are addressed; they are retained for traceability.
 
 ---
 
-## docs/reference/direct-http-mutation-surface.md  — MISALIGNED: 11
+## docs/reference/direct-http-mutation-surface.md  — MISALIGNED: 11 — RETIRED in docs-reference-audit-03
 
-The doc audits three VCS POST routes (`vcs.go`) + one publish POST route, an HTTP
-surface **deleted by commit `540f5e5`**. Its central per-route tables describe routes
-that no longer exist; the surviving in-process accessor mechanism has drifted line
-numbers (doc pinned to tree `770ca64`).
+**Disposition: retire-and-absorb (doc deleted).** The doc audits three VCS POST
+routes (`vcs.go`) + one publish POST route, an HTTP surface **deleted by commit
+`540f5e5`**. Its central verdict (a vestigial direct-HTTP mutation surface that
+bypasses the floor) and its per-route tables describe routes that no longer exist,
+so the doc has no live premise. Per the survivor check in `docs-reference-audit-03`,
+the only still-true present-tense invariants it asserted that were **not** already in
+`security-in-layers.md` were absorbed into that doc's Part 2 "Managed-system
+mutations" section: the single in-process enforcement path (executor → in-process
+core client → accessor → adapter), the write floor being checked only in the
+executor while the accessor carries no floor check, and the accessor being the sole
+RBAC gate because `rbac.EnforcementMiddleware` is a pass-through. **Dropped** (died
+with the doc): all bypass verdicts, the deleted-route/handler/`registerVCSRoutes`
+tables, the deleted `internal/client/vcs.go` methods, the deleted orphan
+`accessor.GitLabRequestChanges`, and every `file:line` citation. The 11 entries below
+are retained for traceability.
 
 1. DOC `:40-42` — three VCS POST routes with handlers `vcsHandler.handleGitHubPostComment`
    (`vcs.go:116`) etc.
@@ -233,10 +246,27 @@ numbers (doc pinned to tree `770ca64`).
 
 ---
 
-## docs/reference/managed-system-egress-map.md  — MISALIGNED: 11
+## docs/reference/managed-system-egress-map.md  — MISALIGNED: 11 — RETIRED in docs-reference-audit-03
 
-Dated (2026-06-09) investigation. Its headline VERDICT (a "surviving bypass-both" via
-the HTTP transport) rests on the same VCS/publish HTTP surface deleted in `540f5e5`.
+**Disposition: retire-and-absorb (doc deleted).** Dated (2026-06-09) investigation
+whose headline VERDICT (a "surviving bypass-both" via the HTTP transport) rests on
+the same VCS/publish HTTP surface deleted in `540f5e5`. Per the survivor check in
+`docs-reference-audit-03`, its still-true mechanism invariants overlap entirely with
+those absorbed from `direct-http-mutation-surface.md` (write floor in the executor
+only; accessor as the sole RBAC gate with `EnforcementMiddleware` a pass-through; the
+single in-process mutation path) — captured once in `security-in-layers.md` Part 2.
+**Dropped** (died with the doc): the bypass-both verdict; the deleted VCS/publish
+HTTP-path findings; the orphan `accessor.GitLabRequestChanges`; the now-false
+"publish_doc_update is gated under `confluence_publish` for ALL targets" claim
+(the tool selects its policy key per target — `internal/safety/tier.go:229-233`); the
+now-false "Core Agent refresh bypasses the accessor" claim (refresh is governed
+through the accessor per CC-05); and all `file:line` citations. Two still-true
+read-side properties were judged **findings/caveats, not protective mutation
+invariants**, and out of this retirement's mutation-surface scope, so they were
+**not** absorbed: the SELECT-only datastore-query enforcement living inside the
+adapter rather than in the classification/RBAC axis (`tier.go:115,117`), and the
+doc-drift detector's own `http.Client` read egress bypassing the accessor. The 11
+entries below are retained for traceability.
 
 1. DOC `:75-81,132,134,205-207` — VCS-mutation HTTP path via `internal/api/vcs.go:24,25,32`.
    CODE: `internal/api/vcs.go` does not exist; no `/comments`/`/reviews`/`/notes` routes.
@@ -522,10 +552,14 @@ are as-built mechanism claims contradicted by D-0011/D-0016.)
 - The largest single fix surface is **`security-in-layers.md`** (the live mutation-surface section
   references a removed `internal/tools/local/` tree) and **`operational-modes-ui-status.md`** (whole-doc
   staleness against the D-0018 write-floor model). These are content rewrites, not line touch-ups.
-- **`direct-http-mutation-surface.md`**, **`managed-system-egress-map.md`**, and
-  **`accessor-promotion-state-axis.md`** are dated investigation snapshots whose premises were removed by
-  later commits/decisions (`540f5e5`, D-0028, D-0030, CC-05). Consider whether each should be rewritten,
-  banner-marked as a historical snapshot, or retired — a disposition decision per doc, not a line edit.
+- **`direct-http-mutation-surface.md`** and **`managed-system-egress-map.md`** were dated investigation
+  snapshots whose central premise (a direct-HTTP managed-system mutation surface) was removed by `540f5e5`.
+  Both were **retired (deleted) in `docs-reference-audit-03`** under a retire-and-absorb disposition: their
+  still-true mutation invariants were absorbed into `security-in-layers.md` (see those sections above); their
+  bypass verdicts and deleted-surface findings were dropped.
+- **`accessor-promotion-state-axis.md`** remains a dated investigation snapshot whose premise was overtaken by
+  D-0028, D-0030, and CC-05. Its disposition (rewrite, banner-mark, or retire) is still open — a per-doc
+  decision, not a line edit.
 - The remaining docs need targeted edits: a renamed path (`joe-architecture.md`), a stale default
   (`joe-architecture.md` gemini model; `DESIGN-SESSIONS-VIEW.md` LIMIT), a removed subcommand
   (`joe-skills-design.md` `status`), and as-built corrections (`joe-identity-design.md` §2.9/§6).
