@@ -10,6 +10,78 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0050 — Retire-and-absorb the dated `accessor-promotion-state-axis.md` investigation; inert-create + governed-promotion + accessor-governed-refresh absorbed into `security-in-layers.md`
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-reference-audit-04
+- Decision: `docs/reference/accessor-promotion-state-axis.md` is **retired (deleted)**
+  under a retire-and-absorb disposition. It was a dated (2026-06-14) one-shot
+  investigation whose central verdict — "the only component-state axis the permit
+  decision reads is the component's zone assignment; there is NO promotion/read-only/
+  lifecycle field, only the presence/absence of a zone-assignment row" — was overtaken
+  by D-0028 (`auto_promote_reads`, the per-component-type dynamic read-admit predicate),
+  D-0030 (the read-only→armed promotion transition that owns credential entry), and the
+  A001-COREGOV CC-05/CC-08 change that routes the autonomous refresh read through the
+  access seam. A read-only survivor check re-derived the live model from code and
+  partitioned every present-tense claim before deletion.
+  - **Absorbed into `security-in-layers.md`**:
+    - Part 2, new "Component lifecycle: inert registration → governed promotion"
+      subsection — `POST /api/v1/components` lands the component **inert**
+      (credential-less by construction, no adapter connected, resolving to the
+      read-only `unassigned` zone; `internal/api/components.go:192-199,247-252`), and
+      credential entry is owned by the single admin-gated, audited read-only→armed
+      **promotion** transition (`POST /api/v1/components/{id}/promote` →
+      `handlePromoteComponent`, `internal/api/components.go:607-721`), which writes a
+      credential **reference** (never an inline secret) in one fail-closed transaction
+      and performs no Connect/Resolve/Probe. The stale Part 2 endpoint-table row
+      ("Creates a component + registers its adapter") was corrected to the inert
+      landing in the same edit, and the create/delete/promote rows re-labelled
+      admin-gated + audited.
+    - §3.5 — the autonomous `agent:core` background refresh resolves every component's
+      adapter **through** `access.ResolveAdapter` under the `agent:core` principal at
+      `ActionRead` (`internal/coreagent/refresh.go:194-216`,
+      `internal/access/access.go:196-231`), so an ungranted/unpromoted component is
+      denied before its adapter — and thus its credential — is resolved; the seam
+      **fails closed** when unwired (refresh refuses to start / denies; CC-08,
+      `internal/coreagent/refresh.go:106-118`), and it is the sole governed adapter
+      path, enforced by a build-failing structural test
+      (`TestInvariant_NoUngovernedAdapterOrGraphAccess`).
+  - **Dropped** (died with the doc): the overtaken "single zone-assignment axis / no
+    promotion field" verdict; the now-false "component create → `adapter.Connect` then
+    `Adapters.Register`, bypasses the seam" and "Core Agent refresh → `Adapters.Get`,
+    bypasses the seam" claims (refresh is governed through the accessor, CC-05); the
+    "`rbac.Action` enum is four constants" claim (the live set is six —
+    `read`/`query`/`mutate`/`delete` + `declare_incident`/`resolve_incident`,
+    `internal/rbac/zones.go:10-33` — already correctly stated in `security-in-layers.md`
+    §8.1); the entire Q5 dispatch-bypass enumeration; and every `file:line` citation.
+  - **Not absorbed (judged still-true findings/caveats, out of scope)**: the RBAC-
+    disabled (nil-engine) permit-all fallback (`reason=rbac_disabled` when neither
+    service accounts nor OIDC are configured, `internal/access/access.go:140-143`) — a
+    permissive dev-mode caveat overlapping `docs/backlog/full-mode-rbac-track.md`, not a
+    protective invariant; and the permit-precedes-backend / no-infra-call-on-denial
+    property, substantially covered by Part 2's accessor-as-sole-gate description. No
+    claim was left unresolved — every present-tense claim was settled from code.
+  - **Retirement mechanism** follows D-0047: the doc was moved out of the repo to
+    `~/joe-launch-archive/accessor-promotion-state-axis.md` (19376 bytes survive
+    privately; git records a deletion); no in-repo graveyard.
+- Basis: live re-derivation against the tree — promotion route at
+  `internal/api/server.go:211`; inert create + governed promote at
+  `internal/api/components.go:192-199,247-252,607-721`; `auto_promote_reads` predicate
+  at `internal/rbac/policy.go:285-330` over migration
+  `internal/store/migrations/024_agent_read_promotions.up.sql`; accessor-governed
+  refresh at `internal/coreagent/refresh.go:194-216` /
+  `internal/access/access.go:196-231` with engine separation at
+  `cmd/joe/server.go:722` (`NewPolicyEngineWithPromote`, posture nil) vs `:856`
+  (`NewPolicyEngineWithGovernance`); six-constant action enum at
+  `internal/rbac/zones.go:10-33`.
+- Supersedes: `docs/reference/accessor-promotion-state-axis.md` in full (deleted). Its
+  open audit findings (9) are marked RETIRED in
+  `docs/backlog/docs-reference-audit.md`, the remaining-open MISALIGNED total
+  recomputed to 13; that campaign stays open.
+
+---
+
 ## D-0049 — Retire-and-absorb two dated direct-HTTP-mutation investigation docs; their still-true invariants absorbed into `security-in-layers.md`
 
 - Date: 2026-06-27
