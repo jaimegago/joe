@@ -56,6 +56,11 @@ Desktop.ini
 # Joe runtime data (local dev)
 ~/.joe/
 
+# Local secrets — never commit. .env holds API keys (e.g. GEMINI_API_KEY) for
+# local runs; both the bare file and any *.env variants stay untracked.
+.env
+*.env
+
 # Claude
 .claude/
 
