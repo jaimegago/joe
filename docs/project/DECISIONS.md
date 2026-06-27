@@ -10,6 +10,52 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0056 — The Integrations section routes each documentable type by its actual activation path: runtime-registerable vs boot-config-only
+
+- Date: 2026-06-28
+- Status: accepted
+- Session: docs-public-establishment-pass-04
+- Decision: A refinement of the D-0055 gate. Passing the D-0055 Connect-AND-armable gate
+  proves a type *can* be brought up, but not *how*. The 18 documentable types split into two
+  bring-up paths that are not interchangeable, and the Integrations page must route each type
+  to the one that actually works for it:
+  - **Runtime-registerable (13):** `kubernetes`, `prometheus`, `mimir`, `loki`, `tempo`,
+    `jaeger`, `alertmanager`, `pagerduty`, `grafana`, `argocd`, `falco`, `terraform`,
+    `envoy`. The connectivity test (`POST /api/v1/components/{id}/test`) constructs the
+    adapter, authenticates, and registers the live connection immediately — no restart. This
+    is the only lifecycle step that constructs through the runtime type→adapter switch.
+  - **Boot-config-only (5):** `github`, `gitlab`, `splunk`, `dynatrace`, `newrelic`. These
+    are armable (credential-wired, so registration and promotion both succeed at runtime) but
+    have **no runtime construction path**. Their connectivity test cannot build an adapter —
+    it returns `"ok": true` with a "type … has no connection to test" message and registers
+    nothing. They come live only at the next daemon **restart**, when the boot connect pass
+    loads every armed component of these types from the store and opens its connection. The
+    bring-up is therefore register + promote (runtime) + static credential env var + restart.
+  Routing a boot-config-only type down the runtime register-promote-arm-test spine dead-ends
+  at the construction step — the same walked-to-a-step-that-cannot-succeed failure the D-0055
+  gate exists to prevent, moved one station downstream. The page must make the split explicit
+  and per-type, and must never send a boot-only type down the runtime spine.
+- Basis: re-derived from the live tree this session. `newAdapterForType` (the runtime
+  type→adapter switch, `internal/api/components.go:131`) has cases for the 13 runtime types
+  but **no** case for `github`, `gitlab`, `splunk`, `dynatrace`, `newrelic` (they hit the
+  `default: return nil`). Of the four lifecycle steps, only the connectivity test
+  (`handleTestComponent`, `internal/api/webui.go:880`) calls `newAdapterForType`; register
+  (`handleCreateComponent`, `internal/api/components.go:200`) constructs nothing by design,
+  and promote (`handlePromoteComponent`, `internal/api/components.go:632`) validates against
+  the credential wiring registry (`credential.WiredProvider`) and writes the reference — it
+  too never constructs an adapter. The boot connect pass `connectSourcesDefault`
+  (`cmd/joe/server.go:1056`) directly constructs and connects `kubernetes`, `git`, `aws`,
+  `azure`, `falco`, `datadog`, `splunk`, `dynatrace`, `newrelic`, `github`, `gitlab` from the
+  store at startup — which is the only way the five boot-only documentable types ever go
+  live. All five remain credential-wired (`internal/credential/wiring.go:44,45,52,53,54`,
+  `KindStatic`) with declared env segments (`internal/credential/references.go:42,43,49,50,51`),
+  so promotion succeeds; only construction does not.
+- Supersedes: nothing — refines D-0055 (which established the documentable set but recorded
+  one uniform register-promote-arm-test spine for all 18 types). D-0055's documentable set is
+  unchanged; this entry only corrects how that set is routed within the page.
+
+---
+
 ## D-0055 — The public Integrations section documents only component types that pass the real-Connect-AND-armable (or credential-less) gate
 
 - Date: 2026-06-27
