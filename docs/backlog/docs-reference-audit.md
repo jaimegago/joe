@@ -9,8 +9,9 @@ classified **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
 
 **Campaign progress:** the actioning campaign rewrites one doc per session. Open
 MISALIGNED entries remaining (recomputed by summing the per-file counts of the
-still-open sections below): **50**. Resolved so far:
-`operational-modes-ui-status.md` (17, in `docs-reference-audit-01`).
+still-open sections below): **44**. Resolved so far:
+`operational-modes-ui-status.md` (17, in `docs-reference-audit-01`);
+`security-in-layers.md` (6, in `docs-reference-audit-02`).
 
 This is an **audit only** — no doc or code was changed. Each MISALIGNED claim below
 carries the doc location, the authoritative code location, a one-line discrepancy,
@@ -348,11 +349,24 @@ CC-05/CC-08 refresh-through-seam change. Carries no superseded banner.
 
 ---
 
-## docs/reference/security-in-layers.md  — MISALIGNED: 6
+## docs/reference/security-in-layers.md  — MISALIGNED: 6 — RESOLVED in docs-reference-audit-02
 
 The sole security authority. Its highest-load-bearing concrete surface — the local
-file/command tools and their `internal/tools/local/...` paths — describes a tool tree
-removed from the codebase.
+file/command tools and their `internal/tools/local/...` paths — described a tool tree
+removed from the codebase. Rewritten in `docs-reference-audit-02` against the live
+tree: the Part-2 "Local tools" table was replaced by a "Local file/command tools —
+removed" subsection; the managed-system mutation surface now lists only the registered
+core tools (`publish_doc_update*`, `github_comment`, `gitlab_comment`,
+`github_request_changes`) with correct `internal/tools/core/` paths; the §3.2 sample
+policy now shows only the live `act` keys with the removed `write_file`/`run_command`
+sections (and the `DefaultPolicy()` `run_command: enabled: true` relic) documented as
+legacy-inert, reconciling the "default-deny" headline; the self-protection invariants
+are described as defense-in-depth guards that remain compiled in regardless of
+registration; and every `internal/tools/local/...` "Key files" citation was repointed
+at `internal/tools/default.go` / `internal/tools/core/` / `internal/safety/invariants.go`.
+The orphaned classification/policy/invariant entries the rewrite surfaced are filed
+separately in `docs/backlog/orphaned-tool-registration-cleanup.md` for a code slice.
+All 6 entries below are addressed; they are retained for traceability.
 
 1. DOC `:51,77,331,367` — `run_command` allowlist at `internal/tools/local/runcmd/subcommands.go`;
    detail at `…/runcmd/runcmd.go`.

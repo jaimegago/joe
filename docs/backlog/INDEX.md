@@ -33,6 +33,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open |
 | [`openai-compat-adapter`](openai-compat-adapter.md) | Backlog — OpenAI-compatible adapter fast-follows | in-progress |
+| [`orphaned-tool-registration-cleanup`](orphaned-tool-registration-cleanup.md) | Orphaned tool registration cleanup — safety entries for the removed local-tool tree | open |
 | [`posture-endpoint-grants-signal`](posture-endpoint-grants-signal.md) | Posture endpoint: a coarse "any write grants exist" signal (full-mode only) | deferred |
 | [`promotion-requirements-single-source`](promotion-requirements-single-source.md) | Backlog — Drive component promotion validation from a single per-Kind requirements source | open |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open |
