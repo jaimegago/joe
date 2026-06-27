@@ -65,18 +65,23 @@ production.
 
 ### Process health
 
-Joe does **not** serve a dedicated `/livez`, `/readyz`, or `/healthz` endpoint. The
-closest thing to a liveness check is the status endpoint, which any monitor can poll:
+Joe does **not** serve a dedicated `/livez`, `/readyz`, or `/healthz` endpoint, and the
+status endpoint is **not** unauthenticated — it sits behind the same edge auth as the
+rest of the API, so a monitor must present a credential (a service-account bearer key) to
+poll it:
 
 ```bash
-curl http://localhost:7777/api/v1/status
+curl -H "Authorization: Bearer <service-account-key>" http://localhost:7777/api/v1/status
 # {"status":"ok","version":"…","time":"2026-06-28T…Z"}
 ```
 
 `GET /api/v1/status` returns a slim `status` / `version` / `time` payload — a 200 means
-the API is up and serving. For the full build identity (commit, build time, and the UI
-digest), `GET /api/v1/version` serializes the complete build-info record. Use `/status`
-as your probe; do not expect a Kubernetes-style readiness gate, because none is wired.
+the API is up and serving; without a credential it returns `401`. For the full build
+identity (commit, build time, and the UI digest), `GET /api/v1/version` serializes the
+complete build-info record (also authenticated). If you need a credential-free process-up
+signal, scrape the unauthenticated Prometheus metrics endpoint on its separate port
+instead (see [Metrics](#metrics) below). Do not expect a Kubernetes-style readiness gate,
+because none is wired.
 
 ## Observability
 

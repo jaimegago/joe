@@ -1,6 +1,6 @@
 # Backlog — Establish docs/public from the operator-facing root docs
 
-Status: open
+Status: complete
 
 Deferred out of the `docs-tree-restructure` session, which reorganized the docs
 tree into `docs/project` (build-meta plus the ADR annex), `docs/reference` (system
@@ -80,6 +80,24 @@ separate, later pass.
   was written), so the page documents the LLM metrics as available and does not mention cache
   metrics at all. A straight content fill — no decision was forced, no code or invariant
   changed. The thread is **not finished** — one slice remains (-07) below.
+- **`docs-public-establishment-pass-07` (done).** Filled **API Reference** (reference:
+  the no-auth/authenticated/admin-gated auth tiers, the error envelope, and the live
+  route surface — status/version, mutate-status and panic, OIDC auth endpoints, graph,
+  components and promotion, knowledge proposals, and the admin surface) from live route
+  registration. The final section in the nine-section nav. This completes the pass.
+- **`docs-public-establishment-pass-08` (done — close-out).** Closed out the thread and
+  reconciled a -06/-07 contradiction about the auth tier of `GET /api/v1/status`. The -06
+  Operations page had presented `/status` as a credential-free liveness probe (an
+  unauthenticated `curl` showing a 200), but the live tree puts both `/status` and
+  `/version` behind the edge auth middleware (`EdgeAuth`'s only public prefix is
+  `/api/v1/auth/`, and the boot identity guard makes auth-disabled mode unreachable), so
+  both return `401` without a credential — exactly the **Auth: authenticated** tier the
+  -07 API Reference page already documented. The Operations page was corrected to the
+  minimum: the status poll now carries a service-account bearer, states the `401`, and
+  points to the genuinely unauthenticated Prometheus `/metrics` endpoint (separate port,
+  on by default) as the credential-free process-up signal. API Reference was already
+  correct and unchanged. A wording reconciliation — no decision was forced, no code or
+  invariant changed. The thread is **complete**.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -146,7 +164,8 @@ inventory):
 - **-04** — Integrations corrective: runtime-registerable vs boot-config-only activation routing (D-0056). *(done)*
 - **-05** — Guides. *(done)*
 - **-06** — Operations (including the break-glass fold into Operations). *(done)*
-- **-07** — API Reference.
+- **-07** — API Reference. *(done)*
+- **-08** — Close-out + `/status` auth-tier reconciliation across Operations and API Reference. *(done)*
 
 Every claim in every slice is gated by `docs/backlog/public-docs-feature-inventory.md`
 (shipped-truth). No PARTIAL or PRESENT-BUT-UNWIRED feature is documented as fully
