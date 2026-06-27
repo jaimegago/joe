@@ -10,6 +10,31 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0053 — Return-path routing: Claude Code echoes the full slug as its first output line; titles and pins lead with a derived uppercase spot-code, while the full slug stays authoritative in commits and the log
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: return-path-conventions
+- Decision: Two return-path routing conventions are added to the slug join so a Claude
+  Code output can be routed back to the chat session that issued it when several sessions
+  run in parallel. First, every Claude Code build prompt instructs Claude Code to **begin
+  its final output with the full slug on its own line**, making the returned output
+  self-labeling so the destination chat is read from line one rather than matched by hand.
+  Second, **chat titles, Claude Code session titles, and pinned items lead with a short
+  uppercase spot-code derived mechanically from the slug** — the repo initial uppercased,
+  plus the first three alphabetic characters of the slug topic uppercased, plus the
+  two-digit thread suffix (e.g. `joe/ledger-03` → `JLED03`, `oasis-spec/backlog-triage-01`
+  → `OBAC01`) — for fast visual spotting in a crowded list. The spot-code is **derived,
+  never stored**, may collide on repo initial or slug body because uniqueness lives in the
+  full slug, and **never appears in commit messages or the decision log**, where the full
+  slug remains authoritative.
+- Basis: `docs/project/pm-convention.md` (new "Return-path routing" section) and
+  `docs/project/claude_joe_project_instructions.md` (the output-echo acceptance criterion
+  and the spot-code title paragraph), both updated in this session.
+- Supersedes: none.
+
+---
+
 ## D-0052 — `docs/public` is the sole published documentation surface for joeagent.dev; `docs/reference` stays internal-only; a nine-section Diataxis-disciplined taxonomy
 
 - Date: 2026-06-27
