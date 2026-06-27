@@ -22,7 +22,6 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred |
 | [`docs-public-establishment-pass`](docs-public-establishment-pass.md) | Backlog — Establish docs/public from the operator-facing root docs | open |
-| [`docs-reference-audit`](docs-reference-audit.md) | Reference-documentation audit — drift against the live codebase | open |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open |

@@ -161,10 +161,10 @@ This is the same pattern as Mutate-action notification: humans see what's changi
 A `joe skills` subcommand (built into the `joe` binary):
 
 ```
-joe skills install <git-url>       Install skills from a git repo
-joe skills install <git-url>/<path>  Install a single skill (sparse checkout)
-joe skills list                    Show installed skills (name, description, source, status)
-joe skills status                  Show active, quarantined, and pending skills with hashes
+joe skills install <repo-url> [--ref <branch|tag>] [--subdir <path>]
+                                   Install skills from a git repo; --subdir installs a single
+                                   skill via sparse checkout, --ref pins a branch/tag/commit
+joe skills list                    Show installed skills with status (active or quarantined)
 joe skills approve <name>          Move a quarantined skill to active
 joe skills reject <name>           Remove a quarantined skill
 joe skills update                  Git pull all installed repos

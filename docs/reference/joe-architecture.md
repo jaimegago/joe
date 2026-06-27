@@ -286,7 +286,7 @@ The MCP server is a thin client over the HTTP API: it exposes Joe's category too
 
 Chat sessions are a first-class subsystem — owned, shareable, and incident-linkable. A session row carries its creator principal (taken from context at create time, never from the request body), type (`default` vs `incident`), linked incident, title, and retention class. Ownership is enforced: a non-owner's list/get/messages are scoped or refused. The as-built specification is normative in [`docs/reference/DESIGN-CHAT-SESSIONS.md`](DESIGN-CHAT-SESSIONS.md).
 
-Locations: `internal/sessionmodel/` (model, captain state machine, lifecycle, regime transitions), `internal/api/sessions.go` (owner-scoped routes), `internal/api/adminsessions.go` (cross-tenant governance).
+Locations: `internal/sessionmodel/` (model, captain state machine, lifecycle, regime transitions), `internal/api/sessiongate.go` (owner-scoped session-authorization seam), `internal/api/adminsessions.go` (cross-tenant governance).
 
 ### Agent Loop
 
@@ -483,8 +483,7 @@ joe/
 │   ├── tools/                    # Tool executor + registry
 │   │   ├── executor.go
 │   │   ├── core/                 # Core tools (call the API via internal/client)
-│   │   ├── shared/               # Go-native diagnostic tools
-│   │   └── local/                # readfile, writefile, runcmd
+│   │   └── shared/               # Go-native diagnostic tools
 │   ├── safety/                   # Action axis, write floor, policy, invariants, panic
 │   ├── rbac/                     # Zone-scoped RBAC + read posture resolver
 │   ├── readposture/              # Install-wide read posture singleton
@@ -529,7 +528,7 @@ llm:
       model: claude-sonnet-4-20250514
     gemini-flash:
       provider: gemini
-      model: gemini-2.0-flash
+      model: gemini-2.5-flash
   currency: USD                    # USD | EUR (Stream G)
 
 server:

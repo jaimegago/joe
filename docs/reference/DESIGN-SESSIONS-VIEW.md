@@ -98,8 +98,9 @@ paging unit is the master row, regardless of how children are counted.
 P2's sort + filter are **client-side pure functions** (`ui/src/lib/sessionFilterSort.ts`,
 composed onto `groupSessions`: fetched rows → `groupSessions` → `filterGrouped`
 → `sortGrouped`). This is correct **only because the list is unpaged today**:
-the query returns a single capped top-N (`LIMIT 50`, no `OFFSET`/cursor,
-`internal/sessionmodel/repository.go:534`) in `ORDER BY last_activity_at DESC`
+the query returns a single capped top-N (a bare SQL `LIMIT ?` bound to the
+handler default of 20, no `OFFSET`/cursor, `internal/sessionmodel/repository.go:534`)
+in `ORDER BY last_activity_at DESC`
 order, so the entire list already lives on the client and a local filter/sort
 sees every row.
 
@@ -223,10 +224,12 @@ for the list surface.
   `out.LinkedIncidentTitle`, `internal/api/webui.go:473`–`474`. **Confirmed.**
 - The LIST projection did NOT carry it: `sessionToWebUI` sets
   `linked_incident_id` (`internal/api/webui.go:303`–`304`) but never
-  `linked_incident_title`; the struct comment at `internal/api/webui.go:227`
-  explicitly noted it was "Set ONLY on the per-id GET (it would be an N+1 on the
-  list projection)." This is the **bare-badge defect** P0 closes (via §5's
-  self-join, which is not an N+1). **Confirmed.**
+  `linked_incident_title`; before P0 the per-id GET was the only surface that set
+  it, since carrying it on the list would have been an N+1. This is the
+  **bare-badge defect** P0 closes (via §5's self-join, which is not an N+1). The
+  struct comment at `internal/api/webui.go:227` now documents the post-P0
+  both-surfaces behavior — set on the per-id GET (via `GetSession`) AND on the
+  list projection (resolved by a self-join, not an N+1). **Confirmed.**
 
 ### 6.D — the predicate's two inputs
 

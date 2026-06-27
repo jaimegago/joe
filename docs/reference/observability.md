@@ -21,7 +21,7 @@ Joe uses OpenTelemetry for observability - traces and metrics.
 ┌─────────────────────────────────────────┐
 │         Observability Layer             │
 │  ┌────────────────────────────────────┐ │
-│  │    LLMMiddleware (Decorator)       │ │
+│  │  InstrumentedAdapter (Decorator)   │ │
 │  │  - Traces (spans)                  │ │
 │  │  - Metrics (counters, histograms)  │ │
 │  │  - Context propagation             │ │
@@ -43,6 +43,14 @@ Joe uses OpenTelemetry for observability - traces and metrics.
 │  - OTLP (any backend)            │
 └──────────────────────────────────┘
 ```
+
+The `InstrumentedAdapter` (`internal/llm/instrumented.go`) is the active
+instrumentation path and is wired into the running binary: it is the outermost
+wrapper of the live LLM chain, constructed by `internal/core/llmchain.go`
+`BuildLLMChain` — the single chain-construction site shared by boot
+(`cmd/joe/server.go`) and both model-swap handlers — so every live adapter, boot
+or hot-swapped, emits identical LLM metrics and spans. The `llm.*` metric names
+are inline literals in `instrumented.go` (not in `metric_names.go`).
 
 ## Configuration
 
@@ -94,39 +102,40 @@ make run
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|--------|
-| `llm.calls` | Counter | Number of API calls | provider, model |
-| `llm.errors` | Counter | Number of failed calls | provider, model |
-| `llm.duration` | Histogram | API latency in ms | provider, model |
-| `llm.tokens` | Counter | Token usage | provider, model, token_type |
+| `llm.requests` | Counter | Number of API requests | provider, model, operation |
+| `llm.errors` | Counter | Number of failed requests | provider, model, operation, api_error_code |
+| `llm.tokens.input` | Counter | Input tokens consumed | provider, model, operation |
+| `llm.tokens.output` | Counter | Output tokens consumed | provider, model, operation |
+| `llm.request.duration` | Histogram | Request latency in ms | provider, model, operation, error |
 
 ### Example Prometheus Queries
 
 **Request rate:**
 ```promql
-rate(llm_calls_total[5m])
+rate(llm_requests_total[5m])
 ```
 
 **Error rate:**
 ```promql
-rate(llm_errors_total[5m]) / rate(llm_calls_total[5m])
+rate(llm_errors_total[5m]) / rate(llm_requests_total[5m])
 ```
 
 **P95 latency:**
 ```promql
-histogram_quantile(0.95, rate(llm_duration_bucket[5m]))
+histogram_quantile(0.95, rate(llm_request_duration_bucket[5m]))
 ```
 
 **Token usage per minute:**
 ```promql
-rate(llm_tokens_total{token_type="input"}[1m]) * 60
+rate(llm_tokens_input_total[1m]) * 60
 ```
 
 **Cost estimation (Gemini):**
 ```promql
 (
-  rate(llm_tokens_total{provider="gemini",token_type="input"}[1h]) * 60 * 60 * 0.075 / 1000000
+  rate(llm_tokens_input_total{llm_provider="gemini"}[1h]) * 60 * 60 * 0.075 / 1000000
 ) + (
-  rate(llm_tokens_total{provider="gemini",token_type="output"}[1h]) * 60 * 60 * 0.30 / 1000000
+  rate(llm_tokens_output_total{llm_provider="gemini"}[1h]) * 60 * 60 * 0.30 / 1000000
 )
 ```
 
@@ -253,15 +262,14 @@ make run
 internal/
 ├── observability/              # Observability package (OpenTelemetry setup)
 │   ├── otel.go                # Provider setup (traces + metrics), config from env
-│   ├── llm_middleware.go      # LLM decorator: spans, counters, histograms
 │   ├── metrics.go             # Named metric definitions
-│   ├── metric_names.go        # Metric name constants
+│   ├── metric_names.go        # Metric name constants (tools.*, adapters.*, graph.*, http.*, coreagent.*, joe.build.info — not llm.*)
 │   └── http_metrics.go        # HTTP middleware metrics
 │
 ├── llm/                       # LLM clients (business logic only)
 │   ├── claude/
 │   ├── gemini/
-│   └── instrumented.go        # InstrumentedAdapter: wraps LLMAdapter with OTel metrics/traces
+│   └── instrumented.go        # InstrumentedAdapter: wraps LLMAdapter with OTel metrics/traces; the llm.* metric names are inline literals here
 ```
 
 **Design Principles:**
