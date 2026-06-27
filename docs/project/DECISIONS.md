@@ -10,6 +10,45 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0052 — `docs/public` is the sole published documentation surface for joeagent.dev; `docs/reference` stays internal-only; a nine-section Diataxis-disciplined taxonomy
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-public-establishment-pass-01
+- Decision: A new `docs/public/` tree is established as the **only** documentation
+  surface published to joeagent.dev. `docs/reference/` remains **internal system-truth**
+  and is **not published**: reference docs are never moved, copied, or linked into the
+  public tree, and internal `file:line` citations never appear on a public page. The
+  public tree is organized as a **nine-section, Diataxis-disciplined taxonomy**, one
+  section per nav entry, in this fixed order: **Overview, Quickstart, Concepts, Install
+  and Build, Configuration, Integrations, Guides, Operations, API Reference**. No site
+  generator config exists yet anywhere in the repo (no Hugo/Hextra/Netlify/Vercel
+  config), so this pass **chooses** the structure rather than matching an existing one:
+  `docs/public/` is the content root; each section is a directory with an `_index.md`
+  carrying `title` + `weight` front-matter; nav order is the `weight` ascending in
+  increments of ten; Concepts holds one explanation page per concept. Forward links use
+  directory-style relative paths (e.g. `../quickstart/`) so later slices fill placeholder
+  sections in place without rewiring links. Per Diataxis, **Concepts is explanation
+  only** — no install steps, config tables, API request/response listings, or procedural
+  how-to; where a reader must act, the page links onward. This pass fully writes Overview
+  and Concepts; the other seven sections land as under-construction placeholders. Every
+  claim is gated by `docs/backlog/public-docs-feature-inventory.md` (shipped-truth spec);
+  no PARTIAL or PRESENT-BUT-UNWIRED feature is described as fully realized.
+  **Doc-version stamping is deferred**: rather than a versioned doc tree, versioning will
+  be a footer commit-and-`ui_digest` stamp applied at release-cadence time (a later
+  slice), consistent with the build-truth single source in `internal/buildinfo`.
+- Basis: no generator config in the tree (`find` for hugo/hextra/netlify/vercel/config.toml
+  returns nothing; the only `joeagent.dev` mention is in the feature inventory). The
+  shipped-truth gate is `docs/backlog/public-docs-feature-inventory.md`. The five
+  operator-facing root docs named as inputs by `docs/backlog/docs-public-establishment-pass.md`
+  (`configuration.md`, `integrations.md`, `operations.md`, `web-ui.md`,
+  `break-glass-access.md`) remain in place as internal source material for later slices.
+- Supersedes: nothing — first decision establishing a published-docs surface. Sets the
+  frame the remaining slices (-02..-05) fill in, tracked in
+  `docs/backlog/docs-public-establishment-pass.md`.
+
+---
+
 ## D-0051 — Remove the dead `observability.LLMMiddleware` metrics path; `llm.NewInstrumentedAdapter` wired into `BuildLLMChain` as the single LLM-instrumentation site
 
 - Date: 2026-06-27
