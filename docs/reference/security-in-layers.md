@@ -16,7 +16,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 1. **Joe must always announce mutations.** Even when authorized, Joe notifies the human before and after any managed-system mutation. The tool executor enforces a blocking pre-execution notification (cancellable) and a post-execution summary for every mutating action — this is compiled in, not an LLM instruction.
 
-2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The safety policy (`~/.joe/safety-policy.yaml`) and the entire `~/.joe/` directory are excluded from every file tool at compile time (`internal/safety/invariants.go`).
+2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The guarantee is now **architectural**: the server process ships no local file tool (Part 2), so no LLM-invokable tool can reach `~/.joe/` at all. The compile-time path exclusion in `internal/safety/invariants.go` (covering `~/.joe/safety-policy.yaml`, `~/.joe/skills-policy.yaml`, and the whole `~/.joe/` directory) remains as defense-in-depth — it re-engages automatically if a file tool is ever reintroduced.
 
 3. **The write floor is boot-resolved and runtime-immutable.** Joe resolves a read-only "write floor" once at boot (observation mode or a sticky safe-mode/panic state). Nothing in the running binary can lower it — recovery is a restart, never a live down-transition (`internal/safety/floor.go`, D-0018).
 
@@ -36,19 +36,16 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 | Area | Detail |
 |------|--------|
-| SQL injection | All queries use parameterized statements (`?`/`$n` placeholders) via `database/sql` |
-| Command injection | `run_command` uses `exec.CommandContext` (no shell), plus an allowlist of permitted commands |
+| SQL injection | All datastore-query tools use parameterized statements (`?`/`$n` placeholders) via `database/sql` |
+| Local mutation surface removed | The server process ships **no** local file or arbitrary-command tool — `read_file` / `write_file` / `run_command` / `local_git_*` / `ask_user` were removed with the `internal/tools/local/` tree (Part 2). The only mutating tools that remain are the doc-publish and code-review paths |
 | Default bind | The `joe` server binds to `localhost:7777` by default |
 | API keys | LLM keys loaded from environment variables, not config files |
-| Output limits | `run_command` truncates stdout/stderr; `read_file` caps file size |
 | URL encoding | Client uses `url.PathEscape` / `url.QueryEscape` for all HTTP calls |
 | Adapters are read-only | K8s, Git, AWS, Azure, observability, datastore, GitOps adapters expose only read/list/describe operations. The only mutating adapters are the doc-publish path (Git commit/push, Confluence, Notion) and the code-review path (GitHub/GitLab comment + request-changes) |
 | Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
 | Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
 | Safety policy | Loaded once at startup from `~/.joe/safety-policy.yaml`; immutable at runtime; default-deny for mutating actions (`internal/safety/policy.go`) |
-| Self-protection invariants | Joe cannot read/write `~/.joe/`, cannot run `joe`/`kill`/`pkill`/`killall` — hardcoded, no override (`internal/safety/invariants.go`) |
-| Path sandboxing | `write_file` enforces `allowed_directories` from the safety policy; symlink-aware, case-insensitive on macOS/Windows |
-| Subcommand allowlists | kubectl/helm/argocd restricted to read-only subcommands; compiled-in, not configurable by LLM (`internal/tools/local/runcmd/subcommands.go`) |
+| Self-protection invariants | Compiled-in, no override (`internal/safety/invariants.go`): `~/.joe/` (config, DB, safety + skills policy) is excluded from any file path, and `joe`/`kill`/`pkill`/`killall` are blocked from command execution. Defense-in-depth — these remain compiled in regardless of which tools are registered, even though the file/command tools they were written to guard are no longer registered (Part 2) |
 | Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
 | API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
 | Request size limits | `http.MaxBytesReader` wraps all request bodies (`internal/api/middleware.go`) |
@@ -62,19 +59,13 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 Every place Joe can change state, by axis. The organizing question is the one the action classification asks: **does this operation mutate the managed system** (live infrastructure + the code/config that governs it)?
 
-### Local tools (run in the `joe` process, user-facing task loop)
+### Local file/command tools — removed
 
-| Tool | Mutates managed system? | What it changes | Authorization | Notification |
-|------|-------------------------|-----------------|---------------|--------------|
-| `write_file` | **YES (Mutate)** | Files within `allowed_directories` only | `act.write_file.enabled` + path sandbox | Before (blocking) + after |
-| `run_command` | **YES (Mutate)** | Depends on allowlist + subcommand validation | `act.run_command.enabled` + command allowlist + subcommand allowlist | Before (blocking) + after |
-| `read_file` | No (Read) | — | Always allowed (blocks `~/.joe/`) | — |
-| `local_git_status` / `local_git_diff` | No (Read) | — | Always allowed | — |
-| `ask_user` | No (Read) | — | Always allowed | — |
+Earlier versions of Joe shipped a local-tool tree (`internal/tools/local/`: `read_file`, `write_file`, `run_command`, `local_git_status` / `local_git_diff`, `ask_user`) that ran in the `joe` process against the operator's machine. **That tree was removed.** `internal/tools/` now holds only `core/` (tools that reach managed systems through the typed API client) and `shared/` (Go-native read-only diagnostics). `NewCoreRegistry` registers only the shared and core tools and explicitly omits the local set (`internal/tools/default.go:25-46`, see the doc comment at `:26-28`); no constructor for `read_file` / `write_file` / `run_command` / `ask_user` / `local_git_*` survives anywhere in the tree (`internal/agentloop/echotool_test.go:11` records the removal).
 
-**`write_file` detail** (`internal/tools/local/writefile/writefile.go`): disabled by default; blocks `~/.joe/` (hardcoded invariant, symlink-aware, case-insensitive); when `allowed_directories` is set, writes are restricted to those dirs; blocking pre-execution notification with cancel.
+The practical effect is a smaller attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command. The only mutating tools Joe ships are the doc-publish and code-review paths below.
 
-**`run_command` detail** (`internal/tools/local/runcmd/runcmd.go`): default allowlist is read-only only (`ls, cat, head, tail, grep, find, wc`); kubectl/helm/argocd are **excluded** from the default and must be added explicitly in `safety-policy.yaml`. When enabled, mutation-capable commands enforce compiled-in subcommand allowlists (kubectl: get/describe/logs/top/explain/…; helm: list/status/get/history/…; argocd read-only verbs). `joe`, `kill`, `pkill`, `killall` are blocked by hardcoded invariant.
+> **Orphaned registrations (tracked for cleanup).** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` still have *classification* entries in `internal/safety/tier.go`, and `write_file` / `run_command` still have *policy* entries in `internal/safety/policy.go`, but with no backing tool these never execute. They are enumerated in [`docs/backlog/orphaned-tool-registration-cleanup.md`](../backlog/orphaned-tool-registration-cleanup.md) for a separate code-cleanup slice.
 
 ### Joe's own model maintenance — classified as Read (not a managed-system mutation)
 
@@ -96,13 +87,11 @@ These tools are registered Read in `internal/safety/tier.go`. The classification
 
 | Tool | What it changes | Policy key (in `act`) | Notification |
 |------|-----------------|-----------------------|--------------|
-| `write_file` | Local files (sandboxed) | `write_file` | Before + after |
-| `run_command` | Local + remote infra (restricted) | `run_command` | Before + after |
-| `publish_doc_update_confluence` / `_notion` / `_git` | External docs (Confluence page, Notion page, Git repo) | `confluence_publish` / `notion_publish` / `git_push` | Before + after |
+| `publish_doc_update` (`_confluence` / `_notion` / `_git`) | External docs (Confluence page, Notion page, Git repo) | `confluence_publish` / `notion_publish` / `git_push` (selected per target) | Before + after |
 | `github_comment` / `gitlab_comment` | External PR/MR thread | `github_comment` / `gitlab_comment` | Before + after |
 | `github_request_changes` | External GitHub review (gates merge) | `github_request_changes` | Before + after |
 
-All managed-system mutations are denied unless their `act` policy key is enabled. Unknown tools default to Mutate and are denied.
+These are the **only** mutating tools the binary registers. They live under `internal/tools/core/` (`publish_doc_update.go`, `github_comment.go`, `gitlab_comment.go`, `github_request_changes.go`) and are wired in `internal/tools/default.go`. All managed-system mutations are denied unless their `act` policy key is enabled. Unknown tools default to Mutate and are denied.
 
 ### API endpoints that mutate Joe's own state
 
@@ -139,8 +128,8 @@ Every tool is classified into one of **two** classes (`internal/safety/tier.go`)
 
 | Class | Description | Default | Examples |
 |-------|-------------|---------|----------|
-| **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `read_file`, `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
-| **Mutate** (`ActionMutate`) | Mutates the managed system (files, infrastructure, deployments, external PR/MR threads, published docs). | Denied by default; per-action opt-in via the `act` policy | `write_file`, `run_command`, `publish_doc_update_*`, `github_comment`, `github_request_changes` |
+| **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
+| **Mutate** (`ActionMutate`) | Mutates the managed system (external PR/MR threads, published docs; infrastructure/deployments as adapters gain mutate verbs). | Denied by default; per-action opt-in via the `act` policy | `publish_doc_update_*`, `github_comment`, `gitlab_comment`, `github_request_changes` |
 
 This **replaces the former three-tier scheme** (Observe/Record/Act, T1/T2/T3). Per **D-0020** (collapse to a binary axis; see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. The old "Record" band (internal-state mutations) is gone: those operations are now Reads, because they do not change the managed system.
 
@@ -154,39 +143,28 @@ The safety policy lives in a file Joe **cannot access**:
 ~/.joe/safety-policy.yaml       # Human-editable only
 ```
 
-This path is excluded from `read_file`/`write_file` at compile time, is not readable by any LLM-invokable tool, and is loaded **once** at startup (never re-read at runtime by the agent).
+This path is not readable by any LLM-invokable tool — the server ships no local file tool that could reach it (Part 2), and the compile-time path exclusion in `internal/safety/invariants.go` backs that up as defense-in-depth. The policy is loaded **once** at startup (never re-read at runtime by the agent).
 
 ```yaml
 # ~/.joe/safety-policy.yaml
 version: 1
 
 # act: managed-system mutations — each is denied unless explicitly enabled.
+# Every key below defaults to false; a fresh install with no policy file denies
+# all of them.
 act:
-  write_file:
-    enabled: false
-    allowed_directories: []      # e.g., ["/tmp/joe-workspace"]
+  # Doc-publish mutations:
+  git_push:               { enabled: false }   # commit + push a doc proposal to a Git repo
+  confluence_publish:     { enabled: false }   # publish a doc proposal to Confluence
+  notion_publish:         { enabled: false }   # publish a doc proposal to Notion
 
-  run_command:
-    enabled: true
-    allowed_commands:            # Overrides the compiled-in read-only allowlist
-      - ls
-      - cat
-      - head
-      - tail
-      - grep
-      - find
-      - wc
-    # kubectl, helm, argocd deliberately excluded — add them here to accept the risk.
-
-  # Doc-publish and code-review mutations (default false):
-  git_push:            { enabled: false }
-  confluence_publish:  { enabled: false }
-  notion_publish:      { enabled: false }
-  github_comment:      { enabled: false }
+  # Code-review mutations:
+  github_comment:         { enabled: false }
+  gitlab_comment:         { enabled: false }
   github_request_changes: { enabled: false }
 ```
 
-> **`record:` is a retained compatibility shim.** The policy struct still parses a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) for backward compatibility with existing policy files. It is **inert**: since Joe's model-maintenance tools are now classified Read, the executor's `CheckAccess` consults only the `act` section. The `record` keys no longer gate anything (D-0018/D-0019/D-0020).
+> **Legacy inert sections.** The policy struct still *parses* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) **and** `act.write_file` / `act.run_command` sections for backward compatibility with existing policy files. All of these are **inert**: the model-maintenance tools the `record` keys once gated are now classified Read, and the `write_file` / `run_command` tools no longer exist, so the executor's `CheckAccess` consults only the live `act` keys above. Note in particular that `DefaultPolicy()` still ships `act.run_command.enabled: true` (`internal/safety/policy.go:77-82`) — a relic of the removed tool that gates nothing, because no `run_command` tool is registered. The default-deny guarantee is therefore intact: every *registered* mutating tool defaults to disabled (D-0018/D-0019/D-0020).
 
 ### 3.3 Hardcoded enforcement points
 
@@ -214,13 +192,13 @@ The **incident** half of the precedence sits one layer up, in the §C captain-se
 
 | Invariant | Enforcement |
 |-----------|-------------|
-| Joe cannot read/write its safety policy | `~/.joe/safety-policy.yaml` excluded from all file tools |
-| Joe cannot read/write its skills policy | `~/.joe/skills-policy.yaml` excluded |
+| Joe cannot read/write its safety policy | `~/.joe/safety-policy.yaml` excluded by `IsPathAllowed` |
+| Joe cannot read/write its skills policy | `~/.joe/skills-policy.yaml` excluded by `IsPathAllowed` |
 | Joe cannot write to `~/.joe/` | The whole directory is excluded (symlink-aware, case-insensitive) |
-| Joe cannot run the `joe` binary | `joe` blocked from `run_command` |
-| Joe cannot kill processes | `kill`, `pkill`, `killall` blocked |
+| Joe cannot run the `joe` binary | `joe` rejected by `IsCommandAllowed` |
+| Joe cannot kill processes | `kill`, `pkill`, `killall` rejected by `IsCommandAllowed` |
 
-These are constants in source, not configurable.
+These are constants in source, not configurable. They are **defense-in-depth**: the file tools (`read_file` / `write_file`) and the command tool (`run_command`) these guards were written to constrain are no longer registered (Part 2), so today nothing invokes `IsPathAllowed` / `IsCommandAllowed` on a live tool path. The guards remain compiled in and would re-engage the moment any such tool is reintroduced — which is why the architectural guarantee (invariant #2) does not depend on them.
 
 **3. Notification contract** (hardcoded for every mutating action, `internal/safety/notifier.go`):
 
@@ -303,11 +281,10 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 
 | Gap | Severity | Status | Detail |
 | --- | -------- | ------ | ------ |
-| ~~No path sandboxing on `write_file`~~ | ~~CRITICAL~~ | **FIXED** | `write_file` enforces `allowed_directories` + blocks `~/.joe/` |
-| No path sandboxing on `read_file` | HIGH | Open | The LLM can read any file the process user can access (except `~/.joe/`) |
+| ~~No path sandboxing on local file tools~~ | ~~CRITICAL~~ | **REMOVED** | The local `read_file` / `write_file` tools were removed entirely (Part 2); the server process ships no local file read or write tool. The sandbox question is moot — there is no local-file surface to sandbox |
 | Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system without a human-enabled `act` key, and no tool that reaches security config — but the input channel itself is unsanitized |
 
-**Key files:** `internal/tools/local/readfile/`, `internal/tools/local/writefile/`, `internal/safety/invariants.go`
+**Key files:** `internal/tools/default.go` (registration; omits the local set), `internal/tools/core/` (the live tool surface), `internal/safety/invariants.go` (defense-in-depth path/command guards)
 
 ### Layer 4: Authorization
 
@@ -327,8 +304,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 - Safety policy loader from `~/.joe/safety-policy.yaml`: `internal/safety/policy.go`
 - Executor gate (floor → scope → policy → notify) before every `Execute()`: `internal/tools/executor.go`
 - Default-deny for unknown tools (classified Mutate)
-- Self-protection invariants + path sandboxing: `internal/safety/invariants.go`, `internal/tools/local/writefile/`
-- `run_command` subcommand validation: `internal/tools/local/runcmd/subcommands.go`
+- Self-protection invariants (path/command guards, defense-in-depth): `internal/safety/invariants.go`
 - Mutation notification contract: `internal/safety/notifier.go`
 - Edge auth + request size limits: `internal/api/middleware.go`
 
@@ -346,7 +322,6 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 - **Environment-level operation blocking** — deterministic block of namespace/cluster-scoped destructive operations (§3.7)
 - **Mutation circuit breaker** — rolling-window rate limiter on mutating actions with manual reset (§3.7)
 - **Credential isolation enforcement** — verify Joe never uses caller-provided infra credentials (§3.7)
-- **`read_file` path sandboxing**
 - Response security headers; TLS-by-default for non-localhost binds
 
 ---
@@ -362,10 +337,10 @@ This is how the Core Safety Principles compose: invariants 1–3 hold at every s
 ```
 Stage 1: Observe                 Stage 2: Read-only infra tools
 ─────────────────                ──────────────────────────────
-Joe reads everything,            Human enables kubectl/helm/argocd in
-changes nothing.                 safety-policy.yaml. Subcommand allowlists
-"Why is payment-api slow?"       restrict to get/describe/logs. Joe queries
-→ Joe explains the cause.        infra directly, still mutating nothing.
+Joe reads everything,            Human registers more components. Each core
+changes nothing.                 tool is read-only by construction (it exposes
+"Why is payment-api slow?"       no mutate verb), so Joe queries infra
+→ Joe explains the cause.        directly, still mutating nothing.
 
 Stage 3: Supervised healing      Stage 4: Autonomous healing
 ───────────────────────────      ────────────────────────────
@@ -388,7 +363,7 @@ Joe's healing is informed by the knowledge graph, not blind command execution. B
 
 ### 6.4 Healing safety guarantees
 
-Even with healing enabled, the hardcoded invariants remain: every mutating action announces before and after; subcommand allowlists are compiled in (enabling `kubectl` does not unlock `kubectl delete`); self-protection invariants never change; per-action granularity means each mutation is a separate trust decision; and the write floor blocks every mutation in observation or safe mode regardless of which actions are enabled. The environment-level block and circuit breaker (§3.7) are the planned additions that bound blast radius and runaway sequences.
+Even with healing enabled, the hardcoded invariants remain: every mutating action announces before and after; each mutating action is a separate adapter-backed tool with its own narrow verb (there is no arbitrary-command tool through which extra verbs could be smuggled in); self-protection invariants never change; per-action granularity means each mutation is a separate trust decision; and the write floor blocks every mutation in observation or safe mode regardless of which actions are enabled. The environment-level block and circuit breaker (§3.7) are the planned additions that bound blast radius and runaway sequences.
 
 ---
 
