@@ -35,7 +35,7 @@ distil reusable "learnings," and persists each as a knowledge entry.
   `ExtractFrom` across `internal/config/`, `cmd/`, `internal/core/`,
   `internal/agentloop/`, and `internal/coreagent/` return nothing.
 - `core.Services` has no `Extractor` field —
-  [internal/core/services.go:40](../../internal/core/services.go) (`type
+  [internal/core/services.go:42](../../internal/core/services.go) (`type
   Services struct`) contains no learning/extractor member.
 - `cmd/joe/server.go` never constructs it — no `learning` import or `learning.New`
   call anywhere in the server entrypoint.

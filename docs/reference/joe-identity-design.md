@@ -138,9 +138,9 @@ Why: the method already knows its own semantics (`GetPodLogs` is read; a future 
 
 - New human, first login: identity is authenticated by the IdP; **authority is operator-provisioned.** First login creates the `user:` principal binding with zero zones. The user can authenticate but can do nothing until an operator grants zones. (Self-service join is deferred.)
 - First admin (chicken-and-egg): a config-designated admin email. The first principal whose verified email matches the configured admin email is granted admin authority on first login. This is the only bootstrap path; document it as such.
-- Zone provisioning (day-one and day-100 operator experience): **CLI command only for v1.** Operator grants/revokes zones to a `user:` or `svc:` principal via CLI. Admin UI and admin HTTP endpoint are deferred behind this seam.
+- Zone provisioning (day-one and day-100 operator experience): the design-era "CLI command only for v1" plan was superseded by the as-built surface. **Provisioning runs over the admin REST API** (`internal/api/admin.go`), the single audited writer; the CLI provisioning surface was removed (D-0016) and the admin endpoint is the dynamic writer (D-0011). Operator grants/revokes zones to a `user:` or `svc:` principal via the admin endpoints; an admin UI is an additive caller of the same operations.
 
-Rejects: self-service zone acquisition; admin UI in v1.
+Rejects: self-service zone acquisition.
 
 ### 2.10 Captain: unchanged in concept, fixed in wiring
 
@@ -196,7 +196,7 @@ These are the things a reviewer (or a future safety eval) will check. State them
 
 - **IdP groups / group-based authz** — seam: `IsAllowed` is already set-shaped; add `group:` entries to the set from the `groups` claim. No evaluation change.
 - **MCP human-identity pass-through** — seam: MCP is a normal service-account client today; pass-through is an additive identity-forwarding feature later.
-- **Admin UI / admin HTTP endpoint for provisioning** — seam: CLI provisioning exists; UI is another caller of the same provisioning operations.
+- **Admin HTTP endpoint for provisioning** — **shipped, not deferred:** the admin REST surface (`internal/api/admin.go` — `/api/v1/admin/zones`, `/admin/component-zones`) is the single audited provisioning writer (D-0011, D-0016), replacing the design-era CLI. A richer admin UI remains an additive caller of the same operations.
 - **JWT / stateless sessions** — only relevant if joe-core is distributed; revisit then.
 - **Distributed joe-core / remote inter-component auth** — seam: the accessor takes an explicit principal parameter; if a process boundary appears, that parameter becomes a wire-carried identity (the deliberate K8s model).
 - **GitHub-direct login** — seam: single OIDC issuer today; add a GitHub OAuth2 adapter or front with Dex later.

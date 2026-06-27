@@ -1,5 +1,5 @@
 # Reference-documentation audit — drift against the live codebase
-Status: open
+Status: done
 
 ## Summary
 
@@ -7,14 +7,17 @@ Audited **13** reference documents under `docs/reference/` against the live tree
 (re-derived from code, not from memory or `DECISIONS.md`). The original audit
 classified **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
 
-**Campaign progress:** the actioning campaign rewrites one doc per session. Open
-MISALIGNED entries remaining (recomputed by summing the per-file counts of the
-still-open sections below): **13**. Resolved so far:
-`operational-modes-ui-status.md` (17, in `docs-reference-audit-01`);
-`security-in-layers.md` (6, in `docs-reference-audit-02`). Retired (doc deleted,
-survivors absorbed) so far: `direct-http-mutation-surface.md` (11) and
+**Campaign progress: CLOSED.** Open MISALIGNED entries remaining: **0** (recomputed
+by summing the per-file counts of the sections below — every section is now marked
+RESOLVED or RETIRED). Resolved: `operational-modes-ui-status.md` (17, in
+`docs-reference-audit-01`); `security-in-layers.md` (6, in `docs-reference-audit-02`);
+and the final slice `docs-reference-audit-05` (13 across `joe-architecture.md` (3),
+`DESIGN-SESSIONS-VIEW.md` (3), `joe-identity-design.md` (2), `joe-skills-design.md`
+(2), `observability.md` (2), and `learn-from-sessions-current-state.md` (1)). Retired
+(doc deleted, survivors absorbed): `direct-http-mutation-surface.md` (11) and
 `managed-system-egress-map.md` (11), both in `docs-reference-audit-03`;
-`accessor-promotion-state-axis.md` (9, in `docs-reference-audit-04`).
+`accessor-promotion-state-axis.md` (9, in `docs-reference-audit-04`). Total actioned:
+17 + 6 + 13 resolved + 31 retired = **67 MISALIGNED**, matching the original count.
 
 This is an **audit only** — no doc or code was changed. Each MISALIGNED claim below
 carries the doc location, the authoritative code location, a one-line discrepancy,
@@ -459,7 +462,14 @@ All 6 entries below are addressed; they are retained for traceability.
 
 ---
 
-## docs/reference/joe-architecture.md  — MISALIGNED: 3
+## docs/reference/joe-architecture.md  — MISALIGNED: 3 — RESOLVED in docs-reference-audit-05
+
+Re-verified against the live tree and corrected: the directory tree no longer
+lists `internal/tools/local/` (only `core/`+`shared/` exist); the Chat Sessions
+"Locations" line now points at `internal/api/sessiongate.go` (the owner-scoped
+session-authorization seam; `internal/api/sessions.go` does not exist); the
+config.yaml example shows `gemini-2.5-flash` (`internal/config/constants.go:15`).
+All 3 entries below addressed; retained for traceability.
 
 1. DOC `:487` — directory tree lists `internal/tools/local/` ("readfile, writefile, runcmd").
    CODE: `internal/tools/` holds only `core/` and `shared/`; local tools registered in
@@ -477,7 +487,17 @@ All 6 entries below are addressed; they are retained for traceability.
 
 ---
 
-## docs/reference/DESIGN-SESSIONS-VIEW.md  — MISALIGNED: 3
+## docs/reference/DESIGN-SESSIONS-VIEW.md  — MISALIGNED: 3 — RESOLVED in docs-reference-audit-05
+
+Re-verified and corrected: §2.1 now describes the list query as a bare SQL
+`LIMIT ?` bound to the handler default of 20 (`repository.go:534`,
+`webui.go:359`) — no literal `LIMIT 50` survives in code (the only `LIMIT 50`
+string left is a stale comment in `ui/src/lib/sessionFilterSort.ts:22`, a code
+file out of this documentation-only slice's scope), so §2.1 and §6.A ("default
+20") now agree; the §6.B struct-comment excerpt no longer misquotes the rewritten
+`webui.go:227` comment — it now describes the post-P0 both-surfaces (self-join,
+not N+1) behavior that comment documents. All 3 entries below addressed; retained
+for traceability.
 
 1. DOC `:99,102` — "single capped top-N (`LIMIT 50`, no OFFSET/cursor,
    `internal/sessionmodel/repository.go:534`)."
@@ -498,7 +518,15 @@ All 6 entries below are addressed; they are retained for traceability.
 
 ---
 
-## docs/reference/joe-identity-design.md  — MISALIGNED: 2
+## docs/reference/joe-identity-design.md  — MISALIGNED: 2 — RESOLVED in docs-reference-audit-05
+
+Re-verified and corrected per D-0011/D-0016, respecting the doc's AS-BUILT banner
+(no drifted line numbers reintroduced, package path only): §2.9 now states that
+zone provisioning runs over the admin REST API (`internal/api/admin.go`, the
+single audited writer) — the design-era "CLI command only" plan was superseded
+and the CLI provisioning surface removed (confirmed `cmd/joe/main.go`); §6 now
+lists the admin HTTP endpoint as **shipped, not deferred** (`/api/v1/admin/zones`,
+`/admin/component-zones`). All 2 entries below addressed; retained for traceability.
 
 (AS-BUILT banner declares inline `file:line` citations historical — not flagged. These two
 are as-built mechanism claims contradicted by D-0011/D-0016.)
@@ -517,7 +545,16 @@ are as-built mechanism claims contradicted by D-0011/D-0016.)
 
 ---
 
-## docs/reference/joe-skills-design.md  — MISALIGNED: 2
+## docs/reference/joe-skills-design.md  — MISALIGNED: 2 — RESOLVED in docs-reference-audit-05
+
+Re-verified and corrected against `cmd/joe/main.go`: the `joe skills status`
+subcommand was removed from the CLI-surface listing (the live switch is
+install/list/remove/update/approve/reject/reload, with status folded into
+`list`); the install invocation now shows the as-built shape
+`joe skills install <repo-url> [--ref <branch|tag>] [--subdir <path>]` — a single
+`<repo-url>` positional plus a `--subdir` flag for single-skill sparse checkout,
+not the old inline `<git-url>/<path>`. All 2 entries below addressed; retained for
+traceability.
 
 1. DOC `:167` — CLI surface lists `joe skills status` as a distinct subcommand.
    CODE `cmd/joe/main.go:343-549` — switch has install/list/remove/update/approve/reject/reload only;
@@ -531,7 +568,24 @@ are as-built mechanism claims contradicted by D-0011/D-0016.)
 
 ---
 
-## docs/reference/observability.md  — MISALIGNED: 2
+## docs/reference/observability.md  — MISALIGNED: 2 — RESOLVED in docs-reference-audit-05
+
+Re-verified against the live tree, where the audit's own code-side citations had
+drifted since it ran: `internal/observability/llm_middleware.go` no longer exists,
+and `NewInstrumentedAdapter` is now **wired into production** (the audit's "neither
+is constructed in production" premise is reversed). Corrected to live truth: the
+`llm.*` metric names are inline literals in `internal/llm/instrumented.go`
+(`llm.requests`, `llm.errors`, `llm.tokens.input`, `llm.tokens.output`,
+`llm.request.duration`) — not in `metric_names.go`, which holds the
+`tools.*`/`adapters.*`/`graph.*`/`http.*`/`coreagent.*` + `joe.build.info`
+families; the package tree dropped the deleted `llm_middleware.go`; the
+architecture diagram, metric table, and Prometheus query examples now name the
+`InstrumentedAdapter` and its live metric names; and the doc now states the
+`InstrumentedAdapter` is the active path, wired as the outermost LLM-chain wrapper
+by `internal/core/llmchain.go` `BuildLLMChain` (boot `cmd/joe/server.go` + both
+model-swap handlers). The span/trace section (`llm.chat` attributes) was already
+correct against `instrumented.go` and was preserved. All 2 entries below addressed;
+retained for traceability.
 
 1. DOC `:259` — package tree points the headline `llm.*` metric names at `metric_names.go`.
    CODE `internal/observability/metric_names.go:11-57` holds `tools.*`/`adapters.*`/`graph.*`/`http.*`/
@@ -562,7 +616,8 @@ are as-built mechanism claims contradicted by D-0011/D-0016.)
   native Claude+Gemini, floor>incident>RBAC, write-floor determinism) all VERIFIED.
 - **docs/reference/learn-from-sessions-current-state.md** — VERIFIED 28, MISALIGNED 1, UNVERIFIABLE 2. The
   doc's thesis (the extractor in `internal/knowledge/learning/` is orphaned/unwired and self-contradicts on
-  tier) is confirmed against live code. Its single misalignment is a 2-line off citation:
+  tier) is confirmed against live code. Its single misalignment was a 2-line off citation, **RESOLVED in
+  docs-reference-audit-05** (corrected to `:42`; the orphaned-extractor thesis left untouched):
   - DOC `:38` — `type Services struct` at `internal/core/services.go:40`.
     CODE `internal/core/services.go:42`.
     CLASS: other (line drift)
