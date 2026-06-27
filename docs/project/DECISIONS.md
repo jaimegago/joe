@@ -10,6 +10,62 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0048 — Generic OpenAI-compatible adapter (`openai-compat`); provider set is config-driven via `base_url`; native `claude`/`gemini` retained
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: openai-compat-adapter
+- Decision: Joe gains a third LLM provider, `openai-compat`, a generic adapter
+  that speaks the OpenAI Chat Completions protocol against **any** compatible
+  server (OpenAI, vLLM, llama.cpp, Ollama, LocalAI, …) at a configurable
+  `base_url`. Specifics:
+  - **New adapter, native clients untouched.** `internal/llm/openaicompat/`
+    implements `llm.LLMAdapter` (`Chat` + `Embed`) as a small, dependency-free
+    HTTP client against `/v1/chat/completions` and `/v1/embeddings`. The native
+    vendor-SDK `claude` and `gemini` clients are neither removed nor rerouted;
+    the factory switch (`internal/llmfactory/factory.go`) adds an explicit
+    `openai-compat` case ahead of the gemini default.
+  - **Config-driven provider set.** `ModelConfig` gains a `BaseURL` field
+    (`base_url`), consumed only by `openai-compat` and ignored by the native
+    clients. The validated set lives in two authoritative places — the factory
+    switch and the validation allow-list (`internal/config/validation.go`,
+    both `ValidateAPIKeys` and `ValidateAPIKeysWithUserMessage`). For
+    `openai-compat`, validation gates on `BaseURL` presence and accepts an
+    **empty** `OPENAI_API_KEY` (keyless local endpoints); unknown providers are
+    still rejected by the default case. `AutoSelectProvider` is unchanged — it
+    stays key-presence-based over the native providers, and `openai-compat` is
+    chosen explicitly via provider + `base_url`, never auto-selected.
+  - **Wire-shape control is why this is hand-rolled, not SDK-backed.** A stable
+    Go SDK exists (`github.com/openai/openai-go` v1.12.0, base URL via
+    `option.WithBaseURL`), but it now defaults to `max_completion_tokens`, which
+    many compatible servers reject; owning the request lets us emit `max_tokens`
+    (what generic servers accept) and an optional Authorization header. Anthropic
+    also ships an OpenAI-compatibility shim, but it is **test-only** and does not
+    carry native `tool_use`; routing Claude through an OpenAI path would lose
+    tool-calling parity. Native `tool_use` is required, so the native clients
+    stay; the generic adapter is additive.
+  - **Governance is unchanged.** The adapter emits only neutral `llm.ToolCall`
+    values and has no execution authority; execution flows solely through the
+    tool executor, whose gate order (floor > incident > RBAC) is untouched. A
+    governance break-test proves an adapter-produced mutate tool call is denied
+    by the write floor in observation mode exactly as for the native providers.
+- Basis: `internal/llm/openaicompat/openaicompat.go` (Chat/Embed, request and
+  both-direction tool mapping, optional key); `internal/llmfactory/factory.go`
+  (switch case + `HasProviderAPIKey`); `internal/config/validation.go` and
+  `internal/config/config.go` (`BaseURL`, allow-list, BaseURL gate);
+  `internal/env/keys.go` (`OPENAI_API_KEY`); tests in
+  `internal/llm/openaicompat/{openaicompat_test.go,governance_test.go}` and
+  `internal/config/validation_openaicompat_test.go`. Go module probe confirmed
+  `github.com/openai/openai-go` resolves to v1.12.0.
+- Supersedes: the fixed-count "exactly two providers / no OpenAI adapter"
+  framing in `CLAUDE.md`, `docs/reference/joe-architecture.md`, and
+  `docs/configuration.md` (reworded structurally per D-0032 — no hardcoded
+  provider count). Deferred work tracked in
+  `docs/backlog/openai-compat-adapter.md` (streaming, Azure-style auth/url
+  variant, embeddings capability negotiation beyond a clear error).
+
+---
+
 ## D-0047 — Docs tree restructured (`docs/project`, `docs/reference`, `docs/backlog/investigations`); wholly-superseded process-exhaust archived OUT of the repo — no in-repo `docs/archive`
 
 - Date: 2026-06-27

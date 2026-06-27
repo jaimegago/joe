@@ -103,6 +103,13 @@ func ValidateAPIKeys(mc ModelConfig) error {
 		if geminiKey == "" && googleKey == "" {
 			return fmt.Errorf("%s or %s environment variable is required for Gemini provider", env.GeminiAPIKey, env.GoogleAPIKey)
 		}
+	case providerOpenAICompat:
+		// The generic OpenAI-compatible provider gates on BaseURL presence,
+		// NOT on an API key: OPENAI_API_KEY is optional (empty is valid for
+		// keyless local endpoints), but the endpoint base URL is required.
+		if mc.BaseURL == "" {
+			return fmt.Errorf("base_url is required for the %s provider (set base_url on the model config)", providerOpenAICompat)
+		}
 	default:
 		return fmt.Errorf("unsupported LLM provider: %s", mc.Provider)
 	}
@@ -151,7 +158,7 @@ func ValidateCostCurrency(lc LLMConfig) error {
 // This is suitable for CLI output where we want to show detailed setup instructions.
 func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
 	// Check if provider is supported
-	supportedProviders := []string{providerClaude, providerGemini}
+	supportedProviders := []string{providerClaude, providerGemini, providerOpenAICompat}
 	providerSupported := false
 	for _, p := range supportedProviders {
 		if mc.Provider == p {
@@ -161,7 +168,7 @@ func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
 	}
 
 	if !providerSupported {
-		return fmt.Errorf("You need to connect Joe to an LLM.\n\nCurrently supported LLMs:\n  - Claude (Anthropic)\n  - Gemini (Google)\n\nConfigured provider '%s' is not supported.", mc.Provider)
+		return fmt.Errorf("You need to connect Joe to an LLM.\n\nCurrently supported LLMs:\n  - Claude (Anthropic)\n  - Gemini (Google)\n  - Any OpenAI-compatible endpoint (provider 'openai-compat' + base_url)\n\nConfigured provider '%s' is not supported.", mc.Provider)
 	}
 
 	// Check for API keys
@@ -178,6 +185,11 @@ func ValidateAPIKeysWithUserMessage(mc ModelConfig) error {
 		if geminiKey == "" && googleKey == "" {
 			return fmt.Errorf("You need to connect Joe to an LLM.\n\nGemini is configured but neither %s nor %s is set or both are empty.\n\nCurrently supported LLMs:\n  - Claude (Anthropic) - requires %s\n  - Gemini (Google) - requires %s or %s\n\nTo use Gemini:\n  export %s=your-api-key-here\n\nTo use Claude, update your config to use a Claude model",
 				env.GeminiAPIKey, env.GoogleAPIKey, env.AnthropicAPIKey, env.GeminiAPIKey, env.GoogleAPIKey, env.GeminiAPIKey)
+		}
+	case providerOpenAICompat:
+		// The key is optional; only the base URL is required for this provider.
+		if mc.BaseURL == "" {
+			return fmt.Errorf("You need to connect Joe to an LLM.\n\nThe 'openai-compat' provider is configured but no base_url is set.\n\nSet base_url to your OpenAI-compatible endpoint (e.g. http://localhost:11434/v1).\n%s is optional and only sent when set (keyless local endpoints are supported).", env.OpenAIAPIKey)
 		}
 	}
 

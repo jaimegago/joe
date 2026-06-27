@@ -7,6 +7,10 @@ const (
 	AnthropicAPIKey = "ANTHROPIC_API_KEY"
 	GeminiAPIKey    = "GEMINI_API_KEY"
 	GoogleAPIKey    = "GOOGLE_API_KEY"
+	// OpenAIAPIKey is the key for the generic openai-compat provider. It is
+	// OPTIONAL: keyless local endpoints (llama.cpp, Ollama) leave it unset,
+	// and validation gates on BaseURL presence rather than this key.
+	OpenAIAPIKey = "OPENAI_API_KEY"
 
 	// System
 	Home = "HOME"

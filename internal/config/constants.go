@@ -30,8 +30,9 @@ const (
 	defaultQuietTimezone = "Local"
 
 	// Provider names.
-	providerClaude = "claude"
-	providerGemini = "gemini"
+	providerClaude       = "claude"
+	providerGemini       = "gemini"
+	providerOpenAICompat = "openai-compat"
 
 	// Default knowledge configuration.
 	defaultKnowledgeSemanticTopK  = 5

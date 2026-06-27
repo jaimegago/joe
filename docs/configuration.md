@@ -19,14 +19,21 @@ llm:
   current: claude-sonnet            # key from llm.available — the active model
   available:
     claude-sonnet:
-      provider: claude              # claude | gemini
-      model: claude-sonnet-4-20250514
+      provider: claude              # native Anthropic / Google adapters, or
+      model: claude-sonnet-4-20250514  # openai-compat for any OpenAI-compatible endpoint
     gemini-flash:
       provider: gemini
       model: gemini-2.5-flash
+    local-llama:
+      provider: openai-compat       # generic OpenAI Chat Completions endpoint
+      model: llama3                 # the model name the endpoint expects
+      base_url: http://localhost:11434/v1  # REQUIRED for openai-compat; ignored by native providers
   # API keys are NEVER stored in config — set them in joe's environment:
-  #   ANTHROPIC_API_KEY              (Claude)
+  #   ANTHROPIC_API_KEY               (Claude)
   #   GEMINI_API_KEY / GOOGLE_API_KEY (Gemini)
+  #   OPENAI_API_KEY                  (openai-compat; OPTIONAL — omit for keyless local endpoints)
+  # The selectable provider set is authoritative in internal/llmfactory/factory.go
+  # and internal/config/validation.go.
 
 server:
   address: "localhost:7777"         # joe listen address
@@ -112,6 +119,7 @@ the first admin.
 | ------------------------------ | ----------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`            | Provider key for Claude                                           |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Provider key for Gemini                                       |
+| `OPENAI_API_KEY`               | Provider key for `openai-compat` (OPTIONAL — omit for keyless local endpoints; the endpoint comes from `base_url`) |
 | `JOE_CONFIG`                   | Path to the config file (overrides `~/.joe/config.yaml`)          |
 | `JOE_SERVER_ADDRESS`           | Overrides `server.address`                                        |
 | `JOE_API_KEY`                  | Sets the key of the reserved `server` service account; also the bearer token client subcommands present |

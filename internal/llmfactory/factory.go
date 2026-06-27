@@ -9,6 +9,7 @@ import (
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llm/claude"
 	"github.com/jaimegago/joe/internal/llm/gemini"
+	"github.com/jaimegago/joe/internal/llm/openaicompat"
 )
 
 // NewAdapter creates an LLMAdapter from a ModelConfig.
@@ -26,6 +27,10 @@ func NewAdapter(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, err
 	switch mc.Provider {
 	case "claude":
 		return claude.NewClient(mc.Model)
+	case "openai-compat":
+		// Generic OpenAI-compatible endpoint; the base URL comes from config
+		// and OPENAI_API_KEY is optional (keyless local endpoints).
+		return openaicompat.NewClient(mc.Model, mc.BaseURL)
 	default: // "gemini" — ValidateAPIKeys already rejects unknown providers above
 		return gemini.NewClient(ctx, mc.Model)
 	}
@@ -51,6 +56,12 @@ func HasProviderAPIKey(provider string) bool {
 		return os.Getenv(env.AnthropicAPIKey) != ""
 	case "gemini":
 		return os.Getenv(env.GeminiAPIKey) != "" || os.Getenv(env.GoogleAPIKey) != ""
+	case "openai-compat":
+		// The key is OPTIONAL for openai-compat (keyless local endpoints are
+		// valid), so report true whenever the provider is selected: the
+		// deployment is considered credentialed even with an empty key, and
+		// configurability is gated on BaseURL by validation, not on this key.
+		return true
 	default:
 		return false
 	}
