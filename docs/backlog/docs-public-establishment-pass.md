@@ -62,6 +62,24 @@ separate, later pass.
   Operations were split into separate slices, the remaining plan was renumbered:
   Operations (with the break-glass fold) is **-06** and API Reference is **-07**. The
   thread is **not finished** — two slices remain (-06, -07) below.
+- **`docs-public-establishment-pass-06` (done).** Filled **Operations** (how-to: running the
+  daemon, TLS at a how-to level, the embedded SQLite store at `~/.joe/joe.db` and the
+  session archive at `~/.joe/session-archive`, process health, observability, recovering
+  from safe mode, and the break-glass-access fold). Re-derived against the live tree,
+  honoring the known accuracy traps: the Prometheus metrics endpoint is on a **separate
+  port** (`9090`/`/metrics`) from the API (`7777`); the traces exporter **defaults to
+  `none`** so spans are instrumented but not exported until `OTEL_TRACES_EXPORTER` is set
+  to `stdout`/`otlp`; **no** dedicated `/livez`/`/readyz`/`/healthz` endpoint exists (only
+  `GET /api/v1/status` and `GET /api/v1/version` are served); and there is **no API unlock**
+  — `POST /api/v1/unlock` does not exist, the write floor is sealed at boot, and recovery is
+  the local `joe unlock` CLI (clears the `cluster_panic_state` row, never signals a live
+  process) plus a restart, with arming writes and acknowledging the panic as distinct steps.
+  Re-derivation corrected two of the prompt's inventory-era leads against the live tree: the
+  per-LLM-call metrics are **now wired and emitted** (`llm_requests_total` etc.) and the
+  cache metrics were **removed entirely** — both by **D-0051** (committed after the inventory
+  was written), so the page documents the LLM metrics as available and does not mention cache
+  metrics at all. A straight content fill — no decision was forced, no code or invariant
+  changed. The thread is **not finished** — one slice remains (-07) below.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -127,7 +145,7 @@ inventory):
 - **-03** — Configuration + Integrations. *(done)*
 - **-04** — Integrations corrective: runtime-registerable vs boot-config-only activation routing (D-0056). *(done)*
 - **-05** — Guides. *(done)*
-- **-06** — Operations (including the break-glass fold into Operations).
+- **-06** — Operations (including the break-glass fold into Operations). *(done)*
 - **-07** — API Reference.
 
 Every claim in every slice is gated by `docs/backlog/public-docs-feature-inventory.md`
