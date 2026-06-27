@@ -4,7 +4,7 @@ import type { GroupedSessions, IncidentCluster } from '@/lib/sessionGrouping';
 
 // sessionFilterSort holds the two-view sessions list CONTROLS (keyword filter +
 // sort), implemented as pure functions over the OUTPUT of groupSessions
-// (docs/DESIGN-SESSIONS-VIEW.md §2). The pipeline is:
+// (docs/reference/DESIGN-SESSIONS-VIEW.md §2). The pipeline is:
 //
 //     fetched rows → groupSessions → filterGrouped → sortGrouped
 //
@@ -24,7 +24,7 @@ import type { GroupedSessions, IncidentCluster } from '@/lib/sessionGrouping';
 // client and filtering/sorting it locally sees every row. When paging lands
 // (P3), this MUST move SERVER-SIDE: a client-side filter/sort over a single page
 // would filter/sort only that page, not the whole history. This is the
-// known-revisit recorded in docs/DESIGN-SESSIONS-VIEW.md §2.1, not a surprise.
+// known-revisit recorded in docs/reference/DESIGN-SESSIONS-VIEW.md §2.1, not a surprise.
 
 // SortKey is the control set: newest-first by last activity (the default, which
 // matches the server's existing ORDER BY last_activity_at DESC), oldest-first by

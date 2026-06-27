@@ -45,7 +45,7 @@ type AutoApprovePolicy struct {
 	// introduce a brand-new skill into a previously-installed (trusted)
 	// repo. Off by default because "this repo adds a new skill" is a
 	// distinct trust decision from "this repo updates an existing skill" —
-	// see docs/joe-skills-design.md "Three trust layers".
+	// see docs/reference/joe-skills-design.md "Three trust layers".
 	NewSkillsInExistingRepos bool `yaml:"new_skills_in_existing_repos"`
 }
 

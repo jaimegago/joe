@@ -3,7 +3,7 @@
 Status: deferred — design-approved in spirit, unimplemented
 Entry created: 2026-06-08. This is an implementation backlog item (a posture-read
 enhancement), not a new decision — it does not add a DECISIONS.md entry.
-Design of record: docs/DECISIONS.md D-0019 (the trust model). This entry records
+Design of record: docs/project/DECISIONS.md D-0019 (the trust model). This entry records
 only the implementation track; it does not duplicate D-0019.
 Relates to: D-0019 (trust model / postures), D-0018 (the write floor).
 Ships with: the full-mode/RBAC track (docs/backlog/full-mode-rbac-track.md) and
@@ -95,10 +95,10 @@ no json tags).
 
 ## References (link, do not duplicate)
 
-- docs/DECISIONS.md **D-0019** — the trust model; design of record for this item
+- docs/project/DECISIONS.md **D-0019** — the trust model; design of record for this item
   (the two postures, the "configured vs zero grants" distinction, and the future
   on-demand capability control).
-- docs/DECISIONS.md **D-0018** — the write floor (the observation / safe_mode
+- docs/project/DECISIONS.md **D-0018** — the write floor (the observation / safe_mode
   reasons; why the field is moot when the floor is up).
 - docs/backlog/full-mode-rbac-track.md — the full-mode/RBAC track this ships with;
   owns the RBAC policy-store surface this signal reads from.

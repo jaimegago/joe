@@ -14,7 +14,7 @@ import (
 // refused with 403 BEFORE any call to
 // sessionmodel.Repository.ResolveIncidentRegime.
 //
-// This protects PHASE-0-SESSION-MODEL.md §R5 / Invariant 4 (incident-
+// This protects the session-model design (Phase 0) §R5 / Invariant 4 (incident-
 // mode exit may not be automated): the AST grep guard in
 // regime_invariant_test.go pins ResolveIncidentRegime's sole production
 // caller to (*regimeHandler).resolve. The seam-disabled gate returns

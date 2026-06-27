@@ -3,7 +3,7 @@
 // from request headers and the durable executor wrapper
 // (coreagent.DurableExecutor) consumes when persisting tool-call intent.
 //
-// Phase 1 Change 9 — see docs/PHASE-1-DECOMPOSITION.md.
+// Phase 1 Change 9 — see the Phase 1 decomposition plan.
 //
 // Lives in its own package to avoid an import cycle between
 // internal/api (which writes the values) and internal/coreagent (which

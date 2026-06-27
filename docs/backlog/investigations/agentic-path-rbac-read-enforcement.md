@@ -1,3 +1,5 @@
+> **Status: OPEN** — live finding; read-only RBAC-read-enforcement investigation, not yet actioned.
+
 ```
 INVESTIGATION: RBAC read-enforcement on the agentic loop path
 Date: 2026-06-08

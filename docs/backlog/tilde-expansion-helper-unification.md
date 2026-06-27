@@ -55,4 +55,4 @@ behavior, it is not a mechanical merge — hence deferred.
 helpers produce identical output for a shared input table and fails the moment
 either diverges. The duplication cannot silently drift while this stays deferred.
 
-Reference: `docs/decisions/D-0026-credential-provider-abstraction.md`.
+Reference: `docs/project/adr/D-0026-credential-provider-abstraction.md`.

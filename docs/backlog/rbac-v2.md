@@ -71,7 +71,7 @@ zones, or from any other side effect. The flat-to-zoned transition is one
 explicit, logged act and nothing else may trigger it.
 
 This deferral is recorded under the read-posture-latch decision; Phase 1 found no
-corresponding numbered entry in `docs/DECISIONS.md`, so this seed references it by
+corresponding numbered entry in `docs/project/DECISIONS.md`, so this seed references it by
 the slug read-posture-latch.
 
 ## Use-case inventory to design from

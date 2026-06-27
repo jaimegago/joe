@@ -65,7 +65,7 @@ The leak, precisely:
 - `internal/api/webui.go:213` `handleCreateSession` — never records the caller as owner.
 - Principal **is** available (EdgeAuth sets it in context via `rbac.PrincipalFromContext`); the handlers just ignore it. These paths aren't `sourceID`-keyed, so RBAC zone enforcement doesn't fire on them either.
 
-The decomposition plan already calls for collapsing these: `docs/PHASE-1-DECOMPOSITION.md`
+The Phase 1 decomposition plan already called for collapsing these: it
 lists "webui migration to the new session model" as explicit post-Phase-1 work, with a
 note in `internal/api/sessions.go` that `/agent-sessions` runs parallel to the legacy
 `/sessions` route until "the post-Phase-1 webui migration will collapse the two."
@@ -827,7 +827,7 @@ These are tracked items, **not blocking nodes**:
   team-public model — keep the admin-purge-routes-erasure point, drop the
   sensitive-and-admin-visible framing.
 - The three B001 inventory reports were never produced and are **not** present under
-  `docs/investigations`; landing the dated as-built snapshots remains open doc-debt. (The
+  an investigations directory; landing the dated as-built snapshots remains open doc-debt. (The
   B001 findings themselves are captured inline above — see §10 and the §12 notes.)
 - The learn-from-sessions feature is a decided future feature with its legacy tables retained
   per `docs/backlog`.

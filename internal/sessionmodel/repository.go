@@ -343,7 +343,7 @@ var (
 // secondary-repo pattern (RBAC, graph, knowledge, review, proposals,
 // panic-state). The shared persistence interface seam is preserved by
 // using ? placeholders + store.Rebind for cross-driver portability — see
-// PHASE-0-SESSION-MODEL.md §5b-6 and Invariant 6.
+// the session-model design (Phase 0) §5b-6 and Invariant 6.
 type SQLRepository struct {
 	db     *sql.DB
 	driver string

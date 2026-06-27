@@ -27,7 +27,7 @@ func registerSharedTools(registry *Registry) {
 // askuser) since those only make sense on the user's local machine. This is
 // used by the task execution endpoint on joe.
 //
-// After Identity Phase E (docs/joe-identity-design.md §3), the value passed in
+// After Identity Phase E (docs/reference/joe-identity-design.md §3), the value passed in
 // is an in-process accessor-backed client constructed by joe (see
 // internal/api/inproc_client.go) — there is no loopback HTTP self-call. The
 // argument type is coretools.CoreToolsClient (the aggregate of each tool's

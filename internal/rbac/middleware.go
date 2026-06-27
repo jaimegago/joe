@@ -55,7 +55,7 @@ func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handl
 }
 
 // EnforcementMiddleware is a coarse outer gate that survives in the chain as a
-// defence-in-depth seam (docs/joe-identity-design.md §3, Phase E demotion). Its
+// defence-in-depth seam (docs/reference/joe-identity-design.md §3, Phase E demotion). Its
 // former per-zone IsAllowed decision has been moved into the guarded accessor
 // (internal/access), which is now the AUTHORITATIVE RBAC gate on BOTH the HTTP
 // path (Phase A) and the in-process agent-loop path (Phase E). The accessor

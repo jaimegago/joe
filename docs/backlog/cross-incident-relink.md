@@ -2,7 +2,7 @@
 
 Status: **deferred — post-launch structural feature.** Not a chrome fix and not
 launch-blocking. Lands on the same post-launch shelf as the incident-regime /
-captain redesign (`docs/security-architecture-direction.md` §8, "the
+captain redesign (`docs/reference/security-architecture-direction.md` §8, "the
 incident/captain gate is post-launch as a feature").
 
 ## Context
@@ -94,8 +94,8 @@ is not blocked by the structural items above.
 
 ## Pointers
 
-- Two-type model + linkage rules: `docs/DESIGN-CHAT-SESSIONS.md` §12.3.
+- Two-type model + linkage rules: `docs/reference/DESIGN-CHAT-SESSIONS.md` §12.3.
 - Promote-in-place declare: `internal/sessionmodel/regime_transitions.go`.
 - Link path + incident-row refusal: `internal/api/webui.go` `handleLinkIncident`.
 - Post-launch incident/captain shelf:
-  `docs/security-architecture-direction.md` §8.
+  `docs/reference/security-architecture-direction.md` §8.

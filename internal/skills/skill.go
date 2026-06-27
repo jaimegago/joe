@@ -3,7 +3,7 @@
 // surfaced into LLM context at decision time by the router.
 //
 // Phase 1 scope: static loading at startup, deterministic keyword routing,
-// no CLI, no hot reload, no quarantine. See docs/joe-skills-design.md.
+// no CLI, no hot reload, no quarantine. See docs/reference/joe-skills-design.md.
 package skills
 
 import (
@@ -19,7 +19,7 @@ import (
 
 // MaxSkillSize is the largest SKILL.md file (in bytes) Joe will load. Anything
 // larger is rejected at parse time to prevent context-window exhaustion.
-// See docs/joe-skills-design.md "Skill content size limits".
+// See docs/reference/joe-skills-design.md "Skill content size limits".
 const MaxSkillSize = 50 * 1024
 
 // Skill is a parsed Agent Skills document.

@@ -98,7 +98,7 @@ type Services struct {
 	// reports the per-caller auth facts and this rides alongside them.
 	OIDCEnabled bool
 	// Audit is the append-only audit trail (Identity Phase F,
-	// docs/joe-identity-design.md §2.6). Wired by cmd/joe/server.go after
+	// docs/reference/joe-identity-design.md §2.6). Wired by cmd/joe/server.go after
 	// the store migrations run. Consumers: the guarded accessor
 	// (internal/access) writes one row per authorization decision; the
 	// regime and captain handlers (internal/api) write durable rows for

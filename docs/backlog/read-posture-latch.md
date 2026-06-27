@@ -24,7 +24,7 @@ deferred out of the launch build without losing any capability.
   zones and grant-based read are presented as the **full-mode (`zoned`) era**
   concept, not the default mental model. The launch story is team-flat read
   (team-public, integrity-and-accountability spine); zones/grants are the
-  opt-in full-mode evolution. Audit `docs/security-in-layers.md` and the
+  opt-in full-mode evolution. Audit `docs/reference/security-in-layers.md` and the
   architecture/README prose for places that assume grant-based read is the
   baseline.
 - **v2 zoned-flip UI.** The posture flip is REST-only today (`POST

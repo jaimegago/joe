@@ -13,11 +13,11 @@ dormant and orphaned: nothing constructs or calls it, it reads the legacy
 `session_messages` table rather than the live `agent_sessions`/`chat_messages`
 store, and its write path threads no principal, consults no accessor/RBAC seam,
 and writes no audit row. Full current-state analysis with `file:line` citations:
-[docs/investigations/learn-from-sessions-current-state.md](../investigations/learn-from-sessions-current-state.md).
+[docs/reference/learn-from-sessions-current-state.md](../reference/learn-from-sessions-current-state.md).
 
 The feature's *only* data source is the legacy `sessions` / `session_messages`
 tables (migration 001). The B001 sessions consolidation
-([docs/DESIGN-CHAT-SESSIONS.md](../DESIGN-CHAT-SESSIONS.md) §12, and §7 step 4
+([docs/reference/DESIGN-CHAT-SESSIONS.md](../reference/DESIGN-CHAT-SESSIONS.md) §12, and §7 step 4
 which names the "knowledge-extraction consumers" as one of the legacy consumers
 that must be repointed or dropped) is the consolidation context. The decision
 recorded below settles how the two interact.
@@ -62,6 +62,6 @@ decision). Absent one of those, the legacy tables stay.
 ## Pointers
 
 - Current-state record (every claim cited `file:line`):
-  [docs/investigations/learn-from-sessions-current-state.md](../investigations/learn-from-sessions-current-state.md).
+  [docs/reference/learn-from-sessions-current-state.md](../reference/learn-from-sessions-current-state.md).
 - Consolidation context:
-  [docs/DESIGN-CHAT-SESSIONS.md](../DESIGN-CHAT-SESSIONS.md) §12.
+  [docs/reference/DESIGN-CHAT-SESSIONS.md](../reference/DESIGN-CHAT-SESSIONS.md) §12.

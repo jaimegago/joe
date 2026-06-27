@@ -1,6 +1,6 @@
 // Package audit is the append-only audit trail.
 //
-// Identity & Authentication design (docs/joe-identity-design.md §2.6),
+// Identity & Authentication design (docs/reference/joe-identity-design.md §2.6),
 // Phase F: every authorization decision the accessor makes — and every
 // regime/captain transition — is recorded as one row in the audit_log
 // table. The repository exposes ONLY an Insert path; there is no Update or
@@ -9,7 +9,7 @@
 // (database-level append-only). The two enforcements are deliberately
 // redundant.
 //
-// Failure posture (docs/joe-identity-design.md §4):
+// Failure posture (docs/reference/joe-identity-design.md §4):
 //
 //   - Mutating actions (mutate, delete, and every transition row) FAIL
 //     CLOSED — if the audit row cannot be written, the action does not

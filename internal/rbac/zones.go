@@ -71,7 +71,7 @@ type Policy struct {
 
 // Admin records that a principal holds dynamic admin status — the
 // authorization-decision capability introduced by Phase H (see
-// docs/joe-identity-design.md §2.9, docs/DECISIONS.md D-0011).
+// docs/reference/joe-identity-design.md §2.9, docs/project/DECISIONS.md D-0011).
 //
 // Admin is a property of the principal, not of a (principal, zone) pair:
 // holding the row means the policy engine allows the principal on any zone

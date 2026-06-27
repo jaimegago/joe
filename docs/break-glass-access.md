@@ -1,6 +1,6 @@
 # Break-Glass Access — Joe
 
-How an authorized operator reaches Joe when the normal OIDC human-login path is unavailable. This is an operator how-to, not a design spec: it tells you how to configure a break-glass credential, grant it admin, use it, confirm it is actually enforced, and review its use in the audit log. For the identity and authentication design behind it, see [joe-identity-design.md](joe-identity-design.md); for the security overview, see [security-in-layers.md](security-in-layers.md).
+How an authorized operator reaches Joe when the normal OIDC human-login path is unavailable. This is an operator how-to, not a design spec: it tells you how to configure a break-glass credential, grant it admin, use it, confirm it is actually enforced, and review its use in the audit log. For the identity and authentication design behind it, see [joe-identity-design.md](reference/joe-identity-design.md); for the security overview, see [security-in-layers.md](reference/security-in-layers.md).
 
 ---
 
@@ -129,7 +129,7 @@ Break-glass use is recorded in the append-only, tamper-evident `audit_log`. Each
 - the user agent
 - an `allow` decision
 
-For the framing behind why credential use is audited, see [case-study-kiro-incident.md](case-study-kiro-incident.md).
+Credential use is audited so that every break-glass action leaves a reviewable trail in the audit log.
 
 ### What it proves — and what it does not
 
@@ -160,6 +160,5 @@ Break-glass is an internal-tool capability, not an internet-facing one; keep its
 
 ## See also
 
-- [joe-identity-design.md](joe-identity-design.md) — the identity and authentication design that break-glass is part of.
-- [security-in-layers.md](security-in-layers.md) — the security architecture overview.
-- [case-study-kiro-incident.md](case-study-kiro-incident.md) — the safety framing behind why credential use is audited.
+- [joe-identity-design.md](reference/joe-identity-design.md) — the identity and authentication design that break-glass is part of.
+- [security-in-layers.md](reference/security-in-layers.md) — the security architecture overview.

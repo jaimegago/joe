@@ -1,6 +1,6 @@
 -- Chat sessions Phase 1 (ownership & isolation): move the Web UI chat onto the
 -- new session model and close the cross-user chat data leak.
--- See docs/DESIGN-CHAT-SESSIONS.md §10 (locked decisions) and §11 (Phase 1).
+-- See docs/reference/DESIGN-CHAT-SESSIONS.md §10 (locked decisions) and §11 (Phase 1).
 --
 -- Two parts:
 --  1. agent_sessions gains `title` (human-editable label, written in Phase 2)
@@ -24,7 +24,7 @@ ALTER TABLE agent_sessions ADD COLUMN title TEXT;
 ALTER TABLE agent_sessions ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
 
 -- §6-C: the FK to agent_sessions(id) is ON DELETE CASCADE so deleting a session
--- expunges its messages (incident-expunge per PHASE-0-SESSION-MODEL.md §5b-5).
+-- expunges its messages (incident-expunge per the session-model design (Phase 0) §5b-5).
 CREATE TABLE chat_messages (
     id          TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,

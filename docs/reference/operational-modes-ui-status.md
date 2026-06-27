@@ -7,7 +7,7 @@ gaps only — no fixes proposed.
 cites `file:line`. Doc/memory/prior-doc claims were re-verified against code; drift and
 discrepancies are recorded in the final section rather than silently reconciled.
 
-**Note on prior work:** `docs/investigations/incident-mode-status.md` does **not** exist
+**Note on prior work:** no standalone `incident-mode-status` investigation exists
 in the tree. A prior version of *this* file existed (covering only panic/incident/captain,
 three axes) and was used as a starting point; it has since drifted on the panic/safe-mode
 axis (a UI banner and a typed denial now exist that it recorded as absent). All of its
@@ -57,8 +57,7 @@ repo's git history.**
   comment text [internal/prompts/zones.go:142](../../internal/prompts/zones.go)).
 - No `OASIS` launch config carries it either — `OASIS`/`oasis` references are eval-suite
   scenarios and `oasisctl` API-compat notes only
-  ([internal/api/tasks.go:863](../../internal/api/tasks.go),
-  [docs/PHASE-2-IMPLEMENTATION-NOTES.md:89](../../docs/PHASE-2-IMPLEMENTATION-NOTES.md)),
+  ([internal/api/tasks.go:863](../../internal/api/tasks.go)),
   not a daemon read-mode setting.
 
 **Where the read/write *concept* actually lives now** (subsumed, not a global flag):

@@ -67,5 +67,5 @@ artifactory's bimodal selection — is a distinct modeling exercise that would
 front-run that design if attempted inside A003. It is deferred to its own future
 session. No launch capability is blocked by deferring it.
 
-Reference: `docs/decisions/D-0026-credential-provider-abstraction.md`; D-0031
+Reference: `docs/project/adr/D-0026-credential-provider-abstraction.md`; D-0031
 §DEFERRED (A003 promotion-boundary close-out).

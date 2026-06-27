@@ -1,7 +1,7 @@
 // Package access is the single guarded seam through which all
 // infrastructure-adapter and graph-store access must flow.
 //
-// Identity & Authentication design (docs/joe-identity-design.md §2.5),
+// Identity & Authentication design (docs/reference/joe-identity-design.md §2.5),
 // Phase A: enforcement moves off the HTTP transport into this accessor.
 // Every dispatch method evaluates rbac.IsAllowed BEFORE resolving and
 // calling the underlying adapter or graph store. On a denied decision the
@@ -85,7 +85,7 @@ type Accessor struct {
 	// the accessor's decision is identical to the middleware's.
 	engine *rbac.PolicyEngine
 	// auditRepo is the append-only audit trail (Identity Phase F,
-	// docs/joe-identity-design.md §2.6). Every decision the accessor
+	// docs/reference/joe-identity-design.md §2.6). Every decision the accessor
 	// makes — allow and deny alike — writes ONE row here at the decision
 	// point. A nil auditRepo is treated as "audit disabled" (used by
 	// dev/local runs without a database); cmd/joe/server.go always
@@ -106,7 +106,7 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 // permit is the single enforcement chokepoint. It evaluates the policy engine
 // for (principals, sourceID, action) — the authorization subject is a SET of
 // principals, permitted if ANY member holds a matching grant (union of grants;
-// docs/joe-identity-design.md §2.7) — and writes exactly ONE audit row to the
+// docs/reference/joe-identity-design.md §2.7) — and writes exactly ONE audit row to the
 // append-only audit log capturing the decision (Phase F, design §2.6). On a
 // denied decision it returns ErrPermissionDenied.
 //

@@ -57,4 +57,4 @@ credential-provider seam). Designing an AWS credential-chain provider is a
 distinct modeling exercise that would front-run that design if attempted inside
 A003. No launch capability is blocked by deferring it.
 
-Reference: `docs/decisions/D-0026-credential-provider-abstraction.md`.
+Reference: `docs/project/adr/D-0026-credential-provider-abstraction.md`.

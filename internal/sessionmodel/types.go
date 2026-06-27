@@ -1,5 +1,5 @@
 // Package sessionmodel owns the durable session, system regime, and captain
-// binding records defined in docs/PHASE-0-SESSION-MODEL.md (§5b, §B, §R).
+// binding records defined in the session-model design (Phase 0) (§5b, §B, §R).
 //
 // Phase 1 builds the substrate, not the behavior. This package establishes
 // shape and persistence; downstream changes layer HTTP, regime declare/
@@ -77,7 +77,7 @@ type ChatSessionRow struct {
 	// LinkedIncidentTitle is the title of this session's linked incident MASTER
 	// (the row whose id == this row's LinkedIncidentID), resolved by the list
 	// queries' self-join so a linked child can render a titled incident badge
-	// without a per-row lookup (docs/DESIGN-SESSIONS-VIEW.md §5). Empty for an
+	// without a per-row lookup (docs/reference/DESIGN-SESSIONS-VIEW.md §5). Empty for an
 	// incident master, an unlinked session, or an untitled master.
 	LinkedIncidentTitle string
 }

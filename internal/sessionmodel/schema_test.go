@@ -31,7 +31,7 @@ func newTestStore(t *testing.T) *store.Store {
 
 // TestMigration009_SchemaSQLite asserts the schema runs cleanly on SQLite
 // (the always-on half of the cross-driver guard called out in
-// PHASE-1-DECOMPOSITION.md Change 1 / Invariant 6).
+// the Phase 1 decomposition plan Change 1 / Invariant 6).
 func TestMigration009_SchemaSQLite(t *testing.T) {
 	s := newTestStore(t)
 	db := s.DB()
@@ -58,8 +58,8 @@ func TestMigration009_SchemaSQLite(t *testing.T) {
 // TestMigration009_SchemaPostgres runs the same migrations against a
 // Postgres instance when one is reachable. CI without Postgres skips it;
 // the SQLite half plus the Postgres-portable-SQL rule (no AUTOINCREMENT,
-// no STRICT, no SQLite-only JSON1) is the residual guard. PHASE-1-
-// DECOMPOSITION.md §6 residual risks records this.
+// no STRICT, no SQLite-only JSON1) is the residual guard. The Phase 1
+// decomposition plan §6 residual risks records this.
 //
 // To enable locally: set JOE_TEST_POSTGRES_DSN to a libpq-style DSN
 // pointing at a disposable Postgres database (e.g.

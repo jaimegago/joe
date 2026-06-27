@@ -1,5 +1,5 @@
 // Package credential implements the credential-provider abstraction from
-// D-0026 (docs/decisions/D-0026-credential-provider-abstraction.md).
+// D-0026 (docs/project/adr/D-0026-credential-provider-abstraction.md).
 //
 // A provider selects WHICH credential source a component's adapter consumes
 // (launch model: provider-selects-the-source, credential stays adapter-resident).

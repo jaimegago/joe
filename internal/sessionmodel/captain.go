@@ -16,7 +16,7 @@ import (
 // CaptainService implements the §B captain attach + transfer state machine
 // on top of sessionmodel.Repository and runmodel.Repository. The Repository
 // owns raw row I/O; this service composes them into the business rules
-// from PHASE-0-SESSION-MODEL.md §B and the R-CAP{1,2,3} attach rules.
+// from the session-model design (Phase 0) §B and the R-CAP{1,2,3} attach rules.
 //
 // Phase 1 scope: human captains only. Joe-type captain is a Change 12
 // inert seam (compile-time const false in internal/seams/).

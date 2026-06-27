@@ -1,9 +1,9 @@
 -- Phase 1 Change 1: Session model — durable session, system regime, and
--- captain binding tables. See docs/PHASE-0-SESSION-MODEL.md (§5b, §B, §R)
--- and docs/PHASE-1-DECOMPOSITION.md (Change 1, §6-C).
+-- captain binding tables. See the session-model design (Phase 0) (§5b, §B, §R)
+-- and the Phase 1 decomposition plan (Change 1, §6-C).
 --
 -- §6-C: FKs to agent_sessions(id) in this migration are ON DELETE CASCADE.
--- Rationale: incident-expunge per PHASE-0-SESSION-MODEL.md §5b-5. The
+-- Rationale: incident-expunge per the session-model design (Phase 0) §5b-5. The
 -- self-FK on agent_sessions(linked_incident_id) is what makes two-level
 -- expunge (incident -> linked investigations) a pure schema property.
 --

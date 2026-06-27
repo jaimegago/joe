@@ -36,7 +36,7 @@ func TestAtomicRouter_SnapshotIsStableForCaller(t *testing.T) {
 	// A chain that captures a snapshot at the start of reasoning must
 	// continue to see that snapshot even if the registry is swapped
 	// mid-chain. This is the snapshot-per-reasoning-chain guarantee
-	// from docs/joe-skills-design.md.
+	// from docs/reference/joe-skills-design.md.
 	old := NewRouter(buildRegistry(t, mustParse(t, "alpha", "old description")))
 	a := NewAtomicRouter(old)
 

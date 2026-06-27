@@ -134,10 +134,10 @@ raised before streaming begins.)
 
 ## References (link, do not duplicate)
 
-- docs/DECISIONS.md **D-0022** — denial precedence (floor > incident > RBAC).
-- docs/DECISIONS.md **D-0019** — trust model and postures; the posture banner the
+- docs/project/DECISIONS.md **D-0022** — denial precedence (floor > incident > RBAC).
+- docs/project/DECISIONS.md **D-0019** — trust model and postures; the posture banner the
   pop-up must not duplicate.
-- docs/DECISIONS.md **D-0018** — the write floor (the `safe_mode` / `observation`
+- docs/project/DECISIONS.md **D-0018** — the write floor (the `safe_mode` / `observation`
   reasons).
-- docs/DECISIONS.md **D-0014** — write-failure feedback (origin of the
+- docs/project/DECISIONS.md **D-0014** — write-failure feedback (origin of the
   differentiated per-message mapping this item builds on).

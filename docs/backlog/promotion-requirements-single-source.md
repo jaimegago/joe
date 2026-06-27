@@ -47,4 +47,4 @@ strongest no-drift posture, explicitly deferred from A002 because A002 is a
 UI/read surface over the settled promotion backend and does not modify governed
 enforcement.
 
-Reference: D-0030 (the component promotion endpoint, `docs/DECISIONS.md`).
+Reference: D-0030 (the component promotion endpoint, `docs/project/DECISIONS.md`).

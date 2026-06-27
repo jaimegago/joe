@@ -1,8 +1,10 @@
 # Backlog triage — done / obsolete / open against landed reality
 
+> **Status: OPEN** — live triage; per-item verdicts not yet actioned.
+
 Read-only diagnosis (2026-06-24, HEAD `1fcc5b4`). For each pre-existing backlog
 file directly under `docs/backlog/`, the verdict is derived from **landed
-reality** — git log, `docs/DECISIONS.md`, and the current codebase — not from the
+reality** — git log, `docs/project/DECISIONS.md`, and the current codebase — not from the
 tone of the prose. No files were modified, moved, or archived.
 
 **Scope.** 22 files sit directly under `docs/backlog/`. Four were recently

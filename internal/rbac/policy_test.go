@@ -358,7 +358,7 @@ func TestPolicyEngine_IsAllowed_ListPoliciesError(t *testing.T) {
 // TestPolicyEngine_IsAllowed_SetSingleMember is the Phase B behavioural
 // contract for the size-1 case actually used in production: a set whose single
 // member has a matching grant is allowed; a set whose single member lacks the
-// grant is denied (docs/joe-identity-design.md §2.7).
+// grant is denied (docs/reference/joe-identity-design.md §2.7).
 func TestPolicyEngine_IsAllowed_SetSingleMember(t *testing.T) {
 	db := openTestDB(t)
 	repo := rbac.NewRepository(db, "sqlite")
@@ -490,7 +490,7 @@ func TestPolicyEngine_HasZoneAccess_SetUnion(t *testing.T) {
 	}
 }
 
-// --- Phase H: dynamic admin capability (docs/DECISIONS.md D-0011) ---
+// --- Phase H: dynamic admin capability (docs/project/DECISIONS.md D-0011) ---
 
 // TestPhaseH_AdminAllowedOnZoneCreatedAfterDesignation is the bug-fix
 // demonstration. Pre-Phase-H, admin authority was a snapshot of grants

@@ -14,7 +14,7 @@ import (
 )
 
 // captainHandler exposes the §B captain attach + transfer state machine
-// over HTTP. Phase 1 Change 6. See docs/PHASE-0-SESSION-MODEL.md §B and
+// over HTTP. Phase 1 Change 6. See the session-model design (Phase 0) §B and
 // the §6-D reachability finding in
 // internal/store/migrations/013_captain_reachability.up.sql.
 //

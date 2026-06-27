@@ -14,8 +14,8 @@ import (
 )
 
 // runsHandler exposes the §D run lifecycle HTTP control plane —
-// Phase 1 Change 7. See docs/PHASE-0-SESSION-MODEL.md §D and
-// docs/PHASE-1-DECOMPOSITION.md Change 7.
+// Phase 1 Change 7. See the session-model design (Phase 0) §D and
+// the Phase 1 decomposition plan Change 7.
 //
 // The state machine (legal transitions only):
 //

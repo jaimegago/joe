@@ -16,7 +16,7 @@ import (
 )
 
 // TestCaptain_BOVR_ForceYieldOnJoeCurrent is the named structural guard
-// for PHASE-0-SESSION-MODEL.md Invariant 3 (Human-override-always-wins
+// for the session-model design (Phase 0) Invariant 3 (Human-override-always-wins
 // for joe-captain, compiled in) and the R-OVR force-yield branch added
 // in Change 12.
 //
@@ -224,7 +224,7 @@ func TestCaptain_BOVR_NoJoeDeclineBranchInBeginTransfer(t *testing.T) {
 			t.Errorf("§R-OVR violation: BeginTransfer contains a string literal "+
 				"%q mentioning joe declining. R-OVR compiles in joe-captain "+
 				"immediate force-yield — there is no decline path. Remove the "+
-				"literal or update PHASE-0-SESSION-MODEL.md §B R-OVR and this "+
+				"literal or update the session-model design (Phase 0) §B R-OVR and this "+
 				"guard in the same diff.", strings.Trim(lit.Value, "`\""))
 		}
 		return true

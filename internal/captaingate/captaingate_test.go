@@ -269,7 +269,7 @@ func TestCaptainGate_AllowsT1ReadsInIncident(t *testing.T) {
 // G this would have SUCCEEDED — the user task loop used a naked
 // *tools.Executor with no §C gate — so this test is the concrete
 // signal Phase G fixed the bug it set out to fix
-// (docs/joe-identity-design.md §0 bug #2).
+// (docs/reference/joe-identity-design.md §0 bug #2).
 //
 // We do NOT spin up the full agentic LLM loop because that's an
 // integration concern; we drive the wrapper's ExecuteBatch directly

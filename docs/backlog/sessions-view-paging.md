@@ -1,6 +1,6 @@
 # Backlog — P3: paging for the sessions two-view split
 
-Status: **deferred — P3 of the sessions-view split** (`docs/DESIGN-SESSIONS-VIEW.md`
+Status: **deferred — P3 of the sessions-view split** (`docs/reference/DESIGN-SESSIONS-VIEW.md`
 §2). Not pressing: the unpaged capped top-N (`LIMIT 50`, newest-activity-first)
 is adequate until real session volume arrives. Not launch-blocking.
 

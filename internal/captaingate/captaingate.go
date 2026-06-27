@@ -5,7 +5,7 @@
 // behind /api/v1/tasks and /api/v1/tasks/stream).
 //
 // Why this lives here and not in coreagent (Phase G, see
-// docs/joe-identity-design.md §0 bug #2, §2.10, §5 Invariant 6):
+// docs/reference/joe-identity-design.md §0 bug #2, §2.10, §5 Invariant 6):
 // before Phase G the gate lived in *coreagent.DurableExecutor, which
 // wraps only the Core Agent's executor. The user task loop used a plain
 // *tools.Executor with no gate — exactly the wiring the design called

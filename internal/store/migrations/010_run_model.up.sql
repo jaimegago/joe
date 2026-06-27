@@ -1,9 +1,9 @@
 -- Phase 1 Change 2: Run model — the §D durable run substrate.
--- See docs/PHASE-0-SESSION-MODEL.md §D and docs/PHASE-1-DECOMPOSITION.md
+-- See the session-model design (Phase 0) §D and the Phase 1 decomposition plan
 -- (Change 2, §6-C).
 --
 -- §6-C: FKs to agent_sessions(id) and agent_runs(id) in this migration are
--- ON DELETE CASCADE. Rationale: incident-expunge per PHASE-0-SESSION-MODEL.md
+-- ON DELETE CASCADE. Rationale: incident-expunge per the session-model design (Phase 0)
 -- §5b-5. The cascade test in internal/runmodel/cascade_schema_test.go proves
 -- this end-to-end as a pure schema property.
 

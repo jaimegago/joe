@@ -3,7 +3,7 @@
 // target session's timeline. Annotation semantic only — no workflow,
 // no queue, no accept/reject state.
 //
-// See docs/PHASE-0-SESSION-MODEL.md §A4 and §A6.
+// See the session-model design (Phase 0) §A4 and §A6.
 package findings
 
 import "time"

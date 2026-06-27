@@ -18,8 +18,8 @@ const GrantedByBootstrapAdminEmail = "bootstrap_admin_email"
 // admin_principals.reason for every grant it performs.
 const BootstrapAdminReason = "auth.admin_email match"
 
-// Provisioner manages admin authority. In Phase H (see docs/joe-identity-design.md
-// §2.9, docs/DECISIONS.md D-0011) admin authority is a DYNAMIC capability
+// Provisioner manages admin authority. In Phase H (see docs/reference/joe-identity-design.md
+// §2.9, docs/project/DECISIONS.md D-0011) admin authority is a DYNAMIC capability
 // stored in admin_principals — a principal-scoped row that the policy engine
 // reads at decision time and short-circuits to allow on any zone+action the
 // zone itself permits. The previous Phase C definition (a snapshot of

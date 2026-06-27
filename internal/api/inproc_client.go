@@ -52,7 +52,7 @@ import (
 // established at the edge (auth.EdgeAuth → rbac.WithPrincipal) — and delegates
 // to the guarded accessor for adapter/graph access. There is NO loopback HTTP
 // hop and NO re-authentication: identity is established once at the edge and
-// carried by context, per docs/joe-identity-design.md §1.
+// carried by context, per docs/reference/joe-identity-design.md §1.
 //
 // For tools that do not touch an adapter or the graph store (list_components,
 // search_knowledge, doc-drafter, proposals/publish), the client reaches the
@@ -98,7 +98,7 @@ func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) 
 // via a helper) so the static guard in access_phaseb_test.go can see the
 // context derivation in each function body. The edge middleware (auth.EdgeAuth)
 // always sets a principal for a non-public path — see
-// docs/joe-identity-design.md §1.
+// docs/reference/joe-identity-design.md §1.
 
 // --- list_components (uses services.Store.Components; not an adapter) ---
 

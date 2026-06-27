@@ -1,6 +1,6 @@
 -- Phase 1 Change 6: captain reachability signal (§6-D NET-NEW).
--- See docs/PHASE-1-DECOMPOSITION.md (Change 6, §6-D) and
--- docs/PHASE-0-SESSION-MODEL.md §B3.
+-- See the Phase 1 decomposition plan (Change 6, §6-D) and
+-- the session-model design (Phase 0) §B3.
 --
 -- §6-D FINDING: captain reachability signal source verified.
 -- [NET-NEW] built in this change as session_captains.last_seen_at

@@ -1,5 +1,5 @@
 -- Phase 1 Change 5: regime declare/resolve RBAC.
--- See docs/PHASE-1-DECOMPOSITION.md (Change 5, §6-B).
+-- See the Phase 1 decomposition plan (Change 5, §6-B).
 --
 -- §6-B FINDING: IsAllowed unmatched-sourceID behavior verified at
 -- internal/rbac/policy.go:28-35 — unmatched sourceID defaults to zone

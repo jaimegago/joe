@@ -376,15 +376,15 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	readPostureSvc := readposture.NewMutationService(readPostureRepo, auditRepo)
 
 	// Wire session-model repository (tables created by migration 009).
-	// Phase 1 Change 1 — see docs/PHASE-1-DECOMPOSITION.md.
+	// Phase 1 Change 1 — see the Phase 1 decomposition plan.
 	sessionModelRepo := sessionmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
 	// Wire run-model repository (tables created by migration 010).
-	// Phase 1 Change 2 — see docs/PHASE-1-DECOMPOSITION.md.
+	// Phase 1 Change 2 — see the Phase 1 decomposition plan.
 	runModelRepo := runmodel.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
 	// Wire findings + warnings repositories (tables created by migration 011).
-	// Phase 1 Change 3 — see docs/PHASE-1-DECOMPOSITION.md.
+	// Phase 1 Change 3 — see the Phase 1 decomposition plan.
 	findingsRepo := findings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	warningsRepo := warnings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 

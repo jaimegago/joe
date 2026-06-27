@@ -1,5 +1,5 @@
 // Package auth implements human authentication at the edge (Identity Phase C,
-// docs/joe-identity-design.md §2.1–§2.3, §2.9).
+// docs/reference/joe-identity-design.md §2.1–§2.3, §2.9).
 //
 // A human logs in through a single configurable OIDC issuer; the verified
 // `email` claim becomes a `user:<email>` principal (rbac.UserPrincipal). That
