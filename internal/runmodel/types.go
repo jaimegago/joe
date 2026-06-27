@@ -1,5 +1,5 @@
 // Package runmodel owns the durable run substrate defined in
-// docs/PHASE-0-SESSION-MODEL.md §D: runs, steps, solicitations, world
+// the session-model design (Phase 0) §D: runs, steps, solicitations, world
 // handles, idempotency keys, and the action ledger.
 //
 // Phase 1 builds the substrate, not the agentic loop. Downstream changes

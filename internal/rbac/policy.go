@@ -190,7 +190,7 @@ const (
 // IsAllowed returns true if ANY principal in the set may perform action on
 // componentID — the union-of-grants decision (additive / allow-only). A size-1
 // set reproduces the previous single-principal decision exactly, which is the
-// Phase B regression contract (docs/joe-identity-design.md §2.7). Thin
+// Phase B regression contract (docs/reference/joe-identity-design.md §2.7). Thin
 // wrapper over Decide.
 func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, componentID string, action Action) bool {
 	return e.Decide(ctx, principals, componentID, action).Allowed
@@ -199,7 +199,7 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, c
 // Decide is the full-fidelity decision call: returns the same outcome as
 // IsAllowed and also the resolved zone and a structured reason. The guarded
 // accessor calls this so the audit row records the zone and reason actually
-// reached (Phase F, docs/joe-identity-design.md §2.6).
+// reached (Phase F, docs/reference/joe-identity-design.md §2.6).
 //
 // Decision path:
 //  1. Resolve the component's zone (default: "unassigned" if no assignment) —
@@ -207,7 +207,7 @@ func (e *PolicyEngine) IsAllowed(ctx context.Context, principals PrincipalSet, c
 //  2. If that zone does not allow the action at all, deny outright. Phase H
 //     keeps this check ahead of the admin short-circuit: admin bypasses the
 //     PER-PRINCIPAL grant requirement, NOT the ZONE'S allowed_actions list
-//     (the stricter interpretation, see docs/DECISIONS.md D-0011). A zone
+//     (the stricter interpretation, see docs/project/DECISIONS.md D-0011). A zone
 //     classified readonly stays readonly even for an admin; the zone
 //     classification is a property of the zone, not of the principal.
 //     2a. read-posture-latch: for ActionRead by an authenticated caller, if the

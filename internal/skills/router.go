@@ -7,7 +7,7 @@ import (
 )
 
 // MaxActiveSkills bounds how many skills the router activates for any single
-// query. See docs/joe-skills-design.md "Skill router context budget".
+// query. See docs/reference/joe-skills-design.md "Skill router context budget".
 const MaxActiveSkills = 3
 
 // minTokenLen drops 1- and 2-character tokens before scoring — they generate

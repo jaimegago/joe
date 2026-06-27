@@ -1,8 +1,8 @@
 -- Phase 1 Change 3: Findings + Joe-warnings.
--- See docs/PHASE-0-SESSION-MODEL.md §A4, §E1/§E2, §R3.
+-- See the session-model design (Phase 0) §A4, §E1/§E2, §R3.
 --
 -- §6-C: every FK to agent_sessions(id) in this migration is ON DELETE
--- CASCADE. Rationale: incident-expunge per PHASE-0-SESSION-MODEL.md §5b-5.
+-- CASCADE. Rationale: incident-expunge per the session-model design (Phase 0) §5b-5.
 -- joe_warnings.source_investigation_session_id is nullable; deletion of
 -- its referenced session cascades the warning row away (the investigation
 -- context is part of the warning's identity).

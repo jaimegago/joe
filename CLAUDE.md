@@ -8,7 +8,7 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 
 ## Architectural Invariants
 
-> Before re-deciding anything architectural, consult [`docs/DECISIONS.md`](docs/DECISIONS.md) — the normative, append-only decision log (newest-on-top); where it conflicts with prose here, the log is the source of truth.
+> Before re-deciding anything architectural, consult [`docs/project/DECISIONS.md`](docs/project/DECISIONS.md) — the normative, append-only decision log (newest-on-top); where it conflicts with prose here, the log is the source of truth.
 
 - Single `joe` binary: bare `joe` (or `joe --config ...`) starts the server (HTTP API + Core Agent + adapters + graph); subcommands (mcp, slack, skills, incident, panic, unlock) dispatch ahead of it. The server entrypoint lives in `cmd/joe/server.go`; the CLI dispatcher in `cmd/joe/main.go`
 - Graph store is SQLite-backed — no Cayley. Edge types: the named set is the relation constants declared in `internal/graph/relations.go`, but `graph_edges.relation` is free-form TEXT with no CHECK constraint, so further types enter as inline string literals (e.g. in `internal/coreagent/`) that bypass the constant set — the declared constants are authoritative as names, but no fixed count is authoritative as the total
@@ -22,7 +22,7 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 - Technical layer organization (`internal/llm/`, `internal/tools/`, `internal/graph/`) is intentional — Joe is a single-purpose tool, not a multi-domain business app
 - Core Agent autonomy levels: Autonomous (deterministic) -> LLM+Auto (high-confidence) -> Needs Human (queued as clarifications)
 - All LLM prompt strings live in `internal/prompts/` — not scattered across packages
-- Chat sessions are a core subsystem (first-class owned/shareable/incident-linked sessions); its as-built specification is normative in [`docs/DESIGN-CHAT-SESSIONS.md`](docs/DESIGN-CHAT-SESSIONS.md) — consult it before changing session behavior
+- Chat sessions are a core subsystem (first-class owned/shareable/incident-linked sessions); its as-built specification is normative in [`docs/reference/DESIGN-CHAT-SESSIONS.md`](docs/reference/DESIGN-CHAT-SESSIONS.md) — consult it before changing session behavior
 
 ## Applicable Skills
 
@@ -68,7 +68,7 @@ npm run test
 ## Reference Documents
 
 - `docs/backlog/INDEX.md` — open-work entry point: the index of active backlog items (finished items move to `docs/backlog/done/`)
-- `docs/pm-convention.md` — the project-management and session-tracking convention (the slug that joins chat, Claude Code, commits, and decisions)
-- `docs/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
-- `docs/joe-architecture.md` — Full architecture with diagrams
-- `docs/security-in-layers.md` — the sole security authority: Action Safety Framework, executor gate order and denial precedence, read posture, RBAC, and Panic Mode / write floor
+- `docs/project/pm-convention.md` — the project-management and session-tracking convention (the slug that joins chat, Claude Code, commits, and decisions)
+- `docs/project/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
+- `docs/reference/joe-architecture.md` — Full architecture with diagrams
+- `docs/reference/security-in-layers.md` — the sole security authority: Action Safety Framework, executor gate order and denial precedence, read posture, RBAC, and Panic Mode / write floor

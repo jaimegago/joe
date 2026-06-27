@@ -180,9 +180,9 @@ decision coupled to those tables' retirement.
 The following older statements describe the feature as a shipped, working
 capability; they are stale and are corrected to point here:
 
-- `docs/milestones-completed.md` Phase 7.4 / 7.5 (LLM-derived insights "DONE",
+- The completed-milestones log, Phase 7.4 / 7.5 (LLM-derived insights "DONE",
   "session learning wired").
-- `docs/joe-architecture.md` KNOWLEDGE TIERS Tier 3 ("Patterns extracted from
+- `docs/reference/joe-architecture.md` KNOWLEDGE TIERS Tier 3 ("Patterns extracted from
   sessions") and the Phase 7 checklist ("LLM-derived insights from sessions").
 - Any memory/chat asserting the learn-from-sessions feature is complete (see
   `JOE_PROJECT_KNOWLEDGE.md` §10).

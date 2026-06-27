@@ -2,7 +2,7 @@
 
 Operator-facing controls: action safety tiers, emergency shutdown, and RBAC
 administration. For the security architecture behind these, see
-[security-in-layers.md](security-in-layers.md).
+[security-in-layers.md](reference/security-in-layers.md).
 
 All HTTP examples below assume a service-account bearer token in `$JOE_API_KEY`
 (see [configuration.md](configuration.md#authentication)).
@@ -18,7 +18,7 @@ mutation and denied.
 
 This section covers only what an operator edits. For the full action-safety
 model — the classification rules, the write floor, and how the executor gates
-every call — [security-in-layers.md](security-in-layers.md) is the authority.
+every call — [security-in-layers.md](reference/security-in-layers.md) is the authority.
 
 Policy lives in `~/.joe/safety-policy.yaml`. Joe's own tools cannot read or
 modify this file (the entire `~/.joe/` directory is excluded from every file
@@ -181,5 +181,5 @@ curl http://localhost:7777/api/v1/admin/unassigned \
 ```
 
 The `principal` is a service-account principal (`svc:<name>`) or an OIDC user
-identity. See [security-in-layers.md](security-in-layers.md) for the full RBAC
+identity. See [security-in-layers.md](reference/security-in-layers.md) for the full RBAC
 model.

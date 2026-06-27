@@ -5,7 +5,7 @@
 // no longer satisfies it; its managed-system methods were removed along with
 // the vestigial direct-HTTP surface.)
 //
-// Identity Phase E (docs/joe-identity-design.md §3): the loop's tool registry
+// Identity Phase E (docs/reference/joe-identity-design.md §3): the loop's tool registry
 // is wired to an in-process accessor — there is no loopback HTTP self-call.
 // Defining the aggregate here lets NewCoreRegistry take a single client value
 // while keeping the per-tool small interfaces intact for unit testing.

@@ -1069,7 +1069,7 @@ func TestWebUIGetSession_LinkedIncidentTitle(t *testing.T) {
 // TestWebUIListSessions_IncidentProjection is the LIST sibling of
 // TestWebUIGetSession_LinkedIncidentTitle: it decodes the real GET /sessions
 // JSON and asserts the P0 read-model projection
-// (docs/DESIGN-SESSIONS-VIEW.md §4) — the incident_involved flag and, on a
+// (docs/reference/DESIGN-SESSIONS-VIEW.md §4) — the incident_involved flag and, on a
 // linked child, the master id + title — so the bare-badge defect is closed on
 // the list, not just the per-id GET.
 func TestWebUIListSessions_IncidentProjection(t *testing.T) {

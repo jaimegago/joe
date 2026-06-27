@@ -57,4 +57,4 @@ skeleton against D-0026's deferred ambient-workload-identity provider; this file
 records the same gap from the A003 promotion-boundary angle plus the missing
 credential provider.
 
-Reference: `docs/decisions/D-0026-credential-provider-abstraction.md`.
+Reference: `docs/project/adr/D-0026-credential-provider-abstraction.md`.

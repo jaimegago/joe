@@ -14,8 +14,8 @@ import (
 
 // TestSeams_ConstNotVar is the named structural guard for the
 // "compile-time const false" property of the four autonomy-seam flags
-// declared in seams.go (PHASE-0-SESSION-MODEL.md "incremental-autonomy
-// seam pattern" / PHASE-1-DECOMPOSITION.md Change 12).
+// declared in seams.go (the session-model design (Phase 0) "incremental-autonomy
+// seam pattern" / the Phase 1 decomposition plan Change 12).
 //
 // The seams are not config-driven, not env-var-driven, not settings-
 // backed. Flipping any of them is a compile-time edit in seams.go (or
@@ -35,7 +35,7 @@ import (
 // If a future contributor introduces a runtime override path, this
 // guard fails with an explanatory message pointing at the const-only
 // design intent. The legitimate way to relax this is to update
-// PHASE-0-SESSION-MODEL.md's "incremental-autonomy seam pattern" and
+// the session-model design's "incremental-autonomy seam pattern" and
 // this guard in the same diff.
 func TestSeams_ConstNotVar(t *testing.T) {
 	repoRoot := findRepoRoot(t)
@@ -69,8 +69,8 @@ func TestSeams_ConstNotVar(t *testing.T) {
 					if idRe.MatchString(name.Name) {
 						t.Errorf("seams.go declares %q as `var` — autonomy seams must be "+
 							"compile-time `const` per the incremental-autonomy seam pattern. "+
-							"Change the declaration to `const` or update PHASE-0-SESSION-"+
-							"MODEL.md and this guard.", name.Name)
+							"Change the declaration to `const` or update the session-model "+
+							"design (Phase 0) and this guard.", name.Name)
 					}
 				}
 			}
@@ -123,7 +123,7 @@ func TestSeams_ConstNotVar(t *testing.T) {
 	for _, name := range required {
 		if !seen[name] {
 			t.Errorf("seams.go is missing the required Change 12 seam flag %q. "+
-				"PHASE-1-DECOMPOSITION.md §Change 12 enumerates the four "+
+				"The Phase 1 decomposition plan §Change 12 enumerates the four "+
 				"flags — removing one is a design change.", name)
 		}
 	}
@@ -218,7 +218,7 @@ func TestSeams_ConstNotVar(t *testing.T) {
 				"env-var-driven. The seam is a compile-time constant in "+
 				"internal/seams/seams.go. Remove the env lookup or move the "+
 				"flag into seams.go (and document why a runtime path is "+
-				"needed by updating PHASE-0-SESSION-MODEL.md).",
+				"needed by updating the session-model design (Phase 0)).",
 				rel, line, literal)
 		}
 		return nil

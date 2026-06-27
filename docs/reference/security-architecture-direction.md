@@ -9,7 +9,7 @@
 > explicitly targets to build toward; two are open questions; all are pending a
 > live-tree investigation (see §"Verification dependency"). Per the project's
 > verify-first discipline, do **not** promote any item here into
-> `JOE_PROJECT_KNOWLEDGE.md`, `docs/DECISIONS.md`, or a numbered D-00xx entry
+> `JOE_PROJECT_KNOWLEDGE.md`, `docs/project/DECISIONS.md`, or a numbered D-00xx entry
 > until it is built and re-derived against the code. Those numbered entries can
 > reference this document once each piece lands and is verified.
 >

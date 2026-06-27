@@ -10,7 +10,7 @@ it — was written against an earlier Joe architecture and has drifted. The stal
 claims are symptoms of a stale spine, not isolated typos. The redo must rebuild the
 failure-mode-to-mechanism mapping, not patch individual lines.
 
-The original standalone document (`docs/case-study-kiro-incident.md`) has been
+The original standalone `case-study-kiro-incident` document has been
 removed from the tree. Its full content is preserved verbatim in the snapshot
 section at the end of this backlog file. That snapshot is the prior-state-of-record
 the redo works from; do not look for a live case study file.
@@ -59,7 +59,7 @@ document. Resolve this before scheduling the redo.
 ## Preserved stale snapshot — OLD case study as it stood at deletion
 
 > **DO NOT CITE AS CURRENT TRUTH.** Everything below this heading is the OLD
-> `docs/case-study-kiro-incident.md` reproduced verbatim and unaltered as it stood
+> `case-study-kiro-incident` document reproduced verbatim and unaltered as it stood
 > at the moment of deletion. It is known to contain stale and incorrect claims about
 > Joe's behavior (see the redo brief above). It is retained here solely as source
 > material for the redo. It is **not** a description of Joe's present behavior and
@@ -107,7 +107,7 @@ Joe's safety architecture is designed to make this class of incident structurall
 
 Even if a user has cluster-admin on their own kubectl, Joe uses its own service account with pre-scoped, least-privilege permissions. The user's elevated access never flows into Joe's tool execution.
 
-See: `docs/security-in-layers.md` §3.8 (Credential Isolation)
+See: `docs/reference/security-in-layers.md` §3.8 (Credential Isolation)
 
 ### Failure 2: No Blast Radius Control
 
@@ -129,7 +129,7 @@ environment_operations:
 
 The Kiro scenario — "delete and recreate the environment" — would be blocked by the environment-level detector *before* the risk tier check even runs. Two walls, not one.
 
-See: `docs/security-in-layers.md` §3.1 (Action Classification), §3.6 (Environment-Level Blocking)
+See: `docs/reference/security-in-layers.md` §3.1 (Action Classification), §3.6 (Environment-Level Blocking)
 
 ### Failure 3: No Human-in-the-Loop
 
@@ -170,7 +170,7 @@ This notification is **blocking** — the human sees it in the REPL and has 3 se
 
 Critically: RBAC permissions do not bypass the safety layer. Even an SRE with full production access still sees the T3 notification, still gets the dry-run, and still must wait through the blocking window. Two layers (RBAC + Safety) are independent — passing one does not bypass the other.
 
-See: `docs/security-in-layers.md` §3.3 (Hardcoded Enforcement Points)
+See: `docs/reference/security-in-layers.md` §3.3 (Hardcoded Enforcement Points)
 
 ### Failure 4: No Rate Limiting on Mutations
 
@@ -197,7 +197,7 @@ circuit_breaker:
 
 This catches the specific failure mode where an LLM reasons itself into a chain of destructive actions faster than a human can meaningfully review each one. The breaker trips *before* the next action executes.
 
-See: `docs/security-in-layers.md` §3.7 (Mutation Rate Limiting)
+See: `docs/reference/security-in-layers.md` §3.7 (Mutation Rate Limiting)
 
 ### Failure 5: Post-Hoc Safeguards
 
@@ -210,11 +210,11 @@ See: `docs/security-in-layers.md` §3.7 (Mutation Rate Limiting)
 3. Wire through the safety gate before execution
 4. Implement the notification contract
 5. Include tests verifying denial and notification behavior
-6. Document its blast radius in `docs/security-in-layers.md`
+6. Document its blast radius in `docs/reference/security-in-layers.md`
 
 This is enforced by architecture, not process. A new tool that skips safety classification will be classified as T3 (denied by default) and rejected at runtime.
 
-See: `docs/joe-architecture.md` (Per-Phase Safety Requirements)
+See: `docs/reference/joe-architecture.md` (Per-Phase Safety Requirements)
 
 ---
 
@@ -246,5 +246,5 @@ The critical design difference: **Joe's safety rules are deterministic, not prob
 
 - Financial Times: "AWS suffered outages after engineers let AI coding tools make changes" (Feb 20, 2026)
 - The Register: "Amazon's vibe-coding tool Kiro reportedly vibed too hard" (Feb 20, 2026)
-- `docs/security-in-layers.md` — Full safety framework specification (the security authority: Action Safety Framework, RBAC, read posture, Panic Mode)
-- `docs/joe-architecture.md` — Action Safety Framework architectural decisions
+- `docs/reference/security-in-layers.md` — Full safety framework specification (the security authority: Action Safety Framework, RBAC, read posture, Panic Mode)
+- `docs/reference/joe-architecture.md` — Action Safety Framework architectural decisions

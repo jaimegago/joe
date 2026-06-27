@@ -78,4 +78,4 @@ A003 is the promotion-boundary work. Modeling a credential-bearing URI — and t
 redaction boundary it implies — is a distinct design exercise that would
 front-run its own decisions if attempted inside A003.
 
-Reference: `docs/decisions/D-0026-credential-provider-abstraction.md`.
+Reference: `docs/project/adr/D-0026-credential-provider-abstraction.md`.

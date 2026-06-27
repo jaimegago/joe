@@ -17,7 +17,7 @@ export interface SessionListControlsProps {
 }
 
 // SessionListControls is the SHARED keyword-filter + sort control for both the
-// Conversations and Incidents views (docs/DESIGN-SESSIONS-VIEW.md §2). One
+// Conversations and Incidents views (docs/reference/DESIGN-SESSIONS-VIEW.md §2). One
 // implementation, applied to each view's rows/clusters via applyViewControls.
 // The filter matches session titles only (not message content); the sort axes
 // are newest/oldest activity and title A–Z.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# soak-6a.sh — §6-A staging-soak walkthrough for PHASE-1-DECOMPOSITION
+# soak-6a.sh — §6-A staging-soak walkthrough for the Phase 1 decomposition plan
 # Change 10 (captain-session gate insertion).
 #
 # Drives the HTTP-observable half of §6-A against a RUNNING joe

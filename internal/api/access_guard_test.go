@@ -11,7 +11,7 @@ import (
 )
 
 // TestInvariant_NoUngovernedAdapterOrGraphAccess is the load-bearing
-// structural guard for docs/joe-identity-design.md §2.5 / §5-Invariant-2,
+// structural guard for docs/reference/joe-identity-design.md §2.5 / §5-Invariant-2,
 // Phase A: the guarded accessor (internal/access) is the ONLY path to an
 // infrastructure adapter or the graph store. Concretely, no production code
 // outside the allowlist may:
@@ -24,7 +24,7 @@ import (
 // allowed; passing services.Adapters / services.Graph as constructor
 // arguments (e.g. access.New(...)) is likewise fine.
 //
-// Phase E (docs/joe-identity-design.md §3) tightened this invariant. The
+// Phase E (docs/reference/joe-identity-design.md §3) tightened this invariant. The
 // agent-loop execution path (internal/api/tasks.go → in-process accessor
 // client → accessor) is NOT in the allowlist and is covered by the guard —
 // proving that the loop now reaches infra through the accessor with the real
@@ -67,8 +67,8 @@ import (
 //     yields no delta, so the write is fenced by the floored read; the write
 //     carries the agent:core principal for audit and takes no write permit by
 //     design. The orphan-write enumeration (every ApplyGraphDelta call site is
-//     reachable only downstream of the floored access.ResolveAdapter) is recorded
-//     in docs/investigations/coreagent-refresh-governance-mint-thread.md.
+//     reachable only downstream of the floored access.ResolveAdapter) was verified
+//     during the coreagent refresh-governance review.
 //
 //     The refresh side remains READ-ONLY on customer infrastructure by invariant
 //     (every *_refresh.go file calls List/Get/Describe/Status only — no

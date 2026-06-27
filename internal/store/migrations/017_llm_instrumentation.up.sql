@@ -1,5 +1,5 @@
 -- Stream G phase G1: LLM instrumentation schema.
--- See docs/joe-identity-design.md (LLM cost/runaway gates) and the Stream G
+-- See docs/reference/joe-identity-design.md (LLM cost/runaway gates) and the Stream G
 -- prompt. This migration is purely a schema groundwork phase — no recorder,
 -- enforcement, settings service, HTTP, or UI lands here. It only:
 --

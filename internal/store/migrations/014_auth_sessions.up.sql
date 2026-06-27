@@ -1,6 +1,6 @@
 -- Identity Phase C: OIDC login + server-side sessions.
--- See docs/joe-identity-design.md §2.3 (server-side session + cookie) and
--- docs/DECISIONS.md D-0006.
+-- See docs/reference/joe-identity-design.md §2.3 (server-side session + cookie) and
+-- docs/project/DECISIONS.md D-0006.
 --
 -- Two tables, both keyed on opaque random identifiers:
 --

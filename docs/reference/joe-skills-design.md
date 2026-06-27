@@ -305,6 +305,6 @@ These are deliberate gaps for the implementing engineer to resolve:
 ## References
 
 - Agent Skills specification: https://agentskills.io/specification
-- Joe security architecture: `docs/security-in-layers.md`
-- Joe overall architecture: `docs/joe-architecture.md`
+- Joe security architecture: `docs/reference/security-in-layers.md`
+- Joe overall architecture: `docs/reference/joe-architecture.md`
 - OASIS SI profile (for capability eval scenarios): `oasis-spec` repo

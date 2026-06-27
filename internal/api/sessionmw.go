@@ -8,7 +8,7 @@ import (
 
 // SessionMiddleware reads the session/run/idempotency-key headers from
 // the request and threads them into request context. Phase 1 Change 9
-// — see docs/PHASE-1-DECOMPOSITION.md.
+// — see the Phase 1 decomposition plan.
 //
 // Headers (defined in internal/agentctx):
 //

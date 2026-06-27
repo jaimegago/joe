@@ -271,7 +271,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		}
 	}
 
-	// Identity Phase E (docs/joe-identity-design.md §3): the loop's tool
+	// Identity Phase E (docs/reference/joe-identity-design.md §3): the loop's tool
 	// registry is wired to the in-process accessor-backed client. There is
 	// no loopback HTTP self-call and no re-authentication as svc:server;
 	// every tool's adapter/graph access reaches the accessor with the real
@@ -307,7 +307,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	}
 	executor := tools.NewExecutor(registry, h.server.services.Metrics, execOpts...)
 
-	// Identity Phase G (docs/joe-identity-design.md §0 bug #2, §2.10, §5
+	// Identity Phase G (docs/reference/joe-identity-design.md §0 bug #2, §2.10, §5
 	// Invariant 6, D-0010): wrap the loop's tool executor with the
 	// SHARED §C captain-session gate. The gate runs UPSTREAM of every
 	// per-tool invocation in this loop — i.e. before tools.Executor's

@@ -2,7 +2,7 @@ Edge-type literal consolidation and constraining graph_edges.relation
 Status: open
 
 Rehomes the edge-type smell established by the edge-type-count arbitration
-(evidence: [docs/investigations/edge-type-count-arbitration.md](../investigations/edge-type-count-arbitration.md)).
+(evidence: [docs/backlog/investigations/edge-type-count-arbitration.md](investigations/edge-type-count-arbitration.md)).
 This is a code-hygiene item, not a correctness bug — the graph behaves correctly
 today.
 
@@ -47,6 +47,6 @@ silently reappear, so the two halves are best decided together.
 ## Evidence
 
 Full enumeration, exhaustive emit-site search, and the 19-vs-20-vs-24 resolution:
-[docs/investigations/edge-type-count-arbitration.md](../investigations/edge-type-count-arbitration.md).
+[docs/backlog/investigations/edge-type-count-arbitration.md](investigations/edge-type-count-arbitration.md).
 The structural-not-count framing of these edge types in CLAUDE.md is recorded as
-**D-0032** in [docs/DECISIONS.md](../DECISIONS.md).
+**D-0032** in [docs/project/DECISIONS.md](../project/DECISIONS.md).

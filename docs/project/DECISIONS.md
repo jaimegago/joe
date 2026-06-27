@@ -10,6 +10,72 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0047 — Docs tree restructured (`docs/project`, `docs/reference`, `docs/backlog/investigations`); wholly-superseded process-exhaust archived OUT of the repo — no in-repo `docs/archive`
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-tree-restructure
+- Decision: the flat `docs/` tree was reorganized into three homes, and the
+  retirement mechanism for dead docs was settled.
+  - **No in-repo `docs/archive`.** Wholly-superseded **process-exhaust** —
+    point-in-time plans, phase prompts, completed-milestone logs, and
+    one-shot investigations that nothing live points to — moves to the
+    **external** `~/joe-launch-archive` directory, **outside** the repo (a
+    plain `mv`; git records a deletion and the bytes survive privately). The
+    repo does not carry a graveyard. Files leaving this way include the
+    `PHASE-0/1/2` session-model docs, `PLAN-OF-RECORD-RECONCILED.md`, the
+    `joe-identity-phase-*` prompts + plan, `milestones-completed.md`,
+    `may_16th_refactor_plan.txt`, `case-study-kiro-incident.md`,
+    `security-findings-punchlist.md`, the `safety-reasoning-articulation`
+    prompt, and nine credential/governance investigations. Where source
+    comments cited a now-archived design doc (the `PHASE-0/1/2` cluster, cited
+    by 22 source files incl. guard tests and migrations), the citations were
+    **de-pathed in place** — the section anchors kept, the dangling filename
+    dropped — so nothing in the tree points at an archived path.
+  - **Archive-versus-banner primacy.** A **banner** marks a *partially*-
+    superseded doc that **stays and relocates in-repo** (its as-built core is
+    still normative; e.g. the `DESIGN-CHAT-SESSIONS.md` §12 banner, the
+    `joe-identity-design.md` as-built banner). The **external archive** takes a
+    *wholly*-superseded doc **out of the repo**. The two are mutually exclusive
+    — a doc is either banner-and-kept or archived-and-removed, never both.
+    `docs/backlog/done/` is unaffected: it remains the **completed-work
+    archive** of finished backlog threads, distinct from both the in-repo
+    banner mechanism and the external process-exhaust archive.
+  - **New tree shape.** `docs/project/` holds build-meta (`DECISIONS.md`,
+    `pm-convention.md`, `claude_joe_project_instructions.md`) plus the
+    `adr/` annex (`D-0026…`) and its `adr/evidence/` sub-annex (the three
+    investigations D-0026 names as its verification basis). `docs/reference/`
+    holds system truth — the architecture/security/identity/skills/session
+    design docs **plus the five flattened standing-reference current-state
+    maps** (accessor-promotion, direct-http-mutation, learn-from-sessions,
+    managed-system-egress, operational-modes), now peers of the architecture
+    docs. `docs/backlog/investigations/` holds the live, open findings
+    (agentic-path RBAC read, backlog-triage, edge-type-count, jpk-migration,
+    llm-egress) below `INDEX.md`'s depth-one scope.
+  - **Operator-facing root docs stay put.** `configuration.md`,
+    `integrations.md`, `operations.md`, `web-ui.md`, and
+    `break-glass-access.md` remain directly under `docs/` as the agreed
+    operator-facing basis and the handoff to a separate, later `docs/public`
+    establishment pass (tracked in `docs/backlog/docs-public-establishment-pass.md`).
+    Their cross-links were repaired this session; only their final placement is
+    deferred.
+- Basis: executed against the live tree — every source path verified before its
+  move; all inbound navigational references repaired (CLAUDE.md, README.md, the
+  repo-root `DECISIONS.md` pointer, source/test comments, active backlog files,
+  and intra-`reference`/root cross-links) and proven by a tree-wide grep that
+  returns zero references to any moved-from or removed path; `go build ./...` and
+  `go vet ./...` clean after the source-comment repointing. Historical-record
+  citations (this log, the ADR + evidence annex, anything under
+  `docs/backlog/done/`) were left intact as point-in-time record even where they
+  name a now-removed file.
+- Supersedes: establishes the docs tree layout and the external-archive
+  retirement mechanism; supersedes the flat `docs/` convention. Does not
+  re-decide any retired-doc content decision (D-0044/D-0045/D-0046) — those
+  remain the authority for *why* their docs left; this entry records *where the
+  tree now puts things*.
+
+---
+
 ## D-0046 — `docs/JOE_SECURITY.md` and `docs/JOE_RBAC_IMPLEMENTATION.md` deleted, not relabeled; `docs/security-in-layers.md` is the sole security authority
 
 - Date: 2026-06-27

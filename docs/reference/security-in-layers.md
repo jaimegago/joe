@@ -2,7 +2,7 @@
 
 This document captures Joe's security posture, known gaps, remediation plan, and — critically — the **Action Safety Framework** that governs what Joe is allowed to change and under what conditions.
 
-Joe runs as a single `joe` binary: bare `joe` starts the server (HTTP API on `:7777`, Core Agent, adapters, graph); subcommands (`joe mcp`, `joe slack`, `joe panic`, `joe unlock`, …) dispatch ahead of it. There is no separate daemon — the earlier two-binary `joecored` split is retired. Where this document and [`docs/DECISIONS.md`](DECISIONS.md) conflict, the decision log is the source of truth.
+Joe runs as a single `joe` binary: bare `joe` starts the server (HTTP API on `:7777`, Core Agent, adapters, graph); subcommands (`joe mcp`, `joe slack`, `joe panic`, `joe unlock`, …) dispatch ahead of it. There is no separate daemon — the earlier two-binary `joecored` split is retired. Where this document and [`docs/project/DECISIONS.md`](../project/DECISIONS.md) conflict, the decision log is the source of truth.
 
 This is a living document — update it as fixes land.
 
@@ -532,5 +532,5 @@ GET/POST              /api/v1/admin/sessions/...          # Cross-tenant session
 
 - OWASP Top 10: https://owasp.org/www-project-top-ten/
 - Go secure coding: https://owasp.org/www-project-go-secure-coding-practices-guide/
-- [`docs/DECISIONS.md`](DECISIONS.md) — normative decision log (D-0018 write floor / panic; D-0020 binary axis; D-0022 denial precedence; D-0041/D-0043 read posture)
-- [`docs/joe-architecture.md`](joe-architecture.md) — system architecture
+- [`docs/project/DECISIONS.md`](../project/DECISIONS.md) — normative decision log (D-0018 write floor / panic; D-0020 binary axis; D-0022 denial precedence; D-0041/D-0043 read posture)
+- [`docs/reference/joe-architecture.md`](joe-architecture.md) — system architecture

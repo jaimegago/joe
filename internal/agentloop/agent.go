@@ -78,7 +78,7 @@ func WithAuditRepo(r audit.Repository) AgentOption {
 }
 
 // BatchExecutor is the minimal surface the loop calls on its executor.
-// Phase G change (docs/joe-identity-design.md §0 bug #2 / §2.10): the
+// Phase G change (docs/reference/joe-identity-design.md §0 bug #2 / §2.10): the
 // loop's executor used to be a concrete *tools.Executor, but the
 // captain-session gate fix requires wrapping it so the §C gate runs
 // upstream of the per-tool call. Both *tools.Executor and the Phase G

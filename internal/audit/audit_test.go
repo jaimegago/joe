@@ -15,7 +15,7 @@ import (
 )
 
 // TestRepositoryAPISurface_AppendOnly is the code-level half of the
-// dual append-only enforcement (docs/joe-identity-design.md §2.6, Phase F
+// dual append-only enforcement (docs/reference/joe-identity-design.md §2.6, Phase F
 // req 2a). It parses the audit package source and asserts that the
 // Repository interface — the surface every audit caller depends on —
 // declares EXACTLY the two insert-shaped methods on the allow-list

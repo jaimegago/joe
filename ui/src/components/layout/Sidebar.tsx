@@ -31,7 +31,7 @@ interface NavItem {
   end: boolean;
 }
 
-// Navigation model (session admin-nav-consolidation, see docs/DECISIONS.md):
+// Navigation model (session admin-nav-consolidation, see docs/project/DECISIONS.md):
 // operator surfaces are flat top-level entries; the admin-only surfaces that
 // have no operator view live under a single expandable Admin subgroup. Surfaces
 // with an operator view (Components, Sessions) appear ONCE as top-level operator

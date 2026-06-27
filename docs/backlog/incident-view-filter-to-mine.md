@@ -1,7 +1,7 @@
 # Backlog — "Filter to mine" in the incident view
 
 Status: **deferred — ships only if explicitly chosen.** Not a numbered phase of
-the sessions-view split (`docs/DESIGN-SESSIONS-VIEW.md` §3). Not launch-blocking.
+the sessions-view split (`docs/reference/DESIGN-SESSIONS-VIEW.md` §3). Not launch-blocking.
 
 ## Context
 
@@ -29,7 +29,7 @@ These genuinely diverge in the live model:
   `creator_principal` while attaching the *declarer* as captain, so a master's
   owner and the incident's captain may differ
   (`internal/sessionmodel/repository.go`, `DeclareIncidentRegime` doc; §12.3 of
-  `docs/DESIGN-CHAT-SESSIONS.md`).
+  `docs/reference/DESIGN-CHAT-SESSIONS.md`).
 - Linked children are independent sessions that may be owned by yet other
   principals (`linked_incident_id` is a participation pointer, a fact, not a
   type — `internal/sessionmodel/types.go:50`).

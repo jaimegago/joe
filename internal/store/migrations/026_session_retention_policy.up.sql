@@ -1,5 +1,5 @@
 -- B007a: the admin retention-policy store for the redesigned session subsystem.
--- See docs/DESIGN-CHAT-SESSIONS.md §12.5 (retention/lifecycle pipeline) and §13
+-- See docs/reference/DESIGN-CHAT-SESSIONS.md §12.5 (retention/lifecycle pipeline) and §13
 -- (B007 node). §12 wins over earlier sections where they conflict.
 --
 -- §12.5 specifies ONE admin-configured retention policy (not a per-class table):

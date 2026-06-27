@@ -173,7 +173,7 @@ Machine callers authenticate with a service-account bearer token; humans log in
 via OIDC. Manage zones and policies from the Web UI admin panel or the admin REST
 API (`/api/v1/admin/...`) — the single audited writer to RBAC state. See
 [docs/operations.md](docs/operations.md) for the admin recipes and
-[docs/security-in-layers.md](docs/security-in-layers.md) for the security model.
+[docs/reference/security-in-layers.md](docs/reference/security-in-layers.md) for the security model.
 
 ---
 
@@ -200,7 +200,7 @@ Installed skills live under `~/.joe/skills/`, tracked by
 require `joe skills approve <name>` before Joe will load them — `~/.joe/skills-policy.yaml`
 defines trusted sources. A starter library of senior-SRE judgment skills lives at
 [github.com/jaimegago/joe-sre-skills](https://github.com/jaimegago/joe-sre-skills)
-(MIT). See [docs/joe-skills-design.md](docs/joe-skills-design.md) for the design.
+(MIT). See [docs/reference/joe-skills-design.md](docs/reference/joe-skills-design.md) for the design.
 
 ---
 
@@ -320,11 +320,11 @@ joe/
 - [docs/configuration.md](docs/configuration.md) — Config file reference and environment variables
 - [docs/operations.md](docs/operations.md) — Safety tiers, emergency shutdown, RBAC admin
 - [docs/integrations.md](docs/integrations.md) — MCP server and Slack bot setup
-- [docs/joe-architecture.md](docs/joe-architecture.md) — Full architecture and component diagrams
+- [docs/reference/joe-architecture.md](docs/reference/joe-architecture.md) — Full architecture and component diagrams
 - [docs/web-ui.md](docs/web-ui.md) — Web UI specification
-- [docs/security-in-layers.md](docs/security-in-layers.md) — Security authority: Action Safety Framework, RBAC, read posture, Panic Mode
-- [docs/joe-skills-design.md](docs/joe-skills-design.md) — Skills system design
-- [docs/observability.md](docs/observability.md) — OpenTelemetry instrumentation
+- [docs/reference/security-in-layers.md](docs/reference/security-in-layers.md) — Security authority: Action Safety Framework, RBAC, read posture, Panic Mode
+- [docs/reference/joe-skills-design.md](docs/reference/joe-skills-design.md) — Skills system design
+- [docs/reference/observability.md](docs/reference/observability.md) — OpenTelemetry instrumentation
 - [test/README.md](test/README.md) — Test harness layout (`test/mocks`, `test/integration`, `test/e2e`)
 
 ---

@@ -1,6 +1,6 @@
 -- Identity Phase H: admin status as a dynamic capability.
--- See docs/joe-identity-design.md §2.9 (admin bootstrap) and §5 Invariant 2.
--- Decision: docs/DECISIONS.md D-0011.
+-- See docs/reference/joe-identity-design.md §2.9 (admin bootstrap) and §5 Invariant 2.
+-- Decision: docs/project/DECISIONS.md D-0011.
 --
 -- Phase C (D-0006) defined "admin authority" as a snapshot of grants — an
 -- rbac_policies row on every security zone that existed AT BOOTSTRAP. That

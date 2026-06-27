@@ -47,12 +47,11 @@ The consolidated checklist below existed only in JPK / `LAUNCH_READINESS.md`
 
 ## History scrub — what survives in a tracked doc (cross-reference)
 
-The history-scrub mechanics are partially recorded in the tracked
-[docs/security-findings-punchlist.md](../security-findings-punchlist.md): its
+The history-scrub mechanics are partially recorded in the security-findings
+punchlist (since archived out of the repo): its
 **§D "Migration note"** and **§C** defer the `review_jobs` table / migration
 cleanup to the **git-filter-repo "history scrub (Stream C)"** and name the
-`git-filter-repo` path explicitly (`docs/security-findings-punchlist.md:116`,
-`:120-128`).
+`git-filter-repo` path explicitly.
 
 What the punchlist does **not** carry — and what this file therefore preserves —
 is the concrete launch-time scrub scope from JPK §8:

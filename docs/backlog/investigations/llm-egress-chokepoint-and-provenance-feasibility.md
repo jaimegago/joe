@@ -1,3 +1,5 @@
+> **Status: OPEN** — live finding; feasibility-and-shape only, no work started.
+
 ```
 # Investigation — LLM-egress chokepoint, OpenAI-compatible adapter, fail-closed egress, and sensitivity provenance
 

@@ -227,11 +227,11 @@ type webUISession struct {
 	// Set on the per-id GET (resolved via GetSession) AND on the LIST projection
 	// (resolved by a self-join, NOT an N+1 — see ListRecentSessions /
 	// ListSessionsByCreator). The two surfaces share this field name so the
-	// sessions-view UI consumes one shape (docs/DESIGN-SESSIONS-VIEW.md §4).
+	// sessions-view UI consumes one shape (docs/reference/DESIGN-SESSIONS-VIEW.md §4).
 	LinkedIncidentTitle string `json:"linked_incident_title,omitempty"`
 	// IncidentInvolved is the load-bearing computed property that splits the
 	// sessions UI into the incident view vs the conversation view
-	// (docs/DESIGN-SESSIONS-VIEW.md §1.1): true iff this session is an incident
+	// (docs/reference/DESIGN-SESSIONS-VIEW.md §1.1): true iff this session is an incident
 	// master (type='incident') OR a participant linked to one
 	// (linked_incident_id set). Derived in sessionToWebUI from the row's own
 	// columns — no query. Always present (NOT omitempty) so the client reads it as

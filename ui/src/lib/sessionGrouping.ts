@@ -1,7 +1,7 @@
 import type { Session } from '@/api/types';
 
 // sessionGrouping is the SINGLE pure transform behind the two-view sessions
-// split (docs/DESIGN-SESSIONS-VIEW.md §1.2). Its input is the flat array of
+// split (docs/reference/DESIGN-SESSIONS-VIEW.md §1.2). Its input is the flat array of
 // projected session rows from GET /sessions; its output partitions that array
 // into (a) the conversation list and (b) the incident clusters. The split key
 // is the P0-computed `incident_involved` flag — this function NEVER re-derives

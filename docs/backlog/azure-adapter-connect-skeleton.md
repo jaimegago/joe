@@ -9,7 +9,7 @@ config but builds no Azure SDK client and performs no connectivity check
 (`azure.go:107` — the method ends at `a.config = cfg` / `a.connected = true`).
 It is honest-incomplete: the adapter advertises a connection it has not made.
 
-D-0026 (`docs/decisions/D-0026-credential-provider-abstraction.md`) records this
+D-0026 (`docs/project/adr/D-0026-credential-provider-abstraction.md`) records this
 under "Documented gaps" and ties it to the **deferred** ambient-workload-identity
 provider: the Azure path is exactly the explicit, opt-in "use the runtime's
 projected identity to federate" case (AKS workload identity) that the ADR places

@@ -1,7 +1,7 @@
 # Backlog — conversational session content-search
 
 Status: **deferred — post-launch shelf.** Distinct from the P2 title filter on
-the sessions list (`docs/DESIGN-SESSIONS-VIEW.md` §2.1). Not launch-blocking.
+the sessions list (`docs/reference/DESIGN-SESSIONS-VIEW.md` §2.1). Not launch-blocking.
 
 ## What this is
 
@@ -30,7 +30,7 @@ points; P2 explicitly scoped to the former.
   that index is the bulk of the work.
 - Governed through the **session-authz seam as a READ**: results are subject to
   the same read model as any session access (team-public read today, §12.7 of
-  `docs/DESIGN-CHAT-SESSIONS.md`), so content-search never surfaces a transcript
+  `docs/reference/DESIGN-CHAT-SESSIONS.md`), so content-search never surfaces a transcript
   the caller could not already open.
 
 ## Why deferred

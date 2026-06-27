@@ -5,7 +5,7 @@ package rbac
 // decision is permitted if ANY member holds a matching grant for the component's
 // zone and the requested action. The model is additive / allow-only — there
 // are no deny rules, consistent with the single-principal model it replaces
-// and with Kubernetes RBAC (docs/joe-identity-design.md §2.7).
+// and with Kubernetes RBAC (docs/reference/joe-identity-design.md §2.7).
 //
 // At launch the set is constructed with exactly one member — the caller's own
 // principal. Both enforcement points lift the context-derived caller principal

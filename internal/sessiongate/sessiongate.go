@@ -1,6 +1,6 @@
 // Package sessiongate implements the §C captain-session-owned mutation
 // gate as a pure function. Phase 1 Change 8 — see
-// docs/PHASE-0-SESSION-MODEL.md §C and docs/PHASE-1-DECOMPOSITION.md
+// the session-model design (Phase 0) §C and the Phase 1 decomposition plan
 // Change 8.
 //
 // Invariant 5 / §C2: this gate is session-model-owned and runs UPSTREAM

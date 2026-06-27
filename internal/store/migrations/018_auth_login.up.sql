@@ -1,6 +1,6 @@
 -- Stream H3: audit_log.kind CHECK widening for the auth_login kind.
 --
--- Break-glass auth-login auditing (docs/joe-identity-design.md §2.6) records
+-- Break-glass auth-login auditing (docs/reference/joe-identity-design.md §2.6) records
 -- credential use — both the OIDC human login and the break-glass
 -- service-account bearer path — as one row in the existing append-only
 -- audit_log. Those rows carry a new kind value, 'auth_login', which the

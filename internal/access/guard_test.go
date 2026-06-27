@@ -10,7 +10,7 @@ import (
 )
 
 // TestEveryDispatchMethodDeclaresAnAction is the structural guard for
-// docs/joe-identity-design.md §2.8: the action for each gated operation is
+// docs/reference/joe-identity-design.md §2.8: the action for each gated operation is
 // declared as a property of the method (adjacent to the delegated adapter
 // call), not inferred from an HTTP verb.
 //

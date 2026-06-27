@@ -18,7 +18,7 @@ Today goreleaser is scaffold-only: CI proves the build and injection but
 publishes. Turning on real publishing (tag-triggered `goreleaser release`,
 artifact upload, checksums/signing, install instructions) is a **distribution-
 posture change**: it moves Joe off build-from-source-only. When taken it needs its
-own posture flip and its own `docs/DECISIONS.md` entry, plus a decision on what to
+own posture flip and its own `docs/project/DECISIONS.md` entry, plus a decision on what to
 publish (which `goos`/`goarch`, archives, whether the UI is staged into the embed
 before the release build so published binaries are UI-complete) and the secrets/
 permissions for the release job. Not launch-blocking; do it deliberately, not by

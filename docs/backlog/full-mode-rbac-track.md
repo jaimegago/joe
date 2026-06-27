@@ -1,7 +1,7 @@
 # Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal
 
 Status: deferred — design-approved, unimplemented
-Design of record: docs/DECISIONS.md D-0019 (the trust model). This entry is the implementation backlog item, not a new decision; it does not duplicate D-0019.
+Design of record: docs/project/DECISIONS.md D-0019 (the trust model). This entry is the implementation backlog item, not a new decision; it does not duplicate D-0019.
 Depends on: the write floor (D-0018) — DONE. This is the natural next implementation track after the floor.
 Blocks: autonomous-path seam routing (D-0022 Task 2, deferred). See "Dependency chain" below.
 
@@ -132,9 +132,9 @@ D-0022 Task 2 and D-0010 VERDICT-A).
 
 ## References (link, do not duplicate)
 
-- docs/DECISIONS.md **D-0019** — the trust model; design of record for this track.
-- docs/DECISIONS.md **D-0020** — the binary Read/Mutate model; defines why the
+- docs/project/DECISIONS.md **D-0019** — the trust model; design of record for this track.
+- docs/project/DECISIONS.md **D-0020** — the binary Read/Mutate model; defines why the
   Core Agent's graph operations are Reads.
-- docs/DECISIONS.md **D-0018** — the write floor (done; the prerequisite layer).
-- docs/DECISIONS.md **D-0022** — denial precedence (Task 1, done) and the deferred
+- docs/project/DECISIONS.md **D-0018** — the write floor (done; the prerequisite layer).
+- docs/project/DECISIONS.md **D-0022** — denial precedence (Task 1, done) and the deferred
   autonomous-path seam routing (Task 2) this track unblocks.

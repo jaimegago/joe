@@ -6,7 +6,7 @@ vs-resolved styling). P2 = the shared keyword-filter + sort controls,
 **client-side interim** (§2.1). P3 (paging) and the deferred "filter to mine"
 item are planned below, not built.
 
-This document is a sibling of `docs/DESIGN-CHAT-SESSIONS.md` and inherits its
+This document is a sibling of `docs/reference/DESIGN-CHAT-SESSIONS.md` and inherits its
 storage model (migration 025, the §12 clean-room schema). Where this prompt's
 prose and the live tree disagreed, **the tree won and this doc records the
 tree**; the Phase 1 verification basis (below) is the receipt.

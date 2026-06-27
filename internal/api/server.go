@@ -25,7 +25,7 @@ import (
 type Server struct {
 	services *core.Services
 	// accessor is the single guarded seam to infrastructure adapters and
-	// the graph store (docs/joe-identity-design.md §2.5, Phase A). HTTP
+	// the graph store (docs/reference/joe-identity-design.md §2.5, Phase A). HTTP
 	// handlers reach adapters/graph ONLY through this; they never resolve
 	// services.Adapters or call services.Graph directly.
 	accessor *access.Accessor

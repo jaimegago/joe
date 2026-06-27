@@ -1,7 +1,7 @@
 //go:build !seam_enabled
 
 // Package seams hosts the compile-time autonomy-seam flags from
-// PHASE-0-SESSION-MODEL.md §"incremental-autonomy seam pattern".
+// the session-model design (Phase 0) §"incremental-autonomy seam pattern".
 //
 // Every constant in this package gates a defined-but-inert entry point
 // that Phase 1 builds as a *seam*, never as *behavior*. The constants
@@ -23,7 +23,7 @@
 package seams
 
 // JoeAutonomousDeclareEnabled gates Joe-autonomous incident declaration
-// (PHASE-0-SESSION-MODEL.md R2 / "incremental-autonomy seam pattern").
+// (the session-model design (Phase 0) R2 / "incremental-autonomy seam pattern").
 // When false (Phase 1), a declare request that asks for
 // declared_kind=joe is refused with 403 BEFORE any sessionmodel
 // mutation. When true (future enablement), the declare handler routes
@@ -32,7 +32,7 @@ package seams
 const JoeAutonomousDeclareEnabled = false
 
 // JoeAutonomousResolveEnabled gates Joe-autonomous incident resolve
-// (PHASE-0-SESSION-MODEL.md R4 / "incremental-autonomy seam pattern").
+// (the session-model design (Phase 0) R4 / "incremental-autonomy seam pattern").
 // When false (Phase 1), a resolve request that signals as_joe=true is
 // refused with 403 BEFORE any call to
 // sessionmodel.Repository.ResolveIncidentRegime — preserving Change 5's
@@ -41,7 +41,7 @@ const JoeAutonomousDeclareEnabled = false
 const JoeAutonomousResolveEnabled = false
 
 // JoeConfirmCloseDispositionEnabled gates Joe self-disposition of a
-// confirm_close solicitation (PHASE-0-SESSION-MODEL.md §D taxonomy /
+// confirm_close solicitation (the session-model design (Phase 0) §D taxonomy /
 // "incremental-autonomy seam pattern"). When false (Phase 1), a resolve
 // request against a confirm_close solicitation that signals
 // disposed_by=joe is refused with 403. Human disposition (the default
@@ -50,7 +50,7 @@ const JoeAutonomousResolveEnabled = false
 const JoeConfirmCloseDispositionEnabled = false
 
 // JoeCaptainTypeEnabled gates attaching a captain of type joe
-// (PHASE-0-SESSION-MODEL.md R-CAP4 / "incremental-autonomy seam pattern").
+// (the session-model design (Phase 0) R-CAP4 / "incremental-autonomy seam pattern").
 // When false (Phase 1), CaptainService.Attach returns
 // ErrOnlyHumansInPhase1 for captain_type=joe. When true (future
 // enablement), Attach proceeds with the joe-type insertion.
@@ -66,12 +66,12 @@ const JoeConfirmCloseDispositionEnabled = false
 // session-surgical takeback.
 //
 // Phase 1 explicitly DOES NOT BUILD scoped per-agent unlock — it is
-// tracked as "Open / deferred" in PHASE-0-SESSION-MODEL.md. The
+// tracked as "Open / deferred" in the session-model design (Phase 0). The
 // R-OVR force-yield in CaptainService.BeginTransfer (compiled in, not
 // behind this seam) IS in place, but its semantic guarantee is only
 // complete once a session-surgical override mechanism exists.
 //
 // A future contributor enabling this seam without first landing scoped
-// unlock is the residual-risk failure mode recorded in PHASE-1-
-// DECOMPOSITION.md §6.
+// unlock is the residual-risk failure mode recorded in the Phase 1
+// decomposition plan §6.
 const JoeCaptainTypeEnabled = false

@@ -21,7 +21,7 @@ import (
 // captain-session gate + §B1 principal substitution. The gate has
 // since moved to internal/captaingate (the shared wrapper used by BOTH
 // the Core Agent and the user task loop — see
-// docs/joe-identity-design.md §0 bug #2 / §2.10 / §5 Invariant 6).
+// docs/reference/joe-identity-design.md §0 bug #2 / §2.10 / §5 Invariant 6).
 // Production composition is now `captaingate.Wrap(durable.Wrap(inner))`
 // so the gate runs UPSTREAM of §D5 (a refused mutation is never
 // persisted as an issued intent — nothing happened to record).

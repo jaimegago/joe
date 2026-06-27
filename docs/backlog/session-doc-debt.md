@@ -23,21 +23,21 @@ since shifted. **No action remains for this item; recorded for closure only.**
 
 ## 2. Phantom B001 inventory reports — STILL OPEN (verified absent)
 
-JPK §11.3 reported that `docs/DESIGN-CHAT-SESSIONS.md` claimed three `b001-*`
-inventory reports had landed under `docs/investigations/`, but no such files
+JPK §11.3 reported that `docs/reference/DESIGN-CHAT-SESSIONS.md` claimed three `b001-*`
+inventory reports had landed under an investigations directory, but no such files
 exist on disk.
 
-**Verified 2026-06-24: the reports are still absent.** `ls docs/investigations/ |
-grep -i b001` returns nothing. The design doc itself has since been updated to
+**Verified 2026-06-24: the reports are still absent.** No `b001-*` files exist
+in the tree. The design doc itself has since been updated to
 acknowledge the gap rather than assert the reports exist — at
-[docs/DESIGN-CHAT-SESSIONS.md:827](../DESIGN-CHAT-SESSIONS.md:827): "The three
+[docs/reference/DESIGN-CHAT-SESSIONS.md:827](../reference/DESIGN-CHAT-SESSIONS.md:827): "The three
 B001 inventory reports were never produced and are **not** present under
-`docs/investigations`; landing the dated as-built snapshots remains open
+an investigations directory; landing the dated as-built snapshots remains open
 doc-debt." (Earlier sessions correctly declined to fabricate them.)
 
 **Open work:** either produce the three dated as-built B001 inventory snapshots
-under `docs/investigations/`, or formally close the doc-debt by removing the
-"remains open doc-debt" claim at `docs/DESIGN-CHAT-SESSIONS.md:827`. The as-built
+under an investigations directory, or formally close the doc-debt by removing the
+"remains open doc-debt" claim at `docs/reference/DESIGN-CHAT-SESSIONS.md:827`. The as-built
 session reality is already captured inline in that design doc (§10, §12 notes)
 and verified in code, so the snapshots are a completeness nicety, not a
 correctness gap.

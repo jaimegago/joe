@@ -1,6 +1,6 @@
 # Joe Architecture
 
-Reference architecture for Joe. This document describes the current component structure and data flow. Where it conflicts with [`docs/DECISIONS.md`](DECISIONS.md), the decision log is the source of truth.
+Reference architecture for Joe. This document describes the current component structure and data flow. Where it conflicts with [`docs/project/DECISIONS.md`](../project/DECISIONS.md), the decision log is the source of truth.
 
 ---
 
@@ -8,7 +8,7 @@ Reference architecture for Joe. This document describes the current component st
 
 Joe is an AI-powered infrastructure copilot. Unlike tools that give LLMs direct access to production systems, Joe enforces **deterministic safety rules** — compiled into the binary, not instructed by the LLM. The LLM suggests actions; hardcoded policy gates decide what executes.
 
-This matters because AI agents with production access will make catastrophic mistakes (see `docs/case-study-kiro-incident.md`). The question is not *if* the LLM hallucinates a dangerous action, but whether the system architecture makes that hallucination harmless.
+This matters because AI agents with production access will make catastrophic mistakes. The question is not *if* the LLM hallucinates a dangerous action, but whether the system architecture makes that hallucination harmless.
 
 **Joe's safety guarantees:**
 
@@ -18,13 +18,13 @@ This matters because AI agents with production access will make catastrophic mis
 - **Default deny.** Every managed-system mutation starts disabled. Humans opt in per action.
 - **Binary action axis.** Every tool is classified Read or Mutate — Reads always run, Mutates are gated. There is no third tier (D-0020).
 
-Full safety specification: [`docs/security-in-layers.md`](security-in-layers.md).
+Full safety specification: [`docs/reference/security-in-layers.md`](security-in-layers.md).
 
 ---
 
 ## Design Principles
 
-1. **Safety enforcement is hardcoded, not LLM-instructed** — deterministic policy gates control all mutations. See [Action Safety Framework](#action-safety-framework) and `docs/security-in-layers.md`.
+1. **Safety enforcement is hardcoded, not LLM-instructed** — deterministic policy gates control all mutations. See [Action Safety Framework](#action-safety-framework) and `docs/reference/security-in-layers.md`.
 2. **A single `joe` binary** — bare `joe` starts the server (HTTP API + Core Agent + adapters + graph); subcommands (`joe mcp`, `joe slack`, `joe skills`, `joe incident`, `joe panic`, `joe unlock`) dispatch ahead of it.
 3. **Two agent roles, one process** — the Core Agent maintains the graph in the background; the task/chat loop assists users. Both run inside the same process and share one tool-executor governance path; there is no inter-process HTTP boundary between them.
 4. **The HTTP API is the integration contract** — external clients (Web UI, MCP server, Slack, CLI subcommands) reach Joe over `/api/v1/`.
@@ -284,7 +284,7 @@ The MCP server is a thin client over the HTTP API: it exposes Joe's category too
 
 ### Chat Sessions
 
-Chat sessions are a first-class subsystem — owned, shareable, and incident-linkable. A session row carries its creator principal (taken from context at create time, never from the request body), type (`default` vs `incident`), linked incident, title, and retention class. Ownership is enforced: a non-owner's list/get/messages are scoped or refused. The as-built specification is normative in [`docs/DESIGN-CHAT-SESSIONS.md`](DESIGN-CHAT-SESSIONS.md).
+Chat sessions are a first-class subsystem — owned, shareable, and incident-linkable. A session row carries its creator principal (taken from context at create time, never from the request body), type (`default` vs `incident`), linked incident, title, and retention class. Ownership is enforced: a non-owner's list/get/messages are scoped or refused. The as-built specification is normative in [`docs/reference/DESIGN-CHAT-SESSIONS.md`](DESIGN-CHAT-SESSIONS.md).
 
 Locations: `internal/sessionmodel/` (model, captain state machine, lifecycle, regime transitions), `internal/api/sessions.go` (owner-scoped routes), `internal/api/adminsessions.go` (cross-tenant governance).
 
@@ -314,7 +314,7 @@ Location: internal/tools/
                 sysinfo, traceroute)
 ```
 
-The executor classifies each tool (Read/Mutate) and runs the ordered gate: write floor → zone/component scope → namespace scope → safety policy → pre-execution notification (Mutate only) → execute → post-execution notification (Mutate only). See [`docs/security-in-layers.md`](security-in-layers.md) §3.3.
+The executor classifies each tool (Read/Mutate) and runs the ordered gate: write floor → zone/component scope → namespace scope → safety policy → pre-execution notification (Mutate only) → execute → post-execution notification (Mutate only). See [`docs/reference/security-in-layers.md`](security-in-layers.md) §3.3.
 
 Core tools are organized by subsystem (graph, k8s, git, aws, the observability/datastore/GitOps/networking/registry families, code review, knowledge, doc publishing). They call the local HTTP API through `internal/client/`, which keeps the tool surface uniform whether invoked by the Core Agent or the task loop.
 
@@ -426,7 +426,7 @@ The Knowledge Store captures runbooks, synced docs, and learned insights across 
 
 The curated-immutability rule is enforced in code: `Update`/`Delete` on a `curated` entry returns an error (`internal/knowledge/service.go`). This matches the architectural invariant — the LLM can create/update Tier-3 (derived) knowledge but cannot touch Tier-1 (curated).
 
-> **Not wired (as of 2026-06-20).** The derived "patterns extracted from sessions" capability describes the *intended* design. The extractor that would produce these (`internal/knowledge/learning/`) is dormant and orphaned — never called, reading the legacy `session_messages` table, writing ungoverned. No session-derived Tier-3 entries are produced today. See [docs/investigations/learn-from-sessions-current-state.md](investigations/learn-from-sessions-current-state.md).
+> **Not wired (as of 2026-06-20).** The derived "patterns extracted from sessions" capability describes the *intended* design. The extractor that would produce these (`internal/knowledge/learning/`) is dormant and orphaned — never called, reading the legacy `session_messages` table, writing ungoverned. No session-derived Tier-3 entries are produced today. See [docs/reference/learn-from-sessions-current-state.md](learn-from-sessions-current-state.md).
 
 **Knowledge → docs flow.** Joe can extract an insight (stored Tier-3), notice a runbook missing it, and generate a **draft** proposal (`generate_doc_draft`, Read class — it writes only to Joe's proposal store). Publishing the proposal to an external system (`publish_doc_update_*`) is a Mutate action requiring human approval and the relevant `act` policy key; a published doc later re-syncs as Tier-2.
 
@@ -558,7 +558,7 @@ logging:
 
 ## Action Safety Framework
 
-Joe enforces a hardcoded safety layer that governs what it can change and under what conditions. It is compiled into the binary and configured by humans outside Joe's reach. Full details in [`docs/security-in-layers.md`](security-in-layers.md); for a real-world case study see `docs/case-study-kiro-incident.md`.
+Joe enforces a hardcoded safety layer that governs what it can change and under what conditions. It is compiled into the binary and configured by humans outside Joe's reach. Full details in [`docs/reference/security-in-layers.md`](security-in-layers.md).
 
 ### Action axis (binary)
 
@@ -588,7 +588,7 @@ Constants in source (`internal/safety/invariants.go`): Joe cannot read/write `~/
 
 ### Designed but not yet built
 
-Environment-level operation blocking, the mutation circuit breaker, and credential-isolation enforcement are designed (see `docs/security-in-layers.md` §3.7) but **not** yet enforced in code. They become relevant as Joe gains infrastructure-mutating adapters.
+Environment-level operation blocking, the mutation circuit breaker, and credential-isolation enforcement are designed (see `docs/reference/security-in-layers.md` §3.7) but **not** yet enforced in code. They become relevant as Joe gains infrastructure-mutating adapters.
 
 ---
 
@@ -610,4 +610,4 @@ Historical milestone log. (The "two binaries" framing of early phases is retired
 | 9 — Security + clients | Emergency shutdown / panic; MCP server; zone-scoped RBAC; Web UI; Slack bot |
 | 10 — Code review | GitHub + GitLab adapters; webhook receiver; Review Agent; `joe review` |
 
-Subsequent work (single-binary consolidation, the write floor and binary axis, read posture, incident regime, session-model decomposition) is recorded in [`docs/DECISIONS.md`](DECISIONS.md).
+Subsequent work (single-binary consolidation, the write floor and binary axis, read posture, incident regime, session-model decomposition) is recorded in [`docs/project/DECISIONS.md`](../project/DECISIONS.md).

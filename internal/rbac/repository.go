@@ -78,7 +78,7 @@ type Repository interface {
 	// Unassigned components (no zone assignment yet)
 	ListUnassignedComponentIDs(ctx context.Context) ([]string, error)
 
-	// Admin status (Phase H, see docs/DECISIONS.md D-0011). Admin is a
+	// Admin status (Phase H, see docs/project/DECISIONS.md D-0011). Admin is a
 	// principal-scoped capability, not a (principal, zone) grant. The
 	// policy engine reads IsAdmin during Decide/HasZoneAccess and
 	// short-circuits to allow if the principal holds the row, subject to

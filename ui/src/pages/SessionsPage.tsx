@@ -36,7 +36,7 @@ import { MessageSquare, Plus, Trash2, AlertTriangle, RotateCcw, ShieldAlert } fr
 // history without paging, which is a later phase (P3).
 const SESSIONS_LIMIT = 50;
 
-// The primary axis is now the two-view split (docs/DESIGN-SESSIONS-VIEW.md §1.2):
+// The primary axis is now the two-view split (docs/reference/DESIGN-SESSIONS-VIEW.md §1.2):
 // Conversations (incident-free) and Incidents (clustered), with Trash retained
 // as-is. The old flat "All sessions" listing is replaced by these two views; the
 // former "Mine" tab becomes a toggle on the Conversations view.
@@ -68,7 +68,7 @@ export function SessionsPage() {
 
   const [view, setView] = useState<View>('conversations');
   // mineOnly is the retained "Mine" filter, scoped to the Conversations view
-  // (docs/DESIGN-SESSIONS-VIEW.md §2 / §3): the incident view shows all owners,
+  // (docs/reference/DESIGN-SESSIONS-VIEW.md §2 / §3): the incident view shows all owners,
   // and "filter to mine" on incidents is the explicitly deferred item.
   const [mineOnly, setMineOnly] = useState(false);
   // Keyword filter + sort are CLIENT-SIDE, view-local UI state (P2). The state is

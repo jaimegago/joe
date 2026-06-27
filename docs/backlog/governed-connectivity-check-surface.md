@@ -47,4 +47,4 @@ For context, the admin-gated/audited standard the legacy test route diverges fro
 was established by A003: **D-0029** (govern component registration as a
 credential-less, admin-gated, same-tx-audited boundary) and **D-0030** (the
 component promotion endpoint as the single governed read-only-to-armed
-transition). Both in `docs/DECISIONS.md`.
+transition). Both in `docs/project/DECISIONS.md`.

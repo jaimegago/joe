@@ -1,5 +1,5 @@
 -- B002: Storage-schema rewrite for the redesigned session subsystem.
--- See docs/DESIGN-CHAT-SESSIONS.md §12.4 (clean-room storage) and §13 (B002
+-- See docs/reference/DESIGN-CHAT-SESSIONS.md §12.4 (clean-room storage) and §13 (B002
 -- node). §12 wins over earlier sections of that document where they conflict.
 --
 -- This migration rebuilds agent_sessions to the §12.4 target:

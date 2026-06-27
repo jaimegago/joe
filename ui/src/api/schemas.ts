@@ -240,7 +240,7 @@ export const SessionSchema = z.object({
   // the "Linked to incident" badge on a participant session.
   linked_incident_id: z.string().optional(),
   // incident_involved is the P0 read-model split predicate
-  // (docs/DESIGN-SESSIONS-VIEW.md §1.1): true iff this session is an incident
+  // (docs/reference/DESIGN-SESSIONS-VIEW.md §1.1): true iff this session is an incident
   // MASTER (type='incident') OR a participant linked to one
   // (linked_incident_id set). It is the load-bearing flag the two-view sessions
   // UI partitions on — the conversation view is incident_involved=false, the

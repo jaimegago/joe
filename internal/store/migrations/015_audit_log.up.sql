@@ -1,7 +1,7 @@
 -- Identity Phase F: append-only audit log.
--- See docs/joe-identity-design.md §2.6 (one append-only table, written at the
+-- See docs/reference/joe-identity-design.md §2.6 (one append-only table, written at the
 -- decision point) and §4 (failure posture: fail-CLOSED for mutations,
--- fail-OPEN for reads). Decision: docs/DECISIONS.md D-0009.
+-- fail-OPEN for reads). Decision: docs/project/DECISIONS.md D-0009.
 --
 -- ONE table records every authorization decision the accessor makes (every
 -- infra-adapter and graph-store allow/deny) PLUS the regime/captain
@@ -19,7 +19,7 @@
 --   created_at      RFC3339 UTC string, matching every other timestamp column
 --                   in the schema (RFC3339 TEXT — 009, 010, 011, 014).
 --   principal       string per the prefix-typed principal model
---                   (docs/joe-identity-design.md §2.2). NULL only for the
+--                   (docs/reference/joe-identity-design.md §2.2). NULL only for the
 --                   coreagent-style transition rows that have no caller
 --                   principal (declared by no-one) — should not arise for
 --                   accessor-written rows.
