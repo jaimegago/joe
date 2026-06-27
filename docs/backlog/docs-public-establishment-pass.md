@@ -16,6 +16,14 @@ separate, later pass.
   under-construction placeholders for the other seven sections. `docs/reference` stays
   internal-only and is not published. The thread is **not finished** — seven sections
   remain to write across slices -02..-05 below.
+- **`docs-public-establishment-pass-02` (done).** Filled **Install and Build** (how-to:
+  build-from-source-only posture, `make build`, running the daemon, the full
+  authentication posture — service-account bearer keys, OIDC, and the OIDC-only admin
+  bootstrap, plus observation mode) and **Quickstart** (tutorial: the minimal
+  boot-to-first-answer path — `JOE_API_KEY` identity + `ANTHROPIC_API_KEY` + observation
+  mode — driving the real `POST /api/v1/tasks` interaction surface). The other five
+  placeholders were left untouched. The thread is **not finished** — five sections remain
+  across slices -03..-05 below.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -77,7 +85,7 @@ inventory):
 
 ## Remaining slice plan
 
-- **-02** — Install and Build + Quickstart.
+- **-02** — Install and Build + Quickstart. *(done)*
 - **-03** — Configuration + Integrations.
 - **-04** — Guides + Operations (including the break-glass fold into Operations).
 - **-05** — API Reference.
