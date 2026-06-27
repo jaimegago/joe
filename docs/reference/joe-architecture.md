@@ -28,7 +28,7 @@ Full safety specification: [`docs/reference/security-in-layers.md`](security-in-
 2. **A single `joe` binary** — bare `joe` starts the server (HTTP API + Core Agent + adapters + graph); subcommands (`joe mcp`, `joe slack`, `joe skills`, `joe incident`, `joe panic`, `joe unlock`) dispatch ahead of it.
 3. **Two agent roles, one process** — the Core Agent maintains the graph in the background; the task/chat loop assists users. Both run inside the same process and share one tool-executor governance path; there is no inter-process HTTP boundary between them.
 4. **The HTTP API is the integration contract** — external clients (Web UI, MCP server, Slack, CLI subcommands) reach Joe over `/api/v1/`.
-5. **AI-agnostic** — the LLM adapter abstracts the provider; Joe supports and validates two providers, `claude` and `gemini`.
+5. **AI-agnostic** — the LLM adapter abstracts the provider; native Anthropic (`claude`) and Google (`gemini`) adapters sit alongside a generic OpenAI-compatible adapter (`openai-compat`) selectable by provider plus a config `base_url`. The validated set is config-driven (`internal/llmfactory/factory.go`, `internal/config/validation.go`).
 6. **The Core Agent has autonomy levels** — deterministic changes auto-apply, ambiguous ones queue as clarifications for a human.
 7. **Humans own all mutations** — Joe never changes infrastructure, files, or configuration without explicit human authorization.
 
@@ -301,7 +301,7 @@ type LLMAdapter interface {
 }
 ```
 
-Location: `internal/llm/`; provider selection in `internal/llmfactory/factory.go`. Joe supports and validates exactly **two** providers — `claude` (Anthropic) and `gemini` (Google). There is no OpenAI or Ollama adapter. Boot validates the active model's API key (`ANTHROPIC_API_KEY` for claude; `GEMINI_API_KEY` or `GOOGLE_API_KEY` for gemini) and fails fast if it is missing (`internal/config/validation.go`).
+Location: `internal/llm/`; provider selection in `internal/llmfactory/factory.go`. Joe ships native, vendor-SDK adapters for `claude` (Anthropic) and `gemini` (Google) plus a generic `openai-compat` adapter — a small, dependency-free HTTP client (`internal/llm/openaicompat/`) that speaks the OpenAI Chat Completions protocol against any compatible server (OpenAI, vLLM, llama.cpp, Ollama, LocalAI, …) at a configurable `base_url`. The validated provider set is config-driven; `internal/llmfactory/factory.go` (the factory switch) and `internal/config/validation.go` (the allow-list) are authoritative. Boot validates the active model: native providers require an API key (`ANTHROPIC_API_KEY` for claude; `GEMINI_API_KEY` or `GOOGLE_API_KEY` for gemini) and fail fast if it is missing; `openai-compat` instead requires `base_url` and treats `OPENAI_API_KEY` as optional (empty is valid for keyless local endpoints).
 
 ### Tool Executor
 
@@ -478,7 +478,7 @@ joe/
 │   ├── agentloop/                # Per-turn chat/task loop
 │   ├── captaingate/              # §C captain-session incident gate (shared)
 │   ├── sessiongate/ sessionmodel/ session*  # Chat-session subsystem
-│   ├── llm/                      # LLM adapters (claude, gemini)
+│   ├── llm/                      # LLM adapters (claude, gemini, openai-compat)
 │   ├── llmfactory/               # Provider selection
 │   ├── tools/                    # Tool executor + registry
 │   │   ├── executor.go
@@ -550,7 +550,7 @@ logging:
   level: info                      # debug | info | warn | error
 ```
 
-**Environment overrides** (`internal/config/`, `internal/env/keys.go`): `JOE_LLM_PROVIDER` (claude|gemini), `JOE_LLM_MODEL`, `JOE_SERVER`, `JOE_API_KEY`, `JOE_DATABASE_DSN`, `JOE_LOG_LEVEL`, and `JOE_MODE=observation` (raises the write floor at boot). Provider auto-selection: an explicit preference wins; with both keys present Joe keeps Claude; with one key it switches to that provider; with none it errors naming both providers.
+**Environment overrides** (`internal/config/`, `internal/env/keys.go`): `JOE_LLM_PROVIDER` (the provider name, e.g. `claude`, `gemini`, or `openai-compat` — see `internal/llmfactory/factory.go` for the selectable set), `JOE_LLM_MODEL`, `JOE_SERVER`, `JOE_API_KEY`, `JOE_DATABASE_DSN`, `JOE_LOG_LEVEL`, and `JOE_MODE=observation` (raises the write floor at boot). Provider auto-selection ranges over the native key-bearing providers only: an explicit preference wins; with both Anthropic and Gemini keys present Joe keeps Claude; with one key it switches to that provider; with none it errors naming both. `openai-compat` is never auto-selected — it is chosen explicitly via provider plus `base_url`.
 
 **Build identity** (`internal/buildinfo/`): `Version`/`Commit`/`BuildTime` are injected via ldflags `-X` at the full import path; `ui_digest` is a sha256 over the embedded UI bytes, computed once at boot from the embedded FS. `GET /api/v1/version` serializes the full `Info` (including `ui_digest`); `GET /api/v1/status` reports only `version`; the `joe_build_info` Prometheus gauge (constant 1) carries the same identity in labels. A plain `go build ./...` reports the unset `dev`/`none`/`unknown` defaults; `make build` injects real values and embeds the UI.
 

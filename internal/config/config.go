@@ -263,8 +263,12 @@ type LLMConfig struct {
 
 // ModelConfig describes a single LLM model
 type ModelConfig struct {
-	Provider string `yaml:"provider"` // "claude", "gemini"
+	Provider string `yaml:"provider"` // e.g. "claude", "gemini", "openai-compat"
 	Model    string `yaml:"model"`    // e.g. "claude-sonnet-4-20250514"
+	// BaseURL is the OpenAI-compatible endpoint base URL (e.g.
+	// "http://localhost:11434/v1"). It is REQUIRED for the openai-compat
+	// provider and ignored by the native claude and gemini clients.
+	BaseURL string `yaml:"base_url,omitempty"`
 }
 
 // CurrentModel returns the ModelConfig for the currently selected model
