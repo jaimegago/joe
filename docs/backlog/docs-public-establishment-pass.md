@@ -8,11 +8,20 @@ truth), and `docs/backlog/investigations` (live findings), but deliberately left
 the operator-facing how-to docs at the `docs/` root as the agreed handoff to a
 separate, later pass.
 
+## Progress
+
+- **`docs-public-establishment-pass-01` (done).** Established `docs/public/` as the
+  sole published documentation surface for joeagent.dev and laid down the nine-section
+  taxonomy (decision **D-0052**). Fully wrote **Overview** and **Concepts**; created
+  under-construction placeholders for the other seven sections. `docs/reference` stays
+  internal-only and is not published. The thread is **not finished** — seven sections
+  remain to write across slices -02..-05 below.
+
 ## What stays at `docs/` root (the inputs to this pass)
 
 These five operator-facing documents were **not** moved by `docs-tree-restructure`.
 They remain directly under `docs/` as the agreed operator-facing basis, and they are
-the inputs to a future `docs/public` establishment pass:
+the inputs to this `docs/public` establishment pass:
 
 - `docs/configuration.md`
 - `docs/integrations.md`
@@ -20,13 +29,65 @@ the inputs to a future `docs/public` establishment pass:
 - `docs/web-ui.md`
 - `docs/break-glass-access.md`
 
-## The pass
+## Agreed nine-section nav (D-0052)
 
-Stand up a `docs/public` area (operator- and end-user-facing documentation) from
-these five as the source material — deciding final placement, naming, and any
-splits/merges at that time. Their cross-links into and out of `docs/reference` and
-`docs/project` were already repaired during `docs-tree-restructure`, so this pass
-starts from a tree with no dangling references.
+One section per nav entry, ordered by `weight` ascending (increments of ten):
 
-This is a structure/placement decision, out of scope for the restructure session,
-and is recorded here so the handoff is not lost.
+1. Overview
+2. Quickstart
+3. Concepts
+4. Install and Build
+5. Configuration
+6. Integrations
+7. Guides
+8. Operations
+9. API Reference
+
+Each section is a directory under `docs/public/` with an `_index.md` carrying
+`title` + `weight` front-matter. Concepts holds one explanation page per concept.
+Forward links use directory-style relative paths so placeholders fill in place.
+
+## Per-section source mapping and disposition
+
+**Four operator docs reworked** (each becomes/feeds a section, rewritten — not copied —
+for a public audience):
+
+| Root doc | Target section | Disposition |
+|---|---|---|
+| `docs/configuration.md` | Configuration | reworked into the section |
+| `docs/integrations.md` | Integrations | reworked into the section |
+| `docs/operations.md` | Operations | reworked into the section |
+| `docs/web-ui.md` | Guides | reworked into task-focused how-to |
+
+**Break-glass folded into Operations:**
+
+| Root doc | Target section | Disposition |
+|---|---|---|
+| `docs/break-glass-access.md` | Operations | folded in, not its own section |
+
+**Five sections net-new** (no single operator-doc source; derived/rewritten from the
+internal reference tree + DECISIONS for a public audience, gated by the feature
+inventory):
+
+- Overview — *written in -01*
+- Concepts — *written in -01*
+- Quickstart — net-new
+- Install and Build — net-new
+- API Reference — net-new
+
+## Remaining slice plan
+
+- **-02** — Install and Build + Quickstart.
+- **-03** — Configuration + Integrations.
+- **-04** — Guides + Operations (including the break-glass fold into Operations).
+- **-05** — API Reference.
+
+Every claim in every slice is gated by `docs/backlog/public-docs-feature-inventory.md`
+(shipped-truth). No PARTIAL or PRESENT-BUT-UNWIRED feature is documented as fully
+realized. Internal `file:line` citations never appear on a public page; that
+verification discipline stays in session reports.
+
+## Deferred
+
+Doc-version stamping is deferred to a footer commit-and-`ui_digest` stamp applied at
+release-cadence time, rather than a versioned doc tree (D-0052).

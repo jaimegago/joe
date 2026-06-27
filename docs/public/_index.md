@@ -1,0 +1,27 @@
+---
+title: Joe Documentation
+description: AI infrastructure copilot for platform engineers — governed by construction.
+---
+
+# Joe Documentation
+
+Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform
+engineers. A single binary runs a daemon that maps your infrastructure into a graph,
+answers questions about it through an agentic loop, and — only when you deliberately
+allow it — acts on it.
+
+Start with the [Overview](overview/) for what Joe is and the one property everything
+else rests on, then read [Concepts](concepts/) to understand why it works the way it
+does.
+
+## Sections
+
+- [Overview](overview/) — what Joe is and the governed-safety invariant.
+- [Quickstart](quickstart/) — get a Joe daemon running.
+- [Concepts](concepts/) — explanation: why Joe is governed, how its parts fit.
+- [Install and Build](install-and-build/) — build the `joe` binary from source.
+- [Configuration](configuration/) — the YAML config and environment surface.
+- [Integrations](integrations/) — the systems Joe connects to.
+- [Guides](guides/) — task-focused how-to.
+- [Operations](operations/) — running, observing, and recovering Joe.
+- [API Reference](api-reference/) — the HTTP surface.

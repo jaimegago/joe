@@ -72,3 +72,4 @@ npm run test
 - `docs/project/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
 - `docs/reference/joe-architecture.md` — Full architecture with diagrams
 - `docs/reference/security-in-layers.md` — the sole security authority: Action Safety Framework, executor gate order and denial precedence, read posture, RBAC, and Panic Mode / write floor
+- `docs/public/` — the **sole published** documentation surface (joeagent.dev); `docs/reference/` and `docs/project/` are **internal-only** and never published. Per D-0052, do not move/copy/link reference docs into `docs/public`, and never surface internal `file:line` citations on a public page

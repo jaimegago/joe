@@ -1,0 +1,56 @@
+---
+title: Overview
+weight: 10
+description: What Joe is, and the one structural guarantee everything else rests on.
+---
+
+# Overview
+
+Joe is an AI infrastructure copilot for platform engineers. A single binary, `joe`,
+runs an HTTP daemon that discovers your infrastructure, builds a graph of its
+components and their relationships, and answers questions about it through an agentic
+loop. When — and only when — an operator deliberately allows it, Joe can also act on
+that infrastructure. Joe is provider-agnostic across LLMs and reaches your systems
+through typed adapters rather than ad-hoc scripts.
+
+## Running implies governed
+
+The property the rest of the documentation rests on is simple to state:
+
+> **Joe running implies Joe governed.**
+
+This is a structural guarantee, not a behavior maintained by discipline. It does not
+depend on an operator remembering to switch something on, or on a policy file being
+correct. Three structural facts hold it up:
+
+- The daemon **refuses to boot without an identity configuration** — either an OIDC
+  issuer or at least one service account. There is no unauthenticated runtime mode to
+  fall into.
+- Every adapter and graph access flows through **one guarded accessor** that records
+  its decision. There is no second, ungoverned path to a managed system; a build-time
+  check forbids one from being added.
+- The decision to allow mutations is a **boot-time** decision that cannot be reversed
+  while the process runs.
+
+## Observation mode is the day-one default
+
+A freshly installed Joe starts in **observation mode**. In this mode the **write
+floor** is up: every attempt to mutate a managed system is denied *before any other
+gate* — before RBAC, before zones, before incident state — is even consulted. Joe can
+read your infrastructure and reason about it, but it cannot change it.
+
+The write floor is resolved once, at boot, and is immutable for the life of the
+process. Nothing at runtime can lower it. Bringing it down is a deliberate act:
+change the boot inputs and restart. So moving Joe from "reads only" to "can act" is
+never accidental and never silent — it is an operator decision with a restart attached
+to it.
+
+## Where to go next
+
+- New to Joe and want it running? → [Quickstart](../quickstart/)
+- Want to understand *why* it works this way? → [Concepts](../concepts/)
+- Building the binary from source? → [Install and Build](../install-and-build/)
+- Configuring the daemon? → [Configuration](../configuration/)
+- Connecting it to your systems? → [Integrations](../integrations/)
+- Running and recovering it in production? → [Operations](../operations/)
+- Looking for the HTTP surface? → [API Reference](../api-reference/)
