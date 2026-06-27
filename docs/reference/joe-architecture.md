@@ -40,33 +40,33 @@ Joe is one binary. Running bare `joe` starts the server, which hosts every subsy
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  joe  (single process)                                                     │
-│                                                                            │
+│  joe  (single process)                                                    │
+│                                                                           │
 │  ┌──────────────────────────┐      ┌──────────────────────────────────┐   │
 │  │  HTTP API (:7777)        │      │  Core Agent (background)         │   │
 │  │                          │      │                                  │   │
 │  │  /api/v1/graph/...       │      │  • Refresh loop (poll sources,   │   │
-│  │  /api/v1/components/...   │      │    diff, update graph)           │   │
-│  │  /api/v1/observe/...      │      │  • Discovery / onboarding        │   │
-│  │  /api/v1/tasks (chat)     │      │  • Clarification queueing        │   │
-│  │  /api/v1/admin/...        │      │  • Tools: graph_add_*, register_ │   │
-│  │  /api/v1/panic, /unlock   │      │    component, save_* (Read class)│   │
+│  │  /api/v1/components/...  │      │    diff, update graph)           │   │
+│  │  /api/v1/observe/...     │      │  • Discovery / onboarding        │   │
+│  │  /api/v1/tasks (chat)    │      │  • Clarification queueing        │   │
+│  │  /api/v1/admin/...       │      │  • Tools: graph_add_*, register_ │   │
+│  │  /api/v1/panic, /unlock  │      │    component, save_* (Read class)│   │
 │  └───────────┬──────────────┘      └────────────────┬─────────────────┘   │
-│              │                                       │                     │
-│              ▼                                       ▼                     │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Shared tool executor + governance                               │    │
-│  │  (write floor → §C captain gate → zone/namespace scope →         │    │
-│  │   safety policy → notify)                                        │    │
-│  └────────────────────────────────┬─────────────────────────────────┘    │
-│                                    │                                       │
-│  ┌──────────┐ ┌──────────┐ ┌───────┴──────┐ ┌──────────┐ ┌──────────┐     │
+│              │                                      │                     │
+│              ▼                                      ▼                     │
+│  ┌──────────────────────────────────────────────────────────────────┐     │
+│  │  Shared tool executor + governance                               │     │
+│  │  (write floor → §C captain gate → zone/namespace scope →         │     │
+│  │   safety policy → notify)                                        │     │
+│  └────────────────────────────────┬─────────────────────────────────┘     │
+│                                   │                                       │
+│  ┌──────────┐ ┌──────────┐ ┌──────┴───────┐ ┌──────────┐ ┌──────────┐     │
 │  │  Graph   │ │   SQL    │ │  Adapters    │ │   LLM    │ │ Knowledge│     │
 │  │  Store   │ │  Store   │ │ K8s,Git,AWS, │ │ Adapter  │ │  Store   │     │
 │  │ (SQLite) │ │ (SQLite) │ │ Prom, …      │ │claude/   │ │          │     │
 │  │          │ │          │ │              │ │gemini    │ │          │     │
 │  └──────────┘ └──────────┘ └──────────────┘ └──────────┘ └──────────┘     │
-│                                                                            │
+│                                                                           │
 └───────────────────────────────────────────────────────────────────────────┘
 
 External clients reach Joe over the HTTP API:
@@ -177,21 +177,21 @@ Joe has two agent *roles*, both hosted in the single binary.
 ### Core Agent (maintains infrastructure knowledge)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  Core Agent                                                          │
 │  ──────────                                                          │
-│  Runs: background, in the joe server process                        │
-│  Purpose: keep the infrastructure graph accurate and up-to-date     │
+│  Runs: background, in the joe server process                         │
+│  Purpose: keep the infrastructure graph accurate and up-to-date      │
 │                                                                      │
 │  • Background refresh: poll connected components, diff against the   │
 │    graph, apply deterministic deltas, queue ambiguous findings       │
-│  • Discovery / onboarding: interpret user-provided input            │
+│  • Discovery / onboarding: interpret user-provided input             │
 │  • Tools (all Read class — they maintain Joe's own model, not infra):│
-│      graph_add_node, graph_add_edge, graph_update_node,             │
+│      graph_add_node, graph_add_edge, graph_update_node,              │
 │      register_component, save_onboarding_fact, save_knowledge_entry  │
 │                                                                      │
 │  Location: internal/coreagent/                                       │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 The Core Agent refresh path stamps the `svc:agent:core` principal on its context and resolves each component's adapter through the access guard. Its read surface is governed by `auto_promote_read` (per-component-type promotion) plus grants — **not** by the human read posture (D-0043).
@@ -201,7 +201,7 @@ The Core Agent refresh path stamps the `svc:agent:core` principal on its context
 ### Task / Chat Loop (assists users)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  Task / Chat Loop                                                    │
 │  ────────────────                                                    │
 │  Runs: per request, behind /api/v1/tasks and /api/v1/tasks/stream    │
@@ -211,13 +211,13 @@ The Core Agent refresh path stamps the `svc:agent:core` principal on its context
 │    1. Add the user message to session history                        │
 │    2. Build the prompt (system + graph summary + tools + history)    │
 │    3. Call the LLM; if it returns tool calls, execute them through   │
-│       the shared governed executor; loop until the LLM stops calling  │
-│    4. Stream the response; enforce per-turn token/cost ceilings       │
+│       the shared governed executor; loop until the LLM stops calling │
+│    4. Stream the response; enforce per-turn token/cost ceilings      │
 │                                                                      │
 │  Tools available: the Read-class query/observability tools, plus     │
 │  the gated Mutate tools (write_file, run_command, doc-publish,       │
 │  code-review) when their act policy keys are enabled.                │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 Both loops compose the **same** tool-executor governance (`internal/captaingate/` §C gate over the base `internal/tools/` executor), so the write floor, incident gate, zone scope, safety policy, and notification contract apply identically on the autonomous and the user-facing paths.
@@ -264,7 +264,7 @@ Key files: `internal/core/clarification_service.go`, `internal/store/clarificati
 ### MCP Server (`joe mcp`)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────┐
 │  MCP Server                                                          │
 │  ──────────                                                          │
 │  Exposes Joe to AI coding assistants (Claude Code, Cursor, Codex).   │
@@ -277,7 +277,7 @@ Key files: `internal/core/clarification_service.go`, `internal/store/clarificati
 │                                                                      │
 │  Architecture: assistant → MCP server → Joe HTTP API                 │
 │  Env: JOE_SERVER (default http://localhost:7777), JOE_API_KEY        │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 The MCP server is a thin client over the HTTP API: it exposes Joe's category tools as MCP tool definitions and translates calls into HTTP requests (`internal/mcp/server.go`, `dispatcher.go`, `tools.go`).
