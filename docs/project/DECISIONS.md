@@ -10,6 +10,49 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0051 — Remove the dead `observability.LLMMiddleware` metrics path; `llm.NewInstrumentedAdapter` wired into `BuildLLMChain` as the single LLM-instrumentation site
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: llm-instrumentation-rewire
+- Decision: The redundant `observability.LLMMiddleware` (`internal/observability/llm_middleware.go`,
+  emitting the `llm.calls` / `llm.errors` / `llm.duration` / `llm.tokens` metric set) is
+  **deleted** along with its test, having had no production caller. LLM OpenTelemetry
+  instrumentation is now applied by `llm.NewInstrumentedAdapter`
+  (`internal/llm/instrumented.go`), wrapped as the **outermost** decorator in
+  `core.Services.BuildLLMChain` (`internal/core/llmchain.go`) — the single chain
+  construction site shared by boot (`cmd/joe/server.go`) and both model-swap handlers
+  (`internal/api/models.go`, `internal/api/llmsettings.go`), so every live adapter (boot
+  or hot-swapped) emits identical LLM metrics and spans. The live `llm.*` metric set is
+  **not frozen here**: it is whatever `NewInstrumentedAdapter` declares as inline literals
+  in `internal/llm/instrumented.go` (today `llm.requests` / `llm.errors` /
+  `llm.tokens.input` / `llm.tokens.output` / `llm.request.duration`); that declaration is
+  authoritative and `docs/reference/observability.md` mirrors it. This commit also drops
+  the unrelated dead **cache** metrics (`cache.lookups` / `hits` / `misses` / `errors` /
+  `duration`, `Metrics.RecordCacheLookup`, `AttrCacheName`) from
+  `internal/observability/metrics.go` + `metric_names.go`, which likewise had no non-test
+  caller. This closes the doc-ahead-of-code split: `observability.md` already described
+  this exact state on `origin/main` and needed no further edit.
+- Basis: post-deletion tree has zero references to `LLMMiddleware` / `NewLLMMiddleware`
+  and to the `llm.calls` / `llm.duration` / `llm.tokens` literals (the surviving
+  `llm.errors` hits belong to the live `internal/llm/instrumented.go` path); zero
+  references to `RecordCacheLookup` / `MetricCache*` / `cacheMetrics`. `BuildLLMChain` is
+  the single construction site, enforced by
+  `internal/llmusage/wrap_once_guard_test.go`. Live metric names at
+  `internal/llm/instrumented.go:62,70,78,86,94`; doc table at
+  `docs/reference/observability.md:105-109`. `go build ./...`, `go vet`, and
+  `go test ./internal/observability/ ./internal/core/ ./internal/llm/ ./internal/llmusage/`
+  pass with the dead path removed; integration tests (`-tags=integration`) compile.
+- Supersedes: the `observability.LLMMiddleware` instrumentation path and its
+  `llm.calls`/`llm.errors`/`llm.duration`/`llm.tokens` metric names (deleted), and the
+  dead `cache.*` observability metrics (deleted). Backlog/investigation findings that
+  recorded this dead code (`docs/backlog/public-docs-feature-inventory.md`,
+  `docs/backlog/investigations/llm-egress-chokepoint-and-provenance-feasibility.md`,
+  `docs/backlog/done/docs-reference-audit.md`) are resolved by this removal; they remain
+  as historical findings under their own campaigns.
+
+---
+
 ## D-0050 — Retire-and-absorb the dated `accessor-promotion-state-axis.md` investigation; inert-create + governed-promotion + accessor-governed-refresh absorbed into `security-in-layers.md`
 
 - Date: 2026-06-27
