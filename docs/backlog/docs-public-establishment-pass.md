@@ -24,6 +24,16 @@ separate, later pass.
   mode — driving the real `POST /api/v1/tasks` interaction surface). The other five
   placeholders were left untouched. The thread is **not finished** — five sections remain
   across slices -03..-05 below.
+- **`docs-public-establishment-pass-03` (done).** Filled **Configuration** (reference: the
+  full YAML and environment surface with code-true defaults, corrected against the live
+  tree — `auth.session_ttl` is `12h` not `24h`, `server.rate_limit_burst` has no default
+  and clamps to `1` when limiting is enabled, and the inert/reserved keys are flagged
+  honestly: the non-USD `llm.currency`/`usd_to_configured_rate` conversion, and the whole
+  `refresh.*` block — `interval_minutes` plus `llm_budget.*` — which is parsed but has no
+  consumer) and **Integrations** (how-to: the register→promote→arm spine, then per-type
+  guidance for only the gate-passing documentable set, with each type's credential
+  mechanism). The gate is recorded as decision **D-0055**. The remaining three placeholders
+  were left untouched. The thread is **not finished** — two slices remain (-04, -05) below.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -86,7 +96,7 @@ inventory):
 ## Remaining slice plan
 
 - **-02** — Install and Build + Quickstart. *(done)*
-- **-03** — Configuration + Integrations.
+- **-03** — Configuration + Integrations. *(done)*
 - **-04** — Guides + Operations (including the break-glass fold into Operations).
 - **-05** — API Reference.
 

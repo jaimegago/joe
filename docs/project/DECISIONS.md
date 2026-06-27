@@ -10,6 +10,49 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0055 — The public Integrations section documents only component types that pass the real-Connect-AND-armable (or credential-less) gate
+
+- Date: 2026-06-27
+- Status: accepted
+- Session: docs-public-establishment-pass-03
+- Decision: A documentation policy governs what `docs/public/integrations/` may present as
+  a working integration. A component type is documentable as a connectable system **only**
+  when both hold: (a) its adapter's `Connect` is a real implementation that establishes or
+  probes a live client (not a skeleton/stub that merely parses config and marks itself
+  connected), and (b) the type is **armable** through the governed promotion path — either
+  a credential provider exists that can supply its credential shape, or the type is
+  credential-less-but-functional. The launch credential mechanisms that define armability
+  are exactly two provider kinds plus the credential-less case: **static** (an env-var
+  indirection named `JOE_<SEGMENT>_<LABEL>`, used by every wired single-token backend),
+  **kubeconfig-exec** (an in-cluster or kubeconfig-path locator, used by `kubernetes`), and
+  **none** (credential-less types that function as registered: `terraform`, `envoy`).
+  Applying the gate to the live tree, the documentable set is the 16 credential-wired
+  types — `kubernetes` (kubeconfig-exec) plus the 15 static types `github`, `gitlab`,
+  `prometheus`, `mimir`, `loki`, `tempo`, `jaeger`, `splunk`, `dynatrace`, `newrelic`,
+  `alertmanager`, `pagerduty`, `grafana`, `falco`, `argocd` — plus the two credential-less
+  types `terraform` and `envoy`. Types that fail the gate are **never** given a working
+  procedure: `azure`, `helm`, and `nginx-ingress` have skeleton `Connect`; `git`, `aws`,
+  `datadog`, and the datastore types (`postgresql`, `mysql`, `redis`, `mongodb`, `kafka`,
+  `elasticsearch`) have a real `Connect` but no governed credential path; `cloudwatch` and
+  `azuremonitor` have no adapter package; and `oci_registry`, `dockerhub`, `artifactory`,
+  `ecr` resolve to an adapter-not-found error when registered. For these, a single honest
+  "not yet supported" line is the most the Integrations section may say — never a procedure
+  that walks a reader to a promotion step that cannot accept their credential.
+- Basis: the credential-provider surface is the authoritative armability signal —
+  `internal/credential/wiring.go` (the wired-type registry, 16 entries; the promotion
+  endpoint's reject-unwired authority) and `internal/credential/provider.go`
+  (`ProviderForKind` ships exactly `KindStatic` and `KindKubeconfigExec`), with the
+  per-type env segments in `internal/credential/references.go`. `Connect` verdicts and the
+  full component-type enum (`internal/store/constants.go`, `AllowedComponentTypes`) were
+  re-derived from the live adapter tree this session. Extends the shipped-truth gate of
+  D-0052 (and the inventory `docs/backlog/public-docs-feature-inventory.md`) with the
+  specific rule for the Integrations section. D-0052 establishes the public surface and the
+  general shipped-truth gate but does not record this Connect-AND-armable rule, so this
+  entry is not a duplicate.
+- Supersedes: nothing — refines D-0052 for the Integrations section.
+
+---
+
 ## D-0054 — Return-path routing conventions reverted: no title-level identifier; the slug in commits and the decision log is the sole join
 
 - Date: 2026-06-27
