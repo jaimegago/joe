@@ -42,10 +42,6 @@ func TestMetrics_Recorders(t *testing.T) {
 	m.RecordDBOperation(ctx, "insert", 3*time.Millisecond, nil)
 	m.RecordDBOperation(ctx, "insert", 3*time.Millisecond, errors.New("boom"))
 
-	m.RecordCacheLookup(ctx, "facts", true, 2*time.Millisecond, nil)
-	m.RecordCacheLookup(ctx, "facts", false, 2*time.Millisecond, nil)
-	m.RecordCacheLookup(ctx, "facts", false, 2*time.Millisecond, errors.New("boom"))
-
 	m.RecordRefreshCycle(ctx, 1*time.Second, nil)
 	m.RecordRefreshCycle(ctx, 1*time.Second, errors.New("boom"))
 	m.RecordDiscoveryInput(ctx, 500*time.Millisecond, nil)

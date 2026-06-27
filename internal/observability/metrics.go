@@ -30,9 +30,6 @@ type Metrics struct {
 	dbOnce sync.Once
 	db     dbMetrics
 
-	cacheOnce sync.Once
-	cache     cacheMetrics
-
 	coreAgentOnce sync.Once
 	coreAgent     coreAgentMetrics
 
@@ -318,78 +315,6 @@ func (m *Metrics) RecordDBOperation(ctx context.Context, operation string, durat
 	safeRecordHistogram(ctx, metrics.durationHist, float64(duration.Milliseconds()), attrs...)
 	if err != nil {
 		safeAddCounter(ctx, metrics.errorCounter, 1, attrs...)
-	}
-}
-
-type cacheMetrics struct {
-	lookupCounter metric.Int64Counter
-	hitCounter    metric.Int64Counter
-	missCounter   metric.Int64Counter
-	errorCounter  metric.Int64Counter
-	durationHist  metric.Float64Histogram
-}
-
-func (m *Metrics) getCacheMetrics() *cacheMetrics {
-	m.cacheOnce.Do(func() {
-		lookupCounter, err := m.meter.Int64Counter(
-			MetricCacheLookups,
-			metric.WithDescription("Cache lookups"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCacheLookups, err)
-
-		hitCounter, err := m.meter.Int64Counter(
-			MetricCacheHits,
-			metric.WithDescription("Cache hits"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCacheHits, err)
-
-		missCounter, err := m.meter.Int64Counter(
-			MetricCacheMisses,
-			metric.WithDescription("Cache misses"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCacheMisses, err)
-
-		errorCounter, err := m.meter.Int64Counter(
-			MetricCacheErrors,
-			metric.WithDescription("Cache errors"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCacheErrors, err)
-
-		durationHist, err := m.meter.Float64Histogram(
-			MetricCacheDuration,
-			metric.WithDescription("Cache lookup duration"),
-			metric.WithUnit(metricUnitMS),
-		)
-		logMetricInitError(MetricCacheDuration, err)
-
-		m.cache = cacheMetrics{
-			lookupCounter: lookupCounter,
-			hitCounter:    hitCounter,
-			missCounter:   missCounter,
-			errorCounter:  errorCounter,
-			durationHist:  durationHist,
-		}
-	})
-	return &m.cache
-}
-
-func (m *Metrics) RecordCacheLookup(ctx context.Context, cacheName string, hit bool, duration time.Duration, err error) {
-	metrics := m.getCacheMetrics()
-	attrs := []attribute.KeyValue{attribute.String(AttrCacheName, cacheName)}
-	safeAddCounter(ctx, metrics.lookupCounter, 1, attrs...)
-	safeRecordHistogram(ctx, metrics.durationHist, float64(duration.Milliseconds()), attrs...)
-	if err != nil {
-		safeAddCounter(ctx, metrics.errorCounter, 1, attrs...)
-		return
-	}
-	if hit {
-		safeAddCounter(ctx, metrics.hitCounter, 1, attrs...)
-	} else {
-		safeAddCounter(ctx, metrics.missCounter, 1, attrs...)
 	}
 }
 

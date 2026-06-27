@@ -71,5 +71,15 @@ func (s *Services) BuildLLMChain(inner llm.LLMAdapter, mc config.ModelConfig) ll
 		cfg.Currency = s.Config.LLM.Currency
 		cfg.FXRate = s.Config.LLM.USDToConfiguredRate
 	}
-	return llmusage.NewRecorderAdapter(cfg)
+	chain := llmusage.NewRecorderAdapter(cfg)
+
+	// Wrap the recording / cost-gating chain in OpenTelemetry instrumentation
+	// (LLM call/error/token/latency metrics + spans). This is the SINGLE chain
+	// construction site shared by boot and both model-swap handlers, so every
+	// live adapter — boot or hot-swapped — emits identical LLM observability.
+	// Instrumentation is the OUTERMOST wrapper: it measures the whole chain end
+	// to end and never sits between the recorder and the raw client, preserving
+	// the recorder's raw-client contract. A nil logger applies slog.Default(),
+	// mirroring the recorder's boot posture above.
+	return llm.NewInstrumentedAdapter(chain, nil, mc.Provider, mc.Model)
 }
