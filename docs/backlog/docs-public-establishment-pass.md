@@ -47,6 +47,21 @@ separate, later pass.
   The routing rule is recorded as decision **D-0056** (a refinement of the D-0055 gate; the
   documentable set is unchanged). No code or invariant changed. The thread is **not
   finished** — two slices remain (-05, -06) below.
+- **`docs-public-establishment-pass-05` (done).** Filled **Guides** (how-to: one page per
+  feature area — the web UI and human OIDC login, chat sessions, the incident regime,
+  skills, the MCP server, the Slack bot, the knowledge graph, and documentation proposals
+  — plus the Guides landing). Each page was re-derived from the live tree against the
+  shipped parser/route surface, honoring the known accuracy traps: documentation publish
+  is presented as a step distinct from approval and gated by the write floor (it will not
+  publish in observation mode); the web UI lands on chat with no dashboard and a flat nav
+  plus an `is_admin` admin subgroup; the incident page documents the captain gate and
+  banner but not the deferred captain UI/read surface, and flags `joe incident list` as a
+  stub; skills are documented at the real `joe skills` shapes (no `status` subcommand);
+  and the Integrations MCP pointer now resolves to the new MCP guide. A straight content
+  fill — no decision was forced, no code or invariant changed. Because Guides and
+  Operations were split into separate slices, the remaining plan was renumbered:
+  Operations (with the break-glass fold) is **-06** and API Reference is **-07**. The
+  thread is **not finished** — two slices remain (-06, -07) below.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -111,8 +126,9 @@ inventory):
 - **-02** — Install and Build + Quickstart. *(done)*
 - **-03** — Configuration + Integrations. *(done)*
 - **-04** — Integrations corrective: runtime-registerable vs boot-config-only activation routing (D-0056). *(done)*
-- **-05** — Guides + Operations (including the break-glass fold into Operations).
-- **-06** — API Reference.
+- **-05** — Guides. *(done)*
+- **-06** — Operations (including the break-glass fold into Operations).
+- **-07** — API Reference.
 
 Every claim in every slice is gated by `docs/backlog/public-docs-feature-inventory.md`
 (shipped-truth). No PARTIAL or PRESENT-BUT-UNWIRED feature is documented as fully
