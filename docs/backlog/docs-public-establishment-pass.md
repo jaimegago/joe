@@ -33,7 +33,20 @@ separate, later pass.
   consumer) and **Integrations** (how-to: the register→promote→arm spine, then per-type
   guidance for only the gate-passing documentable set, with each type's credential
   mechanism). The gate is recorded as decision **D-0055**. The remaining three placeholders
-  were left untouched. The thread is **not finished** — two slices remain (-04, -05) below.
+  were left untouched. The thread is **not finished** — two slices remain (-05, -06) below.
+- **`docs-public-establishment-pass-04` (done — corrective).** Corrected the **Integrations**
+  page written in -03. The page had presented one uniform register→promote→arm→test runtime
+  spine for all 18 documentable types, but re-derivation of the live tree showed the runtime
+  type→adapter constructor (`newAdapterForType`) has no case for `github`, `gitlab`, `splunk`,
+  `dynatrace`, `newrelic`: these five are armable but have no runtime construction path, so
+  the connectivity test cannot build them and they come live only at a daemon restart via the
+  boot connect pass (`connectSourcesDefault`). The page now routes per-type by activation
+  path — **runtime-registerable (13)** via `/test`, **boot-config-only (5)** via
+  register+promote+env-var+restart — with an explicit activation column on every table. The
+  MCP mention was trimmed to a one-line pointer to Guides (MCP is documented in slice -05).
+  The routing rule is recorded as decision **D-0056** (a refinement of the D-0055 gate; the
+  documentable set is unchanged). No code or invariant changed. The thread is **not
+  finished** — two slices remain (-05, -06) below.
 
 ## What stays at `docs/` root (the inputs to this pass)
 
@@ -97,8 +110,9 @@ inventory):
 
 - **-02** — Install and Build + Quickstart. *(done)*
 - **-03** — Configuration + Integrations. *(done)*
-- **-04** — Guides + Operations (including the break-glass fold into Operations).
-- **-05** — API Reference.
+- **-04** — Integrations corrective: runtime-registerable vs boot-config-only activation routing (D-0056). *(done)*
+- **-05** — Guides + Operations (including the break-glass fold into Operations).
+- **-06** — API Reference.
 
 Every claim in every slice is gated by `docs/backlog/public-docs-feature-inventory.md`
 (shipped-truth). No PARTIAL or PRESENT-BUT-UNWIRED feature is documented as fully
