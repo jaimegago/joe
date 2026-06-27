@@ -104,15 +104,21 @@ The VCS tools route through the accessor in-process (`internal/api/inproc_client
 
 | Endpoint | Method | Mutation | Authorization |
 |----------|--------|----------|---------------|
-| `/api/v1/components` | POST | Creates a component + registers its adapter | Edge auth |
-| `/api/v1/components/{id}` | DELETE | Removes a component + disconnects its adapter | Edge auth |
-| `/api/v1/components/{id}/promote` | POST | Arms a component (readonly → armed) | Edge auth |
+| `/api/v1/components` | POST | Registers a component **inert** — credential-less, no adapter connected | Admin-gated + audited |
+| `/api/v1/components/{id}` | DELETE | Removes a component (+ its credential reference) and unregisters any resident adapter | Admin-gated + audited |
+| `/api/v1/components/{id}/promote` | POST | Arms a component (readonly → armed): writes a credential **reference**, performs no Connect/Probe | Admin-gated + audited |
 | `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies stored graph ops | Edge auth |
 | `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | Edge auth |
 | `/api/v1/refresh` | POST | Triggers graph reconciliation | Edge auth |
 | `/api/v1/admin/*` | various | Zones, policies, read-posture, read-promotions, sessions | Admin-gated + audited |
 
 All `/api/v1/` routes sit behind edge auth middleware; admin routes additionally require the admin gate and write an append-only audit row. Request bodies are limited by `MaxRequestBody` middleware.
+
+### Component lifecycle: inert registration → governed promotion
+
+Creating a component does **not** connect to or register an adapter. `POST /api/v1/components` lands the component **inert** — credential-less by construction (credential-bearing config fields are *rejected* at registration, not silently stripped), assigned to no zone (so it resolves to the read-only `unassigned` zone), with no adapter connected and no credential present (`internal/api/components.go:192-199,247-252`). There is no eager `Connect` probe: a credential-less record cannot authenticate, and connecting at registration would be the attacker-controllable network-call / env-dereference vector the inert landing closes.
+
+Credential entry is owned by a **single governed transition** — the read-only-to-armed promotion (D-0030): `POST /api/v1/components/{id}/promote` → `handlePromoteComponent` (`internal/api/components.go:607-721`). Promotion is admin-gated and audited, writes a credential **reference** into the component's config — an env-var indirection or a kubeconfig-exec locator, never an inline secret — in one fail-closed transaction, and performs **no** credential resolution (no `Connect`, `Resolve`, or `Probe`; whether the reference actually works is a separate explicit admin probe). Re-promoting an armed component overwrites its reference as another gated, audited event, so a credential change is itself governed rather than a delete-and-recreate. A component type with no wired credential provider can never be armed (the first validation after the component loads).
 
 ### Adapters
 
@@ -237,7 +243,7 @@ Key properties:
 
 - The `team_flat` admit sits **after** the zone-allows-action gate. It widens **WHO** may perform a read the zone already permits; it never changes **WHICH** actions a zone allows. It fires for the read action only and requires a non-empty (authenticated) principal set.
 - The posture is **orthogonal to the write floor.** A `team_flat` install with the floor up still denies every mutate — read posture has no input to the executor's floor check.
-- The posture governs **human-facing transport reads only.** The autonomous `agent:core` read surface (background refresh) is a **separate axis**, governed solely by `auto_promote_read` (per-component-type promotion) plus grants. The two are separated at engine construction: the transport policy engine carries the read-posture resolver (`NewPolicyEngineWithGovernance`); the refresh engine does not (`NewPolicyEngineWithPromote`, posture seam nil). Flipping the posture cannot change what `agent:core` can read (D-0043).
+- The posture governs **human-facing transport reads only.** The autonomous `agent:core` read surface (background refresh) is a **separate axis**, governed solely by `auto_promote_read` (per-component-type promotion) plus grants. The two are separated at engine construction: the transport policy engine carries the read-posture resolver (`NewPolicyEngineWithGovernance`); the refresh engine does not (`NewPolicyEngineWithPromote`, posture seam nil). Flipping the posture cannot change what `agent:core` can read (D-0043). The refresh does not bypass the access seam to reach adapters: since A001-COREGOV CC-05 it resolves every component's adapter through `access.ResolveAdapter` under the `agent:core` principal at `ActionRead` (`internal/coreagent/refresh.go:194-216`, `internal/access/access.go:196-231`), so an ungranted/unpromoted component is denied before its adapter — and thus its credential — is resolved, and the refresh read is audited like any other adapter access. The seam **fails closed** if unwired: the background refresh refuses to start, and `resolveAdapter` denies rather than reading the raw registry (CC-08, `internal/coreagent/refresh.go:106-118`). The access seam is in fact the sole governed path to any adapter — a build-failing structural test (`TestInvariant_NoUngovernedAdapterOrGraphAccess`, `internal/api/access_guard_test.go`) forbids any package outside a narrow allowlist (`internal/access`, `internal/coreagent`, `cmd/joe`) from resolving an adapter directly.
 - The posture is read **live per request** (no boot cache). Flipping it is an **admin-gated, audited operator act** on `GET`/`POST /api/v1/admin/read-posture`.
 
 ### 3.6 Protected security configuration

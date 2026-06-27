@@ -9,11 +9,12 @@ classified **VERIFIED = 287**, **MISALIGNED = 67**, **UNVERIFIABLE = 40**.
 
 **Campaign progress:** the actioning campaign rewrites one doc per session. Open
 MISALIGNED entries remaining (recomputed by summing the per-file counts of the
-still-open sections below): **22**. Resolved so far:
+still-open sections below): **13**. Resolved so far:
 `operational-modes-ui-status.md` (17, in `docs-reference-audit-01`);
 `security-in-layers.md` (6, in `docs-reference-audit-02`). Retired (doc deleted,
 survivors absorbed) so far: `direct-http-mutation-surface.md` (11) and
-`managed-system-egress-map.md` (11), both in `docs-reference-audit-03`.
+`managed-system-egress-map.md` (11), both in `docs-reference-audit-03`;
+`accessor-promotion-state-axis.md` (9, in `docs-reference-audit-04`).
 
 This is an **audit only** — no doc or code was changed. Each MISALIGNED claim below
 carries the doc location, the authoritative code location, a one-line discrepancy,
@@ -320,12 +321,33 @@ entries below are retained for traceability.
 
 ---
 
-## docs/reference/accessor-promotion-state-axis.md  — MISALIGNED: 9
+## docs/reference/accessor-promotion-state-axis.md  — MISALIGNED: 9 — RETIRED in docs-reference-audit-04
 
-Dated (2026-06-14) investigation whose core verdict — "the only component-state axis
-the permit decision reads is zone assignment; no promotion/read-only field exists" —
-was overtaken by D-0028 (`auto_promote_reads`), D-0030 (promotion endpoint), and the
-CC-05/CC-08 refresh-through-seam change. Carries no superseded banner.
+**Disposition: retire-and-absorb (doc deleted; D-0050).** Dated (2026-06-14)
+investigation whose core verdict — "the only component-state axis the permit decision
+reads is zone assignment; no promotion/read-only field exists" — was overtaken by
+D-0028 (`auto_promote_reads`), D-0030 (promotion endpoint), and the CC-05/CC-08
+refresh-through-seam change. A read-only survivor check partitioned every present-tense
+claim. The still-true governance properties **not** already in `security-in-layers.md`
+were absorbed into that doc: (a) component creation lands the component **inert** —
+credential-less, no adapter connected, resolving to the read-only `unassigned` zone
+(Part 2, new "Component lifecycle" subsection); (b) credential entry is owned by the
+single governed, admin-gated, audited read-only→armed **promotion** transition, which
+writes a reference (never an inline secret) and performs no Connect/Probe (same
+subsection; the stale "create … registers its adapter" endpoint-table row was corrected
+in the same edit); (c) the autonomous `agent:core` refresh resolves adapters **through
+the access seam** (`access.ResolveAdapter`, `ActionRead`) and **fails closed** when
+unwired, with the seam guarded as the sole adapter path by a build-failing structural
+test (§3.5). **Dropped** (died with the doc): the overtaken "single zone-assignment
+axis / no promotion field" verdict; the now-false "component create → `Connect` then
+`Register`, bypasses the seam" and "refresh → `Adapters.Get`, bypasses the seam" claims;
+the "four-constant `rbac.Action` enum" claim (the live six are already correctly in
+`security-in-layers.md` §8.1); the whole Q5 bypass enumeration; and every `file:line`
+citation. The RBAC-disabled (nil-engine) permit-all caveat and the
+permit-precedes-backend property were judged still-true findings/caveats rather than
+missing protective invariants and were **not** absorbed (the former overlaps
+`full-mode-rbac-track`; the latter is substantially covered by Part 2). No claim was
+left unresolved. The 9 entries below are retained for traceability.
 
 1. DOC `:137,167` — Core Agent refresh `→ Adapters.Get(source.ID)`; "bypasses the seam."
    CODE `internal/coreagent/refresh.go:215` calls `r.accessor.ResolveAdapter(ctx, principal,
@@ -557,9 +579,12 @@ are as-built mechanism claims contradicted by D-0011/D-0016.)
   Both were **retired (deleted) in `docs-reference-audit-03`** under a retire-and-absorb disposition: their
   still-true mutation invariants were absorbed into `security-in-layers.md` (see those sections above); their
   bypass verdicts and deleted-surface findings were dropped.
-- **`accessor-promotion-state-axis.md`** remains a dated investigation snapshot whose premise was overtaken by
-  D-0028, D-0030, and CC-05. Its disposition (rewrite, banner-mark, or retire) is still open — a per-doc
-  decision, not a line edit.
+- **`accessor-promotion-state-axis.md`** was a dated investigation snapshot whose premise was overtaken by
+  D-0028, D-0030, and CC-05. **Retired (deleted) in `docs-reference-audit-04`** under a retire-and-absorb
+  disposition (D-0050): its still-true governance properties (inert component creation, the governed
+  read-only→armed promotion that owns credential entry, and the accessor-governed/fail-closed refresh) were
+  absorbed into `security-in-layers.md`; its overtaken verdict, bypass enumeration, and `file:line` citations
+  were dropped.
 - The remaining docs need targeted edits: a renamed path (`joe-architecture.md`), a stale default
   (`joe-architecture.md` gemini model; `DESIGN-SESSIONS-VIEW.md` LIMIT), a removed subcommand
   (`joe-skills-design.md` `status`), and as-built corrections (`joe-identity-design.md` §2.9/§6).
