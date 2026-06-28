@@ -154,6 +154,9 @@ call) or only at the next daemon restart (boot).
 | --- | --- | --- | --- |
 | Kubernetes | `kubernetes` | kubeconfig-exec — `in_cluster: true` or a `kubeconfig` path | runtime (`/test`) |
 
+For the click-by-click web-UI walkthrough of registering, promoting, and taking a cluster
+live, see [Register a Kubernetes component](../guides/register-kubernetes/).
+
 ### Source control and code review
 
 | System | Type | Credential mechanism | Activation |
