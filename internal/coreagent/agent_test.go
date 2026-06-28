@@ -378,7 +378,9 @@ func TestRegisterComponentTool_Execute(t *testing.T) {
 		{"missing name", map[string]any{"type": "kubernetes", "config": map[string]any{}}, true},
 		{"missing type", map[string]any{"name": "x", "config": map[string]any{}}, true},
 		{"invalid type", map[string]any{"name": "x", "type": "badtype", "config": map[string]any{}}, true},
-		{"missing config", map[string]any{"name": "x", "type": "kubernetes"}, true},
+		// Config is optional at registration (D-0029): an absent config is
+		// normalized to an empty JSON object and the component lands inert.
+		{"absent config lands inert", map[string]any{"name": "x", "type": "kubernetes"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

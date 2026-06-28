@@ -436,7 +436,7 @@ func (t *RegisterComponentTool) Parameters() llm.ParameterSchema {
 				Description: "Source-specific configuration",
 			},
 		},
-		Required: []string{"name", "type", "config"},
+		Required: []string{"name", "type"},
 	}
 }
 
@@ -454,15 +454,20 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("unsupported source type %q (allowed: %s)", sourceType, strings.Join(store.AllowedComponentTypes(), ", "))
 	}
 
-	config, ok := args["config"].(map[string]any)
-	if !ok || config == nil {
-		return nil, fmt.Errorf("config is required and must be an object")
-	}
-
-	// Create source in store
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	// Config is optional at registration (D-0029): a config-less registration
+	// lands inert. Accept an absent or null config as empty; reject only a
+	// present-but-non-object config.
+	var configBytes json.RawMessage
+	if raw, present := args["config"]; present && raw != nil {
+		config, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("config must be an object")
+		}
+		b, err := json.Marshal(config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal config: %w", err)
+		}
+		configBytes = b
 	}
 
 	// Credential-less by construction (A003 Stream G): an autonomous discovery
@@ -472,6 +477,11 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 	if err := componentgov.RejectCredentialFields(configBytes); err != nil {
 		return nil, fmt.Errorf("config must be credential-less: %w", err)
 	}
+
+	// Default an absent or empty config to an empty JSON object at the SAME
+	// shared seam the HTTP create path uses, before encryption, so the two
+	// registration surfaces cannot drift and a config-less registration persists.
+	configBytes = componentgov.NormalizeRegistrationConfig(configBytes)
 
 	randBytes := make([]byte, 8)
 	if _, err := crypto_rand.Read(randBytes); err != nil {

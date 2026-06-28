@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -72,6 +73,50 @@ func TestCreateComponent_RejectsCredentialFields(t *testing.T) {
 			t.Errorf("credential-less component not persisted (count=%d); want 1", got)
 		}
 	})
+}
+
+// TestCreateComponent_AbsentConfigPersistsInert is the regression break-test for
+// the restored D-0029 invariant: a registration payload carrying id + type +
+// name and NO config field must persist and land inert. The bug was that an
+// absent config reached the NOT NULL components.config INSERT as a nil blob and
+// surfaced as a generic 500; the suite stayed green only because every other
+// create helper always sent a config (even `{}`). The shared registration seam
+// now normalizes the absent config to an empty JSON object before encryption, so
+// the round-trip read returns a valid empty-object config — confirming the
+// encrypt/decrypt path handles the defaulted "{}".
+func TestCreateComponent_AbsentConfigPersistsInert(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	f.markAdmin("user:alice")
+
+	// No "config" key at all — the UI registration payload shape that regressed.
+	body := `{"id":"c-noconfig","type":"prometheus","name":"prom"}`
+	w := f.do(http.MethodPost, "/api/v1/components", body, "user:alice")
+	if w.Code != http.StatusCreated {
+		t.Fatalf("absent-config create: status=%d body=%s; want 201", w.Code, w.Body.String())
+	}
+	if got := componentCount(t, f, "c-noconfig"); got != 1 {
+		t.Fatalf("config-less component not persisted (count=%d); want 1", got)
+	}
+
+	// Round-trip read through the store: the stored config is a valid empty JSON
+	// object, and the component is inert (no credential reference → not armed).
+	comp, err := f.services.Store.Components.Get(context.Background(), "c-noconfig")
+	if err != nil {
+		t.Fatalf("get component: %v", err)
+	}
+	if comp == nil {
+		t.Fatal("component not found after create")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(comp.Config, &fields); err != nil {
+		t.Fatalf("stored config %q is not a valid JSON object: %v", string(comp.Config), err)
+	}
+	if len(fields) != 0 {
+		t.Errorf("stored config = %q; want an empty object {}", string(comp.Config))
+	}
+	if _, armed := armedState(comp.Config); armed {
+		t.Error("config-less registration must land inert (unarmed); armedState reported armed")
+	}
 }
 
 // --- admin gate ---

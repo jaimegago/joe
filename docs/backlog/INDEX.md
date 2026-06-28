@@ -38,6 +38,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`public-docs-feature-inventory`](public-docs-feature-inventory.md) | Public Docs Feature Inventory | open |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress |
+| [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |

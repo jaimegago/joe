@@ -2,6 +2,7 @@ package coreagent
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
 
@@ -85,6 +86,41 @@ func TestRegisterComponentTool_WritesAuditOnCredentiallessSuccess(t *testing.T) 
 	}
 	if decision != string(audit.DecisionAllow) {
 		t.Errorf("audit decision = %q; want allow", decision)
+	}
+}
+
+// TestRegisterComponentTool_AbsentConfigPersistsInert is the tool-path twin of
+// the HTTP regression (TestCreateComponent_AbsentConfigPersistsInert): a
+// register_component call with NO config arg must persist a credential-less,
+// inert component whose stored config round-trips to a valid empty JSON object.
+// Both registration surfaces consult the same normalization seam, so neither can
+// regress the restored D-0029 config-less-registration invariant.
+func TestRegisterComponentTool_AbsentConfigPersistsInert(t *testing.T) {
+	svc := makeTestServices(t)
+	svc.Audit = audit.NewRepository(svc.Store.DB(), svc.Store.Driver())
+	tool := NewRegisterComponentTool(svc, slog.Default())
+
+	// No "config" arg at all.
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"name": "discovered-inert", "type": "prometheus",
+	})
+	if err != nil {
+		t.Fatalf("absent-config register: unexpected error %v", err)
+	}
+
+	comps, lerr := svc.Store.Components.List(context.Background())
+	if lerr != nil {
+		t.Fatalf("list components: %v", lerr)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("config-less register persisted %d components; want 1", len(comps))
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(comps[0].Config, &fields); err != nil {
+		t.Fatalf("stored config %q is not a valid JSON object: %v", string(comps[0].Config), err)
+	}
+	if len(fields) != 0 {
+		t.Errorf("stored config = %q; want an empty object {}", string(comps[0].Config))
 	}
 }
 
