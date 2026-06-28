@@ -10,6 +10,53 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0059 — The component-registration how-to lives in Guides (Kubernetes first), and Quickstart includes registering one Kubernetes component
+
+- Date: 2026-06-28
+- Status: accepted
+- Session: component-registration-guide
+- Decision: The task-oriented, web-UI walkthrough for bringing a component under Joe's
+  management is a **Guides** page, not new prose in Integrations or Concepts. The first
+  such page, `docs/public/guides/register-kubernetes.md` (`weight: 15`, slotted directly
+  after the web-UI login guide), covers **Kubernetes only**: register the component (it
+  lands inert), assign it a zone, promote it with a **kubeconfig-exec** reference
+  (in-cluster identity or kubeconfig path — indirection-only, no inline secret), then run
+  the UI **Test Connection** affordance, which constructs and registers the live adapter
+  with no restart. Other component types — including the boot-config-only types that come
+  live only at a daemon restart per D-0056 — are deferred to further sections or sibling
+  Guides pages and are *not* covered here. The page links to Concepts for the "why"
+  (inert registration, governed promotion, credentials-as-references) rather than
+  re-explaining, and cross-references Integrations instead of duplicating its per-type
+  routing table (D-0055 / D-0056): Integrations' Kubernetes entry links forward to the
+  Guide and the Guide links back. Separately, **Quickstart now includes registering and
+  promoting one Kubernetes component** as a first-class step (a new Step 5 / Step 6),
+  pointing at the Guide for the click-by-click detail and ending on an agentic ask that
+  reads the live cluster — establishing the policy that Quickstart demonstrates a real
+  registered component rather than ending on an empty graph.
+- Basis: re-derived from the live tree this session. The web UI exposes the affordances
+  the Guide documents and only those: the Components page renders an admin-gated
+  **+ Register Component** form (type selector populated from the backend type enum;
+  fields id/type/name; no credential field), an admin-gated **Promote** action whose
+  Kubernetes form offers a kubeconfig path, an optional context, and an in-cluster
+  checkbox with no secret field, and a **Test Connection** button available to any
+  authenticated principal; zone assignment for a freshly registered component is the
+  admin-gated unassigned-components control on the Zones admin page. The server accepts
+  this exactly: `kubernetes` is wired to the kubeconfig-exec provider, promotion writes a
+  reference and refuses an inline `value`, and the connectivity-test handler builds the
+  adapter, connects, and registers it live in-process (no restart). The Test affordance is
+  real and load-bearing for the runtime-registerable Kubernetes path, so the Guide's
+  happy path ends on a Test Connection click; the open `governed-connectivity-check-surface`
+  backlog item (the test route is not admin-gated and an inert component has nothing to
+  probe) is noted as deferred and does not block documenting the affordance that ships.
+  Claims were gated against `docs/backlog/public-docs-feature-inventory.md` per the
+  D-0052 / D-0055 shipped-truth rule; no internal `file:line` citations appear on any
+  public page; and per D-0032 no volatile count (number of component types or credential
+  providers) is hardcoded on a public page — the Guide points to Integrations for the
+  per-type set.
+- Supersedes: nothing — adds a Guides page and a Quickstart step; refines the
+  D-0055 / D-0056 Integrations-as-routing-index split by placing the UI walkthrough in
+  Guides and cross-linking the two.
+
 ## D-0058 — Six dead-on-arrival component types are removed from the registrable set at the single authoritative seam so they are unregistrable through every surface
 
 - Date: 2026-06-28

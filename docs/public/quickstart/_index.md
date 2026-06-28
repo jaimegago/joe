@@ -90,7 +90,43 @@ Joe runs a full agentic turn and returns a JSON response. The answer is in the
 its graph is empty — that is the expected, correct answer for a fresh install, and it
 confirms the whole path works end to end: identity, the LLM, and the agent loop.
 
-That is your one answer. Joe is up, governed, read-only, and responding.
+That is your one answer. Joe is up, governed, read-only, and responding — but with
+nothing to manage yet. Give it one system to read.
+
+## Step 5 — Register one Kubernetes cluster
+
+Joe is near-useless until it has a registered component to reason about. Connect one
+through the web UI. Bringing a system under management is always the same three beats:
+**register** it (it lands inert — recorded, but credential-less and unable to act),
+**promote** it with a credential **reference** (never a stored secret), then run a
+**connectivity test** that takes it live. For Kubernetes the reference is a kubeconfig
+locator — an in-cluster identity or a kubeconfig path — and the test brings it live with
+no restart.
+
+Registering and promoting are admin actions in the web UI, so this step needs a human
+admin login rather than the service-account key from Step 2. The full click-by-click
+procedure — logging in, registering, assigning a zone, promoting with a kubeconfig
+reference, and testing — lives in the guide:
+
+> **[Register a Kubernetes component](../guides/register-kubernetes/)** — do the steps
+> there, then come back.
+
+When the component's connectivity test reports success, the cluster is live and Joe can
+read it.
+
+## Step 6 — Ask Joe about the cluster
+
+Run the same agentic ask again, now that Joe has something real to read:
+
+```sh
+curl -s http://localhost:7777/api/v1/tasks \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What Kubernetes workloads do you know about, and is anything unhealthy?"}'
+```
+
+This time Joe answers from the live cluster — still read-only, because the write floor is
+up. You have gone from an empty install to a governed copilot reading real infrastructure.
 
 ## What you just did
 
@@ -101,11 +137,14 @@ That is your one answer. Joe is up, governed, read-only, and responding.
   managed system.
 - Drove its real interaction surface — the agentic task endpoint — and got an answer
   back.
+- Registered and promoted one Kubernetes cluster through the UI and took it live, so Joe
+  had real infrastructure to read.
 
 ## Where to go next
 
 - The full build, run, and authentication procedure (including OIDC login for humans
   and the admin bootstrap) → [Install and Build](../install-and-build/)
 - Every configuration key and environment variable → [Configuration](../configuration/)
-- Connect Joe to real systems so it has something to map → [Integrations](../integrations/)
+- Register the other system types Joe supports → [Integrations](../integrations/)
+- The full Kubernetes register-and-promote walkthrough → [Register a Kubernetes component](../guides/register-kubernetes/)
 - Understand observation mode, principals, and governance → [Concepts](../concepts/)

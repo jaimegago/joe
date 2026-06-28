@@ -17,6 +17,10 @@ binary. For the *why* behind any of these, the pages link back to
 
 - [The web UI and human login](web-ui/) — log a human in over OIDC, the admin
   bootstrap, and what the post-login app actually looks like.
+- [Register a Kubernetes component](register-kubernetes/) — bring a cluster under Joe's
+  management through the UI: register it inert, promote it with a kubeconfig reference,
+  and take it live. Other component types are covered separately; see
+  [Integrations](../integrations/) for the per-type routing.
 - [Chat sessions](chat-sessions/) — create a session, who can read it, and link one
   to an incident.
 - [The incident regime](incidents/) — declare and resolve an incident, and what the
