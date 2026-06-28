@@ -10,6 +10,62 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0058 — Six dead-on-arrival component types are removed from the registrable set at the single authoritative seam so they are unregistrable through every surface
+
+- Date: 2026-06-28
+- Status: accepted
+- Session: trim-deadonarrival-component-types
+- Decision: Six component types that are non-functional at runtime regardless of
+  config — `oci_registry`, `dockerhub`, `artifactory`, `ecr`, `cloudwatch`,
+  `azuremonitor` — are removed from the authoritative registrable-type set
+  (`store.AllowedComponentTypes` / `store.IsValidComponentType`,
+  `internal/store/constants.go`). Because every registration surface consults that
+  single seam — the HTTP create endpoint (`handleCreateComponent`,
+  `internal/api/components.go`), the `register_component` LLM tool
+  (`RegisterComponentTool.Execute`, `internal/coreagent/agent.go`), and the web
+  registration form (which populates its type selector from
+  `handleListComponentTypes` → `AllowedComponentTypes`) — all three now uniformly
+  reject the six with exactly the invalid-type response a wholly unknown type
+  already takes. No surface is special-cased. The four registry constants
+  (`ComponentTypeOCIRegistry/DockerHub/Artifactory/ECR`) remain DEFINED because the
+  coreagent refresh type-switch (`internal/coreagent/refresh.go`) still names them;
+  a dead-on-arrival comment at the constant block records that they are
+  unregistrable and why. The two with no adapter code at all
+  (`ComponentTypeCloudWatch/AzureMonitor`) are deleted entirely — nothing outside
+  the registrable lists referenced them. Read paths are type-agnostic (GET, list,
+  and Test handlers read and serialize without validating the stored type), so a
+  previously-stored row of a removed type still lists/reads; no read-path tolerance
+  was needed and none was added. This closes a launch credibility gap: a type the
+  operator could register but that could never function, with the runtime Test
+  control reporting a misleading "no connection to test" success.
+- Basis: re-derived from the live tree this session. Neither construction map
+  contains any of the six — not the boot path (`connectSourcesDefault`,
+  `cmd/joe/server.go`, which builds kubernetes/git/aws/azure/falco/datadog/splunk/
+  dynatrace/newrelic/github/gitlab) nor the runtime path (`newAdapterForType`,
+  `internal/api/components.go`) — so no adapter is ever constructed for them and the
+  refresh cases for the four registry types can never be reached (dead but
+  harmless). `cloudwatch`/`azuremonitor` had no adapter package at all; their
+  constants were referenced only by the two registrable lists. Verified by tests:
+  `TestHandleCreateComponent_DeadOnArrivalTypesRejected` (HTTP, all six →
+  400/`invalid_component`), `TestRegisterComponentTool_DeadOnArrivalTypesRejected`
+  (tool path, all six plus an unknown-type baseline → error, nothing persisted),
+  and added negative cases in `TestIsValidComponentType`. The existing
+  `TestHandleCreateComponent_FallthroughTypes` was updated to drop
+  oci_registry/artifactory/ecr while keeping the boot-only group
+  (github/gitlab/datadog/splunk/dynatrace/newrelic) and the empty-config-Connect
+  group (helm/nginx-ingress) unchanged.
+- Rejected alternatives: (1) gating the type only in the UI dropdown — rejected
+  because the backend would still accept the six through the HTTP create endpoint
+  and the `register_component` tool, leaving the dead-on-arrival hole open on every
+  non-UI surface. (2) wiring the four adapter-bearing types into a construction map
+  and building the two missing adapters now — rejected as a feature change unfit for
+  launch; that work is deferred as separate post-launch items
+  (`docs/backlog/trim-deadonarrival-component-types.md`).
+- Supersedes: nothing — narrows the registrable set established incrementally
+  across the Phase 6.13 / Phase 10 type additions.
+
+---
+
 ## D-0057 — A config-less registration is made to persist by normalizing an absent/empty config to an empty JSON object at the shared registration seam, before encryption
 
 - Date: 2026-06-28

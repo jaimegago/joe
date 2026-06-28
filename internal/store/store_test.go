@@ -706,6 +706,18 @@ func TestIsValidComponentType(t *testing.T) {
 		{"prometheus", true},
 		{"github", true},
 		{"gitlab", true},
+		// Boot-only group stays registrable (constructed at boot only).
+		{"datadog", true},
+		{"splunk", true},
+		// Dead-on-arrival types removed from the registrable set by
+		// trim-deadonarrival-component-types: no construction path, so
+		// unregistrable through every surface.
+		{"oci_registry", false},
+		{"dockerhub", false},
+		{"artifactory", false},
+		{"ecr", false},
+		{"cloudwatch", false},
+		{"azuremonitor", false},
 		{"unknown", false},
 		{"", false},
 		{"KUBERNETES", false},

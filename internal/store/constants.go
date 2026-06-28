@@ -6,17 +6,15 @@ const (
 	ComponentTypeGit        = "git"
 	ComponentTypeKubernetes = "kubernetes"
 
-	ComponentTypePrometheus   = "prometheus"
-	ComponentTypeMimir        = "mimir"
-	ComponentTypeLoki         = "loki"
-	ComponentTypeTempo        = "tempo"
-	ComponentTypeJaeger       = "jaeger"
-	ComponentTypeDatadog      = "datadog"
-	ComponentTypeSplunk       = "splunk"
-	ComponentTypeDynatrace    = "dynatrace"
-	ComponentTypeNewRelic     = "newrelic"
-	ComponentTypeCloudWatch   = "cloudwatch"
-	ComponentTypeAzureMonitor = "azuremonitor"
+	ComponentTypePrometheus = "prometheus"
+	ComponentTypeMimir      = "mimir"
+	ComponentTypeLoki       = "loki"
+	ComponentTypeTempo      = "tempo"
+	ComponentTypeJaeger     = "jaeger"
+	ComponentTypeDatadog    = "datadog"
+	ComponentTypeSplunk     = "splunk"
+	ComponentTypeDynatrace  = "dynatrace"
+	ComponentTypeNewRelic   = "newrelic"
 
 	ComponentTypeAlertmanager = "alertmanager"
 	ComponentTypePagerDuty    = "pagerduty"
@@ -43,6 +41,18 @@ const (
 	ComponentTypeFalco = "falco"
 
 	// Phase 6.13 — Artifact registry source types.
+	//
+	// DEAD-ON-ARRIVAL / UNREGISTRABLE: these four are deliberately ABSENT from
+	// AllowedComponentTypes / IsValidComponentType below, so no surface (HTTP
+	// create, register_component tool, web form) will accept them. The constants
+	// remain defined only because the coreagent refresh type-switch
+	// (internal/coreagent/refresh.go) still names them; their adapter packages
+	// and refresh/query paths exist but are never wired into any construction map
+	// (neither connectSourcesDefault in cmd/joe/server.go nor newAdapterForType in
+	// internal/api/components.go builds them), so those refresh cases can never be
+	// reached — they are dead but harmless. Wiring these four into a construction
+	// map is deferred post-launch work; see
+	// docs/backlog/trim-deadonarrival-component-types.md.
 	ComponentTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
 	ComponentTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
 	ComponentTypeArtifactory = "artifactory"  // JFrog Artifactory
@@ -69,8 +79,6 @@ func AllowedComponentTypes() []string {
 		ComponentTypeSplunk,
 		ComponentTypeDynatrace,
 		ComponentTypeNewRelic,
-		ComponentTypeCloudWatch,
-		ComponentTypeAzureMonitor,
 		ComponentTypeAlertmanager,
 		ComponentTypePagerDuty,
 		ComponentTypeGrafana,
@@ -86,10 +94,6 @@ func AllowedComponentTypes() []string {
 		ComponentTypeNginx,
 		ComponentTypeEnvoy,
 		ComponentTypeFalco,
-		ComponentTypeOCIRegistry,
-		ComponentTypeDockerHub,
-		ComponentTypeArtifactory,
-		ComponentTypeECR,
 		ComponentTypeGitHub,
 		ComponentTypeGitLab,
 	}
@@ -112,8 +116,6 @@ func IsValidComponentType(sourceType string) bool {
 		ComponentTypeSplunk,
 		ComponentTypeDynatrace,
 		ComponentTypeNewRelic,
-		ComponentTypeCloudWatch,
-		ComponentTypeAzureMonitor,
 		ComponentTypeAlertmanager,
 		ComponentTypePagerDuty,
 		ComponentTypeGrafana,
@@ -129,10 +131,6 @@ func IsValidComponentType(sourceType string) bool {
 		ComponentTypeNginx,
 		ComponentTypeEnvoy,
 		ComponentTypeFalco,
-		ComponentTypeOCIRegistry,
-		ComponentTypeDockerHub,
-		ComponentTypeArtifactory,
-		ComponentTypeECR,
 		ComponentTypeGitHub,
 		ComponentTypeGitLab:
 		return true

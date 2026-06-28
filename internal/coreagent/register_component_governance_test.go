@@ -49,6 +49,39 @@ func TestRegisterComponentTool_RejectsCredentialFields(t *testing.T) {
 	}
 }
 
+// TestRegisterComponentTool_DeadOnArrivalTypesRejected proves the tool rejects
+// the six dead-on-arrival types (oci_registry/dockerhub/artifactory/ecr have
+// adapter packages wired into no construction map; cloudwatch/azuremonitor have no
+// adapter code) with an error and persists nothing — the SAME outcome a wholly
+// unknown type gets, because both flow through store.IsValidComponentType. They
+// were removed from the registrable set by trim-deadonarrival-component-types.
+func TestRegisterComponentTool_DeadOnArrivalTypesRejected(t *testing.T) {
+	deadTypes := []string{
+		"oci_registry", "dockerhub", "artifactory", "ecr",
+		"cloudwatch", "azuremonitor",
+		"totally-unknown-type", // unknown-type baseline: identical outcome
+	}
+	for _, srcType := range deadTypes {
+		t.Run(srcType, func(t *testing.T) {
+			svc := makeTestServices(t)
+			tool := NewRegisterComponentTool(svc, slog.Default())
+			_, err := tool.Execute(context.Background(), map[string]any{
+				"name": "discovered", "type": srcType, "config": map[string]any{},
+			})
+			if err == nil {
+				t.Fatalf("type %s: expected rejection, got nil error", srcType)
+			}
+			comps, lerr := svc.Store.Components.List(context.Background())
+			if lerr != nil {
+				t.Fatalf("list components: %v", lerr)
+			}
+			if len(comps) != 0 {
+				t.Errorf("type %s: component persisted despite rejection (count=%d)", srcType, len(comps))
+			}
+		})
+	}
+}
+
 // TestRegisterComponentTool_WritesAuditOnCredentiallessSuccess proves a
 // credential-less success writes exactly one component.register audit row whose
 // actor is the Core Agent principal (svc:agent:core).
