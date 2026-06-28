@@ -286,11 +286,15 @@ func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 // adapter connect step (fall through the switch) and are saved directly.
 func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 	// Types that have no connect step (fall through the switch) plus types whose
-	// Connect() succeeds with empty config.
+	// Connect() succeeds with empty config. The boot-only group
+	// (github/gitlab/datadog/splunk/dynatrace/newrelic) is constructed only at
+	// boot (connectSourcesDefault), so it registers OK here with no runtime
+	// connect step. oci_registry/artifactory/ecr were REMOVED from this list by
+	// trim-deadonarrival-component-types: they are no longer registrable (see
+	// TestHandleCreateComponent_DeadOnArrivalTypesRejected).
 	fallthroughTypes := []string{
 		"github", "gitlab",
 		"datadog", "splunk", "dynatrace", "newrelic",
-		"oci_registry", "artifactory", "ecr",
 		"helm", "nginx-ingress",
 	}
 
@@ -304,6 +308,42 @@ func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 			// These types have no Connect() step, so the source should be saved successfully.
 			if w.Code != http.StatusCreated {
 				t.Errorf("type=%s: expected 201, got %d: %s", srcType, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestHandleCreateComponent_DeadOnArrivalTypesRejected asserts the six types that
+// have no construction path (oci_registry, dockerhub, artifactory, ecr have adapter
+// packages but are wired into no construction map; cloudwatch and azuremonitor have
+// no adapter code at all) are rejected by the HTTP create endpoint with exactly the
+// same invalid-type response a wholly unknown type gets — they were removed from the
+// registrable set by trim-deadonarrival-component-types.
+func TestHandleCreateComponent_DeadOnArrivalTypesRejected(t *testing.T) {
+	deadTypes := []string{
+		"oci_registry", "dockerhub", "artifactory", "ecr",
+		"cloudwatch", "azuremonitor",
+	}
+
+	for _, srcType := range deadTypes {
+		t.Run(srcType, func(t *testing.T) {
+			_, _, mux := setupTestServerWithStore(t)
+			body := `{"id":"src-doa","type":"` + srcType + `","name":"dead on arrival","config":{}}`
+			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("type=%s: status = %d, want %d (same as unknown type): %s", srcType, w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			var response struct {
+				Error string `json:"error"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+				t.Fatalf("type=%s: decode response: %v", srcType, err)
+			}
+			if response.Error != "invalid_component" {
+				t.Errorf("type=%s: error code = %q, want %q (same as unknown type)", srcType, response.Error, "invalid_component")
 			}
 		})
 	}
