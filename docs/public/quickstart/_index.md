@@ -32,12 +32,16 @@ You also need two credentials ready:
 
 - An **Anthropic API key**, because Joe's default model is Claude. Have it ready as a
   string.
-- A way for Joe to reach **one Kubernetes cluster** from where the daemon runs — either a
-  **kubeconfig file** on this host (note its path, e.g. `~/.kube/config`) or an
-  **in-cluster service account** if you run Joe inside the cluster. Without this, Joe has
-  nothing to read and the install is useless: you register a component by *reference* to
-  this credential, never by pasting a secret. A `kubectl get pods` that works from this
-  host is a good sign the reference will resolve.
+- A working **kubeconfig file on this host** for **one Kubernetes cluster** — note its
+  path (e.g. `~/.kube/config`). This quickstart assumes Joe runs **outside** the cluster,
+  so this kubeconfig is how Joe reaches it: client-go loads the file from the daemon's own
+  filesystem, so the path you register must resolve, and the credentials inside it must be
+  valid, **where the daemon runs**. (If you instead run Joe *inside* the target cluster,
+  you can use its in-cluster service account and skip the kubeconfig — but that is not the
+  path this quickstart takes.) Without a reachable cluster credential, Joe has nothing to
+  read and the install is useless. You register a component by *reference* to this
+  kubeconfig — its path — never by pasting its contents. A `kubectl --kubeconfig <path>
+  get pods` that works from this host is a good sign the reference will resolve.
 
 ## Step 1 — Build the binary
 
@@ -78,8 +82,11 @@ ungoverned.
 ./joe
 ```
 
-Joe starts on `localhost:7777`. You do not need a config file — Joe boots on built-in
-defaults. In the startup logs you will see that the **write floor is up
+Joe starts on `localhost:7777`. You do not need a Joe *server* config file — Joe boots on
+built-in defaults. That is separate from the **kubeconfig** from *Before you start*: Joe
+does not load that at boot, and you do not put it in a Joe config file. You hand Joe its
+path when you register the cluster in Step 4, and Joe resolves it from this host's
+filesystem at that point. In the startup logs you will see that the **write floor is up
 (observation)**: Joe is read-only. Leave it running and open a second terminal for the
 next step.
 
@@ -89,9 +96,10 @@ Joe is near-useless until it has a registered component to reason about, so conn
 before you ask anything. Do it through the web UI. Bringing a system under management is
 always the same three beats: **register** it (it lands inert — recorded, but
 credential-less and unable to act), **promote** it with a credential **reference** (never
-a stored secret), then run a **connectivity test** that takes it live. For Kubernetes the
-reference is the kubeconfig locator you readied in *Before you start* — an in-cluster
-identity or a kubeconfig path — and the test brings it live with no restart.
+a stored secret), then run a **connectivity test** that takes it live. For Kubernetes,
+running outside the cluster, that reference is the **kubeconfig path** you readied in
+*Before you start* — the file must be present and valid on the daemon's host, since Joe
+resolves it there — and the test brings the cluster live with no restart.
 
 Registering and promoting are admin actions in the web UI, so this step needs a human
 admin login rather than the service-account key from Step 2. The full click-by-click
