@@ -264,11 +264,16 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default an absent or empty config to an empty JSON object at the shared
+	// registration seam, BEFORE the component is built (and so before encryption
+	// in CreateTx). A config-less registration must persist and land inert; the
+	// components.config column is NOT NULL with no default, so a nil config would
+	// otherwise trip the constraint as a generic 500 (D-0029).
 	source := &store.Component{
 		ID:     req.ID,
 		Type:   req.Type,
 		Name:   req.Name,
-		Config: req.Config,
+		Config: componentgov.NormalizeRegistrationConfig(req.Config),
 	}
 
 	ev := componentRegisterEvent(principal, source)

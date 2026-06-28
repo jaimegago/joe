@@ -49,6 +49,35 @@ var ErrCredentialField = errors.New("credential-bearing field not permitted at r
 // TestCredentialBearingFields_MatchCredentialPackage.
 var credentialBearingFields = credential.CredentialBearingFields()
 
+// NormalizeRegistrationConfig defaults an absent or empty registration config to
+// an empty JSON object ("{}"). It is the shared normalization seam BOTH
+// registration paths — the HTTP create handler and the register_component LLM
+// tool — consult, mirroring the single-source RejectCredentialFields seam so the
+// two surfaces cannot drift in how they default config.
+//
+// Callers MUST run it BEFORE config encryption, so the defaulted empty object
+// flows through the normal encrypt-at-rest path and is stored encrypted like any
+// other config — never a plaintext value that bypasses encryption.
+//
+// Why default rather than relax the schema: the components.config column is NOT
+// NULL with no default (internal/store/migrations/001_initial.up.sql, preserved
+// by the 023 source->component rename). A nil config reaching the INSERT trips
+// that constraint and surfaces as a generic 500, which violates the D-0029
+// design that a credential-less registration writes type + name + non-credential
+// routing config only and lands inert — a config-less registration must persist.
+// Defaulting here keeps config a non-null encrypted JSON object behind a single
+// seam, leaving the column and its NOT NULL constraint untouched.
+//
+// A non-empty config is returned unchanged. The defaulted empty object carries
+// no fields, so it trivially passes RejectCredentialFields — the credential-less,
+// inert-on-registration posture is unchanged.
+func NormalizeRegistrationConfig(config json.RawMessage) json.RawMessage {
+	if len(config) == 0 {
+		return json.RawMessage("{}")
+	}
+	return config
+}
+
 // RejectCredentialFields returns a non-nil error wrapping ErrCredentialField if
 // the submitted config carries ANY credential-bearing field at its top level —
 // the level at which the credential providers actually parse them. A nil/empty

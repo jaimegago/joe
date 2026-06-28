@@ -10,6 +10,58 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0057 — A config-less registration is made to persist by normalizing an absent/empty config to an empty JSON object at the shared registration seam, before encryption
+
+- Date: 2026-06-28
+- Status: accepted
+- Session: register-component-config-default
+- Decision: Both registration paths — the HTTP create handler
+  (`handleCreateComponent`, `internal/api/components.go`) and the
+  `register_component` LLM tool (`RegisterComponentTool.Execute`,
+  `internal/coreagent/agent.go`) — now normalize an absent or empty registration
+  config to an empty JSON object (`"{}"`) at a single shared seam,
+  `componentgov.NormalizeRegistrationConfig`, mirroring the single-source
+  `componentgov.RejectCredentialFields` credential-rejection seam so the two
+  surfaces cannot drift. Normalization runs BEFORE config encryption, so the
+  defaulted object flows through the normal encrypt-at-rest path
+  (`encryptedComponentRepository.encryptConfig`) and is stored encrypted like any
+  other config — never a plaintext value that bypasses encryption. The
+  components.config column stays `TEXT NOT NULL` with no default, and the
+  encryption-at-rest invariant is preserved. This honors the D-0029 design that a
+  registration writes type + name + non-credential routing config only and lands
+  inert: a config-less registration must succeed. All other behavior is unchanged
+  — credential-bearing fields are still rejected (the empty object trivially
+  passes `RejectCredentialFields`), the no-Connect-probe structural guard stays
+  green, and the credential-less, inert-on-registration posture is intact.
+- Basis: re-derived from the live tree this session. The UI registration payload
+  omits `config`; the handler treats `createComponentRequest.Config`
+  (`json.RawMessage`) as optional, but the `components.config` column is
+  `NOT NULL` with no default (`internal/store/migrations/001_initial.up.sql`,
+  preserved verbatim by the 023 source->component table rename) and nothing
+  defaulted an absent config, so a nil blob reached the INSERT
+  (`sqlComponentRepository.create`), tripped the NOT NULL constraint, and
+  surfaced as a generic HTTP 500. The encrypt path short-circuits a zero-length
+  config (`encryptConfig` returns it unchanged when `len == 0`), so only a
+  non-empty `"{}"` both satisfies the column and round-trips through encrypt/
+  decrypt — verified by store-, HTTP-handler-, and tool-path regression tests
+  (`TestEncryptedComponentRepository_EmptyObjectRoundTrip`,
+  `TestCreateComponent_AbsentConfigPersistsInert`,
+  `TestRegisterComponentTool_AbsentConfigPersistsInert`). The suite previously
+  stayed green only because every create-path helper always supplied a config
+  (`TestRegisterComponentTool_Execute`'s "missing config" case even pinned the
+  old reject-absent behavior, now corrected to expect inert success).
+- Rejected alternative: relaxing the schema — making `components.config` nullable
+  or giving it a column default. Rejected because it would let a component carry a
+  NULL or unencrypted-default config, weakening the "config is a non-null
+  encrypted JSON object" invariant and spreading the default across the schema
+  rather than concentrating it behind one application-level normalization seam the
+  way the credential-rejection rule is concentrated. Defaulting at the shared seam
+  keeps the column constraint and the encrypt-at-rest path untouched.
+- Supersedes: nothing — restores the D-0029 config-less-registration invariant
+  that had regressed undetected.
+
+---
+
 ## D-0056 — The Integrations section routes each documentable type by its actual activation path: runtime-registerable vs boot-config-only
 
 - Date: 2026-06-28

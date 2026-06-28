@@ -134,6 +134,45 @@ func TestEncryptedComponentRepository_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestEncryptedComponentRepository_EmptyObjectRoundTrip proves the encrypt/
+// decrypt path handles a defaulted empty-object config ("{}"): it is non-empty
+// (so it encrypts, unlike a zero-length config which short-circuits), the inner
+// store holds ciphertext, and reading back through the wrapper decrypts cleanly
+// to "{}". This is the at-rest substantiation for the register-component-config-
+// default fix, where an absent registration config is normalized to "{}" before
+// it reaches this write path.
+func TestEncryptedComponentRepository_EmptyObjectRoundTrip(t *testing.T) {
+	key := testKey()
+	inner := newMockRepo()
+	repo, err := NewEncryptedComponentRepository(inner, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	empty := json.RawMessage(`{}`)
+	if err := repo.Create(ctx, &Component{ID: "c-empty", Type: "prometheus", Name: "prom", Config: empty}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// The empty object is non-empty bytes, so it is encrypted at rest, not stored
+	// verbatim.
+	if string(inner.components["c-empty"].Config) == "{}" {
+		t.Errorf("empty-object config stored in the clear: %s", inner.components["c-empty"].Config)
+	}
+
+	got, err := repo.Get(ctx, "c-empty")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Get returned nil")
+	}
+	if string(got.Config) != "{}" {
+		t.Errorf("empty-object config after round-trip = %q, want %q", got.Config, "{}")
+	}
+}
+
 // TestEncryptedComponentRepository_UpdateConfigTxEncrypts proves the promotion
 // write path (UpdateConfigTx) encrypts the new config at rest just like Create:
 // the inner repo holds ciphertext (not the plaintext reference), and reading back
