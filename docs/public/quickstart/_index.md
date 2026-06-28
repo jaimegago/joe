@@ -1,18 +1,20 @@
 ---
 title: Quickstart
 weight: 20
-description: From nothing to a running Joe answering one question, in observation mode.
+description: From nothing to a running Joe reading a live cluster and answering one question, in observation mode.
 ---
 
 # Quickstart
 
 This tutorial takes you from an empty checkout to a running `joe` daemon that answers
-one question — in **observation mode**, where Joe can read and reason but cannot change
-anything. You will do nothing irreversible. Follow the steps in order; each one builds
-on the last.
+one real question about your infrastructure — in **observation mode**, where Joe can
+read and reason but cannot change anything. You will do nothing irreversible. Follow the
+steps in order; each one builds on the last.
 
-When you finish, you will have a Joe running locally, in read-only observation mode,
-that has answered a question through its real interaction surface.
+Joe knows nothing until you connect a system to it, so you register one Kubernetes
+cluster *before* you ask anything. When you finish, you will have a Joe running locally,
+in read-only observation mode, reading a live cluster and answering a question about it
+through its real interaction surface.
 
 > This is the on-rails path. For the full build-and-run procedure, the complete
 > authentication options, and production setup, see [Install and Build](../install-and-build/).
@@ -26,8 +28,16 @@ You need three things installed:
 - **Node.js and npm** (the web UI is built and embedded into the binary)
 - **git**
 
-You also need an **Anthropic API key**, because Joe's default model is Claude. Have it
-ready as a string.
+You also need two credentials ready:
+
+- An **Anthropic API key**, because Joe's default model is Claude. Have it ready as a
+  string.
+- A way for Joe to reach **one Kubernetes cluster** from where the daemon runs — either a
+  **kubeconfig file** on this host (note its path, e.g. `~/.kube/config`) or an
+  **in-cluster service account** if you run Joe inside the cluster. Without this, Joe has
+  nothing to read and the install is useless: you register a component by *reference* to
+  this credential, never by pasting a secret. A `kubectl get pods` that works from this
+  host is a good sign the reference will resolve.
 
 ## Step 1 — Build the binary
 
@@ -73,35 +83,15 @@ defaults. In the startup logs you will see that the **write floor is up
 (observation)**: Joe is read-only. Leave it running and open a second terminal for the
 next step.
 
-## Step 4 — Ask Joe one question
+## Step 4 — Register one Kubernetes cluster
 
-Send a message to Joe's agentic task endpoint, authenticating with the same
-`JOE_API_KEY` you set above:
-
-```sh
-curl -s http://localhost:7777/api/v1/tasks \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What can you help me with, and what infrastructure do you currently know about?"}'
-```
-
-Joe runs a full agentic turn and returns a JSON response. The answer is in the
-`final_answer` field. Because you have not connected any systems yet, Joe will tell you
-its graph is empty — that is the expected, correct answer for a fresh install, and it
-confirms the whole path works end to end: identity, the LLM, and the agent loop.
-
-That is your one answer. Joe is up, governed, read-only, and responding — but with
-nothing to manage yet. Give it one system to read.
-
-## Step 5 — Register one Kubernetes cluster
-
-Joe is near-useless until it has a registered component to reason about. Connect one
-through the web UI. Bringing a system under management is always the same three beats:
-**register** it (it lands inert — recorded, but credential-less and unable to act),
-**promote** it with a credential **reference** (never a stored secret), then run a
-**connectivity test** that takes it live. For Kubernetes the reference is a kubeconfig
-locator — an in-cluster identity or a kubeconfig path — and the test brings it live with
-no restart.
+Joe is near-useless until it has a registered component to reason about, so connect one
+before you ask anything. Do it through the web UI. Bringing a system under management is
+always the same three beats: **register** it (it lands inert — recorded, but
+credential-less and unable to act), **promote** it with a credential **reference** (never
+a stored secret), then run a **connectivity test** that takes it live. For Kubernetes the
+reference is the kubeconfig locator you readied in *Before you start* — an in-cluster
+identity or a kubeconfig path — and the test brings it live with no restart.
 
 Registering and promoting are admin actions in the web UI, so this step needs a human
 admin login rather than the service-account key from Step 2. The full click-by-click
@@ -114,9 +104,10 @@ reference, and testing — lives in the guide:
 When the component's connectivity test reports success, the cluster is live and Joe can
 read it.
 
-## Step 6 — Ask Joe about the cluster
+## Step 5 — Ask Joe about the cluster
 
-Run the same agentic ask again, now that Joe has something real to read:
+Now that Joe has something real to read, send a message to its agentic task endpoint,
+authenticating with the same `JOE_API_KEY` you set above:
 
 ```sh
 curl -s http://localhost:7777/api/v1/tasks \
@@ -125,8 +116,11 @@ curl -s http://localhost:7777/api/v1/tasks \
   -d '{"message": "What Kubernetes workloads do you know about, and is anything unhealthy?"}'
 ```
 
-This time Joe answers from the live cluster — still read-only, because the write floor is
-up. You have gone from an empty install to a governed copilot reading real infrastructure.
+Joe runs a full agentic turn and returns a JSON response; the answer is in the
+`final_answer` field. It answers from the live cluster — still read-only, because the
+write floor is up. You have gone from an empty install to a governed copilot reading real
+infrastructure, exercising the whole path end to end: identity, the LLM, the agent loop,
+and a live component read.
 
 ## What you just did
 
@@ -135,10 +129,10 @@ up. You have gone from an empty install to a governed copilot reading real infra
   so it agreed to boot.
 - Ran it in observation mode, with the write floor up, so nothing it did could change a
   managed system.
-- Drove its real interaction surface — the agentic task endpoint — and got an answer
-  back.
 - Registered and promoted one Kubernetes cluster through the UI and took it live, so Joe
   had real infrastructure to read.
+- Drove its real interaction surface — the agentic task endpoint — and got an answer back
+  about that live cluster.
 
 ## Where to go next
 
