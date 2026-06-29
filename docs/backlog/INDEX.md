@@ -12,6 +12,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | Slug | Title | Status |
 |------|-------|--------|
 | [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open |
+| [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred |
 | [`azure-credential-provider-and-connect`](azure-credential-provider-and-connect.md) | Backlog — Azure credential provider + Connect implementation (deferred from A003) | deferred from A003 |

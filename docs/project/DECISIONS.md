@@ -10,6 +10,73 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0060 — Joe's agent-identity and authentication stance is settled as design-of-record (captured in a held draft) — DESIGN, NOT YET IMPLEMENTED
+
+- Date: 2026-06-29
+- Status: accepted (design-of-record; implementation deferred)
+- Session: agent-identity-doc
+- Decision: Joe's agent-identity and authentication stance is settled as
+  design-of-record and captured in a non-published held draft at
+  `docs/drafts/agent-identity.md`. The stance comprises: (1) the **third-identity-class**
+  framing — an agent is neither a human (authenticates assuming presence) nor a service
+  (authenticates on fixed deployment scope), so its safety must come from a mediation
+  layer it enforces on itself; (2) **provenance** as the authority an action traces back
+  to, in two modes — *delegated* (a human originated it; originator = human, actor = Joe)
+  and *autonomous* (Joe originated it; originator and actor both Joe, characteristic of
+  discovery/observation) — with Joe always the actor on the wire, only the originator
+  varying, and provenance orthogonal to read-vs-mutate; (3) **authenticate only as a
+  non-human identity**, never the human authentication path; (4) **never ingest a human's
+  kubeconfig** and **never impersonate** (never assume another identity through identity
+  replacement); (5) the **provenance assertion held Joe-internal** — when a human is the
+  originator, that human is recorded only inside Joe (originator, actor, action, derived
+  from the authenticated session's creator principal) and never transmitted to the managed
+  system, which sees only Joe's own service identity; (6) three never-collapsed planes —
+  identity (who Joe may be on a system), provenance (on whose authority, Joe-internal),
+  governance (the floor: what Joe may do now), with the invariant that a valid credential
+  never implies a permitted action; (7) a **two-method Kubernetes target** — a static
+  bearer method (long-lived bearer token as an `Authorization: Bearer` header, for
+  OpenShift and self-managed/local clusters via a ServiceAccount token) plus a native
+  **Entra exchange** method (Joe performs an Azure Entra OAuth2 token exchange to mint a
+  short-lived bearer token for AKS); and (8) **client-certificate authentication
+  permanently excluded** as a matter of stance, because it is a human authentication path.
+  The draft is held in `docs/drafts/` — a new non-published staging directory deliberately
+  outside `docs/public` (the sole published surface, D-0052), because no generator config
+  exists that could exclude a subdirectory from single-sourcing, so anything under
+  `docs/public` risks publication. The intended eventual home is the Concepts section as a
+  single explanation page; that and the implementation work are tracked in
+  `docs/backlog/agent-identity-doc.md`.
+- **DESIGN, NOT YET IMPLEMENTED.** This entry records a settled stance, not shipped
+  behaviour. The **current shipped Kubernetes credential path remains the
+  kubeconfig-or-in-cluster locator** — the `kubeconfig-exec` provider
+  (`KindKubeconfigExec`, `internal/credential/credential.go:40`) wired to `kubernetes` at
+  `internal/credential/wiring.go:46`, resolving an in-cluster service account or a
+  kubeconfig file (`internal/credential/kubeconfig_exec.go:147-178`, in-cluster fallback at
+  `:150-151`) and consumed by the adapter at `internal/adapters/k8s/k8s.go:131`. The two
+  credential-provider kinds that exist today are `KindStatic` (`:36`) and
+  `KindKubeconfigExec` (`:40`); kubernetes uses the latter. This stance will be realized by
+  a future ADR and the code change that retires the kubeconfig-exec locator for kubernetes
+  in favour of the static-bearer and Entra-exchange methods; until then this is direction,
+  not truth on the wire.
+- Basis: re-derived from the live tree this session (read-only, no code changed). Credential
+  wiring confirmed at `internal/credential/wiring.go:46` (`store.ComponentTypeKubernetes:
+  KindKubeconfigExec`) and `internal/credential/credential.go:36,40`; the kubeconfig/in-cluster
+  locator at `internal/credential/kubeconfig_exec.go`; adapter integration at
+  `internal/adapters/k8s/k8s.go:131`. Staging-location safety confirmed against D-0052: no
+  Hugo/Hextra/Netlify/Vercel generator config exists in the tree, everything under
+  `docs/public/` publishes, and `docs/drafts/` did not previously exist — so the draft sits
+  outside the published surface. The stance's foundational pattern follows RFC 8693
+  (delegation vs. impersonation; the composite-actor pattern) and references Kubernetes
+  impersonation as the native mechanism Joe declines to use; emerging agent-identity
+  standardization work is pointed to by shape only (no Internet-Draft names/numbers/versions,
+  per the volatility of that work).
+- Supersedes: nothing yet — this is design-of-record that will eventually supersede the
+  current-state credential decisions once the implementing ADR and code land. It records the
+  intent to supersede **D-0026** (the credential-provider abstraction that established the
+  kubeconfig-exec launch model for kubernetes) and the kubernetes-credential current-state
+  confirmed by **D-0059** (kubernetes wired to the kubeconfig-exec provider). No code,
+  CLAUDE.md authentication invariant, or public page is changed by this entry; CLAUDE.md is
+  touched only to record the new `docs/drafts` staging convention.
+
 ## D-0059 — The component-registration how-to lives in Guides (Kubernetes first), and Quickstart includes registering one Kubernetes component
 
 - Date: 2026-06-28
