@@ -96,6 +96,20 @@ var promotionRequirements = map[Kind]Requirements{
 			},
 		},
 	},
+	KindStaticBearer: {
+		Kind: KindStaticBearer,
+		Fields: []FieldRequirement{
+			{Name: "env_var", Required: false},
+			{Name: "in_cluster", Required: false},
+		},
+		Constraints: []Constraint{
+			{
+				Rule:    ConstraintAtLeastOneOf,
+				Fields:  []string{"env_var", "in_cluster"},
+				Message: "supply either an env_var name (the variable the bearer token is read from) or in_cluster=true (the pod-mounted service-account token)",
+			},
+		},
+	},
 }
 
 // PromotionRequirements returns the describe-only requirements for a provider
@@ -114,6 +128,8 @@ func kindConfigStruct(kind Kind) (reflect.Type, bool) {
 		return reflect.TypeFor[staticConfig](), true
 	case KindKubeconfigExec:
 		return reflect.TypeFor[kubeconfigExecConfig](), true
+	case KindStaticBearer:
+		return reflect.TypeFor[staticBearerConfig](), true
 	default:
 		return nil, false
 	}

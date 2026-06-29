@@ -74,6 +74,14 @@ func TestPromotionRequirements_TableMatchesEnforcement(t *testing.T) {
 		{"kexec context-only rejected", credential.KindKubeconfigExec, promoteComponentRequest{Context: "ctx"}, false},
 		{"kexec neither rejected", credential.KindKubeconfigExec, promoteComponentRequest{}, false},
 		{"kexec static-field contamination rejected", credential.KindKubeconfigExec, promoteComponentRequest{InCluster: true, EnvVar: "TOK"}, false},
+		// static-bearer (kubernetes): coordinates + an env_var OR in_cluster token source.
+		{"bearer env_var valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK"}, true},
+		{"bearer in_cluster valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", InCluster: true}, true},
+		// LIVE rule is at-least-one-of token source — both set is accepted.
+		{"bearer both sources valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", InCluster: true}, true},
+		{"bearer neither source rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443"}, false},
+		{"bearer inline value rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Value: "secret"}, false},
+		{"bearer kubeconfig contamination rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Kubeconfig: "/k"}, false},
 	}
 
 	for _, tc := range cases {
@@ -167,27 +175,28 @@ func TestPromotionRequirements_StaticShape(t *testing.T) {
 	}
 }
 
-// TestPromotionRequirements_KubeconfigExecShape proves a kubeconfig-exec-wired
-// component describes its three optional locators and the at-least-one-of rule.
-func TestPromotionRequirements_KubeconfigExecShape(t *testing.T) {
+// TestPromotionRequirements_StaticBearerShape proves a static-bearer-wired
+// component (kubernetes) describes its two optional token-source locators and the
+// at-least-one-of rule over them.
+func TestPromotionRequirements_StaticBearerShape(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
 	registerComponent(t, f, "c-k8s", "kubernetes", `{}`)
 
 	body, _ := getPromotionRequirements(t, f, "c-k8s", "user:alice")
-	if !body.Wired || body.Kind != "kubeconfig-exec" || body.Type != "kubernetes" {
-		t.Fatalf("kexec shape: wired=%v kind=%q type=%q; want true/kubeconfig-exec/kubernetes", body.Wired, body.Kind, body.Type)
+	if !body.Wired || body.Kind != "static-bearer" || body.Type != "kubernetes" {
+		t.Fatalf("static-bearer shape: wired=%v kind=%q type=%q; want true/static-bearer/kubernetes", body.Wired, body.Kind, body.Type)
 	}
 	got := map[string]bool{}
 	for _, lf := range body.LocatorFields {
 		if lf.Required {
-			t.Errorf("kexec field %q marked required; the requirement is the cross-field at-least-one-of rule, not a per-field flag", lf.Name)
+			t.Errorf("static-bearer field %q marked required; the requirement is the cross-field at-least-one-of rule, not a per-field flag", lf.Name)
 		}
 		got[lf.Name] = true
 	}
-	for _, want := range []string{"in_cluster", "kubeconfig", "context"} {
+	for _, want := range []string{"env_var", "in_cluster"} {
 		if !got[want] {
-			t.Errorf("kexec locator_fields missing %q: %+v", want, body.LocatorFields)
+			t.Errorf("static-bearer locator_fields missing %q: %+v", want, body.LocatorFields)
 		}
 	}
 	foundOneOf := false
@@ -195,13 +204,13 @@ func TestPromotionRequirements_KubeconfigExecShape(t *testing.T) {
 		if c.Rule == credential.ConstraintAtLeastOneOf {
 			foundOneOf = true
 			sort.Strings(c.Fields)
-			if strings.Join(c.Fields, ",") != "in_cluster,kubeconfig" {
-				t.Errorf("at-least-one-of fields=%v; want [in_cluster kubeconfig]", c.Fields)
+			if strings.Join(c.Fields, ",") != "env_var,in_cluster" {
+				t.Errorf("at-least-one-of fields=%v; want [env_var in_cluster]", c.Fields)
 			}
 		}
 	}
 	if !foundOneOf {
-		t.Errorf("kexec constraints missing %q: %+v", credential.ConstraintAtLeastOneOf, body.Constraints)
+		t.Errorf("static-bearer constraints missing %q: %+v", credential.ConstraintAtLeastOneOf, body.Constraints)
 	}
 }
 
@@ -215,7 +224,7 @@ func TestPromotionRequirements_NoValueLeakage(t *testing.T) {
 
 	const canary = "CANARY_LOCATOR_VALUE"
 	if w := f.do(http.MethodPost, "/api/v1/components/c-k8s/promote",
-		`{"kubeconfig":"/secret/`+canary+`","context":"`+canary+`","audience":"`+canary+`"}`, "user:alice"); w.Code != http.StatusOK {
+		`{"auth_method":"static-bearer","api_server":"https://k8s:6443","env_var":"`+canary+`","audience":"`+canary+`"}`, "user:alice"); w.Code != http.StatusOK {
 		t.Fatalf("arm c-k8s: status=%d body=%s", w.Code, w.Body.String())
 	}
 

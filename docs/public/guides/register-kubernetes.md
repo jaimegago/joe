@@ -1,14 +1,14 @@
 ---
 title: Register a Kubernetes component
 weight: 15
-description: Bring a Kubernetes cluster under Joe's management through the web UI — register it inert, promote it with a kubeconfig reference, and take it live.
+description: Bring a Kubernetes cluster under Joe's management through the web UI — register it inert, promote it with a static-bearer reference, and take it live.
 ---
 
 # Register a Kubernetes component
 
 This how-to walks you, click by click, through bringing one Kubernetes cluster under
 Joe's management using the web UI. You will **register** the cluster (it lands inert),
-**assign it a zone**, **promote** it with a kubeconfig reference, and run a **connectivity
+**assign it a zone**, **promote** it with a static-bearer reference, and run a **connectivity
 test** that takes it live — no daemon restart. When you finish, Joe can read the cluster
 and answer questions about it.
 
@@ -29,9 +29,10 @@ and credentials held as references rather than stored secrets — see
 - An **admin principal**. Registering, assigning a zone, and promoting are all
   admin-gated — the affordances below do not appear for a non-admin. Running the
   connectivity test does not require admin.
-- A way for Joe to reach the cluster **from where the daemon runs**: either Joe runs
-  inside the cluster (an in-cluster service account) or a kubeconfig file is present on
-  the daemon's host. You supply a *reference* to one of these during promotion — never the
+- A way for Joe to reach the cluster **from where the daemon runs**: the cluster's
+  API-server URL and CA bundle, plus a service-account bearer token — either in an
+  environment variable in the daemon's environment, or the pod-mounted token when Joe runs
+  inside the cluster. You supply a *reference* to the token during promotion — never the
   credential contents. See [Components and promotion](../concepts/components-and-promotion/)
   for why.
 
@@ -83,24 +84,31 @@ mean and how they gate access, see
 > 📷 **Screenshot:** `images/guides/register-kubernetes/03-assign-zone.png` — the Zones
 > page unassigned-components panel with the Assign Zone dropdown open.
 
-## Step 4 — Promote the component (admin) — supply a kubeconfig reference
+## Step 4 — Promote the component (admin) — supply a static-bearer reference
 
 Promotion is the single governed transition from inert to **armed**. For Kubernetes it
-collects a **kubeconfig-exec** reference: an in-cluster identity or a kubeconfig path. You
-supply a *reference*, never an inline secret — the dialog offers no secret field by
-construction.
+collects a **static-bearer** reference: the cluster coordinates plus a bearer-token
+source. You supply a *reference*, never an inline secret — the dialog offers no secret
+field by construction. Joe authenticates as its own non-human identity and never ingests
+a human's kubeconfig.
 
 > **Admin only.** The **Promote** button is shown only to an admin principal.
 
 1. Back on the **Components** page, click the cluster's row to open its detail card.
 2. Click **Promote**.
 3. The promotion dialog renders the Kubernetes credential form:
-   - **Kubeconfig path** — the path to a kubeconfig file on the daemon's host, e.g.
-     `/etc/joe/kubeconfig`; **or**
-   - **Use the in-cluster service account** — tick this checkbox instead when Joe runs
-     inside the target cluster.
-   - **Context** *(optional)* — a named context within the kubeconfig.
-   - You must provide **at least one** of an in-cluster identity or a kubeconfig path.
+   - **API-server URL** — the cluster's API-server endpoint, e.g.
+     `https://api.cluster.example.com:6443`.
+   - **CA bundle** *(PEM, optional)* — the cluster CA certificate, stored inline so the
+     record is self-contained.
+   - **Default namespace** *(optional)*.
+   - **Bearer-token environment variable** — the variable in the daemon's environment
+     holding the service-account bearer token (Joe stores the name, never the value);
+     **or**
+   - **Use the in-cluster service-account token instead** — tick this checkbox when Joe
+     runs inside the target cluster, and it reads the pod-mounted token directly.
+   - You must provide **at least one** of a bearer-token environment variable or the
+     in-cluster token.
 4. Click **Continue**. A confirmation step states that arming grants the component a
    credentialed connection under its zone — a privileged, audited change. Confirm with
    **Promote**.
@@ -108,13 +116,12 @@ construction.
 The row's arming state flips to **armed**. Promotion records the reference only; it does
 **not** itself open a connection — that is the next step.
 
-> Whatever you reference — the kubeconfig file or the in-cluster identity — must exist
-> **where the Joe daemon runs**, because Joe resolves it from its own environment when it
-> connects.
+> The bearer-token variable (or the in-cluster token) must exist **where the Joe daemon
+> runs**, because Joe resolves it from its own environment when it connects.
 
 > 📷 **Screenshot:** `images/guides/register-kubernetes/04-promote-kubeconfig.png` — the
-> Promote dialog showing the Kubeconfig path field, the optional Context field, and the
-> in-cluster checkbox.
+> Promote dialog showing the API-server URL, the CA bundle, and the bearer-token source
+> (an environment-variable name or the in-cluster checkbox).
 
 ## Step 5 — Take it live with a connectivity test
 
@@ -129,9 +136,9 @@ restart needed.
    **connected**. Joe can now read the cluster.
 
 If the test reports a failure, the message describes what went wrong (for example, the
-kubeconfig path is not present on the daemon's host, or the credential cannot reach the
-API server). Fix the reference where Joe runs, or re-promote with a corrected locator, and
-test again.
+bearer-token environment variable is not set where the daemon runs, or the credential
+cannot reach the API server). Fix the reference where Joe runs, or re-promote with a
+corrected locator, and test again.
 
 > 📷 **Screenshot:** `images/guides/register-kubernetes/05-test-connection.png` — the
 > component detail card after a successful Test Connection, status shown as connected and
@@ -157,7 +164,7 @@ target path under `images/guides/register-kubernetes/`:
 1. `01-components-page.png` — the Components page with the **+ Register Component** button.
 2. `02-register-dialog.png` — the Register dialog with Type set to `kubernetes`.
 3. `03-assign-zone.png` — the Zones page unassigned panel with the Assign Zone dropdown.
-4. `04-promote-kubeconfig.png` — the Promote dialog's kubeconfig-exec form.
+4. `04-promote-kubeconfig.png` — the Promote dialog's static-bearer form.
 5. `05-test-connection.png` — the detail card after a successful connectivity test.
 
 ## Where to go next

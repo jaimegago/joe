@@ -197,8 +197,8 @@ func TestParseConfig(t *testing.T) {
 	}{
 		{
 			name: "full config",
-			raw:  json.RawMessage(`{"kubeconfig":"/home/user/.kube/config","context":"prod"}`),
-			want: k8s.Config{Kubeconfig: "/home/user/.kube/config", Context: "prod"},
+			raw:  json.RawMessage(`{"api_server":"https://k8s.prod:6443","ca_data":"PEMDATA","namespace":"platform","auth_method":"static-bearer"}`),
+			want: k8s.Config{APIServer: "https://k8s.prod:6443", CAData: "PEMDATA", Namespace: "platform", AuthMethod: "static-bearer"},
 		},
 		{
 			name: "empty config",
@@ -535,63 +535,12 @@ func TestNewWithClients_SetsConnected(t *testing.T) {
 	}
 }
 
-// TestConnect_AbsoluteKubeconfig exercises expandPath with a non-tilde path (covers return path, nil branch).
-func TestConnect_AbsoluteKubeconfig(t *testing.T) {
-	a := k8s.New()
-	src := store.Component{Config: json.RawMessage(`{"kubeconfig": "/nonexistent/path/kubeconfig.yaml"}`)}
-	// expandPath returns the path unchanged; clientcmd fails on missing file
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() should fail for nonexistent absolute kubeconfig")
-	}
-}
-
-// TestConnect_TildeOnlyKubeconfig exercises expandPath len==1 branch ("~" alone).
-func TestConnect_TildeOnlyKubeconfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // ensure home exists but has no .kube/config
-	a := k8s.New()
-	src := store.Component{Config: json.RawMessage(`{"kubeconfig": "~"}`)}
-	// expandPath("~") returns home dir; clientcmd then fails (no kubeconfig there)
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() should fail when kubeconfig resolves to a directory")
-	}
-}
-
-// TestConnect_WithContext exercises the context override branch in buildRESTConfig.
-func TestConnect_WithContext(t *testing.T) {
-	a := k8s.New()
-	src := store.Component{Config: json.RawMessage(`{"kubeconfig": "/nonexistent.yaml", "context": "my-ctx"}`)}
-	// Covers the cfg.Context != "" branch; fails at clientcmd (file missing)
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() should fail for nonexistent kubeconfig")
-	}
-}
-
 // TestConnect_InvalidJSON verifies that Connect returns an error for bad config JSON.
 func TestConnect_InvalidJSON(t *testing.T) {
 	a := k8s.New()
 	src := store.Component{Config: json.RawMessage(`{bad json`)}
 	if err := a.Connect(context.Background(), src); err == nil {
 		t.Error("Connect() should fail for invalid JSON config")
-	}
-}
-
-// TestConnect_TildeKubeconfig exercises expandPath and buildRESTConfig with a non-existent kubeconfig.
-func TestConnect_TildeKubeconfig(t *testing.T) {
-	a := k8s.New()
-	src := store.Component{Config: json.RawMessage(`{"kubeconfig": "~/nonexistent-kubeconfig-for-joe-test.yaml"}`)}
-	// expandPath runs (covering ~-expansion); then clientcmd fails on missing file
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() should fail for nonexistent kubeconfig")
-	}
-}
-
-// TestConnect_InClusterOutsideCluster verifies in-cluster config fails outside a cluster.
-func TestConnect_InClusterOutsideCluster(t *testing.T) {
-	a := k8s.New()
-	src := store.Component{Config: json.RawMessage(`{"in_cluster": true}`)}
-	// rest.InClusterConfig() fails when not running inside a pod
-	if err := a.Connect(context.Background(), src); err == nil {
-		t.Error("Connect() should fail when in_cluster=true outside a cluster")
 	}
 }
 
@@ -665,34 +614,13 @@ func TestListResources_NotConnected(t *testing.T) {
 	}
 }
 
-// TestConnect_EmptyConfig exercises the kubeconfig=="" && !InCluster branch in buildRESTConfig,
-// which falls back to the default kubeconfig loading rules (~/.kube/config or $KUBECONFIG).
-// The test exercises the code path regardless of whether a cluster is reachable.
+// TestConnect_EmptyConfig exercises the no-auth_method path: an empty config has
+// no auth_method, so resolution fails before any cluster contact.
 func TestConnect_EmptyConfig(t *testing.T) {
 	a := k8s.New()
 	src := store.Component{Config: json.RawMessage(`{}`)}
-	// buildRESTConfig falls into the default-rules path (no explicit kubeconfig, no in_cluster).
-	// This exercises the cfg.Kubeconfig == "" branch. It may succeed or fail depending on
-	// whether a kubeconfig/cluster is available in the test environment.
-	_ = a.Connect(context.Background(), src)
-}
-
-// TestExpandPath_HomeDirError exercises the os.UserHomeDir() error path in expandPath.
-// Unsetting HOME and USERPROFILE causes UserHomeDir to return an error on most platforms.
-func TestExpandPath_HomeDirError(t *testing.T) {
-	// Save and clear the environment variables that UserHomeDir uses.
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-	t.Setenv("HOMEDRIVE", "")
-	t.Setenv("HOMEPATH", "")
-
-	a := k8s.New()
-	// A tilde kubeconfig triggers expandPath, which calls os.UserHomeDir().
-	// With HOME unset, UserHomeDir returns an error → Connect returns that error.
-	src := store.Component{Config: json.RawMessage(`{"kubeconfig": "~/some-config.yaml"}`)}
-	err := a.Connect(context.Background(), src)
-	if err == nil {
-		t.Error("Connect() should fail when HOME is not set (UserHomeDir error)")
+	if err := a.Connect(context.Background(), src); err == nil {
+		t.Error("Connect() should fail when no auth_method is configured")
 	}
 }
 

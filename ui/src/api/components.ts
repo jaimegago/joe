@@ -87,15 +87,19 @@ export function fetchPromotionCandidates(id: string): Promise<PromotionCandidate
 // PromoteRequest is a credential REFERENCE — the provider discriminator plus
 // the relevant locator fields. It NEVER carries an inline `value`: the armed
 // record points Joe at a credential in its own environment, it does not store
-// the secret. The static reference is an env_var name; the kubeconfig-exec
-// reference is a path / context / in-cluster identity (at least one of
-// in_cluster or kubeconfig).
+// the secret. The static reference is an env_var name; the static-bearer
+// (kubernetes) reference is the cluster coordinates (api_server, ca_data,
+// namespace) plus auth_method and a bearer-token source — an env_var name OR the
+// in-cluster service-account token. There is no kubeconfig ingestion.
 export type PromoteRequest =
   | { credential_provider: 'static'; env_var: string }
   | {
-      credential_provider: 'kubeconfig-exec';
-      kubeconfig?: string;
-      context?: string;
+      credential_provider: 'static-bearer';
+      auth_method: 'static-bearer';
+      api_server: string;
+      ca_data?: string;
+      namespace?: string;
+      env_var?: string;
       in_cluster?: boolean;
     };
 

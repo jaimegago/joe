@@ -32,16 +32,16 @@ You also need two credentials ready:
 
 - An **Anthropic API key**, because Joe's default model is Claude. Have it ready as a
   string.
-- A working **kubeconfig file on this host** for **one Kubernetes cluster** — note its
-  path (e.g. `~/.kube/config`). This quickstart assumes Joe runs **outside** the cluster,
-  so this kubeconfig is how Joe reaches it: client-go loads the file from the daemon's own
-  filesystem, so the path you register must resolve, and the credentials inside it must be
-  valid, **where the daemon runs**. (If you instead run Joe *inside* the target cluster,
-  you can use its in-cluster service account and skip the kubeconfig — but that is not the
-  path this quickstart takes.) Without a reachable cluster credential, Joe has nothing to
-  read and the install is useless. You register a component by *reference* to this
-  kubeconfig — its path — never by pasting its contents. A `kubectl --kubeconfig <path>
-  get pods` that works from this host is a good sign the reference will resolve.
+- Reach details for **one Kubernetes cluster**: its **API-server URL** and **CA bundle**
+  (PEM), plus a **service-account bearer token**. This quickstart assumes Joe runs
+  **outside** the cluster, so you put the token in an **environment variable in the
+  daemon's environment** (e.g. `JOE_KUBERNETES_PROD_TOKEN`) and register a component by
+  *reference* to that variable name — never by pasting the token. (If you instead run Joe
+  *inside* the target cluster, you can tick the in-cluster option and Joe reads the
+  pod-mounted service-account token directly — but that is not the path this quickstart
+  takes.) Without a reachable cluster credential, Joe has nothing to read and the install
+  is useless. A `kubectl --server <url> --token <token> get pods` that works is a good sign
+  the reference will resolve.
 
 ## Step 1 — Build the binary
 
@@ -83,10 +83,10 @@ ungoverned.
 ```
 
 Joe starts on `localhost:7777`. You do not need a Joe *server* config file — Joe boots on
-built-in defaults. That is separate from the **kubeconfig** from *Before you start*: Joe
-does not load that at boot, and you do not put it in a Joe config file. You hand Joe its
-path when you register the cluster in Step 4, and Joe resolves it from this host's
-filesystem at that point. In the startup logs you will see that the **write floor is up
+built-in defaults. That is separate from the **bearer-token variable** from *Before you
+start*: Joe does not read it at boot, and you do not put it in a Joe config file. You name
+that variable when you promote the cluster in Step 4, and Joe resolves it from its own
+environment at connect time. In the startup logs you will see that the **write floor is up
 (observation)**: Joe is read-only. Leave it running and open a second terminal for the
 next step.
 
@@ -97,13 +97,14 @@ before you ask anything. Do it through the web UI. Bringing a system under manag
 always the same three beats: **register** it (it lands inert — recorded, but
 credential-less and unable to act), **promote** it with a credential **reference** (never
 a stored secret), then run a **connectivity test** that takes it live. For Kubernetes,
-running outside the cluster, that reference is the **kubeconfig path** you readied in
-*Before you start* — the file must be present and valid on the daemon's host, since Joe
-resolves it there — and the test brings the cluster live with no restart.
+running outside the cluster, that reference is the cluster's **API-server URL** and **CA
+bundle** plus the **bearer-token environment variable** you readied in *Before you start* —
+the variable must be set where the daemon runs, since Joe resolves it there — and the test
+brings the cluster live with no restart.
 
 Registering and promoting are admin actions in the web UI, so this step needs a human
 admin login rather than the service-account key from Step 2. The full click-by-click
-procedure — logging in, registering, assigning a zone, promoting with a kubeconfig
+procedure — logging in, registering, assigning a zone, promoting with a static-bearer
 reference, and testing — lives in the guide:
 
 > **[Register a Kubernetes component](../guides/register-kubernetes/)** — do the steps

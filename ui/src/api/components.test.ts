@@ -81,27 +81,32 @@ describe('promotion client fns', () => {
     expect(init.method).toBe('POST');
   });
 
-  it('promoteComponent posts a kubeconfig-exec reference', async () => {
+  it('promoteComponent posts a static-bearer reference', async () => {
     const fetchMock = stubFetchOnce({
       component_id: 'prod-k8s',
       type: 'kubernetes',
-      provider: 'kubeconfig-exec',
+      provider: 'static-bearer',
       armed: true,
       rearm: true,
     });
     const res = await promoteComponent('prod-k8s', {
-      credential_provider: 'kubeconfig-exec',
-      kubeconfig: '/etc/joe/kubeconfig',
-      in_cluster: true,
+      credential_provider: 'static-bearer',
+      auth_method: 'static-bearer',
+      api_server: 'https://api.cluster.example.com:6443',
+      ca_data: 'PEMBYTES',
+      env_var: 'JOE_KUBERNETES_PROD_TOKEN',
     });
     expect(res.rearm).toBe(true);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const sent = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(sent).toEqual({
-      credential_provider: 'kubeconfig-exec',
-      kubeconfig: '/etc/joe/kubeconfig',
-      in_cluster: true,
+      credential_provider: 'static-bearer',
+      auth_method: 'static-bearer',
+      api_server: 'https://api.cluster.example.com:6443',
+      ca_data: 'PEMBYTES',
+      env_var: 'JOE_KUBERNETES_PROD_TOKEN',
     });
     expect(sent).not.toHaveProperty('value');
+    expect(sent).not.toHaveProperty('kubeconfig');
   });
 });

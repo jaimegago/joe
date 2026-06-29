@@ -36,8 +36,18 @@ const (
 	KindStatic Kind = "static"
 	// KindKubeconfigExec is the kubeconfig-exec provider: the credential is the
 	// selected kubeconfig/context the adapter turns into a *rest.Config;
-	// client-go owns the refresh, Joe observes it.
+	// client-go owns the refresh, Joe observes it. As of agent-identity-doc-02 no
+	// component type routes to it (kubernetes moved to KindStaticBearer); it is
+	// kept dead-but-present until the kubeconfig-exec provider package is removed.
 	KindKubeconfigExec Kind = "kubeconfig-exec"
+	// KindStaticBearer is the static-bearer provider: it resolves a long-lived
+	// bearer token from one of two locator sources — a named environment variable
+	// (call-time lookup, name-only stored) or the pod-mounted service-account
+	// token read directly. The adapter applies the token as an Authorization
+	// bearer header on a hand-built *rest.Config. Distinct from KindStatic so its
+	// in_cluster source stays contained to the kubernetes transport and never
+	// leaks onto the single-token HTTP backends (agent-identity-doc-02, D-0060).
+	KindStaticBearer Kind = "static-bearer"
 )
 
 // Stage is the diagnostic spine (R4): the ordered states a resolution can reach.
@@ -117,7 +127,7 @@ const redactedCredential = "[REDACTED CREDENTIAL]"
 // (StaticValue / KubeSelection / CapturedStderr).
 type Credential struct {
 	kind   Kind
-	static string        // KindStatic: the wrapped value
+	static string        // KindStatic: the wrapped value; KindStaticBearer: the resolved bearer token
 	kube   KubeSelection // KindKubeconfigExec: the selected kubeconfig/context
 	stderr string        // captured exec-plugin stderr (human-facing accessor only)
 }
@@ -168,6 +178,17 @@ func (r *Resolution) KubeSelection() (KubeSelection, bool) {
 		return KubeSelection{}, false
 	}
 	return r.cred.kube, true
+}
+
+// BearerToken returns the resolved bearer token and true when this is a
+// static-bearer resolution. This is the deliberate typed accessor the kubernetes
+// adapter calls to apply the token as an Authorization bearer header; like
+// StaticValue it is the ONLY path to the underlying value.
+func (r *Resolution) BearerToken() (string, bool) {
+	if r.cred.kind != KindStaticBearer {
+		return "", false
+	}
+	return r.cred.static, true
 }
 
 // CapturedStderr returns the raw exec-plugin stderr captured on a kubeconfig-exec

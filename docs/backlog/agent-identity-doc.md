@@ -51,18 +51,34 @@ D-0059.
   method depends on (a unique per-component token variable). Break-tested by
   `TestPromote_StaticEnvVarUniqueness`. Recon confirmed names were already stored verbatim
   (no computed-name switch and no migration were needed).
+- **DONE — slice B, Kubernetes transport rewrite to static-bearer (D-0062, session
+  `agent-identity-doc-02`).** The kubernetes adapter builds its `*rest.Config` by hand with
+  no kubeconfig ingestion (`buildRESTConfig`), `static-bearer` is its own credential Kind
+  (`KindStaticBearer`) with env-var and in-cluster token sources, in-cluster reads the
+  pod-mounted token directly (not via `rest.InClusterConfig()`), `auth_method` is a stored
+  per-component discriminator establishing the per-component Kind-selection seam, kubernetes
+  is un-wired from `KindKubeconfigExec` (the provider package left dead-but-present for
+  slice D), and the uniqueness guard is generalized to all `env_var` locators. The
+  promotion UI form and a minimal truthful public-docs accuracy fix landed in-slice;
+  break-tested by `internal/adapters/k8s/transport_break_test.go` +
+  `internal/credential/static_bearer_test.go`.
 
 Still open:
 
 1. **Produce the full ADR** for the stance — the normative decision record that promotes
    D-0060's design-of-record into an implementable specification.
-2. **Rewire the Kubernetes credential path** off the kubeconfig-or-in-cluster locator
-   (`KindKubeconfigExec`) to the **static bearer** method (the Kubernetes transport
-   rewrite).
-3. **Add the native Entra exchange** method (Azure Entra OAuth2 token exchange minting a
-   short-lived bearer token for AKS).
-4. **Retire the kubeconfig-exec provider** for kubernetes once the static-bearer and
-   Entra-exchange methods land.
+2. **Add the native Entra exchange** method (Azure Entra OAuth2 token exchange minting a
+   short-lived bearer token for AKS) — slice C. Extends the per-component
+   `auth_method`→Kind seam established in slice B with a second value, no field migration.
+3. **Retire the kubeconfig-exec provider** for kubernetes once the static-bearer and
+   Entra-exchange methods land — slice D. Removes the dead-but-present
+   `internal/credential/kubeconfig_exec.go` provider, its `KindKubeconfigExec` Kind and
+   requirements entry, and the `tildeguard` helper, and lets the break-test widen.
+4. **Full both-methods public-docs polish** (deferred from slice B, tied to slice C). Slice
+   B made a minimal truthful accuracy fix to the kubernetes credential path in
+   `docs/public/{guides/register-kubernetes,integrations/_index,api-reference/_index,quickstart/_index,concepts/components-and-promotion}.md`,
+   but the fuller prose describing **both** static-bearer and Entra-exchange must not be
+   written until Entra exists (slice C). Reconcile the docs to describe both methods then.
 5. **Implement the provenance assertion** — the Joe-internal originator/actor/action
    record (delegated vs. autonomous), never transmitted to the managed system.
 6. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts

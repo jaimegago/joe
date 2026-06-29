@@ -130,25 +130,27 @@ func TestPromotionCandidates_ArmedComponentStillNamesOnly(t *testing.T) {
 	}
 }
 
-// TestPromotionCandidates_KubeconfigExecNotApplicable proves a kubeconfig-exec
-// wired component answers honestly: applicable=false, no candidates, no prefix.
-func TestPromotionCandidates_KubeconfigExecNotApplicable(t *testing.T) {
+// TestPromotionCandidates_StaticBearerNotApplicable proves a static-bearer wired
+// component (kubernetes) answers honestly: applicable=false, no candidates, no
+// prefix — its env_var name is free-form and its in_cluster source is a fixed
+// mount, so neither is an enumerable set.
+func TestPromotionCandidates_StaticBearerNotApplicable(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
 	registerComponent(t, f, "c-k8s", "kubernetes", `{}`)
 
 	body, _ := getPromotionCandidates(t, f, "c-k8s", "user:alice")
-	if !body.Wired || body.Kind != "kubeconfig-exec" {
-		t.Fatalf("kexec shape: wired=%v kind=%q; want true/kubeconfig-exec", body.Wired, body.Kind)
+	if !body.Wired || body.Kind != "static-bearer" {
+		t.Fatalf("static-bearer shape: wired=%v kind=%q; want true/static-bearer", body.Wired, body.Kind)
 	}
 	if body.Applicable {
-		t.Errorf("kubeconfig-exec applicable=true; want false (its reference is a file path, not an enumerable set)")
+		t.Errorf("static-bearer applicable=true; want false (free-form env_var name / fixed mount, not an enumerable set)")
 	}
 	if len(body.Candidates) != 0 {
-		t.Errorf("kexec candidates=%+v; want empty", body.Candidates)
+		t.Errorf("static-bearer candidates=%+v; want empty", body.Candidates)
 	}
 	if body.Prefix != "" {
-		t.Errorf("kexec prefix=%q; want empty", body.Prefix)
+		t.Errorf("static-bearer prefix=%q; want empty", body.Prefix)
 	}
 }
 

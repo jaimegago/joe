@@ -601,10 +601,16 @@ type promoteComponentRequest struct {
 	// static provider locators
 	EnvVar string `json:"env_var"`
 	Value  string `json:"value"`
-	// kubeconfig-exec provider locators
+	// kubeconfig-exec provider locators (dead-but-present; no type routes here)
 	Kubeconfig string `json:"kubeconfig"`
 	Context    string `json:"context"`
 	InCluster  bool   `json:"in_cluster"`
+	// kubernetes static-bearer coordinates + discriminator (agent-identity-doc-02).
+	// in_cluster (above) doubles as the static-bearer in_cluster token source.
+	APIServer  string `json:"api_server"`
+	CAData     string `json:"ca_data"`
+	Namespace  string `json:"namespace"`
+	AuthMethod string `json:"auth_method"`
 	// shared, non-credential descriptor
 	Audience string `json:"audience"`
 }
@@ -702,16 +708,19 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// UNIQUENESS GUARD (D-0061) — a static env_var locator must be unique across
-	// the WHOLE component set, because environment variables are process-global:
-	// two components sharing a name would resolve to the same secret with no
-	// distinction. Names are operator-supplied and stored verbatim (never computed
-	// or componentID-derived), so the only failure mode is a collision, prevented
-	// here. The Config blob is encrypted at rest, so this cannot be a DB constraint
-	// — it is an application-level decrypt-and-scan of peer components, excluding
-	// this component itself so a re-promote keeping its own name is not a self-
-	// conflict. Static-only: kubeconfig-exec references are file paths, not env vars.
-	if kind == credential.KindStatic {
+	// UNIQUENESS GUARD (D-0061, generalized by agent-identity-doc-02) — an env_var
+	// locator must be unique across the WHOLE component set, because environment
+	// variables are process-global: two components sharing a name would resolve to
+	// the same secret with no distinction. Names are operator-supplied and stored
+	// verbatim (never computed or componentID-derived), so the only failure mode is
+	// a collision, prevented here. The Config blob is encrypted at rest, so this
+	// cannot be a DB constraint — it is an application-level decrypt-and-scan of
+	// peer components, excluding this component itself so a re-promote keeping its
+	// own name is not a self-conflict. The gate fires for ANY promotion writing an
+	// env_var locator regardless of Kind (the generic static Kind OR the kubernetes
+	// static-bearer env-var source); the in_cluster source carries no env var and
+	// is exempt. The peer scan is already Kind-agnostic and process-global.
+	if req.EnvVar != "" {
 		if other, conflict, err := staticEnvVarConflict(r.Context(), s.services.Store.Components, req.EnvVar, id); err != nil {
 			writeInternalError(w, err, "promote uniqueness scan")
 			return
@@ -868,6 +877,41 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 		if req.Context != "" {
 			set("context", req.Context)
 			locatorKeys = append(locatorKeys, "context")
+		}
+	case credential.KindStaticBearer:
+		// Kubernetes static-bearer (agent-identity-doc-02): cluster coordinates
+		// plus a bearer-token locator that is an env_var indirection OR the
+		// pod-mounted in_cluster token — never an inline secret, never a kubeconfig.
+		if req.Value != "" {
+			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; supply an env_var indirection or in_cluster=true (the armed record carries a reference, not a secret)")
+		}
+		if req.Kubeconfig != "" || req.Context != "" {
+			return nil, nil, fmt.Errorf("kubeconfig/context are not valid for a kubernetes static-bearer reference; supply api_server, ca_data, and a static-bearer token (env_var or in_cluster)")
+		}
+		if req.AuthMethod != k8s.AuthMethodStaticBearer {
+			return nil, nil, fmt.Errorf("kubernetes auth_method must be %q", k8s.AuthMethodStaticBearer)
+		}
+		if req.APIServer == "" {
+			return nil, nil, fmt.Errorf("kubernetes static-bearer reference requires api_server (the cluster API-server URL)")
+		}
+		if req.EnvVar == "" && !req.InCluster {
+			return nil, nil, fmt.Errorf("kubernetes static-bearer reference requires either an env_var name or in_cluster=true (the bearer-token source)")
+		}
+		set("api_server", req.APIServer)
+		set("auth_method", req.AuthMethod)
+		if req.CAData != "" {
+			set("ca_data", req.CAData)
+		}
+		if req.Namespace != "" {
+			set("namespace", req.Namespace)
+		}
+		if req.EnvVar != "" {
+			set("env_var", req.EnvVar)
+			locatorKeys = append(locatorKeys, "env_var")
+		}
+		if req.InCluster {
+			set("in_cluster", true)
+			locatorKeys = append(locatorKeys, "in_cluster")
 		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported wired provider kind %q", kind)

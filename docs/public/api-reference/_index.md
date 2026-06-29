@@ -454,15 +454,21 @@ body (fields depend on the provider):
   "credential_provider": "string",
   "env_var": "string",
   "value": "string",
-  "kubeconfig": "string",
-  "context": "string",
+  "auth_method": "static-bearer",
+  "api_server": "string",
+  "ca_data": "string",
+  "namespace": "string",
   "in_cluster": false,
   "audience": "string"
 }
 ```
 
-An inline `value` (an embedded secret) is refused; the reference must be an `env_var`
-indirection. Promotion resolves no credential. Response `200`:
+For a static-credential component the reference is an `env_var`. For Kubernetes the
+reference is `auth_method: static-bearer` with the cluster coordinates (`api_server`,
+`ca_data`, optional `namespace`) plus a bearer-token source — an `env_var` name or
+`in_cluster: true` (the pod-mounted service-account token). An inline `value` (an embedded
+secret) is refused; the reference must be an indirection. Promotion resolves no
+credential. Response `200`:
 
 ```json
 { "component_id": "string", "type": "string", "provider": "string", "armed": true, "rearm": false }

@@ -34,8 +34,9 @@ const envVarPrefix = "JOE_"
 // prefix SEGMENT. Because the type literals are irregular (nginx-ingress,
 // oci_registry, azuremonitor) the segment cannot be derived mechanically from the
 // type string — it is an explicit per-type declaration. Defined for exactly the
-// 15 KindStatic wired types (kubernetes is wired but kubeconfig-exec, so it has no
-// env segment). A guard test (references_test.go) asserts coverage against the
+// KindStatic wired types (kubernetes is wired but static-bearer, whose env_var
+// source is a free-form operator-chosen name, so it has no JOE_<SEGMENT>_ env
+// segment). A guard test (references_test.go) asserts coverage against the
 // KindStatic subset of wiredTypes and that every segment is a valid POSIX env var
 // name fragment, so a new static wired type cannot be added without a segment.
 var envPrefixSegments = map[string]string{

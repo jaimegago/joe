@@ -55,7 +55,7 @@ func TestWiredProvider_AnswersForWiredAndUnwiredTypes(t *testing.T) {
 	}{
 		{"github wired to static", store.ComponentTypeGitHub, KindStatic, true},
 		{"gitlab wired to static", store.ComponentTypeGitLab, KindStatic, true},
-		{"kubernetes wired to kubeconfig-exec", store.ComponentTypeKubernetes, KindKubeconfigExec, true},
+		{"kubernetes wired to static-bearer", store.ComponentTypeKubernetes, KindStaticBearer, true},
 		// A003-W2 static-token backends are now wired to the static provider.
 		{"prometheus wired to static", store.ComponentTypePrometheus, KindStatic, true},
 		{"mimir wired to static (shares prometheus adapter)", store.ComponentTypeMimir, KindStatic, true},
