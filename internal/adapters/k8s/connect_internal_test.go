@@ -2,114 +2,107 @@ package k8s
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// writeKubeconfig writes a minimal kubeconfig pointing at a fake server and
-// returns its path. No real cluster is contacted — these tests exercise the
-// credential-resolution wiring and rest.Config construction, not connectivity.
-func writeKubeconfig(t *testing.T, server, contextName string) string {
-	t.Helper()
-	content := fmt.Sprintf(`apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    server: %s
-  name: fake-cluster
-contexts:
-- context:
-    cluster: fake-cluster
-    user: fake-user
-  name: %s
-current-context: %s
-users:
-- name: fake-user
-  user:
-    token: dummy-token
-`, server, contextName, contextName)
-	path := filepath.Join(t.TempDir(), "kubeconfig")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write kubeconfig: %v", err)
+// agent-identity-doc-02: the kubernetes transport resolves a bearer token for the
+// component's auth_method and builds a *rest.Config by hand. These tests exercise
+// the resolution wiring and rest.Config construction, not connectivity — no
+// cluster is contacted.
+
+// TestResolveBearerToken_EnvVarSource proves the static-bearer env-var source
+// resolves the bearer token through the per-component auth_method seam.
+func TestResolveBearerToken_EnvVarSource(t *testing.T) {
+	t.Setenv("JOE_K8S_BEARER_TEST", "tok-abc123")
+	raw := []byte(`{"auth_method":"static-bearer","api_server":"https://k8s.example.com:6443","env_var":"JOE_K8S_BEARER_TEST"}`)
+
+	token, err := resolveBearerToken(context.Background(), "k8s-1", raw, AuthMethodStaticBearer)
+	if err != nil {
+		t.Fatalf("resolveBearerToken: %v", err)
 	}
-	return path
+	if token != "tok-abc123" {
+		t.Errorf("token = %q, want tok-abc123", token)
+	}
 }
 
-// D-0026 unit 2: the kubeconfig-exec provider's selection round-trips through
-// applyResolvedCredential into cfg, and buildRESTConfig still produces a working
-// *rest.Config pointed at the selected context's server.
-func TestApplyResolvedCredential_KubeconfigExec_BuildsRESTConfig(t *testing.T) {
-	kubeconfig := writeKubeconfig(t, "https://fake.example.com:6443", "fake-context")
-
-	raw := fmt.Appendf(nil,
-		`{"credential_provider":"kubeconfig-exec","kubeconfig":%q,"context":"fake-context"}`, kubeconfig)
-	parsed, err := ParseConfig(raw)
-	if err != nil {
-		t.Fatalf("ParseConfig: %v", err)
+// TestBuildRESTConfig_HandBuilt proves the builder sets host, CA data, and bearer
+// token from the coordinates + resolved token — and sets NOTHING else (no exec
+// provider, no auth provider, no impersonation, no kubeconfig-derived fields).
+func TestBuildRESTConfig_HandBuilt(t *testing.T) {
+	cfg := Config{
+		APIServer:  "https://k8s.example.com:6443",
+		CAData:     "-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----",
+		Namespace:  "platform",
+		AuthMethod: AuthMethodStaticBearer,
 	}
-
-	cfg, err := applyResolvedCredential(context.Background(), "k8s-1", raw, parsed)
-	if err != nil {
-		t.Fatalf("applyResolvedCredential: %v", err)
-	}
-	if cfg.Kubeconfig != kubeconfig {
-		t.Errorf("Kubeconfig = %q, want %q (selection should come via the provider)", cfg.Kubeconfig, kubeconfig)
-	}
-	if cfg.Context != "fake-context" {
-		t.Errorf("Context = %q, want fake-context", cfg.Context)
-	}
-
-	restConfig, err := buildRESTConfig(cfg)
+	rc, err := buildRESTConfig(cfg, "tok-xyz")
 	if err != nil {
 		t.Fatalf("buildRESTConfig: %v", err)
 	}
-	if restConfig.Host != "https://fake.example.com:6443" {
-		t.Errorf("rest.Config.Host = %q, want https://fake.example.com:6443", restConfig.Host)
+	if rc.Host != cfg.APIServer {
+		t.Errorf("Host = %q, want %q", rc.Host, cfg.APIServer)
+	}
+	if string(rc.TLSClientConfig.CAData) != cfg.CAData {
+		t.Errorf("CAData = %q, want %q", rc.TLSClientConfig.CAData, cfg.CAData)
+	}
+	if rc.BearerToken != "tok-xyz" {
+		t.Errorf("BearerToken = %q, want tok-xyz", rc.BearerToken)
+	}
+	// The three fields are the ONLY transport material; everything else stays zero.
+	if rc.BearerTokenFile != "" {
+		t.Errorf("BearerTokenFile = %q; want empty (token is inline, no file)", rc.BearerTokenFile)
+	}
+	if rc.TLSClientConfig.CAFile != "" {
+		t.Errorf("CAFile = %q; want empty (CA is inline CAData, never an on-disk path)", rc.TLSClientConfig.CAFile)
+	}
+	if rc.ExecProvider != nil {
+		t.Error("ExecProvider is set; the hand-built config must never carry an exec provider")
+	}
+	if rc.AuthProvider != nil {
+		t.Error("AuthProvider is set; the hand-built config must never carry an auth provider")
+	}
+	if rc.Impersonate.UserName != "" || rc.Impersonate.UID != "" || len(rc.Impersonate.Groups) != 0 {
+		t.Errorf("Impersonate is set (%+v); Joe never impersonates", rc.Impersonate)
+	}
+	if rc.Username != "" || rc.Password != "" || len(rc.TLSClientConfig.CertData) != 0 || len(rc.TLSClientConfig.KeyData) != 0 {
+		t.Error("a non-bearer credential (basic-auth or client-cert) is set; only the bearer token is permitted")
 	}
 }
 
-// D-0026 unit 2: a config with no discriminator selects the static provider,
-// which yields no KubeSelection, so cfg is left exactly as parsed and the
-// adapter still builds the same *rest.Config (existing behavior preserved).
-func TestApplyResolvedCredential_NoDiscriminator_PreservesSelection(t *testing.T) {
-	kubeconfig := writeKubeconfig(t, "https://legacy.example.com:6443", "legacy-context")
-
-	raw := fmt.Appendf(nil, `{"kubeconfig":%q,"context":"legacy-context"}`, kubeconfig)
-	parsed, err := ParseConfig(raw)
-	if err != nil {
-		t.Fatalf("ParseConfig: %v", err)
-	}
-
-	cfg, err := applyResolvedCredential(context.Background(), "k8s-2", raw, parsed)
-	if err != nil {
-		t.Fatalf("applyResolvedCredential: %v", err)
-	}
-	if cfg != parsed {
-		t.Errorf("cfg = %+v, want unchanged %+v", cfg, parsed)
-	}
-
-	restConfig, err := buildRESTConfig(cfg)
-	if err != nil {
-		t.Fatalf("buildRESTConfig: %v", err)
-	}
-	if restConfig.Host != "https://legacy.example.com:6443" {
-		t.Errorf("rest.Config.Host = %q, want https://legacy.example.com:6443", restConfig.Host)
+// TestBuildRESTConfig_RequiresAPIServer proves a missing api-server URL is a hard
+// configuration error — the host is ours to set, never kubeconfig-derived.
+func TestBuildRESTConfig_RequiresAPIServer(t *testing.T) {
+	if _, err := buildRESTConfig(Config{AuthMethod: AuthMethodStaticBearer}, "tok"); err == nil {
+		t.Fatal("buildRESTConfig should fail when api_server is empty")
 	}
 }
 
-// D-0026 unit 2 break-test: a resolution failure (unknown provider kind) surfaces
-// through Connect's normal error path before any cluster contact, and no
-// credential material appears in the error.
-func TestConnect_ResolveFailure_SurfacesThroughNormalPath(t *testing.T) {
+// TestConnect_UnsupportedAuthMethod proves an unknown/empty auth_method surfaces
+// through Connect's normal error path before any cluster contact, with no
+// credential material in the error.
+func TestConnect_UnsupportedAuthMethod(t *testing.T) {
 	a := New()
-	raw := []byte(`{"credential_provider":"bogus","kubeconfig":"/nonexistent","context":"c"}`)
-	err := a.Connect(context.Background(), store.Component{ID: "k8s-3", Config: raw})
+	raw := []byte(`{"api_server":"https://k8s.example.com:6443","auth_method":"client-cert"}`)
+	err := a.Connect(context.Background(), store.Component{ID: "k8s-1", Config: raw})
 	if err == nil {
-		t.Fatal("expected Connect to fail for an unknown provider kind")
+		t.Fatal("expected Connect to fail for an unsupported auth_method")
+	}
+	if a.Status().Connected {
+		t.Error("adapter should not be connected after an auth_method failure")
+	}
+}
+
+// TestConnect_EnvVarUnsetSurfaces proves a static-bearer env-var source whose
+// variable is unset fails Connect with a non-sensitive reason before any cluster
+// contact.
+func TestConnect_EnvVarUnsetSurfaces(t *testing.T) {
+	a := New()
+	raw := []byte(`{"api_server":"https://k8s.example.com:6443","auth_method":"static-bearer","env_var":"JOE_K8S_DEFINITELY_UNSET"}`)
+	err := a.Connect(context.Background(), store.Component{ID: "k8s-1", Config: raw})
+	if err == nil {
+		t.Fatal("expected Connect to fail when the named env var is unset")
 	}
 	if a.Status().Connected {
 		t.Error("adapter should not be connected after a resolve failure")

@@ -146,35 +146,39 @@ func TestPromote_StaticWiredTypes(t *testing.T) {
 	}
 }
 
-// TestPromote_KubeconfigExecWired proves kubernetes (kubeconfig-exec-wired) arms
-// with a kubeconfig path reference: config carries the discriminator + kubeconfig
-// locator, one audit row, and the kubeconfig PATH does not leak into the row.
-func TestPromote_KubeconfigExecWired(t *testing.T) {
+// TestPromote_StaticBearerWired proves kubernetes (static-bearer-wired) arms with
+// a hand-built-transport reference: config carries the discriminator, the cluster
+// coordinates (api_server, ca_data), auth_method, and the env_var token locator;
+// one audit row; and the env_var NAME does not leak into the row.
+func TestPromote_StaticBearerWired(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
 	registerComponent(t, f, "c-k8s", "kubernetes", `{}`)
 
-	const kubePath = "/etc/secret/kubeconfig-path-locator"
+	const envVar = "JOE_K8S_PROD_BEARER"
 	w := f.do(http.MethodPost, "/api/v1/components/c-k8s/promote",
-		`{"kubeconfig":"`+kubePath+`","context":"prod"}`, "user:alice")
+		`{"auth_method":"static-bearer","api_server":"https://k8s.prod:6443","ca_data":"PEMBYTES","env_var":"`+envVar+`"}`, "user:alice")
 	if w.Code != http.StatusOK {
 		t.Fatalf("promote kubernetes: status=%d body=%s; want 200", w.Code, w.Body.String())
 	}
 	cfg := componentConfigMap(t, f, "c-k8s")
-	if cfg["credential_provider"] != "kubeconfig-exec" {
-		t.Errorf("config credential_provider=%v; want kubeconfig-exec. config=%v", cfg["credential_provider"], cfg)
+	if cfg["credential_provider"] != "static-bearer" {
+		t.Errorf("config credential_provider=%v; want static-bearer. config=%v", cfg["credential_provider"], cfg)
 	}
-	if cfg["kubeconfig"] != kubePath {
-		t.Errorf("config kubeconfig=%v; want %q", cfg["kubeconfig"], kubePath)
+	if cfg["auth_method"] != "static-bearer" {
+		t.Errorf("config auth_method=%v; want static-bearer", cfg["auth_method"])
 	}
-	if cfg["context"] != "prod" {
-		t.Errorf("config context=%v; want prod", cfg["context"])
+	if cfg["api_server"] != "https://k8s.prod:6443" {
+		t.Errorf("config api_server=%v; want https://k8s.prod:6443", cfg["api_server"])
+	}
+	if cfg["env_var"] != envVar {
+		t.Errorf("config env_var=%v; want %q", cfg["env_var"], envVar)
 	}
 	if n := f.countAudit(audit.ActionComponentPromote); n != 1 {
 		t.Fatalf("component.promote rows = %d; want exactly 1", n)
 	}
-	if raw := auditContextRaw(t, f, audit.ActionComponentPromote); strings.Contains(raw, kubePath) {
-		t.Errorf("audit context leaked the kubeconfig path %q: %s", kubePath, raw)
+	if raw := auditContextRaw(t, f, audit.ActionComponentPromote); strings.Contains(raw, envVar) {
+		t.Errorf("audit context leaked the env_var name %q: %s", envVar, raw)
 	}
 }
 

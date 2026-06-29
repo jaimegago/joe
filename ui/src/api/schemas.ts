@@ -117,8 +117,9 @@ export const PromotionCandidateSchema = z.object({
 // GET /api/v1/components/{id}/promotion-candidates — the LIVE candidate set
 // (not cacheable; reflects Joe's environment at request time). Discriminated on
 // `wired`. A wired component reports applicability + (static) the enumerable
-// candidates and their env-name prefix; kubeconfig-exec answers applicable:false
-// with no candidates. An unwired type mirrors the requirements shape. `prefix`
+// candidates and their env-name prefix; a non-enumerable kind (static-bearer)
+// answers applicable:false with no candidates. An unwired type mirrors the
+// requirements shape. `prefix`
 // is omitted by the server when not applicable.
 export const PromotionCandidatesSchema = z.discriminatedUnion('wired', [
   z.object({

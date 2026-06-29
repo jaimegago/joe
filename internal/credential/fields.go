@@ -32,15 +32,17 @@ var nonCredentialConfigFields = map[string]struct{}{
 // credentialConfigStructs is the set of provider config structs whose json tags
 // define Joe's authentication surface: the provider discriminator
 // (discriminator, provider.go), the static/env-var provider's secret + locator
-// (staticConfig, static.go), and the kubeconfig-exec provider's locators
-// (kubeconfigExecConfig, kubeconfig_exec.go). CredentialBearingFields derives its
-// answer from these by reflection, so the field set cannot drift from the structs
-// that actually parse it.
+// (staticConfig, static.go), the kubeconfig-exec provider's locators
+// (kubeconfigExecConfig, kubeconfig_exec.go), and the static-bearer provider's
+// locators (staticBearerConfig, static_bearer.go — env_var/in_cluster, both
+// already in the set). CredentialBearingFields derives its answer from these by
+// reflection, so the field set cannot drift from the structs that actually parse it.
 func credentialConfigStructs() []reflect.Type {
 	return []reflect.Type{
 		reflect.TypeFor[discriminator](),
 		reflect.TypeFor[staticConfig](),
 		reflect.TypeFor[kubeconfigExecConfig](),
+		reflect.TypeFor[staticBearerConfig](),
 	}
 }
 

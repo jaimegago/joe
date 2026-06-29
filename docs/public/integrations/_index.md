@@ -58,7 +58,8 @@ curl -s http://localhost:7777/api/v1/components/<id>/promotion-candidates \
 
 For a static-credential type, the candidates are the matching `JOE_<SEGMENT>_<LABEL>`
 environment variables currently set in the daemon's environment. For Kubernetes the
-reference is a kubeconfig locator rather than an enumerable list.
+reference is the cluster coordinates plus a free-form bearer-token source rather than an
+enumerable list.
 
 ### 3. Promote (arms the component)
 
@@ -84,14 +85,15 @@ references its own variable, and promotion rejects a name already in use by
 another component (environment variables are process-global, so two components
 sharing a name would read the same secret).
 
-For Kubernetes, reference a kubeconfig instead — either in-cluster or a kubeconfig path:
+For Kubernetes, reference the cluster coordinates plus a bearer-token source instead — a
+service-account token from an environment variable, or the in-cluster pod-mounted token:
 
 ```sh
 curl -s http://localhost:7777/api/v1/components/<id>/promote \
   -H "Authorization: Bearer $JOE_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "in_cluster": true }'
-# or: -d '{ "kubeconfig": "/path/to/kubeconfig" }'
+  -d '{ "auth_method": "static-bearer", "api_server": "https://api.cluster.example.com:6443", "ca_data": "<PEM>", "env_var": "JOE_KUBERNETES_PROD_TOKEN" }'
+# or, in-cluster: -d '{ "auth_method": "static-bearer", "api_server": "...", "ca_data": "<PEM>", "in_cluster": true }'
 ```
 
 An inline `value` is refused on both paths — the armed record carries a reference, not a
@@ -157,7 +159,7 @@ call) or only at the next daemon restart (boot).
 
 | System | Type | Credential mechanism | Activation |
 | --- | --- | --- | --- |
-| Kubernetes | `kubernetes` | kubeconfig-exec — `in_cluster: true` or a `kubeconfig` path | runtime (`/test`) |
+| Kubernetes | `kubernetes` | static-bearer — `api_server` + `ca_data` + a bearer token via `env_var` or `in_cluster: true` | runtime (`/test`) |
 
 For the click-by-click web-UI walkthrough of registering, promoting, and taking a cluster
 live, see [Register a Kubernetes component](../guides/register-kubernetes/).

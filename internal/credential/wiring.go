@@ -19,8 +19,13 @@ import "github.com/jaimegago/joe/internal/store"
 
 // wiredTypes maps each component type wired to the credential-provider seam to the
 // provider Kind its adapter selects by default. kubernetes selects the
-// kubeconfig-exec provider; every other wired type defaults to the static provider
-// (a single long-lived token resolved through StaticValue).
+// static-bearer provider (agent-identity-doc-02: a hand-built *rest.Config with a
+// bearer token from an env-var or the pod-mounted service-account token — no
+// kubeconfig ingestion); every other wired type defaults to the static provider
+// (a single long-lived token resolved through StaticValue). The kubernetes
+// adapter additionally reads its per-component auth_method to select the Kind,
+// the seam slice C extends; this map is the type-level default the promotion
+// endpoint reports.
 //
 // A003-W1 seeded the set with {github, kubernetes, gitlab}. A003-W2 closed out the
 // remaining static-token adapters: the HTTP telemetry backends (prometheus, mimir,
@@ -43,7 +48,7 @@ import "github.com/jaimegago/joe/internal/store"
 var wiredTypes = map[string]Kind{
 	store.ComponentTypeGitHub:       KindStatic,
 	store.ComponentTypeGitLab:       KindStatic,
-	store.ComponentTypeKubernetes:   KindKubeconfigExec,
+	store.ComponentTypeKubernetes:   KindStaticBearer,
 	store.ComponentTypePrometheus:   KindStatic,
 	store.ComponentTypeMimir:        KindStatic,
 	store.ComponentTypeLoki:         KindStatic,

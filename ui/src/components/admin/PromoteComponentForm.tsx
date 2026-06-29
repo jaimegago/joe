@@ -73,8 +73,11 @@ export function PromoteComponentForm({
   const [composeMode, setComposeMode] = useState(false);
   const [pickedEnvVar, setPickedEnvVar] = useState('');
   const [label, setLabel] = useState('');
-  const [kubeconfig, setKubeconfig] = useState('');
-  const [context, setContext] = useState('');
+  // kubernetes static-bearer coordinates + token source.
+  const [apiServer, setApiServer] = useState('');
+  const [caData, setCaData] = useState('');
+  const [namespace, setNamespace] = useState('');
+  const [bearerEnvVar, setBearerEnvVar] = useState('');
   const [inCluster, setInCluster] = useState(false);
   // Step-2 confirmation beat.
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -91,7 +94,8 @@ export function PromoteComponentForm({
     !candidates.some((c) => c.env_var_name === composedEnvVar);
 
   // The at-least-one-of rule is READ from the requirements, not hardcoded, so a
-  // backend change to the constraint changes the form's gating with it.
+  // backend change to the constraint changes the form's gating with it. For
+  // static-bearer it ranges over the two token sources {env_var, in_cluster}.
   const atLeastOne = reqs?.wired
     ? reqs.constraints.find((c) => c.rule === 'at-least-one-of')
     : undefined;
@@ -99,32 +103,35 @@ export function PromoteComponentForm({
     switch (name) {
       case 'in_cluster':
         return inCluster;
-      case 'kubeconfig':
-        return kubeconfig.trim() !== '';
-      case 'context':
-        return context.trim() !== '';
+      case 'env_var':
+        return bearerEnvVar.trim() !== '';
       default:
         return false;
     }
   };
-  const kubeReady = atLeastOne
+  // static-bearer needs an api-server URL plus at least one token source.
+  const tokenSourceReady = atLeastOne
     ? atLeastOne.fields.some(fieldPresent)
-    : inCluster || kubeconfig.trim() !== '';
+    : inCluster || bearerEnvVar.trim() !== '';
+  const bearerReady = apiServer.trim() !== '' && tokenSourceReady;
 
   const staticReady = inCompose ? label.trim() !== '' && prefix !== '' : pickedEnvVar !== '';
 
   const canSubmit =
-    kind === 'static' ? staticReady : kind === 'kubeconfig-exec' ? kubeReady : false;
+    kind === 'static' ? staticReady : kind === 'static-bearer' ? bearerReady : false;
 
   function buildBody(): PromoteRequest | null {
     if (kind === 'static') {
       return { credential_provider: 'static', env_var: composedEnvVar };
     }
-    if (kind === 'kubeconfig-exec') {
+    if (kind === 'static-bearer') {
       return {
-        credential_provider: 'kubeconfig-exec',
-        ...(kubeconfig.trim() !== '' ? { kubeconfig: kubeconfig.trim() } : {}),
-        ...(context.trim() !== '' ? { context: context.trim() } : {}),
+        credential_provider: 'static-bearer',
+        auth_method: 'static-bearer',
+        api_server: apiServer.trim(),
+        ...(caData.trim() !== '' ? { ca_data: caData.trim() } : {}),
+        ...(namespace.trim() !== '' ? { namespace: namespace.trim() } : {}),
+        ...(bearerEnvVar.trim() !== '' ? { env_var: bearerEnvVar.trim() } : {}),
         ...(inCluster ? { in_cluster: true } : {}),
       };
     }
@@ -279,27 +286,59 @@ export function PromoteComponentForm({
                 </div>
               )}
 
-              {kind === 'kubeconfig-exec' && (
+              {kind === 'static-bearer' && (
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <Label htmlFor="promote-kubeconfig">Kubeconfig path</Label>
+                    <Label htmlFor="promote-apiserver">API-server URL</Label>
                     <Input
-                      id="promote-kubeconfig"
-                      value={kubeconfig}
-                      onChange={(e) => setKubeconfig(e.target.value)}
-                      placeholder="/etc/joe/kubeconfig"
+                      id="promote-apiserver"
+                      value={apiServer}
+                      onChange={(e) => setApiServer(e.target.value)}
+                      placeholder="https://api.cluster.example.com:6443"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="promote-context">
-                      Context <span className="text-muted-foreground">(optional)</span>
+                    <Label htmlFor="promote-cadata">
+                      CA bundle <span className="text-muted-foreground">(PEM, optional)</span>
+                    </Label>
+                    <textarea
+                      id="promote-cadata"
+                      value={caData}
+                      onChange={(e) => setCaData(e.target.value)}
+                      placeholder="-----BEGIN CERTIFICATE-----&#10;..."
+                      rows={4}
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The cluster CA certificate, stored inline so the record is self-contained.
+                      Leave empty only for a publicly-trusted API server.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="promote-namespace">
+                      Default namespace <span className="text-muted-foreground">(optional)</span>
                     </Label>
                     <Input
-                      id="promote-context"
-                      value={context}
-                      onChange={(e) => setContext(e.target.value)}
-                      placeholder="prod-cluster"
+                      id="promote-namespace"
+                      value={namespace}
+                      onChange={(e) => setNamespace(e.target.value)}
+                      placeholder="default"
                     />
+                  </div>
+
+                  <div className="space-y-1 border-t pt-3">
+                    <Label htmlFor="promote-bearer-envvar">Bearer-token environment variable</Label>
+                    <Input
+                      id="promote-bearer-envvar"
+                      value={bearerEnvVar}
+                      onChange={(e) => setBearerEnvVar(e.target.value)}
+                      placeholder="JOE_KUBERNETES_PROD_TOKEN"
+                      disabled={inCluster}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The variable in Joe&rsquo;s own environment holding the service-account bearer
+                      token. Joe stores the name, never the value, and reads it when it connects.
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
@@ -308,17 +347,14 @@ export function PromoteComponentForm({
                       onCheckedChange={(v) => setInCluster(v === true)}
                     />
                     <Label htmlFor="promote-incluster" className="font-normal">
-                      Use the in-cluster service account
+                      Use the in-cluster service-account token instead
                     </Label>
                   </div>
-                  {atLeastOne && !kubeReady && (
-                    <p className="text-xs text-muted-foreground">{atLeastOne.message}</p>
+                  {atLeastOne && !bearerReady && (
+                    <p className="text-xs text-muted-foreground">
+                      Supply an API-server URL and {atLeastOne.message}
+                    </p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    This points Joe at the credential it will use to reach this component. Joe
-                    reads the kubeconfig (or in-cluster identity) from its own environment — where
-                    Joe runs — when it connects, so it must exist there.
-                  </p>
                 </div>
               )}
 

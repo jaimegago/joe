@@ -89,7 +89,7 @@ func TestEnvPrefixComposition(t *testing.T) {
 		t.Errorf("EnvPrefix(datadog) returned ok=true; datadog is unwired and must have no segment")
 	}
 	if _, ok := EnvPrefix("kubernetes"); ok {
-		t.Errorf("EnvPrefix(kubernetes) returned ok=true; kubernetes is kubeconfig-exec, not a static env type")
+		t.Errorf("EnvPrefix(kubernetes) returned ok=true; kubernetes is static-bearer with a free-form env_var name, not a JOE_<SEGMENT>_ static env type")
 	}
 }
 

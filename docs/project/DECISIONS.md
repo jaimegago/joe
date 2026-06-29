@@ -10,6 +10,72 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0062 — The Kubernetes transport is a hand-built rest.Config with no kubeconfig ingestion; static-bearer is its own credential Kind with env-var and in-cluster sources
+
+- Date: 2026-06-29
+- Status: accepted (implemented)
+- Session: agent-identity-doc-02
+- Decision: The Kubernetes adapter now constructs its `*rest.Config` **by hand** and
+  **never ingests a kubeconfig**. `buildRESTConfig` (`internal/adapters/k8s/k8s.go`) sets
+  exactly three fields — `Host` from the component's `api_server` coordinate,
+  `TLSClientConfig.CAData` from the stored inline `ca_data` bundle, and `BearerToken` from
+  the resolved credential; the `clientcmd` ingestion branch and the
+  `rest.InClusterConfig()` branch are **deleted from the transport**, and an exec provider,
+  auth provider, and impersonation are **never set** (Joe authenticates only as its own
+  non-human identity). **CA is stored inline as `CAData`**, leaning on a self-contained
+  record for a remote fleet rather than an on-disk CA path. The Kubernetes component
+  `Config` gains the cluster coordinates `api_server` / `ca_data` / `namespace` and an
+  `auth_method` discriminator (`internal/adapters/k8s/config.go`). **`static-bearer` is its
+  own credential Kind** (`KindStaticBearer`, `internal/credential/credential.go`), distinct
+  from the generic `KindStatic` so its in-cluster source stays contained to the Kubernetes
+  transport and never leaks onto single-token HTTP backends. It resolves a bearer token
+  from one of two locator sources (`internal/credential/static_bearer.go`): an **env-var
+  source** reusing the existing call-time `lookupEnv` (only a name is stored, never the
+  value) and an **in-cluster source** that **reads the pod-mounted service-account token
+  directly** via `os.ReadFile` of `/var/run/secrets/kubernetes.io/serviceaccount/token` —
+  re-homed out of the kubeconfig-exec provider and deliberately **not** via
+  `rest.InClusterConfig()`, which would itself own host, CA, and token and defeat the
+  hand-built stance. Kubernetes resolution is now **per-component**: the adapter reads
+  `auth_method` and maps it to the Kind (`kindForAuthMethod`), establishing the
+  per-component Kind-selection seam decision #1 and D-0060 call for; `static-bearer` is the
+  only value today and is validated at promotion, with slice C adding a second value with
+  no field migration. Kubernetes is **un-wired from `KindKubeconfigExec`** in
+  `wiredTypes` (now `KindStaticBearer`); the **kubeconfig-exec provider package and its
+  probe path are intentionally left dead-but-present** for the slice-D removal — only the
+  routing changed. The **D-0061 uniqueness guard is generalized**: its already
+  Kind-agnostic, process-global peer scan is unchanged, but the call-site gate now fires
+  for **any promotion writing an `env_var` locator** (the generic static Kind OR the
+  static-bearer env-var source), with the in-cluster source carrying no env var and exempt.
+  The stance is **break-tested structurally**, scoped to the Kubernetes
+  resolution-and-transport path (the k8s package's own files, never a tree-wide
+  `clientcmd` grep that would match the still-present dead provider): the test fails if the
+  package imports `clientcmd`, calls `rest.InClusterConfig`, references `ExecProvider` /
+  `AuthProvider` / `Impersonate`, or sets `Host` / `BearerToken` / `CAData` outside
+  `buildRESTConfig` — plus behavioral coverage that static-bearer resolves a token from
+  each of its two sources and the adapter applies it as the bearer token
+  (`internal/adapters/k8s/transport_break_test.go`, `internal/credential/static_bearer_test.go`).
+  The promotion UI form (`ui/src/components/admin/PromoteComponentForm.tsx`) and a minimal
+  public-docs accuracy fix land in this slice; the fuller both-methods docs polish is
+  deferred to slice C (tracked in `docs/backlog/agent-identity-doc.md`).
+- Basis: Phase-1 recon re-derived from the live tree (read-only) confirmed the single
+  clientcmd ingestion site, the kubeconfig-shaped Config carrying none of the coordinates,
+  the kubernetes-only kubeconfig-exec wiring, the in-cluster `rest.InClusterConfig()` call
+  inside the provider, the promotion locator branch, the `KindStatic`-gated uniqueness
+  call-site over a Kind-agnostic scan, and the vendored client-go (v0.35.2) mechanics
+  showing `rest.InClusterConfig()` sets host/CA/token itself. Implementation adds the new
+  Kind, provider, requirements entry, and per-component seam; rewrites the transport; and
+  generalizes the guard gate. `go build ./...`, `go vet ./...`, `gofmt`, the full
+  `go test ./...` suite, and `ui` lint + vitest pass; the release-shaped `make build`
+  embeds the new form and the binary boots and serves the fresh UI.
+- Supersedes: the Kubernetes half of **D-0026** (kubeconfig-exec as the kubernetes
+  transport) and the current-state note in **D-0059** — the kubeconfig-exec provider
+  remains in the tree but no longer governs the kubernetes path. Builds on **D-0061** (the
+  unique per-component env-var locator the static-bearer env-var source depends on) and is
+  the transport-rewrite slice of the agent-identity design-of-record **D-0060** / decision
+  #1. The remaining campaign slices — the Entra-exchange method (slice C), the
+  kubeconfig-exec package retirement (slice D), and the provenance assertion — remain open
+  and are unchanged by this entry.
+
 ## D-0061 — Static credential environment-variable names are enforced unique per component at the promotion seam (operator-supplied, stored verbatim, never computed)
 
 - Date: 2026-06-29

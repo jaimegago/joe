@@ -16,7 +16,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 // KubernetesAdapter extends the base Adapter with K8s-specific operations.
@@ -60,19 +59,19 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if err != nil {
 		return fmt.Errorf("parse source config: %w", err)
 	}
+	a.config = cfg
 
-	// D-0026 unit 2: route the kubeconfig/context selection through the provider
-	// selected by the component config before building the *rest.Config. A config
-	// without a discriminator selects the static provider, which yields no
-	// KubeSelection, so cfg is left as parsed and existing behavior is preserved.
-	// The eager ServerVersion liveness probe below is kept unchanged.
-	cfg, err = applyResolvedCredential(ctx, source.ID, source.Config, cfg)
+	// agent-identity-doc-02: resolve the bearer token for this component's
+	// auth_method, then build the *rest.Config BY HAND — host from the api-server
+	// coordinate, CA from the stored inline bundle, bearer token from the resolved
+	// credential. No kubeconfig is ever ingested. The eager ServerVersion liveness
+	// probe below is kept unchanged.
+	token, err := resolveBearerToken(ctx, source.ID, source.Config, cfg.AuthMethod)
 	if err != nil {
 		return err
 	}
-	a.config = cfg
 
-	restConfig, err := buildRESTConfig(cfg)
+	restConfig, err := buildRESTConfig(cfg, token)
 	if err != nil {
 		return fmt.Errorf("build rest config: %w", err)
 	}
@@ -121,52 +120,67 @@ func (a *Adapter) Status() adapters.Status {
 	return adapters.Status{Connected: false, Message: "disconnected"}
 }
 
-// applyResolvedCredential selects the credential provider from the component
-// config and, for a kubeconfig-exec resolution, routes the selected
-// kubeconfig/context selection into cfg. A config without a discriminator
-// resolves via the static provider, which yields no KubeSelection, so cfg is
-// returned unchanged. A resolution failure is surfaced as a plain Connect error
-// carrying only the non-sensitive reason — never the credential.
-func applyResolvedCredential(ctx context.Context, componentID string, raw json.RawMessage, cfg Config) (Config, error) {
-	provider, err := credential.Select(raw)
+// kindForAuthMethod maps a kubernetes component's per-component auth_method to the
+// credential Kind that resolves its bearer token. This is the per-component
+// Kind-selection seam (decision #1 / D-0060): the method, not a fixed type→Kind
+// wiring, selects the provider, so a future method (slice C: Entra exchange) adds
+// a case here without touching the rest of the transport. static-bearer is the
+// only method today.
+func kindForAuthMethod(method string) (credential.Kind, error) {
+	switch method {
+	case AuthMethodStaticBearer:
+		return credential.KindStaticBearer, nil
+	default:
+		return "", fmt.Errorf("kubernetes: unsupported auth_method %q (expected %q)", method, AuthMethodStaticBearer)
+	}
+}
+
+// resolveBearerToken maps the component's auth_method to a credential Kind and
+// resolves the bearer token through that Kind's provider. The resolved token is
+// the ONLY credential material that reaches the adapter; the host and CA come from
+// the component's own coordinates. A resolution failure surfaces as a plain
+// Connect error carrying only the non-sensitive reason — never the credential.
+func resolveBearerToken(ctx context.Context, componentID string, raw json.RawMessage, authMethod string) (string, error) {
+	kind, err := kindForAuthMethod(authMethod)
 	if err != nil {
-		return Config{}, fmt.Errorf("select credential provider: %w", err)
+		return "", err
+	}
+	provider, err := credential.ProviderForKind(kind)
+	if err != nil {
+		return "", fmt.Errorf("select credential provider: %w", err)
 	}
 	res, err := provider.Resolve(ctx, componentID, raw)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve credential: %w", err)
+		return "", fmt.Errorf("resolve credential: %w", err)
 	}
 	if !res.Diagnostic.OK {
-		return Config{}, fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
+		return "", fmt.Errorf("resolve credential: %s", res.Diagnostic.Reason)
 	}
-	if sel, ok := res.KubeSelection(); ok {
-		cfg.Kubeconfig = sel.Kubeconfig
-		cfg.Context = sel.Context
-		cfg.InCluster = sel.InCluster
+	token, ok := res.BearerToken()
+	if !ok {
+		return "", fmt.Errorf("resolve credential: provider did not yield a bearer token")
 	}
-	return cfg, nil
+	return token, nil
 }
 
-func buildRESTConfig(cfg Config) (*rest.Config, error) {
-	if cfg.InCluster {
-		return rest.InClusterConfig()
+// buildRESTConfig constructs a *rest.Config BY HAND (agent-identity-doc-02): host
+// from the api-server URL coordinate, TLSClientConfig.CAData from the stored
+// inline CA bundle, BearerToken from the resolved static-bearer credential. These
+// three fields are the ONLY ones this builder sets. The adapter NEVER ingests a
+// kubeconfig and NEVER sets an exec provider, auth provider, or impersonation —
+// Joe authenticates only as its own non-human identity.
+func buildRESTConfig(cfg Config, bearerToken string) (*rest.Config, error) {
+	if cfg.APIServer == "" {
+		return nil, fmt.Errorf("kubernetes: api_server URL is required")
 	}
-
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if cfg.Kubeconfig != "" {
-		expanded, err := expandPath(cfg.Kubeconfig)
-		if err != nil {
-			return nil, fmt.Errorf("expand kubeconfig path: %w", err)
-		}
-		rules.ExplicitPath = expanded
+	rc := &rest.Config{
+		Host:        cfg.APIServer,
+		BearerToken: bearerToken,
 	}
-
-	overrides := &clientcmd.ConfigOverrides{}
-	if cfg.Context != "" {
-		overrides.CurrentContext = cfg.Context
+	if cfg.CAData != "" {
+		rc.TLSClientConfig.CAData = []byte(cfg.CAData)
 	}
-
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	return rc, nil
 }
 
 func expandPath(path string) (string, error) {
