@@ -10,6 +10,56 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0061 — Static credential environment-variable names are enforced unique per component at the promotion seam (operator-supplied, stored verbatim, never computed)
+
+- Date: 2026-06-29
+- Status: accepted (implemented)
+- Session: agent-identity-doc-01
+- Decision: A static credential's locator is an **operator-supplied environment-variable
+  name, stored verbatim and enforced unique across the whole component set**. Promotion
+  rejects an `env_var` already in use by another component. The keying is deliberately
+  **not** computed and **not** componentID-derived: recon confirmed names are already
+  operator-chosen and persisted as-is (`internal/api/components.go` `buildArmedConfig`
+  `set("env_var", req.EnvVar)`) and read back verbatim at resolution
+  (`internal/credential/static.go` `Resolve` → `lookupEnv(cfg.EnvVar)`), with the
+  `ComposeEnvVarName` convention helper (`internal/credential/references.go`) dead outside
+  tests — so there was nothing to switch, only a missing uniqueness check to add. The
+  guard is an **application-level decrypt-and-scan at the promotion seam**
+  (`staticEnvVarConflict` in `internal/api/components.go`): it lists peers, compares the
+  decrypted `env_var`, excludes the component being promoted (so a re-promote to its own
+  name is not a self-conflict), and returns 409 on a match. A **database UNIQUE constraint
+  is impossible** because the component `config` blob is encrypted at rest
+  (`internal/store/encrypted_components.go`), so the locator is opaque ciphertext at the
+  SQL layer. The **scope is the whole component set, not per-type**, because environment
+  variables are process-global — two components sharing a name would resolve to the same
+  secret with no distinction. The **blast radius is every static-wired type**, expressed
+  structurally as the `KindStatic` subset of `wiredTypes`
+  (`internal/credential/wiring.go`); kubernetes is unaffected (kubeconfig-exec, no env
+  segment). The **indirection-only posture is preserved**: an inline `value` is still
+  refused and an empty `env_var` is still refused. **Pre-existing collisions are unhealable
+  by code and out of scope**: the names are operator-chosen and the operator has already
+  set those variables in the environment, so rewriting a stored locator would break
+  resolution rather than fix anything — the guard is forward prevention only, with no
+  startup scan and no data migration. The invariant is **break-tested**, not inspected
+  (`TestPromote_StaticEnvVarUniqueness`): it drives the real HTTP promotion guard and the
+  real `StaticProvider.Resolve`, failing if two distinct components can reach one variable
+  or if two distinct names do not resolve to their own values.
+- Basis: Phase-1 recon re-derived from the live tree (read-only), confirming verbatim
+  store at `buildArmedConfig` and verbatim read at `static.go` `Resolve`, the dead
+  `ComposeEnvVarName` helper (only `references_test.go` callers), the absence of any
+  uniqueness guard in the promotion path, store layer, or migrations, and config
+  encryption at rest. Implementation adds `staticEnvVarConflict` and a 409 reject in
+  `handlePromoteComponent`, plus the break test. `go build ./...`, `go vet`, and the
+  `internal/api` + `internal/credential` suites pass.
+- Supersedes: nothing. Builds on **D-0026** (the credential-provider abstraction that owns
+  the provider config structs and the static/kubeconfig-exec seam) and keys the references
+  declared in `internal/credential/references.go`. This is the **first implementation slice
+  of the agent-identity design-of-record D-0060**: a unique per-component static token
+  variable is the precondition for the later static-bearer Kubernetes method. The later
+  campaign slices — Kubernetes transport rewrite, the Entra-exchange provider,
+  kubeconfig-exec retirement, and the provenance assertion — remain open and are unchanged
+  by this entry.
+
 ## D-0060 — Joe's agent-identity and authentication stance is settled as design-of-record (captured in a held draft) — DESIGN, NOT YET IMPLEMENTED
 
 - Date: 2026-06-29

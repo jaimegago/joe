@@ -702,6 +702,27 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// UNIQUENESS GUARD (D-0061) — a static env_var locator must be unique across
+	// the WHOLE component set, because environment variables are process-global:
+	// two components sharing a name would resolve to the same secret with no
+	// distinction. Names are operator-supplied and stored verbatim (never computed
+	// or componentID-derived), so the only failure mode is a collision, prevented
+	// here. The Config blob is encrypted at rest, so this cannot be a DB constraint
+	// — it is an application-level decrypt-and-scan of peer components, excluding
+	// this component itself so a re-promote keeping its own name is not a self-
+	// conflict. Static-only: kubeconfig-exec references are file paths, not env vars.
+	if kind == credential.KindStatic {
+		if other, conflict, err := staticEnvVarConflict(r.Context(), s.services.Store.Components, req.EnvVar, id); err != nil {
+			writeInternalError(w, err, "promote uniqueness scan")
+			return
+		} else if conflict {
+			writeError(w, http.StatusConflict, errorCodeConflict,
+				"environment variable "+req.EnvVar+" is already in use by another component; each component must reference a unique environment variable",
+				map[string]any{"env_var": req.EnvVar, "conflicting_component_id": other})
+			return
+		}
+	}
+
 	// Distinguish initial-arm from re-arm from the BEFORE state, for the audit row.
 	prevKind, wasArmed := armedState(comp.Config)
 
@@ -748,6 +769,43 @@ func armedState(config json.RawMessage) (kind string, armed bool) {
 		_ = json.Unmarshal(raw, &kind)
 	}
 	return kind, armed
+}
+
+// staticEnvVarConflict reports whether another component is already armed with
+// the same static env_var locator, returning the conflicting component's id. It
+// enforces the D-0061 uniqueness invariant: because env vars are process-global a
+// name may belong to at most one component, and because the Config blob is
+// encrypted at rest this cannot be a DB UNIQUE constraint — it is an application-
+// level scan of the DECRYPTED peer configs (Components.List returns decrypted
+// configs through the encrypted repository). selfID is excluded so re-promoting a
+// component to its OWN existing name is not a self-conflict. An empty envVar never
+// conflicts (buildArmedConfig already rejects it upstream). The scope is the whole
+// component set, deliberately not per-type. It reads only the env_var locator
+// NAME, never a value.
+func staticEnvVarConflict(ctx context.Context, repo store.ComponentRepository, envVar, selfID string) (string, bool, error) {
+	if envVar == "" {
+		return "", false, nil
+	}
+	comps, err := repo.List(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	for _, c := range comps {
+		if c.ID == selfID || len(c.Config) == 0 {
+			continue
+		}
+		var fields struct {
+			EnvVar string `json:"env_var"`
+		}
+		if err := json.Unmarshal(c.Config, &fields); err != nil {
+			// A non-object config carries no env_var locator to collide with.
+			continue
+		}
+		if fields.EnvVar == envVar {
+			return c.ID, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // buildArmedConfig merges the validated credential reference into a copy of the
