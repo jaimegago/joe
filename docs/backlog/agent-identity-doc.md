@@ -43,15 +43,29 @@ D-0059.
 
 ## Deferred implementation work (what this trickles into)
 
+- **DONE — slice A, per-component env-var uniqueness keying (D-0061, session
+  `agent-identity-doc-01`).** Static credential env-var names are now operator-supplied,
+  stored verbatim, and **enforced unique per component** at the promotion seam
+  (`staticEnvVarConflict` in `internal/api/components.go`), so two components can no longer
+  collide on the same env var. This is the foundation the later static-bearer Kubernetes
+  method depends on (a unique per-component token variable). Break-tested by
+  `TestPromote_StaticEnvVarUniqueness`. Recon confirmed names were already stored verbatim
+  (no computed-name switch and no migration were needed).
+
+Still open:
+
 1. **Produce the full ADR** for the stance — the normative decision record that promotes
    D-0060's design-of-record into an implementable specification.
 2. **Rewire the Kubernetes credential path** off the kubeconfig-or-in-cluster locator
-   (`KindKubeconfigExec`) to the **static bearer** method.
+   (`KindKubeconfigExec`) to the **static bearer** method (the Kubernetes transport
+   rewrite).
 3. **Add the native Entra exchange** method (Azure Entra OAuth2 token exchange minting a
    short-lived bearer token for AKS).
-4. **Verify per-component environment-variable keying** in the credential references so
-   two same-type components cannot collide on the same env var.
-5. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
+4. **Retire the kubeconfig-exec provider** for kubernetes once the static-bearer and
+   Entra-exchange methods land.
+5. **Implement the provenance assertion** — the Joe-internal originator/actor/action
+   record (delegated vs. autonomous), never transmitted to the managed system.
+6. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
    section as a single explanation page, wired to the component-registration guide and to
    Integrations.
 

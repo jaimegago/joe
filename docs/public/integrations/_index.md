@@ -79,6 +79,11 @@ curl -s http://localhost:7777/api/v1/components/<id>/promote \
   -d '{ "env_var": "JOE_PROMETHEUS_PROD" }'
 ```
 
+The environment variable name must be **unique per component**: each component
+references its own variable, and promotion rejects a name already in use by
+another component (environment variables are process-global, so two components
+sharing a name would read the same secret).
+
 For Kubernetes, reference a kubeconfig instead — either in-cluster or a kubeconfig path:
 
 ```sh
