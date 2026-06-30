@@ -100,6 +100,8 @@ func ProviderForKind(kind Kind) (Provider, error) {
 		return NewKubeconfigExecProvider(), nil
 	case KindStaticBearer:
 		return NewStaticBearerProvider(), nil
+	case KindEntraExchange:
+		return NewEntraExchangeProvider(), nil
 	default:
 		return nil, fmt.Errorf("credential: unknown provider kind %q", kind)
 	}

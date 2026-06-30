@@ -454,21 +454,33 @@ body (fields depend on the provider):
   "credential_provider": "string",
   "env_var": "string",
   "value": "string",
-  "auth_method": "static-bearer",
+  "auth_method": "static-bearer | entra-exchange",
   "api_server": "string",
   "ca_data": "string",
   "namespace": "string",
   "in_cluster": false,
+  "tenant_id": "string",
+  "client_id": "string",
+  "client_secret_env_var": "string",
   "audience": "string"
 }
 ```
 
 For a static-credential component the reference is an `env_var`. For Kubernetes the
-reference is `auth_method: static-bearer` with the cluster coordinates (`api_server`,
-`ca_data`, optional `namespace`) plus a bearer-token source — an `env_var` name or
-`in_cluster: true` (the pod-mounted service-account token). An inline `value` (an embedded
-secret) is refused; the reference must be an indirection. Promotion resolves no
-credential. Response `200`:
+reference carries the cluster coordinates (`api_server`, `ca_data`, optional `namespace`)
+plus a credential for one of two `auth_method` values:
+
+- **`static-bearer`** — a bearer-token source, either an `env_var` name or
+  `in_cluster: true` (the pod-mounted service-account token).
+- **`entra-exchange`** (AKS) — Joe mints a short-lived bearer token via an Azure Entra
+  OAuth2 client-credentials exchange, using `tenant_id`, `client_id`, `audience` (the
+  scope), and `client_secret_env_var` (the variable holding the app registration's client
+  secret). `client_secret_env_var` is a distinct field from the static-bearer `env_var`
+  and is exempt from the env-var uniqueness guard, so one app registration's client secret
+  may be shared across clusters.
+
+An inline `value` (an embedded secret) is refused; every reference must be an indirection.
+Promotion resolves no credential. Response `200`:
 
 ```json
 { "component_id": "string", "type": "string", "provider": "string", "armed": true, "rearm": false }

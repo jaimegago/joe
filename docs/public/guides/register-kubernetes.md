@@ -1,16 +1,30 @@
 ---
 title: Register a Kubernetes component
 weight: 15
-description: Bring a Kubernetes cluster under Joe's management through the web UI — register it inert, promote it with a static-bearer reference, and take it live.
+description: Bring a Kubernetes cluster under Joe's management through the web UI — register it inert, promote it with a static-bearer or Entra-exchange reference, and take it live.
 ---
 
 # Register a Kubernetes component
 
 This how-to walks you, click by click, through bringing one Kubernetes cluster under
 Joe's management using the web UI. You will **register** the cluster (it lands inert),
-**assign it a zone**, **promote** it with a static-bearer reference, and run a **connectivity
+**assign it a zone**, **promote** it with a credential reference, and run a **connectivity
 test** that takes it live — no daemon restart. When you finish, Joe can read the cluster
 and answer questions about it.
+
+Joe offers **two Kubernetes authentication methods**, both native and both authenticating
+Joe as its own non-human identity:
+
+- **Static bearer** — a long-lived bearer token applied as an `Authorization: Bearer`
+  header, for clusters that issue a ServiceAccount token (OpenShift, self-managed, and
+  local clusters). The token comes from an environment variable in the daemon's
+  environment, or — when Joe runs inside the target cluster — the pod-mounted
+  service-account token.
+- **Entra exchange** — for AKS, Joe mints a short-lived bearer token through an Azure
+  Entra OAuth2 client-credentials exchange using an app registration's client secret.
+
+You choose the method in the Promote dialog. Either way you supply a *reference* to a
+credential, never the secret itself, and Joe never ingests a human's kubeconfig.
 
 This page covers **Kubernetes only**. Other component types follow the same register →
 promote → activate spine but differ in their credential mechanism and activation path
@@ -30,11 +44,16 @@ and credentials held as references rather than stored secrets — see
   admin-gated — the affordances below do not appear for a non-admin. Running the
   connectivity test does not require admin.
 - A way for Joe to reach the cluster **from where the daemon runs**: the cluster's
-  API-server URL and CA bundle, plus a service-account bearer token — either in an
-  environment variable in the daemon's environment, or the pod-mounted token when Joe runs
-  inside the cluster. You supply a *reference* to the token during promotion — never the
-  credential contents. See [Components and promotion](../concepts/components-and-promotion/)
-  for why.
+  API-server URL and CA bundle, plus the credential for your chosen method —
+  - for **static bearer**, a service-account bearer token, either in an environment
+    variable in the daemon's environment or the pod-mounted token when Joe runs inside the
+    cluster;
+  - for **Entra exchange**, the Azure tenant ID, the app registration's client (application)
+    ID, the AKS audience the token is scoped to, and an environment variable holding the
+    app registration's client secret.
+
+  You supply a *reference* to the credential during promotion — never the credential
+  contents. See [Components and promotion](../concepts/components-and-promotion/) for why.
 
 ## Step 1 — Open the Components page
 
@@ -84,44 +103,51 @@ mean and how they gate access, see
 > 📷 **Screenshot:** `images/guides/register-kubernetes/03-assign-zone.png` — the Zones
 > page unassigned-components panel with the Assign Zone dropdown open.
 
-## Step 4 — Promote the component (admin) — supply a static-bearer reference
+## Step 4 — Promote the component (admin) — supply a credential reference
 
 Promotion is the single governed transition from inert to **armed**. For Kubernetes it
-collects a **static-bearer** reference: the cluster coordinates plus a bearer-token
-source. You supply a *reference*, never an inline secret — the dialog offers no secret
-field by construction. Joe authenticates as its own non-human identity and never ingests
-a human's kubeconfig.
+collects the cluster coordinates plus a credential reference for your chosen
+authentication method. You supply a *reference*, never an inline secret — the dialog
+offers no secret field by construction. Joe authenticates as its own non-human identity
+and never ingests a human's kubeconfig.
 
 > **Admin only.** The **Promote** button is shown only to an admin principal.
 
 1. Back on the **Components** page, click the cluster's row to open its detail card.
 2. Click **Promote**.
-3. The promotion dialog renders the Kubernetes credential form:
+3. The promotion dialog renders the Kubernetes credential form. First, the **cluster
+   coordinates**, shared by both methods:
    - **API-server URL** — the cluster's API-server endpoint, e.g.
      `https://api.cluster.example.com:6443`.
    - **CA bundle** *(PEM, optional)* — the cluster CA certificate, stored inline so the
      record is self-contained.
    - **Default namespace** *(optional)*.
-   - **Bearer-token environment variable** — the variable in the daemon's environment
-     holding the service-account bearer token (Joe stores the name, never the value);
-     **or**
-   - **Use the in-cluster service-account token instead** — tick this checkbox when Joe
-     runs inside the target cluster, and it reads the pod-mounted token directly.
-   - You must provide **at least one** of a bearer-token environment variable or the
-     in-cluster token.
-4. Click **Continue**. A confirmation step states that arming grants the component a
+4. Choose the **Authentication method**, then fill the fields it reveals:
+   - **Static bearer token** — supply **either** a **Bearer-token environment variable**
+     (the variable in the daemon's environment holding the service-account bearer token —
+     Joe stores the name, never the value) **or** tick **Use the in-cluster service-account
+     token instead** when Joe runs inside the target cluster and reads the pod-mounted
+     token directly. You must provide at least one of the two.
+   - **Entra exchange** — supply the **Azure tenant ID**, the **Application (client) ID**,
+     the **Audience (scope)** the minted token is scoped to (Joe requests the `/.default`
+     scope for it), and the **Client-secret environment variable** holding the app
+     registration's client secret. Joe stores the variable name, never the secret. One app
+     registration can serve several clusters, so this variable name **may be shared** across
+     components.
+5. Click **Continue**. A confirmation step states that arming grants the component a
    credentialed connection under its zone — a privileged, audited change. Confirm with
    **Promote**.
 
 The row's arming state flips to **armed**. Promotion records the reference only; it does
 **not** itself open a connection — that is the next step.
 
-> The bearer-token variable (or the in-cluster token) must exist **where the Joe daemon
-> runs**, because Joe resolves it from its own environment when it connects.
+> The credential variable (the bearer-token variable, the in-cluster token, or the
+> client-secret variable) must exist **where the Joe daemon runs**, because Joe resolves it
+> from its own environment when it connects.
 
-> 📷 **Screenshot:** `images/guides/register-kubernetes/04-promote-kubeconfig.png` — the
-> Promote dialog showing the API-server URL, the CA bundle, and the bearer-token source
-> (an environment-variable name or the in-cluster checkbox).
+> 📷 **Screenshot:** `images/guides/register-kubernetes/04-promote-credential.png` — the
+> Promote dialog showing the cluster coordinates, the authentication-method selector, and
+> the fields for the selected method.
 
 ## Step 5 — Take it live with a connectivity test
 
@@ -136,9 +162,9 @@ restart needed.
    **connected**. Joe can now read the cluster.
 
 If the test reports a failure, the message describes what went wrong (for example, the
-bearer-token environment variable is not set where the daemon runs, or the credential
-cannot reach the API server). Fix the reference where Joe runs, or re-promote with a
-corrected locator, and test again.
+bearer-token or client-secret environment variable is not set where the daemon runs, the
+Entra exchange was refused, or the credential cannot reach the API server). Fix the
+reference where Joe runs, or re-promote with a corrected locator, and test again.
 
 > 📷 **Screenshot:** `images/guides/register-kubernetes/05-test-connection.png` — the
 > component detail card after a successful Test Connection, status shown as connected and
@@ -164,7 +190,8 @@ target path under `images/guides/register-kubernetes/`:
 1. `01-components-page.png` — the Components page with the **+ Register Component** button.
 2. `02-register-dialog.png` — the Register dialog with Type set to `kubernetes`.
 3. `03-assign-zone.png` — the Zones page unassigned panel with the Assign Zone dropdown.
-4. `04-promote-kubeconfig.png` — the Promote dialog's static-bearer form.
+4. `04-promote-credential.png` — the Promote dialog's credential form, showing the
+   authentication-method selector (static bearer and Entra exchange).
 5. `05-test-connection.png` — the detail card after a successful connectivity test.
 
 ## Where to go next

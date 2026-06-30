@@ -41,7 +41,10 @@ You also need two credentials ready:
   pod-mounted service-account token directly — but that is not the path this quickstart
   takes.) Without a reachable cluster credential, Joe has nothing to read and the install
   is useless. A `kubectl --server <url> --token <token> get pods` that works is a good sign
-  the reference will resolve.
+  the reference will resolve. (For **AKS**, Joe also supports an **Entra exchange** method
+  that mints a token from an Azure app registration instead of a static bearer token; this
+  quickstart uses the static-bearer path. See
+  [Register a Kubernetes component](../guides/register-kubernetes/) for both methods.)
 
 ## Step 1 — Build the binary
 

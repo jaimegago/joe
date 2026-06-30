@@ -87,10 +87,14 @@ export function fetchPromotionCandidates(id: string): Promise<PromotionCandidate
 // PromoteRequest is a credential REFERENCE — the provider discriminator plus
 // the relevant locator fields. It NEVER carries an inline `value`: the armed
 // record points Joe at a credential in its own environment, it does not store
-// the secret. The static reference is an env_var name; the static-bearer
-// (kubernetes) reference is the cluster coordinates (api_server, ca_data,
-// namespace) plus auth_method and a bearer-token source — an env_var name OR the
-// in-cluster service-account token. There is no kubeconfig ingestion.
+// the secret. The static reference is an env_var name; the kubernetes reference
+// is the cluster coordinates (api_server, ca_data, namespace) plus auth_method
+// and a credential source that depends on the method. The static-bearer method's
+// source is a bearer-token env_var name OR the in-cluster service-account token;
+// the entra-exchange method's source is tenant_id/client_id/audience plus a
+// client_secret_env_var reference (the secret is resolved by name, never stored,
+// and uses a DISTINCT field so shared Azure app registrations are allowed). There
+// is no kubeconfig ingestion.
 export type PromoteRequest =
   | { credential_provider: 'static'; env_var: string }
   | {
@@ -101,6 +105,17 @@ export type PromoteRequest =
       namespace?: string;
       env_var?: string;
       in_cluster?: boolean;
+    }
+  | {
+      credential_provider: 'entra-exchange';
+      auth_method: 'entra-exchange';
+      api_server: string;
+      ca_data?: string;
+      namespace?: string;
+      tenant_id: string;
+      client_id: string;
+      audience: string;
+      client_secret_env_var: string;
     };
 
 // promoteComponent transitions an inert component to armed (or rotates an

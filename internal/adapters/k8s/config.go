@@ -5,12 +5,19 @@ import (
 	"fmt"
 )
 
-// AuthMethodStaticBearer is the only kubernetes transport auth method today: a
-// long-lived bearer token applied to a hand-built *rest.Config. It is the value
+// AuthMethodStaticBearer is the original kubernetes transport auth method: a
+// long-lived bearer token applied to a hand-built *rest.Config. It is one value
 // the per-component auth_method discriminator carries and maps to
-// credential.KindStaticBearer. Slice C adds a second method (Entra exchange) with
-// no change to the stored coordinate fields (agent-identity-doc-02, D-0060).
+// credential.KindStaticBearer (agent-identity-doc-02, D-0060).
 const AuthMethodStaticBearer = "static-bearer"
+
+// AuthMethodEntraExchange is the second kubernetes transport auth method
+// (agent-identity-doc-03, D-0063): Joe MINTS a short-lived bearer token via an
+// Azure Entra OAuth2 client-credentials exchange (for AKS) and applies it to the
+// same hand-built *rest.Config. It maps to credential.KindEntraExchange. The
+// stored cluster-coordinate fields (api_server, ca_data, namespace) are unchanged
+// from static-bearer; only the credential source differs.
+const AuthMethodEntraExchange = "entra-exchange"
 
 // Config holds the Kubernetes-specific cluster coordinates the adapter turns into
 // a *rest.Config by hand (agent-identity-doc-02): the api-server URL is the

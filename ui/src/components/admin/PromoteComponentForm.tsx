@@ -73,12 +73,22 @@ export function PromoteComponentForm({
   const [composeMode, setComposeMode] = useState(false);
   const [pickedEnvVar, setPickedEnvVar] = useState('');
   const [label, setLabel] = useState('');
-  // kubernetes static-bearer coordinates + token source.
+  // kubernetes cluster coordinates, shared by both auth methods.
   const [apiServer, setApiServer] = useState('');
   const [caData, setCaData] = useState('');
   const [namespace, setNamespace] = useState('');
+  // The per-component auth method selects the credential source. static-bearer
+  // (a long-lived bearer token) is the default; entra-exchange mints a token via
+  // an Azure Entra OAuth2 exchange.
+  const [authMethod, setAuthMethod] = useState<'static-bearer' | 'entra-exchange'>('static-bearer');
+  // static-bearer token source.
   const [bearerEnvVar, setBearerEnvVar] = useState('');
   const [inCluster, setInCluster] = useState(false);
+  // entra-exchange source: app-registration coordinates + a client-secret reference.
+  const [tenantId, setTenantId] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [audience, setAudience] = useState('');
+  const [clientSecretEnvVar, setClientSecretEnvVar] = useState('');
   // Step-2 confirmation beat.
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -115,16 +125,42 @@ export function PromoteComponentForm({
     : inCluster || bearerEnvVar.trim() !== '';
   const bearerReady = apiServer.trim() !== '' && tokenSourceReady;
 
+  // entra-exchange needs the cluster api-server plus the full app-registration
+  // reference: tenant, client, audience (the scope), and a client-secret variable.
+  const entraReady =
+    apiServer.trim() !== '' &&
+    tenantId.trim() !== '' &&
+    clientId.trim() !== '' &&
+    audience.trim() !== '' &&
+    clientSecretEnvVar.trim() !== '';
+
+  // The kubernetes form (reported kind static-bearer is the wired default) gates on
+  // the selected auth method's own readiness.
+  const k8sReady = authMethod === 'entra-exchange' ? entraReady : bearerReady;
+
   const staticReady = inCompose ? label.trim() !== '' && prefix !== '' : pickedEnvVar !== '';
 
   const canSubmit =
-    kind === 'static' ? staticReady : kind === 'static-bearer' ? bearerReady : false;
+    kind === 'static' ? staticReady : kind === 'static-bearer' ? k8sReady : false;
 
   function buildBody(): PromoteRequest | null {
     if (kind === 'static') {
       return { credential_provider: 'static', env_var: composedEnvVar };
     }
     if (kind === 'static-bearer') {
+      if (authMethod === 'entra-exchange') {
+        return {
+          credential_provider: 'entra-exchange',
+          auth_method: 'entra-exchange',
+          api_server: apiServer.trim(),
+          ...(caData.trim() !== '' ? { ca_data: caData.trim() } : {}),
+          ...(namespace.trim() !== '' ? { namespace: namespace.trim() } : {}),
+          tenant_id: tenantId.trim(),
+          client_id: clientId.trim(),
+          audience: audience.trim(),
+          client_secret_env_var: clientSecretEnvVar.trim(),
+        };
+      }
       return {
         credential_provider: 'static-bearer',
         auth_method: 'static-bearer',
@@ -327,33 +363,119 @@ export function PromoteComponentForm({
                   </div>
 
                   <div className="space-y-1 border-t pt-3">
-                    <Label htmlFor="promote-bearer-envvar">Bearer-token environment variable</Label>
-                    <Input
-                      id="promote-bearer-envvar"
-                      value={bearerEnvVar}
-                      onChange={(e) => setBearerEnvVar(e.target.value)}
-                      placeholder="JOE_KUBERNETES_PROD_TOKEN"
-                      disabled={inCluster}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      The variable in Joe&rsquo;s own environment holding the service-account bearer
-                      token. Joe stores the name, never the value, and reads it when it connects.
-                    </p>
+                    <Label htmlFor="promote-authmethod">Authentication method</Label>
+                    <Select
+                      value={authMethod}
+                      onValueChange={(v) => setAuthMethod(v as 'static-bearer' | 'entra-exchange')}
+                    >
+                      <SelectTrigger id="promote-authmethod">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="static-bearer">
+                          Static bearer token (ServiceAccount / OpenShift)
+                        </SelectItem>
+                        <SelectItem value="entra-exchange">
+                          Entra exchange (AKS — minted via Azure Entra)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="promote-incluster"
-                      checked={inCluster}
-                      onCheckedChange={(v) => setInCluster(v === true)}
-                    />
-                    <Label htmlFor="promote-incluster" className="font-normal">
-                      Use the in-cluster service-account token instead
-                    </Label>
-                  </div>
-                  {atLeastOne && !bearerReady && (
-                    <p className="text-xs text-muted-foreground">
-                      Supply an API-server URL and {atLeastOne.message}
-                    </p>
+
+                  {authMethod === 'static-bearer' && (
+                    <>
+                      <div className="space-y-1">
+                        <Label htmlFor="promote-bearer-envvar">
+                          Bearer-token environment variable
+                        </Label>
+                        <Input
+                          id="promote-bearer-envvar"
+                          value={bearerEnvVar}
+                          onChange={(e) => setBearerEnvVar(e.target.value)}
+                          placeholder="JOE_KUBERNETES_PROD_TOKEN"
+                          disabled={inCluster}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The variable in Joe&rsquo;s own environment holding the service-account
+                          bearer token. Joe stores the name, never the value, and reads it when it
+                          connects.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="promote-incluster"
+                          checked={inCluster}
+                          onCheckedChange={(v) => setInCluster(v === true)}
+                        />
+                        <Label htmlFor="promote-incluster" className="font-normal">
+                          Use the in-cluster service-account token instead
+                        </Label>
+                      </div>
+                      {atLeastOne && !bearerReady && (
+                        <p className="text-xs text-muted-foreground">
+                          Supply an API-server URL and {atLeastOne.message}
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {authMethod === 'entra-exchange' && (
+                    <>
+                      <div className="space-y-1">
+                        <Label htmlFor="promote-tenant">Azure tenant ID</Label>
+                        <Input
+                          id="promote-tenant"
+                          value={tenantId}
+                          onChange={(e) => setTenantId(e.target.value)}
+                          placeholder="00000000-0000-0000-0000-000000000000"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="promote-client">Application (client) ID</Label>
+                        <Input
+                          id="promote-client"
+                          value={clientId}
+                          onChange={(e) => setClientId(e.target.value)}
+                          placeholder="00000000-0000-0000-0000-000000000000"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="promote-audience">Audience (scope)</Label>
+                        <Input
+                          id="promote-audience"
+                          value={audience}
+                          onChange={(e) => setAudience(e.target.value)}
+                          placeholder="6dae42f8-4368-4678-94ff-3960e28e3630"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The AKS resource the minted token is scoped to. Joe requests the{' '}
+                          <span className="font-mono">/.default</span> scope for this audience.
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="promote-client-secret-envvar">
+                          Client-secret environment variable
+                        </Label>
+                        <Input
+                          id="promote-client-secret-envvar"
+                          value={clientSecretEnvVar}
+                          onChange={(e) => setClientSecretEnvVar(e.target.value)}
+                          placeholder="JOE_AZURE_APP_SECRET"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The variable in Joe&rsquo;s own environment holding the app
+                          registration&rsquo;s client secret. Joe stores the name, never the value.
+                          One app registration may serve several clusters, so this name may be
+                          shared across components.
+                        </p>
+                      </div>
+                      {!entraReady && (
+                        <p className="text-xs text-muted-foreground">
+                          Supply the API-server URL, tenant ID, client ID, audience, and a
+                          client-secret variable.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
