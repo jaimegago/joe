@@ -89,3 +89,45 @@ func TestPromote_StaticEnvVarUniqueness(t *testing.T) {
 		t.Errorf("c-gh-b resolved to %q; want token-for-B", got)
 	}
 }
+
+// TestPromote_EntraSharedClientSecretAllowed break-tests the deliberate exemption
+// (agent-identity-doc-03): the Entra client secret is referenced by the DISTINCT
+// field client_secret_env_var, which the env-var uniqueness guard (keyed on the
+// literal env_var field) does NOT scan. So two kubernetes components MAY both
+// promote with the SAME client_secret_env_var — the legitimate case of one Azure
+// app registration fronting many clusters — where two static-bearer env_var token
+// references would collide. It drives the REAL HTTP promotion guard.
+func TestPromote_EntraSharedClientSecretAllowed(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	f.markAdmin("user:alice")
+	registerComponent(t, f, "c-aks-a", "kubernetes", `{}`)
+	registerComponent(t, f, "c-aks-b", "kubernetes", `{}`)
+
+	const sharedSecret = "JOE_AZURE_APP_SECRET"
+	body := func(apiServer string) string {
+		return `{"auth_method":"entra-exchange","api_server":"` + apiServer + `","tenant_id":"tenant-1","client_id":"app-1","audience":"api://aks","client_secret_env_var":"` + sharedSecret + `"}`
+	}
+
+	// Both AKS clusters arm via the SAME app-registration client secret — both 200.
+	if w := f.do(http.MethodPost, "/api/v1/components/c-aks-a/promote", body("https://aks-a:443"), "user:alice"); w.Code != http.StatusOK {
+		t.Fatalf("promote c-aks-a: status=%d body=%s; want 200", w.Code, w.Body.String())
+	}
+	if w := f.do(http.MethodPost, "/api/v1/components/c-aks-b/promote", body("https://aks-b:443"), "user:alice"); w.Code != http.StatusOK {
+		t.Fatalf("promote c-aks-b sharing the same client_secret_env_var: status=%d body=%s; want 200 (shared app registration is legitimate, not a collision)", w.Code, w.Body.String())
+	}
+
+	// Both armed configs carry the shared secret reference and the entra discriminator.
+	for _, id := range []string{"c-aks-a", "c-aks-b"} {
+		cfg := componentConfigMap(t, f, id)
+		if cfg["client_secret_env_var"] != sharedSecret {
+			t.Errorf("%s client_secret_env_var = %v; want %q", id, cfg["client_secret_env_var"], sharedSecret)
+		}
+		if cfg["credential_provider"] != string(credential.KindEntraExchange) {
+			t.Errorf("%s credential_provider = %v; want entra-exchange", id, cfg["credential_provider"])
+		}
+		// The shared secret must NOT have been written under the guarded env_var field.
+		if cfg["env_var"] != nil {
+			t.Errorf("%s wrote env_var=%v; the Entra secret must use the distinct client_secret_env_var field", id, cfg["env_var"])
+		}
+	}
+}

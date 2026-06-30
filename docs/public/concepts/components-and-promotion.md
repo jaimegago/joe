@@ -32,9 +32,11 @@ arms it.
 Moving a component from inert (read-only) to **armed** is owned by one transition:
 **promotion**. Promotion is the only place credentials enter. It is admin-gated and
 audited, and it writes a credential **reference** — an environment-variable indirection,
-or for Kubernetes the cluster coordinates plus a bearer-token source (an environment
-variable or the in-cluster token) — never an inline secret value. The secret itself lives
-where it always did (your environment, the cluster); Joe stores only the pointer.
+or for Kubernetes the cluster coordinates plus a credential for the chosen authentication
+method (a static bearer-token source — an environment variable or the in-cluster token —
+or an Entra exchange that mints a token from an Azure app registration's client secret,
+referenced by variable name) — never an inline secret value. The secret itself lives where
+it always did (your environment, the cluster); Joe stores only the pointer.
 
 Promotion does the bookkeeping of arming a component but does **not** itself reach out
 and authenticate: it performs no connect and no probe. Whether the referenced

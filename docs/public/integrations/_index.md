@@ -85,8 +85,9 @@ references its own variable, and promotion rejects a name already in use by
 another component (environment variables are process-global, so two components
 sharing a name would read the same secret).
 
-For Kubernetes, reference the cluster coordinates plus a bearer-token source instead — a
-service-account token from an environment variable, or the in-cluster pod-mounted token:
+For Kubernetes, reference the cluster coordinates plus a credential for one of the two
+authentication methods. The **static-bearer** method takes a service-account token from an
+environment variable, or the in-cluster pod-mounted token:
 
 ```sh
 curl -s http://localhost:7777/api/v1/components/<id>/promote \
@@ -94,6 +95,20 @@ curl -s http://localhost:7777/api/v1/components/<id>/promote \
   -H "Content-Type: application/json" \
   -d '{ "auth_method": "static-bearer", "api_server": "https://api.cluster.example.com:6443", "ca_data": "<PEM>", "env_var": "JOE_KUBERNETES_PROD_TOKEN" }'
 # or, in-cluster: -d '{ "auth_method": "static-bearer", "api_server": "...", "ca_data": "<PEM>", "in_cluster": true }'
+```
+
+The **entra-exchange** method (AKS) mints a short-lived bearer token via an Azure Entra
+OAuth2 client-credentials exchange. Reference the same cluster coordinates plus the tenant,
+client (application) ID, the audience the token is scoped to, and a `client_secret_env_var`
+naming the variable that holds the app registration's client secret. That secret field is
+distinct from the static-bearer `env_var`, so the same client secret **may be shared** by
+several clusters (one app registration fronting many):
+
+```sh
+curl -s http://localhost:7777/api/v1/components/<id>/promote \
+  -H "Authorization: Bearer $JOE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "auth_method": "entra-exchange", "api_server": "https://aks.example.com:443", "ca_data": "<PEM>", "tenant_id": "<tenant>", "client_id": "<app-id>", "audience": "<aks-audience>", "client_secret_env_var": "JOE_AZURE_APP_SECRET" }'
 ```
 
 An inline `value` is refused on both paths — the armed record carries a reference, not a
@@ -159,7 +174,7 @@ call) or only at the next daemon restart (boot).
 
 | System | Type | Credential mechanism | Activation |
 | --- | --- | --- | --- |
-| Kubernetes | `kubernetes` | static-bearer — `api_server` + `ca_data` + a bearer token via `env_var` or `in_cluster: true` | runtime (`/test`) |
+| Kubernetes | `kubernetes` | `auth_method: static-bearer` — `api_server` + `ca_data` + a bearer token via `env_var` or `in_cluster: true`; **or** `auth_method: entra-exchange` (AKS) — `api_server` + `ca_data` + `tenant_id` + `client_id` + `audience` + `client_secret_env_var` | runtime (`/test`) |
 
 For the click-by-click web-UI walkthrough of registering, promoting, and taking a cluster
 live, see [Register a Kubernetes component](../guides/register-kubernetes/).

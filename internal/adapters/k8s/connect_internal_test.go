@@ -2,8 +2,10 @@ package k8s
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -68,6 +70,44 @@ func TestBuildRESTConfig_HandBuilt(t *testing.T) {
 	}
 	if rc.Username != "" || rc.Password != "" || len(rc.TLSClientConfig.CertData) != 0 || len(rc.TLSClientConfig.KeyData) != 0 {
 		t.Error("a non-bearer credential (basic-auth or client-cert) is set; only the bearer token is permitted")
+	}
+}
+
+// TestKindForAuthMethod_SelectsPerMethod proves the per-component auth_method seam
+// maps each method to its credential Kind: static-bearer and entra-exchange map to
+// their respective Kinds, and an unknown method is a hard error. This is the seam
+// the promotion boundary mirrors via the exported KindForAuthMethod.
+func TestKindForAuthMethod_SelectsPerMethod(t *testing.T) {
+	if k, err := kindForAuthMethod(AuthMethodStaticBearer); err != nil || k != credential.KindStaticBearer {
+		t.Errorf("static-bearer -> %q,%v; want KindStaticBearer", k, err)
+	}
+	if k, err := kindForAuthMethod(AuthMethodEntraExchange); err != nil || k != credential.KindEntraExchange {
+		t.Errorf("entra-exchange -> %q,%v; want KindEntraExchange", k, err)
+	}
+	if _, err := kindForAuthMethod("client-cert"); err == nil {
+		t.Error("want error for an unsupported auth_method")
+	}
+	// The exported face used by the promotion boundary agrees with the internal seam.
+	if k, err := KindForAuthMethod(AuthMethodEntraExchange); err != nil || k != credential.KindEntraExchange {
+		t.Errorf("KindForAuthMethod(entra-exchange) -> %q,%v; want KindEntraExchange", k, err)
+	}
+}
+
+// TestResolveBearerToken_EntraExchangeRoutesToProvider proves auth_method
+// entra-exchange routes through resolveBearerToken to the Entra provider: with the
+// client-secret variable unset the Entra provider's own non-sensitive mint-attempted
+// reason surfaces as the Connect error — reaching the provider WITHOUT any live
+// Azure exchange. Once the token IS minted it rides the identical BearerToken seam
+// and is applied to rc.BearerToken by buildRESTConfig (TestBuildRESTConfig_HandBuilt),
+// exactly as a static-bearer token is.
+func TestResolveBearerToken_EntraExchangeRoutesToProvider(t *testing.T) {
+	raw := []byte(`{"auth_method":"entra-exchange","api_server":"https://aks.example.com:443","tenant_id":"t","client_id":"c","audience":"api://aks","client_secret_env_var":"JOE_AKS_SECRET_UNSET"}`)
+	_, err := resolveBearerToken(context.Background(), "k8s-aks", raw, AuthMethodEntraExchange)
+	if err == nil {
+		t.Fatal("expected resolveBearerToken to fail when the client-secret env var is unset")
+	}
+	if !strings.Contains(err.Error(), "client-secret") {
+		t.Errorf("error = %q; want it to surface the Entra provider's non-sensitive reason", err)
 	}
 }
 

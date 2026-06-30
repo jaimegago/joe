@@ -10,6 +10,77 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0063 — Entra-exchange is the second Kubernetes auth method: a transport-agnostic credential Kind minting a short-lived bearer token via an Azure Entra OAuth2 client-credentials exchange
+
+- Date: 2026-06-30
+- Status: accepted (implemented)
+- Session: agent-identity-doc-03
+- Decision: **`KindEntraExchange`** (`internal/credential/credential.go`) is added as the
+  **second Kubernetes authentication method** alongside `static-bearer`, exercising the
+  per-component `auth_method`→Kind selection seam D-0062 established (decision #1 / D-0060)
+  with a real second value. Its provider (`internal/credential/entra_exchange.go`)
+  **mints a short-lived bearer token** via an **Azure Entra OAuth2 client-credentials
+  grant**, performed with the **already-vendored `golang.org/x/oauth2/clientcredentials`**
+  — **no new dependency**, and deliberately **not** the Azure identity SDK. tenant id,
+  client id, audience/scope, and the **client-secret reference** are **all per-resolution
+  values read from config**: the provider **hardcodes no audience and no tenant**, imports
+  **no kubernetes symbol and no Azure-SDK symbol**, and applies the token nowhere — it is
+  **transport-agnostic** so the deferred Azure credential track can reuse it. The minted
+  token returns through the existing **non-serializable credential half**; **audience and
+  expiry** surface on the **serializable diagnostic half** from the token response;
+  Resolve reaches `StageMintSucceeded` and the provider's **own** Probe advances to
+  `StageConnectivityProbed`. The grant type is **client-credentials with a client secret
+  resolved by reference**; **federated workload-identity assertion** is **designed-for as
+  an additive second source** (the `federated_token_file` field is reserved and the
+  requirements at-least-one-of constraint ranges over `{client_secret_env_var,
+  federated_token_file}`) but is **not built** in this slice. The client secret is resolved
+  by the **call-time name-only `lookupEnv`** the static providers use, under a **DISTINCT
+  field `client_secret_env_var`** (not the static-bearer `env_var`). That distinct field is
+  **intentionally exempt from the D-0061/D-0062 env-var uniqueness guard** (which keys on the
+  literal `env_var` field), because **one Azure app registration legitimately fronts many
+  clusters** — two components sharing one `client_secret_env_var` is a valid shared-app
+  case, not a collision. The **`BearerToken()` accessor is generalized** from a
+  `KindStaticBearer`-only gate to a **bearer-Kind set** (`isBearer`, covering
+  static-bearer and entra-exchange), so the Entra-minted token rides the **identical
+  adapter consume-seam** (`resolveBearerToken` → `BearerToken()` → `buildRESTConfig`) with
+  **no adapter change** — recon confirmed the adapter and builder were already
+  Kind-neutral. The **promotion boundary is taught `auth_method`→Kind dispatch** for
+  kubernetes (`internal/api/components.go`): the wired default stays `KindStaticBearer`, but
+  for a kubernetes component the stored `auth_method` selects the effective Kind via the
+  exported `k8s.KindForAuthMethod`, so the discriminator written, the shape validated, and
+  the audit row match what the adapter selects at Connect; `buildArmedConfig` branches the
+  kubernetes handling into the static-bearer and entra-exchange sub-shapes over the shared
+  cluster coordinates, accepting `entra-exchange` as the second valid `auth_method` value
+  and rejecting a mixed or incomplete shape. **Audience is required for entra-exchange** and
+  is enforced in `buildArmedConfig` (the live authority); the requirements table declares it
+  required and the `ValidateReference` always-permitted special-case for `audience` is
+  relaxed to a per-Kind one so the describe-table↔enforcement guard test still agrees. The
+  transport-agnostic invariant and the audience-from-config invariant are pinned by a
+  **structural break-test scoped to the provider file** (`entra_exchange_test.go`: AST
+  imports-only assertion that the provider imports no `k8s.io`/`azure`/`microsoft`/k8s-adapter
+  symbol) plus behavioral coverage (two distinct audiences yield two distinct minted tokens
+  and diagnostic audiences; the diagnostic surfaces audience and expiry). The Entra
+  promotion UI rides this slice (`ui/src/components/admin/PromoteComponentForm.tsx`: an
+  authentication-method selector revealing the tenant/client/audience/client-secret fields)
+  and the full both-methods public-docs polish lands in lock-step.
+- Basis: Phase-1 recon re-derived from the live tree (read-only) confirmed the gating
+  finding — the adapter consume-seam was already Kind-neutral except for the
+  `KindStaticBearer`-gated `BearerToken()` accessor, so generalizing it is the only adapter
+  change; the four Kind-registration sites; the requirements/fields/wiring seams; the
+  promotion handler deriving Kind from the single-valued `wiredTypes` map (the second seam
+  the entra-exchange method exercises); and that `golang.org/x/oauth2/clientcredentials` is
+  vendored and reachable (azidentity is not), so no dependency is required. `go build ./...`,
+  `go vet ./...`, `gofmt`, the full `go test ./...` suite, and `ui` lint + vitest pass.
+- Supersedes: nothing. Builds on **D-0062** (the static-bearer transport and the
+  per-component `auth_method`→Kind seam this slice exercises with a second value) and on
+  **D-0061** (the env-var uniqueness guard this slice deliberately exempts the distinct
+  `client_secret_env_var` field from). It is the Entra-exchange slice (slice C) of the
+  agent-identity design-of-record **D-0060** / decision #1. The remaining campaign slices —
+  the kubeconfig-exec package retirement (slice D), the federated workload-identity
+  assertion source, and the provenance assertion — remain open and unchanged by this entry.
+
+---
+
 ## D-0062 — The Kubernetes transport is a hand-built rest.Config with no kubeconfig ingestion; static-bearer is its own credential Kind with env-var and in-cluster sources
 
 - Date: 2026-06-29

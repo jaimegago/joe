@@ -48,7 +48,33 @@ const (
 	// in_cluster source stays contained to the kubernetes transport and never
 	// leaks onto the single-token HTTP backends (agent-identity-doc-02, D-0060).
 	KindStaticBearer Kind = "static-bearer"
+	// KindEntraExchange is the Entra-exchange provider: it MINTS a short-lived
+	// bearer token via an Azure Entra OAuth2 client-credentials exchange (tenant,
+	// client id, audience/scope, and a client-secret reference all from config).
+	// Like KindStaticBearer its resolved credential is a bearer token the adapter
+	// applies as an Authorization bearer header on a hand-built *rest.Config — the
+	// two are consumed through the identical BearerToken accessor. The provider is
+	// transport-agnostic (no kubernetes or Azure-SDK binding) so the deferred Azure
+	// credential track can reuse it (agent-identity-doc-03, D-0063).
+	KindEntraExchange Kind = "entra-exchange"
 )
+
+// bearerKinds is the set of provider Kinds whose resolved credential is a bearer
+// token applied through Resolution.BearerToken. It is the single declaration the
+// accessor consults so the adapter consume-seam is Kind-agnostic across every
+// bearer-bearing provider: a new bearer Kind joins here and rides the same seam
+// without the adapter or the accessor's call sites changing.
+var bearerKinds = map[Kind]struct{}{
+	KindStaticBearer:  {},
+	KindEntraExchange: {},
+}
+
+// isBearer reports whether a Kind's resolved credential is a bearer token reached
+// through the BearerToken accessor.
+func isBearer(kind Kind) bool {
+	_, ok := bearerKinds[kind]
+	return ok
+}
 
 // Stage is the diagnostic spine (R4): the ordered states a resolution can reach.
 //
@@ -181,11 +207,14 @@ func (r *Resolution) KubeSelection() (KubeSelection, bool) {
 }
 
 // BearerToken returns the resolved bearer token and true when this is a
-// static-bearer resolution. This is the deliberate typed accessor the kubernetes
+// bearer-bearing resolution (any Kind in bearerKinds: static-bearer or
+// entra-exchange today). This is the deliberate typed accessor the kubernetes
 // adapter calls to apply the token as an Authorization bearer header; like
-// StaticValue it is the ONLY path to the underlying value.
+// StaticValue it is the ONLY path to the underlying value, and it is Kind-agnostic
+// across bearer providers so a minted Entra token rides the same seam as a
+// static-bearer token with no adapter change.
 func (r *Resolution) BearerToken() (string, bool) {
-	if r.cred.kind != KindStaticBearer {
+	if !isBearer(r.cred.kind) {
 		return "", false
 	}
 	return r.cred.static, true

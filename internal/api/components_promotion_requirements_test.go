@@ -38,6 +38,15 @@ func presentLocators(req promoteComponentRequest) map[string]bool {
 	if req.InCluster {
 		p["in_cluster"] = true
 	}
+	if req.TenantID != "" {
+		p["tenant_id"] = true
+	}
+	if req.ClientID != "" {
+		p["client_id"] = true
+	}
+	if req.ClientSecretEnvVar != "" {
+		p["client_secret_env_var"] = true
+	}
 	if req.Audience != "" {
 		p["audience"] = true
 	}
@@ -82,6 +91,15 @@ func TestPromotionRequirements_TableMatchesEnforcement(t *testing.T) {
 		{"bearer neither source rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443"}, false},
 		{"bearer inline value rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Value: "secret"}, false},
 		{"bearer kubeconfig contamination rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Kubeconfig: "/k"}, false},
+		{"bearer entra contamination rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", TenantID: "t"}, false},
+		// entra-exchange (kubernetes): coordinates + tenant/client/audience + a client-secret reference.
+		{"entra valid", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", Audience: "api://aks", ClientSecretEnvVar: "SECRET"}, true},
+		{"entra missing tenant rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", ClientID: "c", Audience: "api://aks", ClientSecretEnvVar: "SECRET"}, false},
+		{"entra missing client rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", Audience: "api://aks", ClientSecretEnvVar: "SECRET"}, false},
+		{"entra missing audience rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", ClientSecretEnvVar: "SECRET"}, false},
+		{"entra missing secret ref rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", Audience: "api://aks"}, false},
+		{"entra inline value rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", Audience: "api://aks", ClientSecretEnvVar: "SECRET", Value: "secret"}, false},
+		{"entra static-bearer source contamination rejected", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", Audience: "api://aks", ClientSecretEnvVar: "SECRET", EnvVar: "TOK"}, false},
 	}
 
 	for _, tc := range cases {
@@ -211,6 +229,51 @@ func TestPromotionRequirements_StaticBearerShape(t *testing.T) {
 	}
 	if !foundOneOf {
 		t.Errorf("static-bearer constraints missing %q: %+v", credential.ConstraintAtLeastOneOf, body.Constraints)
+	}
+}
+
+// TestPromotionRequirements_EntraExchangeShape proves a kubernetes component armed
+// for the entra-exchange method describes its required tenant_id/client_id/audience
+// inputs plus the client_secret_env_var reference, and the at-least-one-of rule
+// over the credential SOURCES. The endpoint reports the auth_method-selected Kind,
+// not just the wired default, so the form can render the entra branch. Because the
+// reported Kind is auth_method-driven, this drives the armed component through a
+// prior promote so the discriminator selects entra-exchange.
+func TestPromotionRequirements_EntraExchangeShape(t *testing.T) {
+	reqs, ok := credential.PromotionRequirements(credential.KindEntraExchange)
+	if !ok {
+		t.Fatal("no requirements entry for entra-exchange")
+	}
+	got := map[string]bool{}
+	required := map[string]bool{}
+	for _, f := range reqs.Fields {
+		got[f.Name] = true
+		if f.Required {
+			required[f.Name] = true
+		}
+	}
+	for _, want := range []string{"tenant_id", "client_id", "audience", "client_secret_env_var"} {
+		if !got[want] {
+			t.Errorf("entra-exchange fields missing %q: %+v", want, reqs.Fields)
+		}
+	}
+	for _, want := range []string{"tenant_id", "client_id", "audience"} {
+		if !required[want] {
+			t.Errorf("entra-exchange field %q should be required", want)
+		}
+	}
+	foundOneOf := false
+	for _, c := range reqs.Constraints {
+		if c.Rule == credential.ConstraintAtLeastOneOf {
+			foundOneOf = true
+			sort.Strings(c.Fields)
+			if strings.Join(c.Fields, ",") != "client_secret_env_var,federated_token_file" {
+				t.Errorf("entra at-least-one-of fields=%v; want [client_secret_env_var federated_token_file]", c.Fields)
+			}
+		}
+	}
+	if !foundOneOf {
+		t.Errorf("entra-exchange constraints missing %q: %+v", credential.ConstraintAtLeastOneOf, reqs.Constraints)
 	}
 }
 

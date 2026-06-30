@@ -110,6 +110,36 @@ var promotionRequirements = map[Kind]Requirements{
 			},
 		},
 	},
+	KindEntraExchange: {
+		Kind: KindEntraExchange,
+		Fields: []FieldRequirement{
+			{Name: "tenant_id", Required: true},
+			{Name: "client_id", Required: true},
+			// audience is a descriptor (nonCredentialConfigFields) but is REQUIRED
+			// for entra-exchange — it is the per-resolution scope. Declared here so
+			// the form renders it required and the guard test sees it; the
+			// always-permitted special-case in ValidateReference is relaxed for this
+			// Kind, and buildArmedConfig is the live authority that enforces it.
+			{Name: "audience", Required: true},
+			// client_secret_env_var is a DISTINCT field from static-bearer's env_var
+			// so it is intentionally exempt from the env-var uniqueness guard (one
+			// Azure app registration may front many components). The secret is
+			// resolved by reference, never inline.
+			{Name: "client_secret_env_var", Required: false},
+		},
+		Constraints: []Constraint{
+			{
+				// At-least-one-of the credential SOURCES: the built client-secret
+				// reference today, plus the designed-for federated-assertion source
+				// (federated_token_file) reserved so it slots in additively without
+				// disturbing the client-secret source. Only client_secret_env_var is
+				// produced this slice.
+				Rule:    ConstraintAtLeastOneOf,
+				Fields:  []string{"client_secret_env_var", "federated_token_file"},
+				Message: "supply client_secret_env_var (the variable the Entra client secret is read from)",
+			},
+		},
+	},
 }
 
 // PromotionRequirements returns the describe-only requirements for a provider
@@ -130,20 +160,22 @@ func kindConfigStruct(kind Kind) (reflect.Type, bool) {
 		return reflect.TypeFor[kubeconfigExecConfig](), true
 	case KindStaticBearer:
 		return reflect.TypeFor[staticBearerConfig](), true
+	case KindEntraExchange:
+		return reflect.TypeFor[entraExchangeConfig](), true
 	default:
 		return nil, false
 	}
 }
 
-// KindLocatorFields returns the sorted locator JSON field names declared by a
-// Kind's provider config struct — every json-tagged field EXCEPT the
-// credential_provider discriminator and the non-credential descriptors
-// (nonCredentialConfigFields, e.g. audience). These are the field names that may
-// legitimately appear in a credential reference for that Kind. Unlike
-// CredentialBearingFields it is per-Kind (not deduped across structs) and drops
-// the discriminator, so the requirements endpoint and guard test can check the
-// table's named fields against the real struct — the table can never name a field
-// the provider struct does not have.
+// KindLocatorFields returns the sorted JSON field names a Kind's provider config
+// struct declares that may legitimately appear in a credential reference — every
+// json-tagged field EXCEPT the credential_provider discriminator (the routing tag,
+// not a reference field). It INCLUDES the descriptor fields (e.g. audience): a
+// descriptor legitimately appears in a reference, and for some Kinds it is a
+// required input (entra-exchange's audience is the per-resolution scope). Unlike
+// CredentialBearingFields it is per-Kind (not deduped across structs); the guard
+// test uses it to check the table's named fields and constraint fields against the
+// real struct — the table can never name a field the provider struct does not have.
 func KindLocatorFields(kind Kind) ([]string, bool) {
 	t, ok := kindConfigStruct(kind)
 	if !ok {
@@ -156,9 +188,6 @@ func KindLocatorFields(kind Kind) ([]string, bool) {
 			continue
 		}
 		if name == "credential_provider" {
-			continue
-		}
-		if _, skip := nonCredentialConfigFields[name]; skip {
 			continue
 		}
 		out = append(out, name)
@@ -183,11 +212,19 @@ func (r Requirements) ValidateReference(present map[string]bool) error {
 	// Any supplied field that is neither a declared locator for this Kind nor a
 	// shared descriptor is forbidden. This covers static's inline value and
 	// cross-Kind contamination (e.g. a kubeconfig field on a static reference).
+	// The credential_provider discriminator is always permitted. audience is a
+	// shared descriptor permitted by default, but a Kind that DECLARES audience as
+	// a field (entra-exchange, where it is the required per-resolution scope) falls
+	// through to normal field validation so its required flag is enforced — the
+	// relaxation that keeps this predicate in agreement with buildArmedConfig.
 	for name, ok := range present {
 		if !ok {
 			continue
 		}
-		if name == "credential_provider" || name == "audience" {
+		if name == "credential_provider" {
+			continue
+		}
+		if name == "audience" && !allowed["audience"] {
 			continue
 		}
 		if !allowed[name] {

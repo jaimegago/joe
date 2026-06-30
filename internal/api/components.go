@@ -611,7 +611,13 @@ type promoteComponentRequest struct {
 	CAData     string `json:"ca_data"`
 	Namespace  string `json:"namespace"`
 	AuthMethod string `json:"auth_method"`
-	// shared, non-credential descriptor
+	// kubernetes entra-exchange locators (agent-identity-doc-03). client_secret_env_var
+	// is a DISTINCT field from env_var so it is intentionally exempt from the env-var
+	// uniqueness guard (one Azure app registration may front many components).
+	TenantID           string `json:"tenant_id"`
+	ClientID           string `json:"client_id"`
+	ClientSecretEnvVar string `json:"client_secret_env_var"`
+	// shared, non-credential descriptor (required for entra-exchange: the scope)
 	Audience string `json:"audience"`
 }
 
@@ -689,8 +695,26 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// The supplied discriminator, if any, must match the type's wired Kind: a
-	// component cannot be armed with a provider its adapter does not select.
+	// PER-COMPONENT KIND SELECTION (D-0062, exercised by a real second method in
+	// D-0063). For kubernetes the wired default is a starting point only: the
+	// stored auth_method selects the effective Kind (static-bearer OR
+	// entra-exchange) the adapter will use at Connect, via the SAME k8s seam
+	// (kindForAuthMethod). Resolve it here so the discriminator written, the shape
+	// validated, and the audit row all match what the adapter selects — the wired
+	// default itself is unchanged. Other types keep their single wired Kind.
+	if comp.Type == store.ComponentTypeKubernetes && req.AuthMethod != "" {
+		methodKind, mErr := k8s.KindForAuthMethod(req.AuthMethod)
+		if mErr != nil {
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, mErr.Error())
+			return
+		}
+		kind = methodKind
+	}
+
+	// The supplied discriminator, if any, must match the effective Kind: a
+	// component cannot be armed with a provider its adapter does not select. For
+	// kubernetes the effective Kind is the auth_method-selected one above, so this
+	// accepts whichever of its two valid Kinds the method chose.
 	if req.CredentialProvider != "" && credential.Kind(req.CredentialProvider) != kind {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
 			"credential_provider does not match the wired provider for this component type",
@@ -817,6 +841,22 @@ func staticEnvVarConflict(ctx context.Context, repo store.ComponentRepository, e
 	return "", false, nil
 }
 
+// writeK8sCoordinates writes the cluster coordinates shared by BOTH kubernetes
+// auth methods — api_server and the auth_method discriminator, plus optional
+// ca_data and namespace — into the armed config. static-bearer and entra-exchange
+// carry identical transport coordinates (agent-identity-doc-03); only the
+// credential source differs, so the coordinate writes are single-sourced here.
+func writeK8sCoordinates(set func(string, any), req promoteComponentRequest) {
+	set("api_server", req.APIServer)
+	set("auth_method", req.AuthMethod)
+	if req.CAData != "" {
+		set("ca_data", req.CAData)
+	}
+	if req.Namespace != "" {
+		set("namespace", req.Namespace)
+	}
+}
+
 // buildArmedConfig merges the validated credential reference into a copy of the
 // component's existing (non-credential routing) config: routing fields are
 // preserved, any prior credential reference is cleared first (so a re-promote
@@ -888,6 +928,9 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 		if req.Kubeconfig != "" || req.Context != "" {
 			return nil, nil, fmt.Errorf("kubeconfig/context are not valid for a kubernetes static-bearer reference; supply api_server, ca_data, and a static-bearer token (env_var or in_cluster)")
 		}
+		if req.TenantID != "" || req.ClientID != "" || req.ClientSecretEnvVar != "" {
+			return nil, nil, fmt.Errorf("entra-exchange locators (tenant_id/client_id/client_secret_env_var) are not valid for a kubernetes static-bearer reference")
+		}
 		if req.AuthMethod != k8s.AuthMethodStaticBearer {
 			return nil, nil, fmt.Errorf("kubernetes auth_method must be %q", k8s.AuthMethodStaticBearer)
 		}
@@ -897,14 +940,7 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 		if req.EnvVar == "" && !req.InCluster {
 			return nil, nil, fmt.Errorf("kubernetes static-bearer reference requires either an env_var name or in_cluster=true (the bearer-token source)")
 		}
-		set("api_server", req.APIServer)
-		set("auth_method", req.AuthMethod)
-		if req.CAData != "" {
-			set("ca_data", req.CAData)
-		}
-		if req.Namespace != "" {
-			set("namespace", req.Namespace)
-		}
+		writeK8sCoordinates(set, req)
 		if req.EnvVar != "" {
 			set("env_var", req.EnvVar)
 			locatorKeys = append(locatorKeys, "env_var")
@@ -913,6 +949,44 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 			set("in_cluster", true)
 			locatorKeys = append(locatorKeys, "in_cluster")
 		}
+	case credential.KindEntraExchange:
+		// Kubernetes entra-exchange (agent-identity-doc-03): the SAME cluster
+		// coordinates as static-bearer, but the credential is a short-lived token
+		// MINTED via an Azure Entra OAuth2 exchange. The client secret is resolved
+		// by reference through the DISTINCT client_secret_env_var field (so it is
+		// exempt from the env-var uniqueness guard — shared app registrations are
+		// legitimate); no inline secret, no static-bearer token source, no kubeconfig.
+		if req.Value != "" {
+			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; the Entra client secret is referenced via client_secret_env_var (the armed record carries a reference, not a secret)")
+		}
+		if req.Kubeconfig != "" || req.Context != "" {
+			return nil, nil, fmt.Errorf("kubeconfig/context are not valid for a kubernetes entra-exchange reference")
+		}
+		if req.EnvVar != "" || req.InCluster {
+			return nil, nil, fmt.Errorf("static-bearer token sources (env_var/in_cluster) are not valid for a kubernetes entra-exchange reference; the bearer token is minted, supply tenant_id, client_id, audience and client_secret_env_var")
+		}
+		if req.AuthMethod != k8s.AuthMethodEntraExchange {
+			return nil, nil, fmt.Errorf("kubernetes auth_method must be %q", k8s.AuthMethodEntraExchange)
+		}
+		if req.APIServer == "" {
+			return nil, nil, fmt.Errorf("kubernetes entra-exchange reference requires api_server (the cluster API-server URL)")
+		}
+		if req.TenantID == "" || req.ClientID == "" {
+			return nil, nil, fmt.Errorf("kubernetes entra-exchange reference requires tenant_id and client_id")
+		}
+		// audience is enforced HERE as the live authority (the requirements table
+		// declares it required; this is where it is rejected when missing).
+		if req.Audience == "" {
+			return nil, nil, fmt.Errorf("kubernetes entra-exchange reference requires audience (the token scope minted for the cluster)")
+		}
+		if req.ClientSecretEnvVar == "" {
+			return nil, nil, fmt.Errorf("kubernetes entra-exchange reference requires client_secret_env_var (the variable the Entra client secret is read from)")
+		}
+		writeK8sCoordinates(set, req)
+		set("tenant_id", req.TenantID)
+		set("client_id", req.ClientID)
+		set("client_secret_env_var", req.ClientSecretEnvVar)
+		locatorKeys = append(locatorKeys, "tenant_id", "client_id", "client_secret_env_var")
 	default:
 		return nil, nil, fmt.Errorf("unsupported wired provider kind %q", kind)
 	}

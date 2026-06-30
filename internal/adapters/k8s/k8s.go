@@ -123,16 +123,28 @@ func (a *Adapter) Status() adapters.Status {
 // kindForAuthMethod maps a kubernetes component's per-component auth_method to the
 // credential Kind that resolves its bearer token. This is the per-component
 // Kind-selection seam (decision #1 / D-0060): the method, not a fixed type→Kind
-// wiring, selects the provider, so a future method (slice C: Entra exchange) adds
-// a case here without touching the rest of the transport. static-bearer is the
-// only method today.
+// wiring, selects the provider, so each transport method adds a case here without
+// touching the rest of the transport. Both methods resolve to a bearer token the
+// adapter applies identically; only the credential source differs (a long-lived
+// token vs. a minted Entra token).
 func kindForAuthMethod(method string) (credential.Kind, error) {
 	switch method {
 	case AuthMethodStaticBearer:
 		return credential.KindStaticBearer, nil
+	case AuthMethodEntraExchange:
+		return credential.KindEntraExchange, nil
 	default:
-		return "", fmt.Errorf("kubernetes: unsupported auth_method %q (expected %q)", method, AuthMethodStaticBearer)
+		return "", fmt.Errorf("kubernetes: unsupported auth_method %q (expected %q or %q)", method, AuthMethodStaticBearer, AuthMethodEntraExchange)
 	}
+}
+
+// KindForAuthMethod exposes the per-component auth_method→credential.Kind seam to
+// the promotion boundary (internal/api) so it selects the SAME Kind the adapter
+// will at Connect — the discriminator written at promotion and the provider used
+// at Connect cannot diverge. It is the exported face of the internal
+// kindForAuthMethod mapping.
+func KindForAuthMethod(method string) (credential.Kind, error) {
+	return kindForAuthMethod(method)
 }
 
 // resolveBearerToken maps the component's auth_method to a credential Kind and

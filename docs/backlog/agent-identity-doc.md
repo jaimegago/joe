@@ -62,26 +62,38 @@ D-0059.
   promotion UI form and a minimal truthful public-docs accuracy fix landed in-slice;
   break-tested by `internal/adapters/k8s/transport_break_test.go` +
   `internal/credential/static_bearer_test.go`.
+- **DONE — slice C, native Entra exchange (D-0063, session `agent-identity-doc-03`).**
+  `KindEntraExchange` (`internal/credential/entra_exchange.go`) is the second kubernetes
+  auth method, exercising the per-component `auth_method`→Kind seam with a real second value
+  (no field migration). Its provider mints a short-lived bearer token via an Azure Entra
+  OAuth2 client-credentials exchange using the already-vendored
+  `golang.org/x/oauth2/clientcredentials` (no new dependency, no Azure SDK); tenant id,
+  client id, audience/scope, and the client-secret reference are all per-resolution config
+  values, and the provider imports no kubernetes or Azure-SDK symbol (transport-agnostic,
+  reusable by the deferred Azure track — pinned by an AST imports-only break-test). The
+  client secret is referenced under a distinct `client_secret_env_var` field, intentionally
+  exempt from the env-var uniqueness guard so a shared Azure app registration is allowed.
+  The `BearerToken()` accessor was generalized to a bearer-Kind set so the minted token
+  rides the identical adapter consume-seam; the promotion boundary learned `auth_method`→Kind
+  dispatch for kubernetes. Federated workload-identity assertion is designed-for as an
+  additive source (`federated_token_file` reserved) but not built. The Entra promotion UI
+  and the full both-methods public-docs polish landed in-slice.
 
 Still open:
 
 1. **Produce the full ADR** for the stance — the normative decision record that promotes
    D-0060's design-of-record into an implementable specification.
-2. **Add the native Entra exchange** method (Azure Entra OAuth2 token exchange minting a
-   short-lived bearer token for AKS) — slice C. Extends the per-component
-   `auth_method`→Kind seam established in slice B with a second value, no field migration.
-3. **Retire the kubeconfig-exec provider** for kubernetes once the static-bearer and
-   Entra-exchange methods land — slice D. Removes the dead-but-present
+2. **Retire the kubeconfig-exec provider** for kubernetes now that the static-bearer and
+   Entra-exchange methods have landed — slice D. Removes the dead-but-present
    `internal/credential/kubeconfig_exec.go` provider, its `KindKubeconfigExec` Kind and
    requirements entry, and the `tildeguard` helper, and lets the break-test widen.
-4. **Full both-methods public-docs polish** (deferred from slice B, tied to slice C). Slice
-   B made a minimal truthful accuracy fix to the kubernetes credential path in
-   `docs/public/{guides/register-kubernetes,integrations/_index,api-reference/_index,quickstart/_index,concepts/components-and-promotion}.md`,
-   but the fuller prose describing **both** static-bearer and Entra-exchange must not be
-   written until Entra exists (slice C). Reconcile the docs to describe both methods then.
-5. **Implement the provenance assertion** — the Joe-internal originator/actor/action
+3. **Add the federated workload-identity assertion source** for entra-exchange — the
+   additive second credential source designed-for in slice C (`federated_token_file`
+   reserved under the at-least-one-of constraint) but not built, so AKS workload identity
+   needs no client secret.
+4. **Implement the provenance assertion** — the Joe-internal originator/actor/action
    record (delegated vs. autonomous), never transmitted to the managed system.
-6. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
+5. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
    section as a single explanation page, wired to the component-registration guide and to
    Integrations.
 
