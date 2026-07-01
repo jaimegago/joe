@@ -34,3 +34,5 @@ rest depend on.
   posture.
 - [The knowledge graph](knowledge-graph/) — components, relationships, and how
   observability backends are resolved.
+- [Capabilities](capabilities/) — the full surface of what Joe can do, and why all of
+  it is reading rather than changing your systems.

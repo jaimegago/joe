@@ -198,11 +198,9 @@ web_search:                           # optional; web search is inert until a pr
 
 ### `web_search`
 
-Web search is a **global capability**, not a registered component: it is resolved once
-at boot and shared by every chat session. It gives Joe a `web_search` tool that returns
-ranked results (title, URL, and snippet only). Search **discovers** URLs; it never fetches
-page contents — Joe reads a chosen result by passing its URL to the separate
-`http_request` tool. The two stay separate and compose.
+Web search is a global, boot-resolved capability shared by every chat session. What it
+does and how it fits Joe's read-only tool surface is explained in
+[Capabilities](../concepts/capabilities/); the keys are below.
 
 | Key | Default | Effect |
 | --- | --- | --- |
