@@ -17,6 +17,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred |
 | [`azure-credential-provider-and-connect`](azure-credential-provider-and-connect.md) | Backlog — Azure credential provider + Connect implementation (deferred from A003) | deferred from A003 |
 | [`build-version-instrumentation`](build-version-instrumentation.md) | Build & version instrumentation — deferred fast-follows | open |
+| [`capability-map`](capability-map.md) | Capability-map Concepts page — deferred follow-ups | open |
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress |

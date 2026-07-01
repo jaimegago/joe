@@ -10,6 +10,68 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0066 — Joe's capability surface is documented as a single Concepts explanation page ("Capabilities") with an "everything is a Read" spine; observation mode is presented as available-not-default; the web_search narrative moves from Configuration to Concepts
+
+- Date: 2026-07-01
+- Status: accepted (implemented)
+- Session: capability-map
+- Decision: The full capability surface of a built-from-source `joe` gets **one new
+  published Concepts page**, `docs/public/concepts/capabilities.md` (title "Capabilities",
+  weight 100 — the next free ascending-by-ten slot after the knowledge-graph page at 90,
+  per D-0052). It is **explanation only** (D-0052 Concepts discipline): no config tables,
+  no how-to steps, no API request/response listings, and no internal `file:line`
+  citations; where a reader must act it links onward (Configuration for keys, Integrations
+  for the per-type component set, Guides for registration, the safety Concepts pages for
+  governance).
+  - **Spine — "every capability is a Read."** The page organizes the whole surface around
+    the invariant that everything Joe does out of the box inspects the managed system's
+    state without changing it, so it classifies `ActionRead` and passes the write floor
+    unconditionally. This is re-derived truth, not assertion: the shared-tool registration
+    site registers a set of Read-class Go-native tools (`registerSharedTools`,
+    `internal/tools/default.go`) — network/system diagnostics, an HTTP fetch restricted to
+    `GET`/`HEAD` (`httpreq` `allowedMethods`), and a web search that returns ranked
+    title/URL/snippet only and never fetches page bodies (D-0064) — each carrying an
+    explicit `ActionRead` row in `toolRegistry` (`internal/safety/tier.go`). The MCP
+    surface (`joe mcp`) registers only read tools (graph/k8s/metrics/logs/traces/alerts/
+    knowledge). No volatile count is stated anywhere: the shared-tool set, component-type
+    set, and edge types are expressed **structurally or as pointers** (D-0032).
+  - **Three capability classes** are named: (1) built-in component-independent read tools,
+    with fetch and search framed as **separate-and-composing** (search discovers a URL,
+    fetch retrieves a URL already held); (2) the **component-backed observe surface** Joe
+    opens once a component is promoted, governed by RBAC/zones/read posture, pointed to
+    Integrations for the per-type set; (3) **MCP as read-as-context** — a coding agent
+    reads Joe's live graph/state as context while it writes infrastructure-as-code
+    (D-0034), explicitly *not* a code-driven change pipeline.
+  - **Observation mode is available, not the boot default.** The page (and the corrected
+    Overview and observation-mode Concepts pages) state Joe **can be run read-only** via
+    `JOE_MODE=observation`, never that it ships/boots read-only. This tracks the
+    implementation truth: `ResolveWriteFloor(panicStatePresent, observationEnvSet)`
+    (`internal/safety/floor.go`) returns a floor that is **DOWN** when neither input is set
+    — a normally started Joe boots writable and governance decides each mutation (D-0018
+    implementation note). The default-observation posture (D-0019) remains **pending/not
+    wired**, so the wording is "can run," not "by default."
+  - **web_search narrative relocated.** The "what web search does / discovers-vs-fetches /
+    compose" narrative moves from the Configuration page into the new Concepts page;
+    Configuration keeps the **keys only** (`web_search.provider` / `base_url` / `api_key`
+    and the `JOE_WEBSEARCH_*` overrides) plus a one-line cross-link to Capabilities. This
+    applies the D-0032 structural framing and D-0052 discipline consistently.
+- Basis: Re-derived from the live tree (read-only Phase 1): shared-tool registration
+  (`internal/tools/default.go` `registerSharedTools`), the `ActionRead` classification of
+  every shared tool and the `GET`/`HEAD` restriction (`internal/safety/tier.go`,
+  `internal/tools/shared/httpreq/httpreq.go`), the web-search return shape
+  (`internal/tools/shared/websearch/websearch.go`), the write-floor default
+  (`internal/safety/floor.go` `ResolveWriteFloor`), the MCP read-only tool set
+  (`internal/mcp/server.go`), and the shipped-truth gate
+  (`docs/backlog/public-docs-feature-inventory.md`). No PARTIAL or unwired feature is
+  described as realized.
+- Supersedes: the Overview "Observation mode is the day-one default" section and the
+  observation-mode Concepts page's "day-one default / freshly installed" phrasing — both
+  corrected to "can run read-only via `JOE_MODE=observation`." Does not supersede D-0018
+  (floor mechanism), D-0019 (default-observation, still pending), D-0032, D-0034, D-0052,
+  or D-0064.
+
+---
+
 ## D-0065 — The kubeconfig-exec credential provider is retired and deleted; clientcmd is confined by a strengthened repo-wide break-test (not removed)
 
 - Date: 2026-07-01
