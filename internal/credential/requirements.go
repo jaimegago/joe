@@ -29,7 +29,7 @@ const (
 	// NOT be supplied; the reference is an indirection only. (static: "value")
 	ConstraintForbidInlineValue = "forbid-inline-value"
 	// ConstraintAtLeastOneOf requires that at least one of the named fields be
-	// supplied. (kubeconfig-exec: "in_cluster" or "kubeconfig"). This mirrors the
+	// supplied. (static-bearer: "env_var" or "in_cluster"). This mirrors the
 	// LIVE buildArmedConfig rule, which accepts BOTH being set — it is
 	// at-least-one, NOT exactly-one.
 	ConstraintAtLeastOneOf = "at-least-one-of"
@@ -78,21 +78,6 @@ var promotionRequirements = map[Kind]Requirements{
 				Rule:    ConstraintForbidInlineValue,
 				Fields:  []string{"value"},
 				Message: "an inline credential value is not accepted; supply an env_var indirection (the armed record carries a reference, not a secret)",
-			},
-		},
-	},
-	KindKubeconfigExec: {
-		Kind: KindKubeconfigExec,
-		Fields: []FieldRequirement{
-			{Name: "in_cluster", Required: false},
-			{Name: "kubeconfig", Required: false},
-			{Name: "context", Required: false},
-		},
-		Constraints: []Constraint{
-			{
-				Rule:    ConstraintAtLeastOneOf,
-				Fields:  []string{"in_cluster", "kubeconfig"},
-				Message: "supply either in_cluster=true or a kubeconfig path",
 			},
 		},
 	},
@@ -156,8 +141,6 @@ func kindConfigStruct(kind Kind) (reflect.Type, bool) {
 	switch kind {
 	case KindStatic:
 		return reflect.TypeFor[staticConfig](), true
-	case KindKubeconfigExec:
-		return reflect.TypeFor[kubeconfigExecConfig](), true
 	case KindStaticBearer:
 		return reflect.TypeFor[staticBearerConfig](), true
 	case KindEntraExchange:

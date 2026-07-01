@@ -38,8 +38,10 @@ var ErrCredentialField = errors.New("credential-bearing field not permitted at r
 //     (internal/credential/provider.go, discriminator.CredentialProvider).
 //   - "value", "env_var": the static provider's inline secret and its
 //     environment-variable locator (internal/credential/static.go).
-//   - "kubeconfig", "context", "in_cluster": the kubeconfig-exec provider's
-//     locators (internal/credential/kubeconfig_exec.go).
+//   - "env_var", "in_cluster": the static-bearer provider's bearer-token
+//     locators (internal/credential/static_bearer.go).
+//   - "tenant_id", "client_id", "client_secret_env_var", "federated_token_file":
+//     the entra-exchange provider's locators (internal/credential/entra_exchange.go).
 //
 // Before D-0029's seam closure this was a hand-copied literal mirroring those
 // tags with no shared source: a new provider field could silently re-open a

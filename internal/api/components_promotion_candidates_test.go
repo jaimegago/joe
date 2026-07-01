@@ -18,7 +18,7 @@ import (
 // question — "which references can the admin choose right now?" — sibling to the
 // cacheable promotion-requirements SHAPE endpoint. These tests pin: names-only,
 // type-prefix-scoped enumeration with zero value leakage; the unwired and
-// kubeconfig-exec honest shapes; admin-gating; and the STRUCTURAL invariant that
+// static-bearer honest shapes; admin-gating; and the STRUCTURAL invariant that
 // env enumeration lives in the provider seam, never the handler.
 
 type candidate struct {

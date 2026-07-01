@@ -1,6 +1,6 @@
 # Backlog — Unify the tilde-expansion helpers
 
-Status: deferred (recorded by D-0026; the unit-1 Probe fix duplicated the helper on purpose — do not unify as part of D-0026).
+Status: closed (moot) — resolved by D-0065 (agent-identity-doc-04): the two byte-identical adapter hand-copies this item tracked were both DELETED. `internal/credential/kubeconfig_exec.go`'s `expandKubeconfigPath` went with the retired kubeconfig-exec provider, the `tildeguard` package that pinned the pair was deleted, and the k8s adapter's `expandPath` (its only consumer gone) was pruned. Only `internal/paths/defaults.go`'s `ExpandPath` remains — never part of the duplication problem — so there is nothing left to unify.
 
 ## Context
 

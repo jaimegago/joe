@@ -20,6 +20,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress |
+| [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred |
@@ -46,7 +47,6 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred |
-| [`tilde-expansion-helper-unification`](tilde-expansion-helper-unification.md) | Backlog — Unify the tilde-expansion helpers | deferred |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Dead-on-arrival component types — deferred wiring and a related Test-control UX bug | open |
 | [`unauth-health-surface`](unauth-health-surface.md) | Unauthenticated health surface — auth-posture and information-exposure analysis | open |

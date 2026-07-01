@@ -78,22 +78,33 @@ D-0059.
   dispatch for kubernetes. Federated workload-identity assertion is designed-for as an
   additive source (`federated_token_file` reserved) but not built. The Entra promotion UI
   and the full both-methods public-docs polish landed in-slice.
+- **DONE — slice D, retire the kubeconfig-exec provider (D-0065, session
+  `agent-identity-doc-04`).** The kubeconfig-exec provider is deleted in full now that both
+  live kubernetes auth methods route through the seam: `internal/credential/kubeconfig_exec.go`,
+  the `KindKubeconfigExec` Kind, its `ProviderForKind`/requirements/`fields.go` entries, the
+  compile-forced cascade (`KubeSelection` struct + accessor + `Credential.kube`), the dead
+  `buildArmedConfig` case and the vestigial `promoteComponentRequest.Kubeconfig`/`Context`
+  fields, the `tildeguard` package, and the k8s adapter's now-dead `expandPath` helper are all
+  gone. `clientcmd` stays a legitimate dependency (helm/nginx use it) — NOT removed — but the
+  transport break-test is strengthened to assert it is absent from the k8s package, from
+  `internal/credential`, and repo-wide except `{helm, nginx}`. Migration disposition: a
+  documented breaking change, no migration (the encrypted-at-rest config is un-reshapeable by
+  SQL and the sole real pre-B instance is a dev row already un-connectable post-B). The dead
+  `CapturedStderr` surface is left in place, tracked for teardown in
+  `docs/backlog/credential-stderr-surface-teardown.md`.
 
 Still open:
 
 1. **Produce the full ADR** for the stance — the normative decision record that promotes
    D-0060's design-of-record into an implementable specification.
-2. **Retire the kubeconfig-exec provider** for kubernetes now that the static-bearer and
-   Entra-exchange methods have landed — slice D. Removes the dead-but-present
-   `internal/credential/kubeconfig_exec.go` provider, its `KindKubeconfigExec` Kind and
-   requirements entry, and the `tildeguard` helper, and lets the break-test widen.
-3. **Add the federated workload-identity assertion source** for entra-exchange — the
+2. **Add the federated workload-identity assertion source** for entra-exchange — the
    additive second credential source designed-for in slice C (`federated_token_file`
    reserved under the at-least-one-of constraint) but not built, so AKS workload identity
    needs no client secret.
-4. **Implement the provenance assertion** — the Joe-internal originator/actor/action
-   record (delegated vs. autonomous), never transmitted to the managed system.
-5. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
+3. **Implement the provenance assertion** — the sole remaining implementation slice of the
+   auth-method track: the Joe-internal originator/actor/action record (delegated vs.
+   autonomous), never transmitted to the managed system.
+4. **Publish the doc**: relocate `docs/drafts/agent-identity.md` into the Concepts
    section as a single explanation page, wired to the component-registration guide and to
    Integrations.
 

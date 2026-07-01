@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/jaimegago/joe/internal/adapters"
@@ -194,23 +191,3 @@ func buildRESTConfig(cfg Config, bearerToken string) (*rest.Config, error) {
 	}
 	return rc, nil
 }
-
-func expandPath(path string) (string, error) {
-	if strings.HasPrefix(path, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if len(path) == 1 {
-			return home, nil
-		}
-		return filepath.Join(home, path[1:]), nil
-	}
-	return path, nil
-}
-
-// ExpandPathForTest exposes the unexported expandPath to the cross-package
-// tilde-helper guard (internal/credential/tildeguard, D-0026). It exists only so
-// that guard can assert this canonical helper and credential's hand-copied
-// duplicate (expandKubeconfigPath) stay byte-identical; it has no production use.
-func ExpandPathForTest(path string) (string, error) { return expandPath(path) }

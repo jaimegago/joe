@@ -10,6 +10,76 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0065 — The kubeconfig-exec credential provider is retired and deleted; clientcmd is confined by a strengthened repo-wide break-test (not removed)
+
+- Date: 2026-07-01
+- Status: accepted (implemented)
+- Session: agent-identity-doc-04
+- Decision: The **kubeconfig-exec credential provider is retired and deleted in full** now that
+  both live kubernetes auth methods route through the per-component `auth_method`→Kind seam
+  (D-0062 static-bearer, D-0063 entra-exchange). Deleted: the whole `internal/credential/kubeconfig_exec.go`
+  (`KubeconfigExecProvider`, its constructor, `parseKubeconfigExecConfig`, `kubeconfigExecConfig`,
+  `kubeProber`/`kubeProbeResult`/`defaultKubeProbe` and its `clientcmd` path, `expandKubeconfigPath`,
+  `ExpandKubeconfigPathForTest`); the `KindKubeconfigExec` enum entry; the `ProviderForKind` case; the
+  `promotionRequirements` map entry and its `kindConfigStruct` case; the `kubeconfigExecConfig` entry in
+  `credentialConfigStructs` (`fields.go`); the compile-forced cascade — the `KubeSelection()` accessor,
+  the now-unused `KubeSelection` struct and `Credential.kube` field; and the dead `buildArmedConfig`
+  `KindKubeconfigExec` case. The `internal/credential/tildeguard` package (which existed solely to pin
+  the now-deleted duplicate tilde helper against the k8s adapter's) is deleted, and the k8s adapter's
+  `expandPath`/`ExpandPathForTest` — dead once the transport stopped ingesting kubeconfigs and the guard
+  was gone — are pruned with it.
+  - **Proof of unreachability** (established before deletion): no `wiredTypes` entry resolves to
+    `KindKubeconfigExec` (kubernetes → `KindStaticBearer`); the promotion handler's effective Kind is
+    `WiredProvider` (never it) overridden for kubernetes by `k8s.KindForAuthMethod` ∈ {static-bearer,
+    entra-exchange} only, and a supplied `credential_provider` must equal that effective Kind or 400 —
+    so no promotion can write the Kind and the `buildArmedConfig` case was dead; the adapter selects it
+    via neither path (`kindForAuthMethod`). The one runtime construction path was `credential.Select`
+    over a **stored** config (admin credential-status/probe only, never the adapter Connect); post-deletion
+    `Select` returns an unknown-kind error for such a config, handled gracefully (`listCredentialStatus`
+    reports a per-entry error; the probe returns 400) — no crash.
+  - **Migration disposition — documented breaking change, NO migration.** Recon decrypted the sole
+    kubernetes component in the live dev DB (`petri-test`) and confirmed it is armed pre-B with
+    `credential_provider: "kubeconfig-exec"` + `in_cluster`, no `auth_method`. Such a row is **already
+    un-connectable post-B** (the adapter errors on the empty `auth_method`); deletion only changes its
+    admin-probe error text. A SQL migration **cannot** re-shape it — the config blob is AES-256-GCM
+    encrypted at rest (the same reason the env-var uniqueness guard is application-level), and no
+    automatic translation exists from the kubeconfig-exec locators to static-bearer/entra-exchange
+    coordinates. With Joe distributed build-from-source only (no released binaries, no fleet of DBs) and
+    the sole real instance a developer test row, the disposition is a documented breaking change:
+    a pre-B kubeconfig-exec kubernetes component must be re-promoted with an `auth_method`, or deleted.
+  - **Break-test strengthened, dependency confined not removed.** `clientcmd` remains a legitimate
+    module dependency — the helm and nginx-ingress adapters (kubeconfig-shaped) still import it — so
+    `go mod tidy` drops nothing and `go.mod`/`go.sum` are unchanged. `transport_break_test.go` is
+    upgraded from a k8s-package-scoped assertion to assert `clientcmd` absence three ways: from the k8s
+    transport package, from `internal/credential` (newly assertable once the dead provider left), and
+    repo-wide from every production package except the accepted-importer set
+    `{internal/adapters/packaging/helm, internal/adapters/networking/nginx}` — catching any new
+    `clientcmd` creep into the transport or credential path.
+  - **Vestigial-field prune and deferred stderr teardown.** The `promoteComponentRequest.Kubeconfig`
+    and `Context` fields are pruned (no provider reads them; both static and static-bearer already
+    rejected them). Dropping `kubeconfigExecConfig` removes `kubeconfig`/`context` from
+    `CredentialBearingFields`, so **componentgov registration no longer rejects those two fields** —
+    harmless, because nothing reads them (registration still rejects every live credential field).
+    The `Credential.stderr` / `Resolution.CapturedStderr()` surface is now **vestigial** (kubeconfig-exec
+    was its only producer): it always returns `""`, and it plus its admin endpoint and the
+    `CredentialStatusTable` UI are **left in place** pending a separate teardown tracked in
+    `docs/backlog/credential-stderr-surface-teardown.md`.
+- Basis: Re-derived from the live tree (read-only recon, then implementation). Pre-B kubernetes wiring
+  to `KindKubeconfigExec` confirmed at `a520898^:internal/credential/wiring.go:46`; the current wiring
+  (`internal/credential/wiring.go`) maps kubernetes → `KindStaticBearer`. The `petri-test` config shape
+  was read by decrypting only its top-level key names + the non-secret `credential_provider` discriminator
+  (no secret values). `clientcmd`'s live importers (`internal/adapters/packaging/helm/helm.go`,
+  `internal/adapters/networking/nginx/nginx.go`) verified present, so the dependency stays. `go build ./...`,
+  `go vet ./...`, `gofmt -s`, and the full `go test ./...` suite (including the strengthened break-test)
+  pass for this change.
+- Supersedes: the deletion half of **D-0062**'s "kubeconfig-exec provider left dead-but-present for the
+  slice-D removal" — that removal is now done. Builds on **D-0062** (hand-built transport, static-bearer)
+  and **D-0063** (entra-exchange), which established the two live methods this deletion relies on. The
+  historical **D-0026** ADR (kubeconfig-exec as the kubernetes transport) and **D-0059**/**D-0060** notes
+  remain as history; this entry is the current position.
+
+---
+
 ## D-0064 — Web search ships as a Go-native shared Read tool behind a SearchProvider abstraction, SearXNG-first, boot-only, exposed-and-deny, user-loop-only
 
 - Date: 2026-07-01

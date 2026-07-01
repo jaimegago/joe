@@ -102,9 +102,9 @@ type Candidate struct {
 // References is the normalized answer to "which references can the admin choose
 // for this component right now?" — the provider-described capability result.
 // Applicable is false for providers whose reference is not an enumerable set (the
-// kubeconfig-exec provider's reference is a file path, not a candidate list);
-// such a provider returns Applicable=false with no candidates rather than forcing
-// env semantics onto itself. Prefix is the env-name scope enumerated (static
+// static-bearer provider's free-form env-var name and in-cluster mount are not a
+// candidate list); such a provider returns Applicable=false with no candidates
+// rather than forcing env semantics onto itself. Prefix is the env-name scope enumerated (static
 // only; empty when not applicable). Candidates is always non-nil so it serializes
 // as [] not null.
 type References struct {

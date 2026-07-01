@@ -17,14 +17,15 @@ import (
 // or GET /api/v1/components/{id} — the read model replaces the blob with a
 // derived armed/provider projection.
 var forbiddenReadKeys = []string{
-	"config", "credential_provider", "env_var", "kubeconfig",
-	"context", "in_cluster", "audience", "value",
+	"config", "credential_provider", "env_var", "in_cluster",
+	"tenant_id", "client_id", "client_secret_env_var", "audience", "value",
 }
 
-// armedComponentConfig is a fully-populated armed reference: every credential
-// locator the two wired providers can write, so the absence assertions exercise
-// the worst case (a real promotion writes only a subset).
-const armedComponentConfig = `{"credential_provider":"kubeconfig-exec","kubeconfig":"/home/op/.kube/config","context":"prod","in_cluster":true,"env_var":"GH_TOKEN","audience":"github","endpoint":"https://k8s.prod"}`
+// armedComponentConfig is a fully-populated armed reference: a superset of the
+// credential locators the wired kubernetes providers can write (static-bearer's
+// env_var/in_cluster and entra-exchange's tenant/client/secret), so the absence
+// assertions exercise the worst case (a real promotion writes only a subset).
+const armedComponentConfig = `{"credential_provider":"static-bearer","auth_method":"static-bearer","api_server":"https://k8s.prod","ca_data":"PEMDATA","in_cluster":true,"env_var":"GH_TOKEN","tenant_id":"t","client_id":"c","client_secret_env_var":"SECRET","audience":"github","endpoint":"https://k8s.prod"}`
 
 func assertNoLocatorKeys(t *testing.T, raw string) {
 	t.Helper()
@@ -70,8 +71,8 @@ func TestComponentReadModel_ArmedHidesLocators_GetAndList(t *testing.T) {
 	if !got.Armed {
 		t.Errorf("GET armed = false, want true for promoted component")
 	}
-	if got.Provider != "kubeconfig-exec" {
-		t.Errorf("GET provider = %q, want kubeconfig-exec", got.Provider)
+	if got.Provider != "static-bearer" {
+		t.Errorf("GET provider = %q, want static-bearer", got.Provider)
 	}
 
 	// List
@@ -97,8 +98,8 @@ func TestComponentReadModel_ArmedHidesLocators_GetAndList(t *testing.T) {
 	if len(list.Components) != 1 {
 		t.Fatalf("list len = %d, want 1", len(list.Components))
 	}
-	if !list.Components[0].Armed || list.Components[0].Provider != "kubeconfig-exec" {
-		t.Errorf("LIST projection = %+v, want armed=true provider=kubeconfig-exec", list.Components[0])
+	if !list.Components[0].Armed || list.Components[0].Provider != "static-bearer" {
+		t.Errorf("LIST projection = %+v, want armed=true provider=static-bearer", list.Components[0])
 	}
 }
 
