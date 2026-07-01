@@ -67,6 +67,7 @@ npm run test
 - The registered-external-system entity is a "component" (`store.Component`, `components` table). "source" was renamed per D-0021; the unrelated `knowledge_sources` concept keeps its name
 - Panic state persisted to the `cluster_panic_state` DB row (single row, id=1) via `internal/store/panic_store.go` — there is no `panic.state` file; safe mode raises the write floor, which blocks the Mutate class in the executor
 - MCP server (`joe mcp`) reads `JOE_SERVER` + `JOE_API_KEY` env vars
+- Joe speaks MCP in one direction only: it runs as an MCP server (`joe mcp`), exposing its own governed tools, but deliberately does NOT act as an MCP client / consume external MCP servers' tools — the protocol has no enforceable tool mutation classification, so consuming it would reduce the machine-checkable observe-mode write-floor guarantee to an operator promise (see D-0067)
 - **repo-specific override:** do not add a `Co-Authored-By` trailer to commit messages
 
 ## Reference Documents

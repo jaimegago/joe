@@ -69,3 +69,4 @@ daemon's posture and the credential in `JOE_API_KEY`, not by the MCP client.
 
 - How backends are resolved from the graph → [The knowledge graph](knowledge-graph/)
 - Connecting the managed systems these tools reach → [Integrations](../integrations/)
+- Why Joe serves MCP but will not consume it → [Joe and MCP](../concepts/joe-and-mcp/)
