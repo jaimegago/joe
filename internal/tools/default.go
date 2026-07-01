@@ -2,24 +2,34 @@ package tools
 
 import (
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/search"
 	coretools "github.com/jaimegago/joe/internal/tools/core"
 	"github.com/jaimegago/joe/internal/tools/shared/dnsquery"
 	"github.com/jaimegago/joe/internal/tools/shared/httpreq"
 	"github.com/jaimegago/joe/internal/tools/shared/netcheck"
 	"github.com/jaimegago/joe/internal/tools/shared/sysinfo"
 	"github.com/jaimegago/joe/internal/tools/shared/traceroute"
+	"github.com/jaimegago/joe/internal/tools/shared/websearch"
 )
 
-// registerSharedTools registers shared diagnostic tools (T1, Go-native, no CLI
-// deps). These run in-process and work from both joe (user's machine
+// registerSharedTools registers shared diagnostic tools (Read-class, Go-native,
+// no CLI deps). These run in-process and work from both joe (user's machine
 // perspective) and joecored (cluster/server perspective).
-func registerSharedTools(registry *Registry) {
+//
+// searchProvider is the boot-resolved web-search backend threaded in from
+// Services; it may be nil (web search unconfigured), in which case web_search is
+// still registered and advertised but returns a no-backend-configured
+// tool-error when called (exposed-and-deny). This registration path backs the
+// user task loop only; the autonomous agent:core registry
+// (internal/coreagent) registers its own tools and does NOT include web_search.
+func registerSharedTools(registry *Registry, searchProvider search.Provider) {
 	registry.Register(netcheck.NewTCPConnectTool())
 	registry.Register(netcheck.NewPortScanTool())
 	registry.Register(dnsquery.NewDNSLookupTool())
 	registry.Register(httpreq.NewHTTPRequestTool())
 	registry.Register(sysinfo.NewSystemInfoTool())
 	registry.Register(traceroute.NewTraceRouteTool())
+	registry.Register(websearch.NewWebSearchTool(searchProvider))
 }
 
 // NewCoreRegistry creates a registry with shared diagnostic tools and core
@@ -33,11 +43,15 @@ func registerSharedTools(registry *Registry) {
 // argument type is coretools.CoreToolsClient (the aggregate of each tool's
 // small *Client interface), so the HTTP *client.Client also satisfies it for
 // external test harnesses (e.g. test/e2e).
-func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.SafetyPolicy) *Registry {
+//
+// searchProvider is the boot-resolved web-search backend (nil when web search
+// is unconfigured) threaded into the web_search shared tool. This is the
+// user-task-loop registration path only.
+func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.SafetyPolicy, searchProvider search.Provider) *Registry {
 	registry := NewRegistry()
 
-	// Shared diagnostic tools (T1, Go-native, no CLI deps).
-	registerSharedTools(registry)
+	// Shared diagnostic tools (Read-class, Go-native, no CLI deps).
+	registerSharedTools(registry, searchProvider)
 
 	// Core tools.
 	registerCoreTools(registry, coreClient)

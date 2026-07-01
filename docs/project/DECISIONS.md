@@ -10,6 +10,83 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0064 — Web search ships as a Go-native shared Read tool behind a SearchProvider abstraction, SearXNG-first, boot-only, exposed-and-deny, user-loop-only
+
+- Date: 2026-07-01
+- Status: accepted (implemented)
+- Session: web-search-tool
+- Decision: Joe gains a **web-search capability** as a **Go-native shared tool**
+  (`internal/tools/shared/websearch`, tool `Name()` exactly `web_search`), a sibling of
+  `dnsquery`/`httpreq`/`netcheck`/`sysinfo`/`traceroute` that satisfies the same
+  `tools.Tool` interface and **never reaches the coretools client or accessor seam**. It is
+  **distinct from `http_request`**: web search **discovers URLs**, `http_request` **fetches a
+  URL the model already holds**; the two **stay separate and compose** — `web_search` returns
+  **ranked title/url/snippet only** and **never fetches page bodies**. It is classified
+  **`ActionRead`** via an **explicit row in the `toolRegistry` map**
+  (`internal/safety/tier.go`), so it **passes the write floor unconditionally**; without that
+  row `ClassifyTool` would default it to `ActionMutate` (deny-by-default) and the tool would
+  be floor-blocked and policy-gated — the load-bearing invariant is pinned by
+  `TestClassifyWebSearchIsRead`. The backend sits behind a **`SearchProvider` abstraction**
+  (`internal/search`: interface `Provider.Search(ctx, query, count)` returning
+  `[]search.Result{Title,URL,Snippet}`) with a **boot-time factory** (`search.NewProvider`)
+  that selects an implementation from configuration, **mirroring the LLM-adapter factory
+  pattern in spirit** — provider name plus `base_url` plus an optional key, analogous to the
+  `openai-compat` model config. There is **no silent default provider**: exactly as the LLM
+  adapter requires an operator to configure a provider, **web search is inert until
+  configured** (empty provider → `NewProvider` returns a nil `Provider`). **SearXNG** is the
+  one provider implemented — the self-hostable, **keyless** backend: a GET against the
+  configured `base_url` `/search` endpoint requesting `format=json`, extracting only the
+  per-result `title`/`url`/`content` fields; the optional key rides an `Authorization: Bearer`
+  header when set, otherwise none is sent. **Keyed providers (Tavily, Brave) are designed-for
+  and deferred** to the backlog — the abstraction leaves them a clean additive extension.
+  Configuration is **boot-only**: `config.WebSearchConfig` (`web_search.provider` /
+  `base_url` / `api_key`) resolved once at boot with the `JOE_WEBSEARCH_PROVIDER` /
+  `JOE_WEBSEARCH_BASE_URL` / `JOE_WEBSEARCH_API_KEY` env overrides (the same JOE_-prefixed
+  convention the LLM config uses), built in `cmd/joe/server.go` into `search.NewProvider`,
+  sealed onto `core.Services.WebSearch`, and threaded into the tool constructor at the
+  shared-tool registration point (`NewCoreRegistry` → `registerSharedTools`). A misconfigured
+  backend (unknown provider, or SearXNG without a `base_url`) is **fatal at boot** as an LLM
+  misconfiguration is; **there is no runtime swap handler, admin endpoint, or new audit
+  vocabulary — changing the backend requires a restart**. Credentials, when a keyed provider
+  is later added, ride **plain config/env like the LLM providers**, not the
+  credentials-as-references model. **Exposed-and-deny**: when no backend is configured the
+  tool stays **registered and advertised** and its call returns a `no search backend
+  configured` **tool-error result** (it is never hidden), mirroring how denials surface as
+  tool-results elsewhere — pinned by the behavioral break-test `TestExecute_NoBackendConfigured`
+  and the advertisement break-test `TestWebSearchAdvertisedWhenUnconfigured`. Registration is
+  **user-task-loop-only** (`internal/tools/default.go`); the **autonomous `agent:core` registry
+  (`internal/coreagent`) registers its own tool set and does NOT include `web_search`** —
+  agent:core registration is deferred. **Egress** is to the **single operator-configured
+  `base_url`** (strictly narrower than `http_request`'s any-URL GET); **no URL allow-list, no
+  rate limit, and no audit row** are added — matching the existing shared-tool posture (shared
+  tools do not reach the accessor-point audit row), with external-network egress **deliberately
+  not a gate dimension** (operator-run egress gateways are deployment substrate, and `base_url`
+  may point at the provider directly or at such a gateway, transparent to Joe).
+- Basis: Re-derived from the live tree (read-only recon). The shared-tool split is real —
+  `internal/tools/shared/{dnsquery,httpreq,netcheck,sysinfo,traceroute}` are Go-native tools
+  registered by `registerSharedTools` in `internal/tools/default.go`, separate from the
+  accessor-backed `registerCoreTools`. The classifier map and its default are authoritative:
+  `toolRegistry` in `internal/safety/tier.go` explicitly lists every read tool and
+  `ClassifyTool` returns `ActionMutate` for any unlisted name, and `CheckAccess` allows reads
+  unconditionally while gating mutates behind the act policy. The floor/consumer branch is
+  real: `internal/api/tasks.go` injects `WithWriteFloor` into the user-task executor, which
+  denies the Mutate class when the floor is up — a Read is never floor-blocked. The
+  exposed-and-deny registry behavior matches the existing pattern where a tool always advertises
+  via `Registry.ToDefinitions()` and a denial surfaces as a tool-result rather than a hidden
+  tool. The LLM-adapter pattern this mirrors is `internal/llmfactory/factory.go` (provider
+  switch) + `internal/config` (`ModelConfig` provider/base_url, `applyEnvOverrides` JOE_-prefix
+  convention) + the openai-compat "optional key, base_url required" shape. `agent:core` builds a
+  disjoint registry in `internal/coreagent/agent.go` (`registerCoreAgentTools`), confirming
+  user-loop-only registration leaves the autonomous surface unchanged. `go build ./...`,
+  `go vet ./...`, `gofmt`, and the full `go test ./...` suite (including the new break-tests)
+  pass for this change, verified against a clean checkout of the commit.
+- Supersedes: nothing. Additive. Establishes the `internal/search` SearchProvider abstraction
+  and the `web_search` shared tool; the keyed hosted providers, `agent:core` registration, a
+  runtime swap surface, and any egress rate-limit/allow-list/per-search log line remain open
+  in `docs/backlog/web-search-tool.md`.
+
+---
+
 ## D-0063 — Entra-exchange is the second Kubernetes auth method: a transport-agnostic credential Kind minting a short-lived bearer token via an Azure Entra OAuth2 client-credentials exchange
 
 - Date: 2026-06-30

@@ -34,7 +34,7 @@ func validatePropertySchema(toolName, propName string, prop llm.Property) error 
 // schema bugs are caught by `go test` rather than at runtime against a live API.
 func TestToolSchemaValidity(t *testing.T) {
 	coreClient := stubCoreClient{}
-	registry := NewCoreRegistry(coreClient, nil)
+	registry := NewCoreRegistry(coreClient, nil, nil)
 
 	for _, tool := range registry.GetAll() {
 		t.Run(tool.Name(), func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestToolSchemaValidity(t *testing.T) {
 
 func TestNewCoreRegistry(t *testing.T) {
 	coreClient := stubCoreClient{}
-	registry := NewCoreRegistry(coreClient, nil)
+	registry := NewCoreRegistry(coreClient, nil, nil)
 
 	if registry == nil {
 		t.Fatal("NewCoreRegistry() returned nil")
@@ -65,6 +65,7 @@ func TestNewCoreRegistry(t *testing.T) {
 		"http_request": true,
 		"system_info":  true,
 		"trace_route":  true,
+		"web_search":   true,
 		// Core tools (call joecored API)
 		"list_components":     true,
 		"graph_query":         true,

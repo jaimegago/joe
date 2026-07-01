@@ -23,6 +23,7 @@ type Config struct {
 	Database      DatabaseConfig     `yaml:"database"`
 	Skills        SkillsConfig       `yaml:"skills"`
 	Auth          AuthConfig         `yaml:"auth"`
+	WebSearch     WebSearchConfig    `yaml:"web_search"`
 
 	// explicitProvider records whether the user expressed an explicit LLM
 	// provider preference during Load — either JOE_LLM_PROVIDER or an
@@ -259,6 +260,36 @@ type LLMConfig struct {
 	// 1.0) when Currency is CurrencyUSD. Stream G phase G1: definition +
 	// validation only — no caller multiplies by this value yet.
 	USDToConfiguredRate float64 `yaml:"usd_to_configured_rate"`
+}
+
+// WebSearchConfig configures Joe's web-search capability — a global,
+// boot-only capability (not a registered component), resolved once at boot and
+// threaded into the web_search shared tool. It mirrors the LLM provider config
+// in spirit: a provider name plus a base_url and an OPTIONAL key, analogous to
+// the openai-compat model config.
+//
+// There is no silent default provider: an empty Provider leaves web search
+// inert (the web_search tool stays advertised but returns a
+// no-backend-configured tool-error). Credentials, when a keyed provider is
+// later added, ride plain config/env like the LLM providers — not the
+// credentials-as-references model used for components. For the one provider
+// implemented today (SearXNG) there is normally no key at all.
+type WebSearchConfig struct {
+	// Provider selects the search backend. "" (the default) means web search is
+	// unconfigured/inert. The only implemented value is "searxng"; any other
+	// non-empty value is rejected at boot by search.NewProvider.
+	Provider string `yaml:"provider"`
+	// BaseURL is the search endpoint base URL (e.g. a SearXNG instance, or an
+	// operator-run egress gateway that fronts it). REQUIRED when Provider is set.
+	BaseURL string `yaml:"base_url,omitempty"`
+	// APIKey is an OPTIONAL key for instances/providers that require one. SearXNG
+	// normally needs none; keyed hosted providers (deferred) will use it.
+	APIKey string `yaml:"api_key,omitempty"`
+}
+
+// Configured reports whether a web-search provider has been selected.
+func (w WebSearchConfig) Configured() bool {
+	return w.Provider != ""
 }
 
 // ModelConfig describes a single LLM model
@@ -568,6 +599,23 @@ func applyEnvOverrides(cfg *Config) []string {
 	if dsn := os.Getenv("JOE_DATABASE_DSN"); dsn != "" {
 		cfg.Database.DSN = dsn
 		overrides = append(overrides, "JOE_DATABASE_DSN")
+	}
+
+	// Web-search overrides. Web search is a global, boot-only capability
+	// resolved from config plus these JOE_-prefixed env vars — the same
+	// override convention the LLM configuration uses. The optional key is
+	// env-overridable so it can be kept out of the config file.
+	if provider := os.Getenv("JOE_WEBSEARCH_PROVIDER"); provider != "" {
+		cfg.WebSearch.Provider = provider
+		overrides = append(overrides, "JOE_WEBSEARCH_PROVIDER")
+	}
+	if baseURL := os.Getenv("JOE_WEBSEARCH_BASE_URL"); baseURL != "" {
+		cfg.WebSearch.BaseURL = baseURL
+		overrides = append(overrides, "JOE_WEBSEARCH_BASE_URL")
+	}
+	if apiKey := os.Getenv("JOE_WEBSEARCH_API_KEY"); apiKey != "" {
+		cfg.WebSearch.APIKey = apiKey
+		overrides = append(overrides, "JOE_WEBSEARCH_API_KEY")
 	}
 
 	return overrides
