@@ -277,7 +277,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// every tool's adapter/graph access reaches the accessor with the real
 	// caller principal already carried in the Go context (the one
 	// auth.EdgeAuth set via rbac.WithPrincipal at the edge).
-	registry := tools.NewCoreRegistry(h.server.inproc, safetyPolicy)
+	registry := tools.NewCoreRegistry(h.server.inproc, safetyPolicy, h.server.services.WebSearch)
 	// D-0018 / D-0022: inject the boot-resolved write floor so the user-task
 	// executor denies managed-system Mutates (write_file, run_command,
 	// publish_doc_update_*, github_comment, …) whenever the floor is up

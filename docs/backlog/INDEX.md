@@ -50,3 +50,4 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Dead-on-arrival component types — deferred wiring and a related Test-control UX bug | open |
 | [`unauth-health-surface`](unauth-health-surface.md) | Unauthenticated health surface — auth-posture and information-exposure analysis | open |
+| [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open |

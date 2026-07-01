@@ -109,6 +109,12 @@ var toolRegistry = map[string]ToolClassification{
 	"http_request": {Class: ActionRead, Description: "Probe an HTTP/HTTPS endpoint"},
 	"system_info":  {Class: ActionRead, Description: "Return system stats: disk, memory, load, OS"},
 	"trace_route":  {Class: ActionRead, Description: "Trace network path to a host (hop-by-hop)"},
+	// web_search discovers URLs via the operator-configured search engine; it
+	// mutates no managed system, so it is a Read and passes the write floor
+	// unconditionally. Without this explicit row ClassifyTool would default it
+	// to ActionMutate (deny-by-default) and it would be floor-blocked and
+	// policy-gated. Pinned by TestClassifyWebSearchIsRead.
+	"web_search": {Class: ActionRead, Description: "Search the web for ranked results (title, URL, snippet)"},
 
 	// Data store tools (Phase 6.7) — read-only diagnostic queries
 	"postgres_stat":         {Class: ActionRead, Description: "Query PostgreSQL activity, table stats, replication lag"},

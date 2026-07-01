@@ -112,6 +112,11 @@ database:
 skills:
   trusted_sources: []                 # repos auto-trusted for skill install ([] = allowlist off)
   hot_reload_disabled: false
+
+web_search:                           # optional; web search is inert until a provider is set
+  provider: ""                        # "" = disabled; the only supported value today is "searxng"
+  base_url: ""                        # REQUIRED when provider is set (the search endpoint or a gateway)
+  api_key: ""                         # optional; SearXNG normally needs none
 ```
 
 ## Key reference
@@ -191,6 +196,41 @@ skills:
 | `skills.trusted_sources` | `[]` | Repositories auto-trusted for skill install; empty means the allowlist is off. |
 | `skills.hot_reload_disabled` | `false` | Disable the skills hot-reload watcher. |
 
+### `web_search`
+
+Web search is a **global capability**, not a registered component: it is resolved once
+at boot and shared by every chat session. It gives Joe a `web_search` tool that returns
+ranked results (title, URL, and snippet only). Search **discovers** URLs; it never fetches
+page contents — Joe reads a chosen result by passing its URL to the separate
+`http_request` tool. The two stay separate and compose.
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `web_search.provider` | `""` | Search backend. `""` (the default) leaves web search **disabled**. There is no default provider. The only supported value today is `searxng`. |
+| `web_search.base_url` | `""` | **Required** when a provider is set. The search endpoint's base URL. May point either at the search provider directly or at an operator-run egress gateway that fronts it — transparent to Joe. |
+| `web_search.api_key` | `""` | Optional key. SearXNG normally needs none; when set it is sent as a bearer token. |
+
+When no provider is configured the `web_search` tool is **still offered to Joe** but every
+call returns a `no search backend configured` error — it is never silently hidden. A
+misconfigured backend (an unknown provider, or `searxng` without a `base_url`) fails the
+daemon at boot. Changing the backend requires a **restart**; there is no runtime switch.
+
+**SearXNG (recommended self-host backend).** [SearXNG](https://docs.searxng.org/) is a
+self-hostable, keyless metasearch engine. Point `base_url` at your instance and **enable
+JSON output** on it — SearXNG serves JSON only when `json` is listed under `search.formats`
+in its `settings.yml` (the default configuration omits it). Joe queries the instance's
+`/search` endpoint with `format=json` and reads each result's title, URL, and snippet.
+
+```yaml
+web_search:
+  provider: searxng
+  base_url: https://searxng.internal.example.com
+```
+
+**Keyed hosted providers** (e.g. Tavily, Brave) are a designed-for extension behind the
+same provider abstraction but are **not implemented yet**. When added, their keys will ride
+plain config/env like the LLM provider keys — not the component credential-reference model.
+
 ## Environment variables
 
 ### Config overrides
@@ -203,6 +243,9 @@ skills:
 | `JOE_SERVER_ADDRESS` | Overrides `server.address`. |
 | `JOE_API_KEY` | Sets the key of the reserved `server` service account (principal `svc:server`), creating it if absent. |
 | `JOE_DATABASE_DSN` | Overrides `database.dsn`. |
+| `JOE_WEBSEARCH_PROVIDER` | Overrides `web_search.provider`. |
+| `JOE_WEBSEARCH_BASE_URL` | Overrides `web_search.base_url`. |
+| `JOE_WEBSEARCH_API_KEY` | Overrides `web_search.api_key` (keep the key out of the config file). |
 
 ### Boot and process
 

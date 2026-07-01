@@ -57,6 +57,7 @@ import (
 	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/search"
 	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/sessionsweeper"
@@ -502,6 +503,26 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.Findings = findingsRepo
 	services.Warnings = warningsRepo
 	services.CaptainSvc = captainSvc
+	// Web search is a global, boot-only capability (not a component): resolve
+	// the configured SearchProvider once here from cfg.WebSearch and seal it
+	// into Services, where the user-task tool registry reads it for the
+	// web_search tool. NewProvider returns a nil provider when web search is
+	// unconfigured (inert — the tool stays advertised and returns a
+	// no-backend-configured tool-error), and an error only for a misconfigured
+	// backend (unknown provider, or SearXNG without a base_url), which is fatal
+	// at boot as an LLM misconfiguration is. Changing the backend requires a
+	// restart — there is no runtime swap surface.
+	searchProvider, err := search.NewProvider(cfg.WebSearch)
+	if err != nil {
+		slog.Error("failed to configure web search", "error", err)
+		return 1
+	}
+	services.WebSearch = searchProvider
+	if searchProvider != nil {
+		slog.Info("web search provider ready", "provider", cfg.WebSearch.Provider)
+	} else {
+		slog.Info("web search not configured (web_search tool advertised, reports no backend)")
+	}
 	defer services.Close()
 	slog.Info("core services ready", "graph_store", "sqlite", "adapters", len(adapterRegistry.List()))
 

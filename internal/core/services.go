@@ -23,6 +23,7 @@ import (
 	"github.com/jaimegago/joe/internal/readposture"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
+	"github.com/jaimegago/joe/internal/search"
 	"github.com/jaimegago/joe/internal/sessionarchive"
 	"github.com/jaimegago/joe/internal/sessionmodel"
 	"github.com/jaimegago/joe/internal/skills"
@@ -42,9 +43,16 @@ type CoreAgent interface {
 type Services struct {
 	Config *config.Config
 	LLM    llm.LLMAdapter
-	Graph  graph.GraphStore
-	Store  *store.Store
-	Agent  CoreAgent // Core Agent instance for control endpoints
+	// WebSearch is the boot-resolved web-search provider (global, boot-only
+	// capability — not a component). Resolved once in cmd/joe/server.go from
+	// cfg.WebSearch via search.NewProvider and threaded into the user-task
+	// tool registry's web_search tool. nil when web search is unconfigured, in
+	// which case the web_search tool stays advertised and returns a
+	// no-backend-configured tool-error (exposed-and-deny).
+	WebSearch search.Provider
+	Graph     graph.GraphStore
+	Store     *store.Store
+	Agent     CoreAgent // Core Agent instance for control endpoints
 	// WriteFloor is the boot-resolved, runtime-immutable write floor (D-0018).
 	// Resolved exactly once in cmd/joe/server.go from the panic state (sticky)
 	// and the JOE_MODE=observation env var, then stored here as the single
