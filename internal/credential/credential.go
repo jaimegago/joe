@@ -34,12 +34,6 @@ const (
 	// KindStatic is the static/env-var provider: the credential is a wrapped
 	// long-lived value. The degenerate case, not the base case.
 	KindStatic Kind = "static"
-	// KindKubeconfigExec is the kubeconfig-exec provider: the credential is the
-	// selected kubeconfig/context the adapter turns into a *rest.Config;
-	// client-go owns the refresh, Joe observes it. As of agent-identity-doc-02 no
-	// component type routes to it (kubernetes moved to KindStaticBearer); it is
-	// kept dead-but-present until the kubeconfig-exec provider package is removed.
-	KindKubeconfigExec Kind = "kubeconfig-exec"
 	// KindStaticBearer is the static-bearer provider: it resolves a long-lived
 	// bearer token from one of two locator sources — a named environment variable
 	// (call-time lookup, name-only stored) or the pod-mounted service-account
@@ -133,16 +127,6 @@ type Diagnostic struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// KubeSelection is the kubeconfig-exec means: the selected kubeconfig/context an
-// adapter turns into a *rest.Config. It is a pointer to a file plus a context
-// name, not credential material — but it is exposed only through the typed
-// accessor so the resolution surface stays uniform.
-type KubeSelection struct {
-	Kubeconfig string
-	Context    string
-	InCluster  bool
-}
-
 const redactedCredential = "[REDACTED CREDENTIAL]"
 
 // Credential is the non-serializable half of a resolution: the means the adapter
@@ -150,12 +134,11 @@ const redactedCredential = "[REDACTED CREDENTIAL]"
 // format path returns a fixed redacted constant, so it cannot leak into
 // responses, audit rows, errors, logs or prompt payloads (R3). The underlying
 // means is reachable ONLY through the typed accessors on Resolution
-// (StaticValue / KubeSelection / CapturedStderr).
+// (StaticValue / BearerToken / CapturedStderr).
 type Credential struct {
 	kind   Kind
-	static string        // KindStatic: the wrapped value; KindStaticBearer: the resolved bearer token
-	kube   KubeSelection // KindKubeconfigExec: the selected kubeconfig/context
-	stderr string        // captured exec-plugin stderr (human-facing accessor only)
+	static string // KindStatic: the wrapped value; KindStaticBearer/KindEntraExchange: the resolved bearer token
+	stderr string // captured provider stderr (human-facing accessor only; vestigial — see CapturedStderr)
 }
 
 // String returns the redacted constant. Never the credential.
@@ -196,16 +179,6 @@ func (r *Resolution) StaticValue() (string, bool) {
 	return r.cred.static, true
 }
 
-// KubeSelection returns the selected kubeconfig/context and true when this is a
-// kubeconfig-exec resolution. The adapter builds the *rest.Config from it; Joe
-// does not.
-func (r *Resolution) KubeSelection() (KubeSelection, bool) {
-	if r.cred.kind != KindKubeconfigExec {
-		return KubeSelection{}, false
-	}
-	return r.cred.kube, true
-}
-
 // BearerToken returns the resolved bearer token and true when this is a
 // bearer-bearing resolution (any Kind in bearerKinds: static-bearer or
 // entra-exchange today). This is the deliberate typed accessor the kubernetes
@@ -220,10 +193,13 @@ func (r *Resolution) BearerToken() (string, bool) {
 	return r.cred.static, true
 }
 
-// CapturedStderr returns the raw exec-plugin stderr captured on a kubeconfig-exec
-// mint failure. This is the deliberate human-facing "paste this" affordance — the
-// ONLY path to the captured text. It is never included in the diagnostic half or
-// any structured-log rendering.
+// CapturedStderr returns the raw provider stderr captured on a mint failure —
+// the deliberate human-facing "paste this" affordance, the ONLY path to the
+// captured text, never in the diagnostic half or any structured-log rendering.
+// VESTIGIAL as of agent-identity-doc-04: the kubeconfig-exec provider was the
+// only producer of captured stderr and has been deleted, so no provider sets it
+// today and this always returns "". The accessor and its admin/UI consumers are
+// left in place pending a separate teardown (docs/backlog/credential-stderr-surface-teardown.md).
 func (r *Resolution) CapturedStderr() string { return r.cred.stderr }
 
 // String renders the diagnostic half only — never the credential or stderr.

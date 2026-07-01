@@ -29,12 +29,6 @@ func presentLocators(req promoteComponentRequest) map[string]bool {
 	if req.EnvVar != "" {
 		p["env_var"] = true
 	}
-	if req.Kubeconfig != "" {
-		p["kubeconfig"] = true
-	}
-	if req.Context != "" {
-		p["context"] = true
-	}
 	if req.InCluster {
 		p["in_cluster"] = true
 	}
@@ -74,15 +68,7 @@ func TestPromotionRequirements_TableMatchesEnforcement(t *testing.T) {
 		{"static inline value rejected", credential.KindStatic, promoteComponentRequest{EnvVar: "TOK", Value: "secret"}, false},
 		{"static value-only rejected", credential.KindStatic, promoteComponentRequest{Value: "secret"}, false},
 		{"static missing env_var rejected", credential.KindStatic, promoteComponentRequest{}, false},
-		{"static kube-field contamination rejected", credential.KindStatic, promoteComponentRequest{EnvVar: "TOK", Kubeconfig: "/k"}, false},
-		// kubeconfig-exec
-		{"kexec in_cluster valid", credential.KindKubeconfigExec, promoteComponentRequest{InCluster: true}, true},
-		{"kexec kubeconfig valid", credential.KindKubeconfigExec, promoteComponentRequest{Kubeconfig: "/k"}, true},
-		// LIVE rule is at-least-one-of, NOT exactly-one — both set is accepted.
-		{"kexec both valid", credential.KindKubeconfigExec, promoteComponentRequest{InCluster: true, Kubeconfig: "/k"}, true},
-		{"kexec context-only rejected", credential.KindKubeconfigExec, promoteComponentRequest{Context: "ctx"}, false},
-		{"kexec neither rejected", credential.KindKubeconfigExec, promoteComponentRequest{}, false},
-		{"kexec static-field contamination rejected", credential.KindKubeconfigExec, promoteComponentRequest{InCluster: true, EnvVar: "TOK"}, false},
+		{"static in_cluster contamination rejected", credential.KindStatic, promoteComponentRequest{EnvVar: "TOK", InCluster: true}, false},
 		// static-bearer (kubernetes): coordinates + an env_var OR in_cluster token source.
 		{"bearer env_var valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK"}, true},
 		{"bearer in_cluster valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", InCluster: true}, true},
@@ -90,7 +76,6 @@ func TestPromotionRequirements_TableMatchesEnforcement(t *testing.T) {
 		{"bearer both sources valid", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", InCluster: true}, true},
 		{"bearer neither source rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443"}, false},
 		{"bearer inline value rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Value: "secret"}, false},
-		{"bearer kubeconfig contamination rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", Kubeconfig: "/k"}, false},
 		{"bearer entra contamination rejected", credential.KindStaticBearer, promoteComponentRequest{AuthMethod: "static-bearer", APIServer: "https://k8s:6443", EnvVar: "TOK", TenantID: "t"}, false},
 		// entra-exchange (kubernetes): coordinates + tenant/client/audience + a client-secret reference.
 		{"entra valid", credential.KindEntraExchange, promoteComponentRequest{AuthMethod: "entra-exchange", APIServer: "https://aks:443", TenantID: "t", ClientID: "c", Audience: "api://aks", ClientSecretEnvVar: "SECRET"}, true},

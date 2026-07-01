@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,9 +27,6 @@ func TestStaticProvider_ResolveInlineValue(t *testing.T) {
 	v, ok := res.StaticValue()
 	if !ok || v != "tok-abc" {
 		t.Fatalf("StaticValue = %q,%t", v, ok)
-	}
-	if _, ok := res.KubeSelection(); ok {
-		t.Fatalf("static resolution should not yield a kube selection")
 	}
 }
 
@@ -121,105 +115,6 @@ func TestStaticProvider_Describe(t *testing.T) {
 	}
 }
 
-// ----- kubeconfig-exec provider -----
-
-func TestKubeconfigExec_ResolveSelectsSource(t *testing.T) {
-	p := NewKubeconfigExecProvider()
-	cfg := json.RawMessage(`{"credential_provider":"kubeconfig-exec","kubeconfig":"/home/sre/.kube/config","context":"prod-eks","audience":"k8s"}`)
-	res, err := p.Resolve(context.Background(), "comp-k", cfg)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	// Resolve never contacts the backend: at most mint-succeeded.
-	if res.Diagnostic.Stage != StageMintSucceeded || !res.Diagnostic.OK {
-		t.Fatalf("want mint-succeeded/ok, got %s ok=%t", res.Diagnostic.Stage, res.Diagnostic.OK)
-	}
-	sel, ok := res.KubeSelection()
-	if !ok {
-		t.Fatalf("want a kube selection")
-	}
-	if sel.Kubeconfig != "/home/sre/.kube/config" || sel.Context != "prod-eks" {
-		t.Fatalf("selection = %+v", sel)
-	}
-	if _, ok := res.StaticValue(); ok {
-		t.Fatalf("kubeconfig-exec resolution must not yield a static value")
-	}
-}
-
-func TestKubeconfigExec_ProbeSuccess(t *testing.T) {
-	p := &KubeconfigExecProvider{prober: func(context.Context, KubeSelection) kubeProbeResult {
-		return kubeProbeResult{}
-	}}
-	res, _ := p.Resolve(context.Background(), "comp-k", json.RawMessage(`{"context":"prod"}`))
-	probed, err := p.Probe(context.Background(), res)
-	if err != nil {
-		t.Fatalf("Probe: %v", err)
-	}
-	if probed.Diagnostic.Stage != StageConnectivityProbed || !probed.Diagnostic.OK {
-		t.Fatalf("want connectivity-probed/ok, got %s ok=%t", probed.Diagnostic.Stage, probed.Diagnostic.OK)
-	}
-}
-
-func TestKubeconfigExec_ProbeMintFailureCapturesStderr(t *testing.T) {
-	const stderr = "exec: aws-iam-authenticator: could not reach IdP at 10.0.0.1"
-	p := &KubeconfigExecProvider{prober: func(context.Context, KubeSelection) kubeProbeResult {
-		return kubeProbeResult{stderr: stderr, err: errors.New("exec plugin failed")}
-	}}
-	res, _ := p.Resolve(context.Background(), "comp-k", json.RawMessage(`{"context":"prod"}`))
-	probed, err := p.Probe(context.Background(), res)
-	if err != nil {
-		t.Fatalf("Probe returned error, want staged failure: %v", err)
-	}
-	if probed.Diagnostic.OK {
-		t.Fatalf("want OK=false on exec failure")
-	}
-	if probed.Diagnostic.Stage != StageMintAttempted {
-		t.Fatalf("want generic mint-failed (stop at mint-attempted), got %s", probed.Diagnostic.Stage)
-	}
-	// The diagnostic reason is generic — never the raw stderr.
-	if strings.Contains(probed.Diagnostic.Reason, "aws-iam-authenticator") || probed.Diagnostic.Reason == "" {
-		t.Fatalf("reason must be generic and non-sensitive, got %q", probed.Diagnostic.Reason)
-	}
-	// The raw stderr is reachable ONLY through the deliberate accessor.
-	if got := probed.CapturedStderr(); got != stderr {
-		t.Fatalf("CapturedStderr = %q, want verbatim stderr", got)
-	}
-}
-
-// expandKubeconfigPath must resolve a tilde-prefixed path to the SAME absolute
-// path the k8s adapter would (D-0026 unit-1 Probe path-handling fix). The
-// adapter's expandPath computes filepath.Join(os.UserHomeDir(), rest) with no
-// filepath.Abs; this test recomputes that reference independently rather than a
-// live cluster, since Probe itself touches a backend.
-func TestExpandKubeconfigPath_TildeMatchesAdapter(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("cannot determine home directory: %v", err)
-	}
-
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{name: "tilde with subpath", in: "~/.kube/config", want: filepath.Join(home, ".kube/config")},
-		{name: "tilde only", in: "~", want: home},
-		{name: "absolute unchanged", in: "/etc/kubeconfig", want: "/etc/kubeconfig"},
-		{name: "relative unchanged", in: "configs/kube", want: "configs/kube"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := expandKubeconfigPath(tc.in)
-			if err != nil {
-				t.Fatalf("expandKubeconfigPath(%q): %v", tc.in, err)
-			}
-			if got != tc.want {
-				t.Fatalf("expandKubeconfigPath(%q) = %q, want %q (must match adapter expandPath)", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 // ----- selection / discriminator -----
 
 func TestSelect_DefaultsToStaticWhenDiscriminatorAbsent(t *testing.T) {
@@ -231,16 +126,6 @@ func TestSelect_DefaultsToStaticWhenDiscriminatorAbsent(t *testing.T) {
 		if _, ok := prov.(*StaticProvider); !ok {
 			t.Fatalf("Select(%s) = %T, want *StaticProvider", cfg, prov)
 		}
-	}
-}
-
-func TestSelect_PicksKubeconfigExec(t *testing.T) {
-	prov, err := Select(json.RawMessage(`{"credential_provider":"kubeconfig-exec"}`))
-	if err != nil {
-		t.Fatalf("Select: %v", err)
-	}
-	if _, ok := prov.(*KubeconfigExecProvider); !ok {
-		t.Fatalf("Select = %T, want *KubeconfigExecProvider", prov)
 	}
 }
 
@@ -298,13 +183,13 @@ func TestBreakCredentialHalfNeverLeaks(t *testing.T) {
 // future change sweeps stderr into the diagnostic or any log path.
 func TestBreakCapturedStderrNeverLeaks(t *testing.T) {
 	const sentinel = "S3NTINEL-stderr-Bearer-eyJhbGci-zzz"
-	p := &KubeconfigExecProvider{prober: func(context.Context, KubeSelection) kubeProbeResult {
-		return kubeProbeResult{stderr: sentinel, err: errors.New("exec plugin failed")}
-	}}
-	res, _ := p.Resolve(context.Background(), "comp-leak2", json.RawMessage(`{"context":"prod"}`))
-	probed, err := p.Probe(context.Background(), res)
-	if err != nil {
-		t.Fatalf("Probe: %v", err)
+	// The kubeconfig-exec provider that once set this field is gone
+	// (agent-identity-doc-04), but the captured-stderr field and its human-facing
+	// accessor remain (vestigial, pending teardown). Build the Resolution directly
+	// so the non-leak invariant stays pinned regardless of which provider produces it.
+	probed := &Resolution{
+		Diagnostic: Diagnostic{ComponentID: "comp-leak2", Stage: StageMintAttempted, OK: false},
+		cred:       Credential{stderr: sentinel},
 	}
 
 	// The human-facing accessor — the ONLY legitimate path — must return it.

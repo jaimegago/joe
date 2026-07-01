@@ -354,9 +354,9 @@ func TestPromote_RejectsMismatchedProvider(t *testing.T) {
 	f.markAdmin("user:alice")
 	registerComponent(t, f, "c-gh", "github", `{}`)
 
-	// github is static-wired; asking for kubeconfig-exec must be refused.
+	// github is static-wired; asking for a non-matching provider must be refused.
 	w := f.do(http.MethodPost, "/api/v1/components/c-gh/promote",
-		`{"credential_provider":"kubeconfig-exec","kubeconfig":"/x"}`, "user:alice")
+		`{"credential_provider":"vault-magic","env_var":"X"}`, "user:alice")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("mismatched provider: status=%d body=%s; want 400", w.Code, w.Body.String())
 	}

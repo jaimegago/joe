@@ -32,8 +32,8 @@ func validEnvSegment(s string) bool {
 
 // TestEnvPrefixSegments_CoverAllStaticWiredTypes is the coverage guard: every
 // KindStatic wired type MUST declare a prefix segment, and the map must declare a
-// segment for no NON-static-wired type (kubernetes is wired but kubeconfig-exec,
-// so it must have none). If a static wired type is added to wiring.go without a
+// segment for no NON-static-wired type (kubernetes is wired but static-bearer, so
+// it must have none). If a static wired type is added to wiring.go without a
 // segment here, this fails.
 func TestEnvPrefixSegments_CoverAllStaticWiredTypes(t *testing.T) {
 	wantStatic := map[string]bool{}
@@ -51,7 +51,7 @@ func TestEnvPrefixSegments_CoverAllStaticWiredTypes(t *testing.T) {
 		}
 	}
 	// Every declared segment belongs to a static wired type (no strays, no
-	// kubeconfig-exec or unwired types).
+	// static-bearer or unwired types).
 	for typ := range envPrefixSegments {
 		if !wantStatic[typ] {
 			t.Errorf("env prefix segment declared for %q, which is not a KindStatic wired type", typ)
@@ -174,20 +174,5 @@ func TestStaticAvailableReferences_UndeclaredTypeErrors(t *testing.T) {
 	p := staticWithEnviron([]string{"JOE_GITHUB_PROD=x"})
 	if _, err := p.AvailableReferences("datadog"); err == nil {
 		t.Fatalf("want error for a type with no declared env prefix segment")
-	}
-}
-
-// TestKubeconfigExecAvailableReferences_NotApplicable proves the kubeconfig-exec
-// provider answers honestly not-applicable with no candidates.
-func TestKubeconfigExecAvailableReferences_NotApplicable(t *testing.T) {
-	refs, err := NewKubeconfigExecProvider().AvailableReferences("kubernetes")
-	if err != nil {
-		t.Fatalf("AvailableReferences(kubernetes): %v", err)
-	}
-	if refs.Applicable {
-		t.Errorf("kubeconfig-exec references should be not-applicable")
-	}
-	if len(refs.Candidates) != 0 {
-		t.Errorf("kubeconfig-exec candidates = %+v; want empty", refs.Candidates)
 	}
 }

@@ -601,10 +601,8 @@ type promoteComponentRequest struct {
 	// static provider locators
 	EnvVar string `json:"env_var"`
 	Value  string `json:"value"`
-	// kubeconfig-exec provider locators (dead-but-present; no type routes here)
-	Kubeconfig string `json:"kubeconfig"`
-	Context    string `json:"context"`
-	InCluster  bool   `json:"in_cluster"`
+	// in_cluster is the static-bearer pod-mounted service-account token source.
+	InCluster bool `json:"in_cluster"`
 	// kubernetes static-bearer coordinates + discriminator (agent-identity-doc-02).
 	// in_cluster (above) doubles as the static-bearer in_cluster token source.
 	APIServer  string `json:"api_server"`
@@ -894,39 +892,17 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 		if req.EnvVar == "" {
 			return nil, nil, fmt.Errorf("static credential reference requires env_var (the environment variable the credential is read from)")
 		}
-		if req.Kubeconfig != "" || req.Context != "" || req.InCluster {
-			return nil, nil, fmt.Errorf("kubeconfig-exec locators are not valid for a static provider reference")
+		if req.InCluster {
+			return nil, nil, fmt.Errorf("in_cluster is not a valid locator for a static provider reference")
 		}
 		set("env_var", req.EnvVar)
 		locatorKeys = []string{"env_var"}
-	case credential.KindKubeconfigExec:
-		if req.Value != "" || req.EnvVar != "" {
-			return nil, nil, fmt.Errorf("static locators (value/env_var) are not valid for a kubeconfig-exec provider reference")
-		}
-		if !req.InCluster && req.Kubeconfig == "" {
-			return nil, nil, fmt.Errorf("kubeconfig-exec reference requires either in_cluster=true or a kubeconfig path")
-		}
-		if req.InCluster {
-			set("in_cluster", true)
-			locatorKeys = append(locatorKeys, "in_cluster")
-		}
-		if req.Kubeconfig != "" {
-			set("kubeconfig", req.Kubeconfig)
-			locatorKeys = append(locatorKeys, "kubeconfig")
-		}
-		if req.Context != "" {
-			set("context", req.Context)
-			locatorKeys = append(locatorKeys, "context")
-		}
 	case credential.KindStaticBearer:
 		// Kubernetes static-bearer (agent-identity-doc-02): cluster coordinates
 		// plus a bearer-token locator that is an env_var indirection OR the
-		// pod-mounted in_cluster token — never an inline secret, never a kubeconfig.
+		// pod-mounted in_cluster token — never an inline secret.
 		if req.Value != "" {
 			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; supply an env_var indirection or in_cluster=true (the armed record carries a reference, not a secret)")
-		}
-		if req.Kubeconfig != "" || req.Context != "" {
-			return nil, nil, fmt.Errorf("kubeconfig/context are not valid for a kubernetes static-bearer reference; supply api_server, ca_data, and a static-bearer token (env_var or in_cluster)")
 		}
 		if req.TenantID != "" || req.ClientID != "" || req.ClientSecretEnvVar != "" {
 			return nil, nil, fmt.Errorf("entra-exchange locators (tenant_id/client_id/client_secret_env_var) are not valid for a kubernetes static-bearer reference")
@@ -958,9 +934,6 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 		// legitimate); no inline secret, no static-bearer token source, no kubeconfig.
 		if req.Value != "" {
 			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; the Entra client secret is referenced via client_secret_env_var (the armed record carries a reference, not a secret)")
-		}
-		if req.Kubeconfig != "" || req.Context != "" {
-			return nil, nil, fmt.Errorf("kubeconfig/context are not valid for a kubernetes entra-exchange reference")
 		}
 		if req.EnvVar != "" || req.InCluster {
 			return nil, nil, fmt.Errorf("static-bearer token sources (env_var/in_cluster) are not valid for a kubernetes entra-exchange reference; the bearer token is minted, supply tenant_id, client_id, audience and client_secret_env_var")

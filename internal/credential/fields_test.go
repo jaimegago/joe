@@ -9,23 +9,22 @@ import (
 // exactly the discriminator plus the wired providers' secret/locator fields, with
 // the non-credential "audience" descriptor excluded. It is the break-test for the
 // D-0029 seam closure: adding a new authentication field to a provider config
-// struct (staticConfig, kubeconfigExecConfig, staticBearerConfig, entraExchangeConfig,
-// discriminator) changes CredentialBearingFields() and fails this test, forcing a
+// struct (staticConfig, staticBearerConfig, entraExchangeConfig, discriminator)
+// changes CredentialBearingFields() and fails this test, forcing a
 // conscious decision — admit it to the set, or exclude it via
 // nonCredentialConfigFields. Either way the rejected-field list cannot silently
 // drift from the structs that parse it. The entra-exchange locators
 // (client_id/client_secret_env_var/federated_token_file/tenant_id) are admitted:
-// they enter only at promotion and are cleared on re-promote.
+// they enter only at promotion and are cleared on re-promote. The kubeconfig/context
+// locators left the set with the kubeconfig-exec provider (agent-identity-doc-04).
 func TestCredentialBearingFields_ExactSet(t *testing.T) {
 	want := []string{
 		"client_id",
 		"client_secret_env_var",
-		"context",
 		"credential_provider",
 		"env_var",
 		"federated_token_file",
 		"in_cluster",
-		"kubeconfig",
 		"tenant_id",
 		"value",
 	}
@@ -36,7 +35,7 @@ func TestCredentialBearingFields_ExactSet(t *testing.T) {
 }
 
 // TestCredentialBearingFields_ExcludesAudience guards the one deliberate
-// exclusion: "audience" is json-tagged on staticConfig and kubeconfigExecConfig
+// exclusion: "audience" is json-tagged on staticConfig and entraExchangeConfig
 // but is descriptive, not authentication, so it must NOT appear in the set — a
 // component may legitimately carry an audience at registration.
 func TestCredentialBearingFields_ExcludesAudience(t *testing.T) {

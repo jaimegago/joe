@@ -134,9 +134,9 @@ func (p *StaticBearerProvider) Describe(config json.RawMessage) (Descriptor, err
 // AvailableReferences is not-applicable for the static-bearer provider: its
 // env_var source is a free-form operator-chosen name (kubernetes has no
 // JOE_<SEGMENT>_ enumeration prefix) and its in_cluster source is a fixed mount,
-// so neither is an enumerable candidate set. Like the kubeconfig-exec provider it
-// reports Applicable=false; the picker renders the locator form (an env-var name
-// field or an in-cluster choice) instead of a candidate list.
+// so neither is an enumerable candidate set. It reports Applicable=false; the
+// picker renders the locator form (an env-var name field or an in-cluster choice)
+// instead of a candidate list.
 func (p *StaticBearerProvider) AvailableReferences(_ string) (References, error) {
 	return References{Applicable: false, Candidates: []Candidate{}}, nil
 }

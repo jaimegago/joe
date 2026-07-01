@@ -35,13 +35,13 @@ func componentCount(t *testing.T, f *llmadminFixture, id string) int {
 // bearing field class is REJECTED (not silently stripped) at registration, and
 // that a credential-less routing config is ACCEPTED. One sub-test per field
 // class derived from the credential providers (static value/env_var, the
-// credential_provider discriminator, a kubeconfig-exec locator).
+// credential_provider discriminator, an entra-exchange locator).
 func TestCreateComponent_RejectsCredentialFields(t *testing.T) {
 	rejected := map[string]string{
 		"static_value":        `{"value":"super-secret-token"}`,
 		"static_env_var":      `{"env_var":"AWS_SECRET_ACCESS_KEY"}`,
 		"credential_provider": `{"credential_provider":"static"}`,
-		"kubeconfig_locator":  `{"kubeconfig":"/etc/kube/config"}`,
+		"entra_client_secret": `{"client_secret_env_var":"AKS_CLIENT_SECRET"}`,
 	}
 	for name, cfg := range rejected {
 		t.Run("rejects/"+name, func(t *testing.T) {

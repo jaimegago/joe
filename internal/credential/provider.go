@@ -36,8 +36,8 @@ type Provider interface {
 	// provider enumerates the process environment scoped to the type's
 	// JOE_<SEGMENT>_ prefix, returning each match as a {label, env_var_name}
 	// candidate (NAMES ONLY — never a value, never the environment at large). A
-	// provider whose reference is not an enumerable set (kubeconfig-exec: a file
-	// path) returns Applicable=false with no candidates. It takes componentType —
+	// provider whose reference is not an enumerable set returns Applicable=false
+	// with no candidates. It takes componentType —
 	// not config — because the answer is type-scoped, not config-scoped, and it
 	// needs no store handle: the caller resolves the type and hands it in. This is
 	// the seam that lets a future DB/external-manager provider answer the same
@@ -96,8 +96,6 @@ func ProviderForKind(kind Kind) (Provider, error) {
 	switch kind {
 	case KindStatic:
 		return NewStaticProvider(), nil
-	case KindKubeconfigExec:
-		return NewKubeconfigExecProvider(), nil
 	case KindStaticBearer:
 		return NewStaticBearerProvider(), nil
 	case KindEntraExchange:

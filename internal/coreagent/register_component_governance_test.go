@@ -26,7 +26,7 @@ func TestRegisterComponentTool_RejectsCredentialFields(t *testing.T) {
 		"static_value":        {"value": "super-secret"},
 		"static_env_var":      {"env_var": "AWS_SECRET_ACCESS_KEY"},
 		"credential_provider": {"credential_provider": "static"},
-		"kubeconfig_locator":  {"kubeconfig": "/etc/kube/config"},
+		"entra_client_secret": {"client_secret_env_var": "AKS_CLIENT_SECRET"},
 	}
 	for name, cfg := range cases {
 		t.Run(name, func(t *testing.T) {
