@@ -10,6 +10,17 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0068 — The `system_info` shared tool is removed; Joe's shared diagnostic tools are outward network probes only, and remote-host OS stats are deferred to a future component type
+
+- Date: 2026-07-02
+- Status: accepted (implemented)
+- Session: sysinfo-tool-removal
+- Decision: The `system_info` shared tool and its package are **deleted entirely** — the `internal/tools/shared/sysinfo` package (platform readers plus test), its import and registration in `internal/tools/default.go`, its classifier row in `internal/safety/tier.go`, and its entry in the registration pin-test in `internal/tools/default_test.go` (the shared set now pins to six tools: `tcp_connect`, `port_scan`, `dns_lookup`, `http_request`, `trace_route`, `web_search`). `system_info` was the one shared diagnostic that inspected the **host Joe itself runs on** (disk, memory, load, OS) rather than probing outward from Joe's network position; it had **no target parameter** and could only ever report on the daemon's own machine, which contradicts Joe's capability story — Joe inspects the *managed systems it is pointed at*, not the box it is deployed on. The remaining shared tools are therefore **outward network diagnostics only** (connectivity, port, DNS, path) plus the compose-with HTTP fetch and web search; none reads the local host. The legitimate want it gestured at — OS-level stats of a *remote managed host* — is **deferred to a future component type** (SSH-reachable host or node agent), recorded in `docs/backlog/remote-host-diagnostics.md`, with the constraints that a shell transport is Mutate-capable by construction and would need a severely constrained read-only surface to classify honestly as a Read, and that Kubernetes node stats already have a governed path through the `kubernetes` component. Not a shared-tool retrofit.
+- Basis: Phase-1 re-derivation against the live tree (`sysinfo-tool-removal` session): package `internal/tools/shared/sysinfo/` (5 files including `sysinfo.go` and `sysinfo_test.go`); import at `internal/tools/default.go:10` and registration at `internal/tools/default.go:30`; classifier row `"system_info"` at `internal/safety/tier.go:110`; expected-registered-set entry at `internal/tools/default_test.go:66`; capabilities prose ("report local system stats (disk, memory, load, OS)") at `docs/public/concepts/capabilities.md:30`; shared-tree listing at `docs/reference/joe-architecture.md:313-314`. No reference to the tool name or package survives anywhere in Go, prompts, UI, or config after removal (only DECISIONS.md history and the new backlog file name it). `golang.org/x/sys` reclassified direct→indirect by `go mod tidy` since only the sysinfo readers used it. `go build`, `go vet`, `gofmt -l`, and full `go test ./...` all pass post-removal.
+- Supersedes: narratively updates the D-0064 sibling list (which named `sysinfo` alongside `dnsquery`/`httpreq`/`netcheck`/`traceroute` as Go-native shared tools) and the D-0066 capabilities-page prose (which described built-in tools as reporting local system stats). Both entries remain unedited as append-only history; this entry states the current position where they now read stale.
+
+---
+
 ## D-0067 — Joe will not act as an MCP client (consume external MCP servers' tools); the protocol's lack of an enforceable tool mutation classification is incompatible with the observe-mode guarantee
 
 - Date: 2026-07-01

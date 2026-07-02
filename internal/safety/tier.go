@@ -107,7 +107,6 @@ var toolRegistry = map[string]ToolClassification{
 	"port_scan":    {Class: ActionRead, Description: "Scan multiple ports on a host"},
 	"dns_lookup":   {Class: ActionRead, Description: "Resolve DNS records for a hostname"},
 	"http_request": {Class: ActionRead, Description: "Probe an HTTP/HTTPS endpoint"},
-	"system_info":  {Class: ActionRead, Description: "Return system stats: disk, memory, load, OS"},
 	"trace_route":  {Class: ActionRead, Description: "Trace network path to a host (hop-by-hop)"},
 	// web_search discovers URLs via the operator-configured search engine; it
 	// mutates no managed system, so it is a Read and passes the write floor

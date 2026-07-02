@@ -311,7 +311,7 @@ Location: internal/tools/
   registry.go   Tool registration
   core/         Core tools — reach the server API via internal/client/
   shared/       Go-native diagnostic tools (dnsquery, httpreq, netcheck,
-                sysinfo, traceroute)
+                traceroute)
 ```
 
 The executor classifies each tool (Read/Mutate) and runs the ordered gate: write floor → zone/component scope → namespace scope → safety policy → pre-execution notification (Mutate only) → execute → post-execution notification (Mutate only). See [`docs/reference/security-in-layers.md`](security-in-layers.md) §3.3.
