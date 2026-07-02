@@ -25,9 +25,10 @@ those pages are about the rules applied to it.
 The first class needs nothing registered. Joe ships with a set of component-independent
 diagnostic tools that run in-process and work from wherever the daemon runs:
 
-- **Network and system diagnostics** — check TCP connectivity to a host and port, scan a
-  range of ports, resolve DNS records for a name, trace the network path to a host
-  hop-by-hop, and report local system stats (disk, memory, load, OS).
+- **Network diagnostics** — probe outward from wherever the daemon runs: check TCP
+  connectivity to a host and port, scan a range of ports, resolve DNS records for a name,
+  and trace the network path to a host hop-by-hop. These inspect other systems from Joe's
+  network vantage point; none of them read or change the host Joe itself runs on.
 - **An HTTP fetch** — retrieve an HTTP or HTTPS URL the model *already holds* and return
   its status, headers, and a snippet of the body. It is deliberately restricted to the
   safe methods `GET` and `HEAD`; a request using any mutating method is refused. It is a

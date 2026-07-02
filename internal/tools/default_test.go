@@ -63,7 +63,6 @@ func TestNewCoreRegistry(t *testing.T) {
 		"port_scan":    true,
 		"dns_lookup":   true,
 		"http_request": true,
-		"system_info":  true,
 		"trace_route":  true,
 		"web_search":   true,
 		// Core tools (call joecored API)

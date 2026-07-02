@@ -7,7 +7,6 @@ import (
 	"github.com/jaimegago/joe/internal/tools/shared/dnsquery"
 	"github.com/jaimegago/joe/internal/tools/shared/httpreq"
 	"github.com/jaimegago/joe/internal/tools/shared/netcheck"
-	"github.com/jaimegago/joe/internal/tools/shared/sysinfo"
 	"github.com/jaimegago/joe/internal/tools/shared/traceroute"
 	"github.com/jaimegago/joe/internal/tools/shared/websearch"
 )
@@ -27,7 +26,6 @@ func registerSharedTools(registry *Registry, searchProvider search.Provider) {
 	registry.Register(netcheck.NewPortScanTool())
 	registry.Register(dnsquery.NewDNSLookupTool())
 	registry.Register(httpreq.NewHTTPRequestTool())
-	registry.Register(sysinfo.NewSystemInfoTool())
 	registry.Register(traceroute.NewTraceRouteTool())
 	registry.Register(websearch.NewWebSearchTool(searchProvider))
 }
