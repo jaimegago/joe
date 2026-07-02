@@ -29,12 +29,12 @@ credential, never the secret itself, and Joe never ingests a human's kubeconfig.
 This page covers **Kubernetes only**. Other component types follow the same register →
 promote → activate spine but differ in their credential mechanism and activation path
 (some come live only at the next daemon restart). They are documented separately — see
-[Integrations](../integrations/) for the per-type routing index, and the sibling
+[Components](../components/) for the per-type routing index, and the sibling
 how-to pages as they are added.
 
 For *why* the lifecycle is split the way it is — inert registration, governed promotion,
 and credentials held as references rather than stored secrets — see
-[Components and promotion](../concepts/components-and-promotion/).
+[The component lifecycle](../concepts/component-lifecycle/).
 
 ## Before you start
 
@@ -53,7 +53,7 @@ and credentials held as references rather than stored secrets — see
     app registration's client secret.
 
   You supply a *reference* to the credential during promotion — never the credential
-  contents. See [Components and promotion](../concepts/components-and-promotion/) for why.
+  contents. See [The component lifecycle](../concepts/component-lifecycle/) for why.
 
 ## Step 1 — Open the Components page
 
@@ -197,7 +197,7 @@ target path under `images/guides/register-kubernetes/`:
 ## Where to go next
 
 - The per-type routing index, including which types come live at runtime versus only at
-  the next daemon restart → [Integrations](../integrations/)
+  the next daemon restart → [Components](../components/)
 - Why registration and promotion are two separate, governed steps →
-  [Components and promotion](../concepts/components-and-promotion/)
+  [The component lifecycle](../concepts/component-lifecycle/)
 - Zones and who may read a component → [RBAC, zones, and read posture](../concepts/rbac-zones-and-read-posture/)

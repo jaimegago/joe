@@ -1,10 +1,10 @@
 ---
-title: Integrations
+title: Components
 weight: 60
 description: The systems Joe connects to.
 ---
 
-# Integrations
+# Components
 
 This section is the practical guide to connecting Joe to the systems it manages. Every
 system follows the same first three steps — **register, then promote, then arm** — but the
@@ -14,7 +14,7 @@ documents the shared flow once, flags which activation path each type takes, the
 per-type credential mechanism for each system you can connect today.
 
 For the *why* behind the two-step lifecycle, read
-[Components and promotion](../concepts/components-and-promotion/). For the configuration
+[The component lifecycle](../concepts/component-lifecycle/). For the configuration
 of credential references, see [Configuration](../configuration/). All the endpoints below
 are admin-gated; authenticate with a service-account bearer key (see
 [Install and Build](../install-and-build/)).
@@ -260,6 +260,6 @@ path, or have no usable adapter. Do not rely on them yet.
 
 ## Where to go next
 
-- Why registration and promotion are split → [Components and promotion](../concepts/components-and-promotion/)
+- Why registration and promotion are split → [The component lifecycle](../concepts/component-lifecycle/)
 - Credential references and the full environment surface → [Configuration](../configuration/)
 - Running and observing Joe → [Operations](../operations/)

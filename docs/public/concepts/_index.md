@@ -24,7 +24,7 @@ rest depend on.
   named and authenticated.
 - [RBAC, zones, and the read posture](rbac-zones-and-read-posture/) — how
   authorization is grouped and how read breadth is chosen.
-- [Components and promotion](components-and-promotion/) — the registered-system entity
+- [The component lifecycle](component-lifecycle/) — the registered-system entity
   and the single governed path that arms it.
 - [The agent loop and autonomy levels](agent-loop-and-autonomy/) — the interactive
   and background loops, and how autonomous Joe really is today.
@@ -34,5 +34,5 @@ rest depend on.
   posture.
 - [The knowledge graph](knowledge-graph/) — components, relationships, and how
   observability backends are resolved.
-- [Capabilities](capabilities/) — the full surface of what Joe can do, and why all of
-  it is reading rather than changing your systems.
+- [The action model](action-model/) — the full surface of what Joe can do, how every
+  action is classified Read or Mutate, and how each class is governed.

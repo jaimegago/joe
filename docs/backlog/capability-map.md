@@ -1,12 +1,16 @@
 Capability-map Concepts page — deferred follow-ups
 Status: open
 
-The public Concepts "Capabilities" page shipped in session `capability-map` (D-0066): a
-single explanation page mapping Joe's full capability surface around the "every capability
-is a Read" spine, with observation mode presented as an available posture rather than the
-boot default. The web_search narrative moved out of Configuration (which now carries keys
-plus a cross-link). The following threads are deliberately deferred and keep this item
-open.
+The public Concepts capability page shipped in session `capability-map` (D-0066): a
+single explanation page mapping Joe's full capability surface, with observation mode
+presented as an available posture rather than the boot default and the web_search
+narrative moved out of Configuration (which now carries keys plus a cross-link). The
+`docs-public-refit` session (D-0069) reworked that page's spine — it is no longer "every
+capability is a Read"; the page is now `concepts/action-model.md`, titled "The action
+model", built around the binary Read/Mutate classification and documenting the shipped
+external-collaboration mutation surface. The read-surface inventory, web_search
+placement, and observe-mode available-not-default stance survive that rework. The
+following threads are deliberately deferred and keep this item open.
 
 ## Deferred items
 
@@ -21,12 +25,12 @@ open.
   the write floor defaults DOWN today (D-0018 impl note; `ResolveWriteFloor` returns a
   down floor when neither panic nor `JOE_MODE=observation` is set). D-0019 (default
   observation) is still pending. If/when the boot default is changed to observation, the
-  Capabilities page, the Overview page, and the observation-mode Concepts page should be
+  action-model page, the Overview page, and the observation-mode Concepts page should be
   upgraded from "can run read-only" to "boots read-only by default."
 
-- **Document keyed search providers (Tavily, Brave) when added.** The Capabilities page and
+- **Document keyed search providers (Tavily, Brave) when added.** The action-model page and
   the Configuration keys currently describe SearXNG as the only implemented web-search
   backend. When keyed hosted providers land (tracked as an implementation item in
-  `web-search-tool.md`), the Capabilities narrative and the Configuration `web_search`
+  `web-search-tool.md`), the action-model narrative and the Configuration `web_search`
   keys should be extended to name them. This is the documentation half of that deferred
   feature; the code half stays in `web-search-tool.md`.

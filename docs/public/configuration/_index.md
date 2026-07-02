@@ -199,8 +199,8 @@ web_search:                           # optional; web search is inert until a pr
 ### `web_search`
 
 Web search is a global, boot-resolved capability shared by every chat session. What it
-does and how it fits Joe's read-only tool surface is explained in
-[Capabilities](../concepts/capabilities/); the keys are below.
+does and how it is classified as a Read on Joe's action surface is explained in
+[The action model](../concepts/action-model/); the keys are below.
 
 | Key | Default | Effect |
 | --- | --- | --- |
@@ -293,7 +293,7 @@ A static (env-var) credential reference for a component is an environment variab
 named `JOE_<SEGMENT>_<LABEL>`, where `<SEGMENT>` is the component type's fixed prefix
 segment and `<LABEL>` is your choice (e.g. `PROD`, `STAGING`). For example, a GitHub
 component references `JOE_GITHUB_PROD`. The segments are defined for the static
-credential types listed in [Integrations](../integrations/). The credential value lives
+credential types listed in [Components](../components/). The credential value lives
 only in that environment variable; promotion stores the variable *name*, never the value.
 
 ## Provider configuration
@@ -324,5 +324,5 @@ binary today. They are documented here so they are not mistaken for operative kn
 
 - A guided first run → [Quickstart](../quickstart/)
 - Build and run the daemon, and the full authentication posture → [Install and Build](../install-and-build/)
-- Connect Joe to your systems → [Integrations](../integrations/)
+- Connect Joe to your systems → [Components](../components/)
 - Why Joe is governed by construction → [Concepts](../concepts/)

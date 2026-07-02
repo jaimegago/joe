@@ -6,8 +6,8 @@ description: What Joe is, and the one structural guarantee everything else rests
 
 # Overview
 
-Joe is an AI infrastructure copilot for platform engineers. A single binary, `joe`,
-runs an HTTP daemon that discovers your infrastructure, builds a graph of its
+Joe is a self-hosted, open-source AI agent for your infrastructure. A single binary, `joe`,
+runs as a long-lived daemon that discovers your infrastructure, builds a graph of its
 components and their relationships, and answers questions about it through an agentic
 loop. When — and only when — an operator deliberately allows it, Joe can also act on
 that infrastructure. Joe is provider-agnostic across LLMs and reaches your systems
@@ -53,6 +53,6 @@ to it.
 - Want to understand *why* it works this way? → [Concepts](../concepts/)
 - Building the binary from source? → [Install and Build](../install-and-build/)
 - Configuring the daemon? → [Configuration](../configuration/)
-- Connecting it to your systems? → [Integrations](../integrations/)
+- Connecting it to your systems? → [Components](../components/)
 - Running and recovering it in production? → [Operations](../operations/)
 - Looking for the HTTP surface? → [API Reference](../api-reference/)

@@ -363,8 +363,8 @@ A component is a registered external system. Listing and reading types is
 **authenticated**; registering, deleting, inspecting promotion, and promoting are
 **admin-gated**. Registration accepts no credential material — a component is armed
 later by promotion, which stores a credential *reference* (an env-var name), never a
-secret value. See [Components and promotion](../concepts/components-and-promotion/) and
-[Integrations](../integrations/).
+secret value. See [The component lifecycle](../concepts/component-lifecycle/) and
+[Components](../components/).
 
 ### `GET /api/v1/component-types`
 

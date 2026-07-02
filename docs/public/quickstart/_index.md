@@ -130,7 +130,7 @@ curl -s http://localhost:7777/api/v1/tasks \
 
 Joe runs a full agentic turn and returns a JSON response; the answer is in the
 `final_answer` field. It answers from the live cluster — still read-only, because the
-write floor is up. You have gone from an empty install to a governed copilot reading real
+write floor is up. You have gone from an empty install to a governed agent reading real
 infrastructure, exercising the whole path end to end: identity, the LLM, the agent loop,
 and a live component read.
 
@@ -151,6 +151,6 @@ and a live component read.
 - The full build, run, and authentication procedure (including OIDC login for humans
   and the admin bootstrap) → [Install and Build](../install-and-build/)
 - Every configuration key and environment variable → [Configuration](../configuration/)
-- Register the other system types Joe supports → [Integrations](../integrations/)
+- Register the other system types Joe supports → [Components](../components/)
 - The full Kubernetes register-and-promote walkthrough → [Register a Kubernetes component](../guides/register-kubernetes/)
 - Understand observation mode, principals, and governance → [Concepts](../concepts/)

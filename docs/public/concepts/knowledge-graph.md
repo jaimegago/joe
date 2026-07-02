@@ -7,7 +7,7 @@ description: Components, relationships, and how observability backends are resol
 # The knowledge graph
 
 At Joe's center is a **graph** of your infrastructure. The nodes are
-[components](../components-and-promotion/) — the external systems Joe has registered — and
+[components](../component-lifecycle/) — the external systems Joe has registered — and
 the edges are the relationships between them. The graph is persisted locally
 (SQLite-backed), and it is what gives Joe a model of your environment to reason over
 rather than treating every question as a blank slate.
@@ -46,5 +46,5 @@ self-maintenance can keep the graph fresh without eroding the things a human
 deliberately asserted.
 
 For connecting the systems that become components and their backends, see
-[Integrations](../../integrations/); for working with the graph through Joe, see
+[Components](../../components/); for working with the graph through Joe, see
 [Guides](../../guides/).
