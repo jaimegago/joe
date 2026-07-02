@@ -20,7 +20,7 @@ binary. For the *why* behind any of these, the pages link back to
 - [Register a Kubernetes component](register-kubernetes/) — bring a cluster under Joe's
   management through the UI: register it inert, promote it with a static-bearer reference,
   and take it live. Other component types are covered separately; see
-  [Integrations](../integrations/) for the per-type routing.
+  [Components](../components/) for the per-type routing.
 - [Chat sessions](chat-sessions/) — create a session, who can read it, and link one
   to an incident.
 - [The incident regime](incidents/) — declare and resolve an incident, and what the
@@ -28,7 +28,7 @@ binary. For the *why* behind any of these, the pages link back to
 - [Skills](skills/) — install, approve, and manage Agent Skills from the `joe skills`
   subcommand.
 - [The MCP server](mcp/) — connect an editor or other MCP client and the tool surface
-  Joe exposes. This is the page the [Integrations](../integrations/) section points to.
+  Joe exposes. This is the page the [Components](../components/) section points to.
 - [The Slack bot](slack/) — bring up `joe slack` as a Socket Mode daemon client.
 - [The knowledge graph](knowledge-graph/) — query the graph and understand how it
   populates.

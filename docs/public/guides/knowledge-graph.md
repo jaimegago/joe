@@ -34,7 +34,7 @@ curl -s "http://localhost:7777/api/v1/graph/query?q=payment-svc" \
 You do not hand-author the graph node by node. It fills from two places:
 
 - **Components you register.** Registering a managed system (the
-  register → promote flow in [Integrations](../integrations/)) puts it under Joe's
+  register → promote flow in [Components](../components/)) puts it under Joe's
   management. Registration alone is inert; once a component is promoted and armed, Joe's
   autonomous refresh cycle connects to it.
 - **Autonomous discovery.** The refresh cycle reads each armed component, discovers the
@@ -54,7 +54,7 @@ resolve their backend by following the matching edge from the named service, the
 translate and run the query against whatever system that edge points to. The MCP tools
 `joe_metrics`, `joe_logs`, `joe_traces`, `joe_alerts`, and `joe_k8s` are the same surface
 from an editor. Connect the backing systems and wire their edges through
-[Integrations](../integrations/) and these resolve automatically.
+[Components](../components/) and these resolve automatically.
 
 ## Curated versus derived knowledge
 
@@ -76,5 +76,5 @@ will mislead.
 ## Where to go next
 
 - The model behind the graph and its knowledge tiers → [The knowledge graph](../concepts/knowledge-graph/)
-- Connecting the systems that populate it → [Integrations](../integrations/)
-- Promotion: why registering a component is inert until armed → [Components and promotion](../concepts/components-and-promotion/)
+- Connecting the systems that populate it → [Components](../components/)
+- Promotion: why registering a component is inert until armed → [The component lifecycle](../concepts/component-lifecycle/)

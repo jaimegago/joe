@@ -163,6 +163,6 @@ for the full model.
 
 - A guided, guaranteed-success first run → [Quickstart](../quickstart/)
 - Every configuration key, default, and environment variable → [Configuration](../configuration/)
-- Connecting Joe to your systems → [Integrations](../integrations/)
+- Connecting Joe to your systems → [Components](../components/)
 - Running, observing, and recovering Joe in production → [Operations](../operations/)
 - Why Joe is governed by construction → [Concepts](../concepts/)

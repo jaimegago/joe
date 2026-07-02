@@ -1,10 +1,10 @@
 ---
-title: Components and promotion
+title: The component lifecycle
 weight: 50
 description: The registered-system entity and the single governed path that arms it.
 ---
 
-# Components and promotion
+# The component lifecycle
 
 A **component** is Joe's name for a registered external system — a Kubernetes
 cluster, a Prometheus, a GitHub org, a Grafana, and so on. Components are the nodes of
@@ -58,5 +58,5 @@ floor](../observation-mode-and-the-write-floor/): the capable, dangerous state i
 the default and is only reached by an explicit, recorded decision.
 
 For *which* component types exist and how to connect each, see
-[Integrations](../../integrations/); for the configuration of credential references,
+[Components](../../components/); for the configuration of credential references,
 see [Configuration](../../configuration/).
