@@ -154,8 +154,8 @@ floor](../concepts/observation-mode-and-the-write-floor/).
 The floor is resolved once at boot from two inputs and then sealed for the life of the
 process:
 
-- **Observation mode** — booting with `JOE_MODE=observation` raises the floor as a
-  deliberate read-only posture.
+- **Observation mode** — Joe's default read-only posture. The floor comes up when
+  `JOE_MODE` is unset and, explicitly, with `JOE_MODE=observation`.
 - **A sticky panic** — a panic recorded in the database (the single `cluster_panic_state`
   row) raises the floor on every subsequent boot until it is cleared. A panic wins over
   everything: it holds the floor up regardless of the mode setting.
@@ -192,8 +192,10 @@ down-transition.
 
 ### Recovering
 
-Two conditions are independently necessary for Joe to come back up able to write, and
-neither is sufficient alone:
+Recovery has one step you take now and a second that is forthcoming. Clearing the panic
+returns Joe to its **normal observation (read-only) posture**; coming back up *able to
+write* is not reachable today and will apply under the governed full-capabilities mode.
+Neither condition is sufficient alone:
 
 1. **Acknowledge the panic.** On the host where Joe runs, clear the sticky panic row
    with the local CLI:
@@ -211,18 +213,25 @@ neither is sufficient alone:
    panic exit) or while a sealed-floor Joe is still up — either way it changes nothing
    until restart.
 
-2. **Arm writes.** Make sure no *other* read-only posture will hold the floor up on the
-   next boot — in particular, that Joe is not started with `JOE_MODE=observation`.
-   Clearing the panic does nothing if the daemon comes back up in observation mode, and
-   leaving observation mode does nothing while the panic row is still set.
+2. **Arm writes (forthcoming).** Coming back up *able to write* is not something a
+   restart can do today: Joe's shipped default is observation, so clearing the panic
+   returns Joe to the read-only observation posture rather than a writable one. When the
+   governed full-capabilities mode lands, this is the step where you would ensure no
+   *other* read-only posture holds the floor up on the next boot — clearing the panic
+   would do nothing if the daemon still came up in observation mode, and leaving
+   observation mode would do nothing while the panic row is still set. Until then,
+   recovery ends at the observation posture.
 
-Then restart Joe. The floor re-resolves from the now-clear row and the current mode,
-and comes down only when both conditions hold.
+Then restart Joe. The floor re-resolves from the now-clear row and the current mode. With
+the panic cleared, Joe returns to its observation (read-only) posture; the floor will come
+down only under the forthcoming full-capabilities mode, once both conditions above can be
+met.
 
-One more layer sits above the floor: even with the floor down, individual mutating
-actions remain **denied by default**. Each must be opted in under the `act` section of
-the safety policy before Joe will run it. Clearing a panic restores the *ability* to
-mutate; it does not by itself arm any specific write. See [Governed
+One more layer sits above the floor: even once the floor is down under full mode,
+individual mutating actions remain **denied by default**. Each must be opted in under the
+`act` section of the safety policy before Joe will run it. Bringing the floor down
+restores only the *ability* to mutate; it does not by itself arm any specific write. See
+[Governed
 safety](../concepts/governed-safety/) for the action-safety model and
 [Configuration](../configuration/) for the policy file.
 

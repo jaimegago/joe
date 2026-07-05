@@ -225,7 +225,7 @@ plain config/env like the LLM provider keys — not the component credential-ref
 | Variable | Effect |
 | --- | --- |
 | `JOE_CONFIG` | Config file path; below `--config`, above `~/.joe/config.yaml`. |
-| `JOE_MODE` | `observation` raises the write floor at boot (read-only posture). Any other value leaves it down. |
+| `JOE_MODE` | Unset or `observation` raises the write floor at boot (read-only posture — the default). `full` is refused at boot (governed full-capabilities mode is not yet implemented); any unrecognized value is refused fail-closed. |
 
 ### Provider API keys
 

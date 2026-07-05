@@ -103,8 +103,11 @@ Response `200`:
 { "can_mutate": false, "reason": "observation" }
 ```
 
-`reason` is always one of `full` (floor down, mutates permitted subject to RBAC),
-`observation` (booted into observation mode), or `safe_mode` (panic recovery). See
+`reason` is one of `full` (floor down, mutates permitted subject to RBAC),
+`observation` (booted into observation mode), or `safe_mode` (panic recovery). The
+`full` value is part of the enum but is **not currently returned** — the governed
+full-capabilities mode that brings the floor down is not yet implemented, so a shipped
+Joe reports `observation` or `safe_mode`. See
 [Observation mode and the write floor](../concepts/observation-mode-and-the-write-floor/).
 
 ### `POST /api/v1/panic`
