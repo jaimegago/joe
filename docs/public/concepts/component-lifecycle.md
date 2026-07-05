@@ -2,6 +2,8 @@
 title: The component lifecycle
 weight: 50
 description: The registered-system entity and the single governed path that arms it.
+aliases:
+  - /docs/concepts/components-and-promotion/
 ---
 
 # The component lifecycle
