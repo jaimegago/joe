@@ -13,13 +13,25 @@ deferred out of the launch build without losing any capability.
 
 ## Deferred work
 
-- **Hide the zoned-era admin UI from the launch build.** The Zones, Policies, and
-  source/component-zone-assignment admin pages configure the grant-based (`zoned`)
-  read decision, which is inert under the `team_flat` launch default. Hide these
-  pages from the launch build (the backing admin REST endpoints stay; only the UI
-  entry points are removed/feature-gated) so the launch surface reflects the flat
-  read model and does not present knobs that do nothing until an operator flips to
-  `zoned`.
+- **Hide the zoned-era admin UI from the launch build — scope corrected; Policies
+  done (read-posture-latch, D-0072).** The original three-surface scope (Zones,
+  Policies, and component-zone assignment) was **wrong**. The zone-allows-action
+  gate (`zone.Allows`, `internal/rbac/policy.go`) runs **ahead** of the
+  `team_flat` read admit, so Zones and component-zone assignment still shape
+  **which** reads are permitted even under `team_flat` — they are **not** inert
+  and must **stay visible**. Only the **Policies** page (grant rows) was truly
+  inert under `team_flat`: the boot-resolved write floor denies every Mutate below
+  RBAC, and the `team_flat` admit widens read to every authenticated principal
+  ahead of the read-grant logic, so grants admit nothing either way. The Policies
+  page is now **posture-gated in the UI** by this session: its sidebar nav entry
+  and `/admin/policies` route render only when the live posture is `zoned`,
+  redirecting/hiding under `team_flat`. The gate is **client-side only** — the
+  backing `/api/v1/admin/policies` REST endpoints stay registered and admin-gated
+  so an operator can manage grants over REST in either posture. The posture is
+  fetched via `useReadPosture` (GET `/api/v1/admin/read-posture`); no backend
+  endpoint was added. Zones and component-zone assignment are explicitly
+  **untouched** and stay visible. The v2 zoned-flip admin UI (below) remains
+  deferred.
 - **Reframe the public docs for the two eras.** Rework the human-facing docs so
   zones and grant-based read are presented as the **full-mode (`zoned`) era**
   concept, not the default mental model. The launch story is team-flat read

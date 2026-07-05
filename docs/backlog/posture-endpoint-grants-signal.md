@@ -24,15 +24,21 @@ boot-resolved floor's reason off the services struct. That endpoint deliberately
 reports the floor tri-state ONLY. The grants signal described here is NOT part of
 that initial endpoint.
 
-### Verified current state (re-derive exact file:line from live code before acting; verified 2026-06-08 against the live tree)
+### Verified current state (re-derive exact file:line from live code before acting; corrected 2026-07-05 against the live tree)
 
-1. **The posture endpoint is NOT present in the live tree yet.** No posture
-   handler, route registration, or response struct exists under `internal/api/`
-   as of 2026-06-08 (searched for `posture` / `registerPosture` / a posture
-   response struct — no production hits; the matches for "posture" are all
-   unrelated prose like `audit.FailurePosture`). Treat the endpoint as planned /
-   in-flight, not landed. The implementer must locate its handler file:line once
-   it lands and confirm the shape below against it.
+1. **The posture read endpoint HAS since landed** — as GET `/api/v1/mutate-status`
+   (`internal/api/mutatestatus.go`), which reports the write-floor tri-state this
+   item's endpoint was to carry. Its response struct is `mutateStatusResponse`
+   with `can_mutate` (mirrors `!floor.Up()`) and a `reason` field sourced from the
+   **boot-resolved** floor's reason (`full` / `observation` / `safe_mode`, always
+   non-empty). Both fields come from a single read of the boot-resolved floor, so
+   they cannot disagree. (Earlier this section claimed no posture endpoint existed
+   under `internal/api/` as of 2026-06-08; that is now stale.) The **coarse
+   any-write-grants-exist signal described by this item remains unimplemented and
+   deferred** — `mutate-status` reports the floor tri-state ONLY and carries no
+   grants field. This backlog item still tracks that deferred additive field; the
+   implementer would add it to `mutateStatusResponse` (or its successor) per the
+   snake_case-tag note below, gated on the floor being down.
 
 2. **The floor tri-state source is confirmed.** The resolved floor is
    `s.services.WriteFloor` — field `WriteFloor safety.WriteFloor` on the Services

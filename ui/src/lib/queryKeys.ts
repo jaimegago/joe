@@ -19,4 +19,5 @@ export const QUERY_KEYS = {
   unassigned: ['unassigned'] as const,
   componentZones: ['component-zones'] as const,
   llmSettings: ['llm-settings'] as const,
+  readPosture: ['read-posture'] as const,
 } as const;
