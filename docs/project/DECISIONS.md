@@ -10,6 +10,17 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0071 — A renamed docs/public page whose old URL was published on joeagent.dev carries a Hugo `aliases` front-matter entry for the old URL; aliases live upstream in docs/public
+
+- Date: 2026-07-05
+- Status: accepted (implemented)
+- Session: docs-public-refit-02
+- Decision: When a `docs/public` page or section is renamed after its URL has been published on joeagent.dev, the new page carries a Hugo `aliases` front-matter entry for the old published URL. The rationale is mechanical: joeagent.dev is hosted on GitHub Pages, which has no server-side redirects, so Hugo front-matter aliases are the only redirect mechanism available; and because the joeagent.dev build syncs a copy of the `docs/public` tree, the aliases must live upstream in `docs/public` itself so they travel with the content and survive site-side re-seeds rather than being hand-placed site-side. Applied here to the two published URLs killed by D-0070's renames: `docs/public/components/_index.md` gains `aliases: [/docs/integrations/]` and `docs/public/concepts/component-lifecycle.md` gains `aliases: [/docs/concepts/components-and-promotion/]`. No alias is added for the action-model page — the old capabilities URL was never published in the live sitemap.
+- Basis: `docs-public-refit-02` session. The live joeagent.dev sitemap lists `/docs/integrations/` and `/docs/concepts/components-and-promotion/`, both of which the D-0070 renames (commit 411feea) would otherwise turn into 404s. GitHub Pages offers no redirect layer; Hugo's `aliases` front-matter field is its standard client-side redirect mechanism. CLAUDE.md carries no mention of aliases or the published-URL convention and needed no edit.
+- Supersedes: nothing; extends **D-0070**'s rename with the redirect layer it left unaddressed. D-0070 remains unedited as append-only history.
+
+---
+
 ## D-0070 — The public taxonomy section "Integrations" is renamed "Components", the "Components and promotion" Concepts page is retitled "The component lifecycle", and the copilot-for-platform-engineers / HTTP-daemon copy is replaced with the self-hosted open-source AI-agent framing
 
 - Date: 2026-07-02

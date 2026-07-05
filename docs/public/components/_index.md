@@ -2,6 +2,8 @@
 title: Components
 weight: 60
 description: The systems Joe connects to.
+aliases:
+  - /docs/integrations/
 ---
 
 # Components
