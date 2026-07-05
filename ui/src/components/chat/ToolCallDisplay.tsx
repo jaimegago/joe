@@ -21,11 +21,22 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
         {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <span className="text-gray-500">🔧</span>
         <span className="font-mono font-medium">{toolCall.name}</span>
-        <span className="text-gray-400">({argsPreview}{argsPreview.length >= 60 ? '…' : ''})</span>
+        <span className="text-gray-400">
+          ({argsPreview}
+          {argsPreview.length >= 60 ? '…' : ''})
+        </span>
         <span className="ml-auto">
           {toolCall.status === 'pending' && <LoadingSpinner size="sm" className="inline-block" />}
-          {toolCall.status === 'success' && <Badge variant="success" className="text-xs">ok</Badge>}
-          {toolCall.status === 'error' && <Badge variant="destructive" className="text-xs">error</Badge>}
+          {toolCall.status === 'success' && (
+            <Badge variant="success" className="text-xs">
+              ok
+            </Badge>
+          )}
+          {toolCall.status === 'error' && (
+            <Badge variant="destructive" className="text-xs">
+              error
+            </Badge>
+          )}
         </span>
       </button>
       {expanded && toolCall.result && (

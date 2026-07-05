@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { ZoneForm } from '@/components/admin/ZoneForm';
 import { updateZone, deleteZone } from '@/api/security';
 import { ApiRequestError } from '@/api/client';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import type { SecurityZone } from '@/api/types';
 
 interface ZonesTableProps {
@@ -30,7 +38,7 @@ export function ZonesTable({ zones }: ZonesTableProps) {
     onSuccess: () => {
       toast.success('Zone updated');
       setEditing(null);
-      void qc.invalidateQueries({ queryKey: ['zones'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.zones });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -39,11 +47,11 @@ export function ZonesTable({ zones }: ZonesTableProps) {
     mutationFn: (zone: SecurityZone) => deleteZone(zone.id),
     onSuccess: () => {
       toast.success('Zone deleted');
-      void qc.invalidateQueries({ queryKey: ['zones'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.zones });
       // A delete cascades grants and frees components, so refresh the dependent lists.
-      void qc.invalidateQueries({ queryKey: ['policies'] });
-      void qc.invalidateQueries({ queryKey: ['component-zones'] });
-      void qc.invalidateQueries({ queryKey: ['unassigned'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.policies });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.componentZones });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.unassigned });
     },
     onError: (e: Error, zone) => {
       // The zone-in-use case is a 409: the zone still has source assignments and
@@ -80,15 +88,21 @@ export function ZonesTable({ zones }: ZonesTableProps) {
               <TableCell>
                 <div className="flex flex-wrap gap-1">
                   {z.allowed_actions.map((a) => (
-                    <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>
+                    <Badge key={a} variant="secondary" className="text-xs">
+                      {a}
+                    </Badge>
                   ))}
                 </div>
               </TableCell>
               <TableCell>{z.sourceCount ?? 0}</TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setEditing(z)}>Edit</Button>
-                  <Button variant="destructive" size="sm" onClick={() => setDeleting(z)}>Delete</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(z)}>
+                    Edit
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setDeleting(z)}>
+                    Delete
+                  </Button>
                 </div>
               </TableCell>
             </TableRow>

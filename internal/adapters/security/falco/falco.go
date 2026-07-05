@@ -282,16 +282,9 @@ func (a *Adapter) fetchEvents(ctx context.Context, priority, source, rule string
 
 	events := make([]Event, 0, len(result.Events))
 	for _, r := range result.Events {
-		events = append(events, Event{
-			UUID:         r.UUID,
-			Output:       r.Output,
-			Priority:     r.Priority,
-			Rule:         r.Rule,
-			Time:         r.Time,
-			Source:       r.Source,
-			Tags:         r.Tags,
-			OutputFields: r.OutputFields,
-		})
+		// rawEvent is field-identical to Event (tags aside), so a plain
+		// conversion replaces the field-by-field copy (staticcheck S1016).
+		events = append(events, Event(r))
 	}
 
 	return events, nil

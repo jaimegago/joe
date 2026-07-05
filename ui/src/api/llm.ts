@@ -7,16 +7,9 @@ import {
   SetContextBudgetResponseSchema,
   UsageAggregateSchema,
   UsageWindowSchema,
-  UsageSessionSchema,
   LLMProvidersSchema,
 } from './schemas';
-import type {
-  LLMSettings,
-  UsageAggregate,
-  UsageWindow,
-  UsageSession,
-  LLMProviders,
-} from './types';
+import type { LLMSettings, UsageAggregate, UsageWindow, LLMProviders } from './types';
 
 // Stream G phase G5 — LLM settings, usage, and providers API. Each
 // function validates the response through its schema, exactly as the
@@ -82,16 +75,8 @@ export function fetchPerPrincipalUsage(window: UsageWindowParam): Promise<UsageW
     .then((r) => UsageWindowSchema.parse(r));
 }
 
-export function fetchSessionUsage(sessionId: string): Promise<UsageSession> {
-  return apiClient
-    .get<unknown>(`/api/v1/llm/usage/sessions/${sessionId}`)
-    .then((r) => UsageSessionSchema.parse(r));
-}
-
 // Providers — read-only presence list.
 
 export function fetchLLMProviders(): Promise<LLMProviders> {
-  return apiClient
-    .get<unknown>('/api/v1/llm/providers')
-    .then((r) => LLMProvidersSchema.parse(r));
+  return apiClient.get<unknown>('/api/v1/llm/providers').then((r) => LLMProvidersSchema.parse(r));
 }

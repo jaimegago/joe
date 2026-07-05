@@ -44,7 +44,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 | Adapters are read-only | K8s, Git, AWS, Azure, observability, datastore, GitOps adapters expose only read/list/describe operations. The only mutating adapters are the doc-publish path (Git commit/push, Confluence, Notion) and the code-review path (GitHub/GitLab comment + request-changes) |
 | Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
 | Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
-| Safety policy | Loaded once at startup from `~/.joe/safety-policy.yaml`; immutable at runtime; default-deny for mutating actions (`internal/safety/policy.go`) |
+| Safety policy | Compiled `DefaultPolicy()` (no on-disk file); default-deny for mutating actions, modulated per request only by the task `safety_tier` (`internal/safety/policy.go`) |
 | Self-protection invariants | Compiled-in, no override (`internal/safety/invariants.go`): `~/.joe/` (config, DB, safety + skills policy) is excluded from any file path, and `joe`/`kill`/`pkill`/`killall` are blocked from command execution. Defense-in-depth — these remain compiled in regardless of which tools are registered, even though the file/command tools they were written to guard are no longer registered (Part 2) |
 | Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
 | API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
@@ -148,36 +148,35 @@ This **replaces the former three-tier scheme** (Observe/Record/Act, T1/T2/T3). P
 
 Classification is hardcoded per tool at registration time. The LLM cannot change a tool's class. **Unknown tools are classified Mutate and denied by default.**
 
-### 3.2 Policy file
+### 3.2 Policy (compiled default — no file)
 
-The safety policy lives in a file Joe **cannot access**:
+There is **no on-disk safety-policy file** in this build. The runtime policy is
+constructed at boot from `DefaultPolicy()` (`internal/safety/policy.go`) and
+modulated per request by the task `safety_tier` (`observe` / `record` / `act`),
+which can only *restrict* a task below the default, never widen it. The former
+`~/.joe/safety-policy.yaml` loader was never wired into the production boot path
+and has been removed; `DefaultPolicy()` is the single source of policy truth.
+
+`DefaultPolicy()` denies every managed-system mutation:
 
 ```
-~/.joe/safety-policy.yaml       # Human-editable only
+# Effective compiled default (illustrative — NOT a file you edit):
+#   every managed-system mutation is disabled.
+git_push:               disabled   # commit + push a doc proposal to a Git repo
+confluence_publish:     disabled   # publish a doc proposal to Confluence
+notion_publish:         disabled   # publish a doc proposal to Notion
+github_comment:         disabled
+gitlab_comment:         disabled
+github_request_changes: disabled
 ```
 
-This path is not readable by any LLM-invokable tool — the server ships no local file tool that could reach it (Part 2), and the compile-time path exclusion in `internal/safety/invariants.go` backs that up as defense-in-depth. The policy is loaded **once** at startup (never re-read at runtime by the agent).
+Although no file is loaded, Joe still cannot reach `~/.joe/`: the server ships no
+LLM-invokable file tool (Part 2), and the compile-time path exclusion in
+`internal/safety/invariants.go` excludes the whole `~/.joe/` directory —
+including the historical `safety-policy.yaml` / `skills-policy.yaml` names — as
+defense-in-depth for any file tool that might ever be reintroduced.
 
-```yaml
-# ~/.joe/safety-policy.yaml
-version: 1
-
-# act: managed-system mutations — each is denied unless explicitly enabled.
-# Every key below defaults to false; a fresh install with no policy file denies
-# all of them.
-act:
-  # Doc-publish mutations:
-  git_push:               { enabled: false }   # commit + push a doc proposal to a Git repo
-  confluence_publish:     { enabled: false }   # publish a doc proposal to Confluence
-  notion_publish:         { enabled: false }   # publish a doc proposal to Notion
-
-  # Code-review mutations:
-  github_comment:         { enabled: false }
-  gitlab_comment:         { enabled: false }
-  github_request_changes: { enabled: false }
-```
-
-> **Legacy inert sections.** The policy struct still *parses* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) **and** `act.write_file` / `act.run_command` sections for backward compatibility with existing policy files. All of these are **inert**: the model-maintenance tools the `record` keys once gated are now classified Read, and the `write_file` / `run_command` tools no longer exist, so the executor's `CheckAccess` consults only the live `act` keys above. Note in particular that `DefaultPolicy()` still ships `act.run_command.enabled: true` (`internal/safety/policy.go:77-82`) — a relic of the removed tool that gates nothing, because no `run_command` tool is registered. The default-deny guarantee is therefore intact: every *registered* mutating tool defaults to disabled (D-0018/D-0019/D-0020).
+> **Legacy inert struct fields.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) **and** `act.write_file` / `act.run_command` fields. All are **inert**: the model-maintenance tools the `record` fields once gated are now classified Read, and the `write_file` / `run_command` tools no longer exist, so the executor's `CheckAccess` consults only the live `act` keys. Note in particular that `DefaultPolicy()` still ships `act.run_command.enabled: true` — a relic of the removed tool that gates nothing, because no `run_command` tool is registered. The default-deny guarantee is therefore intact: every *registered* mutating tool defaults to disabled (D-0018/D-0019/D-0020).
 
 ### 3.3 Hardcoded enforcement points
 
@@ -314,7 +313,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 ### Action Safety Framework — COMPLETE
 
 - Binary Read/Mutate classification with a hardcoded registry: `internal/safety/tier.go`
-- Safety policy loader from `~/.joe/safety-policy.yaml`: `internal/safety/policy.go`
+- Compiled default safety policy (no on-disk file): `internal/safety/policy.go` (`DefaultPolicy`)
 - Executor gate (floor → scope → policy → notify) before every `Execute()`: `internal/tools/executor.go`
 - Default-deny for unknown tools (classified Mutate)
 - Self-protection invariants (path/command guards, defense-in-depth): `internal/safety/invariants.go`

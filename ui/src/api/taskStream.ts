@@ -179,15 +179,32 @@ export interface StreamHandlers {
 // apply), then parses the SSE body incrementally, invoking the handlers as
 // events arrive. It resolves when the stream ends or a terminal error is
 // delivered; it never throws — all failure modes are routed through onError.
-export async function streamTask(body: TaskStreamRequest, handlers: StreamHandlers): Promise<void> {
+//
+// An optional AbortSignal cancels an in-flight stream: it is passed to fetch
+// (aborting the request/response), and the read loop also breaks on it and
+// releases the reader. When aborted, streamTask returns SILENTLY — it does not
+// call onError, so a caller that abandoned this stream (e.g. the user switched
+// sessions) never has its handlers fire for the discarded turn.
+export async function streamTask(
+  body: TaskStreamRequest,
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  // Already aborted before we even started — nothing to do.
+  if (signal?.aborted) return;
+
   let response: Response;
   try {
     response = await apiClient.requestRaw('/api/v1/tasks/stream', {
       method: 'POST',
       headers: { Accept: 'text/event-stream' },
       body: JSON.stringify(body),
+      signal,
     });
   } catch (err) {
+    // A caller-initiated abort surfaces as an AbortError; swallow it silently
+    // (the turn was intentionally discarded) rather than reporting an error.
+    if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
     handlers.onError(err instanceof Error ? err.message : 'Could not reach the server', true);
     return;
   }
@@ -220,6 +237,12 @@ export async function streamTask(body: TaskStreamRequest, handlers: StreamHandle
 
   try {
     for (;;) {
+      // Break on abort before each read so an abandoned stream stops promptly
+      // and its late frames never reach the (now stale) handlers.
+      if (signal?.aborted) {
+        await reader.cancel().catch(() => undefined);
+        return;
+      }
       const { done, value } = await reader.read();
       if (done) break;
       for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
@@ -231,7 +254,18 @@ export async function streamTask(body: TaskStreamRequest, handlers: StreamHandle
       dispatchFrame(frame, handlers);
     }
   } catch (err) {
+    // A caller-initiated abort mid-read raises here — swallow it silently.
+    if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
     handlers.onError(err instanceof Error ? err.message : 'The stream was interrupted', false);
+  } finally {
+    // Release the reader's lock on the body so the connection can be reclaimed.
+    // Guarded because releaseLock throws if a read is still pending; on the
+    // abort path we already cancelled and awaited, so this is a safe no-op.
+    try {
+      reader.releaseLock();
+    } catch {
+      // Reader already released (e.g. by cancel()) — nothing to do.
+    }
   }
 }
 

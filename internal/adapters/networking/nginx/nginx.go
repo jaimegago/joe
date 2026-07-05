@@ -153,6 +153,9 @@ func (a *Adapter) initDoer() error {
 	if err != nil {
 		return fmt.Errorf("build k8s config: %w", err)
 	}
+	// Bound the ServerVersion liveness probe (and all subsequent client calls) so
+	// initDoer cannot hang indefinitely while a.mu is held for writing.
+	restCfg.Timeout = 30 * time.Second
 
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {

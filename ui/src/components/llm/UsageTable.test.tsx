@@ -16,7 +16,12 @@ function row(currency: string, costNano: number, model: string): UsageBreakdown 
 
 describe('UsageTable currency grouping', () => {
   it('renders one currency group with a subtotal at launch (single currency)', () => {
-    render(<UsageTable rows={[row('USD', 1_000_000_000, 'a'), row('USD', 2_000_000_000, 'b')]} dimension="model" />);
+    render(
+      <UsageTable
+        rows={[row('USD', 1_000_000_000, 'a'), row('USD', 2_000_000_000, 'b')]}
+        dimension="model"
+      />
+    );
     expect(screen.getByTestId('currency-group-USD')).toBeInTheDocument();
     expect(screen.getByTestId('subtotal-USD')).toHaveTextContent('3.00 USD');
   });

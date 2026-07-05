@@ -26,7 +26,7 @@ func NewGitHubRequestChangesTool(c GitHubRequestChangesClient) *GitHubRequestCha
 func (t *GitHubRequestChangesTool) Name() string { return "github_request_changes" }
 
 func (t *GitHubRequestChangesTool) Description() string {
-	return "Submit a review requesting changes on a GitHub pull request. This blocks the PR from merging. Use only for blocking issues (security risks, infrastructure misconfigurations, breaking changes). This is T3 (Act) — requires explicit policy opt-in."
+	return "Submit a review requesting changes on a GitHub pull request. This blocks the PR from merging. Use only for blocking issues (security risks, infrastructure misconfigurations, breaking changes). This is a Mutate action — requires explicit safety-policy opt-in."
 }
 
 func (t *GitHubRequestChangesTool) Parameters() llm.ParameterSchema {

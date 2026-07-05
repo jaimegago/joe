@@ -355,6 +355,11 @@ func (a *Adapter) execQuery(req *http.Request) (*QueryResult, error) {
 			return nil, fmt.Errorf("parse vector result: %w", err)
 		}
 		for _, s := range samples {
+			// A well-formed sample is a [timestamp, "value"] pair; skip anything
+			// shorter rather than panicking on a malformed response.
+			if len(s.Value) < 2 {
+				continue
+			}
 			ts, _ := s.Value[0].(float64)
 			val, _ := s.Value[1].(string)
 			result.Vector = append(result.Vector, Sample{

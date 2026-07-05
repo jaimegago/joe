@@ -401,14 +401,12 @@ func (h *runsHandler) openSolicitation(w http.ResponseWriter, r *http.Request) {
 		Payload:      string(req.Payload),
 		LivenessFlag: livenessFlag,
 	}
-	created, err := h.repo.OpenSolicitation(r.Context(), sol)
+	// One transaction: solicitation INSERT + running → awaiting_input UPDATE.
+	// Two separate writes here let a failed state UPDATE strand a committed open
+	// solicitation on a still-'running' run, and a retry would mint a duplicate.
+	created, err := h.repo.OpenSolicitationAwaitInput(r.Context(), sol)
 	if err != nil {
 		writeInternalError(w, err, "open solicitation")
-		return
-	}
-	// Transition run: running → awaiting_input.
-	if err := h.repo.UpdateRunState(r.Context(), runID, runmodel.RunStateAwaitingInput, nil); err != nil {
-		writeInternalError(w, err, "transition run to awaiting_input")
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
@@ -593,13 +591,11 @@ func (h *runsHandler) recordWorldHandle(w http.ResponseWriter, r *http.Request) 
 		Locator:   req.Locator,
 		QueryMeta: string(req.QueryMeta),
 	}
-	created, err := h.repo.RecordWorldHandle(r.Context(), handle)
+	// One transaction: handle INSERT + running → awaiting_world UPDATE (same
+	// atomic-pair rationale as openSolicitation above).
+	created, err := h.repo.RecordWorldHandleAwaitWorld(r.Context(), handle)
 	if err != nil {
 		writeInternalError(w, err, "record world handle")
-		return
-	}
-	if err := h.repo.UpdateRunState(r.Context(), runID, runmodel.RunStateAwaitingWorld, nil); err != nil {
-		writeInternalError(w, err, "transition run to awaiting_world")
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)

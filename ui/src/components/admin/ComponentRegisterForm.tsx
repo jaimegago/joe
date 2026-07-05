@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,9 +71,9 @@ export function ComponentRegisterForm({
           <DialogDescription>
             Registration records an <strong>inert</strong> component only: it lands in the{' '}
             <strong>unassigned zone</strong> under the read-only floor with{' '}
-            <strong>no credentials</strong> and can take no action. No credentials are
-            collected here — they are supplied later, at promotion. After registering you must
-            separately <strong>promote</strong> it (to supply credentials) and{' '}
+            <strong>no credentials</strong> and can take no action. No credentials are collected
+            here — they are supplied later, at promotion. After registering you must separately{' '}
+            <strong>promote</strong> it (to supply credentials) and{' '}
             <strong>assign it a zone</strong> before it can do anything.
           </DialogDescription>
         </DialogHeader>
@@ -83,13 +92,13 @@ export function ComponentRegisterForm({
             <Label htmlFor="component-type">Type</Label>
             <Select value={type} onValueChange={setType}>
               <SelectTrigger id="component-type">
-                <SelectValue
-                  placeholder={typesQ.isLoading ? 'Loading types…' : 'Select a type'}
-                />
+                <SelectValue placeholder={typesQ.isLoading ? 'Loading types…' : 'Select a type'} />
               </SelectTrigger>
               <SelectContent>
                 {types.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

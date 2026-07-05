@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
+import { QueryError } from '@/components/common/QueryError';
 import {
   Select,
   SelectContent,
@@ -197,6 +198,12 @@ export function AdminSessionsPanel() {
         <TabsContent value={state} className="mt-4">
           {sessionsQ.isLoading ? (
             <LoadingPage />
+          ) : sessionsQ.isError ? (
+            <QueryError
+              error={sessionsQ.error}
+              onRetry={() => void sessionsQ.refetch()}
+              resourceLabel="sessions"
+            />
           ) : sessions.length === 0 ? (
             <EmptyState
               icon={Database}

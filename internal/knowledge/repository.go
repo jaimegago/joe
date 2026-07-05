@@ -90,7 +90,7 @@ func (r *sqlRepository) GetEntry(ctx context.Context, id string) (*Entry, error)
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("knowledge entry not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrEntryNotFound, id)
 	}
 	return entries[0], nil
 }

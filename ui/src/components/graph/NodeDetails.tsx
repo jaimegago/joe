@@ -32,38 +32,50 @@ export function NodeDetails({ node, onClose }: NodeDetailsProps) {
       <div className="flex-1 overflow-y-auto p-4 text-sm">
         <div className="space-y-3">
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Status
+            </p>
             <p className="mt-1 flex items-center gap-1" style={{ color: status.color }}>
               {status.dot} {status.label}
             </p>
           </div>
           {node.namespace && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Namespace</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Namespace
+              </p>
               <p className="mt-1">{node.namespace}</p>
             </div>
           )}
           {node.cluster && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cluster</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Cluster
+              </p>
               <p className="mt-1">{node.cluster}</p>
             </div>
           )}
           {node.labels && Object.keys(node.labels).length > 0 && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Labels</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Labels
+              </p>
               <div className="flex flex-wrap gap-1">
-                {Object.entries(node.labels).slice(0, 8).map(([k, v]) => (
-                  <Badge key={k} variant="secondary" className="text-xs">
-                    {k}={String(v)}
-                  </Badge>
-                ))}
+                {Object.entries(node.labels)
+                  .slice(0, 8)
+                  .map(([k, v]) => (
+                    <Badge key={k} variant="secondary" className="text-xs">
+                      {k}={String(v)}
+                    </Badge>
+                  ))}
               </div>
             </div>
           )}
           {metaEntries.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Metadata</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Metadata
+              </p>
               <dl className="space-y-1">
                 {metaEntries.map(([k, v]) => (
                   <div key={k} className="flex gap-2">

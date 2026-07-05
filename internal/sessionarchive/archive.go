@@ -58,6 +58,17 @@ var ErrUnsupportedArtifactVersion = errors.New("sessionarchive: unsupported arti
 // archive_ref (it is not archived), so there is nothing to rehydrate.
 var ErrNotArchived = errors.New("sessionarchive: session is not archived (no archive_ref)")
 
+// ErrArtifactExists is returned by a provider's Store when a final artifact
+// already exists at the locator this call would produce. Because the artifact is
+// keyed only by session id, a pre-existing final artifact means a concurrent or
+// prior archival already owns it — and the guarded archive-state UPDATE
+// (archiveExec, WHERE archived_at IS NULL) ensures at most one archival can
+// legitimately win. The winner's committed artifact must not be clobbered or
+// removed by a loser, so Store refuses to overwrite it and Archive treats this as
+// "already/concurrently archived" without removing anything. See D-0025-adjacent
+// double-archive protection.
+var ErrArtifactExists = errors.New("sessionarchive: an artifact already exists at this locator")
+
 // Artifact is the §12.6 versioned, self-contained archive of a session: every
 // piece of metadata needed to reconstitute the session row PLUS the full
 // transcript, in one file. Restore needs nothing but this artifact.
@@ -132,8 +143,11 @@ type Store interface {
 	// the artifact's source. Never the legacy session_messages table.
 	ListChatMessages(ctx context.Context, sessionID string) ([]sessionmodel.ChatMessage, error)
 	// ArchiveSessionTx sets archived_at/archived_by/archive_ref AND removes the
-	// hot transcript rows (the move), on a caller transaction.
-	ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string) error
+	// hot transcript rows (the move), on a caller transaction. expectedMsgs is the
+	// transcript length captured in the artifact; the transition re-counts
+	// chat_messages in-transaction and refuses (ErrArchiveTranscriptChanged,
+	// destroying nothing) if a message landed between the read and the commit.
+	ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string, expectedMsgs int) error
 	// UnarchiveSessionTx clears the archive columns on a caller transaction.
 	UnarchiveSessionTx(ctx context.Context, tx *sql.Tx, id string) error
 	// InsertChatMessageTx rebuilds one hot transcript row verbatim (preserving
@@ -181,14 +195,31 @@ func (a *Archiver) Archive(ctx context.Context, sess sessionmodel.AgentSession, 
 	artifact := BuildArtifact(sess, msgs)
 	ref, err := a.provider.Store(ctx, artifact)
 	if err != nil {
+		// A pre-existing artifact at this (session-keyed) locator means a
+		// concurrent or prior archival already owns it. The guarded archive-state
+		// UPDATE (WHERE archived_at IS NULL) lets at most one archival win, so this
+		// caller must NOT clobber or remove that artifact. Surface it as
+		// "already/concurrently archived" and touch nothing: this call created no
+		// file, so there is nothing to clean up.
+		if errors.Is(err, ErrArtifactExists) {
+			return "", fmt.Errorf("archive: %w", sessionmodel.ErrSessionAlreadyArchived)
+		}
 		return "", fmt.Errorf("archive: store artifact: %w", err)
 	}
+	// Past this point THIS call created the artifact file (Store's os.Link claimed
+	// the final name), so it — and only it — owns cleanup on rollback.
 	if err := commit(func(tx *sql.Tx) error {
-		return a.store.ArchiveSessionTx(ctx, tx, sess.ID, by, ref)
+		// Pass the artifact's message count so the transition can refuse (and roll
+		// back) if the live transcript changed between the read above and this
+		// commit — closing the mid-window message-loss window (§12.6).
+		return a.store.ArchiveSessionTx(ctx, tx, sess.ID, by, ref, len(msgs))
 	}); err != nil {
 		// The state transaction rolled back: the hot rows survive and the columns
-		// are unset, so the artifact would be an orphan. Remove it (best-effort) so
-		// there is never an artifact without a committed archive state.
+		// are unset, so the artifact this call created would be an orphan. Remove
+		// it (best-effort) so there is never an artifact without a committed
+		// archive state. This is safe because Store refused to overwrite a
+		// pre-existing artifact — the file being removed here was created by THIS
+		// call, never a concurrent winner's committed file.
 		_ = a.provider.Remove(ctx, ref)
 		return "", err
 	}
@@ -204,15 +235,23 @@ func (a *Archiver) Archive(ctx context.Context, sess sessionmodel.AgentSession, 
 // It refuses a session with no archive_ref (ErrNotArchived) and surfaces
 // ErrUnsupportedArtifactVersion unchanged so the route can report a refused
 // (never silently accepted) unknown version.
+//
+// After a SUCCESSFUL restore the stale artifact is removed (best-effort): the hot
+// transcript is the live copy again, so the cold artifact is obsolete, and — since
+// Store now refuses to overwrite an existing final artifact (ErrArtifactExists) —
+// leaving it would block a later re-archive of the same session. Removal happens
+// only after commit succeeds; if commit fails the session stays archived and the
+// artifact is deliberately left in place as the sole surviving copy.
 func (a *Archiver) Restore(ctx context.Context, sess sessionmodel.AgentSession, commit CommitFn) error {
 	if sess.ArchiveRef == nil {
 		return ErrNotArchived
 	}
-	artifact, err := a.provider.Load(ctx, *sess.ArchiveRef)
+	ref := *sess.ArchiveRef
+	artifact, err := a.provider.Load(ctx, ref)
 	if err != nil {
 		return err // ErrUnsupportedArtifactVersion bubbles up unchanged
 	}
-	return commit(func(tx *sql.Tx) error {
+	if err := commit(func(tx *sql.Tx) error {
 		if err := a.store.UnarchiveSessionTx(ctx, tx, sess.ID); err != nil {
 			return err
 		}
@@ -231,7 +270,15 @@ func (a *Archiver) Restore(ctx context.Context, sess sessionmodel.AgentSession, 
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Commit succeeded: the transcript is live again, so the cold artifact is
+	// obsolete and must not linger (it would block a re-archive under the
+	// no-overwrite Store guard). Best-effort — a leftover file is harmless to
+	// correctness beyond the re-archive case and never loses committed state.
+	_ = a.provider.Remove(ctx, ref)
+	return nil
 }
 
 // BuildArtifact assembles the versioned artifact from a session row and its live

@@ -47,7 +47,9 @@ export function Markdown({ content }: { content: string }) {
             const isBlock = !className && typeof children === 'string' && !children.includes('\n');
             if (isBlock) {
               return (
-                <code className="bg-zinc-200 dark:bg-zinc-700 rounded px-1 py-0.5 text-xs">{children}</code>
+                <code className="bg-zinc-200 dark:bg-zinc-700 rounded px-1 py-0.5 text-xs">
+                  {children}
+                </code>
               );
             }
             return <code className={className}>{children}</code>;

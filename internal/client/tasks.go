@@ -24,6 +24,12 @@ const (
 	TaskEventFinal = "final"
 )
 
+// maxSSELineBytes bounds a single SSE data: line. The terminal "final" event
+// carries all steps' full tool results on one line, which can be large, so this
+// cap is set well above any plausible single-event size to keep bufio.Scanner
+// from returning ErrTooLong on an otherwise-valid completed turn.
+const maxSSELineBytes = 64 * 1024 * 1024
+
 // TaskEvent is one decoded Server-Sent Event from the streaming task endpoint.
 // Type is the SSE event name ("step", "final", ...); Data is its raw JSON
 // payload, decoded by the caller according to Type.
@@ -76,8 +82,11 @@ func (c *Client) StreamTask(ctx context.Context, req TaskStreamRequest, onEvent 
 // data, but multi-line data lines are concatenated defensively.
 func parseSSE(body io.Reader, onEvent func(TaskEvent) error) error {
 	scanner := bufio.NewScanner(body)
-	// Tool results can be large; allow generous lines.
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	// The terminal "final" event embeds every step's full tool results on a
+	// single data: line, so a legitimate final event can be far larger than any
+	// individual step. Cap generously to avoid bufio.ErrTooLong ("token too
+	// long") aborting a turn that already completed server-side.
+	scanner.Buffer(make([]byte, 0, 64*1024), maxSSELineBytes)
 
 	var event string
 	var data strings.Builder
@@ -101,7 +110,18 @@ func parseSSE(body io.Reader, onEvent func(TaskEvent) error) error {
 		case strings.HasPrefix(line, "event:"):
 			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			data.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			// Per the SSE spec, strip at most ONE leading space after the colon
+			// and join multiple data lines with "\n" — TrimSpace would corrupt
+			// payloads with meaningful leading/trailing whitespace, and joining
+			// with "" would corrupt a genuinely multi-line payload. The server
+			// emits single-line JSON today, so this is spec hardening, not a
+			// behavior change for well-formed streams.
+			frag := strings.TrimPrefix(line, "data:")
+			frag = strings.TrimPrefix(frag, " ")
+			if data.Len() > 0 {
+				data.WriteByte('\n')
+			}
+			data.WriteString(frag)
 		}
 	}
 	if err := scanner.Err(); err != nil {

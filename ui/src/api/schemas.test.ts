@@ -6,7 +6,6 @@ import {
   CreatedComponentSchema,
   ComponentTypesSchema,
   ChatMessageSchema,
-  AlertSchema,
   SessionSchema,
   CurrentUserSchema,
   PromotionRequirementsSchema,
@@ -41,9 +40,7 @@ describe('GraphNodeSchema', () => {
   });
 
   it('throws on missing required field', () => {
-    expect(() =>
-      GraphNodeSchema.parse({ kind: 'Service', name: 'svc', metadata: {} })
-    ).toThrow();
+    expect(() => GraphNodeSchema.parse({ kind: 'Service', name: 'svc', metadata: {} })).toThrow();
   });
 });
 
@@ -174,33 +171,6 @@ describe('ChatMessageSchema', () => {
         role: 'system',
         content: 'hi',
         created_at: '2024-01-01T00:00:00Z',
-      })
-    ).toThrow();
-  });
-});
-
-describe('AlertSchema', () => {
-  it('parses a critical alert', () => {
-    const alert = AlertSchema.parse({
-      id: 'alert-1',
-      severity: 'critical',
-      source: 'prometheus',
-      message: 'CPU high',
-      timestamp: '2024-01-01T00:00:00Z',
-      acknowledged: false,
-    });
-    expect(alert.severity).toBe('critical');
-  });
-
-  it('rejects an unknown severity', () => {
-    expect(() =>
-      AlertSchema.parse({
-        id: 'a',
-        severity: 'fatal',
-        source: 's',
-        message: 'm',
-        timestamp: 't',
-        acknowledged: false,
       })
     ).toThrow();
   });

@@ -25,7 +25,7 @@ func NewGitLabCommentTool(c GitLabCommentClient) *GitLabCommentTool {
 func (t *GitLabCommentTool) Name() string { return "gitlab_comment" }
 
 func (t *GitLabCommentTool) Description() string {
-	return "Post a note on a GitLab merge request. Use this to share findings, suggestions, or a review summary. This is T2 (Record) — it writes to GitLab but does not block the MR."
+	return "Post a note on a GitLab merge request. Use this to share findings, suggestions, or a review summary. This is a Mutate action — it writes to GitLab but does not block the MR."
 }
 
 func (t *GitLabCommentTool) Parameters() llm.ParameterSchema {

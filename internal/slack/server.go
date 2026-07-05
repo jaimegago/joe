@@ -30,13 +30,18 @@ func NewServer(api *gslack.Client, sm *socketmode.Client, agent *Agent) *Server 
 func (s *Server) Start(ctx context.Context) error {
 	go s.processEvents(ctx)
 
+	// RunContext (not Run) so a ctx cancel tears the Socket Mode websocket
+	// down and lets this goroutine exit — with plain Run the connection and
+	// goroutine would outlive Start and leak on shutdown.
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.sm.Run()
+		errCh <- s.sm.RunContext(ctx)
 	}()
 
 	select {
 	case <-ctx.Done():
+		// Our own cancellation: RunContext is unwinding; its error is not a
+		// connection failure worth surfacing.
 		return nil
 	case err := <-errCh:
 		return err

@@ -144,7 +144,7 @@ func defaultServerDeps() serverDeps {
 // string held in a constant rather than inlined at the log site. Joe refuses to
 // start in this state because the RBAC policy engine would be nil — an ungoverned
 // engine that permits every operation — so there is no safe way to run.
-const noIdentityConfigMessage = `Joe has no usable identity configuration — it would run ungoverned.
+const noIdentityConfigMessage = `no usable identity configuration — Joe would run ungoverned.
 
 Without an identity source the RBAC policy engine is not constructed, which
 permits every operation with no caller principal to authorize against. Joe
@@ -155,7 +155,7 @@ Configure at least one of the following, then restart:
     and auth.oidc.redirect_url. A partial OIDC block (e.g. issuer only) does NOT
     count as configured and Joe will still refuse to start.
   - Service account (machine access): add at least one entry to
-    server.service_accounts (name + key).`
+    server.service_accounts (name + key)`
 
 // requireIdentityConfigured is the boot-time refuse-to-start guard (JOE-IDBOOT).
 // It returns nil when Joe has a usable identity configuration — i.e. when the
@@ -990,11 +990,20 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Warn("web UI not embedded in this binary — only the API under /api/v1 and a fallback page are served; build with `make build` to produce a UI-complete binary")
 	}
 
+	// WriteTimeout is deliberately 0 (no server-wide write deadline): the task
+	// SSE surfaces (/api/v1/tasks, /api/v1/tasks/stream) hold the response open
+	// for the whole agent turn, which defaults to 5 minutes and is
+	// per-request-configurable — a 30s WriteTimeout would kill every turn
+	// longer than that mid-write. Per-request deadlines come from the task
+	// timeout (request context), not from the server. ReadHeaderTimeout keeps
+	// the slowloris protection a nonzero ReadTimeout alone would otherwise
+	// provide for the header phase.
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      rootHandler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:              addr,
+		Handler:           rootHandler,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      0,
 	}
 
 	// Start metrics server if enabled

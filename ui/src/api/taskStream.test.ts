@@ -5,7 +5,10 @@ import { apiClient } from './client';
 
 // --- Fixtures -----------------------------------------------------------
 
-function stepFrame(stepNumber: number, opts?: { input?: number; output?: number; tool?: string }): string {
+function stepFrame(
+  stepNumber: number,
+  opts?: { input?: number; output?: number; tool?: string }
+): string {
   const payload = {
     step_number: stepNumber,
     llm_request: { message_count: stepNumber, tools_available: ['k8s', 'metrics'] },
@@ -69,7 +72,9 @@ describe('SSEFrameParser', () => {
     const frames = parser.push(finalFrame());
     expect(frames).toHaveLength(1);
     expect(frames[0].event).toBe('final');
-    expect((JSON.parse(frames[0].data) as { final_answer: string }).final_answer).toBe('the answer');
+    expect((JSON.parse(frames[0].data) as { final_answer: string }).final_answer).toBe(
+      'the answer'
+    );
   });
 
   it('parses multiple frames delivered in one chunk', () => {
@@ -120,7 +125,7 @@ describe('streamTask', () => {
 
     await streamTask(
       { session_id: 's1', message: 'hi' },
-      { onStep: (s) => steps.push(s), onFinal: (f) => (final = f), onError },
+      { onStep: (s) => steps.push(s), onFinal: (f) => (final = f), onError }
     );
 
     expect(steps.map((s) => s.step_number)).toEqual([1, 2]);
@@ -141,7 +146,7 @@ describe('streamTask', () => {
     const steps: StepEvent[] = [];
     await streamTask(
       { message: 'hi' },
-      { onStep: (s) => steps.push(s), onFinal: vi.fn(), onError: vi.fn() },
+      { onStep: (s) => steps.push(s), onFinal: vi.fn(), onError: vi.fn() }
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].step_number).toBe(1);

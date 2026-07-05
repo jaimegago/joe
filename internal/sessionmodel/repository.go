@@ -50,11 +50,27 @@ type Repository interface {
 	// statement (no application-level fan-out).
 	DeleteSession(ctx context.Context, id string) error
 	// UpdateSessionTitle sets a session's human-editable title (migration 022).
-	// The Web UI PATCH handler owner-checks before calling, so this is an
-	// unconditional write by ID (DESIGN-CHAT-SESSIONS.md §11 Phase 2). It does
-	// not bump last_activity_at — a rename is metadata housekeeping, not chat
-	// activity, so it must not reorder the recency-sorted browse list.
+	// This is the MANUAL-RENAME path: the Web UI PATCH handler owner-checks
+	// before calling, so this is an unconditional write by ID
+	// (DESIGN-CHAT-SESSIONS.md §11 Phase 2). It does not bump last_activity_at —
+	// a rename is metadata housekeeping, not chat activity, so it must not
+	// reorder the recency-sorted browse list. The auto-title background path must
+	// NOT use this method — it must use SetSessionTitleIfUnset (compare-and-set),
+	// or it will clobber a concurrent manual rename.
 	UpdateSessionTitle(ctx context.Context, id, title string) error
+	// SetSessionTitleIfUnset is the AUTO-TITLE path's compare-and-set title
+	// write: it sets the title ONLY if the session currently has no title
+	// (title IS NULL), returning whether a row was affected (true = this call set
+	// the title; false = the session was already titled). This closes the
+	// check-then-act race between the auto-title background goroutine and a
+	// concurrent manual rename: the auto-title goroutine reads Title==nil and then
+	// writes, and a manual UpdateSessionTitle landing in that window would
+	// otherwise be clobbered by the auto-title write, violating the documented
+	// "user who renamed wins" invariant. Doing the null-check inside the UPDATE's
+	// WHERE clause makes the read-and-write atomic at the SQL layer, so the
+	// auto-title write is a no-op once any title (manual or prior auto) exists.
+	// Like UpdateSessionTitle it does not bump last_activity_at.
+	SetSessionTitleIfUnset(ctx context.Context, id, title string) (bool, error)
 	// LinkSessionToIncident attaches a plain chat session to the active
 	// incident by setting linked_incident_id ONLY (DESIGN-CHAT-SESSIONS.md
 	// §12.3): under the two-type model participation is the pointer alone — there
@@ -110,12 +126,18 @@ type Repository interface {
 	// ArchiveSession is the §12.6 archive STATE transition: it stamps
 	// archived_at=now / archived_by / archive_ref (the provider-produced locator)
 	// AND removes the hot transcript rows (the MOVE to cold storage — the artifact
-	// becomes the sole copy). Returns ErrSessionAlreadyArchived if already
-	// archived. The non-Tx variant is the store-level test twin.
-	ArchiveSession(ctx context.Context, id, by, ref string) error
+	// becomes the sole copy). expectedMsgs is the transcript length the caller
+	// serialized into the artifact: the transition re-counts chat_messages before
+	// deleting and returns ErrArchiveTranscriptChanged (destroying nothing) when a
+	// message landed between the artifact read and this write — otherwise that
+	// message would be deleted unarchived. Returns ErrSessionAlreadyArchived if
+	// already archived. The non-Tx variant is the store-level test twin.
+	ArchiveSession(ctx context.Context, id, by, ref string, expectedMsgs int) error
 	// ArchiveSessionTx is ArchiveSession on a caller transaction so the column
-	// stamp, the transcript move, and the §12.6 audit row commit atomically.
-	ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string) error
+	// stamp, the transcript-count verification, the transcript move, and the
+	// §12.6 audit row commit atomically — a count mismatch rolls the whole
+	// transaction back and the caller may re-read and retry.
+	ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string, expectedMsgs int) error
 	// UnarchiveSession clears the archive columns, returning an archived session
 	// to active (§12.6 restore). The caller rebuilds the hot transcript from the
 	// artifact. Returns ErrSessionNotArchived if not currently archived.
@@ -318,6 +340,11 @@ var (
 var (
 	ErrNoActiveCaptain          = errors.New("sessionmodel: no active captain for session")
 	ErrCaptainPrincipalMismatch = errors.New("sessionmodel: principal does not match active captain")
+	// ErrCaptainAlreadyDetached — the SwapCaptain detach matched no active row
+	// (the outgoing captain was already detached, e.g. by a concurrent
+	// confirm-transfer). The whole swap rolls back so the loser cannot create a
+	// second active captain (single-active-captain invariant, D-0025).
+	ErrCaptainAlreadyDetached = errors.New("sessionmodel: outgoing captain is already detached")
 )
 
 // ErrNotFound is returned when a lookup finds no matching row.
@@ -333,6 +360,13 @@ var (
 	// ErrSessionAlreadyArchived — archive on a session that is already archived
 	// (the guarded UPDATE matched no un-archived row).
 	ErrSessionAlreadyArchived = errors.New("sessionmodel: session is already archived")
+	// ErrArchiveTranscriptChanged — the in-transaction chat_messages count no
+	// longer matches the transcript the caller serialized into the artifact: a
+	// message landed (or vanished) between the artifact read and the archive
+	// commit. The transition writes nothing (the caller's transaction rolls
+	// back) so the new message is never deleted unarchived; the caller may
+	// re-read the transcript and retry.
+	ErrArchiveTranscriptChanged = errors.New("sessionmodel: transcript changed since the archive artifact was built")
 	// ErrSessionNotArchived — restore-from-archive on a session that is not
 	// currently archived.
 	ErrSessionNotArchived = errors.New("sessionmodel: session is not archived")
@@ -468,6 +502,31 @@ func (r *SQLRepository) UpdateSessionTitle(ctx context.Context, id, title string
 		return fmt.Errorf("update session title: %w", err)
 	}
 	return nil
+}
+
+// SetSessionTitleIfUnset sets the title column ONLY when it is currently NULL,
+// returning whether the write landed. The `title IS NULL` predicate makes the
+// auto-title path a compare-and-set: a concurrent manual UpdateSessionTitle (an
+// unconditional write) that lands first fills the column, and this call then
+// matches zero rows and returns (false, nil) rather than clobbering the manual
+// value. last_activity_at is deliberately left untouched (parallel to
+// UpdateSessionTitle) so an auto-title does not reorder the recency browse list.
+//
+// This is the ONLY title-write the auto-title background goroutine must use;
+// UpdateSessionTitle stays reserved for the owner-checked manual-rename path.
+func (r *SQLRepository) SetSessionTitleIfUnset(ctx context.Context, id, title string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+		UPDATE agent_sessions SET title = ? WHERE id = ? AND title IS NULL`), title, id)
+	if err != nil {
+		return false, fmt.Errorf("set session title if unset: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		// A driver that does not report RowsAffected cannot confirm the CAS
+		// outcome; report no-write so the caller does not assume it won the race.
+		return false, nil
+	}
+	return n > 0, nil
 }
 
 // LinkSessionToIncident sets linked_incident_id ONLY — no type flip. Under the
@@ -918,12 +977,16 @@ func (r *SQLRepository) AttachCaptain(ctx context.Context, c Captain) (*Captain,
 	return r.attachCaptainExec(ctx, r.db, c)
 }
 
-// sqlExecer is the subset of *sql.DB / *sql.Tx that the captain writes use,
-// so the attach core can run either standalone (on r.db) or inside a
-// transaction (on a *sql.Tx). It lets AttachCaptain and the SwapCaptain
-// transaction share one INSERT implementation instead of forking it.
+// sqlExecer is the subset of *sql.DB / *sql.Tx that the captain writes and the
+// lifecycle transitions use, so a shared core can run either standalone (on
+// r.db) or inside a transaction (on a *sql.Tx). It lets AttachCaptain and the
+// SwapCaptain transaction share one INSERT implementation instead of forking it,
+// and lets archiveExec re-count chat_messages in the same executor as its writes
+// (QueryRowContext) so the count-guard commits or rolls back atomically with the
+// transcript move. Both *sql.DB and *sql.Tx satisfy the full set.
 type sqlExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // attachCaptainExec is the shared attach core: it validates required fields,
@@ -1164,14 +1227,26 @@ func (r *SQLRepository) swapCaptainWithHook(ctx context.Context, outgoingID stri
 	}()
 
 	// 1. Detach the outgoing captain. Same SET clause as the D-0024 resolve
-	// detach (detached_at set; transfer columns cleared), keyed by id.
-	if _, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
+	// detach (detached_at set; transfer columns cleared), keyed by id — but
+	// guarded on detached_at IS NULL so only a still-active captain is detached.
+	// Two racing confirm-transfers each read the same active captain and both
+	// call SwapCaptain; without this guard both detaches "succeed" and both
+	// attaches insert, leaving two rows with detached_at IS NULL (two active
+	// captains, violating the single-active-captain invariant, D-0025). The guard
+	// makes the detach a compare-and-set: the loser matches zero rows and gets
+	// ErrCaptainAlreadyDetached, so its whole swap transaction rolls back (via the
+	// deferred Rollback) instead of attaching a second captain.
+	var res sql.Result
+	if res, err = tx.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE session_captains
 		SET detached_at = ?, transfer_state = NULL,
 		    incoming_principal = NULL, transfer_initiator = NULL
-		WHERE id = ?`),
+		WHERE id = ? AND detached_at IS NULL`),
 		when.Format(time.RFC3339), outgoingID); err != nil {
 		return fmt.Errorf("swap captain: detach outgoing: %w", err)
+	}
+	if err = requireOneRow(res, ErrCaptainAlreadyDetached, "swap captain: detach outgoing"); err != nil {
+		return err
 	}
 
 	if hookAfterDetach != nil {

@@ -750,3 +750,76 @@ func TestCaptain_TransferSwapAtomicOnAttachFailure(t *testing.T) {
 		t.Errorf("post-fault captain rows = %d, want 1 (incoming attach must have rolled back)", len(all))
 	}
 }
+
+// TestCaptain_SwapRefusesAlreadyDetached is the guard for the two-active-captains
+// race (D-0025): two racing confirm-transfers both read the same active captain
+// and both call SwapCaptain. The first swap detaches the outgoing captain; the
+// second must NOT re-detach an already-detached row and attach a second captain
+// (which would leave two rows with detached_at IS NULL). It asserts the loser's
+// SwapCaptain returns ErrCaptainAlreadyDetached and inserts no new captain, so
+// exactly one active captain remains. The guard is the `AND detached_at IS NULL`
+// predicate plus the RowsAffected==1 check in the swap's detach step.
+func TestCaptain_SwapRefusesAlreadyDetached(t *testing.T) {
+	e := newCaptainEnv(t, 60)
+	sessionID := e.declareWithCaptain(t, "alice")
+
+	repo, ok := e.sess.(*sessionmodel.SQLRepository)
+	if !ok {
+		t.Fatalf("expected *sessionmodel.SQLRepository, got %T", e.sess)
+	}
+
+	outgoing, err := repo.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil || outgoing == nil {
+		t.Fatalf("pre-swap GetActiveCaptain = (%+v, %v), want alice active", outgoing, err)
+	}
+
+	mkIncoming := func(principal string) sessionmodel.Captain {
+		now := time.Now().UTC()
+		active := sessionmodel.TransferStateActive
+		return sessionmodel.Captain{
+			ID:            uuid.NewString(),
+			SessionID:     sessionID,
+			CaptainType:   sessionmodel.CaptainTypeHuman,
+			Principal:     principal,
+			AttachedAt:    now,
+			TransferState: &active,
+			LastSeenAt:    &now,
+		}
+	}
+
+	// First swap wins: alice → bob.
+	if err := repo.SwapCaptain(e.ctx, outgoing.ID, mkIncoming("bob"), time.Now().UTC()); err != nil {
+		t.Fatalf("first SwapCaptain: %v", err)
+	}
+
+	// Second swap is the race loser: it targets the SAME (now-detached) outgoing
+	// id. It must refuse and attach nothing.
+	err = repo.SwapCaptain(e.ctx, outgoing.ID, mkIncoming("carol"), time.Now().UTC())
+	if !errors.Is(err, sessionmodel.ErrCaptainAlreadyDetached) {
+		t.Fatalf("second SwapCaptain err = %v, want ErrCaptainAlreadyDetached", err)
+	}
+
+	// Exactly one active captain (bob) — carol's attach must have rolled back.
+	active, err := repo.GetActiveCaptain(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("post-race GetActiveCaptain: %v", err)
+	}
+	if active == nil || active.Principal != "bob" {
+		t.Fatalf("active captain = %+v, want exactly bob (single active captain, D-0025)", active)
+	}
+
+	// Count active (detached_at IS NULL) rows directly to prove there is no second.
+	all, err := repo.ListCaptainsForSession(e.ctx, sessionID)
+	if err != nil {
+		t.Fatalf("ListCaptainsForSession: %v", err)
+	}
+	activeCount := 0
+	for _, c := range all {
+		if c.DetachedAt == nil {
+			activeCount++
+		}
+	}
+	if activeCount != 1 {
+		t.Errorf("active captain rows = %d, want exactly 1 (carol's attach must have rolled back)", activeCount)
+	}
+}

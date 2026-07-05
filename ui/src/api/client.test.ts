@@ -99,7 +99,10 @@ describe('ApiClient', () => {
     );
 
     await expect(client.get('/secure')).rejects.toBeInstanceOf(mod.ApiRequestError);
-    await expect(client.get('/secure')).rejects.toMatchObject({ status: 401, message: 'unauthorized' });
+    await expect(client.get('/secure')).rejects.toMatchObject({
+      status: 401,
+      message: 'unauthorized',
+    });
   });
 
   it('invokes the unauthorized handler exactly on 401, not on other non-2xx', async () => {

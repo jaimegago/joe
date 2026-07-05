@@ -1,8 +1,5 @@
 import { apiClient } from './client';
-import {
-  CredentialStatusEntrySchema,
-  CredentialProbeResponseSchema,
-} from './schemas';
+import { CredentialStatusEntrySchema, CredentialProbeResponseSchema } from './schemas';
 import { z } from 'zod';
 import type { CredentialStatusEntry, CredentialProbeResponse } from './types';
 
@@ -26,10 +23,7 @@ export function fetchCredentialStatuses(): Promise<CredentialStatusEntry[]> {
 // exists; the stderr text itself is fetched separately and only on request.
 export function probeCredential(componentId: string): Promise<CredentialProbeResponse> {
   return apiClient
-    .post<unknown>(
-      `/api/v1/admin/credential-status/${encodeURIComponent(componentId)}/probe`,
-      {}
-    )
+    .post<unknown>(`/api/v1/admin/credential-status/${encodeURIComponent(componentId)}/probe`, {})
     .then((r) => CredentialProbeResponseSchema.parse(r));
 }
 

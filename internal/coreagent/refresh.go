@@ -77,14 +77,26 @@ func (r *Refresher) SetAccessor(accessor *access.Accessor) {
 	r.accessor = accessor
 }
 
-// NewRefresher creates a new background refresher
+// defaultRefreshInterval is the fallback background-refresh cadence used when
+// the operator has not configured refresh.interval_minutes (or set it to a
+// non-positive value).
+const defaultRefreshInterval = 5 * time.Minute
+
+// NewRefresher creates a new background refresher. The refresh cadence is taken
+// from the operator's refresh.interval_minutes config (services.Config) so the
+// documented, boot-logged knob actually takes effect; a missing or non-positive
+// value falls back to defaultRefreshInterval.
 func NewRefresher(services *core.Services, llmAdapter llm.LLMAdapter, logger *slog.Logger, metrics *observability.Metrics) *Refresher {
+	interval := defaultRefreshInterval
+	if services != nil && services.Config != nil && services.Config.Refresh.Interval > 0 {
+		interval = services.Config.Refresh.Interval
+	}
 	return &Refresher{
 		services: services,
 		llm:      llmAdapter,
 		logger:   logger.With("component", "refresher"),
 		metrics:  observability.EnsureMetrics(metrics),
-		interval: 5 * time.Minute,
+		interval: interval,
 		doneCh:   make(chan struct{}),
 	}
 }

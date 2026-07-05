@@ -137,6 +137,13 @@ func (h *modelHandler) handleSetCurrent(w http.ResponseWriter, r *http.Request) 
 	// service rolls back the transaction — no settings row, no
 	// audit row — and we return before reaching Swap, so the live
 	// adapter is also unchanged.
+	//
+	// modelSwapMu makes persist+swap indivisible against the sibling admin
+	// switch handler (llmsettings.go handleSetModel): without it two racing
+	// switches can interleave the two writes and leave the live adapter
+	// disagreeing with the persisted active model.
+	h.server.modelSwapMu.Lock()
+	defer h.server.modelSwapMu.Unlock()
 	if err := h.server.services.LLMSettings.SetActiveModel(r.Context(), req.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to persist active model: %s", err))
 		return

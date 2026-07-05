@@ -137,6 +137,14 @@ export const PromotionCandidatesSchema = z.discriminatedUnion('wired', [
   }),
 ]);
 
+// POST /api/v1/components/{id}/test response — the connectivity-test outcome.
+// `ok` is the pass/fail; `message` is the server's human explanation (present on
+// both success and failure). Validated at the boundary like every other response.
+export const TestComponentResponseSchema = z.object({
+  ok: z.boolean(),
+  message: z.string().optional(),
+});
+
 // POST /api/v1/components/{id}/promote response — OUTCOME ONLY, never echoes
 // the reference. `rearm` is true when an already-armed component's reference
 // was rotated rather than armed for the first time.
@@ -379,6 +387,20 @@ export const RegimeSchema = z
     incidentTitle: r.IncidentTitle ?? null,
   }));
 
+// POST /api/v1/regime/resolve response — the resolved incident's session id and
+// the principal who resolved it. Validated at the boundary.
+export const ResolveIncidentResponseSchema = z.object({
+  session_id: z.string(),
+  resolved_by: z.string(),
+});
+
+// POST /api/v1/sessions/{id}/incident-state response — the session id and its
+// new lifecycle state after the advance. Validated at the boundary.
+export const AdvanceIncidentStateResponseSchema = z.object({
+  session_id: z.string(),
+  incident_state: z.string(),
+});
+
 // Panic / safe mode status — GET /api/v1/panic/status.
 //
 // Unlike the regime endpoint, panicStatusResponse carries explicit snake_case
@@ -499,11 +521,6 @@ export const UsageWindowSchema = z.object({
   rows: z.array(UsageBreakdownSchema),
 });
 
-export const UsageSessionSchema = z.object({
-  session_id: z.string(),
-  rows: z.array(UsageBreakdownSchema),
-});
-
 // LLM providers (Stream G phase G5 — GET /api/v1/llm/providers). Booleans
 // only; the response never carries key material, only key presence.
 export const LLMProviderSchema = z.object({
@@ -576,16 +593,6 @@ export const CredentialProbeResponseSchema = z.object({
 export const ReadPromotionSchema = z.object({
   component_type: z.string(),
   enabled: z.boolean(),
-});
-
-// Alerts
-export const AlertSchema = z.object({
-  id: z.string(),
-  severity: z.enum(['critical', 'warning', 'info']),
-  source: z.string(),
-  message: z.string(),
-  timestamp: z.string(),
-  acknowledged: z.boolean(),
 });
 
 // Skills — the loaded-skills inspection/management surface (GET /skills).

@@ -20,6 +20,7 @@ import { updateSessionTitle, linkSessionToIncident, promoteSessionToIncident } f
 import { resolveIncident, advanceIncidentState, type IncidentWorkState } from '@/api/regime';
 import { ApiRequestError } from '@/api/client';
 import { incidentAffordance } from '@/lib/incidentAffordance';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import { Link } from 'react-router-dom';
 import {
   Plus,
@@ -180,9 +181,10 @@ export function ChatPage() {
     mutationFn: (id: string) => promoteSessionToIncident(id),
     onSuccess: () => {
       toast.success('Incident declared on this session');
-      void qc.invalidateQueries({ queryKey: ['regime'] });
-      if (activeSessionId) void qc.invalidateQueries({ queryKey: ['session', activeSessionId] });
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.regime });
+      if (activeSessionId)
+        void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.session, activeSessionId] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
     },
     onError: (e: Error) =>
       toast.error(
@@ -196,9 +198,10 @@ export function ChatPage() {
   // captain/admin. invalidateIncidentViews refreshes everything the regime and
   // session state feed: the banner, this session's metadata, and the lists.
   const invalidateIncidentViews = () => {
-    void qc.invalidateQueries({ queryKey: ['regime'] });
-    if (activeSessionId) void qc.invalidateQueries({ queryKey: ['session', activeSessionId] });
-    void qc.invalidateQueries({ queryKey: ['sessions'] });
+    void qc.invalidateQueries({ queryKey: QUERY_KEYS.regime });
+    if (activeSessionId)
+      void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.session, activeSessionId] });
+    void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
   };
 
   const advanceIncidentMut = useMutation({

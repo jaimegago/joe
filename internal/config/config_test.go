@@ -260,19 +260,6 @@ refresh:
     batch_threshold: 20
     batch_timeout_sec: 60
 
-notifications:
-  desktop:
-    enabled: true
-    priority_threshold: high
-  slack:
-    enabled: true
-    priority_threshold: urgent
-  quiet_hours:
-    enabled: true
-    start: "23:00"
-    end: "07:00"
-    timezone: UTC
-
 logging:
   level: debug
   file: /var/log/joe.log
@@ -305,14 +292,6 @@ logging:
 
 	if cfg.Refresh.LLMBudget.MaxCallsPerHour != 200 {
 		t.Errorf("Max calls per hour = %d, want 200", cfg.Refresh.LLMBudget.MaxCallsPerHour)
-	}
-
-	if !cfg.Notifications.Desktop.Enabled {
-		t.Error("Desktop notifications should be enabled")
-	}
-
-	if cfg.Notifications.Desktop.PriorityThreshold != "high" {
-		t.Errorf("Desktop priority = %s, want high", cfg.Notifications.Desktop.PriorityThreshold)
 	}
 
 	if cfg.Logging.File != "/var/log/joe.log" {

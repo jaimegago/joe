@@ -247,11 +247,18 @@ func TestRemoteIP_SplitsPort(t *testing.T) {
 	}
 }
 
-func TestRemoteIP_XForwardedFor(t *testing.T) {
+// TestRemoteIP_IgnoresXForwardedFor pins the anti-spoofing behavior: the
+// rate-limit key must come from the un-spoofable TCP peer (RemoteAddr), never
+// from the client-controlled X-Forwarded-For header. Honoring XFF would let a
+// direct client (Joe listens directly on :7777 with no trusted proxy) bypass
+// the limiter with a fresh spoofed IP per request and grow the limiter map
+// without bound.
+func TestRemoteIP_IgnoresXForwardedFor(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "10.1.2.3, 172.16.0.1")
-	if got := remoteIP(req); got != "10.1.2.3" {
-		t.Errorf("remoteIP() = %q, want 10.1.2.3", got)
+	if got := remoteIP(req); got != "192.168.0.1" {
+		t.Errorf("remoteIP() = %q, want 192.168.0.1 (XFF must be ignored)", got)
 	}
 }
 

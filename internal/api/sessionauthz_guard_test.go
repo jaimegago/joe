@@ -69,12 +69,16 @@ func TestInvariant_SessionMutationGoesThroughSeam(t *testing.T) {
 	// B007a lifecycle mutators (TrashSessionTx / RestoreSessionTx / PurgeSessionTx)
 	// are pinned too, so every session lifecycle mutation must go through the seam.
 	mutationMethods := map[string]bool{
-		"UpdateSessionTitle":    true,
-		"LinkSessionToIncident": true,
-		"DeleteSession":         true,
-		"TrashSessionTx":        true,
-		"RestoreSessionTx":      true,
-		"PurgeSessionTx":        true,
+		"UpdateSessionTitle": true,
+		// SetSessionTitleIfUnset is the auto-title path's compare-and-set title
+		// write (it exists so the system actor cannot clobber a manual rename);
+		// it mutates a session all the same, so it is pinned here too.
+		"SetSessionTitleIfUnset": true,
+		"LinkSessionToIncident":  true,
+		"DeleteSession":          true,
+		"TrashSessionTx":         true,
+		"RestoreSessionTx":       true,
+		"PurgeSessionTx":         true,
 	}
 
 	type site struct {

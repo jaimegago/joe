@@ -1,5 +1,9 @@
 import { apiClient } from './client';
-import { RegimeSchema } from './schemas';
+import {
+  RegimeSchema,
+  ResolveIncidentResponseSchema,
+  AdvanceIncidentStateResponseSchema,
+} from './schemas';
 import type { Regime } from './types';
 
 // GET /api/v1/regime — is an incident regime active, and if so who declared
@@ -13,7 +17,9 @@ export function fetchRegime(): Promise<Regime> {
 // 'believed_mitigated', and enforces the regime-control resolve capability (403);
 // the caller surfaces those. Returns the resolved session id.
 export function resolveIncident(): Promise<{ session_id: string; resolved_by: string }> {
-  return apiClient.post<{ session_id: string; resolved_by: string }>('/api/v1/regime/resolve', {});
+  return apiClient
+    .post<unknown>('/api/v1/regime/resolve', {})
+    .then((r) => ResolveIncidentResponseSchema.parse(r));
 }
 
 // IncidentWorkState is the pre-resolve lifecycle the UI can advance an incident
@@ -27,8 +33,7 @@ export function advanceIncidentState(
   sessionId: string,
   state: IncidentWorkState
 ): Promise<{ session_id: string; incident_state: string }> {
-  return apiClient.post<{ session_id: string; incident_state: string }>(
-    `/api/v1/sessions/${encodeURIComponent(sessionId)}/incident-state`,
-    { state }
-  );
+  return apiClient
+    .post<unknown>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/incident-state`, { state })
+    .then((r) => AdvanceIncidentStateResponseSchema.parse(r));
 }

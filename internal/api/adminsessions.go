@@ -498,7 +498,12 @@ func (h *adminSessionsHandler) handleListAllTrash(w http.ResponseWriter, r *http
 	}
 	out := make([]webUISession, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, sessionToWebUI(row.AgentSession, row.MessageCount))
+		// Cross-tenant governance view: use the admin projection so
+		// creator_principal / trashed_at / archived_at are populated (the
+		// per-user sessionToWebUI omits them), then carry the message count.
+		ws := adminSessionToWebUI(row.AgentSession)
+		ws.MessageCount = row.MessageCount
+		out = append(out, ws)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": out, "count": len(out)})
 }

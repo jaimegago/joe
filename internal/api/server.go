@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jaimegago/joe/internal/access"
@@ -56,6 +57,14 @@ type Server struct {
 	// sessionAccessAdmin (this instance) AFTER the requireAdmin prefix gate, so
 	// cross-tenant governance requires BOTH. No per-user route holds it.
 	sessionAuthzAdmin *sessionauthz.Seam
+	// modelSwapMu serializes the persist-active-model + live-adapter-Swap pair.
+	// TWO handlers perform that pair — POST /models/current (models.go) and the
+	// admin POST /admin/llm/model (llmsettings.go) — and the pair is not atomic:
+	// two racing switches can interleave persist(A), persist(B), swap(B),
+	// swap(A), leaving the live adapter (A) disagreeing with the persisted
+	// active model (B) until restart. Both handlers hold this mutex across
+	// persist+swap so each pair applies indivisibly and in one order.
+	modelSwapMu sync.Mutex
 }
 
 // New creates a new API server with access to core services.

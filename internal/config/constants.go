@@ -20,15 +20,6 @@ const (
 	defaultBatchThreshold         = 10
 	defaultBatchTimeoutSec        = 30
 
-	// Default notification thresholds.
-	defaultDesktopThreshold = "medium"
-	defaultSlackThreshold   = "high"
-
-	// Default quiet hours.
-	defaultQuietStart    = "22:00"
-	defaultQuietEnd      = "08:00"
-	defaultQuietTimezone = "Local"
-
 	// Provider names.
 	providerClaude       = "claude"
 	providerGemini       = "gemini"

@@ -163,9 +163,7 @@ export function InfraGraph({ graph, onRefresh }: InfraGraphProps) {
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
         </ReactFlow>
       </div>
-      {selectedNode && (
-        <NodeDetails node={selectedNode} onClose={() => setSelectedNodeId(null)} />
-      )}
+      {selectedNode && <NodeDetails node={selectedNode} onClose={() => setSelectedNodeId(null)} />}
     </div>
   );
 }

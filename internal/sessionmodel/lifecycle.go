@@ -70,12 +70,12 @@ func (r *SQLRepository) restoreExec(ctx context.Context, exec sqlExecer, id stri
 
 // --- Archive (move to cold storage) ---
 
-func (r *SQLRepository) ArchiveSession(ctx context.Context, id, by, ref string) error {
-	return r.archiveExec(ctx, r.db, id, by, ref)
+func (r *SQLRepository) ArchiveSession(ctx context.Context, id, by, ref string, expectedMsgs int) error {
+	return r.archiveExec(ctx, r.db, id, by, ref, expectedMsgs)
 }
 
-func (r *SQLRepository) ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string) error {
-	return r.archiveExec(ctx, tx, id, by, ref)
+func (r *SQLRepository) ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by, ref string, expectedMsgs int) error {
+	return r.archiveExec(ctx, tx, id, by, ref, expectedMsgs)
 }
 
 // archiveExec performs the §12.6 archive STATE transition: it stamps
@@ -86,7 +86,33 @@ func (r *SQLRepository) ArchiveSessionTx(ctx context.Context, tx *sql.Tx, id, by
 // guarded UPDATE matches only an un-archived row, so re-archiving affects zero
 // rows and returns ErrSessionAlreadyArchived BEFORE any transcript is removed.
 // It touches only agent_sessions and chat_messages — never the legacy tables.
-func (r *SQLRepository) archiveExec(ctx context.Context, exec sqlExecer, id, by, ref string) error {
+//
+// MID-WINDOW message-loss guard (§12.6). The transcript is read
+// (Archiver.Archive → ListChatMessages) and serialized into the artifact BEFORE
+// this DELETE runs, and the two are not in one transaction (the file write cannot
+// be). A chat_messages row inserted for this session AFTER the artifact read but
+// BEFORE this DELETE commits would be captured by neither the artifact nor the
+// surviving hot rows — it would be silently destroyed. expectedMsgs is the
+// transcript length the caller serialized into the artifact; this transition
+// RE-COUNTS chat_messages inside the same transaction and, on a mismatch, writes
+// nothing and returns ErrArchiveTranscriptChanged so the caller's transaction
+// rolls back (destroying nothing) and it may re-read the transcript and retry. The
+// count read + column stamp + transcript delete all run on the same executor, so
+// the guard is atomic with the move.
+func (r *SQLRepository) archiveExec(ctx context.Context, exec sqlExecer, id, by, ref string, expectedMsgs int) error {
+	// Re-count the live transcript in this transaction. If it no longer matches
+	// what the caller serialized, a message landed (or vanished) since the
+	// artifact was built — refuse and destroy nothing.
+	var actual int
+	if err := exec.QueryRowContext(ctx, store.Rebind(r.driver, `
+		SELECT COUNT(*) FROM chat_messages WHERE session_id = ?`), id).Scan(&actual); err != nil {
+		return fmt.Errorf("archive session: count transcript: %w", err)
+	}
+	if actual != expectedMsgs {
+		return fmt.Errorf("archive session: %w (artifact has %d messages, live transcript has %d)",
+			ErrArchiveTranscriptChanged, expectedMsgs, actual)
+	}
+
 	res, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE agent_sessions
 		SET archived_at = ?, archived_by = ?, archive_ref = ?

@@ -399,6 +399,13 @@ func (h *regimeHandler) advanceIncidentState(w http.ResponseWriter, r *http.Requ
 		writeInternalError(w, err, "advance incident")
 		return
 	}
+	// GetSession's contract is (nil, nil) for a missing row (scanSession maps
+	// sql.ErrNoRows to nil, nil) — the ErrNotFound branch above never fires for
+	// a missing session, so guard the nil explicitly before dereferencing.
+	if sess == nil {
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "session not found")
+		return
+	}
 	if sess.Type != sessionmodel.SessionTypeIncident {
 		writeError(w, http.StatusConflict, "conflict", "session is not an incident")
 		return

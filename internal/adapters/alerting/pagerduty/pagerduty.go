@@ -234,16 +234,9 @@ func (a *Adapter) ListIncidents(ctx context.Context, serviceID, status string, l
 
 	incidents := make([]Incident, 0, len(raw.Incidents))
 	for _, r := range raw.Incidents {
-		incidents = append(incidents, Incident{
-			ID:          r.ID,
-			Title:       r.Title,
-			Status:      r.Status,
-			Urgency:     r.Urgency,
-			Service:     r.Service,
-			CreatedAt:   r.CreatedAt,
-			HTMLURL:     r.HTMLURL,
-			Description: r.Description,
-		})
+		// rawIncident is field-identical to Incident (tags aside), so a plain
+		// conversion replaces the field-by-field copy (staticcheck S1016).
+		incidents = append(incidents, Incident(r))
 	}
 
 	return incidents, nil

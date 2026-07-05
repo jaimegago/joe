@@ -81,7 +81,11 @@ describe('SkillsTable', () => {
   });
 
   it('approves a quarantined skill directly', async () => {
-    mockApprove.mockResolvedValue({ status: 'ok', name: 'sketchy-skill', skills: ['sketchy-skill'] });
+    mockApprove.mockResolvedValue({
+      status: 'ok',
+      name: 'sketchy-skill',
+      skills: ['sketchy-skill'],
+    });
     renderTable();
 
     const user = userEvent.setup();
@@ -91,7 +95,11 @@ describe('SkillsTable', () => {
   });
 
   it('rejects a skill only after confirmation', async () => {
-    mockReject.mockResolvedValue({ status: 'ok', name: 'sketchy-skill', skills: ['sketchy-skill'] });
+    mockReject.mockResolvedValue({
+      status: 'ok',
+      name: 'sketchy-skill',
+      skills: ['sketchy-skill'],
+    });
     renderTable();
 
     const user = userEvent.setup();

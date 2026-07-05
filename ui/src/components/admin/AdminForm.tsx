@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,8 +56,8 @@ export function AdminForm({ open, onOpenChange, onSubmit, isLoading }: AdminForm
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Prefix with user:, group:, or svc:. Granting admin removes the
-                principal&apos;s redundant per-zone grants.
+                Prefix with user:, group:, or svc:. Granting admin removes the principal&apos;s
+                redundant per-zone grants.
               </p>
             )}
           </div>
@@ -67,7 +71,9 @@ export function AdminForm({ open, onOpenChange, onSubmit, isLoading }: AdminForm
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={(isLoading ?? false) || !canSubmit}>
               Add Admin
             </Button>

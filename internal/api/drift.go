@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/jaimegago/joe/internal/knowledge"
@@ -46,7 +47,20 @@ func (h *driftHandler) handleDetectDriftByEntry(w http.ResponseWriter, r *http.R
 	id := r.PathValue("id")
 	report, err := h.server.services.DriftDet.Detect(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, err.Error(), map[string]any{"id": id})
+		// Distinguish the three failure classes instead of masking everything as
+		// a 404 (and never echo an arbitrary err.Error() to the response body):
+		// missing entry → 404; non-Tier-2 entry (caller mistake) → 400 with the
+		// sentinel's fixed message; anything else is a store/fetch failure → 500
+		// via writeInternalError, which logs without echoing.
+		if errors.Is(err, knowledge.ErrEntryNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "knowledge entry not found", map[string]any{"id": id})
+			return
+		}
+		if errors.Is(err, drift.ErrNotSyncedEntry) {
+			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, drift.ErrNotSyncedEntry.Error(), map[string]any{"id": id})
+			return
+		}
+		writeInternalError(w, err, "detect drift")
 		return
 	}
 	writeJSON(w, http.StatusOK, report)

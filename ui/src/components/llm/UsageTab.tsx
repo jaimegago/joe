@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { UsageTable } from './UsageTable';
@@ -28,7 +32,9 @@ function WindowSelect({
       </SelectTrigger>
       <SelectContent>
         {WINDOWS.map((w) => (
-          <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+          <SelectItem key={w.value} value={w.value}>
+            {w.label}
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>

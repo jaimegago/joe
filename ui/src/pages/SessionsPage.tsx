@@ -29,6 +29,8 @@ import {
   createSession,
 } from '@/api/chat';
 import { ApiRequestError } from '@/api/client';
+import { QueryError } from '@/components/common/QueryError';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import type { Session } from '@/api/types';
 import { MessageSquare, Plus, Trash2, AlertTriangle, RotateCcw, ShieldAlert } from 'lucide-react';
 
@@ -88,7 +90,7 @@ export function SessionsPage() {
   const mineActive = view === 'conversations' && mineOnly;
   const sessionsQ = useQuery({
     queryKey: [
-      'sessions',
+      ...QUERY_KEYS.sessions,
       view === 'incidents' ? 'all' : 'conversations',
       mineActive,
       SESSIONS_LIMIT,
@@ -98,7 +100,7 @@ export function SessionsPage() {
   });
 
   const trashQ = useQuery({
-    queryKey: ['sessions', 'trash', SESSIONS_LIMIT],
+    queryKey: [...QUERY_KEYS.sessions, 'trash', SESSIONS_LIMIT],
     queryFn: () => fetchTrash(SESSIONS_LIMIT),
     enabled: view === 'trash',
   });
@@ -108,7 +110,7 @@ export function SessionsPage() {
     onSuccess: () => {
       toast.success('Session renamed');
       setEditingId(null);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -120,7 +122,7 @@ export function SessionsPage() {
     onSuccess: () => {
       toast.success('Session moved to trash');
       setPendingDelete(null);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -129,7 +131,7 @@ export function SessionsPage() {
     mutationFn: (id: string) => restoreSession(id),
     onSuccess: () => {
       toast.success('Session restored');
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -142,8 +144,8 @@ export function SessionsPage() {
     onSuccess: (res) => {
       toast.success('Incident declared');
       clearDeclareMode();
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
-      void qc.invalidateQueries({ queryKey: ['regime'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.regime });
       navigate(`/chat/${res.session_id}`);
     },
     onError: (e: Error) => toast.error(promoteErrorMessage(e)),
@@ -160,8 +162,8 @@ export function SessionsPage() {
     onSuccess: (res) => {
       toast.success('Incident declared on a new session');
       clearDeclareMode();
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
-      void qc.invalidateQueries({ queryKey: ['regime'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.regime });
       navigate(`/chat/${res.session_id}`);
     },
     onError: (e: Error) => toast.error(promoteErrorMessage(e)),
@@ -213,6 +215,11 @@ export function SessionsPage() {
   const filtering = query.trim().length > 0;
   const trashed = trashQ.data ?? [];
   const loading = view === 'trash' ? trashQ.isLoading : sessionsQ.isLoading;
+  // The active view's query error (governance owns its own error state inside
+  // AdminSessionsPanel, so it is exempt here). A failed list must render an
+  // actionable error panel with a retry, not a misleading "no sessions" empty
+  // state coalesced from `data ?? []`.
+  const activeErrorQ = view === 'trash' ? trashQ : view === 'governance' ? null : sessionsQ;
 
   return (
     <>
@@ -271,6 +278,12 @@ export function SessionsPage() {
 
           {loading ? (
             <LoadingPage />
+          ) : activeErrorQ?.isError ? (
+            <QueryError
+              error={activeErrorQ.error}
+              onRetry={() => void activeErrorQ.refetch()}
+              resourceLabel="sessions"
+            />
           ) : (
             <>
               <TabsContent value="conversations">

@@ -6,10 +6,10 @@
 // explicit-disable case the backend maps to an effective of zero.
 export type LimitSource = 'default' | 'operator' | 'disabled';
 
-export function describeLimit(limit: {
-  state: string;
-  effective: number;
-}): { source: LimitSource; label: string } {
+export function describeLimit(limit: { state: string; effective: number }): {
+  source: LimitSource;
+  label: string;
+} {
   if (limit.state === 'backstop_fallback') {
     return { source: 'default', label: 'Default (backstop)' };
   }

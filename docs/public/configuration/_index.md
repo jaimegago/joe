@@ -82,19 +82,6 @@ refresh:                              # NOTE: this whole block is currently iner
     batch_threshold: 10
     batch_timeout_sec: 30
 
-notifications:
-  desktop:
-    enabled: false
-    priority_threshold: medium        # low | medium | high | urgent
-  slack:
-    enabled: false
-    priority_threshold: high
-  quiet_hours:
-    enabled: false
-    start: "22:00"
-    end: "08:00"
-    timezone: Local
-
 logging:
   level: info                         # debug | info | warn | error
   file: ""                            # log file path ("" = stderr only)
@@ -153,18 +140,6 @@ web_search:                           # optional; web search is inert until a pr
 | `auth.session_ttl` | `12h` | Human session lifetime. |
 | `auth.post_login_redirect` | `/` | Path to redirect to after a successful login. |
 | `auth.oidc.issuer` / `client_id` / `client_secret` / `redirect_url` | `""` | OIDC login is active only when `issuer`, `client_id`, and `redirect_url` are all set; the login/callback/logout endpoints are registered only then. |
-
-### `notifications`
-
-| Key | Default | Effect |
-| --- | --- | --- |
-| `notifications.desktop.enabled` | `false` | Enable desktop notifications. |
-| `notifications.desktop.priority_threshold` | `medium` | Minimum priority to notify (`low`/`medium`/`high`/`urgent`). |
-| `notifications.slack.enabled` | `false` | Enable Slack notifications. |
-| `notifications.slack.priority_threshold` | `high` | Minimum priority to notify. |
-| `notifications.quiet_hours.enabled` | `false` | Suppress notifications during quiet hours. |
-| `notifications.quiet_hours.start` / `end` | `22:00` / `08:00` | Quiet-hours window. |
-| `notifications.quiet_hours.timezone` | `Local` | Timezone the window is interpreted in. |
 
 ### `logging`
 

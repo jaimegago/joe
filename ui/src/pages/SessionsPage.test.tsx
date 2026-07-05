@@ -89,6 +89,24 @@ describe('SessionsPage', () => {
     expect(mockFetch).toHaveBeenCalledWith({ mine: false, limit: 50 });
   });
 
+  it('renders an actionable error panel with a retry when the sessions query fails', async () => {
+    // A failed list must not coalesce to a misleading "no conversations yet"
+    // empty state — it renders the shared QueryError panel with a Retry that
+    // re-runs the query.
+    mockFetch.mockRejectedValueOnce(new Error('boom'));
+    mockFetch.mockResolvedValueOnce(owned);
+    renderPage();
+
+    expect(await screen.findByText("Couldn't load sessions")).toBeInTheDocument();
+    expect(screen.queryByText('No conversations yet')).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+
+    // The retry re-runs fetchSessions and the list now renders.
+    expect(await screen.findByText('Payment Service Crashloop')).toBeInTheDocument();
+  });
+
   it('marks a session owned by another principal read-only and owner-attributed', async () => {
     mockFetch.mockResolvedValue([
       {

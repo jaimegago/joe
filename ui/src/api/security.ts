@@ -63,20 +63,17 @@ export function fetchComponentZones(): Promise<ComponentZoneAssignment[]> {
   return apiClient
     .get<unknown>('/api/v1/admin/component-zones')
     .then(
-      (r) =>
-        z.object({ assignments: z.array(ComponentZoneAssignmentSchema) }).parse(r).assignments
+      (r) => z.object({ assignments: z.array(ComponentZoneAssignmentSchema) }).parse(r).assignments
     );
 }
 
 export function fetchUnassigned(): Promise<{ component_id: string }[]> {
-  return apiClient
-    .get<unknown>('/api/v1/admin/unassigned')
-    .then((r) =>
-      z
-        .object({ component_ids: z.array(z.string()) })
-        .parse(r)
-        .component_ids.map((id) => ({ component_id: id }))
-    );
+  return apiClient.get<unknown>('/api/v1/admin/unassigned').then((r) =>
+    z
+      .object({ component_ids: z.array(z.string()) })
+      .parse(r)
+      .component_ids.map((id) => ({ component_id: id }))
+  );
 }
 
 export function assignZone(
@@ -107,7 +104,9 @@ export function fetchPolicies(): Promise<RbacPolicy[]> {
     .then((r) => z.object({ policies: z.array(RbacPolicySchema) }).parse(r).policies);
 }
 
-export function createPolicy(policy: Pick<RbacPolicy, 'principal' | 'zone_id'>): Promise<RbacPolicy> {
+export function createPolicy(
+  policy: Pick<RbacPolicy, 'principal' | 'zone_id'>
+): Promise<RbacPolicy> {
   return apiClient
     .post<unknown>('/api/v1/admin/policies', {
       principal: policy.principal,
@@ -118,16 +117,6 @@ export function createPolicy(policy: Pick<RbacPolicy, 'principal' | 'zone_id'>):
 
 export function deletePolicy(id: number): Promise<void> {
   return apiClient.delete<void>(`/api/v1/admin/policies/${id}`);
-}
-
-// revokePolicy revokes a single principal→zone grant by its natural key —
-// POST /api/v1/admin/policies/revoke. Lets a caller revoke without first
-// resolving the synthetic policy id.
-export function revokePolicy(principal: string, zoneId: string): Promise<void> {
-  return apiClient.post<void>('/api/v1/admin/policies/revoke', {
-    principal,
-    zone_id: zoneId,
-  });
 }
 
 // --- Identity registry (Users page) ---
@@ -191,7 +180,9 @@ export function removeAdmin(principal: string): Promise<void> {
 export function fetchReadPromotions(): Promise<ReadPromotion[]> {
   return apiClient
     .get<unknown>('/api/v1/admin/read-promotions')
-    .then((r) => z.object({ read_promotions: z.array(ReadPromotionSchema) }).parse(r).read_promotions);
+    .then(
+      (r) => z.object({ read_promotions: z.array(ReadPromotionSchema) }).parse(r).read_promotions
+    );
 }
 
 // setReadPromotion flips one component type's autonomous-read state — POST

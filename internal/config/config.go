@@ -14,16 +14,15 @@ import (
 
 // Config represents the Joe configuration
 type Config struct {
-	LLM           LLMConfig          `yaml:"llm"`
-	Server        ServerConfig       `yaml:"server"`
-	Refresh       RefreshConfig      `yaml:"refresh"`
-	Notifications NotificationConfig `yaml:"notifications"`
-	Logging       LoggingConfig      `yaml:"logging"`
-	Knowledge     KnowledgeConfig    `yaml:"knowledge"`
-	Database      DatabaseConfig     `yaml:"database"`
-	Skills        SkillsConfig       `yaml:"skills"`
-	Auth          AuthConfig         `yaml:"auth"`
-	WebSearch     WebSearchConfig    `yaml:"web_search"`
+	LLM       LLMConfig       `yaml:"llm"`
+	Server    ServerConfig    `yaml:"server"`
+	Refresh   RefreshConfig   `yaml:"refresh"`
+	Logging   LoggingConfig   `yaml:"logging"`
+	Knowledge KnowledgeConfig `yaml:"knowledge"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Skills    SkillsConfig    `yaml:"skills"`
+	Auth      AuthConfig      `yaml:"auth"`
+	WebSearch WebSearchConfig `yaml:"web_search"`
 
 	// explicitProvider records whether the user expressed an explicit LLM
 	// provider preference during Load — either JOE_LLM_PROVIDER or an
@@ -176,7 +175,7 @@ type ServerConfig struct {
 	InsecureCookies bool `yaml:"insecure_cookies"`
 	// SessionArchiveDir overrides where the §12.6 filesystem archive provider
 	// writes versioned session artifacts. Empty (the default) resolves to
-	// ~/.joe/session-archive via paths.SessionArchiveDir.
+	// ~/.joe/<paths.SessionArchiveDirName> in cmd/joe/server.go.
 	SessionArchiveDir string `yaml:"session_archive_dir"`
 }
 
@@ -336,27 +335,6 @@ type LLMBudget struct {
 	BatchTimeout    time.Duration `yaml:"-"` // Computed from BatchTimeoutSec
 }
 
-// NotificationConfig configures notifications
-type NotificationConfig struct {
-	Desktop    ChannelConfig    `yaml:"desktop"`
-	Slack      ChannelConfig    `yaml:"slack"`
-	QuietHours QuietHoursConfig `yaml:"quiet_hours"`
-}
-
-// ChannelConfig configures a notification channel
-type ChannelConfig struct {
-	Enabled           bool   `yaml:"enabled"`
-	PriorityThreshold string `yaml:"priority_threshold"` // "low", "medium", "high", "urgent"
-}
-
-// QuietHoursConfig configures quiet hours
-type QuietHoursConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Start    string `yaml:"start"`
-	End      string `yaml:"end"`
-	Timezone string `yaml:"timezone"`
-}
-
 // LoggingConfig configures logging
 type LoggingConfig struct {
 	Level string `yaml:"level"` // "debug", "info", "warn", "error"
@@ -473,22 +451,6 @@ func defaultConfig() *Config {
 				MaxCallsPerHour: defaultMaxCallsPerHour,
 				BatchThreshold:  defaultBatchThreshold,
 				BatchTimeoutSec: defaultBatchTimeoutSec,
-			},
-		},
-		Notifications: NotificationConfig{
-			Desktop: ChannelConfig{
-				Enabled:           false,
-				PriorityThreshold: defaultDesktopThreshold,
-			},
-			Slack: ChannelConfig{
-				Enabled:           false,
-				PriorityThreshold: defaultSlackThreshold,
-			},
-			QuietHours: QuietHoursConfig{
-				Enabled:  false,
-				Start:    defaultQuietStart,
-				End:      defaultQuietEnd,
-				Timezone: defaultQuietTimezone,
 			},
 		},
 		Logging: LoggingConfig{

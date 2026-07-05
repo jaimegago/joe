@@ -12,46 +12,26 @@ All HTTP examples below assume a service-account bearer token in `$JOE_API_KEY`
 Every tool Joe can execute is classified on a binary **Read/Mutate** axis at
 registration. Reads (queries, Joe's own graph/model maintenance, notifications
 to humans) always run. Mutates (writes to files, infrastructure, deployments,
-external PR/MR threads) are **denied by default** and require a per-action
-opt-in in the safety policy's `act` section. An unknown tool is treated as a
-mutation and denied.
+external PR/MR threads) are **denied by default**. An unknown tool is treated as
+a mutation and denied.
 
-This section covers only what an operator edits. For the full action-safety
-model — the classification rules, the write floor, and how the executor gates
-every call — [security-in-layers.md](reference/security-in-layers.md) is the authority.
+The mutation gate is **compiled in — there is no operator-editable safety-policy
+file** in this build. Gating comes from three compiled-in layers: the binary
+Read/Mutate classification, the default policy (`internal/safety/policy.go`,
+`DefaultPolicy` — all managed-system mutations off), and the boot-resolved write
+floor, which denies the entire Mutate class in observation mode or sticky safe
+mode regardless of anything else. The only per-request control is the task
+`safety_tier` (`observe` / `record` / `act`), which can further *restrict* a
+given task but never grants more than the compiled-in default.
 
-Policy lives in `~/.joe/safety-policy.yaml`. Joe's own tools cannot read or
-modify this file (the entire `~/.joe/` directory is excluded from every file
-tool at compile time). When the file is absent, Joe uses the most restrictive
-default: every mutating action disabled.
+For the full model — classification rules, the write floor, and the executor
+gate order (floor → scope → policy → notify) —
+[security-in-layers.md](reference/security-in-layers.md) is the authority.
 
-```yaml
-# ~/.joe/safety-policy.yaml
-version: 1
-
-# Mutating actions are denied by default; enable per action (explicit opt-in).
-act:
-  write_file:
-    enabled: false
-    allowed_directories:        # empty = unrestricted (when enabled)
-      - /tmp/joe-workspace
-      - /home/me/projects
-  run_command:
-    enabled: false
-    allowed_commands:           # allowlist by command
-      - kubectl get
-      - kubectl logs
-      - kubectl describe
-      - helm list
-  k8s_write:
-    enabled: false
-  pagerduty_ack:
-    enabled: false
-  alertmanager_silence:
-    enabled: false
-  git_push:
-    enabled: false
-```
+> Joe still protects `~/.joe/` structurally: the server ships no filesystem-write
+> tool, and the compile-time self-protection path exclusion
+> (`internal/safety/invariants.go`) excludes the whole `~/.joe/` directory from
+> any file tool that might ever be reintroduced.
 
 ## Emergency shutdown (panic mode)
 

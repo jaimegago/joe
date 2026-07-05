@@ -86,16 +86,6 @@ func TestDatabasePath_UsesHome(t *testing.T) {
 	}
 }
 
-func TestSecureHomeDir(t *testing.T) {
-	got, err := SecureHomeDir()
-	if err != nil {
-		t.Skipf("Cannot get home directory: %v", err)
-	}
-	if got == "" {
-		t.Fatal("SecureHomeDir() returned empty string")
-	}
-}
-
 func TestDefaultConfigPath_FallbackOnError(t *testing.T) {
 	orig := getSecureHomeDir
 	getSecureHomeDir = func() (string, error) { return "", fmt.Errorf("injected error") }

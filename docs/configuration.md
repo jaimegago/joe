@@ -65,19 +65,6 @@ refresh:
     batch_threshold: 10
     batch_timeout_sec: 30
 
-notifications:
-  desktop:
-    enabled: false
-    priority_threshold: medium      # low | medium | high | urgent
-  slack:
-    enabled: false
-    priority_threshold: high
-  quiet_hours:
-    enabled: false
-    start: "22:00"
-    end: "08:00"
-    timezone: Local
-
 logging:
   level: info                       # debug | info | warn | error
   file: ""                          # log file path (empty = stderr only)

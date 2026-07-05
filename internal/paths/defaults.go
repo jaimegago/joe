@@ -16,17 +16,6 @@ const (
 	SessionArchiveDirName = "session-archive"
 )
 
-// SessionArchiveDir returns the default directory the filesystem archive provider
-// writes session artifacts to (~/.joe/session-archive). An operator override is
-// resolved by cmd/joe/server.go from server.session_archive_dir.
-func SessionArchiveDir() (string, error) {
-	dir, err := JoeDirPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, SessionArchiveDirName), nil
-}
-
 // DefaultConfigPath returns the default configuration file path.
 // Returns ~/.joe/config.yaml using secure home directory resolution.
 func DefaultConfigPath() string {
@@ -49,15 +38,8 @@ func JoeDirPath() (string, error) {
 	return filepath.Join(home, JoeDir), nil
 }
 
-// SecureHomeDir returns the user's home directory using system APIs that
-// bypass the HOME environment variable. This is the exported version of
-// getSecureHomeDir for use by other packages that need secure home resolution.
-func SecureHomeDir() (string, error) {
-	return getSecureHomeDir()
-}
-
 // ExpandPath expands ~ to the secure home directory and makes the path absolute.
-// Uses SecureHomeDir() which bypasses the HOME environment variable.
+// It bypasses the HOME environment variable via getSecureHomeDir().
 func ExpandPath(path string) (string, error) {
 	if strings.HasPrefix(path, "~") {
 		home, err := getSecureHomeDir()

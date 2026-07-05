@@ -1,10 +1,7 @@
 import type { Node, Edge } from 'reactflow';
 
 // Simple hierarchical layout using level-based positioning
-export function applyHierarchicalLayout(
-  nodes: Node[],
-  edges: Edge[]
-): Node[] {
+export function applyHierarchicalLayout(nodes: Node[], edges: Edge[]): Node[] {
   if (nodes.length === 0) return nodes;
 
   // Build adjacency

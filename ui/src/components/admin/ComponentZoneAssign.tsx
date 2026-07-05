@@ -2,22 +2,33 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { fetchComponentZones, removeZone } from '@/api/security';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 
 export function ComponentZoneAssign() {
   const qc = useQueryClient();
-  const { data = [] } = useQuery({ queryKey: ['component-zones'], queryFn: fetchComponentZones });
+  const { data = [] } = useQuery({
+    queryKey: QUERY_KEYS.componentZones,
+    queryFn: fetchComponentZones,
+  });
   const [unassigning, setUnassigning] = useState<string | null>(null);
 
   const removeMut = useMutation({
     mutationFn: (componentId: string) => removeZone(componentId),
     onSuccess: () => {
       toast.success('Component unassigned');
-      void qc.invalidateQueries({ queryKey: ['component-zones'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.componentZones });
       // The source returns to the unassigned pool — refresh that list too.
-      void qc.invalidateQueries({ queryKey: ['unassigned'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.unassigned });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -45,7 +56,11 @@ export function ComponentZoneAssign() {
               </TableCell>
               <TableCell>
                 <div className="flex justify-end">
-                  <Button variant="outline" size="sm" onClick={() => setUnassigning(a.component_id)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setUnassigning(a.component_id)}
+                  >
                     Unassign
                   </Button>
                 </div>

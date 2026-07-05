@@ -1,12 +1,20 @@
 import { useState } from 'react';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { hasReservedPrefix } from '@/lib/principals';
 import type { SecurityZone, PrincipalRecord } from '@/api/types';
@@ -22,7 +30,14 @@ interface PolicyFormProps {
   isLoading?: boolean;
 }
 
-export function PolicyForm({ open, onOpenChange, zones, principals, onSubmit, isLoading }: PolicyFormProps) {
+export function PolicyForm({
+  open,
+  onOpenChange,
+  zones,
+  principals,
+  onSubmit,
+  isLoading,
+}: PolicyFormProps) {
   // A principal only appears in the registry after its first OIDC login, but a
   // policy can be granted to a not-yet-seen principal (the backend accepts any
   // reserved-prefixed identity). So the picker offers known principals AND a
@@ -122,7 +137,9 @@ export function PolicyForm({ open, onOpenChange, zones, principals, onSubmit, is
             </Select>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={(isLoading ?? false) || !canSubmit}>
               Create
             </Button>

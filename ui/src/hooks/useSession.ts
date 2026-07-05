@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSession } from '@/api/chat';
 import { ApiRequestError } from '@/api/client';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import type { Session } from '@/api/types';
 
 // How long, after a session id first comes into view, to keep polling for its
@@ -109,7 +110,7 @@ export function useSession(
   }, [sessionId]);
 
   const q = useQuery({
-    queryKey: ['session', sessionId],
+    queryKey: [...QUERY_KEYS.session, sessionId],
     queryFn: () => fetchSession(sessionId!),
     enabled: sessionId != null,
     // Bounded title-await: poll only while the session is still untitled and the
@@ -136,13 +137,13 @@ export function useSession(
   // their "New chat" rows pick it up live too.
   const title = data?.title;
   useEffect(() => {
-    if (title) void qc.invalidateQueries({ queryKey: ['sessions'] });
+    if (title) void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
   }, [title, qc]);
 
   const applyUpdate = useCallback(
     (updated: Session) => {
-      qc.setQueryData(['session', updated.id], updated);
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
+      qc.setQueryData([...QUERY_KEYS.session, updated.id], updated);
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
     },
     [qc]
   );

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -94,7 +95,14 @@ func (h *proposalHandler) handleGetProposal(w http.ResponseWriter, r *http.Reque
 	id := r.PathValue("id")
 	p, err := h.server.services.Proposals.Get(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "proposal not found", map[string]any{"id": id})
+		// Only a genuine miss (the store's ErrNotFound sentinel) is a 404; any
+		// other store failure is a 500 — writeInternalError logs it without
+		// echoing internals to the client.
+		if errors.Is(err, proposals.ErrNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "proposal not found", map[string]any{"id": id})
+			return
+		}
+		writeInternalError(w, err, "get proposal")
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
