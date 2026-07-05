@@ -124,12 +124,13 @@ already captured, not a live dialog at the moment of the write.
 
 ## Running Joe read-only
 
-When you want a categorical guarantee that Joe will not mutate anything, Joe can be run
-under a **hard read-only posture** by starting the daemon in observation mode
-(`JOE_MODE=observation`), which raises the write floor for the life of the process. This
-is an *available posture*, not the boot default: a normally started Joe boots writable and
-lets the gate chain above decide each mutation. Observation mode is the switch you throw
-when you want the floor up regardless. The
+Joe gives a categorical guarantee that it will not mutate anything by default: it **ships
+in observation mode**, a hard read-only posture that raises the write floor for the life
+of the process. The floor comes up when `JOE_MODE` is unset and, explicitly, with
+`JOE_MODE=observation`. This is the boot default, not an opt-in: a governed
+full-capabilities mode that would let the gate chain above decide each mutation is
+forthcoming — `JOE_MODE=full` is refused at boot pending implementation — so today Joe
+boots read-only regardless. The
 [observation mode and the write floor](observation-mode-and-the-write-floor/) page
 explains the mechanism and how to recover from it.
 
