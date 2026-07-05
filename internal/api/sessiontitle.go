@@ -55,7 +55,8 @@ func (h *taskHandler) maybeAutoTitle(ctx context.Context, sessionID, firstUserMs
 // small LLM call, in the background. It detaches from the request's cancellation
 // (the HTTP turn returns immediately) while preserving the principal/session
 // context values, and bounds itself with its own timeout. The write is
-// conditional: it only sets the title if the session is still untitled — a user
+// conditional: it only sets the title if the session is still untitled
+// (an atomic compare-and-set in the store, SetSessionTitleIfUnset) — a user
 // who renamed in the meantime wins, and a second turn never overwrites. The UI
 // polls the session after the first turn and swaps the placeholder for this
 // title once it lands. Best-effort throughout; any failure leaves the session
@@ -102,13 +103,16 @@ func (h *taskHandler) generateTitleAsync(ctx context.Context, sessionID, firstUs
 
 		// Only set the title if the session is still untitled — respect a manual
 		// rename that landed while the LLM call was in flight, and stay idempotent
-		// across concurrent first turns.
-		cur, err := h.server.services.SessionModel.GetSession(tctx, sessionID)
-		if err != nil || cur == nil || cur.Title != nil {
+		// across concurrent first turns. The condition is enforced atomically in
+		// the store (SetSessionTitleIfUnset's `title IS NULL` WHERE clause), not
+		// via a read-then-write, so a rename racing this write always wins.
+		set, err := h.server.services.SessionModel.SetSessionTitleIfUnset(tctx, sessionID, title)
+		if err != nil {
+			slog.Debug("auto-title: write failed", "session_id", sessionID, "error", err)
 			return
 		}
-		if err := h.server.services.SessionModel.UpdateSessionTitle(tctx, sessionID, title); err != nil {
-			slog.Debug("auto-title: write failed", "session_id", sessionID, "error", err)
+		if !set {
+			slog.Debug("auto-title: session already titled; leaving existing title", "session_id", sessionID)
 		}
 	}()
 }

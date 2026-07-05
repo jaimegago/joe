@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 
 const ALL_ACTIONS = ['read', 'query', 'mutate', 'delete'] as const;
-type Action = typeof ALL_ACTIONS[number];
+type Action = (typeof ALL_ACTIONS)[number];
 
 interface ZoneFormData {
   id: string;
@@ -34,7 +38,7 @@ export function ZoneForm({ open, onOpenChange, initial, onSubmit, isLoading }: Z
   );
 
   function toggleAction(a: Action) {
-    setActions((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
+    setActions((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -84,10 +88,7 @@ export function ZoneForm({ open, onOpenChange, initial, onSubmit, isLoading }: Z
             <div className="flex gap-4">
               {ALL_ACTIONS.map((a) => (
                 <label key={a} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={actions.includes(a)}
-                    onCheckedChange={() => toggleAction(a)}
-                  />
+                  <Checkbox checked={actions.includes(a)} onCheckedChange={() => toggleAction(a)} />
                   {a}
                 </label>
               ))}

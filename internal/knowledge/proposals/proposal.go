@@ -3,7 +3,16 @@
 // being published back to Confluence, Notion, or a Git repository.
 package proposals
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound is the sentinel for a proposal lookup that matched no row. The
+// repository wraps it with the offending id (fmt.Errorf("%w: ...")), so callers
+// can distinguish a genuinely missing proposal (errors.Is → HTTP 404) from a
+// real store failure (→ 500) instead of masking every error as not-found.
+var ErrNotFound = errors.New("proposal not found")
 
 // ProposalStatus represents the lifecycle state of a proposal.
 type ProposalStatus string

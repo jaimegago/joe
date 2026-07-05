@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -94,14 +101,18 @@ export function PrincipalsTable({ rows, selfPrincipal }: PrincipalsTableProps) {
                     <Badge variant="secondary">active</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-muted-foreground text-sm">{fmt(record.last_seen_at)}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">
+                  {fmt(record.last_seen_at)}
+                </TableCell>
                 <TableCell>
                   {isAdmin ? (
                     <span className="text-muted-foreground text-sm">all zones (admin)</span>
                   ) : zones.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {zones.map((z) => (
-                        <Badge key={z} variant="secondary" className="text-xs">{z}</Badge>
+                        <Badge key={z} variant="secondary" className="text-xs">
+                          {z}
+                        </Badge>
                       ))}
                     </div>
                   ) : (
@@ -109,12 +120,20 @@ export function PrincipalsTable({ rows, selfPrincipal }: PrincipalsTableProps) {
                   )}
                 </TableCell>
                 <TableCell>
-                  {isAdmin ? <Badge>admin</Badge> : <span className="text-muted-foreground text-sm">—</span>}
+                  {isAdmin ? (
+                    <Badge>admin</Badge>
+                  ) : (
+                    <span className="text-muted-foreground text-sm">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
                     {disabled ? (
-                      <Button variant="outline" size="sm" onClick={() => enableMut.mutate(record.principal)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => enableMut.mutate(record.principal)}
+                      >
                         Enable
                       </Button>
                     ) : (

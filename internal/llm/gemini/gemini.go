@@ -378,7 +378,7 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 			return &APIError{
 				Code:    apiErr.Code,
 				Message: apiErr.Message,
-				Err:     fmt.Errorf("Gemini rejected the request: the input exceeds the model's maximum context length:\n  %s\n\n%w", errDetails, llm.ErrContextOverflow),
+				Err:     fmt.Errorf("the Gemini API rejected the request: the input exceeds the model's maximum context length:\n  %s\n\n%w", errDetails, llm.ErrContextOverflow),
 			}
 		}
 
@@ -425,11 +425,11 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 
 			enhancedErr = fmt.Errorf("%s\n\nCommon causes:\n  - Invalid model name\n  - Malformed request\n  - Tool/function definition issues\n\n%s", errorMsg, modelsList)
 		case 403:
-			enhancedErr = fmt.Errorf("authentication failed with Gemini API: %s\n\nCheck that your GEMINI_API_KEY is valid.", apiErr.Message)
+			enhancedErr = fmt.Errorf("authentication failed with Gemini API: %s\n\nCheck that your GEMINI_API_KEY is valid", apiErr.Message)
 		case 429:
 			enhancedErr = fmt.Errorf("rate limit exceeded for Gemini API: %s\n\nYou've hit your API quota limit. Options:\n  1. Wait a few minutes and try again\n  2. Check your quota at https://aistudio.google.com/apikey\n  3. Upgrade your API plan if needed\n  4. Try a different model (some have separate quotas)", apiErr.Message)
 		default:
-			enhancedErr = fmt.Errorf("Gemini API error (%d): %s", apiErr.Code, apiErr.Message)
+			enhancedErr = fmt.Errorf("the Gemini API returned an error (%d): %s", apiErr.Code, apiErr.Message)
 		}
 
 		return &APIError{

@@ -1,11 +1,22 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { probeCredential, fetchCredentialStderr } from '@/api/credentialStatus';
-import type { CredentialStatusEntry, CredentialDiagnostic, CredentialProbeResponse } from '@/api/types';
+import type {
+  CredentialStatusEntry,
+  CredentialDiagnostic,
+  CredentialProbeResponse,
+} from '@/api/types';
 import { Copy } from 'lucide-react';
 
 // StageBadge maps a staged diagnostic to a single status badge. The four cases
@@ -80,7 +91,9 @@ function CredentialStatusRow({ entry }: { entry: CredentialStatusEntry }) {
             </span>
           )}
         </TableCell>
-        <TableCell className="text-muted-foreground text-sm">{d?.context ?? d?.audience ?? '—'}</TableCell>
+        <TableCell className="text-muted-foreground text-sm">
+          {d?.context ?? d?.audience ?? '—'}
+        </TableCell>
         <TableCell className="text-muted-foreground text-sm">
           {d?.expires_at ? new Date(d.expires_at).toLocaleString() : '—'}
         </TableCell>

@@ -10,11 +10,10 @@ import (
 )
 
 // PolicyFileName is the name of the skills policy file within the Joe config
-// directory. It is parallel to safety.PolicyFileName.
+// directory.
 //
-// Like the safety policy, this file is a *protected config*: Joe's tools cannot
-// read or write it (enforced by safety.IsPathAllowed). Humans edit it by hand;
-// the LLM cannot influence its contents at runtime.
+// This file is a *protected config*: humans edit it by hand and the LLM cannot
+// influence its contents at runtime (Joe exposes no filesystem-write tool).
 const PolicyFileName = "skills-policy.yaml"
 
 // Policy controls which skill components Joe will install without explicit

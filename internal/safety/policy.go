@@ -1,20 +1,18 @@
 package safety
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/jaimegago/joe/internal/paths"
-	"gopkg.in/yaml.v3"
-)
-
-// PolicyFileName is the name of the safety policy file within the Joe config directory.
+// PolicyFileName is the historical name of the safety policy file within the Joe
+// config directory. Joe no longer LOADS this file (the loader was removed — the
+// runtime policy comes from DefaultPolicy modulated per request), but the name
+// is retained because the self-protection path exclusion in invariants.go still
+// treats ~/.joe/<PolicyFileName> as off-limits to any (future) file tool.
 const PolicyFileName = "safety-policy.yaml"
 
-// SafetyPolicy defines what Joe is allowed to do. It is loaded once at startup
-// from ~/.joe/safety-policy.yaml. Joe's own tools cannot read or modify this file.
+// SafetyPolicy defines what Joe is allowed to do. It is constructed at runtime
+// from DefaultPolicy() and modulated per request by the task's safety_tier
+// (see internal/api resolveSafetyPolicy). There is no on-disk policy file: the
+// former ~/.joe/safety-policy.yaml loader was never wired in production and was
+// removed. The yaml tags are retained only so the struct still round-trips if a
+// file-backed source is ever reintroduced deliberately.
 type SafetyPolicy struct {
 	Version int          `yaml:"version"`
 	Record  RecordPolicy `yaml:"record"`
@@ -88,59 +86,6 @@ func DefaultPolicy() *SafetyPolicy {
 	}
 }
 
-// LoadPolicy reads the safety policy from the given directory. If the file does
-// not exist, it returns DefaultPolicy(). If the file exists but is malformed,
-// it returns an error — we refuse to run with an unparseable policy.
-func LoadPolicy(configDir string) (*SafetyPolicy, error) {
-	path := filepath.Join(configDir, PolicyFileName)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return DefaultPolicy(), nil
-		}
-		return nil, fmt.Errorf("read safety policy %s: %w", path, err)
-	}
-
-	policy := DefaultPolicy() // start from defaults so missing fields get safe values
-	if err := yaml.Unmarshal(data, policy); err != nil {
-		return nil, fmt.Errorf("parse safety policy %s: %w", path, err)
-	}
-
-	if policy.Version < 1 {
-		return nil, fmt.Errorf("safety policy %s: version must be >= 1, got %d", path, policy.Version)
-	}
-
-	// Expand ~ in allowed_directories to the user's home directory.
-	// Uses secure home resolution that bypasses HOME env var.
-	if err := expandTildePaths(policy.Act.WriteFile.AllowedDirectories); err != nil {
-		return nil, fmt.Errorf("safety policy %s: expand allowed_directories: %w", path, err)
-	}
-
-	// Normalize allowed_directories to absolute, cleaned paths and reject relative entries.
-	if err := normalizeAllowedDirectories(policy.Act.WriteFile.AllowedDirectories); err != nil {
-		return nil, fmt.Errorf("safety policy %s: normalize allowed_directories: %w", path, err)
-	}
-
-	return policy, nil
-}
-
-// IsT2Allowed checks whether a T2 (Record) action category is permitted.
-func (p *SafetyPolicy) IsT2Allowed(category string) bool {
-	switch category {
-	case "graph_mutations":
-		return p.Record.GraphMutations
-	case "source_registration":
-		return p.Record.ComponentRegistration
-	case "onboarding_facts":
-		return p.Record.OnboardingFacts
-	case "autonomous_refresh":
-		return p.Record.AutonomousRefresh
-	default:
-		return false // unknown category → deny
-	}
-}
-
 // IsT3Allowed checks whether a T3 (Act) action is permitted.
 func (p *SafetyPolicy) IsT3Allowed(action string) bool {
 	switch action {
@@ -159,46 +104,4 @@ func (p *SafetyPolicy) IsT3Allowed(action string) bool {
 	default:
 		return false // unknown action → deny
 	}
-}
-
-// expandTildePaths expands ~ prefix in path slices to the user's home directory.
-// Modifies the slice in place. Uses secure home resolution (bypasses HOME env).
-func expandTildePaths(paths_ []string) error {
-	var home string
-	for i, p := range paths_ {
-		if strings.HasPrefix(p, "~/") || p == "~" {
-			if home == "" {
-				var err error
-				home, err = paths.SecureHomeDir()
-				if err != nil {
-					return fmt.Errorf("cannot resolve ~ in path %q: %w", p, err)
-				}
-			}
-			if p == "~" {
-				paths_[i] = home
-			} else {
-				paths_[i] = filepath.Join(home, p[2:])
-			}
-		}
-	}
-	return nil
-}
-
-// normalizeAllowedDirectories converts allowed_directories entries to absolute,
-// cleaned paths and rejects any that are still relative after expansion.
-func normalizeAllowedDirectories(paths_ []string) error {
-	for i, p := range paths_ {
-		if p == "" {
-			continue
-		}
-		if !filepath.IsAbs(p) {
-			return fmt.Errorf("allowed_directories must be absolute: %q", p)
-		}
-		absPath, err := filepath.Abs(p)
-		if err != nil {
-			return fmt.Errorf("failed to resolve allowed_directories path %q: %w", p, err)
-		}
-		paths_[i] = filepath.Clean(absPath)
-	}
-	return nil
 }

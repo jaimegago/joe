@@ -40,7 +40,9 @@ function Probe() {
       <span data-testid="rbac">{String(rbacEnabled)}</span>
       <span data-testid="oidc">{String(oidcEnabled)}</span>
       <span data-testid="principal">{principal ?? ''}</span>
-      <button onClick={() => void apiClient.get('/api/v1/graph').catch(() => undefined)}>ping</button>
+      <button onClick={() => void apiClient.get('/api/v1/graph').catch(() => undefined)}>
+        ping
+      </button>
       <button onClick={() => void login('break-glass-token').catch(() => undefined)}>login</button>
       <button onClick={() => logout()}>logout</button>
     </div>
@@ -58,9 +60,16 @@ describe('AuthProvider', () => {
   it('treats RBAC-off as authed regardless of token, with no login prompt', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        response(200, { principal: 'local', is_admin: true, rbac_enabled: false, oidc_enabled: false })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          response(200, {
+            principal: 'local',
+            is_admin: true,
+            rbac_enabled: false,
+            oidc_enabled: false,
+          })
+        )
     );
     renderWithAuth(<Probe />);
 
@@ -72,7 +81,16 @@ describe('AuthProvider', () => {
   it('is authed when RBAC is on and /me succeeds', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }))
+      vi
+        .fn()
+        .mockResolvedValue(
+          response(200, {
+            principal: 'alice',
+            is_admin: false,
+            rbac_enabled: true,
+            oidc_enabled: false,
+          })
+        )
     );
     renderWithAuth(<Probe />);
 
@@ -95,9 +113,16 @@ describe('AuthProvider', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          response(200, {
+            principal: 'alice',
+            is_admin: false,
+            rbac_enabled: true,
+            oidc_enabled: false,
+          })
+        )
     );
 
     render(
@@ -109,7 +134,10 @@ describe('AuthProvider', () => {
     );
 
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'));
-    expect(qc.getQueryData(['mutate-status'])).toEqual({ can_mutate: false, reason: 'observation' });
+    expect(qc.getQueryData(['mutate-status'])).toEqual({
+      can_mutate: false,
+      reason: 'observation',
+    });
   });
 
   it('is unauthed when RBAC is on and /me returns 401', async () => {
@@ -132,7 +160,14 @@ describe('AuthProvider', () => {
       'fetch',
       vi.fn((url: unknown) => {
         if (String(url).includes('/api/v1/me')) {
-          return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }));
+          return Promise.resolve(
+            response(200, {
+              principal: 'alice',
+              is_admin: false,
+              rbac_enabled: true,
+              oidc_enabled: false,
+            })
+          );
         }
         // The public auth-config endpoint is reachable and not a session
         // signal — it must not be the 401 this test drives through /graph.
@@ -160,7 +195,14 @@ describe('AuthProvider', () => {
         if (String(url).includes('/api/v1/auth/logout')) {
           return Promise.resolve(response(200, { ok: true }));
         }
-        return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: true }));
+        return Promise.resolve(
+          response(200, {
+            principal: 'alice',
+            is_admin: false,
+            rbac_enabled: true,
+            oidc_enabled: true,
+          })
+        );
       })
     );
     renderWithAuth(<Probe />);
@@ -186,7 +228,14 @@ describe('AuthProvider', () => {
           // A stale cookie / server error on logout must not block local clear.
           return Promise.resolve(response(500, { message: 'logout failed' }));
         }
-        return Promise.resolve(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: true }));
+        return Promise.resolve(
+          response(200, {
+            principal: 'alice',
+            is_admin: false,
+            rbac_enabled: true,
+            oidc_enabled: true,
+          })
+        );
       })
     );
     renderWithAuth(<Probe />);
@@ -207,7 +256,16 @@ describe('AuthProvider', () => {
     // after a successful re-login — this test guards that regression.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(response(200, { principal: 'alice', is_admin: false, rbac_enabled: true, oidc_enabled: false }))
+      vi
+        .fn()
+        .mockResolvedValue(
+          response(200, {
+            principal: 'alice',
+            is_admin: false,
+            rbac_enabled: true,
+            oidc_enabled: false,
+          })
+        )
     );
     renderWithAuth(<Probe />);
 

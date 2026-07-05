@@ -21,7 +21,6 @@ import type {
   RetentionPolicySchema,
   PurgeManifestSchema,
   PurgePreviewSchema,
-  AlertSchema,
   CurrentUserSchema,
   ZoneAccessSchema,
   RegimeSchema,
@@ -36,7 +35,6 @@ import type {
   UsageBreakdownSchema,
   UsageAggregateSchema,
   UsageWindowSchema,
-  UsageSessionSchema,
   LLMProviderSchema,
   LLMProvidersSchema,
   CredentialStageSchema,
@@ -73,7 +71,6 @@ export type Session = z.infer<typeof SessionSchema>;
 export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>;
 export type PurgeManifest = z.infer<typeof PurgeManifestSchema>;
 export type PurgePreview = z.infer<typeof PurgePreviewSchema>;
-export type Alert = z.infer<typeof AlertSchema>;
 export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 export type ZoneAccess = z.infer<typeof ZoneAccessSchema>;
 export type Regime = z.infer<typeof RegimeSchema>;
@@ -89,7 +86,6 @@ export type LLMSettings = z.infer<typeof LLMSettingsSchema>;
 export type UsageBreakdown = z.infer<typeof UsageBreakdownSchema>;
 export type UsageAggregate = z.infer<typeof UsageAggregateSchema>;
 export type UsageWindow = z.infer<typeof UsageWindowSchema>;
-export type UsageSession = z.infer<typeof UsageSessionSchema>;
 export type LLMProvider = z.infer<typeof LLMProviderSchema>;
 export type LLMProviders = z.infer<typeof LLMProvidersSchema>;
 export type CredentialStage = z.infer<typeof CredentialStageSchema>;

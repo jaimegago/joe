@@ -265,6 +265,12 @@ func (h *llmSettingsHandler) handleSetActiveModel(w http.ResponseWriter, r *http
 	// The admin surface must produce an identical post-swap chain so a
 	// model change here keeps usage recording and cost-gate enforcement.
 	adapter := h.server.services.BuildLLMChain(raw, mc)
+	// modelSwapMu makes persist+swap indivisible against the sibling switch
+	// handler (models.go handleSetCurrent): without it two racing switches can
+	// interleave the two writes and leave the live adapter disagreeing with the
+	// persisted active model.
+	h.server.modelSwapMu.Lock()
+	defer h.server.modelSwapMu.Unlock()
 	if err := h.server.services.LLMSettings.SetActiveModel(r.Context(), req.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, errorCodeInternal, fmt.Sprintf("failed to persist active model: %s", err))
 		return

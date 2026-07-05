@@ -36,9 +36,3 @@ export const STATUS_CONFIG: Record<string, { color: string; dot: string; label: 
   disconnected: { color: '#9ca3af', dot: '○', label: 'Disconnected' },
   error: { color: '#ef4444', dot: '○', label: 'Error' },
 };
-
-export const SEVERITY_CONFIG: Record<string, { color: string; variant: 'default' | 'destructive' | 'warning' | 'secondary' }> = {
-  critical: { color: '#ef4444', variant: 'destructive' },
-  warning: { color: '#eab308', variant: 'warning' },
-  info: { color: '#3b82f6', variant: 'secondary' },
-};

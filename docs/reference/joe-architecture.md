@@ -512,9 +512,10 @@ joe/
 ```
 ~/.joe/
 ├── config.yaml          # User configuration
-├── safety-policy.yaml   # Safety policy (Joe cannot read/write this)
+├── skills-policy.yaml   # Skills trust policy (Joe cannot read/write this)
 ├── joe.db               # SQLite database (includes the graph)
 └── repos/               # Cloned git repos
+# Note: the safety policy is compiled in (DefaultPolicy) — no safety-policy.yaml file.
 ```
 
 **config.yaml** (representative; `internal/config/`):
@@ -579,7 +580,7 @@ This replaces the former three-tier Observe/Record/Act (T1/T2/T3) scheme — col
 
 ### Safety policy
 
-The policy lives in `~/.joe/safety-policy.yaml` — human-editable only, excluded from Joe's file tools, loaded once at startup. Its `act` section gates each Mutate tool (default deny). The legacy `record` section is a retained, inert compatibility shim (model-maintenance tools are now Reads).
+The policy is the compiled `DefaultPolicy()` (`internal/safety/policy.go`) — there is no on-disk safety-policy file (the loader was never wired in production and was removed). Its `act` section gates each Mutate tool (default deny); the per-task `safety_tier` can only narrow it. The legacy `record` section is a retained, inert compatibility field (model-maintenance tools are now Reads). The `~/.joe/` path exclusion in `internal/safety/invariants.go` still keeps that directory off-limits to any future file tool.
 
 ### Self-protection invariants
 

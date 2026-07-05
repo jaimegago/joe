@@ -8,10 +8,12 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Button } from '@/components/ui/button';
 import { PoliciesTable } from '@/components/admin/PoliciesTable';
 import { PolicyForm } from '@/components/admin/PolicyForm';
+import { QueryError } from '@/components/common/QueryError';
 import { useZones } from '@/hooks/useZones';
 import { usePolicies } from '@/hooks/usePolicies';
 import { usePrincipals } from '@/hooks/usePrincipals';
 import { createPolicy } from '@/api/security';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import { ShieldCheck } from 'lucide-react';
 
 // PoliciesAdminPage is the former Admin "Policies" tab promoted to a standalone
@@ -31,12 +33,27 @@ export function PoliciesAdminPage() {
     onSuccess: () => {
       toast.success('Policy created');
       setShowCreatePolicy(false);
-      void qc.invalidateQueries({ queryKey: ['policies'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.policies });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   if (policiesQ.isLoading) return <LoadingPage />;
+
+  if (policiesQ.isError) {
+    return (
+      <>
+        <Header title="Policies" />
+        <PageContainer>
+          <QueryError
+            error={policiesQ.error}
+            onRetry={() => void policiesQ.refetch()}
+            resourceLabel="policies"
+          />
+        </PageContainer>
+      </>
+    );
+  }
 
   const zones = zonesQ.data ?? [];
   const policies = policiesQ.data ?? [];

@@ -900,9 +900,18 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Connected: register the live adapter so the refresh loop and tools can use
-	// it, and clear the stored error so the list status recovers.
+	// it, and clear the stored error so the list status recovers. Registering
+	// over an existing entry displaces the old connected instance, which still
+	// holds live resources (redis/postgres/mysql pools, mongodb monitor
+	// goroutines) — Disconnect it best-effort so repeated tests do not leak one
+	// connected adapter per click.
 	if h.server.services.Adapters != nil {
-		h.server.services.Adapters.Register(src.ID, adapter)
+		if displaced := h.server.services.Adapters.Register(src.ID, adapter); displaced != nil {
+			if derr := displaced.Disconnect(); derr != nil {
+				slog.Warn("failed to disconnect displaced adapter after test-and-replace",
+					"component_id", src.ID, "error", derr)
+			}
+		}
 	}
 	if updateErr := h.server.services.Store.Components.UpdateSyncStatus(ctx, src.ID, time.Now(), ""); updateErr != nil {
 		slog.Warn("failed to persist source test status", "component_id", src.ID, "error", updateErr)

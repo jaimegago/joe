@@ -6,6 +6,7 @@ import {
   PromotionRequirementsSchema,
   PromotionCandidatesSchema,
   PromoteResponseSchema,
+  TestComponentResponseSchema,
 } from './schemas';
 import { z } from 'zod';
 import type {
@@ -47,17 +48,10 @@ export function createComponent(input: {
     .then((r) => CreatedComponentSchema.parse(r));
 }
 
-export function fetchComponent(id: string): Promise<Component> {
-  return apiClient
-    .get<unknown>(`/api/v1/components/${encodeURIComponent(id)}`)
-    .then((r) => ComponentSchema.parse(r));
-}
-
 export function testComponent(id: string): Promise<{ ok: boolean; message?: string }> {
-  return apiClient.post<{ ok: boolean; message?: string }>(
-    `/api/v1/components/${encodeURIComponent(id)}/test`,
-    {}
-  );
+  return apiClient
+    .post<unknown>(`/api/v1/components/${encodeURIComponent(id)}/test`, {})
+    .then((r) => TestComponentResponseSchema.parse(r));
 }
 
 export function deleteComponent(id: string): Promise<void> {

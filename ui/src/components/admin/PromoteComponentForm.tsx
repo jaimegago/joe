@@ -99,9 +99,7 @@ export function PromoteComponentForm({
   const inCompose = composeMode || (!candQ.isLoading && candidates.length === 0);
   const composedEnvVar = inCompose ? prefix + label.trim() : pickedEnvVar;
   const labelNotLive =
-    inCompose &&
-    label.trim() !== '' &&
-    !candidates.some((c) => c.env_var_name === composedEnvVar);
+    inCompose && label.trim() !== '' && !candidates.some((c) => c.env_var_name === composedEnvVar);
 
   // The at-least-one-of rule is READ from the requirements, not hardcoded, so a
   // backend change to the constraint changes the form's gating with it. For
@@ -140,8 +138,7 @@ export function PromoteComponentForm({
 
   const staticReady = inCompose ? label.trim() !== '' && prefix !== '' : pickedEnvVar !== '';
 
-  const canSubmit =
-    kind === 'static' ? staticReady : kind === 'static-bearer' ? k8sReady : false;
+  const canSubmit = kind === 'static' ? staticReady : kind === 'static-bearer' ? k8sReady : false;
 
   function buildBody(): PromoteRequest | null {
     if (kind === 'static') {
@@ -194,9 +191,9 @@ export function PromoteComponentForm({
               {verb} {component.id}
             </DialogTitle>
             <DialogDescription>
-              Arming gives this component a credentialed connection under its assigned zone.
-              You supply a <strong>reference</strong> to a credential in Joe&rsquo;s
-              environment — never the secret itself.
+              Arming gives this component a credentialed connection under its assigned zone. You
+              supply a <strong>reference</strong> to a credential in Joe&rsquo;s environment — never
+              the secret itself.
             </DialogDescription>
           </DialogHeader>
 
@@ -217,8 +214,8 @@ export function PromoteComponentForm({
           {reqs && !reqs.wired && (
             <div className="space-y-3">
               <p className="text-sm">
-                This component type (<span className="font-mono">{reqs.type}</span>) can&rsquo;t
-                be armed yet — Joe has no credential provider wired for it.
+                This component type (<span className="font-mono">{reqs.type}</span>) can&rsquo;t be
+                armed yet — Joe has no credential provider wired for it.
               </p>
               <div>
                 <p className="mb-1 text-xs text-muted-foreground">Types that can be armed</p>

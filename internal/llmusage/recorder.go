@@ -191,6 +191,17 @@ func NewRecorderAdapter(cfg Config) *RecorderAdapter {
 // invoked — no tokens are consumed and no usage row is recorded for
 // the refused call. The gate also fires the once-only mixed-currency
 // detector on the first call, off the per-call enforcement path.
+//
+// The gate is check-then-act by design: it reads accumulated spend from
+// the table BEFORE delegating, and a concurrent call's usage row only
+// lands after that call's inner return — in-flight calls are invisible
+// to the check. The accepted consequence is a bounded overshoot: spend
+// in a window can exceed its limit by at most (in-flight concurrency ×
+// the largest single-call cost), because each concurrent call passed
+// the gate before any of their rows were recorded. The limits are
+// budget rails, not a hard invariant; serializing the gate (a lock or
+// SELECT-FOR-UPDATE spanning the inner call) was rejected as it would
+// serialize every Chat call end-to-end.
 func (r *RecorderAdapter) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	r.mixedOnce.Do(func() { r.detectMixedCurrency(ctx) })
 	if err := r.gate(ctx); err != nil {

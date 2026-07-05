@@ -36,7 +36,7 @@ func TestArchive_MovesTranscriptAndStampsColumns(t *testing.T) {
 	addMsg(t, repo, "m1", "s1", "user", "hello")
 	addMsg(t, repo, "m2", "s1", "assistant", "hi there")
 
-	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:s1.json"); err != nil {
+	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:s1.json", 2); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
 
@@ -52,9 +52,45 @@ func TestArchive_MovesTranscriptAndStampsColumns(t *testing.T) {
 		t.Errorf("transcript still in hot storage after archive: %d rows", len(msgs))
 	}
 
-	// Re-archive is rejected (guard matched no un-archived row).
-	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:dup.json"); !errors.Is(err, sessionmodel.ErrSessionAlreadyArchived) {
+	// Re-archive is rejected (guard matched no un-archived row). The transcript is
+	// already moved (0 live rows), so the count guard passes and the
+	// already-archived guard fires.
+	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:dup.json", 0); !errors.Is(err, sessionmodel.ErrSessionAlreadyArchived) {
 		t.Errorf("double archive err = %v, want ErrSessionAlreadyArchived", err)
+	}
+}
+
+// TestArchive_RefusesTranscriptChanged proves the §12.6 mid-window guard: if the
+// live transcript no longer matches the count the caller serialized into the
+// artifact (a message landed between the artifact read and the archive commit),
+// ArchiveSession refuses with ErrArchiveTranscriptChanged and destroys NOTHING —
+// the columns stay unset and every hot row survives, so the caller may re-read and
+// retry. This is the structural close of the "message written mid-archive is
+// silently deleted" data-loss window.
+func TestArchive_RefusesTranscriptChanged(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	mkSession(t, repo, "s1", "user:alice")
+	addMsg(t, repo, "m1", "s1", "user", "hello")
+	addMsg(t, repo, "m2", "s1", "assistant", "hi there")
+	// The caller built its artifact from 2 messages; then a 3rd landed before the
+	// archive commit. Passing the stale expectedMsgs=2 must be refused.
+	addMsg(t, repo, "m3", "s1", "user", "wait, one more")
+
+	err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:s1.json", 2)
+	if !errors.Is(err, sessionmodel.ErrArchiveTranscriptChanged) {
+		t.Fatalf("ArchiveSession err = %v, want ErrArchiveTranscriptChanged", err)
+	}
+
+	// Nothing was destroyed or stamped.
+	sess, _ := repo.GetSession(ctx, "s1")
+	if sess.ArchivedAt != nil || sess.ArchiveRef != nil {
+		t.Errorf("archive columns stamped despite a refused transcript-changed archive: %+v", sess)
+	}
+	if msgs, _ := repo.ListChatMessages(ctx, "s1"); len(msgs) != 3 {
+		t.Errorf("transcript rows = %d, want 3 (nothing deleted on a refused archive)", len(msgs))
 	}
 }
 
@@ -67,7 +103,7 @@ func TestUnarchive_ClearsColumns(t *testing.T) {
 	ctx := context.Background()
 
 	mkSession(t, repo, "s1", "user:alice")
-	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:s1.json"); err != nil {
+	if err := repo.ArchiveSession(ctx, "s1", "user:admin", "fs:s1.json", 0); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
 	if err := repo.UnarchiveSession(ctx, "s1"); err != nil {
@@ -145,7 +181,7 @@ func TestArchive_SameTxRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginTx: %v", err)
 	}
-	if err := repo.ArchiveSessionTx(ctx, tx, "s1", "user:admin", "fs:s1.json"); err != nil {
+	if err := repo.ArchiveSessionTx(ctx, tx, "s1", "user:admin", "fs:s1.json", 1); err != nil {
 		t.Fatalf("ArchiveSessionTx: %v", err)
 	}
 	// Simulate a later same-tx failure (e.g. the audit insert) by rolling back.

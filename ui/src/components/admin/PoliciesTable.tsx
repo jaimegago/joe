@@ -2,10 +2,18 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { deletePolicy } from '@/api/security';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import type { RbacPolicy } from '@/api/types';
 
 interface PoliciesTableProps {
@@ -20,7 +28,7 @@ export function PoliciesTable({ policies }: PoliciesTableProps) {
     mutationFn: (id: number) => deletePolicy(id),
     onSuccess: () => {
       toast.success('Policy deleted');
-      void qc.invalidateQueries({ queryKey: ['policies'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.policies });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -47,7 +55,9 @@ export function PoliciesTable({ policies }: PoliciesTableProps) {
                 {new Date(p.created_at).toLocaleString()}
               </TableCell>
               <TableCell>
-                <Button variant="destructive" size="sm" onClick={() => setDeleting(p.id)}>Delete</Button>
+                <Button variant="destructive" size="sm" onClick={() => setDeleting(p.id)}>
+                  Delete
+                </Button>
               </TableCell>
             </TableRow>
           ))}

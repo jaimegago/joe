@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -102,7 +101,9 @@ func (s *rateLimitStore) allow(ip string) bool {
 	return l.limiter.Allow()
 }
 
-// cleanup removes entries that haven't been seen for rateLimiterTTL.
+// cleanup removes entries that haven't been seen for rateLimiterTTL. The
+// production boot constructs exactly one store for the process lifetime, so the
+// goroutine runs until exit by design (no shutdown seam is plumbed for it).
 func (s *rateLimitStore) cleanup() {
 	ticker := time.NewTicker(rateLimiterTTL)
 	defer ticker.Stop()
@@ -145,16 +146,16 @@ func RateLimit(rps float64, burst int) func(http.Handler) http.Handler {
 	}
 }
 
-// remoteIP extracts the client IP from the request, stripping the port.
+// remoteIP extracts the rate-limit key from the request: the TCP peer address,
+// stripped of its port. It deliberately does NOT trust X-Forwarded-For. Joe
+// listens directly on :7777 with no trusted reverse proxy in the default
+// deployment, so an XFF header is fully client-controlled — honoring it would
+// let any direct client bypass the limiter (fresh spoofed IP per request) and
+// grow the limiter map without bound. Keying on RemoteAddr is spoof-proof; a
+// deployment that does sit behind a trusted proxy gets per-proxy-IP limiting,
+// a safe degradation. If trusted-proxy support is ever added, gate XFF parsing
+// behind that explicit configuration.
 func remoteIP(r *http.Request) string {
-	// Check X-Forwarded-For first (set by reverse proxies).
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first (leftmost) IP which is the original client.
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

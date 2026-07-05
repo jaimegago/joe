@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -39,6 +40,7 @@ func (a *Adapter) ListVPCs(ctx context.Context) ([]VPC, error) {
 		subnets, err := a.getSubnetsForVPC(ctx, *vpc.VpcId)
 		if err != nil {
 			// Log error but continue
+			slog.Warn("skipping VPC in list result: subnet lookup failed", "vpc_id", *vpc.VpcId, "error", err)
 			continue
 		}
 		vpcData.Subnets = subnets

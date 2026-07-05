@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchRegime } from '@/api/regime';
 import { ApiRequestError } from '@/api/client';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 
 // useRegime polls the system regime so the app shell can surface an active
 // incident. Incident state changes out-of-band (an operator declares/resolves
@@ -9,7 +10,7 @@ import { ApiRequestError } from '@/api/client';
 // chatty. A 401 is definitive (handled by the auth context) and not retried.
 export function useRegime() {
   return useQuery({
-    queryKey: ['regime'],
+    queryKey: QUERY_KEYS.regime,
     queryFn: fetchRegime,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,

@@ -110,16 +110,17 @@ Every mutate is subject to the same executor gate chain, checked in order:
    the captain's session.
 3. **Zone and namespace scope** — the action must fall within a scope the principal is
    granted.
-4. **The safety-policy opt-in** — each mutate class must be explicitly enabled by the
-   operator in the safety policy. A class that is not opted in is denied.
+4. **The compiled safety policy** — each mutate class must be enabled in the safety
+   policy. The policy is the compiled default (`DefaultPolicy`), which denies every
+   managed-system mutation; a class that is not enabled is denied. The per-task
+   `safety_tier` can only narrow this further, never widen it.
 
-Authority to mutate is therefore something the operator builds up deliberately, not a
-default. It comes from the operator's boot-time policy opt-in, plus a human approval step
-in the proposal workflow before a documentation proposal is published, plus the
-captain-only restriction that narrows who may act during an incident. There is no
-per-action confirmation prompt in the server flow — the authority is the policy the
-operator set and the approval the workflow already captured, not a live dialog at the
-moment of the write.
+Authority to mutate is therefore constrained by default, not granted by default. It is
+bounded by the compiled default-deny policy, plus a human approval step in the proposal
+workflow before a documentation proposal is published, plus the captain-only restriction
+that narrows who may act during an incident. There is no per-action confirmation prompt in
+the server flow — the authority is the compiled policy and the approval the workflow
+already captured, not a live dialog at the moment of the write.
 
 ## Running Joe read-only
 

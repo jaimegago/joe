@@ -36,18 +36,23 @@ describe('LoginPage', () => {
 
   it('shows an inline failure and does not persist the token on a 401', async () => {
     // /me is 401 until a valid key is supplied; here every attempt 401s.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: () => Promise.resolve({ message: 'unauthorized' }),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ message: 'unauthorized' }),
+      })
+    );
     renderLogin();
 
     await waitFor(() => expect(screen.getByLabelText('Service-account key')).toBeInTheDocument());
     await userEvent.type(screen.getByLabelText('Service-account key'), 'bad-key');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/authentication failed/i));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/authentication failed/i)
+    );
     expect(screen.queryByTestId('app')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('joe.auth.token')).toBeNull();
   });

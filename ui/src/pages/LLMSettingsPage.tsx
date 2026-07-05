@@ -2,6 +2,7 @@ import { Header } from '@/components/layout/Header';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
+import { QueryError } from '@/components/common/QueryError';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SettingsTab } from '@/components/llm/SettingsTab';
 import { UsageTab } from '@/components/llm/UsageTab';
@@ -20,6 +21,27 @@ export function LLMSettingsPage() {
   const meQ = useCurrentUser();
 
   if (settingsQ.isLoading || providersQ.isLoading) return <LoadingPage />;
+
+  // A failed settings/providers fetch is a genuine error, not an empty config —
+  // render an actionable error panel with a retry rather than "No settings".
+  if (settingsQ.isError || providersQ.isError) {
+    const failed = settingsQ.isError ? settingsQ : providersQ;
+    return (
+      <>
+        <Header title="LLM Settings" />
+        <PageContainer>
+          <QueryError
+            error={failed.error}
+            onRetry={() => {
+              if (settingsQ.isError) void settingsQ.refetch();
+              if (providersQ.isError) void providersQ.refetch();
+            }}
+            resourceLabel="LLM settings"
+          />
+        </PageContainer>
+      </>
+    );
+  }
 
   const settings = settingsQ.data;
   const providers = providersQ.data;
@@ -46,7 +68,11 @@ export function LLMSettingsPage() {
                 models={providers?.providers ?? []}
               />
             ) : (
-              <EmptyState icon={Cpu} title="No settings" description="LLM settings are unavailable." />
+              <EmptyState
+                icon={Cpu}
+                title="No settings"
+                description="LLM settings are unavailable."
+              />
             )}
           </TabsContent>
 
@@ -58,7 +84,11 @@ export function LLMSettingsPage() {
             {providers ? (
               <ProvidersTab providers={providers.providers} current={providers.current} />
             ) : (
-              <EmptyState icon={Cpu} title="No providers" description="No LLM models are configured." />
+              <EmptyState
+                icon={Cpu}
+                title="No providers"
+                description="No LLM models are configured."
+              />
             )}
           </TabsContent>
         </Tabs>

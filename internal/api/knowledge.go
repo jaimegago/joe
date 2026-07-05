@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -101,7 +102,14 @@ func (h *knowledgeHandler) handleGetEntry(w http.ResponseWriter, r *http.Request
 	id := r.PathValue("id")
 	e, err := svc.Get(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "knowledge entry not found", map[string]any{"id": id})
+		// Only a genuine miss (the store's ErrEntryNotFound sentinel) is a 404;
+		// any other store failure is a 500 — writeInternalError logs it without
+		// echoing internals to the client.
+		if errors.Is(err, knowledge.ErrEntryNotFound) {
+			writeError(w, http.StatusNotFound, errorCodeNotFound, "knowledge entry not found", map[string]any{"id": id})
+			return
+		}
+		writeInternalError(w, err, "get knowledge entry")
 		return
 	}
 	writeJSON(w, http.StatusOK, e)

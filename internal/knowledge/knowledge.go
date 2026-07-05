@@ -2,8 +2,15 @@ package knowledge
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
+
+// ErrEntryNotFound is the sentinel for an entry lookup that matched no row. The
+// repository wraps it with the offending id (fmt.Errorf("%w: ...")), so callers
+// can distinguish a genuinely missing entry (errors.Is → HTTP 404) from a real
+// store failure (→ 500) instead of masking every error as not-found.
+var ErrEntryNotFound = errors.New("knowledge entry not found")
 
 // Tier represents the trust level of a knowledge entry.
 type Tier string

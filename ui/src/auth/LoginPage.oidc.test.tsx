@@ -60,7 +60,9 @@ describe('LoginPage OIDC presentation', () => {
     render(<LoginPage />);
 
     expect(screen.getByLabelText('Service-account key')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /use a service-account key/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /use a service-account key/i })
+    ).not.toBeInTheDocument();
     // The only button is the key-submit; there is no separate OIDC button.
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
   });

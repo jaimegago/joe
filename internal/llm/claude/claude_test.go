@@ -583,7 +583,7 @@ func TestEnhanceError_Unknown(t *testing.T) {
 	if errors.As(err, &apiErr) {
 		t.Fatal("Unknown error should not be wrapped in *APIError")
 	}
-	if !strings.Contains(err.Error(), "Claude API call failed") {
-		t.Errorf("Expected 'Claude API call failed' in error, got: %s", err.Error())
+	if !strings.Contains(err.Error(), "call to Claude API failed") {
+		t.Errorf("Expected 'call to Claude API failed' in error, got: %s", err.Error())
 	}
 }

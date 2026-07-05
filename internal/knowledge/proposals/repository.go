@@ -79,7 +79,7 @@ func (r *sqlRepository) Get(ctx context.Context, id string) (*Proposal, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("proposal not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
 	return rows[0], nil
 }

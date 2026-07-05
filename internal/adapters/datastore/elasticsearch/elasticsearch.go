@@ -115,7 +115,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Elasticsearch health check failed (status %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("elasticsearch health check failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	a.connected = true

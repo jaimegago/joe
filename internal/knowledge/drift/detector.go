@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,12 @@ import (
 
 	"github.com/jaimegago/joe/internal/knowledge"
 )
+
+// ErrNotSyncedEntry is the sentinel for a Detect call against an entry that is
+// not Tier 2 (synced): drift is defined only against an external source of
+// truth. It marks a caller mistake (HTTP 400), distinct from a missing entry
+// (knowledge.ErrEntryNotFound → 404) and from a real store/fetch failure (500).
+var ErrNotSyncedEntry = errors.New("drift detection only applies to Tier 2 (synced) entries")
 
 // DriftReport describes drift detected for a single knowledge entry.
 type DriftReport struct {
@@ -53,7 +60,7 @@ func (d *Detector) Detect(ctx context.Context, entryID string) (*DriftReport, er
 		return nil, fmt.Errorf("get entry: %w", err)
 	}
 	if entry.Tier != knowledge.TierSynced {
-		return nil, fmt.Errorf("drift detection only applies to Tier 2 (synced) entries")
+		return nil, ErrNotSyncedEntry
 	}
 
 	externalContent, err := d.fetchExternal(ctx, entry)

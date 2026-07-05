@@ -66,9 +66,18 @@ func NewWithRepo(repo *gogit.Repository, repoPath string) *Adapter {
 	}
 }
 
-func (a *Adapter) Connect(_ context.Context, source store.Component) error {
+func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// go-git's network operations honour a context deadline but impose no default
+	// timeout of their own; a clone/pull against an unreachable remote would
+	// otherwise block forever while a.mu is held. Ensure a bound exists.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
@@ -97,7 +106,7 @@ func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(cfg.Branch)
 			cloneOpts.SingleBranch = true
 		}
-		repo, err = gogit.PlainClone(repoPath, false, cloneOpts)
+		repo, err = gogit.PlainCloneContext(ctx, repoPath, false, cloneOpts)
 		if err != nil {
 			return fmt.Errorf("clone repo: %w", err)
 		}
@@ -107,7 +116,7 @@ func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 			return fmt.Errorf("get worktree: %w", err)
 		}
 		pullOpts := &gogit.PullOptions{Auth: auth}
-		if pullErr := wt.Pull(pullOpts); pullErr != nil && pullErr != gogit.NoErrAlreadyUpToDate {
+		if pullErr := wt.PullContext(ctx, pullOpts); pullErr != nil && pullErr != gogit.NoErrAlreadyUpToDate {
 			return fmt.Errorf("pull repo: %w", pullErr)
 		}
 	}

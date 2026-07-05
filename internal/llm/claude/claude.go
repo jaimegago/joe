@@ -235,13 +235,13 @@ func (c *Client) enhanceError(err error) error {
 		// to the context_overflow terminal status rather than the generic
 		// error bucket. Wraps llm.ErrContextOverflow for errors.Is.
 		code = 400
-		enhancedErr = fmt.Errorf("Claude rejected the request: the prompt or a tool output exceeds the model's maximum context length:\n  %s\n\n%w", errMsg, llm.ErrContextOverflow)
+		enhancedErr = fmt.Errorf("the Claude API rejected the request: the prompt or a tool output exceeds the model's maximum context length:\n  %s\n\n%w", errMsg, llm.ErrContextOverflow)
 	} else if strings.Contains(errMsg, "400") || strings.Contains(errMsg, "invalid") {
 		code = 400
 		enhancedErr = fmt.Errorf("invalid request to Claude API.\n\nThis might indicate unsupported parameters:\n  %s", errMsg)
 	} else {
 		// Return original error with context if we can't enhance it
-		return fmt.Errorf("Claude API call failed: %w", err)
+		return fmt.Errorf("call to Claude API failed: %w", err)
 	}
 
 	return &APIError{

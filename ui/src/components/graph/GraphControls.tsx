@@ -1,4 +1,10 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, Grid3X3 } from 'lucide-react';
 import type { GraphNode } from '@/api/types';
@@ -39,7 +45,9 @@ export function GraphControls({
         <SelectContent>
           <SelectItem value="all">All namespaces</SelectItem>
           {namespaces.map((ns) => (
-            <SelectItem key={ns} value={ns!}>{ns}</SelectItem>
+            <SelectItem key={ns} value={ns!}>
+              {ns}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -50,7 +58,9 @@ export function GraphControls({
         <SelectContent>
           <SelectItem value="all">All kinds</SelectItem>
           {kinds.map((k) => (
-            <SelectItem key={k} value={k}>{k}</SelectItem>
+            <SelectItem key={k} value={k}>
+              {k}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -61,7 +71,9 @@ export function GraphControls({
         <SelectContent>
           <SelectItem value="all">All statuses</SelectItem>
           {statuses.map((s) => (
-            <SelectItem key={s} value={s}>{s}</SelectItem>
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>

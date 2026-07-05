@@ -29,7 +29,9 @@ describe('Sidebar', () => {
   beforeEach(() => mockUseCurrentUser.mockReset());
 
   it('renders admin-only entries and the ADMIN badge when the caller is an admin', () => {
-    mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<typeof useCurrentUser>);
+    mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<
+      typeof useCurrentUser
+    >);
     renderSidebar();
     // The Admin subgroup header and its children render for admins.
     expect(screen.getByText('Admin')).toBeInTheDocument();
@@ -61,7 +63,9 @@ describe('Sidebar', () => {
   });
 
   it('hides admin-only entries and the ADMIN badge when the caller is not an admin', () => {
-    mockUseCurrentUser.mockReturnValue({ data: { is_admin: false } } as ReturnType<typeof useCurrentUser>);
+    mockUseCurrentUser.mockReturnValue({ data: { is_admin: false } } as ReturnType<
+      typeof useCurrentUser
+    >);
     renderSidebar();
     expect(screen.queryByText('Admin')).not.toBeInTheDocument();
     expect(screen.queryByText('LLM Settings')).not.toBeInTheDocument();

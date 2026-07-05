@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -205,7 +206,7 @@ func (a *Adapter) GetVNet(ctx context.Context, id string) (*VNet, error) {
 
 func (a *Adapter) checkConnected() error {
 	if !a.connected {
-		return fmt.Errorf(errorNotConnected)
+		return errors.New(errorNotConnected)
 	}
 	return nil
 }

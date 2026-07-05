@@ -179,7 +179,14 @@ var toolRegistry = map[string]ToolClassification{
 	"helm_release":       {Class: ActionRead, Description: "Get full details for a specific Helm release"},
 	"helm_history":       {Class: ActionRead, Description: "Get revision history for a Helm release"},
 
-	// Knowledge store drift detection (Phase 8) — read-only
+	// Knowledge store search + drift detection (Phase 8) — read-only.
+	// search_knowledge queries Joe's own knowledge store and mutates no managed
+	// system, so it is a Read and passes the write floor unconditionally. Without
+	// this explicit row ClassifyTool would default it to ActionMutate
+	// (deny-by-default) and the advertised tool would be floor-blocked and
+	// policy-denied on every call even though it only reads. Pinned by
+	// TestClassifySearchKnowledgeIsRead.
+	"search_knowledge": {Class: ActionRead, Description: "Search Joe's knowledge store for relevant entries"},
 	"detect_doc_drift": {Class: ActionRead, Description: "Detect documentation drift between knowledge store and external components"},
 
 	// === Read — Joe's own model maintenance ===

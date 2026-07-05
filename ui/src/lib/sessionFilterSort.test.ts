@@ -18,9 +18,21 @@ function session(over: Partial<Session> & { id: string }): Session {
 }
 
 // ---- Conversations fixtures (titles + distinct activity times) -------------
-const apple = session({ id: 'apple', title: 'Apple deploy', last_activity_at: '2026-06-22T12:00:00Z' });
-const banana = session({ id: 'banana', title: 'Banana rollout', last_activity_at: '2026-06-22T09:00:00Z' });
-const cherry = session({ id: 'cherry', title: 'Cherry pipeline', last_activity_at: '2026-06-22T15:00:00Z' });
+const apple = session({
+  id: 'apple',
+  title: 'Apple deploy',
+  last_activity_at: '2026-06-22T12:00:00Z',
+});
+const banana = session({
+  id: 'banana',
+  title: 'Banana rollout',
+  last_activity_at: '2026-06-22T09:00:00Z',
+});
+const cherry = session({
+  id: 'cherry',
+  title: 'Cherry pipeline',
+  last_activity_at: '2026-06-22T15:00:00Z',
+});
 
 // ---- Incident-cluster fixtures ---------------------------------------------
 // Master "Database outage" (newest), two ordered children.

@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchMessages, createSession } from '@/api/chat';
 import { streamTask } from '@/api/taskStream';
 import type { StepEvent, TaskStatus } from '@/api/taskStream';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import type { ChatMessage } from '@/api/types';
 
 // --- Display model ------------------------------------------------------
@@ -170,6 +171,18 @@ export function useChat(initialSessionId?: string) {
   // Monotonic counter for unique live-turn ids (avoids Date.now collisions
   // when two turns start in the same millisecond).
   const seqRef = useRef(0);
+  // The in-flight stream's AbortController plus the session it belongs to.
+  // Switching sessions or unmounting aborts it, so an abandoned turn's request
+  // is cancelled and its callbacks never fire for the session the user moved to.
+  // Null when nothing streams.
+  const abortRef = useRef<{ controller: AbortController; session: string | null } | null>(null);
+  // abortInFlight cancels the current stream (if any) and clears the ref. Used
+  // by the session-switch effect and the unmount cleanup. It does NOT touch
+  // isSending — the callers own that, so they can reset it in the right order.
+  const abortInFlight = useCallback(() => {
+    abortRef.current?.controller.abort();
+    abortRef.current = null;
+  }, []);
   // The id minted by this mount's own createSession() call (see send). History
   // is never fetched for it: its transcript lives in liveItems, and the server
   // only persists it as the turn completes, so a fetch would cache an empty list
@@ -185,15 +198,35 @@ export function useChat(initialSessionId?: string) {
   // (routeSessionId === sessionId), keep everything: it is the same session, now
   // reflected in the address bar.
   const routeSessionId = initialSessionId ?? null;
-  const prevRouteId = useRef(routeSessionId);
-  if (routeSessionId !== prevRouteId.current) {
-    prevRouteId.current = routeSessionId;
+  const [prevRouteId, setPrevRouteId] = useState(routeSessionId);
+  if (routeSessionId !== prevRouteId) {
+    setPrevRouteId(routeSessionId);
     if (routeSessionId !== sessionId) {
+      // Switching to a different session mid-stream: re-enable the composer
+      // immediately and drop the previous mount's live turns. The abandoned
+      // stream is aborted by the sessionId effect below once this commits.
+      setIsSending(false);
       setSessionId(routeSessionId);
       setLiveItems([]);
       setLocallyCreatedId(null);
     }
   }
+
+  // Abort any in-flight stream that belongs to a session other than the one now
+  // in view — i.e. the user switched sessions mid-stream. The request is
+  // cancelled and its callbacks can't mutate state for the new session
+  // (streamTask returns silently once aborted). Keyed on sessionId so it runs
+  // exactly when the in-view session changes, ref access kept out of render.
+  useEffect(() => {
+    if (abortRef.current && abortRef.current.session !== sessionId) {
+      abortInFlight();
+    }
+  }, [sessionId, abortInFlight]);
+  // Abort on unmount so a turn abandoned by navigating away does not keep a
+  // dangling reader/request alive after the component is gone.
+  useEffect(() => {
+    return () => abortInFlight();
+  }, [abortInFlight]);
 
   // Persisted history is loaded once per MOUNT and frozen for that mount's
   // lifetime (staleTime: Infinity, no window-focus refetch). Because it is
@@ -236,6 +269,13 @@ export function useChat(initialSessionId?: string) {
     async (content: string) => {
       setIsSending(true);
 
+      // A fresh AbortController for this turn. If the user switches sessions or
+      // unmounts before the stream ends, abortInFlight() aborts this controller
+      // and streamTask returns silently, so none of the callbacks below fire. It
+      // is tagged with the session it belongs to (filled in once resolved below)
+      // so the sessionId effect can tell an abandoned turn from the current one.
+      const controller = new AbortController();
+
       const seq = seqRef.current++;
       const userId = `u-${seq}`;
       const turnId = `a-${seq}`;
@@ -268,6 +308,9 @@ export function useChat(initialSessionId?: string) {
           setSessionId(session.id);
           sid = session.id;
         } catch {
+          // A caller-initiated abort during creation means this turn was
+          // discarded — leave state alone (the switch already reset it).
+          if (controller.signal.aborted) return;
           updateTurn(turnId, (t) => ({
             ...t,
             status: 'failed',
@@ -278,6 +321,10 @@ export function useChat(initialSessionId?: string) {
           return;
         }
       }
+
+      // Register this turn's controller against its resolved session so the
+      // session-switch effect can abort it if the user navigates away.
+      abortRef.current = { controller, session: sid };
 
       await streamTask(
         { session_id: sid, message: content },
@@ -331,17 +378,26 @@ export function useChat(initialSessionId?: string) {
               // server/transport message is shown.
               errorMessage: writeFailureMessage(code) ?? message,
             })),
-        }
+        },
+        controller.signal
       );
+
+      // This stream was aborted (the user switched sessions or unmounted): the
+      // switch/unmount handler already reset isSending and cleared the view, so
+      // do not touch state or invalidate queries for the abandoned turn.
+      if (controller.signal.aborted) return;
 
       // The first message of a fresh session titles it server-side (an async
       // LLM call that lands shortly after this turn). Refresh the session-list
       // and detail queries — otherwise frozen — so the refreshed last-activity
       // appears now; ChatPage polls the detail query separately until the async
       // title lands and swaps out the "New chat" placeholder.
-      void qc.invalidateQueries({ queryKey: ['sessions'] });
-      if (sid) void qc.invalidateQueries({ queryKey: ['session', sid] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
+      if (sid) void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.session, sid] });
 
+      // This turn's controller is settled; clear the ref so a later switch does
+      // not abort an already-finished controller.
+      if (abortRef.current?.controller === controller) abortRef.current = null;
       setIsSending(false);
     },
     [sessionId, updateTurn, qc]

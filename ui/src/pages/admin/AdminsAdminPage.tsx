@@ -8,8 +8,10 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Button } from '@/components/ui/button';
 import { AdminsTable } from '@/components/admin/AdminsTable';
 import { AdminForm } from '@/components/admin/AdminForm';
+import { QueryError } from '@/components/common/QueryError';
 import { useAdmins } from '@/hooks/usePrincipals';
 import { addAdmin } from '@/api/security';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import { ShieldCheck } from 'lucide-react';
 
 // AdminsAdminPage is the former Admin "Admins" tab promoted to a standalone
@@ -29,12 +31,27 @@ export function AdminsAdminPage() {
       setShowAddAdmin(false);
       void qc.invalidateQueries({ queryKey: ['admins'] });
       // Promotion strips the principal's redundant per-zone grants server-side.
-      void qc.invalidateQueries({ queryKey: ['policies'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.policies });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   if (adminsQ.isLoading) return <LoadingPage />;
+
+  if (adminsQ.isError) {
+    return (
+      <>
+        <Header title="Admins" />
+        <PageContainer>
+          <QueryError
+            error={adminsQ.error}
+            onRetry={() => void adminsQ.refetch()}
+            resourceLabel="admins"
+          />
+        </PageContainer>
+      </>
+    );
+  }
 
   const admins = adminsQ.data ?? [];
 

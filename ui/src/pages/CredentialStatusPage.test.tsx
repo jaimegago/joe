@@ -68,7 +68,12 @@ describe('CredentialStatusPage', () => {
     mockList.mockResolvedValue([entries[1]]);
     const ok: CredentialProbeResponse = {
       component_id: 'github-main',
-      diagnostic: { component_id: 'github-main', provider: 'static', stage: 'connectivity-probed', ok: true },
+      diagnostic: {
+        component_id: 'github-main',
+        provider: 'static',
+        stage: 'connectivity-probed',
+        ok: true,
+      },
       stderr_available: false,
     };
     mockProbe.mockResolvedValue(ok);
@@ -85,7 +90,12 @@ describe('CredentialStatusPage', () => {
     mockList.mockResolvedValue([entries[0]]);
     const lazy: CredentialProbeResponse = {
       component_id: 'prod-cluster',
-      diagnostic: { component_id: 'prod-cluster', provider: 'kubeconfig-exec', stage: 'mint-succeeded', ok: true },
+      diagnostic: {
+        component_id: 'prod-cluster',
+        provider: 'kubeconfig-exec',
+        stage: 'mint-succeeded',
+        ok: true,
+      },
       stderr_available: false,
     };
     mockProbe.mockResolvedValue(lazy);

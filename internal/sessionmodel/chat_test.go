@@ -165,6 +165,62 @@ func TestRepository_UpdateSessionTitle(t *testing.T) {
 	}
 }
 
+// TestRepository_SetSessionTitleIfUnset verifies the auto-title compare-and-set:
+// it sets the title only when the column is NULL and reports whether it wrote, so
+// a concurrent manual rename that landed first is never clobbered ("user who
+// renamed wins"). This is the SQL-layer fix for the auto-title/manual-rename race.
+func TestRepository_SetSessionTitleIfUnset(t *testing.T) {
+	s := newTestStore(t)
+	repo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
+	ctx := context.Background()
+
+	at := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	mk := func(id string) {
+		if _, err := repo.CreateSession(ctx, sessionmodel.AgentSession{
+			ID: id, Type: sessionmodel.SessionTypeDefault, CreatorPrincipal: "user:alice@example.com",
+			CreatedAt: at, LastActivityAt: at,
+		}); err != nil {
+			t.Fatalf("CreateSession %s: %v", id, err)
+		}
+	}
+
+	// Untitled session: the CAS sets it and reports true.
+	mk("s1")
+	set, err := repo.SetSessionTitleIfUnset(ctx, "s1", "Auto Title")
+	if err != nil {
+		t.Fatalf("SetSessionTitleIfUnset: %v", err)
+	}
+	if !set {
+		t.Fatal("SetSessionTitleIfUnset returned false on an untitled session, want true")
+	}
+	got, _ := repo.GetSession(ctx, "s1")
+	if got.Title == nil || *got.Title != "Auto Title" {
+		t.Errorf("title = %v, want %q", got.Title, "Auto Title")
+	}
+	// last_activity_at must be unchanged by an auto-title.
+	if !got.LastActivityAt.Equal(at) {
+		t.Errorf("last_activity_at = %v, want unchanged %v", got.LastActivityAt, at)
+	}
+
+	// Already-titled session (the race loser): the manual rename lands first, then
+	// the auto-title CAS must NOT clobber it and must report false.
+	mk("s2")
+	if err := repo.UpdateSessionTitle(ctx, "s2", "Manual Rename"); err != nil {
+		t.Fatalf("UpdateSessionTitle: %v", err)
+	}
+	set, err = repo.SetSessionTitleIfUnset(ctx, "s2", "Auto Title (loser)")
+	if err != nil {
+		t.Fatalf("SetSessionTitleIfUnset (already titled): %v", err)
+	}
+	if set {
+		t.Error("SetSessionTitleIfUnset returned true on an already-titled session — it clobbered a manual rename")
+	}
+	got, _ = repo.GetSession(ctx, "s2")
+	if got.Title == nil || *got.Title != "Manual Rename" {
+		t.Errorf("title = %v, want the manual rename %q preserved", got.Title, "Manual Rename")
+	}
+}
+
 // TestRepository_LinkSessionToIncident verifies that linking a plain chat
 // session to the active incident sets linked_incident_id ONLY — no type flip
 // (the 'investigation' type was removed; §12.3) — and does not bump

@@ -7,9 +7,10 @@ import {
   fetchPerPrincipalUsage,
   type UsageWindowParam,
 } from '@/api/llm';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 
 export function useLLMSettings() {
-  return useQuery({ queryKey: ['llm-settings'], queryFn: fetchLLMSettings });
+  return useQuery({ queryKey: QUERY_KEYS.llmSettings, queryFn: fetchLLMSettings });
 }
 
 export function useLLMProviders() {

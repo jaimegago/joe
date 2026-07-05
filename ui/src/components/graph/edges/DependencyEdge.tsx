@@ -14,7 +14,11 @@ export const DependencyEdge = memo(function DependencyEdge({
   markerEnd,
 }: EdgeProps) {
   const edgeType = (data as { type?: string } | undefined)?.type ?? 'depends_on';
-  const cfg = EDGE_TYPE_CONFIG[edgeType] ?? EDGE_TYPE_CONFIG.depends_on;
+  // Known edge types carry a curated label + visual style. An unknown relation
+  // keeps the depends_on VISUAL fallback (color/style) but labels itself with
+  // the real relation name rather than mislabeling it "depends on".
+  const known = EDGE_TYPE_CONFIG[edgeType];
+  const cfg = known ?? { ...EDGE_TYPE_CONFIG.depends_on, label: edgeType };
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -34,7 +38,8 @@ export const DependencyEdge = memo(function DependencyEdge({
         style={{
           stroke: cfg.color,
           strokeWidth: 1.5,
-          strokeDasharray: cfg.style === 'dashed' ? '5,5' : cfg.style === 'dotted' ? '2,3' : undefined,
+          strokeDasharray:
+            cfg.style === 'dashed' ? '5,5' : cfg.style === 'dotted' ? '2,3' : undefined,
         }}
       />
       <EdgeLabelRenderer>

@@ -172,8 +172,9 @@ func TestHandleDetectDriftByEntry_NotFound(t *testing.T) {
 	}
 }
 
-// TestHandleDetectDriftByEntry_TierOneEntry verifies 404 for Tier 1 (curated) entries,
-// since drift detection only applies to Tier 2 (synced) entries.
+// TestHandleDetectDriftByEntry_TierOneEntry verifies 400 for Tier 1 (curated)
+// entries: the entry exists, so a 404 would be wrong — drift detection just does
+// not apply to non-synced entries, which is a caller mistake (ErrNotSyncedEntry).
 func TestHandleDetectDriftByEntry_TierOneEntry(t *testing.T) {
 	mux, knowledgeSvc := setupDriftTestServer(t)
 
@@ -189,15 +190,18 @@ func TestHandleDetectDriftByEntry_TierOneEntry(t *testing.T) {
 		t.Fatalf("seed entry: %v", err)
 	}
 
-	// Detect returns error for non-Tier-2 entries → 404.
+	// Detect returns ErrNotSyncedEntry for a non-Tier-2 entry → 400 (not 404:
+	// the entry exists, it is simply ineligible).
 	w := doRequest(mux, http.MethodGet, apiPrefix+"/knowledge/drift/curated-entry", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
 	}
 }
 
-// TestHandleDetectDriftByEntry_TierTwoNoSource verifies 404 for a Tier 2 entry when
-// no matching external source is configured (fetchExternal fails → Detect returns error).
+// TestHandleDetectDriftByEntry_TierTwoNoSource verifies that a Tier 2 entry whose
+// external source is not configured yields 500 — a store/fetch failure surfaced
+// via writeInternalError (which logs without echoing internals), NOT a masked
+// 404. Masking arbitrary fetch failures as "not found" was the bug (audit #16).
 func TestHandleDetectDriftByEntry_TierTwoNoSource(t *testing.T) {
 	mux, knowledgeSvc := setupDriftTestServer(t)
 
@@ -214,9 +218,10 @@ func TestHandleDetectDriftByEntry_TierTwoNoSource(t *testing.T) {
 		t.Fatalf("seed entry: %v", err)
 	}
 
-	// No confluence source → fetchExternal returns error → 404.
+	// No confluence source → fetchExternal fails → 500 (internal error, logged
+	// not echoed), not a masked 404.
 	w := doRequest(mux, http.MethodGet, apiPrefix+"/knowledge/drift/synced-no-src", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
 	}
 }

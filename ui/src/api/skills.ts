@@ -4,11 +4,7 @@ import {
   SkillsReloadResponseSchema,
   SkillsApprovalResponseSchema,
 } from './schemas';
-import type {
-  SkillsListResponse,
-  SkillsReloadResponse,
-  SkillsApprovalResponse,
-} from './types';
+import type { SkillsListResponse, SkillsReloadResponse, SkillsApprovalResponse } from './types';
 
 // Skills inspection/management API. These endpoints are bearer-authed (not
 // RBAC-gated server-side), but every caller renders behind the admin-only
@@ -18,9 +14,7 @@ import type {
 // fetchSkills lists every installed skill, split into the loaded (active) set
 // and the on-disk-but-held (quarantined) set — GET /api/v1/skills.
 export function fetchSkills(): Promise<SkillsListResponse> {
-  return apiClient
-    .get<unknown>('/api/v1/skills')
-    .then((r) => SkillsListResponseSchema.parse(r));
+  return apiClient.get<unknown>('/api/v1/skills').then((r) => SkillsListResponseSchema.parse(r));
 }
 
 // reloadSkills triggers a synchronous rescan of the skills directory and

@@ -2,6 +2,7 @@ package sessionarchive
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,8 +37,25 @@ func NewFilesystemProvider(dir string) *FilesystemProvider {
 func (p *FilesystemProvider) Scheme() string { return fsScheme }
 
 // Store encodes the artifact (stamping the schema version) and writes it
-// atomically (temp file + rename) so a crash mid-write never leaves a truncated
-// artifact that Decode would later mis-read. The session id keys the filename.
+// atomically so a crash mid-write never leaves a truncated artifact that Decode
+// would later mis-read. The session id keys the filename, so one session has at
+// most one artifact.
+//
+// It REFUSES to overwrite an existing final artifact: if a file already exists at
+// the target, Store returns ErrArtifactExists rather than clobbering it. Because
+// the artifact is keyed only by session id, a byte-identical locator is produced
+// by any concurrent/prior archival of the same session; the guarded archive-state
+// UPDATE (archiveExec, WHERE archived_at IS NULL) means at most one archival can
+// legitimately win, so a pre-existing artifact is owned by that winner and must
+// not be clobbered or later removed by a loser. This closes the data-loss window
+// where a rolled-back loser's Remove(ref) would delete the winner's committed
+// artifact (the ref is session-keyed, hence identical).
+//
+// The claim is atomic against a racing creator: the artifact is written to a
+// per-call unique temp file (so two concurrent Stores never share a temp), then
+// os.Link claims the final name — Link fails with os.ErrExist if the target
+// already exists, so exactly one racer wins the final name. The temp is always
+// cleaned up.
 func (p *FilesystemProvider) Store(_ context.Context, a *Artifact) (string, error) {
 	name, err := artifactFilename(a.Session.ID)
 	if err != nil {
@@ -48,12 +66,30 @@ func (p *FilesystemProvider) Store(_ context.Context, a *Artifact) (string, erro
 		return "", err
 	}
 	final := filepath.Join(p.dir, name)
-	tmp := final + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+
+	// Per-call unique temp so concurrent Stores of the same session do not
+	// overwrite each other's in-progress bytes before the atomic claim below.
+	tmp, err := os.CreateTemp(p.dir, name+".tmp-*")
+	if err != nil {
+		return "", fmt.Errorf("archive: create temp artifact: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
 		return "", fmt.Errorf("archive: write artifact: %w", err)
 	}
-	if err := os.Rename(tmp, final); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("archive: write artifact: %w", err)
+	}
+
+	// Atomically claim the final name. os.Link fails with os.ErrExist if a final
+	// artifact already exists, so a concurrent/prior archival's committed file is
+	// never clobbered — the caller sees ErrArtifactExists and removes nothing.
+	if err := os.Link(tmpName, final); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrArtifactExists
+		}
 		return "", fmt.Errorf("archive: commit artifact: %w", err)
 	}
 	return fsScheme + ":" + name, nil

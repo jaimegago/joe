@@ -1,4 +1,11 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Cpu, Check, X } from 'lucide-react';
@@ -15,7 +22,9 @@ interface ProvidersTabProps {
 // as a boolean indicator — there is no key entry and no mutation here.
 export function ProvidersTab({ providers, current }: ProvidersTabProps) {
   if (providers.length === 0) {
-    return <EmptyState icon={Cpu} title="No providers" description="No LLM models are configured." />;
+    return (
+      <EmptyState icon={Cpu} title="No providers" description="No LLM models are configured." />
+    );
   }
   return (
     <Table>
@@ -45,9 +54,7 @@ export function ProvidersTab({ providers, current }: ProvidersTabProps) {
                 </Badge>
               )}
             </TableCell>
-            <TableCell>
-              {p.name === current && <Badge variant="default">Current</Badge>}
-            </TableCell>
+            <TableCell>{p.name === current && <Badge variant="default">Current</Badge>}</TableCell>
           </TableRow>
         ))}
       </TableBody>

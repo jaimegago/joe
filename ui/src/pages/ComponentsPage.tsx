@@ -7,18 +7,35 @@ import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fetchComponents, testComponent, deleteComponent, promoteComponent, createComponent } from '@/api/components';
+import {
+  testComponent,
+  deleteComponent,
+  promoteComponent,
+  createComponent,
+} from '@/api/components';
 import type { PromoteRequest } from '@/api/components';
 import { fetchZones } from '@/api/security';
 import { ApiRequestError } from '@/api/client';
+import { useComponents } from '@/hooks/useComponents';
+import { QueryError } from '@/components/common/QueryError';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import { PromoteComponentForm } from '@/components/admin/PromoteComponentForm';
 import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
 import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
@@ -39,11 +56,7 @@ function StatusDot({ status }: { status: Component['status'] }) {
 // ArmBadge renders a component's inert-vs-armed state from the read-model
 // `armed` field, matched to the page's existing status-badge weight.
 function ArmBadge({ armed }: { armed: boolean }) {
-  return armed ? (
-    <Badge variant="success">armed</Badge>
-  ) : (
-    <Badge variant="secondary">inert</Badge>
-  );
+  return armed ? <Badge variant="success">armed</Badge> : <Badge variant="secondary">inert</Badge>;
 }
 
 export function ComponentsPage() {
@@ -59,8 +72,10 @@ export function ComponentsPage() {
   const meQ = useCurrentUser();
   const isAdmin = meQ.data?.is_admin === true;
 
-  const componentsQ = useQuery({ queryKey: ['components'], queryFn: fetchComponents });
-  const zonesQ = useQuery({ queryKey: ['zones'], queryFn: fetchZones });
+  // Use the shared hook (which polls every 30s) rather than an inline query, so
+  // the list stays fresh and the ['components'] key is defined in one place.
+  const componentsQ = useComponents();
+  const zonesQ = useQuery({ queryKey: QUERY_KEYS.zones, queryFn: fetchZones });
 
   const testMut = useMutation({
     mutationFn: (id: string) => testComponent(id),
@@ -69,7 +84,7 @@ export function ComponentsPage() {
         toast.success(res.message ?? 'Connection successful');
         // The test (re)connects and clears the source's error status server-side,
         // so refresh the list to reflect the recovered status.
-        void qc.invalidateQueries({ queryKey: ['components'] });
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.components });
       } else {
         toast.error(res.message ?? 'Connection failed');
       }
@@ -82,7 +97,7 @@ export function ComponentsPage() {
     onSuccess: () => {
       toast.success('Component removed');
       setSelected(null);
-      void qc.invalidateQueries({ queryKey: ['components'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.components });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -100,7 +115,7 @@ export function ComponentsPage() {
       );
       setPromoteTarget(null);
       // Flip the row to armed and refresh the credential-status views.
-      void qc.invalidateQueries({ queryKey: ['components'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.components });
       void qc.invalidateQueries({ queryKey: ['credential-status'] });
     },
     onError: (e: Error) => {
@@ -130,9 +145,9 @@ export function ComponentsPage() {
       setShowRegisterComponent(false);
       // A new registration lands unassigned; refresh the dependent lists so it
       // surfaces in the unassigned pool and the component views.
-      void qc.invalidateQueries({ queryKey: ['components'] });
-      void qc.invalidateQueries({ queryKey: ['unassigned'] });
-      void qc.invalidateQueries({ queryKey: ['component-zones'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.components });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.unassigned });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.componentZones });
     },
     onError: (e: Error) => {
       // Duplicate id is a 409 from the governed create endpoint. The
@@ -155,9 +170,7 @@ export function ComponentsPage() {
 
   // Render the detail card from the live list so status/last_error stay in sync
   // after a Test Connection refreshes the data (the selected copy is stale).
-  const selectedLive = selected
-    ? (components.find((s) => s.id === selected.id) ?? selected)
-    : null;
+  const selectedLive = selected ? (components.find((s) => s.id === selected.id) ?? selected) : null;
 
   const types = [...new Set(components.map((s) => s.type))];
 
@@ -169,6 +182,21 @@ export function ComponentsPage() {
   });
 
   if (componentsQ.isLoading) return <LoadingPage />;
+
+  if (componentsQ.isError) {
+    return (
+      <>
+        <Header title="Components" />
+        <PageContainer>
+          <QueryError
+            error={componentsQ.error}
+            onRetry={() => void componentsQ.refetch()}
+            resourceLabel="components"
+          />
+        </PageContainer>
+      </>
+    );
+  }
 
   return (
     <>
@@ -196,7 +224,11 @@ export function ComponentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
-              {types.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              {types.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={filterZone} onValueChange={setFilterZone}>
@@ -205,7 +237,11 @@ export function ComponentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Zones</SelectItem>
-              {zones.map((z) => <SelectItem key={z.id} value={z.id}>{z.id}</SelectItem>)}
+              {zones.map((z) => (
+                <SelectItem key={z.id} value={z.id}>
+                  {z.id}
+                </SelectItem>
+              ))}
               <SelectItem value="unassigned">Unassigned</SelectItem>
             </SelectContent>
           </Select>
@@ -223,7 +259,11 @@ export function ComponentsPage() {
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyState icon={Database} title="No components" description="No components match the current filters." />
+          <EmptyState
+            icon={Database}
+            title="No components"
+            description="No components match the current filters."
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -255,10 +295,21 @@ export function ComponentsPage() {
                       <Badge variant="warning">⚠ unassigned</Badge>
                     )}
                   </TableCell>
-                  <TableCell><StatusDot status={s.status} /></TableCell>
-                  <TableCell><ArmBadge armed={s.armed} /></TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelected(s); }}>
+                    <StatusDot status={s.status} />
+                  </TableCell>
+                  <TableCell>
+                    <ArmBadge armed={s.armed} />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelected(s);
+                      }}
+                    >
                       View
                     </Button>
                   </TableCell>
@@ -271,9 +322,7 @@ export function ComponentsPage() {
         {selected && selectedLive && (
           <Card className="mt-4">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">
-                {selectedLive.id}
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">{selectedLive.id}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="grid grid-cols-2 gap-2">
@@ -291,7 +340,11 @@ export function ComponentsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Last Sync</p>
-                  <p>{selectedLive.last_sync_at ? new Date(selectedLive.last_sync_at).toLocaleString() : '—'}</p>
+                  <p>
+                    {selectedLive.last_sync_at
+                      ? new Date(selectedLive.last_sync_at).toLocaleString()
+                      : '—'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Arming</p>
@@ -342,9 +395,7 @@ export function ComponentsPage() {
             which remain the real enforcement. */}
         {isAdmin && (
           <div className="mt-8">
-            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-              Zone assignments
-            </h2>
+            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Zone assignments</h2>
             <ComponentZoneAssign />
           </div>
         )}

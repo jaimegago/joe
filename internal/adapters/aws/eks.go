@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/eks/types"
@@ -30,9 +31,13 @@ func (a *Adapter) ListEKSClusters(ctx context.Context) ([]EKSCluster, error) {
 
 	var clusters []EKSCluster
 	for _, clusterName := range listResult.Clusters {
-		cluster, err := a.GetEKSCluster(ctx, clusterName)
+		// Lock-free variant: we already hold RLock. Re-acquiring RLock via the
+		// public GetEKSCluster would deadlock once a writer queues between the
+		// two acquisitions (sync.RWMutex readers block behind a waiting writer).
+		cluster, err := a.getEKSCluster(ctx, clusterName)
 		if err != nil {
 			// Log error but continue with other clusters
+			slog.Warn("skipping EKS cluster in list result", "cluster", clusterName, "error", err)
 			continue
 		}
 		if cluster != nil {
@@ -47,7 +52,13 @@ func (a *Adapter) ListEKSClusters(ctx context.Context) ([]EKSCluster, error) {
 func (a *Adapter) GetEKSCluster(ctx context.Context, clusterName string) (*EKSCluster, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	return a.getEKSCluster(ctx, clusterName)
+}
 
+// getEKSCluster is the lock-free core of GetEKSCluster; callers must hold
+// a.mu (read or write). The lock is taken once at the public boundary so
+// ListEKSClusters can reuse this without a recursive RLock.
+func (a *Adapter) getEKSCluster(ctx context.Context, clusterName string) (*EKSCluster, error) {
 	if err := a.checkConnected(); err != nil {
 		return nil, err
 	}

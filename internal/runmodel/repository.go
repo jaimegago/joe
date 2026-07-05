@@ -42,12 +42,26 @@ type Repository interface {
 	// Solicitations
 
 	OpenSolicitation(ctx context.Context, s Solicitation) (*Solicitation, error)
+	// OpenSolicitationAwaitInput opens the solicitation AND transitions the run
+	// running → awaiting_input in ONE transaction. The HTTP handler previously
+	// issued these as two separate writes; if the state UPDATE failed after the
+	// INSERT committed, the run stayed 'running' with a committed open
+	// solicitation, and a client retry (the run-state gate still passing) would
+	// mint a SECOND open solicitation for the same pause. Coupling the pair
+	// makes the invariant atomic: either the solicitation exists and the run
+	// awaits input, or neither.
+	OpenSolicitationAwaitInput(ctx context.Context, s Solicitation) (*Solicitation, error)
 	GetSolicitation(ctx context.Context, id string) (*Solicitation, error)
 	ResolveSolicitation(ctx context.Context, id string, resolutionPayload string, resolvedAt time.Time) error
 
 	// World handles
 
 	RecordWorldHandle(ctx context.Context, h WorldHandle) (*WorldHandle, error)
+	// RecordWorldHandleAwaitWorld records the world handle AND transitions the
+	// run running → awaiting_world in ONE transaction — the same
+	// atomic-pair rationale as OpenSolicitationAwaitInput (a committed handle
+	// with the run still 'running' invites a duplicate on retry).
+	RecordWorldHandleAwaitWorld(ctx context.Context, h WorldHandle) (*WorldHandle, error)
 	GetWorldHandle(ctx context.Context, id string) (*WorldHandle, error)
 	ListWorldHandlesForRun(ctx context.Context, runID string) ([]WorldHandle, error)
 	ObserveWorldHandle(ctx context.Context, id string, observedState string, polledAt time.Time) error
@@ -101,6 +115,13 @@ type SQLRepository struct {
 // NewRepository constructs a SQLRepository.
 func NewRepository(db *sql.DB, driver string) *SQLRepository {
 	return &SQLRepository{db: db, driver: driver}
+}
+
+// sqlExecer abstracts *sql.DB / *sql.Tx so a write helper can run either
+// standalone on the pooled handle or inside a caller transaction (mirrors the
+// sessionmodel seam of the same name).
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // --- Runs ---
@@ -169,11 +190,18 @@ func (r *SQLRepository) ListRunsForSession(ctx context.Context, sessionID string
 }
 
 func (r *SQLRepository) UpdateRunState(ctx context.Context, runID string, state RunState, endedAt *time.Time) error {
+	return r.updateRunStateExec(ctx, r.db, runID, state, endedAt)
+}
+
+// updateRunStateExec is UpdateRunState on a caller-chosen executor (pooled
+// handle or transaction), so the combined solicitation/world-handle + state
+// transitions can run it inside their transaction.
+func (r *SQLRepository) updateRunStateExec(ctx context.Context, exec sqlExecer, runID string, state RunState, endedAt *time.Time) error {
 	var endedAtVal any
 	if endedAt != nil {
 		endedAtVal = endedAt.Format(time.RFC3339)
 	}
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		UPDATE agent_runs SET state = ?, ended_at = ? WHERE id = ?`),
 		string(state), endedAtVal, runID)
 	if err != nil {
@@ -271,6 +299,35 @@ func (r *SQLRepository) ListStepsForRun(ctx context.Context, runID string) ([]St
 // --- Solicitations ---
 
 func (r *SQLRepository) OpenSolicitation(ctx context.Context, s Solicitation) (*Solicitation, error) {
+	return r.openSolicitationExec(ctx, r.db, s)
+}
+
+// OpenSolicitationAwaitInput couples the solicitation INSERT and the
+// running → awaiting_input state UPDATE in one transaction (see the interface
+// doc for why the pair must be atomic).
+func (r *SQLRepository) OpenSolicitationAwaitInput(ctx context.Context, s Solicitation) (created *Solicitation, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("open solicitation: begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if created, err = r.openSolicitationExec(ctx, tx, s); err != nil {
+		return nil, err
+	}
+	if err = r.updateRunStateExec(ctx, tx, s.RunID, RunStateAwaitingInput, nil); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("open solicitation: commit: %w", err)
+	}
+	return created, nil
+}
+
+func (r *SQLRepository) openSolicitationExec(ctx context.Context, exec sqlExecer, s Solicitation) (*Solicitation, error) {
 	if s.ID == "" {
 		return nil, fmt.Errorf("open solicitation: id required")
 	}
@@ -284,7 +341,7 @@ func (r *SQLRepository) OpenSolicitation(ctx context.Context, s Solicitation) (*
 	if s.LivenessFlag != nil {
 		livenessFlag = string(*s.LivenessFlag)
 	}
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO run_solicitations
 			(id, run_id, kind, payload, created_at, resolved_at, resolution_payload, liveness_flag)
 		VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)`),
@@ -347,6 +404,35 @@ func (r *SQLRepository) ResolveSolicitation(ctx context.Context, id string, reso
 // --- World handles ---
 
 func (r *SQLRepository) RecordWorldHandle(ctx context.Context, h WorldHandle) (*WorldHandle, error) {
+	return r.recordWorldHandleExec(ctx, r.db, h)
+}
+
+// RecordWorldHandleAwaitWorld couples the world-handle INSERT and the
+// running → awaiting_world state UPDATE in one transaction (see the interface
+// doc for why the pair must be atomic).
+func (r *SQLRepository) RecordWorldHandleAwaitWorld(ctx context.Context, h WorldHandle) (created *WorldHandle, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("record world handle: begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if created, err = r.recordWorldHandleExec(ctx, tx, h); err != nil {
+		return nil, err
+	}
+	if err = r.updateRunStateExec(ctx, tx, h.RunID, RunStateAwaitingWorld, nil); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("record world handle: commit: %w", err)
+	}
+	return created, nil
+}
+
+func (r *SQLRepository) recordWorldHandleExec(ctx context.Context, exec sqlExecer, h WorldHandle) (*WorldHandle, error) {
 	if h.ID == "" {
 		return nil, fmt.Errorf("record world handle: id required")
 	}
@@ -356,7 +442,7 @@ func (r *SQLRepository) RecordWorldHandle(ctx context.Context, h WorldHandle) (*
 	if h.RecordedAt.IsZero() {
 		h.RecordedAt = time.Now().UTC()
 	}
-	_, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
+	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO run_world_handles
 			(id, run_id, locator, query_meta, recorded_at, last_poll_at, last_observed_state)
 		VALUES (?, ?, ?, ?, ?, NULL, NULL)`),

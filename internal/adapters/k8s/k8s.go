@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/credential"
@@ -14,6 +15,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
+// connectTimeout bounds the whole Connect path — the client build and the eager
+// ServerVersion liveness probe — so the verification call cannot block forever
+// while a.mu.Lock() is held. It is applied to the *rest.Config after
+// buildRESTConfig, leaving that builder's three-field invariant intact.
+const connectTimeout = 30 * time.Second
 
 // KubernetesAdapter extends the base Adapter with K8s-specific operations.
 type KubernetesAdapter interface {
@@ -72,6 +79,11 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if err != nil {
 		return fmt.Errorf("build rest config: %w", err)
 	}
+	// Bound the eager ServerVersion probe below (and every subsequent request on
+	// clients derived from this config) so Connect cannot hang indefinitely while
+	// holding a.mu.Lock(). Timeout is not an exec/auth-provider field, so setting
+	// it here does not touch buildRESTConfig's three-field invariant.
+	restConfig.Timeout = connectTimeout
 	a.restConfig = restConfig
 
 	dynClient, err := dynamic.NewForConfig(restConfig)

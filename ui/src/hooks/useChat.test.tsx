@@ -380,6 +380,27 @@ describe('useChat streaming lifecycle', () => {
     expect(fetchMessagesMock).toHaveBeenCalledTimes(2);
   });
 
+  it('re-enables the composer immediately when the route switches to another session mid-stream', async () => {
+    const { Wrapper } = createWrapper();
+    // Start on an existing session and begin a turn that never settles (the
+    // stream stays open — the user navigates away before it finishes).
+    const { rerender } = render(<Harness initialSessionId="s-existing" />, { wrapper: Wrapper });
+
+    await sendMessage('investigate');
+    // The composer is disabled while the stream is in flight.
+    expect(screen.getByRole('textbox')).toBeDisabled();
+
+    // The route switches to a DIFFERENT session before the stream settles. The
+    // abandoned stream is aborted and the composer re-enables at once, without
+    // waiting for the old turn's (now discarded) final event.
+    rerender(<Harness initialSessionId="s-other" />);
+    await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled());
+
+    // The aborted stream's controller was signalled (streamTask's third arg).
+    const signal = streamTaskMock.mock.calls[0][2];
+    expect(signal?.aborted).toBe(true);
+  });
+
   it('resets the per-turn input-token counter to 0 at the start of a second message', async () => {
     const { Wrapper } = createWrapper();
     render(<Harness />, { wrapper: Wrapper });

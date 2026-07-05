@@ -81,6 +81,9 @@ func (r *spyRepo) ListStepsForRun(ctx context.Context, runID string) ([]runmodel
 func (r *spyRepo) OpenSolicitation(ctx context.Context, s runmodel.Solicitation) (*runmodel.Solicitation, error) {
 	return r.inner.OpenSolicitation(ctx, s)
 }
+func (r *spyRepo) OpenSolicitationAwaitInput(ctx context.Context, s runmodel.Solicitation) (*runmodel.Solicitation, error) {
+	return r.inner.OpenSolicitationAwaitInput(ctx, s)
+}
 func (r *spyRepo) GetSolicitation(ctx context.Context, id string) (*runmodel.Solicitation, error) {
 	return r.inner.GetSolicitation(ctx, id)
 }
@@ -89,6 +92,9 @@ func (r *spyRepo) ResolveSolicitation(ctx context.Context, id string, p string, 
 }
 func (r *spyRepo) RecordWorldHandle(ctx context.Context, h runmodel.WorldHandle) (*runmodel.WorldHandle, error) {
 	return r.inner.RecordWorldHandle(ctx, h)
+}
+func (r *spyRepo) RecordWorldHandleAwaitWorld(ctx context.Context, h runmodel.WorldHandle) (*runmodel.WorldHandle, error) {
+	return r.inner.RecordWorldHandleAwaitWorld(ctx, h)
 }
 func (r *spyRepo) GetWorldHandle(ctx context.Context, id string) (*runmodel.WorldHandle, error) {
 	return r.inner.GetWorldHandle(ctx, id)

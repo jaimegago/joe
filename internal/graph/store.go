@@ -76,12 +76,23 @@ type Edge struct {
 // ConfidenceLevel represents how certain we are about an edge
 type ConfidenceLevel int
 
+// The levels are persisted as raw ints in graph_edges.confidence (migration
+// 002, INTEGER DEFAULT 3). Explicit and UserConfirmed both shipped as 3 for a
+// while (a duplicate-value bug), so pre-existing rows cannot distinguish the
+// two: a stored 3 may be either. Renumbering Explicit to its intended 2 is
+// forward-safe because nothing orders or branches on these values today — the
+// only reads are serialization and the refresh delta's equality check
+// (coreagent/graphdelta.go), which treats an old Explicit-as-3 row as changed
+// and rewrites it to 2 on the next reconcile (self-healing for every
+// refresh-managed edge). Ambiguous legacy rows outside a refresh loop keep 3
+// and merely display as user-confirmed; no migration can recover which they
+// meant, so none is attempted.
 const (
 	// Inferred means the edge was guessed by the LLM, not yet confirmed
 	Inferred ConfidenceLevel = 1
 
 	// Explicit means the edge was discovered from API or .joe/ file
-	Explicit ConfidenceLevel = 3
+	Explicit ConfidenceLevel = 2
 
 	// UserConfirmed means the user explicitly confirmed this edge
 	UserConfirmed ConfidenceLevel = 3

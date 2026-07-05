@@ -547,28 +547,37 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 // persistTaskMessages writes the user message and (if non-empty) the raw
 // assistant answer to the session store. The answer is persisted un-redacted;
 // response redaction happens separately in finalizeTaskResponse.
+// The writes are detached from the request's cancellation (same pattern as
+// generateTitleAsync): a client that disconnects mid-stream cancels r.Context(),
+// and losing the turn transcript because the viewer closed a tab would be a
+// silent data loss. Principal/session context values are preserved.
 func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer string, start time.Time) {
 	if h.server.services.SessionModel == nil {
 		return
 	}
-	_, _ = h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+	ctx = context.WithoutCancel(ctx)
+	if _, err := h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
 		ID:        uid.New(),
 		SessionID: sessionID,
 		Role:      "user",
 		Content:   userMsg,
 		CreatedAt: start,
-	})
+	}); err != nil {
+		slog.Warn("persist task transcript: user message write failed", "session_id", sessionID, "error", err)
+	}
 	// Title a freshly-started session from its opening message (heuristic now,
 	// async LLM upgrade after). A no-op once the session already has a title.
 	h.maybeAutoTitle(ctx, sessionID, userMsg)
 	if answer != "" {
-		_, _ = h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
+		if _, err := h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
 			ID:        uid.New(),
 			SessionID: sessionID,
 			Role:      "assistant",
 			Content:   answer,
 			CreatedAt: time.Now().UTC(),
-		})
+		}); err != nil {
+			slog.Warn("persist task transcript: assistant message write failed", "session_id", sessionID, "error", err)
+		}
 	}
 }
 
@@ -577,15 +586,20 @@ func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMs
 // the caller. An existing session owned by a different principal is refused:
 // this closes the cross-user leak on the task path, where seedHistory would
 // otherwise load another user's prior messages into the model context
-// (DESIGN-CHAT-SESSIONS.md §10 — send/continue is owner-only). When SessionModel
-// is unwired (auth-disabled/dev harnesses) there is no persistence and no owner
-// to honor, so the check passes.
+// (DESIGN-CHAT-SESSIONS.md §10 — send/continue is owner-only). A store error
+// fails CLOSED — we cannot prove ownership, so we must not risk continuing
+// another user's session. When SessionModel is unwired (auth-disabled/dev
+// harnesses) there is no persistence and no owner to honor, so the check passes.
 func (h *taskHandler) sessionAccessAllowed(ctx context.Context, sessionID, principal string) bool {
 	if h.server.services.SessionModel == nil || sessionID == "" {
 		return true
 	}
 	sess, err := h.server.services.SessionModel.GetSession(ctx, sessionID)
-	if err != nil || sess == nil {
+	if err != nil {
+		return false
+	}
+	if sess == nil {
+		// Not-yet-existing session: allowed, buildTaskRun creates it caller-owned.
 		return true
 	}
 	return sess.CreatorPrincipal == principal

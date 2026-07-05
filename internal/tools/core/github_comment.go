@@ -25,7 +25,7 @@ func NewGitHubCommentTool(c GitHubCommentClient) *GitHubCommentTool {
 func (t *GitHubCommentTool) Name() string { return "github_comment" }
 
 func (t *GitHubCommentTool) Description() string {
-	return "Post a review comment on a GitHub pull request. Use this to share findings, suggestions, or a review summary. This is T2 (Record) — it writes to GitHub but does not block the PR."
+	return "Post a review comment on a GitHub pull request. Use this to share findings, suggestions, or a review summary. This is a Mutate action — it writes to GitHub but does not block the PR."
 }
 
 func (t *GitHubCommentTool) Parameters() llm.ParameterSchema {

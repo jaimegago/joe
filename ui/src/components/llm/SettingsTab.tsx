@@ -7,15 +7,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { setActiveModel, setCostLimit, setRunawayCeiling, setContextBudget } from '@/api/llm';
-import { formatNanoCost, NANO_PER_UNIT } from '@/lib/usage';
+import { NANO_PER_UNIT } from '@/lib/usage';
+import { QUERY_KEYS } from '@/lib/queryKeys';
 import { describeLimit, type LimitSource } from '@/lib/llm-limits';
 import type { LLMCostLimit, LLMRunawayCeiling, LLMContextBudget, LLMProvider } from '@/api/types';
 
 function SourceBadge({ source }: { source: LimitSource }) {
-  const variant = source === 'operator' ? 'success' : source === 'disabled' ? 'destructive' : 'secondary';
+  const variant =
+    source === 'operator' ? 'success' : source === 'disabled' ? 'destructive' : 'secondary';
   const { label } = describeLimit(
     source === 'default'
       ? { state: 'backstop_fallback', effective: 1 }
@@ -36,7 +42,7 @@ function CostLimitControl({ limit }: { limit: LLMCostLimit }) {
     onSuccess: () => {
       toast.success(`${limit.window} cost limit updated`);
       setValue('');
-      void qc.invalidateQueries({ queryKey: ['llm-settings'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.llmSettings });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -52,7 +58,9 @@ function CostLimitControl({ limit }: { limit: LLMCostLimit }) {
       <CardContent className="space-y-3">
         <div>
           <span className="text-2xl font-semibold">
-            {desc.source === 'disabled' ? 'No limit in force' : formatNanoCost(limit.effective, 'nano')}
+            {desc.source === 'disabled'
+              ? 'No limit in force'
+              : `${limit.effective.toLocaleString()} nano`}
           </span>
           <p className="text-xs text-muted-foreground">
             Effective enforced value{desc.source === 'default' ? ' (backstop default)' : ''}
@@ -94,7 +102,7 @@ function RunawayCeilingControl({ ceiling }: { ceiling: LLMRunawayCeiling }) {
     onSuccess: () => {
       toast.success('Runaway ceiling updated');
       setValue('');
-      void qc.invalidateQueries({ queryKey: ['llm-settings'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.llmSettings });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -162,7 +170,7 @@ function ContextBudgetControl({ budget }: { budget: LLMContextBudget }) {
       toast.success('Context budget updated');
       setValue('');
       setError('');
-      void qc.invalidateQueries({ queryKey: ['llm-settings'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.llmSettings });
     },
     // Surface a backend rejection (e.g. a 400 from the range check) inline so
     // the operator sees the cause; also toast it to match the other controls.
@@ -184,7 +192,8 @@ function ContextBudgetControl({ budget }: { budget: LLMContextBudget }) {
         <div>
           <span className="text-2xl font-semibold">{budget.effective.toFixed(2)}</span>
           <p className="text-xs text-muted-foreground">
-            Fraction of the model context window reserved for input{desc.source === 'default' ? ' (backstop default)' : ''}
+            Fraction of the model context window reserved for input
+            {desc.source === 'default' ? ' (backstop default)' : ''}
           </p>
         </div>
         <form
@@ -238,7 +247,7 @@ function ActiveModelControl({
     mutationFn: (name: string) => setActiveModel(name),
     onSuccess: () => {
       toast.success('Active model updated');
-      void qc.invalidateQueries({ queryKey: ['llm-settings'] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.llmSettings });
       void qc.invalidateQueries({ queryKey: ['llm-providers'] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -273,7 +282,11 @@ function ActiveModelControl({
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit" size="sm" disabled={mut.isPending || selected === '' || selected === activeModel}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={mut.isPending || selected === '' || selected === activeModel}
+          >
             Apply
           </Button>
         </form>
@@ -290,7 +303,13 @@ interface SettingsTabProps {
   models: LLMProvider[];
 }
 
-export function SettingsTab({ activeModel, costLimits, runawayCeiling, contextBudget, models }: SettingsTabProps) {
+export function SettingsTab({
+  activeModel,
+  costLimits,
+  runawayCeiling,
+  contextBudget,
+  models,
+}: SettingsTabProps) {
   return (
     <div className="space-y-6">
       <ActiveModelControl activeModel={activeModel} models={models} />

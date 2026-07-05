@@ -68,7 +68,7 @@ export function SessionRow({
   const isEditing = editingId === s.id;
   // Owner-only controls gate on the positive signal (read_only === false) and
   // fail closed if the flag is ever absent — see SessionSchema.
-  const isOwner = s.read_only !== true;
+  const isOwner = s.read_only === false;
   const isIncidentMaster = s.type === 'incident';
   const activity = s.last_activity_at ?? s.started_at;
 
