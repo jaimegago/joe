@@ -399,21 +399,31 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	clusterPanicStore := sqlStore.PanicStore()
 	safety.SetClusterStore(clusterPanicStore)
 
-	// Resolve the write floor exactly once at boot (D-0018). Its two inputs are
-	// the sticky panic state (the shared cluster_panic_state DB row from a
+	// Resolve the write floor exactly once at boot (D-0018/D-0073). Its two inputs
+	// are the sticky panic state (the shared cluster_panic_state DB row from a
 	// previous emergency shutdown — the SINGLE home for panic state since the
-	// panic.state file was removed) and the JOE_MODE=observation env var.
-	// Precedence: panic wins over observation, so a panicked Joe boots into safe
-	// mode regardless of the env var. The DB row is read here, AFTER the store is
-	// initialized and migrated above and BEFORE any tool executor is wired below,
-	// so the sealed floor governs every write. The resolved value is sealed into
-	// Services below and never re-derived from disk during the process lifetime —
-	// recovery is restart, never a live transition.
+	// panic.state file was removed) and the JOE_MODE boot posture. The day-one
+	// default is observation (D-0073): an unconfigured Joe (JOE_MODE unset) boots
+	// with the floor up for reason observation. env.ResolveBootMode maps the raw
+	// value to the observation input and refuses JOE_MODE=full (not yet
+	// implemented) and any unrecognized value fail-closed — this decision runs
+	// BEFORE floor resolution and aborts boot regardless of panic state, so full
+	// mode never silently enables writes or downgrades. Precedence within the
+	// floor is unchanged: panic wins over observation, so a panicked Joe boots
+	// into safe mode regardless of the env var. The DB row is read here, AFTER the
+	// store is initialized and migrated above and BEFORE any tool executor is
+	// wired below, so the sealed floor governs every write. The resolved value is
+	// sealed into Services below and never re-derived from disk during the process
+	// lifetime — recovery is restart, never a live transition.
 	dbPanicked, dbPanicErr := clusterPanicStore.IsPanicked(ctx)
 	if dbPanicErr != nil {
 		slog.Warn("failed to read panic state on startup", "error", dbPanicErr)
 	}
-	observationMode := os.Getenv(env.Mode) == env.ModeObservation
+	observationMode, modeErr := env.ResolveBootMode(os.Getenv(env.Mode))
+	if modeErr != nil {
+		slog.Error("invalid JOE_MODE boot posture", "error", modeErr)
+		return 1
+	}
 	writeFloor := safety.ResolveWriteFloor(dbPanicked, observationMode)
 	switch writeFloor.Reason() {
 	case safety.FloorReasonSafeMode:
@@ -427,7 +437,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		}
 		slog.Warn("clear the panic state with 'joe unlock', then restart to resume writes")
 	case safety.FloorReasonObservation:
-		slog.Info("WRITE FLOOR UP (observation) — Joe is in read-only observation mode by configuration (JOE_MODE=observation)")
+		slog.Info("WRITE FLOOR UP (observation) — Joe is in read-only observation mode, the day-one default (JOE_MODE unset or =observation); set JOE_MODE explicitly and restart to change posture")
 	}
 
 	// Load or create encryption key for source configs.
