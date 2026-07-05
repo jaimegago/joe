@@ -119,6 +119,31 @@ export function deletePolicy(id: number): Promise<void> {
   return apiClient.delete<void>(`/api/v1/admin/policies/${id}`);
 }
 
+// --- Install read posture (read-posture-latch) ---
+
+// The two install-wide read postures, mirroring internal/readposture (Go
+// PostureTeamFlat / PostureZoned). `team_flat` (launch default) admits every
+// authenticated principal to read every component; `zoned` is the grant-based
+// full-mode read decision. These literals are the wire values of the `posture`
+// field on GET /api/v1/admin/read-posture.
+export const READ_POSTURE = {
+  teamFlat: 'team_flat',
+  zoned: 'zoned',
+} as const;
+export type ReadPosture = (typeof READ_POSTURE)[keyof typeof READ_POSTURE];
+
+// fetchReadPosture reads the current install-wide read posture. Admin-gated
+// server-side (GET /api/v1/admin/read-posture returns 403 to non-admins), so
+// callers only fire it behind an admin gate. The response is {"posture": "..."}.
+export function fetchReadPosture(): Promise<ReadPosture> {
+  return apiClient
+    .get<unknown>('/api/v1/admin/read-posture')
+    .then(
+      (r) =>
+        z.object({ posture: z.enum([READ_POSTURE.teamFlat, READ_POSTURE.zoned]) }).parse(r).posture
+    );
+}
+
 // --- Identity registry (Users page) ---
 
 export function fetchPrincipals(): Promise<PrincipalRecord[]> {

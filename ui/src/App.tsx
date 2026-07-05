@@ -7,6 +7,7 @@ import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { AuthProvider } from '@/auth/AuthContext';
 import { AuthGate } from '@/auth/AuthGate';
 import { RequireAdmin } from '@/auth/RequireAdmin';
+import { RequireZonedPosture } from '@/auth/RequireZonedPosture';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 const GraphPage = lazy(() => import('@/pages/GraphPage').then((m) => ({ default: m.GraphPage })));
@@ -133,9 +134,11 @@ export function App() {
                     path="admin/policies"
                     element={
                       <RequireAdmin>
-                        <Suspense fallback={<LoadingPage />}>
-                          <PoliciesAdminPage />
-                        </Suspense>
+                        <RequireZonedPosture>
+                          <Suspense fallback={<LoadingPage />}>
+                            <PoliciesAdminPage />
+                          </Suspense>
+                        </RequireZonedPosture>
                       </RequireAdmin>
                     }
                   />

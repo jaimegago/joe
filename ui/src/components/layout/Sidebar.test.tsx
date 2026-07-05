@@ -3,11 +3,26 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useReadPosture } from '@/hooks/useReadPosture';
+import { READ_POSTURE } from '@/api/security';
 import { AuthProvider } from '@/auth/AuthContext';
 import { createWrapper } from '@/test/utils';
 
 vi.mock('@/hooks/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 const mockUseCurrentUser = vi.mocked(useCurrentUser);
+
+// The Policies nav entry is gated on the install read posture (read-posture-latch):
+// it renders only when the posture is `zoned`. The Sidebar reads it via
+// useReadPosture, mocked here so each test drives the posture directly.
+vi.mock('@/hooks/useReadPosture', () => ({ useReadPosture: vi.fn() }));
+const mockUseReadPosture = vi.mocked(useReadPosture);
+
+function setPosture(posture: string | undefined) {
+  mockUseReadPosture.mockReturnValue({
+    data: posture,
+    isLoading: posture === undefined,
+  } as ReturnType<typeof useReadPosture>);
+}
 
 // Sidebar consumes both useCurrentUser (admin-link visibility) and the auth
 // context (logout control), so it renders inside an AuthProvider. AuthProvider
@@ -26,7 +41,13 @@ function renderSidebar() {
 }
 
 describe('Sidebar', () => {
-  beforeEach(() => mockUseCurrentUser.mockReset());
+  beforeEach(() => {
+    mockUseCurrentUser.mockReset();
+    mockUseReadPosture.mockReset();
+    // Default to the zoned posture so the full admin nav (including Policies)
+    // renders; posture-specific tests override this.
+    setPosture(READ_POSTURE.zoned);
+  });
 
   it('renders admin-only entries and the ADMIN badge when the caller is an admin', () => {
     mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<
@@ -60,6 +81,44 @@ describe('Sidebar', () => {
     expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getAllByText('Components')).toHaveLength(1);
     expect(screen.getAllByText('Sessions')).toHaveLength(1);
+  });
+
+  it('hides the Policies nav entry under the team_flat posture but keeps Zones', () => {
+    mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<
+      typeof useCurrentUser
+    >);
+    setPosture(READ_POSTURE.teamFlat);
+    renderSidebar();
+    // Policies is inert under team_flat, so it is hidden.
+    expect(screen.queryByText('Policies')).not.toBeInTheDocument();
+    // Zones and component-zone assignment retain live read-shaping function under
+    // team_flat (zone.Allows gates ahead of the team_flat admit), so Zones stays.
+    expect(screen.getByText('Zones')).toBeInTheDocument();
+    // The rest of the admin subgroup is unaffected.
+    expect(screen.getByText('Autonomous Reads')).toBeInTheDocument();
+    expect(screen.getByText('Admins')).toBeInTheDocument();
+  });
+
+  it('shows the Policies nav entry under the zoned posture', () => {
+    mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<
+      typeof useCurrentUser
+    >);
+    setPosture(READ_POSTURE.zoned);
+    renderSidebar();
+    expect(screen.getByText('Policies')).toBeInTheDocument();
+    expect(screen.getByText('Zones')).toBeInTheDocument();
+  });
+
+  it('does not flicker the Policies nav entry in before the posture resolves', () => {
+    mockUseCurrentUser.mockReturnValue({ data: { is_admin: true } } as ReturnType<
+      typeof useCurrentUser
+    >);
+    setPosture(undefined);
+    renderSidebar();
+    // Posture unresolved: Policies stays hidden rather than flashing in.
+    expect(screen.queryByText('Policies')).not.toBeInTheDocument();
+    // Other admin entries still render — only Policies is posture-gated.
+    expect(screen.getByText('Zones')).toBeInTheDocument();
   });
 
   it('hides admin-only entries and the ADMIN badge when the caller is not an admin', () => {

@@ -20,6 +20,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useReadPosture } from '@/hooks/useReadPosture';
+import { READ_POSTURE } from '@/api/security';
 import { useAuth } from '@/auth/AuthContext';
 import { Button } from '@/components/ui/button';
 import { DeclareIncidentButton } from '@/components/incident/DeclareIncidentButton';
@@ -91,6 +93,19 @@ export function Sidebar() {
   // false so admin-only entries never flash before status is known.
   const isAdmin = meQ.data?.is_admin === true;
 
+  // The Policies entry configures the grant-based (`zoned`) read decision, which
+  // is inert under the `team_flat` launch posture (the write floor denies every
+  // mutate below RBAC, and the team_flat admit bypasses read grants). So it is
+  // shown ONLY when the live posture is `zoned`. Fetched behind the admin gate
+  // (the endpoint 403s non-admins) and shared with the /admin/policies route
+  // guard via the query key. While the posture is resolving it is undefined, so
+  // Policies stays hidden — it never flickers in before the posture is known.
+  const postureQ = useReadPosture({ enabled: isAdmin });
+  const showPolicies = postureQ.data === READ_POSTURE.zoned;
+  const visibleAdminNav = adminNav.filter(
+    (item) => item.to !== '/admin/policies' || showPolicies
+  );
+
   // The Admin subgroup is open by default so its children are discoverable; the
   // header toggles it. It only renders for admins.
   const [adminOpen, setAdminOpen] = useState(true);
@@ -124,7 +139,7 @@ export function Sidebar() {
             </button>
             {adminOpen && (
               <div className="mt-1 space-y-1 border-l pl-3">
-                {adminNav.map((item) => (
+                {visibleAdminNav.map((item) => (
                   <NavRow key={item.to} item={item} />
                 ))}
               </div>
