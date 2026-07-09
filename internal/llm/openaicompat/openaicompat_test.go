@@ -174,7 +174,7 @@ func TestChat_ResponseToolCallMapping(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"choices":[{"message":{"content":"","tool_calls":[
-				{"id":"call_9","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"/etc/x\",\"content\":\"y\"}"}}
+				{"id":"call_9","type":"function","function":{"name":"github_comment","arguments":"{\"pr_url\":\"https://x/1\",\"body\":\"y\"}"}}
 			]}}],
 			"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}
 		}`))
@@ -190,11 +190,11 @@ func TestChat_ResponseToolCallMapping(t *testing.T) {
 		t.Fatalf("got %d tool calls, want 1", len(resp.ToolCalls))
 	}
 	tc := resp.ToolCalls[0]
-	if tc.ID != "call_9" || tc.Name != "write_file" {
-		t.Errorf("tool call id/name = %q/%q, want call_9/write_file", tc.ID, tc.Name)
+	if tc.ID != "call_9" || tc.Name != "github_comment" {
+		t.Errorf("tool call id/name = %q/%q, want call_9/github_comment", tc.ID, tc.Name)
 	}
-	if tc.Args["path"] != "/etc/x" || tc.Args["content"] != "y" {
-		t.Errorf("tool call args = %+v, want path=/etc/x content=y", tc.Args)
+	if tc.Args["pr_url"] != "https://x/1" || tc.Args["body"] != "y" {
+		t.Errorf("tool call args = %+v, want pr_url=https://x/1 body=y", tc.Args)
 	}
 }
 

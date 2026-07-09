@@ -215,8 +215,8 @@ The Core Agent refresh path stamps the `svc:agent:core` principal on its context
 │    4. Stream the response; enforce per-turn token/cost ceilings      │
 │                                                                      │
 │  Tools available: the Read-class query/observability tools, plus     │
-│  the gated Mutate tools (write_file, run_command, doc-publish,       │
-│  code-review) when their act policy keys are enabled.                │
+│  the gated Mutate tools (doc-publish, code-review) when their act    │
+│  policy keys are enabled.                                            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -580,11 +580,11 @@ This replaces the former three-tier Observe/Record/Act (T1/T2/T3) scheme — col
 
 ### Safety policy
 
-The policy is the compiled `DefaultPolicy()` (`internal/safety/policy.go`) — there is no on-disk safety-policy file (the loader was never wired in production and was removed). Its `act` section gates each Mutate tool (default deny); the per-task `safety_tier` can only narrow it. The legacy `record` section is a retained, inert compatibility field (model-maintenance tools are now Reads). The `~/.joe/` path exclusion in `internal/safety/invariants.go` still keeps that directory off-limits to any future file tool.
+The policy is the compiled `DefaultPolicy()` (`internal/safety/policy.go`) — there is no on-disk safety-policy file (the loader was never wired in production and was removed). Its `act` section gates each Mutate tool (default deny); the per-task `safety_tier` can only narrow it. The legacy `record` section is a retained, inert compatibility field (model-maintenance tools are now Reads).
 
 ### Self-protection invariants
 
-Constants in source (`internal/safety/invariants.go`): Joe cannot read/write `~/.joe/` (incl. its safety and skills policies), and cannot run `joe`, `kill`, `pkill`, or `killall`. `kubectl`/`helm`/`argocd` are excluded from the default `run_command` allowlist; when enabled, compiled-in subcommand allowlists restrict them to read-only verbs.
+Joe ships **no** tool that writes an arbitrary local file or runs an arbitrary shell command, so there is no local file/command surface to guard. The two-binary-era self-protection guards (the `~/.joe/` path exclusion and the `joe`/`kill`/`pkill`/`killall` command block) lived in `internal/safety/invariants.go`; they were retired with the local-tool tree they governed once it was confirmed no live caller invoked them (D-0074). The guarantee is now structural: with no file or command tool registered on any surface, Joe cannot touch its own config directory or terminate processes.
 
 ### Designed but not yet built
 

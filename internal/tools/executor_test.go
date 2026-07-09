@@ -34,13 +34,13 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "execute successful tool",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "ask_user",
+					name: "graph_query",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"echoed": args["message"].(string)}, nil
 					},
 				})
 			},
-			toolName: "ask_user",
+			toolName: "graph_query",
 			args:     map[string]any{"message": "hello"},
 			want:     map[string]string{"echoed": "hello"},
 			wantErr:  false,
@@ -48,7 +48,7 @@ func TestExecutor_Execute(t *testing.T) {
 		{
 			name: "tool not found",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "ask_user"})
+				r.Register(&mockTool{name: "graph_query"})
 			},
 			toolName: "nonexistent",
 			args:     map[string]any{},
@@ -59,13 +59,13 @@ func TestExecutor_Execute(t *testing.T) {
 			name: "tool execution error",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "read_file",
+					name: "list_components",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return nil, errors.New("execution failed")
 					},
 				})
 			},
-			toolName: "read_file",
+			toolName: "list_components",
 			args:     map[string]any{},
 			wantErr:  true,
 			errMsg:   "failed to execute tool",
@@ -147,21 +147,21 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			name: "execute multiple successful tools",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "read_file",
+					name: "list_components",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"echoed": args["message"].(string)}, nil
 					},
 				})
 				r.Register(&mockTool{
-					name: "ask_user",
+					name: "graph_query",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return map[string]string{"result": "UPPER"}, nil
 					},
 				})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "read_file", Args: map[string]any{"message": "hello"}},
-				{ID: "call-2", Name: "ask_user", Args: map[string]any{"text": "hello"}},
+				{ID: "call-1", Name: "list_components", Args: map[string]any{"message": "hello"}},
+				{ID: "call-2", Name: "graph_query", Args: map[string]any{"text": "hello"}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 2 {
@@ -185,22 +185,22 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 			name: "execute with some failures",
 			setupFunc: func(r *Registry) {
 				r.Register(&mockTool{
-					name: "read_file",
+					name: "list_components",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return "ok", nil
 					},
 				})
 				r.Register(&mockTool{
-					name: "ask_user",
+					name: "graph_query",
 					executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 						return nil, errors.New("failed")
 					},
 				})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "read_file", Args: map[string]any{}},
-				{ID: "call-2", Name: "ask_user", Args: map[string]any{}},
-				{ID: "call-3", Name: "read_file", Args: map[string]any{}},
+				{ID: "call-1", Name: "list_components", Args: map[string]any{}},
+				{ID: "call-2", Name: "graph_query", Args: map[string]any{}},
+				{ID: "call-3", Name: "list_components", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
 				if len(results) != 3 {
@@ -220,10 +220,10 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute with non-existent tool",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "read_file"})
+				r.Register(&mockTool{name: "list_components"})
 			},
 			calls: []ToolCallRequest{
-				{ID: "call-1", Name: "read_file", Args: map[string]any{}},
+				{ID: "call-1", Name: "list_components", Args: map[string]any{}},
 				{ID: "call-2", Name: "nonexistent_tool_xyz", Args: map[string]any{}},
 			},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -241,7 +241,7 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 		{
 			name: "execute empty batch",
 			setupFunc: func(r *Registry) {
-				r.Register(&mockTool{name: "read_file"})
+				r.Register(&mockTool{name: "list_components"})
 			},
 			calls: []ToolCallRequest{},
 			validate: func(t *testing.T, results []ToolCallResult) {
@@ -275,9 +275,9 @@ func TestExecutor_ExecuteBatch(t *testing.T) {
 
 func TestExecutor_ContextCancellation(t *testing.T) {
 	registry := NewRegistry()
-	// Use "ask_user" (T1) so safety gate passes — we're testing context cancellation
+	// Use "graph_query" (T1) so safety gate passes — we're testing context cancellation
 	registry.Register(&mockTool{
-		name: "ask_user",
+		name: "graph_query",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -288,7 +288,7 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := executor.Execute(ctx, "ask_user", map[string]any{})
+	_, err := executor.Execute(ctx, "graph_query", map[string]any{})
 	if err == nil {
 		t.Error("Execute() with cancelled context should return error")
 	}
@@ -452,9 +452,9 @@ func TestExecutor_ResultsToMessages(t *testing.T) {
 
 func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
 	registry := NewRegistry()
-	// "ask_user" is classified as T1 (Observe) in the safety tier registry
+	// "graph_query" is classified as T1 (Observe) in the safety tier registry
 	registry.Register(&mockTool{
-		name: "ask_user",
+		name: "graph_query",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "ok", nil
 		},
@@ -463,7 +463,7 @@ func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
 	// Even with most restrictive policy, T1 tools should work
 	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
 
-	result, err := executor.Execute(context.Background(), "ask_user", map[string]any{"message": "hi"})
+	result, err := executor.Execute(context.Background(), "graph_query", map[string]any{"message": "hi"})
 	if err != nil {
 		t.Fatalf("T1 tool should always be allowed, got error: %v", err)
 	}
@@ -475,18 +475,18 @@ func TestExecutor_SafetyGate_T1_AlwaysAllowed(t *testing.T) {
 func TestExecutor_SafetyGate_T3_DeniedByDefault(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "write_file",
+		name: "github_comment",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "written", nil
 		},
 	})
 
-	// Default policy denies write_file
+	// Default policy denies github_comment
 	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()))
 
-	_, err := executor.Execute(context.Background(), "write_file", map[string]any{"path": "/tmp/test"})
+	_, err := executor.Execute(context.Background(), "github_comment", map[string]any{"path": "/tmp/test"})
 	if err == nil {
-		t.Fatal("write_file should be denied by default policy")
+		t.Fatal("github_comment should be denied by default policy")
 	}
 
 	var accessErr *safety.AccessDeniedError
@@ -499,22 +499,22 @@ func TestExecutor_SafetyGate_T3_AllowedByPolicy(t *testing.T) {
 	registry := NewRegistry()
 	called := false
 	registry.Register(&mockTool{
-		name: "run_command",
+		name: "publish_doc_update_git",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			called = true
 			return "output", nil
 		},
 	})
 
-	// Policy that enables run_command
+	// Policy that enables publish_doc_update_git
 	policy := safety.DefaultPolicy()
-	policy.Act.RunCommand.Enabled = true
+	policy.Act.GitPush.Enabled = true
 
 	executor := NewExecutor(registry, nil, WithPolicy(policy))
 
-	result, err := executor.Execute(context.Background(), "run_command", map[string]any{"command": "ls"})
+	result, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{"command": "ls"})
 	if err != nil {
-		t.Fatalf("run_command should be allowed by policy, got: %v", err)
+		t.Fatalf("publish_doc_update_git should be allowed by policy, got: %v", err)
 	}
 	if !called {
 		t.Error("tool Execute was not called")
@@ -544,19 +544,19 @@ func TestExecutor_SafetyGate_UnknownTool_Denied(t *testing.T) {
 func TestExecutor_Notifier_T3_CalledBeforeAndAfter(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "run_command",
+		name: "publish_doc_update_git",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "ok", nil
 		},
 	})
 
 	policy := safety.DefaultPolicy()
-	policy.Act.RunCommand.Enabled = true
+	policy.Act.GitPush.Enabled = true
 
 	notifier := &trackingNotifier{}
 	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
 
-	_, err := executor.Execute(context.Background(), "run_command", map[string]any{})
+	_, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -567,15 +567,15 @@ func TestExecutor_Notifier_T3_CalledBeforeAndAfter(t *testing.T) {
 	if !notifier.afterCalled {
 		t.Error("NotifyAfter was not called for T3 action")
 	}
-	if notifier.beforeInfo.ToolName != "run_command" {
-		t.Errorf("NotifyBefore tool = %q, want run_command", notifier.beforeInfo.ToolName)
+	if notifier.beforeInfo.ToolName != "publish_doc_update_git" {
+		t.Errorf("NotifyBefore tool = %q, want publish_doc_update_git", notifier.beforeInfo.ToolName)
 	}
 }
 
 func TestExecutor_Notifier_T3_CancelledDuringBefore(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "run_command",
+		name: "publish_doc_update_git",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			t.Fatal("tool should not execute when NotifyBefore returns error")
 			return nil, nil
@@ -583,14 +583,14 @@ func TestExecutor_Notifier_T3_CancelledDuringBefore(t *testing.T) {
 	})
 
 	policy := safety.DefaultPolicy()
-	policy.Act.RunCommand.Enabled = true
+	policy.Act.GitPush.Enabled = true
 
 	notifier := &trackingNotifier{
 		beforeErr: context.Canceled,
 	}
 	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
 
-	_, err := executor.Execute(context.Background(), "run_command", map[string]any{})
+	_, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{})
 	if err == nil {
 		t.Fatal("expected error when NotifyBefore returns error")
 	}
@@ -631,7 +631,7 @@ func TestExecutor_Notifier_ModelMaintenance_NoNotification(t *testing.T) {
 func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "ask_user",
+		name: "graph_query",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			return "ok", nil
 		},
@@ -640,7 +640,7 @@ func TestExecutor_Notifier_T1_NoNotification(t *testing.T) {
 	notifier := &trackingNotifier{}
 	executor := NewExecutor(registry, nil, WithPolicy(safety.DefaultPolicy()), WithNotifier(notifier))
 
-	_, err := executor.Execute(context.Background(), "ask_user", map[string]any{})
+	_, err := executor.Execute(context.Background(), "graph_query", map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -786,12 +786,12 @@ func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
 // the user must see the floor reason — the one they can least readily fix — not
 // the zone violation. Because enforcement short-circuits, only one error ever
 // exists; reordering the floor check above the zone check makes that one error
-// the WriteFloorError. write_file is a registered Mutate; the floor only denies
+// the WriteFloorError. github_comment is a registered Mutate; the floor only denies
 // Mutates, so this combination is the genuine co-occurrence case.
 func TestExecutor_Floor_PrecedesZoneScope(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(&mockTool{
-		name: "write_file",
+		name: "github_comment",
 		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
 			t.Fatal("tool must not execute: floor (and zone) should block it")
 			return nil, nil
@@ -806,7 +806,7 @@ func TestExecutor_Floor_PrecedesZoneScope(t *testing.T) {
 		WithPolicy(safety.DefaultPolicy()),
 	)
 
-	_, err := executor.Execute(context.Background(), "write_file", map[string]any{
+	_, err := executor.Execute(context.Background(), "github_comment", map[string]any{
 		"component_id": "cluster-b", // out of zone — would be a ZoneViolationError if it ran first
 		"path":         "/etc/x",
 	})

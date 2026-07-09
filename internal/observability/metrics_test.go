@@ -28,8 +28,8 @@ func TestMetrics_Recorders(t *testing.T) {
 	m := NewMetrics()
 	ctx := context.Background()
 
-	m.RecordToolExecution(ctx, "read_file", 10*time.Millisecond, nil)
-	m.RecordToolExecution(ctx, "read_file", 10*time.Millisecond, errors.New("boom"))
+	m.RecordToolExecution(ctx, "list_components", 10*time.Millisecond, nil)
+	m.RecordToolExecution(ctx, "list_components", 10*time.Millisecond, errors.New("boom"))
 	m.RecordToolBatch(ctx, 3, 0, 12*time.Millisecond)
 	m.RecordToolBatch(ctx, 3, 1, 12*time.Millisecond)
 

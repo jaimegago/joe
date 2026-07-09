@@ -775,7 +775,7 @@ func TestTaskEndpoint_ToolCallsInSteps(t *testing.T) {
 	}
 }
 
-// floorMutateLLM issues a write_file (Mutate) tool call on its first turn, then
+// floorMutateLLM issues a github_comment (Mutate) tool call on its first turn, then
 // a final answer. Used to drive a managed-system mutation through the user-task
 // loop so the write floor's denial can be observed end-to-end.
 type floorMutateLLM struct{ calls int }
@@ -785,7 +785,7 @@ func (m *floorMutateLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 	if m.calls == 1 {
 		return &llm.ChatResponse{
 			ToolCalls: []llm.ToolCall{
-				{ID: "tc-w", Name: "write_file", Args: map[string]any{"path": "/tmp/joe-floor-test", "content": "x"}},
+				{ID: "tc-w", Name: "github_comment", Args: map[string]any{"path": "/tmp/joe-floor-test", "content": "x"}},
 			},
 			Usage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 		}, nil
@@ -802,9 +802,9 @@ func (m *floorMutateLLM) Embed(_ context.Context, _ string) ([]float32, error) {
 
 // TestTaskEndpoint_WriteFloorBlocksMutate closes the D-0022 floor-coverage hole:
 // the user-task executor (internal/api/tasks.go) must carry the boot-resolved
-// write floor (D-0018) so a Mutate (write_file) is denied when the floor is up,
+// write floor (D-0018) so a Mutate (github_comment) is denied when the floor is up,
 // exactly like the Core Agent executor. With the floor up in observation mode, a
-// write_file tool call must be refused with the floor reason — surfaced as the
+// github_comment tool call must be refused with the floor reason — surfaced as the
 // stable "observation" write-failure code (classifyWriteFailure maps the typed
 // *safety.WriteFloorError, so a non-empty observation code proves the executor
 // returned that typed error). Before the fix the executor carried no floor and
@@ -827,14 +827,14 @@ func TestTaskEndpoint_WriteFloorBlocksMutate(t *testing.T) {
 	}
 
 	if len(resp.Steps) < 1 || len(resp.Steps[0].ToolResults) == 0 {
-		t.Fatalf("expected a tool result for the write_file call; steps=%+v", resp.Steps)
+		t.Fatalf("expected a tool result for the github_comment call; steps=%+v", resp.Steps)
 	}
 	tr := resp.Steps[0].ToolResults[0]
-	if tr.Name != "write_file" {
-		t.Fatalf("tool result name = %q, want write_file", tr.Name)
+	if tr.Name != "github_comment" {
+		t.Fatalf("tool result name = %q, want github_comment", tr.Name)
 	}
 	if tr.Error == "" {
-		t.Error("write_file under an up floor should be denied (non-empty error)")
+		t.Error("github_comment under an up floor should be denied (non-empty error)")
 	}
 	if tr.ErrorCode != errorCodeObservation {
 		t.Errorf("tool result error_code = %q, want %q (write floor not enforced on the user-task path)",
@@ -881,7 +881,7 @@ func TestTaskEndpoint_WriteFloorAllowsReads(t *testing.T) {
 }
 
 // stubFloorTool is a no-op tool whose action class is decided by its NAME via
-// safety.ClassifyTool (write_file → Mutate, read_file → Read). It lets the
+// safety.ClassifyTool (github_comment → Mutate, list_components → Read). It lets the
 // executor-seam test below exercise the floor without the real tool plumbing.
 type stubFloorTool struct{ name string }
 
@@ -900,15 +900,15 @@ func (s stubFloorTool) Execute(_ context.Context, _ map[string]any) (any, error)
 // errors.Is contract the api write-failure classifier depends on.
 func TestUserTaskExecutorFloor_ErrorsIs(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(stubFloorTool{name: "write_file"}) // Mutate by classification
-	registry.Register(stubFloorTool{name: "read_file"})  // Read by classification
+	registry.Register(stubFloorTool{name: "github_comment"})  // Mutate by classification
+	registry.Register(stubFloorTool{name: "list_components"}) // Read by classification
 
 	exec := tools.NewExecutor(registry, nil, tools.WithWriteFloor(safety.ResolveWriteFloor(false, true)))
 	ctx := context.Background()
 
-	_, err := exec.Execute(ctx, "write_file", map[string]any{"path": "/tmp/x", "content": "y"})
+	_, err := exec.Execute(ctx, "github_comment", map[string]any{"path": "/tmp/x", "content": "y"})
 	if err == nil {
-		t.Fatal("write_file under an up floor returned nil error; want a write-floor denial")
+		t.Fatal("github_comment under an up floor returned nil error; want a write-floor denial")
 	}
 	if !errors.Is(err, safety.ErrWriteFloor) {
 		t.Errorf("errors.Is(err, ErrWriteFloor) = false for %v; want true", err)
@@ -922,8 +922,8 @@ func TestUserTaskExecutorFloor_ErrorsIs(t *testing.T) {
 	}
 
 	// A Read must not be floor-blocked.
-	if _, err := exec.Execute(ctx, "read_file", map[string]any{"path": "/tmp/x"}); err != nil {
-		t.Errorf("read_file under an up floor returned %v; a Read must pass the floor", err)
+	if _, err := exec.Execute(ctx, "list_components", map[string]any{"path": "/tmp/x"}); err != nil {
+		t.Errorf("list_components under an up floor returned %v; a Read must pass the floor", err)
 	}
 }
 
@@ -953,7 +953,7 @@ func declareTestIncident(t *testing.T, srv *Server) {
 func firstMutateToolResult(t *testing.T, resp taskResponse) taskToolResult {
 	t.Helper()
 	if len(resp.Steps) < 1 || len(resp.Steps[0].ToolResults) == 0 {
-		t.Fatalf("expected a tool result for the write_file call; steps=%+v", resp.Steps)
+		t.Fatalf("expected a tool result for the github_comment call; steps=%+v", resp.Steps)
 	}
 	return resp.Steps[0].ToolResults[0]
 }
@@ -971,7 +971,7 @@ func firstMutateToolResult(t *testing.T, resp taskResponse) taskToolResult {
 // floor DOWN, the very same Mutate is refused by the captain gate (incident_mode)
 // — proving the incident regime is genuinely active on this path so the
 // precedence assertion is non-vacuous. Each sub-run uses its own server because
-// floorMutateLLM carries a per-instance call counter (it issues write_file only
+// floorMutateLLM carries a per-instance call counter (it issues github_comment only
 // on its first Chat call), so a fresh instance is needed to re-issue the Mutate.
 func TestTaskEndpoint_FloorPrecedesIncidentOnUserTaskPath(t *testing.T) {
 	// Control: floor DOWN + incident active → captain gate refuses (incident_mode).

@@ -124,7 +124,7 @@ func countAuditRows(t *testing.T, s *store.Store, action string) int {
 
 // TestCaptainGate_EndToEnd: declare → captain write allowed → non-captain
 // write refused → resolve → both allowed. The gate keys on ActionMutate;
-// write_file (mutate) is the representative managed-system mutation.
+// github_comment (mutate) is the representative managed-system mutation.
 func TestCaptainGate_EndToEnd(t *testing.T) {
 	e := newGateEnv(t)
 	captainSess := e.declareWithCaptain(t, "alice")
@@ -141,13 +141,13 @@ func TestCaptainGate_EndToEnd(t *testing.T) {
 
 	// 1. Write from captain session BY captain principal → ALLOWED.
 	ctx := withCtx(e.ctx, captainSess, "alice")
-	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "x"}); err != nil {
 		t.Errorf("captain mutation should be allowed: %v", err)
 	}
 
 	// 2. SAME write from non-captain session → REFUSED with redirect.
 	ctx2 := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx2, "write_file", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx2, "github_comment", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("non-captain mutation should be refused by the §C gate")
 	}
@@ -161,10 +161,10 @@ func TestCaptainGate_EndToEnd(t *testing.T) {
 
 	// 3. Resolve → regime returns to normal → both can mutate.
 	e.resolveIncident(t, "alice", captainSess)
-	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x2"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "x2"}); err != nil {
 		t.Errorf("captain mutation after resolve: %v", err)
 	}
-	if _, err := e.wrapper.Execute(ctx2, "write_file", map[string]any{"id": "y2"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx2, "github_comment", map[string]any{"id": "y2"}); err != nil {
 		t.Errorf("non-captain mutation after resolve: %v", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestCaptainGate_RefusalNeverCallsInner(t *testing.T) {
 	}
 
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected refusal")
 	}
@@ -203,7 +203,7 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 
 	ctx := withCtx(e.ctx, captainSess, "alice")
-	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "x"}); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "alice" {
@@ -223,11 +223,11 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("attach bob: %v", err)
 	}
-	if _, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "x2"}); err == nil {
+	if _, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "x2"}); err == nil {
 		t.Fatal("alice should be refused after captaincy transfers to bob")
 	}
 	ctxBob := withCtx(e.ctx, captainSess, "bob")
-	if _, err := e.wrapper.Execute(ctxBob, "write_file", map[string]any{"id": "x3"}); err != nil {
+	if _, err := e.wrapper.Execute(ctxBob, "github_comment", map[string]any{"id": "x3"}); err != nil {
 		t.Fatalf("bob mutation: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "bob" {
@@ -237,7 +237,7 @@ func TestCaptainGate_B1_PrincipalSubstitution(t *testing.T) {
 	// Resolve → normal regime: no substitution; carol seen as carol.
 	e.resolveIncident(t, "bob", captainSess)
 	carolCtx := withCtx(e.ctx, captainSess, "carol")
-	if _, err := e.wrapper.Execute(carolCtx, "write_file", map[string]any{"id": "x4"}); err != nil {
+	if _, err := e.wrapper.Execute(carolCtx, "github_comment", map[string]any{"id": "x4"}); err != nil {
 		t.Fatalf("carol mutation in normal regime: %v", err)
 	}
 	if got := e.spy.lastPrincipal.Load().(rbac.Principal); got != "carol" {
@@ -254,7 +254,7 @@ func TestCaptainGate_AllowsT1ReadsInIncident(t *testing.T) {
 	captainSess := e.declareWithCaptain(t, "alice")
 	// bob is not captain; any T1 read should pass.
 	ctx := withCtx(e.ctx, captainSess, "bob")
-	if _, err := e.wrapper.Execute(ctx, "read_file", map[string]any{"path": "/etc/hosts"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "list_components", map[string]any{"path": "/etc/hosts"}); err != nil {
 		t.Errorf("T1 read should always pass: %v", err)
 	}
 	if got := e.spy.calls.Load(); got != 1 {
@@ -295,7 +295,7 @@ func TestPhaseG_LoopPathNonCaptainMutationRefused(t *testing.T) {
 
 	// 1. Captain session, captain principal: mutation proceeds.
 	captainCtx := withCtx(e.ctx, captainSess, "alice")
-	calls := []tools.ToolCallRequest{{ID: "ok-1", Name: "write_file", Args: map[string]any{"id": "x"}}}
+	calls := []tools.ToolCallRequest{{ID: "ok-1", Name: "github_comment", Args: map[string]any{"id": "x"}}}
 	results, err := e.wrapper.ExecuteBatch(captainCtx, calls)
 	if err != nil {
 		t.Fatalf("captain batch: %v", err)
@@ -307,7 +307,7 @@ func TestPhaseG_LoopPathNonCaptainMutationRefused(t *testing.T) {
 	// 2. Non-captain session: mutation refused, no inner.Execute.
 	innerBefore := e.spy.calls.Load()
 	investigationCtx := withCtx(e.ctx, investigation.ID, "bob")
-	calls = []tools.ToolCallRequest{{ID: "block-1", Name: "write_file", Args: map[string]any{"id": "y"}}}
+	calls = []tools.ToolCallRequest{{ID: "block-1", Name: "github_comment", Args: map[string]any{"id": "y"}}}
 	results, err = e.wrapper.ExecuteBatch(investigationCtx, calls)
 	// ExecuteBatch returns ErrAllToolsFailed when every call errored.
 	if err == nil {
@@ -344,7 +344,7 @@ func TestPhaseG_LoopPathNonCaptainReadsStillSucceed(t *testing.T) {
 	}
 
 	investigationCtx := withCtx(e.ctx, investigation.ID, "bob")
-	reads := []tools.ToolCallRequest{{ID: "investigate-1", Name: "read_file", Args: map[string]any{"path": "/etc/hosts"}}}
+	reads := []tools.ToolCallRequest{{ID: "investigate-1", Name: "list_components", Args: map[string]any{"path": "/etc/hosts"}}}
 	results, err := e.wrapper.ExecuteBatch(investigationCtx, reads)
 	if err != nil {
 		t.Fatalf("non-captain READ on loop should succeed in incident: %v", err)
@@ -374,7 +374,7 @@ func TestPhaseG_GateRefusalRecordedInAuditTrail(t *testing.T) {
 
 	before := countAuditRows(t, e.store, audit.ActionCaptainGateRefused)
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected refusal")
 	}
@@ -443,7 +443,7 @@ func TestFloorPrecedesIncidentGate(t *testing.T) {
 	// Non-captain session in incident regime → would be a GateRefusalError if
 	// the gate ran. With the floor up, the floor wins.
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected denial when floor is up during an incident")
 	}
@@ -487,7 +487,7 @@ func TestFloorDownGateStillRefuses(t *testing.T) {
 	}
 
 	ctx := withCtx(e.ctx, investigation.ID, "bob")
-	_, err := e.wrapper.Execute(ctx, "write_file", map[string]any{"id": "y"})
+	_, err := e.wrapper.Execute(ctx, "github_comment", map[string]any{"id": "y"})
 	if err == nil {
 		t.Fatal("expected the §C gate to refuse a non-captain mutation")
 	}
@@ -508,7 +508,7 @@ func TestFloorAllowsReadsThroughGate(t *testing.T) {
 	e := floorGateEnv(t, floor)
 
 	ctx := withCtx(e.ctx, "", "bob")
-	if _, err := e.wrapper.Execute(ctx, "read_file", map[string]any{"path": "/etc/hosts"}); err != nil {
+	if _, err := e.wrapper.Execute(ctx, "list_components", map[string]any{"path": "/etc/hosts"}); err != nil {
 		t.Fatalf("read must pass even with the floor up: %v", err)
 	}
 	if got := e.spy.calls.Load(); got != 1 {

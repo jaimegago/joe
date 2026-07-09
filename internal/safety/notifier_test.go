@@ -9,12 +9,12 @@ import (
 
 func TestActionInfo_FormatBefore(t *testing.T) {
 	info := ActionInfo{
-		ToolName:    "write_file",
+		ToolName:    "github_comment",
 		Class:       ActionMutate,
-		Description: "Write file to local filesystem",
+		Description: "Post a review comment on a GitHub pull request",
 	}
 	msg := info.FormatBefore()
-	for _, want := range []string{"[Joe]", "write_file", "Write file"} {
+	for _, want := range []string{"[Joe]", "github_comment", "Post a review"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("FormatBefore() = %q, want to contain %q", msg, want)
 		}
@@ -41,12 +41,12 @@ func TestActionInfo_FormatAfter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := ActionInfo{ToolName: "run_command", Class: ActionMutate, Description: "Run shell command"}
+			info := ActionInfo{ToolName: "publish_doc_update_git", Class: ActionMutate, Description: "Commit and push doc proposal to Git repo"}
 			msg := info.FormatAfter(tt.err)
 			if !strings.Contains(msg, tt.wantContains) {
 				t.Errorf("FormatAfter() = %q, want to contain %q", msg, tt.wantContains)
 			}
-			if !strings.Contains(msg, "run_command") {
+			if !strings.Contains(msg, "publish_doc_update_git") {
 				t.Errorf("FormatAfter() = %q, want to contain tool name", msg)
 			}
 			if tt.err != nil && !strings.Contains(msg, tt.err.Error()) {
