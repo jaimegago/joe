@@ -279,8 +279,8 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// auth.EdgeAuth set via rbac.WithPrincipal at the edge).
 	registry := tools.NewCoreRegistry(h.server.inproc, safetyPolicy, h.server.services.WebSearch)
 	// D-0018 / D-0022: inject the boot-resolved write floor so the user-task
-	// executor denies managed-system Mutates (write_file, run_command,
-	// publish_doc_update_*, github_comment, …) whenever the floor is up
+	// executor denies managed-system Mutates (publish_doc_update_*,
+	// github_comment, …) whenever the floor is up
 	// (observation or safe mode). This closes the floor-coverage hole D-0022
 	// recorded: the floor was injected only on the Core Agent executor
 	// (internal/coreagent/agent.go), so a user-task Mutate slipped through the

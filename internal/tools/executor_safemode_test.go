@@ -23,15 +23,15 @@ func (f *safemodeTestTool) Execute(_ context.Context, _ map[string]any) (any, er
 
 func TestExecutor_WriteFloor_BlocksMutate(t *testing.T) {
 	reg := NewRegistry()
-	// write_file is a Mutate tool — must be blocked when the floor is up.
+	// github_comment is a Mutate tool — must be blocked when the floor is up.
 	// (graph_add_node is no longer Mutate: it is T1 model maintenance.)
-	reg.Register(&safemodeTestTool{name: "write_file"})
+	reg.Register(&safemodeTestTool{name: "github_comment"})
 
 	// The floor is INJECTED as a boot-resolved value — there is no global to
 	// activate. A safe_mode floor (panic state present) is up.
 	floor := safety.ResolveWriteFloor(true /*panic*/, false)
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
-	_, err := e.Execute(context.Background(), "write_file", nil)
+	_, err := e.Execute(context.Background(), "github_comment", nil)
 	if err == nil {
 		t.Fatal("expected error when the write floor is up for a Mutate tool")
 	}
@@ -53,12 +53,12 @@ func TestExecutor_WriteFloor_BlocksMutate(t *testing.T) {
 
 func TestExecutor_WriteFloor_ObservationReason(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register(&safemodeTestTool{name: "write_file"})
+	reg.Register(&safemodeTestTool{name: "github_comment"})
 
 	// Observation floor: env var set, no panic.
 	floor := safety.ResolveWriteFloor(false, true /*observation*/)
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
-	_, err := e.Execute(context.Background(), "write_file", nil)
+	_, err := e.Execute(context.Background(), "github_comment", nil)
 	if err == nil {
 		t.Fatal("expected error when the write floor is up under observation")
 	}
@@ -74,12 +74,12 @@ func TestExecutor_WriteFloor_ObservationReason(t *testing.T) {
 
 func TestExecutor_WriteFloor_AllowsReadWhenUp(t *testing.T) {
 	reg := NewRegistry()
-	// read_file is a Read tool — must succeed even when the floor is up.
-	reg.Register(&safemodeTestTool{name: "read_file"})
+	// list_components is a Read tool — must succeed even when the floor is up.
+	reg.Register(&safemodeTestTool{name: "list_components"})
 
 	floor := safety.ResolveWriteFloor(true, false)
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
-	_, err := e.Execute(context.Background(), "read_file", nil)
+	_, err := e.Execute(context.Background(), "list_components", nil)
 	if err != nil {
 		t.Fatalf("expected Read tool to succeed when the floor is up, got: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestExecutor_Floor_NotReDerivedFromDBRow(t *testing.T) {
 	floor := safety.ResolveWriteFloor(dbPanicked, false)
 
 	reg := NewRegistry()
-	reg.Register(&safemodeTestTool{name: "write_file"})
+	reg.Register(&safemodeTestTool{name: "github_comment"})
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
 
 	// A local `joe unlock` clears the panic DB row mid-process.
@@ -146,7 +146,7 @@ func TestExecutor_Floor_NotReDerivedFromDBRow(t *testing.T) {
 
 	// The already-constructed executor must STILL deny — the floor is not
 	// re-derived from the DB row (or anywhere) mid-process.
-	if _, err := e.Execute(ctx, "write_file", nil); !errors.Is(err, safety.ErrWriteFloor) {
+	if _, err := e.Execute(ctx, "github_comment", nil); !errors.Is(err, safety.ErrWriteFloor) {
 		t.Fatalf("floor must stay up after the panic row is cleared mid-process; got err=%v", err)
 	}
 }

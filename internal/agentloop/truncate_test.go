@@ -107,12 +107,12 @@ func TestTruncationLimit_FloorApplies(t *testing.T) {
 }
 
 // hugeResultTool returns a tool result whose JSON content is huge, to drive
-// ingestion truncation of tool results. It registers under a TierObserve (T1)
+// ingestion truncation of tool results. It registers under a list_components
 // name so the default executor policy permits it and the real (large) result —
 // not a safety-denied error string — reaches ingestion.
 type hugeResultTool struct{ payload string }
 
-func (t *hugeResultTool) Name() string        { return "read_file" }
+func (t *hugeResultTool) Name() string        { return "list_components" }
 func (t *hugeResultTool) Description() string { return "returns a large payload" }
 func (t *hugeResultTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{Type: "object", Properties: map[string]llm.Property{}}
@@ -130,8 +130,8 @@ func newHugeResultAgent(t *testing.T, payload string) (*Agent, *Session) {
 	executor := tools.NewExecutor(registry, nil)
 	mock := &mockLLM{responses: []*llm.ChatResponse{
 		{ToolCalls: []llm.ToolCall{
-			{ID: "c1", Name: "read_file", Args: map[string]any{}},
-			{ID: "c2", Name: "read_file", Args: map[string]any{}},
+			{ID: "c1", Name: "list_components", Args: map[string]any{}},
+			{ID: "c2", Name: "list_components", Args: map[string]any{}},
 		}},
 		{Content: "done"},
 	}}
@@ -224,8 +224,8 @@ func TestIngestion_NoReTruncationInHistory(t *testing.T) {
 	// Two tool-calling turns then a final answer: the first turn's truncated
 	// result sits in history across the second iteration.
 	mock := &mockLLM{responses: []*llm.ChatResponse{
-		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "read_file", Args: map[string]any{}}}},
-		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "read_file", Args: map[string]any{}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "list_components", Args: map[string]any{}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "list_components", Args: map[string]any{}}}},
 		{Content: "done"},
 	}}
 	agent := NewAgent(mock, executor, registry, "sys")

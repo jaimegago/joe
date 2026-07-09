@@ -14,12 +14,14 @@ import (
 )
 
 // denyAllMutateTool is a registered managed-system mutate. classified as
-// ActionMutate by safety.ClassifyTool ("write_file"). Its Execute must never
-// run in this test: the write floor must deny the call first.
+// ActionMutate by safety.ClassifyTool ("publish_doc_update_git"). Its Execute
+// must never run in this test: the write floor must deny the call first.
 type denyAllMutateTool struct{ t *testing.T }
 
-func (d *denyAllMutateTool) Name() string        { return "write_file" }
-func (d *denyAllMutateTool) Description() string { return "write a file (managed-system mutate)" }
+func (d *denyAllMutateTool) Name() string { return "publish_doc_update_git" }
+func (d *denyAllMutateTool) Description() string {
+	return "publish a doc update (managed-system mutate)"
+}
 func (d *denyAllMutateTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{Type: "object"}
 }
@@ -43,12 +45,12 @@ func TestGovernance_AdapterToolCall_DeniedByWriteFloor(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 
 	// 1. Stand up a compatible endpoint that returns a mutate tool call,
-	//    exactly as a model would when asking Joe to write a file.
+	//    exactly as a model would when asking Joe to perform a managed-system mutate.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"choices":[{"message":{"content":"","tool_calls":[
-				{"id":"call_x","type":"function","function":{"name":"write_file","arguments":"{\"component_id\":\"cluster-a\",\"path\":\"/etc/x\"}"}}
+				{"id":"call_x","type":"function","function":{"name":"publish_doc_update_git","arguments":"{\"component_id\":\"cluster-a\",\"path\":\"/etc/x\"}"}}
 			]}}],
 			"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
 		}`))

@@ -71,12 +71,6 @@ type ToolClassification struct {
 var toolRegistry = map[string]ToolClassification{
 	// === Read (does not mutate the managed system) ===
 
-	// Local tools (joe binary)
-	"read_file":        {Class: ActionRead, Description: "Read file contents"},
-	"local_git_status": {Class: ActionRead, Description: "Show git working tree status"},
-	"local_git_diff":   {Class: ActionRead, Description: "Show git diff"},
-	"ask_user":         {Class: ActionRead, Description: "Ask user a question"},
-
 	// Core tools (call joecored API — query only)
 	"list_components": {Class: ActionRead, Description: "List registered components"},
 	"graph_query":     {Class: ActionRead, Description: "Query the knowledge graph"},
@@ -223,15 +217,6 @@ var toolRegistry = map[string]ToolClassification{
 	"generate_doc_draft": {Class: ActionRead, Description: "Generate a documentation draft proposal in Joe's store", NeedsDurability: true},
 
 	// === Mutate (managed-system mutations) ===
-
-	// write_file overwrites a path (the path is the natural key — rewriting it
-	// is idempotent); run_command runs an arbitrary command that creates no
-	// Joe-side record and whose result must NOT be served from a stale cache on
-	// re-run (replay-safety of its side effects is the command's own concern).
-	// Neither declares NeedsDurability — they are no longer wrapped just for
-	// being Mutate (D-0020).
-	"write_file":  {Class: ActionMutate, PolicyKey: "write_file", Description: "Write file to local filesystem"},
-	"run_command": {Class: ActionMutate, PolicyKey: "run_command", Description: "Run shell command"},
 
 	// Phase 8: doc publish (writes to external systems). publish_doc_update*
 	// is guarded at the data layer: PublishProposal requires status==approved

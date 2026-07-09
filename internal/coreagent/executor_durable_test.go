@@ -252,7 +252,7 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// register_component DECLARES NeedsDurability (a non-idempotent create) — the
-	// durability wrapper engages for it. (write_file is Mutate but idempotent
+	// durability wrapper engages for it. (publish_doc_update_git is Mutate but idempotent
 	// and no longer declares durability, so it would bypass the wrapper now;
 	// see TestDurableExecutor_DrivenByProperty.)
 	_, err := dur.Execute(f.withRunCtx(""), "register_component", map[string]any{"id": "x"})
@@ -394,9 +394,9 @@ func TestDurableExecutor_UndeclaredBypass(t *testing.T) {
 	spyExec := &spyExecutor{returnValue: "ok", invokeOrder: f.order}
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
-	// read_file does NOT declare NeedsDurability (durability is opt-in, default
+	// list_components does NOT declare NeedsDurability (durability is opt-in, default
 	// OFF), so the wrapper must bypass it entirely.
-	_, err := dur.Execute(f.withRunCtx(""), "read_file", map[string]any{"path": "/etc/hosts"})
+	_, err := dur.Execute(f.withRunCtx(""), "list_components", map[string]any{"path": "/etc/hosts"})
 	if err != nil {
 		t.Fatalf("Execute undeclared: %v", err)
 	}
@@ -420,15 +420,15 @@ func TestDurableExecutor_UndeclaredBypass(t *testing.T) {
 
 func TestDurableExecutor_DrivenByProperty(t *testing.T) {
 	// register_component is ActionRead but declares NeedsDurability → wrapped
-	// (repo touched). write_file is ActionMutate but does not declare it →
+	// (repo touched). publish_doc_update_git is ActionMutate but does not declare it →
 	// bypassed (repo untouched). This pins that the durability decision no
 	// longer consumes the Read/Mutate class.
 	cases := []struct {
 		tool        string
 		wantWrapped bool
 	}{
-		{"register_component", true}, // Read + declared  → wrapped
-		{"write_file", false},        // Mutate + undeclared → bypassed
+		{"register_component", true},      // Read + declared  → wrapped
+		{"publish_doc_update_git", false}, // Mutate + undeclared → bypassed
 	}
 	for _, tc := range cases {
 		f := newFixture(t)

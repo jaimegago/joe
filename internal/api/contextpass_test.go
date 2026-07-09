@@ -145,7 +145,7 @@ func (s *finalScriptLLM) Embed(context.Context, string) ([]float32, error) { ret
 // policy permits it, and returns a large payload to drive result truncation.
 type bigResultTool struct{ payload string }
 
-func (t *bigResultTool) Name() string        { return "read_file" }
+func (t *bigResultTool) Name() string        { return "list_components" }
 func (t *bigResultTool) Description() string { return "big" }
 func (t *bigResultTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{Type: "object", Properties: map[string]llm.Property{}}
@@ -167,8 +167,8 @@ func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
 	// First turn: two oversized tool results then a final answer.
 	llmTrunc := &finalScriptLLM{responses: []*llm.ChatResponse{
 		{ToolCalls: []llm.ToolCall{
-			{ID: "c1", Name: "read_file", Args: map[string]any{}},
-			{ID: "c2", Name: "read_file", Args: map[string]any{}},
+			{ID: "c1", Name: "list_components", Args: map[string]any{}},
+			{ID: "c2", Name: "list_components", Args: map[string]any{}},
 		}},
 		{Content: "done"},
 	}}

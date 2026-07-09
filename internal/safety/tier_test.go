@@ -11,10 +11,6 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		wantClass ActionClass
 	}{
 		// Read
-		{"read_file", ActionRead},
-		{"local_git_status", ActionRead},
-		{"local_git_diff", ActionRead},
-		{"ask_user", ActionRead},
 		{"list_components", ActionRead},
 		{"graph_query", ActionRead},
 		{"graph_related", ActionRead},
@@ -54,8 +50,6 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"ecr_query", ActionRead},
 
 		// Mutate — managed-system mutations
-		{"write_file", ActionMutate},
-		{"run_command", ActionMutate},
 		{"github_comment", ActionMutate},
 		{"gitlab_comment", ActionMutate},
 		{"github_request_changes", ActionMutate},
@@ -163,10 +157,9 @@ func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
 // graph upserts, and status-guarded publishes must stay OFF.
 func TestClassifyTool_IdempotentToolsAreNotDurable(t *testing.T) {
 	notDurable := []string{
-		"read_file", "graph_query", "list_components", // reads
+		"graph_query", "list_components", // reads
 		"graph_add_node", "graph_add_edge", "graph_update_node", // arg-keyed upserts
-		"write_file", "run_command", // idempotent / no Joe-side record
-		"publish_doc_update", "publish_doc_update_git", // data-layer status guard
+		"publish_doc_update", "publish_doc_update_git", // data-layer status guard, no Joe-side record
 	}
 	for _, tool := range notDurable {
 		if ClassifyTool(tool).NeedsDurability {
@@ -187,7 +180,7 @@ func TestCheckAccess_ReadAlwaysAllowed(t *testing.T) {
 	// Read tools should be allowed even with the most restrictive policy
 	policy := &SafetyPolicy{Version: 1} // zero-value = all disabled
 
-	readTools := []string{"read_file", "ask_user", "graph_query", "k8s_get", "aws_ec2"}
+	readTools := []string{"list_components", "git_read", "graph_query", "k8s_get", "aws_ec2"}
 	for _, tool := range readTools {
 		t.Run(tool, func(t *testing.T) {
 			err := CheckAccess(tool, policy)
@@ -238,11 +231,11 @@ func TestCheckAccess_ExternalCommentDeniedByDefault(t *testing.T) {
 }
 
 func TestCheckAccess_MutateDefaultDeny(t *testing.T) {
-	policy := DefaultPolicy() // write_file is disabled by default
+	policy := DefaultPolicy() // git_push is disabled by default
 
-	err := CheckAccess("write_file", policy)
+	err := CheckAccess("publish_doc_update_git", policy)
 	if err == nil {
-		t.Fatal("expected error for disabled write_file, got nil")
+		t.Fatal("expected error for disabled publish_doc_update_git, got nil")
 	}
 	var denied *AccessDeniedError
 	if !errors.As(err, &denied) {
@@ -255,11 +248,11 @@ func TestCheckAccess_MutateDefaultDeny(t *testing.T) {
 
 func TestCheckAccess_MutateEnabled(t *testing.T) {
 	policy := DefaultPolicy()
-	policy.Act.WriteFile.Enabled = true
+	policy.Act.GitPush.Enabled = true
 
-	err := CheckAccess("write_file", policy)
+	err := CheckAccess("publish_doc_update_git", policy)
 	if err != nil {
-		t.Errorf("CheckAccess(write_file) = %v, want nil (enabled)", err)
+		t.Errorf("CheckAccess(publish_doc_update_git) = %v, want nil (enabled)", err)
 	}
 }
 
@@ -293,13 +286,13 @@ func TestActionClass_String(t *testing.T) {
 
 func TestAccessDeniedError_Message(t *testing.T) {
 	err := &AccessDeniedError{
-		ToolName: "write_file",
+		ToolName: "github_comment",
 		Class:    ActionMutate,
-		Reason:   "mutating action 'write_file' is disabled in safety policy",
+		Reason:   "mutating action 'github_comment' is disabled in safety policy",
 	}
 
 	msg := err.Error()
-	if msg != "safety: access denied for tool 'write_file' (mutate): mutating action 'write_file' is disabled in safety policy" {
+	if msg != "safety: access denied for tool 'github_comment' (mutate): mutating action 'github_comment' is disabled in safety policy" {
 		t.Errorf("unexpected error message: %s", msg)
 	}
 }

@@ -23,14 +23,14 @@ import (
 // authorization.
 func TestExecutor_WriteFloor_DeniesMutate_IndependentOfReadPosture(t *testing.T) {
 	reg := NewRegistry()
-	// write_file is a Mutate tool — must be blocked when the floor is up,
+	// github_comment is a Mutate tool — must be blocked when the floor is up,
 	// regardless of the (orthogonal) read posture.
-	reg.Register(&safemodeTestTool{name: "write_file"})
+	reg.Register(&safemodeTestTool{name: "github_comment"})
 
 	floor := safety.ResolveWriteFloor(true /*panic → safe_mode*/, false)
 	e := NewExecutor(reg, nil, WithWriteFloor(floor))
 
-	_, err := e.Execute(context.Background(), "write_file", nil)
+	_, err := e.Execute(context.Background(), "github_comment", nil)
 	if !errors.Is(err, safety.ErrWriteFloor) {
 		t.Fatalf("a Mutate must be denied by the floor regardless of read posture; got err=%v", err)
 	}

@@ -20,8 +20,6 @@ func permissivePolicy() *safety.SafetyPolicy {
 			AutonomousRefresh:     true,
 		},
 		Act: safety.ActPolicy{
-			WriteFile:           safety.WriteFilePolicy{Enabled: true},
-			RunCommand:          safety.RunCommandPolicy{Enabled: true, AllowedCommands: []string{"*"}},
 			K8sWrite:            safety.ActionToggle{Enabled: true},
 			PagerdutyAck:        safety.ActionToggle{Enabled: true},
 			AlertmanagerSilence: safety.ActionToggle{Enabled: true},

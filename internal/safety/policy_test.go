@@ -25,22 +25,7 @@ func TestDefaultPolicy(t *testing.T) {
 		t.Error("Record.AutonomousRefresh should be true by default")
 	}
 
-	// Act defaults: all disabled except run_command (read-only commands only)
-	if p.Act.WriteFile.Enabled {
-		t.Error("Act.WriteFile should be disabled by default")
-	}
-	if len(p.Act.WriteFile.AllowedDirectories) != 0 {
-		t.Errorf("Act.WriteFile.AllowedDirectories = %v, want empty", p.Act.WriteFile.AllowedDirectories)
-	}
-
-	if !p.Act.RunCommand.Enabled {
-		t.Error("Act.RunCommand should be enabled by default (read-only commands)")
-	}
-	wantCmds := []string{"ls", "cat", "head", "tail", "grep", "find", "wc"}
-	if len(p.Act.RunCommand.AllowedCommands) != len(wantCmds) {
-		t.Errorf("Act.RunCommand.AllowedCommands = %v, want %v", p.Act.RunCommand.AllowedCommands, wantCmds)
-	}
-
+	// Act defaults: all mutating actions disabled
 	if p.Act.K8sWrite.Enabled {
 		t.Error("Act.K8sWrite should be disabled by default")
 	}
@@ -63,8 +48,6 @@ func TestIsT3Allowed(t *testing.T) {
 		action string
 		want   bool
 	}{
-		{"write_file", false},
-		{"run_command", true},
 		{"k8s_write", false},
 		{"pagerduty_ack", false},
 		{"alertmanager_silence", false},

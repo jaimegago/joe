@@ -1,6 +1,10 @@
 # Orphaned tool registration cleanup — safety entries for the removed local-tool tree
 
-Status: open
+Status: done (D-0074, session orphaned-tool-registration-cleanup) — the classification
+rows, the `write_file` / `run_command` policy surface, and all three latent
+self-protection guards (`IsPathAllowed` / `IsCommandAllowed` / `IsWritePathInAllowedDir`,
+zero live callers) were deleted; `internal/safety/invariants.go` and its test were
+removed entirely. No guard was retained.
 
 The `internal/tools/local/` tree (`read_file`, `write_file`, `run_command`,
 `local_git_status` / `local_git_diff`, `ask_user`) was removed: no constructor

@@ -124,8 +124,8 @@ func (m *MockLLM) SetupScenarioByName(scenario string) {
 			ToolCalls: []llm.ToolCall{
 				{
 					ID:   "call_1",
-					Name: "read_file",
-					Args: map[string]any{"path": "config.yaml"},
+					Name: "list_components",
+					Args: map[string]any{},
 				},
 			},
 			Usage: llm.TokenUsage{

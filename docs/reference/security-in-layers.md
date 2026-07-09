@@ -16,7 +16,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 1. **Joe must always announce mutations.** Even when authorized, Joe notifies the human before and after any managed-system mutation. The tool executor enforces a blocking pre-execution notification (cancellable) and a post-execution summary for every mutating action — this is compiled in, not an LLM instruction.
 
-2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The guarantee is now **architectural**: the server process ships no local file tool (Part 2), so no LLM-invokable tool can reach `~/.joe/` at all. The compile-time path exclusion in `internal/safety/invariants.go` (covering `~/.joe/safety-policy.yaml`, `~/.joe/skills-policy.yaml`, and the whole `~/.joe/` directory) remains as defense-in-depth — it re-engages automatically if a file tool is ever reintroduced.
+2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The guarantee is **architectural**: the server process ships no local file tool (Part 2), so no LLM-invokable tool can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) at all. The compile-time path exclusion that once backstopped this (`internal/safety/invariants.go`) was removed with the file tools it guarded (D-0074); the guarantee rests entirely on the absence of any file tool, and a guard of that shape would have to return with any reintroduced file tool.
 
 3. **The write floor is boot-resolved and runtime-immutable.** Joe resolves a read-only "write floor" once at boot (observation mode or a sticky safe-mode/panic state). Nothing in the running binary can lower it — recovery is a restart, never a live down-transition (`internal/safety/floor.go`, D-0018).
 
@@ -45,7 +45,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 | Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
 | Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
 | Safety policy | Compiled `DefaultPolicy()` (no on-disk file); default-deny for mutating actions, modulated per request only by the task `safety_tier` (`internal/safety/policy.go`) |
-| Self-protection invariants | Compiled-in, no override (`internal/safety/invariants.go`): `~/.joe/` (config, DB, safety + skills policy) is excluded from any file path, and `joe`/`kill`/`pkill`/`killall` are blocked from command execution. Defense-in-depth — these remain compiled in regardless of which tools are registered, even though the file/command tools they were written to guard are no longer registered (Part 2) |
+| Self-protection invariants | Structural, not code-enforced: Joe registers no tool that writes a local file or runs a shell command, so it has no way to reach `~/.joe/` or terminate a process. The former compiled-in guards (`internal/safety/invariants.go`) that constrained those tools were retired with the local-tool tree once it was confirmed no live caller invoked them (D-0074) |
 | Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
 | API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
 | Request size limits | `http.MaxBytesReader` wraps all request bodies (`internal/api/middleware.go`) |
@@ -65,7 +65,7 @@ Earlier versions of Joe shipped a local-tool tree (`internal/tools/local/`: `rea
 
 The practical effect is a smaller attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command. The only mutating tools Joe ships are the doc-publish and code-review paths below.
 
-> **Orphaned registrations (tracked for cleanup).** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` still have *classification* entries in `internal/safety/tier.go`, and `write_file` / `run_command` still have *policy* entries in `internal/safety/policy.go`, but with no backing tool these never execute. They are enumerated in [`docs/backlog/orphaned-tool-registration-cleanup.md`](../backlog/orphaned-tool-registration-cleanup.md) for a separate code-cleanup slice.
+> **Orphaned registrations — removed (D-0074).** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` previously kept *classification* entries in `internal/safety/tier.go`, and `write_file` / `run_command` kept *policy* entries in `internal/safety/policy.go`, even though no backing tool remained. That two-binary-era residue — the classification rows, the `write_file` / `run_command` policy surface, and the latent self-protection guards — was deleted. `ClassifyTool` now returns the unknown-tool default (Mutate, deny-by-default) for those names.
 
 ### Joe's own model maintenance — classified as Read (not a managed-system mutation)
 
@@ -171,12 +171,12 @@ github_request_changes: disabled
 ```
 
 Although no file is loaded, Joe still cannot reach `~/.joe/`: the server ships no
-LLM-invokable file tool (Part 2), and the compile-time path exclusion in
-`internal/safety/invariants.go` excludes the whole `~/.joe/` directory —
-including the historical `safety-policy.yaml` / `skills-policy.yaml` names — as
-defense-in-depth for any file tool that might ever be reintroduced.
+LLM-invokable file tool (Part 2), so no code path can open that directory. The
+compile-time path exclusion that formerly backstopped this
+(`internal/safety/invariants.go`) was removed with the file tools it guarded
+(D-0074); the guarantee now rests entirely on the absence of any file tool.
 
-> **Legacy inert struct fields.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) **and** `act.write_file` / `act.run_command` fields. All are **inert**: the model-maintenance tools the `record` fields once gated are now classified Read, and the `write_file` / `run_command` tools no longer exist, so the executor's `CheckAccess` consults only the live `act` keys. Note in particular that `DefaultPolicy()` still ships `act.run_command.enabled: true` — a relic of the removed tool that gates nothing, because no `run_command` tool is registered. The default-deny guarantee is therefore intact: every *registered* mutating tool defaults to disabled (D-0018/D-0019/D-0020).
+> **Legacy inert struct field.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`), retained as a backward-compat shim: the model-maintenance tools it once gated are now classified Read, so the executor's `CheckAccess` consults only the live `act` keys. The former `act.write_file` / `act.run_command` fields — and the long-standing tension of `DefaultPolicy()` shipping `act.run_command.enabled: true` while the policy is otherwise default-deny — were removed with the tools they gated (D-0074). The default-deny guarantee is unchanged: every *registered* mutating tool still defaults to disabled (D-0018/D-0019/D-0020).
 
 ### 3.3 Hardcoded enforcement points
 
@@ -200,17 +200,7 @@ These checks are compiled into the binary and cannot be bypassed by configuratio
 
 The **incident** half of the precedence sits one layer up, in the §C captain-session gate (`internal/captaingate/`), which checks the same floor before its own gate (see §3.4).
 
-**2. Self-protection invariants** (`internal/safety/invariants.go`, hardcoded, no config override):
-
-| Invariant | Enforcement |
-|-----------|-------------|
-| Joe cannot read/write its safety policy | `~/.joe/safety-policy.yaml` excluded by `IsPathAllowed` |
-| Joe cannot read/write its skills policy | `~/.joe/skills-policy.yaml` excluded by `IsPathAllowed` |
-| Joe cannot write to `~/.joe/` | The whole directory is excluded (symlink-aware, case-insensitive) |
-| Joe cannot run the `joe` binary | `joe` rejected by `IsCommandAllowed` |
-| Joe cannot kill processes | `kill`, `pkill`, `killall` rejected by `IsCommandAllowed` |
-
-These are constants in source, not configurable. They are **defense-in-depth**: the file tools (`read_file` / `write_file`) and the command tool (`run_command`) these guards were written to constrain are no longer registered (Part 2), so today nothing invokes `IsPathAllowed` / `IsCommandAllowed` on a live tool path. The guards remain compiled in and would re-engage the moment any such tool is reintroduced — which is why the architectural guarantee (invariant #2) does not depend on them.
+**2. Self-protection (structural, not a runtime guard).** Joe registers no tool that writes a local file or runs a shell command, so nothing can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) or terminate a process (`joe`, `kill`, `pkill`, `killall`). This once had a compiled-in backstop — `IsPathAllowed` / `IsCommandAllowed` in `internal/safety/invariants.go` — but those guards had **no live caller** after the local-tool tree was removed, so they were deleted (D-0074). The guarantee does not depend on them: with no file or command tool registered on any surface, there is no LLM-invokable path that would need guarding. If such a tool were ever reintroduced, a guard of this shape would have to come back with it.
 
 **3. Notification contract** (hardcoded for every mutating action, `internal/safety/notifier.go`):
 
@@ -296,7 +286,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 | ~~No path sandboxing on local file tools~~ | ~~CRITICAL~~ | **REMOVED** | The local `read_file` / `write_file` tools were removed entirely (Part 2); the server process ships no local file read or write tool. The sandbox question is moot — there is no local-file surface to sandbox |
 | Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system without a human-enabled `act` key, and no tool that reaches security config — but the input channel itself is unsanitized |
 
-**Key files:** `internal/tools/default.go` (registration; omits the local set), `internal/tools/core/` (the live tool surface), `internal/safety/invariants.go` (defense-in-depth path/command guards)
+**Key files:** `internal/tools/default.go` (registration; omits the local set), `internal/tools/core/` (the live tool surface)
 
 ### Layer 4: Authorization
 
@@ -316,7 +306,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 - Compiled default safety policy (no on-disk file): `internal/safety/policy.go` (`DefaultPolicy`)
 - Executor gate (floor → scope → policy → notify) before every `Execute()`: `internal/tools/executor.go`
 - Default-deny for unknown tools (classified Mutate)
-- Self-protection invariants (path/command guards, defense-in-depth): `internal/safety/invariants.go`
+- Self-protection is structural: no file/command tool is registered, so there is nothing to guard (the former `internal/safety/invariants.go` guards were removed in D-0074)
 - Mutation notification contract: `internal/safety/notifier.go`
 - Edge auth + request size limits: `internal/api/middleware.go`
 
