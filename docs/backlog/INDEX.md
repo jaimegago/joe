@@ -51,6 +51,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred |
+| [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Dead-on-arrival component types — deferred wiring and a related Test-control UX bug | open |
 | [`unauth-health-surface`](unauth-health-surface.md) | Unauthenticated health surface — auth-posture and information-exposure analysis | open |
