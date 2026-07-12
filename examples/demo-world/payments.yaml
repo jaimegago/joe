@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: payments
+    app.kubernetes.io/part-of: shop
+    app.kubernetes.io/component: payment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payments
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payments
+        app.kubernetes.io/part-of: shop
+        app.kubernetes.io/component: payment-service
+    spec:
+      containers:
+        - name: payments
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          # Degraded but alive: the container serves fine on / but has no
+          # /healthz handler, so nginx answers the readiness probe with a real
+          # 404. The probe fails against the live container (not a fabricated
+          # event), the pods go NotReady, yet nothing kills them — there is no
+          # liveness probe — so the Deployment stays up and keeps running.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 1
+          resources:
+            requests:
+              memory: 16Mi
+              cpu: 10m
+            limits:
+              memory: 64Mi
+              cpu: 100m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: payments
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: payments
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

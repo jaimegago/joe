@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: orders
+    app.kubernetes.io/part-of: shop
+    app.kubernetes.io/component: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orders
+        app.kubernetes.io/part-of: shop
+        app.kubernetes.io/component: order-service
+    spec:
+      containers:
+        - name: orders
+          image: python:3.12-slim
+          # Real workload behaviour, not a simulated event: the process holds a
+          # resident baseline near the 128Mi limit (~85-95%) and periodically
+          # allocates an extra burst that pushes total RSS past the cgroup limit,
+          # so the kernel OOM-kills it, the kubelet restarts it, and the restart
+          # count climbs. Between kills it runs steadily near the limit.
+          command: ["python", "-u", "-c"]
+          args:
+            - |
+              import time
+              # Baseline resident memory: bytearray is zero-filled and paged in,
+              # so this really occupies RSS (interpreter overhead lands us in the
+              # 85-95% band of the 128Mi limit).
+              baseline = bytearray(100 * 1024 * 1024)
+              held = [baseline]
+              cycle = 0
+              print("orders: holding steady near the memory limit", flush=True)
+              while True:
+                  time.sleep(15)
+                  cycle += 1
+                  # Every ~4th cycle (~60s) push a burst over the limit. This is
+                  # the excursion that trips the kernel OOM killer.
+                  if cycle % 4 == 0:
+                      print("orders: processing a large batch (memory burst)", flush=True)
+                      held.append(bytearray(45 * 1024 * 1024))
+          resources:
+            requests:
+              memory: 96Mi
+              cpu: 25m
+            limits:
+              memory: 128Mi
+              cpu: 250m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: orders
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: orders
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
