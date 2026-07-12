@@ -21,6 +21,12 @@ middle of a response. The point is to keep an incident's changes deliberate and
 attributable rather than letting any authorized principal mutate freely while everyone
 is reacting.
 
+The model follows the incident-command pattern: while an incident is active, the
+authority to direct changes concentrates into one accountable seat, held until it is
+formally transferred. This is the Incident Command System (ICS) shape that SRE
+incident-management practice inherits, applied here to whose instructions Joe will act
+on during the incident.
+
 The incident regime is **orthogonal to the write floor**. Safe mode (a raised floor)
 and an active incident are independent, composable states: you can be in one, the
 other, both, or neither. The floor asks "are mutations allowed at all?"; the incident
