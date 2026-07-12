@@ -124,6 +124,55 @@ provider (or a redaction-aware `StaticProvider` extension) exists. `redis` and
 redaction — and kafka additionally needs its parsed SASL credentials actually
 applied at connect (see the parse-but-never-apply finding above).
 
+## Datastore secrets pass the credential-less-at-registration guard (VERIFIED)
+
+The unwired datastore types — `mongodb`, `postgresql`, `mysql`, `redis`,
+`elasticsearch`, `kafka` — accept **credential-embedding config fields at
+registration** (a `uri` carrying `user:password`, a discrete `password`, an
+`api_key`) because the registration guard does not know those field names.
+
+`RejectCredentialFields` (`internal/componentgov/credentials.go:92`) is a
+**name-based** rejection: it iterates `credentialBearingFields`
+(`credentials.go:52`), which is single-sourced from
+`credential.CredentialBearingFields()`. That set is derived by reflection over
+the four credential provider structs only —
+`discriminator`/`staticConfig`/`staticBearerConfig`/`entraExchangeConfig`
+(`internal/credential/fields.go:42-79`) — yielding `credential_provider`,
+`value`, `env_var`, `in_cluster`, `tenant_id`, `client_id`,
+`client_secret_env_var`, `federated_token_file` (`audience` is explicitly
+excluded as a descriptor, `fields.go:28-30`). **None of the datastore secret
+field names** (`uri`, `password`, `api_key`) appear in any of those structs, so
+the guard does not cover them and a datastore config carrying them registers
+`201` and stores the secret in the component `config` blob.
+
+The gap is reachable on **both** registration paths, which share this one guard:
+
+- the admin HTTP create path — `RejectCredentialFields(req.Config)` at
+  `internal/api/components.go:247`;
+- the `register_component` LLM tool path — `RejectCredentialFields(configBytes)`
+  at `internal/coreagent/agent.go:477`.
+
+**`mongodb` requires `uri`**, so simply *rejecting* a URI at registration is not
+an available fix today (a URI-less mongodb cannot be described at all). The fix
+is therefore **gated on the URI-shaped credential provider this backlog item
+covers**: once a URI-aware provider owns the secret (parsing routing out of the
+credential, with the redaction boundary the sections above require), the
+registration guard and the provider can share one authoritative view of which
+datastore fields are credential-bearing, closing this registration hole and the
+URI-leak sites together rather than piecemeal.
+
+**Exposure is bounded, not nil.** A secret that lands in `config` this way is
+stored **encrypted at rest** (the component `config` blob is encrypted by the
+repository) and cannot be read back out through the component read model: every
+component serialization path — list, get, **and the create echo** — projects
+through `componentView`, which structurally omits the `Config` blob and every
+credential locator (A002 read-model closure). So this is a **secret-at-rest
+handling gap at the registration boundary**, not a read-side leak.
+
+The tracking GitHub issue for the original D-0026 read-model finding **is being
+deleted**; this backlog entry is now the **sole home** of the datastore
+secret-into-`config` registration residual.
+
 ## Why deferred
 
 A003 is the promotion-boundary work. Modeling a credential-bearing URI — and the
