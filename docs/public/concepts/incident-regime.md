@@ -43,12 +43,10 @@ and safe-mode banners.
 
 ## What is deferred
 
-The conceptual incident regime is broader than what ships today, and this page is
-careful not to over-claim. In particular, a richer incident **captain UI** and a
-dedicated incident **read surface** are **deferred** — they are not part of the current
-documentation surface and should not be relied on. What you can count on now is the
-regime state itself, the way it constrains mutations, and the banner that makes the
-state visible.
+The conceptual incident regime is broader than what ships today. A richer incident
+captain UI and a dedicated incident read surface are deferred and are not part of the
+current release. What ships now is the regime state itself, the way it constrains
+mutations, and the banner that makes the state visible.
 
 For how to declare and resolve an incident, and how it interacts with day-to-day
 operation, see [Operations](../../operations/).
