@@ -415,7 +415,7 @@ func floorGateEnv(t *testing.T, floor safety.WriteFloor) *gateEnv {
 }
 
 // TestFloorPrecedesIncidentGate pins the denial-message precedence floor >
-// incident (D-0019 decision 9) at the captaingate layer. This is the genuine
+// incident (D-0022 / D-0019 decision 9) at the captaingate layer. This is the genuine
 // co-occurrence case: the floor is up AND the system is in incident regime with
 // a non-captain session attempting a Mutate. Both denials apply; the user must
 // see the floor reason (the one they can least readily fix), not the

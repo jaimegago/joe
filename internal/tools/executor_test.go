@@ -781,7 +781,7 @@ func TestExecutor_ZoneScope_EmptyAllowedSources_DeniesAll(t *testing.T) {
 }
 
 // TestExecutor_Floor_PrecedesZoneScope pins the denial-message precedence
-// floor > RBAC (D-0019 decision 9) at the executor layer. When a Mutate trips
+// floor > RBAC (D-0022 / D-0019 decision 9) at the executor layer. When a Mutate trips
 // BOTH the write floor (up) AND a zone-scope violation (out-of-zone component_id),
 // the user must see the floor reason — the one they can least readily fix — not
 // the zone violation. Because enforcement short-circuits, only one error ever

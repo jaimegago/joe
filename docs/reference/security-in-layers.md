@@ -397,7 +397,7 @@ There is no separate "safe mode" runtime toggle. When boot finds a panic state p
 
 Reads continue normally in safe mode — Joe stays a useful read-only copilot while locked.
 
-> The separate `JOE_MODE=observation` env var raises the same floor with reason `observation` — a calm, intended read-only resting posture (not panic). A present panic state wins over the observation env var.
+> Observation mode raises the same floor with reason `observation` — a calm, intended read-only resting posture (not panic) — and is Joe's **day-one boot default** when `JOE_MODE` is unset (or set to `observation`; `full` is refused as not-yet-implemented, D-0073). A present panic state wins over observation.
 
 ### 7.4 Unlock procedure
 
