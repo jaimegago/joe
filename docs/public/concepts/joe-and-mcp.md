@@ -21,7 +21,7 @@ To bring a system under Joe safely, Joe uses a native adapter: Joe's own code th
 
 ## The other direction is fully supported
 
-Pointing your coding agent at Joe over MCP is safe and supported. In that direction Joe is [the server](../guides/mcp/): it exposes tools it authored and governs, and your agent inherits Joe's safety gate. The concern only arises when untrusted tools would flow the other way, into Joe's own decision loop.
+Pointing your coding agent at Joe over MCP is safe and supported. In that direction Joe is [the server](../guides/mcp/): every tool it exposes over MCP is a read by construction — each is wired straight to a query, and no change-class tool exists on that surface — so an agent connected to Joe cannot alter your infrastructure through it, and its reads stay subject to Joe's access control and audit like any other read. The concern only arises when untrusted tools would flow the other way, into Joe's own decision loop.
 
 ## A considered stance, not a permanent verdict
 
