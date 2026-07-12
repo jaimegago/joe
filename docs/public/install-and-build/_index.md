@@ -94,8 +94,10 @@ Configure at least one before you run, or boot will exit with a refusal.
 
 ### Non-human principals: service-account bearer keys
 
-Machine callers — the MCP server, the Slack bot, CI jobs, scripts, `curl` — authenticate
-with a service-account bearer key presented as `Authorization: Bearer <key>`. Joe
+Joe's shipped machine clients are the MCP server and the Slack bot; they — along with
+any other external caller an operator mints a service-account key for, such as a CI job,
+a script, or `curl` — authenticate with a service-account bearer key presented as
+`Authorization: Bearer <key>`. Joe
 resolves the key to a `svc:<name>` principal. Define service accounts in config:
 
 ```yaml
