@@ -707,7 +707,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	if concrete, ok := coreAgent.(*coreagent.Agent); ok && services.RunModel != nil && services.SessionModel != nil {
 		durable := coreagent.NewDurableExecutor(concrete.ToolExecutor(), services.RunModel)
 		// WithFloor makes the denial precedence floor > incident hold by
-		// construction on the autonomous path (D-0019 decision 9): the wrapper
+		// construction on the autonomous path (D-0022 / D-0019 decision 9): the wrapper
 		// checks the same boot-sealed floor the inner executor carries
 		// (agent.go injects it via tools.WithWriteFloor) BEFORE the §C gate, so a
 		// floored Mutate surfaces the floor reason rather than an incident-mode

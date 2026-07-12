@@ -108,7 +108,7 @@ type Option func(*Wrapper)
 
 // WithFloor injects the boot-resolved write floor (D-0018) so the wrapper checks
 // it BEFORE the §C incident gate. This is what makes the denial-message
-// precedence floor > incident (D-0019 decision 9) hold by construction: when the
+// precedence floor > incident (D-0022 / D-0019 decision 9) hold by construction: when the
 // floor is up, a Mutate is refused with the floor's reason (observation /
 // safe_mode) and the §C gate is never consulted, so the user sees the reason
 // they can least readily fix rather than the incident-mode redirect.
@@ -148,7 +148,7 @@ func New(inner SingleExecutor, sessRepo sessionmodel.Repository, auditRepo audit
 //  3. Mutate:
 //     a. Write floor (D-0018) — when WithFloor is injected and the floor is
 //     up, refuse the Mutate with *WriteFloorError BEFORE the §C gate, so the
-//     floor reason outranks an incident-mode refusal (D-0019 decision 9
+//     floor reason outranks an incident-mode refusal (D-0022 / D-0019 decision 9
 //     precedence: floor > incident). No gate consulted, no audit row.
 //     b. §C gate (sessiongate.Check) — UPSTREAM of the inner executor's
 //     safety check AND of the accessor's RBAC check. Refusal returns
@@ -183,7 +183,7 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 		return w.inner.Execute(ctx, name, args)
 	}
 
-	// 2. Write floor (D-0018 / D-0019 decision 9): checked UPSTREAM of the §C
+	// 2. Write floor (D-0018 / D-0022 / D-0019 decision 9): checked UPSTREAM of the §C
 	//    gate so the floor reason (observation / safe_mode) outranks an
 	//    incident-mode refusal — precedence floor > incident, ordered by
 	//    resolvability depth. We are past the Read bypass, so the call is a

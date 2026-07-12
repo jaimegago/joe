@@ -22,7 +22,7 @@ Joe exposes two **independent and composable** operational axes, not one enum:
 
 | # | Axis | Reasons / states | Entered via | State lives in |
 |---|------|------------------|-------------|----------------|
-| 1 | **Write floor** (boot-resolved) | `full` (down) / `observation` / `safe_mode` (up) | `JOE_MODE=observation` (observation); `joe panic`, `kill -USR1`, `POST /api/v1/panic` (safe_mode) | boot-sealed `WriteFloor` value + `cluster_panic_state` DB row |
+| 1 | **Write floor** (boot-resolved) | `full` (down) / `observation` / `safe_mode` (up) | default when `JOE_MODE` unset, or `JOE_MODE=observation` (observation; `full` refused); `joe panic`, `kill -USR1`, `POST /api/v1/panic` (safe_mode) | boot-sealed `WriteFloor` value + `cluster_panic_state` DB row |
 | 2 | **Incident regime + captain gate** | `normal` / `incident` | `POST /api/v1/regime/declare`; captain gate in `internal/captaingate` + `internal/sessiongate` | `system_regime` / `session_captains` tables |
 
 The write floor is a **single** boot-resolved value with a `reason` (D-0018): `observation`
@@ -52,9 +52,9 @@ the prior version of this doc, which denied any global read-only posture.
   ([floor.go:45-54](../../internal/safety/floor.go)) and **sealed**: there is no setter,
   package function, or method anywhere in the binary that lowers a resolved floor —
   recovery is restart, never a live down-transition ([floor.go:22-37](../../internal/safety/floor.go)).
-- **Observation mode is set via `JOE_MODE=observation`.** `env.Mode = "JOE_MODE"` and
+- **Observation mode is Joe's day-one boot default — `JOE_MODE` unset (or set to `observation`) boots it; `full` is refused as not-yet-implemented (D-0073).** `env.Mode = "JOE_MODE"` and
   `env.ModeObservation = "observation"`
-  ([internal/env/keys.go:25,31](../../internal/env/keys.go)). When set, the floor boots up
+  ([internal/env/keys.go:25,31](../../internal/env/keys.go)). In observation, the floor boots up
   with reason `FloorReasonObservation`
   ([floor.go:16,49-50](../../internal/safety/floor.go)) — a "calm, intended read-only
   resting posture; NOT panic/safe mode."
@@ -380,7 +380,7 @@ the classifier; the branch order is documentation of intent, not the enforcement
 1. **Prior version of this doc denied the global read-only posture — SUPERSEDED.** The
    earlier file's §1 thesis ("Read mode … ABSENT … the concept does not exist as a single
    state") is now false: observation mode is a daemon-wide, boot-resolved, runtime-immutable
-   read-only posture set via `JOE_MODE=observation`
+   read-only posture that is Joe's day-one boot default (`JOE_MODE` unset or `observation`; `full` is refused as not-yet-implemented, D-0073)
    ([internal/env/keys.go:25,31](../../internal/env/keys.go);
    [internal/safety/floor.go:16,45-54](../../internal/safety/floor.go)) and readable at
    `GET /api/v1/mutate-status` ([internal/api/mutatestatus.go:44](../../internal/api/mutatestatus.go)).

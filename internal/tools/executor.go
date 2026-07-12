@@ -20,7 +20,7 @@ var ErrAllToolsFailed = errors.New("all tools in batch failed")
 // Before every tool.Execute():
 //  1. Classify the tool's action (Read/Mutate)
 //  2. Check the write floor (D-0018) — FIRST among the denials, so its reason
-//     outranks an RBAC scope violation (D-0019 decision 9 precedence)
+//     outranks an RBAC scope violation (D-0022 / D-0019 decision 9 precedence)
 //  3. Check zone scope (component_id must be in allowed set, if configured)
 //  4. Check namespace scope (namespace must be in allowed set, if configured)
 //  5. Check safety policy (mutations require authorization)
@@ -199,7 +199,7 @@ func (e *Executor) Execute(ctx context.Context, name string, args map[string]any
 	classification := safety.ClassifyTool(name)
 
 	// Step 3: Write floor (D-0018) — checked FIRST among the denials so its
-	// reason outranks an RBAC scope violation (D-0019 decision 9: precedence is
+	// reason outranks an RBAC scope violation (D-0022 / D-0019 decision 9: precedence is
 	// floor > incident > RBAC, ordered by resolvability depth — the floor is the
 	// reason the user can least readily fix). A boot-resolved, runtime-immutable
 	// floor denies every managed-system mutation (the Mutate set; with the Record

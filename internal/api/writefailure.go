@@ -37,7 +37,7 @@ import (
 // agentloop.WithToolErrorClassifier so the loop stays unaware of these types.
 // It runs on the TYPED error before it is stringified onto the wire.
 //
-// PRECEDENCE (D-0019 decision 9: floor > incident > RBAC, ordered by
+// PRECEDENCE (D-0022 / D-0019 decision 9: floor > incident > RBAC, ordered by
 // resolvability depth). The branch order below MATCHES that precedence, but it
 // is NOT what enforces it: enforcement short-circuits at the first failing
 // check (the floor in tools.Executor / captaingate, the §C gate in captaingate,
