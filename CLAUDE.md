@@ -74,6 +74,7 @@ npm run test
 
 - `docs/backlog/INDEX.md` — open-work entry point: the index of active backlog items (finished items move to `docs/backlog/done/`)
 - `docs/project/pm-convention.md` — the project-management and session-tracking convention (the slug that joins chat, Claude Code, commits, and decisions)
+- `docs/project/SITE-CLAIMS.md` — the standing register mapping each load-bearing joeagent.dev claim to its mechanism and pinning test; **any session that changes a mechanism listed there must state the joeagent.dev revision impact in its session report**
 - `docs/project/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
 - `docs/reference/joe-architecture.md` — Full architecture with diagrams
 - `docs/reference/security-in-layers.md` — the sole security authority: Action Safety Framework, executor gate order and denial precedence, read posture, RBAC, and Panic Mode / write floor
