@@ -124,8 +124,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerDatastoreRoutes(mux, apiPrefix)
 	s.registerNetworkingRoutes(mux, apiPrefix)
 	s.registerSecurityRoutes(mux, apiPrefix)
-	s.registerClarificationRoutes(mux, apiPrefix)
-	s.registerControlRoutes(mux, apiPrefix)
+	// Parked for launch (D-0081, session discovery-clarifications-pipeline): the
+	// onboarding, clarifications, and manual-refresh HTTP surfaces are left
+	// unregistered as reachable-but-orphaned code. The register functions,
+	// handlers, ClarificationService/Repository, discovery.ProcessInput, the facts
+	// repository, and all tables/migrations are retained; re-enabling is restoring
+	// these two call sites. The autonomous Refresher (launched from Agent.Start,
+	// independent of the /refresh route) and the session findings routes are
+	// unaffected.
+	//   s.registerClarificationRoutes(mux, apiPrefix)
+	//   s.registerControlRoutes(mux, apiPrefix)
 	s.registerKnowledgeRoutes(mux, apiPrefix)
 	s.registerRegistryRoutes(mux, apiPrefix)
 	s.registerProposalRoutes(mux, apiPrefix)
@@ -260,6 +268,10 @@ func (h *alertingHandler) handleGrafanaAlerts(w http.ResponseWriter, r *http.Req
 // Routes are only registered when the store sub-service is available;
 // callers that omit the store (e.g. lightweight deployments) get no
 // clarification endpoints rather than a panic at request time.
+//
+// PARKED (D-0081): this function is retained but no longer called from
+// RegisterRoutes — the clarifications HTTP surface is unregistered for launch.
+// Re-enabling is restoring the call site in RegisterRoutes.
 func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) {
 	if s.services.Store == nil {
 		return
@@ -274,6 +286,12 @@ func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) 
 }
 
 // registerControlRoutes registers control plane routes
+//
+// PARKED (D-0081): this function is retained but no longer called from
+// RegisterRoutes — the onboarding and manual-refresh HTTP routes are
+// unregistered for launch. The autonomous Refresher is launched from
+// Agent.Start and does not depend on the /refresh route. Re-enabling is
+// restoring the call site in RegisterRoutes.
 func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(fmt.Sprintf("POST %s/onboarding", prefix), s.handleOnboarding)
 	mux.HandleFunc(fmt.Sprintf("POST %s/refresh", prefix), s.handleRefresh)

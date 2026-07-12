@@ -43,8 +43,9 @@ part of it is explicitly incomplete:
   behavior: it applies graph deltas it can derive unambiguously.
 - The refresh loop does **not** ship the *Needs-Human* branch. The step that would
   queue an ambiguous finding from the periodic loop for human clarification is a
-  stub — it is not built. Clarifications exist as a subsystem and are surfaced, but
-  they are populated by onboarding and discovery flows, not by the periodic refresh.
+  stub — it is not built. Clarifications exist as a subsystem in the codebase but are
+  not exposed in this release; where they are populated at all, it is by the onboarding
+  and discovery flows, not by the periodic refresh.
 
 So if you read about Joe "queuing ambiguous findings for clarification," understand
 that this is true of its onboarding/discovery path, not (yet) of the autonomous
