@@ -9,9 +9,10 @@ aliases:
 # Components
 
 A **component** is Joe's name for a system it manages — a Kubernetes cluster, a Prometheus,
-a GitHub org, a Grafana. Components are the nodes of the
-[knowledge graph](../concepts/knowledge-graph/) and the things zones and RBAC grant access
-to. Everything Joe does — answering questions, walking the graph, proposing changes —
+a GitHub org, a Grafana. Components anchor the
+[knowledge graph](../concepts/knowledge-graph/) — Joe hangs the resources it discovers
+inside them off these anchors as further nodes — and they are the things zones and RBAC
+grant access to. Everything Joe does — answering questions, walking the graph, proposing changes —
 happens through the components you register. Without them, Joe boots, authenticates, and
 answers, but has nothing real to say.
 
