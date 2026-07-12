@@ -9,19 +9,30 @@ import (
 )
 
 // skillsHandler exposes runtime control over the in-memory skill registry
-// and the on-disk lifecycle of installed skills. Phase 3 shipped
-// POST /skills/reload; Phase 4 adds:
+// and the on-disk lifecycle of installed skills. Four routes are registered
+// (see registerSkillsRoutes):
 //
+//   - POST /skills/reload   Rescan the skills root and republish the router.
 //   - GET  /skills          List installed skills with status (active,
-//     quarantined) — used by the web UI and by
-//     operators inspecting what's pending approval.
+//     quarantined) — used by the web UI and by operators inspecting what's
+//     pending approval.
 //   - POST /skills/approve  Move a quarantined skill into the active tree.
+//   - POST /skills/reject   Delete a quarantined install.
 //
-// Both new endpoints are bearer-authed (same as other admin endpoints) and
-// every state change is audit-logged via the Manager.
+// Authorization posture (D-0075): the three mutating routes — reload, approve,
+// reject — are admin-gated via server.requireAdmin, the same gate the RBAC and
+// LLM admin surfaces use. GET /skills is authenticated-only by design: it is
+// read-only, exposes no on-disk paths or credentials, and its quarantine roster
+// is teammate-visible in the same spirit as the team-public session model.
+//
+// Lifecycle events currently emit slog lines only (auditSkillEvent in
+// internal/skills). Durable audit rows for skill-lifecycle operations — which
+// would also cover the CLI paths this HTTP gate cannot reach — are tracked as
+// an open item in docs/backlog/skills-governance-hardening.md.
 type skillsHandler struct {
 	watcher *skills.Watcher
 	manager *skills.Manager
+	server  *Server
 }
 
 // registerSkillsRoutes registers skill control endpoints. If the watcher is
@@ -31,7 +42,7 @@ type skillsHandler struct {
 // but is not currently available, which is the right signal for CI/CD code
 // that retries on 5xx but bails on 4xx.
 func (s *Server) registerSkillsRoutes(mux *http.ServeMux, prefix string) {
-	h := &skillsHandler{watcher: s.skillsWatcher(), manager: s.skillsManager()}
+	h := &skillsHandler{watcher: s.skillsWatcher(), manager: s.skillsManager(), server: s}
 	mux.HandleFunc(fmt.Sprintf("POST %s/skills/reload", prefix), h.handleReload)
 	mux.HandleFunc(fmt.Sprintf("GET %s/skills", prefix), h.handleList)
 	mux.HandleFunc(fmt.Sprintf("POST %s/skills/approve", prefix), h.handleApprove)
@@ -71,6 +82,9 @@ type skillsReloadResponse struct {
 }
 
 func (h *skillsHandler) handleReload(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
 	if h.watcher == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
 			"skills hot reload is not enabled on this joe instance")
@@ -174,6 +188,9 @@ type skillsApprovalResponse struct {
 }
 
 func (h *skillsHandler) handleApprove(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
 	if h.manager == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
 			"skills manager is not available on this joe instance")
@@ -210,6 +227,9 @@ func (h *skillsHandler) handleApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *skillsHandler) handleReject(w http.ResponseWriter, r *http.Request) {
+	if _, gated := h.server.requireAdmin(w, r); gated {
+		return
+	}
 	if h.manager == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
 			"skills manager is not available on this joe instance")

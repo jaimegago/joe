@@ -2,6 +2,20 @@
 
 Status: open
 
+> **Progress (skills-governance-hardening session, D-0075).** Items **1**
+> (admin-gate the mutating skills HTTP endpoints) and **4** (fix the stale
+> `internal/skills/skill.go` package comment) are **discharged** by the
+> `skills-governance-hardening: admin-gate the mutating skills HTTP endpoints`
+> commit — the mutating routes (reload/approve/reject) now gate through
+> `requireAdmin`, `handleList` stays authenticated-only by design, and the
+> two stale doc comments (the `skills.go` header and the `skill.go` package
+> doc) are corrected. That commit also corrected the stale CLAUDE.md
+> "RBAC enforcement middleware fires only on paths with a componentID" line
+> (false since the Phase-E demotion, D-0008). Items **2** (durable audit Kind
+> + migration for skill-lifecycle events) and **3** (load-time content
+> integrity) **remain open** with the descriptions below unchanged. Status
+> stays **open** until 2 and 3 land.
+
 ## Context
 
 A read-only investigation of the skills subsystem (`internal/skills/`, its HTTP
@@ -18,7 +32,7 @@ before implementation** — the tree moves and these citations will drift.
 
 ## Items
 
-### 1. Admin-gate the skills HTTP endpoints (fix-before-launch candidate)
+### 1. Admin-gate the skills HTTP endpoints (fix-before-launch candidate) — DONE (D-0075)
 
 The four handlers in `internal/api/skills.go` — `handleReload`,
 `handleList`, `handleApprove`, `handleReject` (registered in
@@ -66,7 +80,7 @@ e.g. verifying loaded skill content against the recorded lockfile hash at
 match — so that a filesystem-level bypass cannot silently promote untrusted
 skills.
 
-### 4. Fix the stale package comment in `internal/skills/skill.go`
+### 4. Fix the stale package comment in `internal/skills/skill.go` — DONE (D-0075)
 
 The package doc comment in `internal/skills/skill.go` still describes a
 **phase-1 scope** ("static loading at startup, deterministic keyword routing,
