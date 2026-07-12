@@ -87,12 +87,18 @@ systems. Every tool reachable over MCP is one of Joe's reads.
 
 ## The mutation surface
 
-Joe is not only a reader. A real mutation surface exists and is reachable today, but it
-is deliberately narrow: it is scoped to **external collaboration writes**, not to your
-running infrastructure. What ships is the ability to comment on a GitHub pull request or a
-GitLab merge request, to submit a GitHub request-changes review, and to publish an
-already-approved documentation proposal to Confluence, Notion, or a Git repository. That
-is the whole of the mutation surface.
+Joe is not only a reader. A real mutation surface exists, and it is deliberately narrow.
+It is registered **only on the human-facing task loop** and scoped to **external
+collaboration writes** — never to your running infrastructure. What it comprises is the
+ability to comment on a GitHub pull request or a GitLab merge request, to submit a GitHub
+request-changes review, and to publish an already-approved documentation proposal to
+Confluence, Notion, or a Git repository. That is the whole of it. But in every
+configuration Joe currently boots, none of it runs: the boot-resolved write floor denies
+the entire Mutate class, because observation is the boot default and full mode is refused
+at boot (the [observation-mode section](#running-joe-read-only) below has the mechanism).
+Keeping these real, Mutate-classified tools registered is a deliberate choice — it means
+the floor's denial is *demonstrated* against live tools rather than *asserted* against an
+empty set, and this surface is the seam that the forthcoming full mode will open.
 
 Two boundaries define it. First, these mutations run **only on the human-facing task
 loop** — the loop a person drives. The autonomous core agent registers no mutating tools,
