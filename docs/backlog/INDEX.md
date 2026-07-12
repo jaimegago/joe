@@ -27,6 +27,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred |
+| [`discovery-clarifications-pipeline`](discovery-clarifications-pipeline.md) | Discovery-to-clarifications pipeline — unpark and finish the onboarding, facts, and needs-human surfaces | open |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |
 | [`feature-clips`](feature-clips.md) | Landing-page demo clips — record, encode, and commit to joeagent.dev | in-progress |
