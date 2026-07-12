@@ -9,8 +9,9 @@ aliases:
 # The component lifecycle
 
 A **component** is Joe's name for a registered external system — a Kubernetes
-cluster, a Prometheus, a GitHub org, a Grafana, and so on. Components are the nodes of
-the [knowledge graph](../knowledge-graph/) and the things RBAC and zones grant access to.
+cluster, a Prometheus, a GitHub org, a Grafana, and so on. Components anchor
+the [knowledge graph](../knowledge-graph/) — the resources Joe discovers inside them
+become further nodes — and are the things RBAC and zones grant access to.
 Bringing a system under Joe's management is a two-step lifecycle, and the split between
 the two steps is a deliberate security boundary.
 
