@@ -1,6 +1,15 @@
-# Joe
+<p align="center">
+  <a href="https://joeagent.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/joe-lockup-dark.svg">
+      <img src="docs/assets/joe-lockup.svg" alt="Joe" width="320">
+    </picture>
+  </a>
+</p>
 
-**Joe** (Joe Operates Everything) is a self-hosted, open-source AI agent for infrastructure operations. It ships as a single Go binary with an embedded web UI (`go:embed`), an MCP server, and SQLite persistence. Every action — from every surface — passes through one governed executor before it runs.
+<p align="center">
+  <strong>Joe</strong> (Joe Operates Everything): a self-hosted, open-source AI agent for infrastructure operations. Single Go binary with embedded web UI (<code>go:embed</code>), MCP server, SQLite persistence. Every action — from every surface — passes one governed executor.
+</p>
 
 ---
 
