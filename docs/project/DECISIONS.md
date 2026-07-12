@@ -10,6 +10,17 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0078 — The Components section index opens with a definitional intro before the lifecycle spine; the per-type routing tables and the not-yet-supported list move to a `connectable-systems` child page
+
+- Date: 2026-07-12
+- Status: accepted (implemented)
+- Session: components-page-restructure
+- Decision: The published Components section index (`docs/public/components/_index.md`) is restructured so it opens with a **definitional intro** — what a component is (Joe's name for a managed system: a Kubernetes cluster, a Prometheus, a GitHub org, a Grafana), that components are the nodes of the knowledge graph and the objects zones and RBAC grant access to, and that Joe is near-useless without them — placed **ahead of the register → promote → arm → activate lifecycle spine**. The per-type **routing tables** (the six category tables mapping each connectable system to its credential mechanism and its runtime-vs-boot activation path, plus the Kubernetes web-UI guide cross-link) and the **"Not yet supported"** type list are **relocated verbatim** from the section index into a new child page, `docs/public/components/connectable-systems.md` (title *Connectable systems*, weight 10). The section index now **routes readers to that child page** (in the opening paragraph, in the activate step, and as the first "Where to go next" bullet) instead of carrying the tables inline. The **Front-end integrations** section (MCP server, Slack bot) stays on the section index unchanged; whether it belongs there at all is deferred (`docs/backlog/components-page-restructure.md`). This change **preserves the D-0055/D-0056 routing discipline** — the runtime-vs-boot activation split and the per-type routing remain the single documented source, now on one dedicated page — and **preserves the D-0032 no-volatile-counts rule**: no hardcoded count of component types or categories is introduced in the new or edited prose. The links in the moved content are re-based for the child page's one-level-deeper depth (`../guides/...`/`../concepts/...` → `../../...`).
+- Basis: `components-page-restructure` session against the live tree. Phase-1 verification confirmed **zero anchored inbound links** to the removed in-page anchors (`#connectable-systems-and-their-credential-mechanism`, `#not-yet-supported`) from anywhere in `docs/public`, so **no published URL dies** and **no new alias is added** — the section index and the new child page both resolve at stable paths. The one relative link inside the moved content (the Kubernetes guide cross-link) was re-based to `../../guides/register-kubernetes/` and verified to resolve against the actual `docs/public` tree. The new intro's `knowledge graph` link targets `../concepts/knowledge-graph/`, which exists.
+- Supersedes: nothing. Refines the presentation of the Components section established by earlier docs work (**D-0055**/**D-0056** routing discipline, unchanged in substance) and continues to honor the **D-0032** no-volatile-counts rule. No security/safety invariant is touched. Partially discharges the framing point tracked in `docs/backlog/registered-components-required-framing.md` for the Components section only; that item stays open for the Overview and Quickstart pass.
+
+---
+
 ## D-0077 — A standing site-claims register (`docs/project/SITE-CLAIMS.md`) maps each load-bearing joeagent.dev claim to its mechanism and pinning test, and sessions changing a listed mechanism must flag a site revision in their report
 
 - Date: 2026-07-12

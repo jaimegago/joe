@@ -25,3 +25,12 @@ point — not something the reader infers. It belongs across:
 
 Stub only — flagged here, not acted on in the `component-registration-guide`
 session. Pick up as a deliberate Overview/Quickstart framing pass.
+
+## Update — `components-page-restructure` session
+
+The Components section index (`docs/public/components/_index.md`) now opens with an
+explicit definition-and-framing intro: it states what a component is and that Joe is
+near-useless without registered components ("Without them, Joe boots, authenticates,
+and answers, but has nothing real to say"). This covers the framing point *for the
+Components section only*. This item remains **open** for its actual scope — the
+Overview and Quickstart framing pass — which is untouched.

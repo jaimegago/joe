@@ -8,12 +8,20 @@ aliases:
 
 # Components
 
+A **component** is Joe's name for a system it manages — a Kubernetes cluster, a Prometheus,
+a GitHub org, a Grafana. Components are the nodes of the
+[knowledge graph](../concepts/knowledge-graph/) and the things zones and RBAC grant access
+to. Everything Joe does — answering questions, walking the graph, proposing changes —
+happens through the components you register. Without them, Joe boots, authenticates, and
+answers, but has nothing real to say.
+
 This section is the practical guide to connecting Joe to the systems it manages. Every
 system follows the same first three steps — **register, then promote, then arm** — but the
 final **activation** step differs by type. Most types come live at runtime through a
 connectivity test; a few can only be brought live at the next daemon restart. This page
-documents the shared flow once, flags which activation path each type takes, then gives the
-per-type credential mechanism for each system you can connect today.
+documents the shared flow once, flags which activation path each type takes, then points you
+to [Connectable systems](connectable-systems/) for the per-type credential mechanism of each
+system you can connect today.
 
 For the *why* behind the two-step lifecycle, read
 [The component lifecycle](../concepts/component-lifecycle/). For the configuration
@@ -121,7 +129,8 @@ secret. Re-promoting an armed component overwrites its reference as another audi
 Promotion records the reference but does not itself authenticate or open a live connection.
 How an armed component becomes live depends on its type, and the two paths are **not**
 interchangeable — sending a boot-only type down the runtime path silently does nothing.
-The per-type tables below mark which path each type takes.
+The per-type tables on [Connectable systems](connectable-systems/) mark which path each
+type takes.
 
 #### Runtime activation (most types)
 
@@ -165,67 +174,6 @@ A component armed with a working credential can read with that credential; wheth
 and [RBAC](../concepts/rbac-zones-and-read-posture/) — arming a component does not by
 itself grant mutation.
 
-## Connectable systems and their credential mechanism
-
-Each system below has a working adapter and a credential path you can complete through
-promotion. The **credential mechanism** column tells you what kind of reference promotion
-expects; the **activation** column tells you whether it comes live at runtime (the `/test`
-call) or only at the next daemon restart (boot).
-
-### Kubernetes
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| Kubernetes | `kubernetes` | `auth_method: static-bearer` — `api_server` + `ca_data` + a bearer token via `env_var` or `in_cluster: true`; **or** `auth_method: entra-exchange` (AKS) — `api_server` + `ca_data` + `tenant_id` + `client_id` + `audience` + `client_secret_env_var` | runtime (`/test`) |
-
-For the click-by-click web-UI walkthrough of registering, promoting, and taking a cluster
-live, see [Register a Kubernetes component](../guides/register-kubernetes/).
-
-### Source control and code review
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| GitHub | `github` | static / env var (`JOE_GITHUB_<LABEL>`) | boot (restart) |
-| GitLab | `gitlab` | static / env var (`JOE_GITLAB_<LABEL>`) | boot (restart) |
-
-### Metrics, logs, and traces
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| Prometheus | `prometheus` | static / env var (`JOE_PROMETHEUS_<LABEL>`) | runtime (`/test`) |
-| Mimir | `mimir` | static / env var (`JOE_MIMIR_<LABEL>`) | runtime (`/test`) |
-| Loki | `loki` | static / env var (`JOE_LOKI_<LABEL>`) | runtime (`/test`) |
-| Tempo | `tempo` | static / env var (`JOE_TEMPO_<LABEL>`) | runtime (`/test`) |
-| Jaeger | `jaeger` | static / env var (`JOE_JAEGER_<LABEL>`) | runtime (`/test`) |
-| Splunk | `splunk` | static / env var (`JOE_SPLUNK_<LABEL>`) | boot (restart) |
-| Dynatrace | `dynatrace` | static / env var (`JOE_DYNATRACE_<LABEL>`) | boot (restart) |
-| New Relic | `newrelic` | static / env var (`JOE_NEWRELIC_<LABEL>`) | boot (restart) |
-
-### Alerting
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| Alertmanager | `alertmanager` | static / env var (`JOE_ALERTMANAGER_<LABEL>`) | runtime (`/test`) |
-| PagerDuty | `pagerduty` | static / env var (`JOE_PAGERDUTY_<LABEL>`) | runtime (`/test`) |
-| Grafana | `grafana` | static / env var (`JOE_GRAFANA_<LABEL>`) | runtime (`/test`) |
-
-### GitOps and security
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| Argo CD | `argocd` | static / env var (`JOE_ARGOCD_<LABEL>`) | runtime (`/test`) |
-| Falco | `falco` | static / env var (`JOE_FALCO_<LABEL>`) | runtime (`/test`) |
-
-### Credential-less systems
-
-These connect without any credential — there is nothing to arm. Register them, run the
-connectivity test, and they function.
-
-| System | Type | Credential mechanism | Activation |
-| --- | --- | --- | --- |
-| Terraform | `terraform` | none — reads local state | runtime (`/test`) |
-| Envoy | `envoy` | none — unauthenticated admin API | runtime (`/test`) |
-
 ## Front-end integrations
 
 Beyond managed systems, Joe ships two front-ends that connect *to* a running daemon over
@@ -251,17 +199,9 @@ export JOE_API_KEY="<service-account-key>"
 joe slack
 ```
 
-## Not yet supported
-
-You will see other component types named in the type enum, but they cannot be completed
-into a working integration at launch and are not documented here: `azure`, `helm`,
-`nginx-ingress`, `git`, `aws`, `datadog`, `postgresql`, `mysql`, `redis`, `mongodb`,
-`kafka`, `elasticsearch`, `cloudwatch`, `azuremonitor`, `oci_registry`, `dockerhub`,
-`artifactory`, and `ecr`. They are either not yet connected, have no governed credential
-path, or have no usable adapter. Do not rely on them yet.
-
 ## Where to go next
 
+- The per-type credential mechanism and activation path for every connectable system → [Connectable systems](connectable-systems/)
 - Why registration and promotion are split → [The component lifecycle](../concepts/component-lifecycle/)
 - Credential references and the full environment surface → [Configuration](../configuration/)
 - Running and observing Joe → [Operations](../operations/)
