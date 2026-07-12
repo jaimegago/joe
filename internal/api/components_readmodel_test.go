@@ -103,6 +103,55 @@ func TestComponentReadModel_ArmedHidesLocators_GetAndList(t *testing.T) {
 	}
 }
 
+// TestComponentReadModel_CreateEchoHidesLocators pins the create-echo half of the
+// read-model closure: the POST /api/v1/components 201 body serializes the SAME
+// componentView projection the GET endpoints return, so a registration echo can no
+// more leak a credential locator or the raw Config blob than a read can. The
+// submitted config deliberately carries locator-shaped keys that PASS the
+// credential-less-at-registration guard (audience is excluded from the
+// credential-bearing set; datastore secret names uri/password/api_key are unknown
+// to it), so the record registers 201 and those keys land in the stored Config —
+// making the absence assertion on the 201 body a genuine regression guard: were the
+// handler to echo the raw store.Component, the blob (and its audience key) would
+// appear. RBAC is disabled in the test harness, so requireAdmin permits the create.
+func TestComponentReadModel_CreateEchoHidesLocators(t *testing.T) {
+	_, _, mux := setupTestServerWithStore(t)
+
+	body := `{"id":"echo-src","type":"mongodb","name":"Echo Store","config":` +
+		`{"audience":"github","uri":"mongodb://user:password@host:27017/db","password":"p","api_key":"k","endpoint":"mongodb://host:27017"}}`
+	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CREATE status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+	createBody := w.Body.String()
+	assertNoLocatorKeys(t, createBody)
+
+	// The echo is the read-model shape: identity fields present, and an inert
+	// (credential-less) registration projects armed=false with no provider.
+	var got struct {
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Name     string `json:"name"`
+		Armed    bool   `json:"armed"`
+		Provider string `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(createBody), &got); err != nil {
+		t.Fatalf("decode create echo: %v", err)
+	}
+	if got.ID != "echo-src" || got.Type != "mongodb" || got.Name != "Echo Store" {
+		t.Errorf("create echo identity = %+v, want id=echo-src type=mongodb name=Echo Store", got)
+	}
+	if got.Armed {
+		t.Errorf("create echo armed = true, want false for a credential-less registration")
+	}
+	if got.Provider != "" {
+		t.Errorf("create echo provider = %q, want empty for an inert component", got.Provider)
+	}
+}
+
 // TestComponentReadModel_InertArmedFalse pins armed=false (and no provider) for
 // an inert, never-promoted component on both read endpoints.
 func TestComponentReadModel_InertArmedFalse(t *testing.T) {

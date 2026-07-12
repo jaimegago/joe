@@ -284,7 +284,14 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, source)
+	// The 201 echo serializes the SAME read-model projection the GET endpoints
+	// return (newComponentView), never the raw store.Component — so the create
+	// response cannot leak the Config blob or any credential locator any more than
+	// a read can. A registration is credential-less by construction, so the echoed
+	// component is inert (armed=false), but routing config an operator submitted
+	// still lives in source.Config; projecting here keeps the create path on the
+	// same one-component-read shape as list/get (A002 read-model closure).
+	writeJSON(w, http.StatusCreated, newComponentView(source))
 }
 
 // componentRegisterEvent builds the same-transaction audit row for a governed
