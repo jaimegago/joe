@@ -1,9 +1,11 @@
 // Package skills implements Joe's Agent Skills consumer. Skills are
-// judgment-elicitation documents loaded from ~/.joe/skills/ at startup and
-// surfaced into LLM context at decision time by the router.
+// judgment-elicitation documents loaded from ~/.joe/skills/ and surfaced into
+// LLM context at decision time by the router.
 //
-// Phase 1 scope: static loading at startup, deterministic keyword routing,
-// no CLI, no hot reload, no quarantine. See docs/reference/joe-skills-design.md.
+// As-built scope: loading and deterministic keyword routing; the `joe skills`
+// CLI (install/list/remove/update/approve/reject); fsnotify hot reload via the
+// watcher; and the quarantine approve/reject flow that holds non-auto-approved
+// installs until a human clears them. See docs/reference/joe-skills-design.md.
 package skills
 
 import (
