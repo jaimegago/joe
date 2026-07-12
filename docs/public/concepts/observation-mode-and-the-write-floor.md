@@ -6,10 +6,12 @@ description: The boot-resolved, runtime-immutable gate that denies managed-syste
 
 # Observation mode and the write floor
 
-Joe classifies every tool it can run as either a **read** or a **mutation** of a
-managed system. Reads gather information; mutations change something out in your
-infrastructure. The **write floor** is the gate that decides, at the coarsest level,
-whether mutations are permitted at all.
+Joe classifies every tool it can run by what it is capable of: read-only tools can
+only gather information; mutation-capable tools can change something out in your
+infrastructure. The classification is by capability, not by invocation — a tool that
+could mutate is treated as a mutation even when a particular call would only read. The
+**write floor** is the gate that decides, at the coarsest level, whether mutations are
+permitted at all.
 
 ## Boot-resolved and runtime-immutable
 
@@ -39,9 +41,9 @@ operator can tell *why* writes are blocked:
 - **Observation mode** — Joe's **default read-only posture**. The floor is up because
   Joe ships in observation mode: it comes up read-only when `JOE_MODE` is unset and,
   explicitly, with `JOE_MODE=observation`. This is the posture in which Joe sees and
-  reasons about your infrastructure without being able to change it. A governed
-  full-capabilities mode is forthcoming — `JOE_MODE=full` is refused at boot pending
-  implementation — so today observation is the only posture Joe boots into.
+  reasons about your infrastructure without being able to change it. `JOE_MODE=full`
+  is recognized but refused at boot as not yet implemented, so today observation is the
+  only posture Joe boots into.
 - **Safe mode** — the floor is up because Joe was put into an emergency
   shutdown/panic state. This is a reaction to something going wrong, not a starting
   posture.
