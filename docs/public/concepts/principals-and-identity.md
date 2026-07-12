@@ -21,8 +21,9 @@ context; it does not re-authenticate on every internal hop.
 
 ## Machines authenticate with service-account keys
 
-Non-human callers — the MCP server, the Slack bot, CI integrations, scripts — present
-a service-account bearer key. Joe resolves the key to a principal carrying the
+Joe's shipped machine clients are the MCP server and the Slack bot; they — along with
+any other external caller an operator mints a service-account key for, such as a CI
+integration or a script — present a service-account bearer key. Joe resolves the key to a principal carrying the
 reserved **`svc:`** prefix — a `svc:<name>` principal. Service accounts are defined in
 configuration; a duplicate or empty key is a boot failure rather than a silent
 ambiguity.
