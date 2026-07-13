@@ -10,6 +10,54 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0095 — The backlog file convention gains two optional lines, `Priority:` and `Blocked-by:`, and INDEX.md gains a blank-when-absent Priority column; a fuller relationship model is explicitly rejected
+
+- Date: 2026-07-13
+- Session: backlog-priority-field
+- Decision: the per-file backlog format (`docs/backlog/<slug>.md`) is extended with
+  **two optional lines placed immediately after the `Status:` line**:
+  - **`Priority:`** — exactly one of `now`, `next`, `later`. `now` = on the current
+    working horizon, picked from first; `next` = queued immediately behind the
+    current horizon; `later` = no horizon. **An absent `Priority:` line means
+    untriaged** — it is never defaulted to a value.
+  - **`Blocked-by:`** — names either a backlog slug or the form
+    `external (short note)`. It is a **one-directional edge**: there is deliberately
+    **no `Blocks` field, no `Related` field, and no reverse-edge maintenance**.
+    `Blocked-by:` is the canonical dependency line going forward; pre-existing
+    informal variants (e.g. `Depends on:` in older files) are left as-is and
+    normalized during the triage pass, not opportunistically.
+  `docs/backlog/INDEX.md` gains a **Priority column after Status**, carrying the
+  item's `Priority:` value; an item with no `Priority:` line **renders as a blank
+  cell, never a default**. `Blocked-by:` is **not** surfaced in INDEX — it is
+  detail-pass information read from the item file.
+- Rejected alternative: a fuller relationship model — bidirectional
+  `Blocks`/`Blocked-by` edges, a `Related` field, or a dependency graph across
+  backlog items — was considered and **rejected**. The backlog is a flat worklist,
+  not a graph; reverse-edge maintenance is manual toil with no picking-time payoff,
+  and a single forward `Blocked-by:` edge captures the only dependency signal that
+  affects what can be picked. The one-directional edge is the whole of it.
+- Mechanics: INDEX has **no regeneration script** — regeneration is by-hand per the
+  instructions in the INDEX header, so those header instructions were updated to
+  specify the new column and its blank-when-absent rule (rather than a script). The
+  format is described identically in `docs/project/pm-convention.md` and
+  `docs/project/claude_joe_project_instructions.md` (kept in lockstep). `CLAUDE.md`
+  was **not** touched: it only points at `docs/backlog/INDEX.md` and does not
+  describe the backlog file format, so there was nothing to keep in sync.
+- Scope: this session added the convention and regenerated INDEX under it; **every
+  pre-existing item renders a blank Priority cell** and no existing backlog body or
+  status line was edited. The deferred, maintainer-dictated triage pass that assigns
+  actual priorities (and normalizes stray `Depends on:` lines to `Blocked-by:`) is
+  recorded as `docs/backlog/backlog-priority-triage.md`.
+- Basis: this session's read of `docs/backlog/INDEX.md` (header derivation prose,
+  no script under `scripts/` or the Makefile references it), the per-file header
+  survey across `docs/backlog/`, `docs/project/pm-convention.md`, and
+  `docs/project/claude_joe_project_instructions.md`.
+- Supersedes: nothing; extends the backlog-format convention recorded in
+  `pm-convention.md` without changing existing status semantics.
+- Status: accepted.
+
+---
+
 ## D-0094 — CRD discovery in the kubernetes refresher: spec strings are the group/version/resource form the resolver requires; uninstalled CRDs manifest as a list-time 404, not a resolution error
 
 - Date: 2026-07-13
