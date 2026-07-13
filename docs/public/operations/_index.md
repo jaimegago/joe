@@ -56,9 +56,17 @@ Joe keeps its state in two places under its home directory (`~/.joe` by default)
 - **The database** — an embedded SQLite store at `~/.joe/joe.db`. This is the graph,
   the knowledge entries, sessions, RBAC state, the panic row, and the audit log. It is
   a single file; no external database server is involved. Back it up as a unit, and
-  treat it as sensitive — the audit log and identity state live here.
+  treat it as sensitive — the audit log and identity state live here. Note that Joe
+  **deletes some of this data automatically on a timer**: a background retention sweeper
+  hard-purges expired sessions (and their transcripts) by default, so a backup is the
+  only way to recover a session Joe has purged (see [Retention and
+  growth](#retention-and-growth)).
 - **The session archive** — cold-storage session artifacts under
-  `~/.joe/session-archive`, overridable with `server.session_archive_dir`.
+  `~/.joe/session-archive`, overridable with `server.session_archive_dir`. This
+  directory is **populated by the retention sweeper** when the session policy's terminal
+  action is *archive*: an expired session is moved here, out of the live database, as a
+  versioned artifact (see [Retention and growth](#retention-and-growth)). With the
+  default terminal action it stays empty.
 
 Both paths follow Joe's home directory; point them at durable, backed-up storage in
 production.
@@ -82,6 +90,77 @@ complete build-info record (also authenticated). If you need a credential-free p
 signal, scrape the unauthenticated Prometheus metrics endpoint on its separate port
 instead (see [Metrics](#metrics) below). Do not expect a Kubernetes-style readiness gate,
 because none is wired.
+
+## Retention and growth
+
+Everything Joe stores lives in the one SQLite file described under [State on
+disk](#state-on-disk). Two facts about how that file changes over time matter for an
+operator: a background sweeper **deletes** some session data on a timer by default, and
+several tables only ever **grow**.
+
+### The session retention sweeper
+
+Joe runs a retention sweeper in the background from the moment the daemon boots — it is
+**on by default, not opt-in**. On a fixed interval (periodically, not continuously) it
+applies the single, install-wide session retention policy and drains abandoned
+login-flow state. Every deletion or lifecycle change it makes is written to the
+[audit log](#tables-that-only-grow) in the same transaction, attributed to a dedicated
+service principal, so automated expirations are as traceable as human ones.
+
+The policy has three knobs, edited from the **Sessions** page (or the admin
+**Governance** tab) and applied install-wide:
+
+- **Trash-grace auto-purge — on by default.** When a session is trashed — by its owner,
+  or by the sweeper under inactivity expiry — it is stamped with a purge deadline of
+  trashed-time plus the trash-grace window. Once that deadline passes, the sweeper
+  **hard-purges** the session: the row is deleted and its transcript goes with it,
+  because chat messages are removed by database cascade when their session is deleted. A
+  purged session is gone from the live database — only a backup can bring it back.
+- **Inactivity expiry — off by default.** The sweeper can also expire sessions left
+  untouched longer than an inactivity window, but that window ships **disabled**: nothing
+  auto-expires on inactivity until an admin turns it on. When enabled, an expired session
+  gets the policy's terminal action.
+- **Terminal action — trash-then-purge (default) or archive.** The default action trashes
+  an expired session, which then follows the trash-grace path above. The alternative,
+  *archive*, moves the session out of the live database into the [session archive
+  directory](#state-on-disk) as a cold-storage artifact. Archive requires a configured
+  archive directory; without one the sweeper leaves the session **active and logs that it
+  did so**, rather than deleting it or marking it archived with no real artifact behind
+  the mark.
+
+**A footgun worth stating plainly.** If the trash-grace window is set to **zero**, or no
+retention policy can be resolved at the moment a session is trashed, that session is
+trashed with **no purge deadline**. The sweeper only purges sessions that carry a
+deadline, so such sessions sit in trash **indefinitely** until an admin purges them by
+hand. This is intended semantics — a zero grace means *never auto-purge*, not *purge
+now* — but it means trash is not guaranteed to drain on its own under every policy, and
+an operator choosing that setting should know they have opted into manual cleanup.
+
+### Tables that only grow
+
+Several tables have **no automatic deletion path** in this version and grow monotonically
+with use. Size backups and disk capacity accordingly:
+
+- **The audit log grows without bound, by design.** It is **append-only** — inserts only,
+  enforced both in application code and by database triggers that reject any update or
+  delete — so there is deliberately no rotation or pruning in this version. The only
+  sanctioned way to reclaim its space is to drop and recreate the table wholesale, which
+  discards the **entire** audit history; there is no selective trim. A retention/rotation
+  mechanism is planned as a later extension, not shipped today.
+- **LLM-usage, code-review-job, and clarification records accumulate.** One usage record
+  is written per model call, and review-job and clarification records accrue as Joe runs;
+  none of these has a prune path today.
+- **The legacy session tables are frozen.** An older sessions/messages store predates the
+  current session subsystem. Nothing writes to it now and it has no deletion path; it is
+  deliberately **retained** (a future feature depends on it) and simply does not change in
+  size.
+- **The infrastructure graph self-reconciles.** Graph edges are *not* in this list: they
+  are added and removed as Joe reconciles the live topology, so the graph does not grow
+  without bound.
+
+Where any of this needs to change — audit rotation, a usage-retention or roll-up policy,
+a database-size signal for operators — it is tracked as deferred work. None of it blocks
+running Joe today; this section is the operator-facing posture as it stands.
 
 ## Observability
 

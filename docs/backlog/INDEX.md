@@ -26,6 +26,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
+| [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs/clarifications pruning, legacy-session disposition, DB-size observability) | open |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred |
 | [`discovery-clarifications-pipeline`](discovery-clarifications-pipeline.md) | Discovery-to-clarifications pipeline — unpark and finish the onboarding, facts, and needs-human surfaces | open |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open |
