@@ -45,7 +45,7 @@ go vet ./...
 gofmt -s -w .
 ```
 
-Release-shaped build (embeds the UI and injects build truth into `internal/buildinfo` via ldflags `-X`): `make build`. A plain `go build ./...` still compiles and reports the unset `dev` defaults. CI validates the same `.goreleaser.yaml` in snapshot mode on every push/PR (`goreleaser build --snapshot --clean`, Node-enabled so the UI-staging `before.hooks` runs, plus a `ui_digest`-based CI guard proving the snapshot embeds the real UI, not the placeholder); only a `v`-prefixed tag push triggers the separate `.github/workflows/release.yml`, which runs `goreleaser release --clean` and actually publishes.
+Release-shaped build (embeds the UI and injects build truth into `internal/buildinfo` via ldflags `-X`): `make build`. A plain `go build ./...` still compiles and reports the unset `dev` defaults. CI validates the same `.goreleaser.yaml` in snapshot mode on every push/PR (`goreleaser build --snapshot --clean`, Node-enabled so the UI-staging `before.hooks` runs, plus a `ui_digest`-based CI guard proving the snapshot embeds the real UI, not the placeholder); only a `v`-prefixed tag push triggers the separate `.github/workflows/release.yml`, which runs `goreleaser release --clean` and actually publishes. Cutting an actual release is an operator procedure, not an agent task — see [`docs/RELEASING.md`](docs/RELEASING.md).
 
 Integration tests: `go test -tags=integration ./...`
 

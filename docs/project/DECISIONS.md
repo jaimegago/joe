@@ -10,6 +10,40 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0092 — The operator release procedure is captured as a runbook at `docs/RELEASING.md`
+
+- Date: 2026-07-13
+- Status: accepted
+- Session: releasing-runbook
+- Decision: `docs/RELEASING.md` is added as the maintainer-facing runbook for
+  cutting a Joe release — a checklist for a human operator, not a skill or
+  agent task, since the load-bearing step (pushing the release tag) is the
+  irreversible publish trigger and must stay a deliberate human action. It is
+  placed at `docs/` rather than `docs/public` per D-0052 (procedure/how-to
+  content is barred from the published surface). Its content is derived
+  strictly from the pipeline as committed by `release-pipeline-01`
+  (`.goreleaser.yaml`, `.github/workflows/release.yml`, the `goreleaser-build`
+  guard in `.github/workflows/tests.yml`) and generalizes the tag-cut
+  procedure `release-pipeline-02` already records in
+  `docs/backlog/release-pipeline.md`, cross-referencing rather than
+  duplicating its update-at-tag-time site list. Volatile specifics (the
+  `goos`/`goarch` build matrix, archive/checksum naming) are expressed as
+  pointers into `.goreleaser.yaml`, not restated fixed lists, per D-0032.
+- Basis: this session's read of `.goreleaser.yaml`, `.github/workflows/release.yml`,
+  `.github/workflows/tests.yml`, and `docs/backlog/release-pipeline.md` as
+  committed at `16de344` (`release-pipeline-01`); confirmed via `git tag -l`
+  (empty) and `release.yml`'s file history (one commit) that no tag has ever
+  been pushed and the workflow has never run.
+- First-run correction obligation: the runbook is written pre-flight, before
+  `release.yml` has ever fired. It carries its own "correct this after the
+  first real release" section and must be revisited once `v0.1.0` actually
+  publishes, to replace any UNVERIFIED operator-judgment claims (e.g. GitHub/
+  goreleaser behavior on partial failure) with what was actually observed.
+- Supersedes: nothing — first runbook for the release procedure.
+- Status: accepted, pending first-run correction.
+
+---
+
 ## D-0091 — GoReleaser is flipped from scaffold-only to publish-on-tag, with a goreleaser-level `before.hooks` guarantee that every invocation stages the real web UI, not the committed placeholder
 
 - Date: 2026-07-13
