@@ -356,6 +356,26 @@ describe('ChatPage last-session restore', () => {
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
   });
 
+  it('stays on a blank /chat when arriving with explicit new-chat intent, even with a remembered session', async () => {
+    // The Sessions page "New chat" button navigates to /chat with router state
+    // { newSession: true }. That must land on a blank chat, not reopen the last
+    // session the restore effect would otherwise pull in.
+    sessionStorage.setItem('joe.chat.lastSession', 's-prev');
+    const { Wrapper } = createWrapper();
+    render(
+      <Wrapper>
+        <MemoryRouter initialEntries={[{ pathname: '/chat', state: { newSession: true } }]}>
+          <LocationSpy />
+          <Routes>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat/:sessionId" element={<ChatPage />} />
+          </Routes>
+        </MemoryRouter>
+      </Wrapper>
+    );
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(/^\/chat$/));
+  });
+
   it('remembers the session in view for the next return', async () => {
     renderAt('/chat/s-prev');
     await waitFor(() => expect(sessionStorage.getItem('joe.chat.lastSession')).toBe('s-prev'));

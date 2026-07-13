@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -36,6 +36,7 @@ import {
 
 export function ChatPage() {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
+  const location = useLocation();
   const chat = useChat(routeSessionId);
   const { principal, rbacEnabled, isAdmin, zones } = useAuth();
   const navigate = useNavigate();
@@ -65,7 +66,15 @@ export function ChatPage() {
   // restoredId remembers what we reopened so the recovery effect can tell a dead
   // *restored* id apart from a session the user actively opened.
   const restoredId = useRef<string | null>(null);
-  const suppressRestore = useRef(false);
+  // Seeded from an explicit new-chat intent so this component lands on a blank
+  // /chat instead of reopening the last session. The Sessions page "New chat"
+  // button navigates here with { newSession: true }; without this seam that
+  // button would land on bare /chat and the restore effect below would reopen
+  // the last-viewed session. handleNewSession sets it live for the in-page
+  // "New Session" button. Consumed exactly once (see the restore effect).
+  const suppressRestore = useRef(
+    (location.state as { newSession?: boolean } | null)?.newSession === true
+  );
   useEffect(() => {
     if (routeSessionId != null) return; // already on a session URL
     if (activeSessionId != null) return; // a session is in view (or being created)

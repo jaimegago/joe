@@ -226,7 +226,11 @@ export function SessionsPage() {
       <Header
         title="Sessions"
         actions={
-          <Button variant="outline" size="sm" onClick={() => navigate('/chat')}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/chat', { state: { newSession: true } })}
+          >
             <Plus className="mr-1 h-3 w-3" />
             New chat
           </Button>
