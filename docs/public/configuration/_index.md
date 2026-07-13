@@ -93,7 +93,7 @@ knowledge:
   sync_enabled: false
 
 database:
-  driver: ""                          # "" → sqlite; "pgx" for PostgreSQL
+  driver: ""                          # "" → sqlite (the only functional driver today); "pgx" is present but not yet operational — see note below
   dsn: ""                             # "" → default SQLite path ~/.joe/joe.db
 
 skills:
@@ -161,8 +161,10 @@ web_search:                           # optional; web search is inert until a pr
 
 | Key | Default | Effect |
 | --- | --- | --- |
-| `database.driver` | `sqlite` | `sqlite`, or `pgx` for PostgreSQL. |
+| `database.driver` | `sqlite` | **SQLite is the supported database.** `sqlite` (the default) is the only functional value. A `pgx` (PostgreSQL) value is present in the configuration surface but is **not yet operational** — see the note below. |
 | `database.dsn` | `~/.joe/joe.db` (SQLite) | Database path or DSN. |
+
+**PostgreSQL is not yet functional.** The `pgx` driver value exists in the configuration surface — the store opens the configured driver, the repositories are dialect-aware, and the migration runner has a PostgreSQL branch — but the embedded migration set is written in SQLite dialect only. Setting `database.driver: "pgx"` today fails at startup during the migration step, before the server begins serving, because those migrations use SQLite-only constructs (`AUTOINCREMENT` and SQLite-specific append-only trigger DDL) that PostgreSQL rejects. Use the default SQLite backend. PostgreSQL support is planned.
 
 ### `skills`
 
