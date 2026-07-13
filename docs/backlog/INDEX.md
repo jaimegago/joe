@@ -54,6 +54,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 |
+| [`release-pipeline`](release-pipeline.md) | Release pipeline — tag cut and distribution-posture doc sweep (-02) | in-progress |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |

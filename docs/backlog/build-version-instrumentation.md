@@ -11,18 +11,13 @@ off `main` and addressed by full import path, the boot-computed `ui_digest`,
 
 ## Deferred fast-follows
 
-### 1. goreleaser publishing flip (distribution-posture change)
+### 1. goreleaser publishing flip (distribution-posture change) — RESOLVED (D-0091)
 
-Today goreleaser is scaffold-only: CI proves the build and injection but
-`release.disable: true` and CI only ever invokes the `build` subcommand — nothing
-publishes. Turning on real publishing (tag-triggered `goreleaser release`,
-artifact upload, checksums/signing, install instructions) is a **distribution-
-posture change**: it moves Joe off build-from-source-only. When taken it needs its
-own posture flip and its own `docs/project/DECISIONS.md` entry, plus a decision on what to
-publish (which `goos`/`goarch`, archives, whether the UI is staged into the embed
-before the release build so published binaries are UI-complete) and the secrets/
-permissions for the release job. Not launch-blocking; do it deliberately, not by
-drift.
+Done in session `release-pipeline-01`: `.goreleaser.yaml` now publishes on a
+`v`-prefixed tag push via `.github/workflows/release.yml`, with UI staging
+guaranteed by a goreleaser `before.hooks` entry rather than a workflow-only
+step. The residual — the actual tag cut and the update-at-tag-time doc sweep —
+is tracked in `docs/backlog/release-pipeline.md`, not here.
 
 ### 2. (trivial, do-when-needed) numeric `joe_build_time_seconds` gauge
 

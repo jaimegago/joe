@@ -10,6 +10,90 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0091 — GoReleaser is flipped from scaffold-only to publish-on-tag, with a goreleaser-level `before.hooks` guarantee that every invocation stages the real web UI, not the committed placeholder
+
+- Date: 2026-07-13
+- Status: accepted
+- Session: release-pipeline-01
+- Decision: the publish flip D-0036 reserved is taken. `.goreleaser.yaml`'s
+  `release.disable: true` is removed (`release.github: {owner: jaimegago, name:
+  joe}` set explicitly); a new tag-triggered workflow
+  (`.github/workflows/release.yml`) runs `goreleaser release --clean` only on
+  a `v`-prefixed tag push (`on.push.tags: ['v*']`), with `permissions:
+  contents: write` and a full-history checkout (`fetch-depth: 0`), pinned to
+  the same goreleaser version (`~> v2`) as the existing snapshot job. The
+  ldflags injection into `internal/buildinfo` (D-0036) is untouched. Semver
+  and **v0.1.0 as the launch version** stand, with the operator performing the
+  tag push (no CLI-tooling change) and CI doing the publish. The work is split
+  across two sessions, as reserved: this session (`release-pipeline-01`) arms
+  the pipeline and proves it; a second session (`release-pipeline-02`) sweeps
+  the update-at-tag-time copy sites and cuts the `v0.1.0` tag on its own
+  commit — tracked in `docs/backlog/release-pipeline.md`. This session creates
+  no tag and publishes no release.
+
+  **UI-staging guarantee.** The real web UI must be embedded in every
+  published binary, not the committed placeholder (`internal/webui/dist/
+  .gitkeep`). Rather than making this a property of one workflow step, it is
+  made a structural property of `.goreleaser.yaml` itself: a new
+  `before.hooks` entry, `scripts/stage-ui-for-release.sh`, runs `npm ci && npm
+  run build` in `ui/` and copies the output into `internal/webui/dist` — the
+  same source/dest the Makefile's `build-ui` target uses, keeping
+  `internal/webui/contract_test.go`'s `TestEmbedSourceMatchesViteOutDir`
+  invariant intact. Because this hook runs before every goreleaser build,
+  it applies uniformly to the tag-triggered release, a local `goreleaser
+  release`/`build`, and the CI snapshot job (`goreleaser-build` in
+  `.github/workflows/tests.yml`) — with no separate workflow-only staging
+  step to drift out of sync. A consequence taken deliberately: the
+  `goreleaser-build` snapshot job now needs Node (added `actions/setup-node`)
+  and is no longer part of the Node-free/placeholder-compiling set; the unit,
+  integration, and lint jobs remain Node-free and placeholder-compiling as
+  before, since faithful release-path validation is exactly this job's
+  purpose.
+
+  **Proof.** The snapshot build was run through this `before.hooks` path in
+  CI; the booted binary's `GET /api/v1/version` `ui_digest` was compared
+  against an independently computed `buildinfo.Compute` digest over the
+  staged `internal/webui/dist` (via the new `scripts/verify-ui-digest`
+  command) and against a digest computed over a placeholder-only directory
+  (just `.gitkeep`) — the booted digest must equal the former and differ from
+  the latter. This assertion is wired as a permanent CI guard step in the
+  `goreleaser-build` job, so a regression to placeholder-embedding fails CI
+  rather than only being caught by manual inspection.
+
+  **Docs.** The must-update-now posture sites identified in this session's
+  Phase 1 (CLAUDE.md License posture and Build sections, `.goreleaser.yaml`'s
+  own header comments, the `goreleaser-build` CI job comment,
+  `docs/backlog/build-version-instrumentation.md`'s flip item,
+  `docs/backlog/launch-positioning-and-employer-decoupling.md`, and
+  `docs/backlog/public-docs-feature-inventory.md`'s install/build section)
+  are updated to the now-true state: pipeline armed, publishes on tag, no
+  release tagged yet. `docs/public/install-and-build/_index.md` is edited only
+  for the "deliberately configured not to publish" clause that becomes false
+  once armed — the "no published release binaries" factual statement itself
+  is untouched, staying true until the tag (release-pipeline-02's edit,
+  tracked in `docs/backlog/release-pipeline.md`). A new Install and Build /
+  Distribution entry is added to `docs/project/SITE-CLAIMS.md` in this same
+  session per the D-0077/D-0088 bidirectional register obligation, since this
+  session publishes new load-bearing copy to that page.
+
+  **Doc-footer version stamping** stays deferred per D-0052; its re-open
+  condition (the first post-launch release) is unchanged and restated in
+  `docs/backlog/release-pipeline.md` — it becomes actionable once
+  `release-pipeline-02` cuts `v0.1.0`, not before.
+- Basis: `.goreleaser.yaml` (`before.hooks`, `release` block);
+  `scripts/stage-ui-for-release.sh`; `scripts/verify-ui-digest/main.go`;
+  `.github/workflows/release.yml`; the `goreleaser-build` job changes and its
+  new UI-digest CI guard step in `.github/workflows/tests.yml`; the doc edits
+  enumerated above; all under the `release-pipeline-01` commit.
+- Supersedes: nothing new — this is the flip D-0036 explicitly reserved as a
+  future posture change with its own decision entry; D-0036 itself stands
+  unchanged (the build-truth/ldflags/`ui_digest` design it recorded is
+  untouched).
+- Status: active. `release-pipeline-02` (tag cut + update-at-tag-time doc
+  sweep) remains open, tracked in `docs/backlog/release-pipeline.md`.
+
+---
+
 ## D-0090 — A second git-history rewrite scrubbed the former-employer email address and the employer acronym from object *content* (commit messages, blobs, and one tree path), correcting the residual leak that D-0089's identity-only pass left behind; the operator performs the force-push
 
 - Date: 2026-07-13

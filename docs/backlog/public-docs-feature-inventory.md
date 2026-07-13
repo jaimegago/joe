@@ -428,9 +428,11 @@ constants at `internal/config/constants.go:33-35`.
 
 ### SHIPPED — build / install
 
-- **Build-from-source only; nothing is published.** `release.disable: true`
-  (`.goreleaser.yaml:57`; header at lines 1-13 states "SCAFFOLD ONLY, NOT PUBLISHING").
-  No release/tag-triggered workflow exists.
+- **Build-from-source only; nothing published yet.** The release pipeline is
+  armed to publish on a `v`-prefixed tag push (D-0091, `.goreleaser.yaml`'s
+  `release` block plus the tag-triggered `.github/workflows/release.yml`); no
+  tag has been pushed, so no release exists yet. See
+  `docs/backlog/release-pipeline.md`.
 - **`make build`** runs `build-ui` (`npm ci && npm run build`, copies `ui/dist` into the
   `//go:embed` staging dir `internal/webui/dist`, `Makefile:51-55`) then compiles
   `./cmd/joe` with ldflags. The `-X` injection targets are exactly
@@ -440,8 +442,11 @@ constants at `internal/config/constants.go:33-35`.
   (`cmd/joe/server.go:309-318`). Plain `go build ./...` reports unset `dev`/`none`
   defaults.
 - **CI** (`.github/workflows/tests.yml`) runs unit, integration, e2e (`make build` +
-  `make test-e2e`), lint, and `goreleaser build --snapshot --clean` (tests.yml:184) —
-  the snapshot build is proven but never publishes.
+  `make test-e2e`), lint, and a `goreleaser build --snapshot --clean` job that stages
+  the real UI via the same `before.hooks` the release path uses and verifies the
+  built snapshot's `ui_digest` against the staged UI — proven but never publishes.
+  A separate tag-triggered `.github/workflows/release.yml` is the only path that
+  runs `goreleaser release --clean` and publishes.
 - **Running Joe:** bare `joe` (or `joe --config`) boots the daemon; listen address from
   `cfg.Server.Address` (default `localhost:7777`). Config path precedence: `--config`
   flag → `JOE_CONFIG` env → `~/.joe/config.yaml` (`cmd/joe/server.go:188-217`); a missing

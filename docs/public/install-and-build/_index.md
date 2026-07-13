@@ -8,8 +8,9 @@ description: Build the joe binary from source, run it, and wire the identity it 
 
 Joe is distributed as **source only**. There are no published release binaries,
 install scripts, or package-manager artifacts today — you build the `joe` binary
-yourself from this repository. The release tooling exists and is exercised by CI, but
-it is deliberately configured not to publish anything.
+yourself from this repository. A release pipeline is armed and publishes signed
+archives and checksums to a GitHub Release when a version tag is pushed, but no
+version has been tagged yet.
 
 This page is the procedure: build the binary, run the daemon, and configure the
 identity it requires. If you just want a guided first run from nothing to one answer,
@@ -45,13 +46,13 @@ A plain `go build ./...` also compiles, but it does **not** embed a freshly buil
 or inject build identity — such a binary reports the unset `dev` build defaults. Use
 `make build` for anything you intend to run.
 
-### Why nothing is published
+### Why nothing is published yet
 
 The repository carries a GoReleaser configuration, and CI runs a snapshot build on
-every change to prove the release path stays healthy. That configuration has releasing
-**disabled**: it never tags, uploads, or publishes artifacts. Building from source is
-the only supported way to obtain `joe` today. Flipping the project to publish binaries
-is a deliberate future posture change, not something that happens on its own.
+every change to prove the release path stays healthy. That configuration publishes a
+GitHub Release automatically when a `v`-prefixed version tag is pushed — the pipeline
+is armed, not disabled. No version has been tagged yet, so building from source is the
+only supported way to obtain `joe` today.
 
 ## Run the daemon
 

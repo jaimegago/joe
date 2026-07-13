@@ -12,9 +12,12 @@ otherwise unrecorded in the tracked spines. For the history-scrub work that
 - Joe is a **personal, public, open-source portfolio project** under
   **Apache-2.0** (`LICENSE` at repo root is ground truth; the CLAUDE.md
   license-posture invariant restates it).
-- Distributed today as **build-from-source only** — no release binaries,
-  goreleaser, Homebrew/Scoop, or `install.sh`. Release tooling is deliberately
-  deferred for v1.
+- Distributed today as **build-from-source only** — no release binaries have
+  been published yet (Homebrew/Scoop/`install.sh` remain undecided). The
+  goreleaser release pipeline is **armed** (D-0091, `release-pipeline-01`): it
+  publishes a GitHub Release on a `v`-prefixed tag push; no tag has been cut
+  yet, so distribution is unchanged in practice. See
+  `docs/backlog/release-pipeline.md` for the tag-cut work.
 - The README was rewritten 2026-06-05 to reflect the single-binary architecture.
 
 ## Relationship to a former employer — decoupled by design

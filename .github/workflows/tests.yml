@@ -157,10 +157,15 @@ jobs:
           version: v2.12.2
           args: --timeout=5m
 
-  # Exercise the release path in snapshot mode ONLY — a full local build that
-  # proves the ldflags -X injection into internal/buildinfo works and the build
-  # is green. No release, no tag-triggered publishing, no artifact upload
-  # (the config also sets release.disable). Distribution stays build-from-source.
+  # Exercises the same .goreleaser.yaml the tag-triggered release workflow
+  # uses, in snapshot mode: a full local build (including the before.hooks UI
+  # staging step, hence the Node setup below) that proves the ldflags -X
+  # injection into internal/buildinfo works, the real UI gets embedded rather
+  # than the placeholder, and the build is green. This job only ever invokes
+  # `goreleaser build`, never `release` — no publish, no tag trigger, no
+  # artifact upload happens here regardless of .goreleaser.yaml's release
+  # settings. Distribution stays build-from-source until a tag push runs the
+  # separate release workflow.
   goreleaser-build:
     name: GoReleaser Snapshot Build
     runs-on: ubuntu-latest
@@ -177,11 +182,85 @@ jobs:
         with:
           go-version: '1.25'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
       - name: Run GoReleaser (snapshot build, no publish)
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: build --snapshot --clean
+
+      - name: Verify the snapshot binary embeds the real UI, not the placeholder
+        run: |
+          set -euo pipefail
+
+          bin="$(find dist -type f -path '*linux_amd64*/joe' | head -1)"
+          if [ -z "$bin" ]; then
+            echo "::error::no linux_amd64 joe binary found under dist/"
+            exit 1
+          fi
+          chmod +x "$bin"
+
+          workdir="$(mktemp -d)"
+          cfg="$workdir/config.yaml"
+          cat > "$cfg" <<CONFIGEOF
+          llm:
+            current: verify
+            available:
+              verify:
+                provider: gemini
+                model: gemini-2.0-flash
+          server:
+            address: localhost:7777
+          database:
+            driver: sqlite
+            dsn: $workdir/joe.db
+          logging:
+            level: info
+          CONFIGEOF
+
+          service_account_key="ci-verify-service-account-key-not-a-real-credential"
+          JOE_CONFIG="$cfg" JOE_API_KEY="$service_account_key" \
+            GEMINI_API_KEY="ci-dummy-key-not-a-real-credential-0000000" \
+            HOME="$workdir" "$bin" &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+
+          version_json=""
+          for _ in $(seq 1 30); do
+            if version_json="$(curl -sf -H "Authorization: Bearer $service_account_key" http://localhost:7777/api/v1/version)"; then
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$version_json" ]; then
+            echo "::error::joe never became ready on :7777"
+            exit 1
+          fi
+
+          actual_digest="$(echo "$version_json" | jq -r '.ui_digest')"
+          expected_digest="$(go run ./scripts/verify-ui-digest internal/webui/dist)"
+
+          placeholder_dir="$(mktemp -d)"
+          cp internal/webui/dist/.gitkeep "$placeholder_dir/"
+          placeholder_digest="$(go run ./scripts/verify-ui-digest "$placeholder_dir")"
+
+          echo "actual=$actual_digest expected=$expected_digest placeholder=$placeholder_digest"
+
+          if [ "$actual_digest" != "$expected_digest" ]; then
+            echo "::error::booted binary's ui_digest ($actual_digest) does not match the digest computed over the staged internal/webui/dist ($expected_digest)"
+            exit 1
+          fi
+          if [ "$actual_digest" = "$placeholder_digest" ]; then
+            echo "::error::booted binary embeds the placeholder UI, not a real build"
+            exit 1
+          fi
+          echo "UI-staging guarantee holds: booted ui_digest matches the staged real UI and differs from the placeholder"
 
   test-summary:
     name: Test Summary

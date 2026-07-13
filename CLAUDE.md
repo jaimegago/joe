@@ -4,7 +4,7 @@
 
 Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platform engineers. A single binary — `joe` — runs the Core daemon (HTTP API on :7777) as its default behavior, with subcommands (`joe mcp`, `joe slack`, etc.) riding alongside. Joe is AI-agnostic — the LLM adapter abstracts the provider: native Anthropic (`claude`) and Google (`gemini`) adapters sit alongside a generic OpenAI-compatible adapter (`openai-compat`), selected by provider plus a config `base_url` and reachable against any server speaking the OpenAI Chat Completions protocol. The validated provider set is config-driven — `internal/llmfactory/factory.go` (the factory switch) and `internal/config/validation.go` (the allow-list) are authoritative. Joe builds a graph of infrastructure relationships backed by SQLite.
 
-**License posture:** Joe is a personal, open-source portfolio project licensed **Apache-2.0** (`LICENSE` at the repo root is ground truth), distributed today as **build-from-source only** (no release binaries or install tooling). Release tooling is **scaffolded and CI-validated but not publishing**: a `.goreleaser.yaml` exists and CI runs `goreleaser build --snapshot --clean` to prove the build/injection, but it never releases, tags, or uploads artifacts (`release.disable: true`); flipping it to publish is a deliberate posture change with its own decision entry. This is independent of the separate `joe-sre-skills` starter repo, which is MIT.
+**License posture:** Joe is a personal, open-source portfolio project licensed **Apache-2.0** (`LICENSE` at the repo root is ground truth). The release pipeline (D-0091) is **armed to publish**: a `v`-prefixed tag push triggers `.github/workflows/release.yml`, which runs `goreleaser release --clean` to publish a GitHub Release carrying the built archives (per `.goreleaser.yaml`'s `builds`/`goos`/`goarch` matrix) and a checksums file, with release notes from goreleaser's default changelog. `.goreleaser.yaml`'s `before.hooks` stage the real web UI (`scripts/stage-ui-for-release.sh`, the same source/dest the Makefile's `build-ui` target uses) before every goreleaser build or release, so a published binary never ships the placeholder embed. **No version has been tagged yet**, so distribution today remains build-from-source only (no published release binaries) — see `docs/backlog/release-pipeline.md` for the residual tag-cut work. This is independent of the separate `joe-sre-skills` starter repo, which is MIT.
 
 ## Architectural Invariants
 
@@ -45,7 +45,7 @@ go vet ./...
 gofmt -s -w .
 ```
 
-Release-shaped build (embeds the UI and injects build truth into `internal/buildinfo` via ldflags `-X`): `make build`. A plain `go build ./...` still compiles and reports the unset `dev` defaults. CI validates the release path without publishing: `goreleaser build --snapshot --clean`.
+Release-shaped build (embeds the UI and injects build truth into `internal/buildinfo` via ldflags `-X`): `make build`. A plain `go build ./...` still compiles and reports the unset `dev` defaults. CI validates the same `.goreleaser.yaml` in snapshot mode on every push/PR (`goreleaser build --snapshot --clean`, Node-enabled so the UI-staging `before.hooks` runs, plus a `ui_digest`-based CI guard proving the snapshot embeds the real UI, not the placeholder); only a `v`-prefixed tag push triggers the separate `.github/workflows/release.yml`, which runs `goreleaser release --clean` and actually publishes.
 
 Integration tests: `go test -tags=integration ./...`
 

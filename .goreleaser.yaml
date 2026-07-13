@@ -1,16 +1,15 @@
-# GoReleaser configuration — SCAFFOLD ONLY, NOT PUBLISHING.
+# GoReleaser configuration — publishes on tag push (D-0091).
 #
-# Joe's distribution posture is build-from-source only (see LICENSE / CLAUDE.md).
-# This file exists so the release path is scaffolded and CI-validated: CI runs
-# `goreleaser build --snapshot --clean`, a full local build that proves the
-# ldflags -X injection into internal/buildinfo works and the build is green. It
-# does NOT release, tag-publish, or upload artifacts. `release.disable: true`
-# below is a second belt-and-braces guard on top of only ever invoking the
-# `build` subcommand in CI.
+# The tag-triggered `.github/workflows/release.yml` runs `goreleaser release
+# --clean` only on a `v`-prefixed tag push, publishing a GitHub Release
+# carrying the built archives and a checksums file. The unchanged
+# `goreleaser-build` CI job keeps validating the same config in snapshot mode
+# (`goreleaser build --snapshot --clean`) on every push/PR with no publish —
+# `release` and `build` are separate goreleaser subcommands, and only the
+# tag-triggered workflow ever invokes `release`.
 #
-# Flipping this to actually publish is a deliberate distribution-posture change
-# tracked in docs/backlog/build-version-instrumentation.md (its own posture flip
-# and decision-log entry when taken).
+# Until a `v`-prefixed tag is pushed, no release exists and distribution stays
+# build-from-source only (see LICENSE / CLAUDE.md / docs/backlog/release-pipeline.md).
 version: 2
 
 project_name: joe
@@ -18,6 +17,11 @@ project_name: joe
 before:
   hooks:
     - go mod download
+    # Stages the real web UI into internal/webui/dist before any goreleaser
+    # build/release runs (release, local build, or the CI snapshot job) — see
+    # the script for why this must be a goreleaser-level hook rather than a
+    # workflow-only step.
+    - ./scripts/stage-ui-for-release.sh
 
 builds:
   - id: joe
@@ -51,7 +55,12 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# No release. Posture is build-from-source only; CI exercises the `build`
-# subcommand in snapshot mode and never the `release` subcommand.
+# Publishes a GitHub Release on a tag push. release.disable is omitted
+# (default false); only the tag-triggered release workflow ever invokes
+# `goreleaser release` — the CI snapshot job only ever invokes `build`, which
+# never publishes regardless of this setting. Release notes are goreleaser's
+# default commit-log changelog (no changelog: block configured).
 release:
-  disable: true
+  github:
+    owner: jaimegago
+    name: joe

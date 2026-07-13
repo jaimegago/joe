@@ -326,3 +326,28 @@ test(s)** · **binding note** (where applicable).
   `llm_usage` retention/roll-up, a review-jobs/clarifications disposition, or a DB-size
   operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition
   changes (`learn-from-sessions-fate`).
+
+---
+
+## Install and Build — `/install-and-build/`
+
+### Distribution posture: build-from-source today, release pipeline armed to publish on tag
+
+- **Claim.** Joe is distributed build-from-source only today — no published release binaries
+  exist. The release pipeline is **armed to publish**: a `v`-prefixed tag push triggers a
+  dedicated release workflow that runs `goreleaser release --clean`, publishing a GitHub Release
+  with the built archives and a checksums file. Until an operator pushes such a tag, no release
+  exists and building from source is the only way to obtain `joe`.
+- **Mechanism.** `.goreleaser.yaml` (`release.disable` unset/false; `before.hooks` stage the real
+  web UI via `scripts/stage-ui-for-release.sh` — the same source/dest the Makefile's `build-ui`
+  target uses — before every goreleaser build or release, so a published binary cannot ship the
+  placeholder embed); the tag-triggered `.github/workflows/release.yml` (`contents: write`,
+  triggers only on `refs/tags/v*`); the unchanged `goreleaser-build` snapshot job in
+  `.github/workflows/tests.yml`, which validates the same config on every push/PR and never
+  publishes.
+- **Pinning tests.** None (no Go test guards this; the CI snapshot job's `ui_digest`-based
+  verification step is a CI-level guard proving the staged UI is real, not a named Go test).
+- **Binding note. Launch-bound.** The "no published release binaries" half of this claim is
+  expected to flip the moment the `v0.1.0` tag is pushed and cut (`release-pipeline-02`,
+  `docs/backlog/release-pipeline.md`) — revise this entry and the Install and Build page's
+  copy at that point; reaching that trigger is the cue to revise, not drift.

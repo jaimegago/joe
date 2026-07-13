@@ -1,0 +1,46 @@
+name: Release
+
+# Publishes a GitHub Release only on a `v`-prefixed tag push (e.g. v0.1.0).
+# This is the sole path that ever invokes `goreleaser release`; the Tests
+# workflow's goreleaser-build job only ever invokes `build --snapshot` and
+# never publishes. Distribution stays build-from-source until an operator
+# pushes such a tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GoReleaser Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # goreleaser needs full history and tags for `git describe` and for
+          # generating release notes from the commit log since the previous tag.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Run GoReleaser (publish release)
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
