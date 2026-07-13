@@ -15,7 +15,7 @@ Namespace `shop`, three Deployments, one Service each:
 
 | Service    | Replicas | Health   | Engineered symptom                                                        |
 |------------|----------|----------|---------------------------------------------------------------------------|
-| `orders`   | 1        | crashing | holds memory near its 128Mi limit and periodically bursts past it → OOMKilled + restarts |
+| `orders`   | 1        | mostly up, restarting | holds memory near its 128Mi limit; a short fast phase OOMKills a few times within ~5 min to seed real restarts, then bursts only every ~13 min → Running 1/1 near the limit with rare OOMKilled restarts, not CrashLoopBackOff |
 | `payments` | 2        | degraded | readiness probe hits a missing `/healthz` → real 404 → pods NotReady, Deployment stays up |
 | `checkout` | 2        | healthy  | fully ready; carries `PAYMENTS_URL` / `ORDERS_URL` env vars naming the other two services |
 
@@ -62,25 +62,50 @@ Re-staging reproduces all three symptoms from a clean slate.
 
 - `payments` NotReady: within ~30 seconds of staging (first readiness probe).
 - `checkout` Ready: within ~30 seconds of staging.
-- `orders` first OOMKill + restart: within ~2 minutes; restarts keep
-  accumulating on roughly a one-minute cadence thereafter, with the pod running
-  near its limit in between.
+- `orders` OOMKills + restarts: the container runs a two-phase workload keyed off
+  a start counter it persists in an `emptyDir` — a **fast phase** for its first
+  three starts that holds near the limit for ~15s then bursts over it, so real
+  OOMKilled restarts accumulate within ~5 minutes of apply (first kill inside the
+  first minute; `RESTARTS` reaches 2–3 by ~3–5 min), followed by a **steady
+  phase** that holds near the limit and bursts only every ~13 minutes.
 
-Give the world a couple of minutes to settle before recording.
+The ~13-minute steady interval is deliberate: the kubelet resets a container's
+restart back-off timer only after it runs cleanly for 10 minutes (the back-off
+caps at 300s and the reset threshold is 2× that = 600s), so spacing the steady
+kills past that window keeps every steady restart at the base ~10s delay and the
+pod out of `CrashLoopBackOff`. The fast phase intentionally accepts a few short
+back-off waits up front (10s, 20s, 40s) to seed the restart history quickly.
+
+Steady state for `orders` is **`Running` 1/1 near its memory limit**, with the
+`RESTARTS` count climbing slowly (one at a time, ~13 min apart) and only a brief
+few-second restart window at each OOM kill. It is *not* `CrashLoopBackOff` — if
+that persists past the first few minutes, the pod is being killed faster than the
+back-off resets.
+
+`payments` and `checkout` settle within a couple of minutes. `orders` shows its
+full symptom set (restarts + OOMKilled last state) within ~5 minutes; give it
+~15 minutes total to confirm it then holds `Running` in the steady phase.
 
 ## Verify each symptom is live
 
 **orders — OOM kills and restarts are real:**
 
 ```sh
-# Restart count climbs (RESTARTS column) and the last termination reason is OOMKilled:
+# Pod is Running 1/1 with the RESTARTS column climbing slowly (~13 min apart);
+# the last termination reason is OOMKilled with exit code 137:
 kubectl get pods -n shop -l app.kubernetes.io/name=orders
 kubectl describe pod -n shop -l app.kubernetes.io/name=orders | grep -A6 'Last State'
-# The OOM shows up as a Terminated/OOMKilled last state (exit code 137) plus
-# Back-off restarting events — kind/containerd records the kill on the pod, not
-# as a namespace-scoped OOMKilling event:
+# The OOM shows up as a Terminated/OOMKilled last state (exit code 137) —
+# kind/containerd records the kill on the pod, not as a namespace-scoped
+# OOMKilling event:
 kubectl get pod -n shop -l app.kubernetes.io/name=orders \
   -o jsonpath='{.items[0].status.containerStatuses[0].lastState.terminated.reason}' ; echo
+kubectl get pod -n shop -l app.kubernetes.io/name=orders \
+  -o jsonpath='{.items[0].status.containerStatuses[0].lastState.terminated.exitCode}' ; echo
+# A short-lived "Back-off restarting failed container" event appears for a few
+# seconds right after each kill, then clears — it does not persist, because the
+# back-off resets between the widely spaced kills (this is what keeps the pod
+# out of CrashLoopBackOff). Run this just after a restart to catch it:
 kubectl get events -n shop | grep -i back-off
 ```
 

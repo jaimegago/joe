@@ -23,29 +23,78 @@ spec:
         - name: orders
           image: python:3.12-slim
           # Real workload behaviour, not a simulated event: the process holds a
-          # resident baseline near the 128Mi limit (~85-95%) and periodically
+          # resident baseline near the 128Mi limit (~80-90%) and periodically
           # allocates an extra burst that pushes total RSS past the cgroup limit,
           # so the kernel OOM-kills it, the kubelet restarts it, and the restart
-          # count climbs. Between kills it runs steadily near the limit.
+          # count climbs. Every kill below is a genuine kernel OOM from the limit
+          # (exit 137) — nothing calls sys.exit() or fabricates an event.
+          #
+          # Two phases, switched by a start counter persisted in the emptyDir at
+          # /state (emptyDir survives container restarts within the pod, so the
+          # counter climbs 1,2,3,... across OOM-restarts):
+          #   * Fast phase (first 3 starts): hold the baseline for ~15s, then
+          #     burst over the limit — so real OOMKills accumulate within tens of
+          #     seconds while the kubelet back-off is still short (10s, 20s, 40s).
+          #     Full demo symptoms (RESTARTS climbing, OOMKilled last state) are
+          #     on record within ~5 minutes of apply.
+          #   * Steady phase (start 4 onward): hold the baseline near the limit
+          #     and burst only every ~13 min. That interval is past the kubelet's
+          #     back-off reset window: the back-off timer resets only after a
+          #     container runs cleanly for 10 minutes (base 10s, doubling, capped
+          #     at 300s; reset threshold is 2x the cap = 600s). Spacing kills
+          #     beyond 600s means every steady-phase restart resets to the base
+          #     ~10s delay, so the pod holds Running 1/1 near the limit and never
+          #     settles into CrashLoopBackOff.
           command: ["python", "-u", "-c"]
           args:
             - |
               import time
+
+              # Start counter persisted across container restarts in the pod's
+              # emptyDir. Absent file on the very first start -> count 1.
+              state = "/state/starts"
+              try:
+                  with open(state) as f:
+                      starts = int(f.read().strip())
+              except (FileNotFoundError, ValueError):
+                  starts = 0
+              starts += 1
+              with open(state, "w") as f:
+                  f.write(str(starts))
+
               # Baseline resident memory: bytearray is zero-filled and paged in,
-              # so this really occupies RSS (interpreter overhead lands us in the
-              # 85-95% band of the 128Mi limit).
+              # so this really occupies RSS (~105Mi measured, interpreter overhead
+              # included — the low-80s % band of the 128Mi limit).
               baseline = bytearray(100 * 1024 * 1024)
               held = [baseline]
-              cycle = 0
-              print("orders: holding steady near the memory limit", flush=True)
-              while True:
+
+              FAST_STARTS = 3
+
+              if starts <= FAST_STARTS:
+                  # Fast phase: hold near the limit briefly, then burst over it
+                  # within tens of seconds so real OOMKills pile up quickly.
+                  print("orders: start #%d (fast phase) holding near the memory limit" % starts, flush=True)
                   time.sleep(15)
-                  cycle += 1
-                  # Every ~4th cycle (~60s) push a burst over the limit. This is
-                  # the excursion that trips the kernel OOM killer.
-                  if cycle % 4 == 0:
-                      print("orders: processing a large batch (memory burst)", flush=True)
-                      held.append(bytearray(45 * 1024 * 1024))
+                  print("orders: processing a large batch (memory burst)", flush=True)
+                  held.append(bytearray(45 * 1024 * 1024))
+                  # Kernel OOM-kills the process here; the sleep below is only
+                  # reached in the unlikely event the kill is delayed.
+                  time.sleep(3600)
+              else:
+                  # Steady phase: hold near the limit, burst only every ~13 min so
+                  # the back-off resets between kills and CrashLoopBackOff never
+                  # becomes the resting state.
+                  print("orders: start #%d (steady phase) holding steady near the memory limit" % starts, flush=True)
+                  cycle = 0
+                  while True:
+                      time.sleep(30)
+                      cycle += 1
+                      if cycle % 26 == 0:  # ~13 min, past the 600s back-off reset window
+                          print("orders: processing a large batch (memory burst)", flush=True)
+                          held.append(bytearray(45 * 1024 * 1024))
+          volumeMounts:
+            - name: state
+              mountPath: /state
           resources:
             requests:
               memory: 96Mi
@@ -53,6 +102,9 @@ spec:
             limits:
               memory: 128Mi
               cpu: 250m
+      volumes:
+        - name: state
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
