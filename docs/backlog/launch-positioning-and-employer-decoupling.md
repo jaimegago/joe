@@ -1,4 +1,4 @@
-Launch positioning, the open-source launch-blocker checklist, and former-employer decoupling
+Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer
 Status: open
 
 This file rehomes the open-source launch context that lived only in the retired
@@ -17,17 +17,17 @@ otherwise unrecorded in the tracked spines. For the history-scrub work that
   deferred for v1.
 - The README was rewritten 2026-06-05 to reflect the single-binary architecture.
 
-## Relationship to former-employer — decoupled by design
+## Relationship to a former employer — decoupled by design
 
 - The company is the author's **former employer**; Joe is a personal project deliberately
   **decoupled** from it. There is no intended product, code, or content linkage.
 - A git-history audit (`HISTORY_AUDIT.md`, dated 2026-05-28 — note: that file is
-  no longer present on disk) found **no former-employer proprietary content**: no colleague
+  no longer present on disk) found **no proprietary content from that employer**: no colleague
   names, hostnames, codenames, or internal systems in any file or commit message.
-- The **only** former-employer linkage found was metadata: **3 commits (all dated
-  2026-02-12) carry the author email `a former-employer address`** instead of
-  `gagojaime@gmail.com`. This is the single most concrete pre-publish history
-  blocker and must be rewritten before going public.
+- The **only** linkage to the former employer found was metadata: **3 commits (all dated
+  2026-02-12) carried a former-employer email address** instead of
+  `gagojaime@gmail.com`. This was the single most concrete pre-publish history
+  blocker and has since been rewritten (see `docs/project/DECISIONS.md` D-0089/D-0090).
 
 ## Open-source launch-blocker checklist (JPK §8, reconciled against Jun 5–6 state)
 
@@ -58,7 +58,7 @@ What the punchlist does **not** carry — and what this file therefore preserved
 is the concrete launch-time scrub scope from JPK §8, **executed by the
 `history-scrub` session** (see `docs/project/DECISIONS.md` D-0089):
 
-- Rewrote the **3 commits** carrying `a former-employer address` (2026-02-12) to
+- Rewrote the **3 commits** carrying a former-employer email address (2026-02-12) to
   `gagojaime@gmail.com`, on both the author and committer fields; no other
   identity (GitHub `noreply`, dependabot) was touched.
 - Purged the old compiled-binary blobs (`joe` / `joecored`) from history.

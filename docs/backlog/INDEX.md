@@ -37,7 +37,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`health-readiness-surface`](health-readiness-surface.md) | Health and readiness probe surface (/livez, /readyz) | open |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |
-| [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and former-employer decoupling | open |
+| [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer | open |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open |
