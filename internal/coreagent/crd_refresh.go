@@ -15,8 +15,13 @@ import (
 
 // crdRefreshSpec describes a CRD resource type to discover and the relation to emit.
 type crdRefreshSpec struct {
-	// Resource is the plural resource name as passed to ListResources.
-	// Format: "resource.group" (e.g. "scaledobjects.keda.sh").
+	// Resource is the fully-qualified resource identifier passed to
+	// ListResources, in the resolver's "group/version/resource" form
+	// (e.g. "keda.sh/v1alpha1/scaledobjects"). This is the ONLY shape
+	// k8s.ResolveGVR accepts for a CRD — the version is required because the
+	// dynamic client addresses "/apis/{group}/{version}/{resource}" directly
+	// (there is no discovery-client lookup to infer it). The older
+	// "resource.group" form silently never resolved (D-0094).
 	Resource string
 	// NodeType is the graph node type to assign to discovered CRD objects.
 	NodeType string
@@ -33,7 +38,7 @@ type crdRefreshSpec struct {
 var crdRefreshSpecs = []crdRefreshSpec{
 	{
 		// KEDA ScaledObjects: scaled_by from ScaledObject → workload.
-		Resource:    "scaledobjects.keda.sh",
+		Resource:    "keda.sh/v1alpha1/scaledobjects",
 		NodeType:    "keda_scaledobject",
 		Relation:    graph.RelationScaledBy,
 		TargetField: "spec.scaleTargetRef.name",
@@ -41,7 +46,7 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	},
 	{
 		// cert-manager Certificates: secures from Certificate → service/ingress.
-		Resource:    "certificates.cert-manager.io",
+		Resource:    "cert-manager.io/v1/certificates",
 		NodeType:    "certificate",
 		Relation:    graph.RelationSecures,
 		TargetField: "", // use cert name (matches the ingress/service it secures)
@@ -49,7 +54,7 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	},
 	{
 		// OPA ConstraintTemplates: policy_enforces from template → namespace/workload.
-		Resource:    "constrainttemplates.templates.gatekeeper.sh",
+		Resource:    "templates.gatekeeper.sh/v1/constrainttemplates",
 		NodeType:    "opa_constraint_template",
 		Relation:    graph.RelationPolicyEnforces,
 		TargetField: "",
@@ -57,7 +62,7 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	},
 	{
 		// Cilium NetworkPolicies: policy_enforces from policy → namespace/workload.
-		Resource:    "ciliumnetworkpolicies.cilium.io",
+		Resource:    "cilium.io/v2/ciliumnetworkpolicies",
 		NodeType:    "cilium_network_policy",
 		Relation:    graph.RelationPolicyEnforces,
 		TargetField: "spec.endpointSelector.matchLabels.app",
@@ -65,7 +70,7 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	},
 	{
 		// Istio VirtualServices: mesh_for from VirtualService → service.
-		Resource:    "virtualservices.networking.istio.io",
+		Resource:    "networking.istio.io/v1beta1/virtualservices",
 		NodeType:    "istio_virtual_service",
 		Relation:    graph.RelationMeshFor,
 		TargetField: "", // use VS name which typically matches the service
@@ -73,7 +78,7 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	},
 	{
 		// Crossplane Managed Resources: provisions from XR → cloud node.
-		Resource:    "composites.apiextensions.crossplane.io",
+		Resource:    "apiextensions.crossplane.io/v1/composites",
 		NodeType:    "crossplane_resource",
 		Relation:    graph.RelationProvisions,
 		TargetField: "",
@@ -210,11 +215,13 @@ func resolveCRDTarget(obj *unstructured.Unstructured, fieldPath, fallback string
 	return value
 }
 
-// crdShortName extracts a short identifier from a fully-qualified resource name.
-// "scaledobjects.keda.sh" → "scaledobjects"
+// crdShortName extracts the plural resource name from a "group/version/resource"
+// identifier for use in node IDs, skip keys, and edge context.
+// "keda.sh/v1alpha1/scaledobjects" → "scaledobjects". A string with no "/" is
+// returned unchanged.
 func crdShortName(resource string) string {
-	if idx := strings.IndexByte(resource, '.'); idx > 0 {
-		return resource[:idx]
+	if idx := strings.LastIndexByte(resource, '/'); idx >= 0 {
+		return resource[idx+1:]
 	}
 	return resource
 }

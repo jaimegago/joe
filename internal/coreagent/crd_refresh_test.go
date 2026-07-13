@@ -5,10 +5,38 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/store"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// TestCRDRefreshSpecsResolveGVR is the structural guard for D-0094: every entry
+// in crdRefreshSpecs must resolve through k8s.ResolveGVR's "group/version/resource"
+// format. Before D-0094 the specs carried "resource.group" strings that never
+// resolved, so CRD discovery silently listed nothing. A future spec added in the
+// wrong form (missing the version, or "resource.group") fails ResolveGVR's 3-part
+// parse and trips this test instead of silently never listing.
+func TestCRDRefreshSpecsResolveGVR(t *testing.T) {
+	for _, spec := range crdRefreshSpecs {
+		gvr, err := k8s.ResolveGVR(spec.Resource)
+		if err != nil {
+			t.Errorf("ResolveGVR(%q) failed: %v — spec.Resource must be group/version/resource", spec.Resource, err)
+			continue
+		}
+		// All six specs target group-scoped CRDs, so every GVR field is required;
+		// an empty field means the string parsed but is malformed for the dynamic
+		// client's "/apis/{group}/{version}/{resource}" addressing.
+		if gvr.Group == "" || gvr.Version == "" || gvr.Resource == "" {
+			t.Errorf("ResolveGVR(%q) = %+v — group, version, and resource must all be non-empty", spec.Resource, gvr)
+		}
+		// The short name used for node IDs/skip keys must equal the resolved
+		// resource, keeping node identity stable across the format.
+		if short := crdShortName(spec.Resource); short != gvr.Resource {
+			t.Errorf("crdShortName(%q) = %q, want resolved resource %q", spec.Resource, short, gvr.Resource)
+		}
+	}
+}
 
 // fakeK8sAdapter is defined in k8s_refresh_test.go.
 
@@ -53,7 +81,7 @@ func TestRefreshK8sCRDs_KEDAScaledObject(t *testing.T) {
 
 	adapter := &fakeK8sAdapter{
 		items: map[string][]unstructured.Unstructured{
-			"scaledobjects.keda.sh": {scaledObj},
+			"keda.sh/v1alpha1/scaledobjects": {scaledObj},
 		},
 	}
 
@@ -77,7 +105,7 @@ func TestRefreshK8sCRDs_CertManagerCertificate(t *testing.T) {
 
 	adapter := &fakeK8sAdapter{
 		items: map[string][]unstructured.Unstructured{
-			"certificates.cert-manager.io": {cert},
+			"cert-manager.io/v1/certificates": {cert},
 		},
 	}
 
@@ -104,7 +132,7 @@ func TestRefreshK8sCRDs_IstioVirtualService(t *testing.T) {
 
 	adapter := &fakeK8sAdapter{
 		items: map[string][]unstructured.Unstructured{
-			"virtualservices.networking.istio.io": {vs},
+			"networking.istio.io/v1beta1/virtualservices": {vs},
 		},
 	}
 
@@ -139,7 +167,7 @@ func TestRefreshK8sCRDs_MeshForEdge(t *testing.T) {
 
 	adapter := &fakeK8sAdapter{
 		items: map[string][]unstructured.Unstructured{
-			"virtualservices.networking.istio.io": {vs},
+			"networking.istio.io/v1beta1/virtualservices": {vs},
 		},
 	}
 
@@ -156,10 +184,10 @@ func TestCRDShortName(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"scaledobjects.keda.sh", "scaledobjects"},
-		{"certificates.cert-manager.io", "certificates"},
-		{"constrainttemplates.templates.gatekeeper.sh", "constrainttemplates"},
-		{"noDotResource", "noDotResource"},
+		{"keda.sh/v1alpha1/scaledobjects", "scaledobjects"},
+		{"cert-manager.io/v1/certificates", "certificates"},
+		{"templates.gatekeeper.sh/v1/constrainttemplates", "constrainttemplates"},
+		{"noSlashResource", "noSlashResource"},
 		{"", ""},
 	}
 

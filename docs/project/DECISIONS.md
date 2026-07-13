@@ -10,6 +10,83 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0094 — CRD discovery in the kubernetes refresher: spec strings are the group/version/resource form the resolver requires; uninstalled CRDs manifest as a list-time 404, not a resolution error
+
+- Date: 2026-07-13
+- Status: accepted
+- Session: crd-gvr-resolution
+- Decision: the six `crdRefreshSpecs` (`internal/coreagent/crd_refresh.go`) are
+  rewritten from the never-resolving `resource.group` form (e.g.
+  `scaledobjects.keda.sh`) to the **`group/version/resource`** form
+  `k8s.ResolveGVR` requires (`keda.sh/v1alpha1/scaledobjects`,
+  `cert-manager.io/v1/certificates`,
+  `templates.gatekeeper.sh/v1/constrainttemplates`,
+  `cilium.io/v2/ciliumnetworkpolicies`,
+  `networking.istio.io/v1beta1/virtualservices`,
+  `apiextensions.crossplane.io/v1/composites`). **Bug**: `ResolveGVR`
+  (`internal/adapters/k8s/resolve.go:32`) accepts a known short name or a 3-part
+  `group/version/resource` split; a `resource.group` string is neither, so every
+  CRD list failed at resolution with a plain (non-typed) `fmt.Errorf`, which the
+  D-0093 taxonomy's `default` branch swallowed as a tolerant Debug skip
+  (`crd_refresh.go`). CRD discovery had therefore **never produced a node** since
+  it was written — the unit tests missed it because `fakeK8sAdapter` keys its
+  items map by the raw spec string and bypasses `ResolveGVR` entirely.
+- Side fixed and why: the **spec strings**, not the resolver. `resource.group`
+  carries no version, and the dynamic client addresses
+  `/apis/{group}/{version}/{resource}` directly with **no discovery-client
+  lookup** to infer one (`internal/adapters/k8s/resources.go:26`), so
+  `resource.group` is structurally insufficient — it can never be made to resolve
+  statically. `group/version/resource` is the only form carrying enough
+  information and is the resolver's documented, tested contract
+  (`TestResolveGVR`). `crdShortName` is changed to take the resource segment
+  after the final `/` (was: substring before the first `.`), preserving the
+  existing node-ID / skip-key / edge-context short names (`scaledobjects`, …)
+  unchanged. The set of CRD kinds is unchanged.
+- Uninstalled-CRD manifestation and where the silent-skip branch lives: because
+  `ResolveGVR` is static string parsing, an uninstalled CRD does **not** fail at
+  resolution. It fails at **list time**: the dynamic client hits the unserved
+  `/apis/{group}/{version}/{resource}` path, the API server returns a **404
+  `StatusError`** (often with no typed reason), and the adapter wraps it `list
+  %s: %w`. `apierrors.IsNotFound` recognizes a bare 404 code as not-found (its
+  `code == http.StatusNotFound` fallback, unwrapping via `errors.As`), so the
+  **existing `case apierrors.IsNotFound(err)` branch** in `refreshCRDSpec` is
+  where the silent Debug skip fires — no new branch was needed. Even were a 404
+  to arrive without a not-found reason, the `default` branch gives identical
+  silent, no-skip, no-abort behavior. **Forbidden** on a CRD list continues to
+  join the skip set as degradation, unchanged from D-0093.
+- Tests: `TestCRDRefreshSpecsResolveGVR` (new, `crd_refresh_test.go`) pins that
+  every `crdRefreshSpecs` entry resolves through `k8s.ResolveGVR` with non-empty
+  group/version/resource and that `crdShortName` matches the resolved resource —
+  a future spec added in `resource.group` or version-less form fails tests
+  instead of silently never listing. `TestRefreshCRDSpec_ForbiddenVsMissing`
+  (extended) adds the real unserved-GVR manifestation: a wrapped bare-404
+  `StatusError` routes to no-skip. The existing CRD unit tests' fake-adapter keys
+  were updated to the new g/v/r strings.
+- Scope / deferred: the **core CRD tools** (`internal/tools/core/`:
+  `keda_tools.go`, `cilium_tools.go`, `certmanager_tools.go`, `opa_tools.go`,
+  `istio_tools.go`, `crossplane_tools.go`, `flux_tools.go`) pass the identical
+  `resource.group` form (e.g. `KEDACRDTypes["ScaledObject"] =
+  "scaledobjects.keda.sh"`) through `K8sListResources` → `ResolveGVR` and carry
+  the **same latent bug** — their on-demand CRD listings have likewise never
+  resolved. Fixing that on-demand tool surface (many kinds across seven tool
+  files) is out of scope here and deferred to
+  `docs/backlog/crd-gvr-resolution.md`.
+- Basis: this session's read of `internal/adapters/k8s/resolve.go`,
+  `internal/adapters/k8s/resources.go`, `internal/coreagent/crd_refresh.go`,
+  `internal/coreagent/k8s_refresh.go` (confirmed `refreshK8sCRDs` is wired into
+  the live refresh at line 245), the fake-adapter test harness
+  (`k8s_refresh_test.go`), and `k8s.io/apimachinery` v0.35.2 `api/errors`
+  (`IsNotFound` returns true for reason `NotFound` OR a non-known-reason 404
+  code, unwrapping via `errors.As`). No public-docs claim names CRD-discovered
+  kinds (KEDA/cert-manager/gatekeeper/cilium/istio/crossplane), so no docs edit
+  was required (D-0052).
+- Supersedes: nothing; fixes a latent defect in the CRD arm of D-0093's taxonomy.
+  The D-0093 forbidden→degraded / not-found→silent / other→tolerant semantics are
+  unchanged; this makes the resolution path they sit on actually reachable.
+- Status: accepted.
+
+---
+
 ## D-0093 — The kubernetes graph refresher degrades per-resource-type on forbidden, surfacing a third `degraded` component status instead of hard-failing the tick
 
 - Date: 2026-07-13

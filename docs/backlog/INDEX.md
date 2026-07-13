@@ -24,6 +24,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open |
 | [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open |
+| [`crd-gvr-resolution`](crd-gvr-resolution.md) | CRD GVR resolution in the on-demand core tools (deferred from crd-gvr-resolution / D-0094) | open |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |
 | [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs/clarifications pruning, legacy-session disposition, DB-size observability) | open |

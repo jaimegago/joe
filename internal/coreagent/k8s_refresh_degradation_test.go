@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -212,6 +214,24 @@ func TestRefreshCRDSpec_ForbiddenVsMissing(t *testing.T) {
 	}
 	if _, _, skip := r.refreshCRDSpec(context.Background(), src, missing, spec, time.Time{}); skip != nil {
 		t.Fatalf("an uninstalled CRD must NOT be a degradation skip, got: %#v", skip)
+	}
+
+	// D-0094: the REAL uninstalled-CRD manifestation. ResolveGVR is static
+	// string parsing (no discovery lookup), so an uninstalled CRD never fails at
+	// resolution — it fails at list time when the dynamic client addresses the
+	// unserved "/apis/{group}/{version}/{resource}" path and the API server
+	// returns a 404 StatusError carrying NO typed reason, which the adapter wraps
+	// with "list %s: %w". apierrors.IsNotFound treats a bare 404 code as
+	// not-found, so this routes to the silent Debug skip, never degradation.
+	unserved := &fakeK8sAdapter{
+		errResource: spec.Resource,
+		err:         fmt.Errorf("list %s: %w", spec.Resource, &apierrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusNotFound}}),
+	}
+	if !apierrors.IsNotFound(unserved.err) {
+		t.Fatal("a bare 404 StatusError must be recognized as not-found (uninstalled CRD)")
+	}
+	if _, _, skip := r.refreshCRDSpec(context.Background(), src, unserved, spec, time.Time{}); skip != nil {
+		t.Fatalf("an unserved-GVR 404 must NOT be a degradation skip, got: %#v", skip)
 	}
 
 	// Any other error → tolerant, no skip.
