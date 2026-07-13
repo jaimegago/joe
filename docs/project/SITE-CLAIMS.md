@@ -7,6 +7,11 @@ session to **flag a joeagent.dev revision in its session report**. A claim whose
 still passes its pinning test is not drift; a claim whose mechanism changed shape — or lost
 its guard — is.
 
+The obligation runs **both directions**: a session that changes a listed mechanism flags a
+site revision, and a session that **publishes a new load-bearing claim to a joeagent.dev
+publication source** adds the corresponding register entry (or entries) in the **same
+session** — so the register does not fall behind the copy it exists to track.
+
 **Conventions.**
 
 - Entries carry **test names, never file:line coordinates** — per the D-0032 principle that
@@ -18,6 +23,9 @@ its guard — is.
   the cue to revise the copy, not a regression to fix.
 - Claim wording here is a short paraphrase for lookup; the **published copy is authoritative**
   for exact phrasing. This register is a derived pointer, not a source of truth for the site.
+- The register-maintenance duty is **bidirectional**: a mechanism change flags a copy revision,
+  and newly published load-bearing copy gets its register entry in the same session that
+  publishes it. Neither half is optional; the register is kept level with the site by both.
 
 Format per entry: **claim** (short form) · **page/section** · **mechanism** · **pinning
 test(s)** · **binding note** (where applicable).
@@ -220,3 +228,101 @@ test(s)** · **binding note** (where applicable).
 - **Pinning tests.** `TestResolveWriteFloor_Precedence`, `TestResolveBootMode`.
 - **Binding note. Launch-bound** in the same sense as the Safety deep-dive write-floor entry:
   the "observation is the only posture Joe boots into" framing revises when full mode lands.
+
+---
+
+## Configuration — `/configuration/`
+
+### SQLite is the supported store; the `pgx` (PostgreSQL) value exists but is not operational
+
+- **Claim.** SQLite is the supported database and the only functional driver; a `pgx`
+  (PostgreSQL) value is present in the configuration surface — the store opens the configured
+  driver, the repositories are dialect-aware, and the migration runner has a PostgreSQL branch
+  — but it is **not yet operational**: setting `database.driver: "pgx"` fails at startup during
+  the migration step, before the server serves, because the embedded migration set is written
+  in SQLite dialect only (`AUTOINCREMENT`, SQLite-specific append-only trigger DDL).
+- **Mechanism.** Driver-parameterized store construction (`store.New` → `sql.Open` on the
+  configured driver) plus the migration runner's driver branch (`Store.Migrate`,
+  `migratePostgres.WithInstance` vs `migrateSQLite.WithInstance`, `internal/store/store.go`),
+  standing over a **SQLite-dialect-locked embedded migration set** — the gap between the wired
+  driver seam and the un-portable SQL is exactly what makes the `pgx` value latent.
+- **Pinning tests.** `TestMigration009_SchemaSQLite` (the SQLite half). The Postgres half,
+  `TestMigration009_SchemaPostgres`, is **env-gated on `JOE_TEST_POSTGRES_DSN` and skips when
+  unset**, so it does not run in CI and covers only migration 009's schema, not the full
+  chain — there is no continuously-run guard proving the whole migration set is Postgres-valid
+  (indeed it is not). Following the MCP-entry precedent, the latency is recorded here rather
+  than claimed as guarded.
+- **Binding note. Mechanism-bound.** The copy revises when
+  `docs/backlog/postgres-backend-completion.md` lands — dialect-portable migration rewrites,
+  PostgreSQL-native append-only enforcement, driver-value validation, and an un-gated CI
+  Postgres migration run — at which point the "present but not operational" framing and the
+  skipped-test posture both change.
+
+---
+
+## Operations — `/operations/`
+
+### The session retention sweeper runs on by default, with trash-grace-purge on and inactivity-expiry off
+
+- **Claim.** A background retention sweeper runs from boot (on by default, not opt-in),
+  applying the single install-wide session policy on a fixed interval. Trash-grace auto-purge
+  is **on by default** (a trashed session is stamped a purge deadline of trashed-time plus the
+  trash-grace window and hard-purged past it, its transcript removed by cascade); inactivity
+  expiry is **off by default**; the terminal action is **trash-then-purge (default) or
+  archive** (archive moves the session to the archive directory as a versioned artifact, and
+  with no archive directory wired it leaves the session active and logs rather than falsely
+  archiving); every sweep effect is written to the audit log in the same transaction. A
+  **zero** trash-grace (or an unresolvable policy at trash time) leaves the session with no
+  purge deadline, so it persists in trash indefinitely until an admin purges it by hand —
+  intended "zero grace = never auto-purge" semantics.
+- **Mechanism.** The seeded single-row retention policy from migration 026 (`inactivity_days`
+  NULL/OFF, `trash_grace_days` 30, `terminal_action` `trash_then_purge`) plus the boot-started
+  sweeper (`internal/sessionsweeper`, wired in `cmd/joe/server.go` under the
+  `svc:sweeper:sessions` principal); the `chat_messages` `ON DELETE CASCADE`; the
+  `purge_after IS NOT NULL` selection predicate that implements the zero-grace footgun.
+- **Pinning tests.** The **seed defaults** are pinned by
+  `TestMigration026_027_RetentionAndAuditKind` (asserts inactivity NULL/OFF, trash-grace 30,
+  terminal `trash_then_purge`, single-row CHECK). The **sweeper behaviors** are pinned by the
+  `TestSweep_*` family — `TestSweep_InactivityOffByDefault`, `TestSweep_TrashGracePurge`,
+  `TestSweep_InactivityTrashThenPurge`, `TestSweep_ArchiveTerminalNoProvider`,
+  `TestSweep_ArchiveTerminalLive`, `TestSweep_LoginFlowDrainIsDistinct`,
+  `TestSweep_NeverTouchesLegacyTables`, `TestSweep_AuditFailureRollsBack`. The **1h default
+  interval cadence** is a code default (`internal/sessionsweeper/sweeper.go`) exercised on a
+  fixed clock by the behavior tests, not directly asserted by its own test — **none yet** for
+  the cadence value itself.
+- **Binding note. Mechanism-bound.** The copy revises if the seed defaults or the sweep cadence
+  change, or when retention v2 lands (`docs/backlog/db-retention-story.md`).
+
+### The audit log grows unbounded by design — append-only, no rotation in v1
+
+- **Claim.** The audit log grows without bound by design: it is append-only (inserts only,
+  enforced in application code and by database triggers rejecting update/delete), so there is
+  deliberately no rotation or pruning in this version; the only sanctioned space-reclamation is
+  dropping and recreating the table wholesale, discarding the entire history.
+- **Mechanism.** The insert-only audit repository surface (`internal/audit`) plus migration-015
+  SQLite triggers blocking UPDATE/DELETE on the audit table; the absence of any production
+  delete path.
+- **Pinning tests.** `TestRepositoryAPISurface_AppendOnly`, `TestMigration015_TriggerBlocksUpdate`,
+  `TestMigration015_TriggerBlocksDelete`.
+- **Binding note. Mechanism-bound.** The "no rotation in v1" framing revises when audit
+  rotation v2 (the insert-rotate-only repository extension named by D-0009) lands, tracked in
+  `docs/backlog/db-retention-story.md`.
+
+### Several other tables grow unbounded with no prune path; the graph self-reconciles and the legacy session tables are frozen
+
+- **Claim.** Beyond the audit log, several table classes have no automatic deletion path in
+  this version and grow monotonically with use — per-model-call usage records, code-review
+  jobs, and clarifications accumulate with no prune path. The legacy session/messages tables
+  are frozen: nothing writes to them, they have no deletion path, and they are deliberately
+  retained for a future feature. The infrastructure graph is **not** in this class — its edges
+  are added and removed as Joe reconciles the live topology, so it does not grow without bound.
+- **Mechanism.** Absence of any production delete-site for the unbounded tables; the frozen
+  legacy store (`internal/store/sessions.go`, its inserts unreachable by any live caller, one
+  dormant reader); the graph reconciler adding and removing edges. Described structurally, per
+  D-0032 — the set of unbounded tables is named by class, not pinned to a fixed count.
+- **Pinning tests.** None (a growth posture / absence-of-delete-path property, not a single
+  break-test; the audit half of it carries the append-only guards above).
+- **Binding note. Mechanism-bound.** Revises when any of the deferred retention work lands — an
+  `llm_usage` retention/roll-up, a review-jobs/clarifications disposition, or a DB-size
+  operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition
+  changes (`learn-from-sessions-fate`).
