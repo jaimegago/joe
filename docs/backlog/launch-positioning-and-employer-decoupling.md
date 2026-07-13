@@ -43,7 +43,8 @@ The consolidated checklist below existed only in JPK / `LAUNCH_READINESS.md`
   on a refreshed post-Phase-2 score. Tracked separately in
   [oasis-relationship.md](oasis-relationship.md).
 - **History scrub** (former-employer email rewrite + compiled-binary blob purge) →
-  **STILL OPEN**. See cross-reference below.
+  **RESOLVED** by the `history-scrub` session (see `docs/project/DECISIONS.md`
+  D-0089). See cross-reference below.
 
 ## History scrub — what survives in a tracked doc (cross-reference)
 
@@ -53,11 +54,15 @@ punchlist (since archived out of the repo): its
 cleanup to the **git-filter-repo "history scrub (Stream C)"** and name the
 `git-filter-repo` path explicitly.
 
-What the punchlist does **not** carry — and what this file therefore preserves —
-is the concrete launch-time scrub scope from JPK §8:
+What the punchlist does **not** carry — and what this file therefore preserved —
+is the concrete launch-time scrub scope from JPK §8, **executed by the
+`history-scrub` session** (see `docs/project/DECISIONS.md` D-0089):
 
-- Rewrite the **3 commits** carrying `a former-employer address` (2026-02-12) to
-  `gagojaime@gmail.com`.
-- Purge **~71 MB of old compiled-binary blobs** (`joe` / `joecored`) from history.
-- Recommended path: scrub with **`git-filter-repo` (Path B)** — the ~174-commit
-  history is an asset worth keeping rather than squashing away.
+- Rewrote the **3 commits** carrying `a former-employer address` (2026-02-12) to
+  `gagojaime@gmail.com`, on both the author and committer fields; no other
+  identity (GitHub `noreply`, dependabot) was touched.
+- Purged the old compiled-binary blobs (`joe` / `joecored`) from history.
+- Path used: **`git-filter-repo`**, with empty/degenerate-commit pruning
+  disabled so the **full commit history is preserved unsquashed** rather than
+  squashed away. The one commit whose only content was the binary removal is
+  retained as an empty commit.
