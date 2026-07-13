@@ -406,7 +406,7 @@ func (s *sqlGraphStore) ListNodesByComponent(ctx context.Context, sourceID strin
 	`)
 	rows, err := s.db.QueryContext(ctx, query, sourceID)
 	if err != nil {
-		return nil, fmt.Errorf("query nodes by source %s: %w", sourceID, err)
+		return nil, fmt.Errorf("query nodes by component %s: %w", sourceID, err)
 	}
 	defer rows.Close()
 

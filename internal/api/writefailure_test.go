@@ -37,7 +37,7 @@ func TestClassifyWriteFailure(t *testing.T) {
 		},
 		{
 			name: "RBAC permission denied wrapped (inproc mapAccessError shape) → zone_denial",
-			err:  fmt.Errorf("access denied for source %q: %w", "prod-db", access.ErrPermissionDenied),
+			err:  fmt.Errorf("access denied for component %q: %w", "prod-db", access.ErrPermissionDenied),
 			want: errorCodeZoneDenial,
 		},
 		{

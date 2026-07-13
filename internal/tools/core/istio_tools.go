@@ -27,7 +27,7 @@ type IstioK8sClient interface {
 
 // --- istio_config ---
 
-// IstioConfigTool lists Istio service mesh CRDs from a Kubernetes source.
+// IstioConfigTool lists Istio service mesh CRDs from a Kubernetes component.
 type IstioConfigTool struct {
 	Client IstioK8sClient
 }
@@ -40,9 +40,9 @@ func (t *IstioConfigTool) Name() string { return "istio_config" }
 
 func (t *IstioConfigTool) Description() string {
 	return "List Istio service mesh resources (VirtualService, DestinationRule, Gateway, " +
-		"ServiceEntry, PeerAuthentication, AuthorizationPolicy) from a Kubernetes source. " +
+		"ServiceEntry, PeerAuthentication, AuthorizationPolicy) from a Kubernetes component. " +
 		"Shows traffic policies, mTLS settings, routing rules, and auth policies. " +
-		"Use component_id of a Kubernetes source where Istio is installed. " +
+		"Use component_id of a Kubernetes component where Istio is installed. " +
 		"Supported kinds: VirtualService, DestinationRule, Gateway, ServiceEntry, " +
 		"PeerAuthentication, AuthorizationPolicy, RequestAuthentication. " +
 		"If you don't know the component_id, call list_components first."
@@ -54,7 +54,7 @@ func (t *IstioConfigTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Istio is installed).",
+				Description: "ID of the Kubernetes component (where Istio is installed).",
 			},
 			"namespace": {
 				Type:        "string",
@@ -145,7 +145,7 @@ func (t *IstioResourceTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Istio is installed).",
+				Description: "ID of the Kubernetes component (where Istio is installed).",
 			},
 			"kind": {
 				Type:        "string",

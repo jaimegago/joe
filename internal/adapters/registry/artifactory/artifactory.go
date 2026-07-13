@@ -80,7 +80,7 @@ func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
-		return fmt.Errorf("parse artifactory source config: %w", err)
+		return fmt.Errorf("parse artifactory component config: %w", err)
 	}
 	a.config = cfg
 	a.httpClient = &http.Client{Timeout: 30 * time.Second}

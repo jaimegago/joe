@@ -43,7 +43,7 @@ func (t *ArgoCDAppsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Argo CD source.",
+				Description: "ID of the Argo CD component.",
 			},
 			"project": {
 				Type:        "string",
@@ -102,7 +102,7 @@ func (t *ArgoCDGetAppTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Argo CD source.",
+				Description: "ID of the Argo CD component.",
 			},
 			"name": {
 				Type:        "string",
@@ -159,7 +159,7 @@ func (t *ArgoCDDiffTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Argo CD source.",
+				Description: "ID of the Argo CD component.",
 			},
 			"name": {
 				Type:        "string",
@@ -216,7 +216,7 @@ func (t *ArgoCDHistoryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Argo CD source.",
+				Description: "ID of the Argo CD component.",
 			},
 			"name": {
 				Type:        "string",

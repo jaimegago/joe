@@ -65,7 +65,7 @@ func (s *Server) resolveComponentForService(r *http.Request, service, relation s
 		}
 	}
 
-	return "", "", fmt.Errorf("no %s source found for service %q — add a %s edge in the graph", relation, service, relation)
+	return "", "", fmt.Errorf("no %s component found for service %q — add a %s edge in the graph", relation, service, relation)
 }
 
 // translateQuestion uses the LLM to translate a natural language question to a native query.
@@ -125,7 +125,7 @@ func (s *Server) handleObserveMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
-			fmt.Sprintf("source %q (type %q) does not support metrics queries via the observe API", sourceID, sourceType))
+			fmt.Sprintf("component %q (type %q) does not support metrics queries via the observe API", sourceID, sourceType))
 		return
 	}
 	result.RawResult = raw
@@ -179,7 +179,7 @@ func (s *Server) handleObserveLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
-			fmt.Sprintf("source %q (type %q) does not support logs queries via the observe API", sourceID, sourceType))
+			fmt.Sprintf("component %q (type %q) does not support logs queries via the observe API", sourceID, sourceType))
 		return
 	}
 	result.RawResult = raw
@@ -223,7 +223,7 @@ func (s *Server) handleObserveTraces(w http.ResponseWriter, r *http.Request) {
 	}
 	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
-			fmt.Sprintf("source %q (type %q) does not support traces queries via the observe API", sourceID, sourceType))
+			fmt.Sprintf("component %q (type %q) does not support traces queries via the observe API", sourceID, sourceType))
 		return
 	}
 	result.RawResult = raw
@@ -278,7 +278,7 @@ func (s *Server) handleObserveAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	if !supported {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent,
-			fmt.Sprintf("source %q (type %q) does not support alerts queries via the observe API", sourceID, sourceType))
+			fmt.Sprintf("component %q (type %q) does not support alerts queries via the observe API", sourceID, sourceType))
 		return
 	}
 	result.Alerts = append(result.Alerts, alerts...)
@@ -418,5 +418,5 @@ func (s *Server) resolveK8sComponentForService(r *http.Request, service string) 
 		}
 	}
 
-	return "", fmt.Errorf("no Kubernetes source found for service %q — ensure the service has k8s nodes in the graph", service)
+	return "", fmt.Errorf("no Kubernetes component found for service %q — ensure the service has k8s nodes in the graph", service)
 }

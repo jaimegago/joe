@@ -117,7 +117,7 @@ func (r *encryptedComponentRepository) encryptConfig(config json.RawMessage) (js
 	}
 	encrypted, err := crypto.Encrypt(r.key, config)
 	if err != nil {
-		return nil, fmt.Errorf("store: encrypt source config: %w", err)
+		return nil, fmt.Errorf("store: encrypt component config: %w", err)
 	}
 	// Store as a JSON string so the column type remains TEXT/JSON.
 	quoted, err := json.Marshal(encrypted)
@@ -141,7 +141,7 @@ func (r *encryptedComponentRepository) decryptComponent(source *Component) (*Com
 	}
 	decrypted, err := crypto.Decrypt(r.key, raw)
 	if err != nil {
-		return nil, fmt.Errorf("store: decrypt source config: %w", err)
+		return nil, fmt.Errorf("store: decrypt component config: %w", err)
 	}
 	copy := *source
 	copy.Config = json.RawMessage(decrypted)

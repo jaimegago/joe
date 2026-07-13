@@ -12,7 +12,7 @@ import (
 
 func (r *Refresher) refreshGitComponent(ctx context.Context, source *store.Component, adapter git.GitAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing git source", "component_id", source.ID)
+	r.logger.Info("refreshing git component", "component_id", source.ID)
 
 	desiredNodes := make([]graph.Node, 0)
 	desiredEdges := make([]graph.Edge, 0)

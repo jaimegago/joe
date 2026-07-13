@@ -44,7 +44,7 @@ func (t *RegistryQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "The registry source ID as registered in Joe.",
+				Description: "The registry component ID as registered in Joe.",
 			},
 			"repo": {
 				Type:        "string",
@@ -143,7 +143,7 @@ func (t *ArtifactoryQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "The Artifactory source ID as registered in Joe.",
+				Description: "The Artifactory component ID as registered in Joe.",
 			},
 			"repo": {
 				Type:        "string",
@@ -251,7 +251,7 @@ func (t *ECRQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "The ECR source ID as registered in Joe.",
+				Description: "The ECR component ID as registered in Joe.",
 			},
 			"repo": {
 				Type:        "string",

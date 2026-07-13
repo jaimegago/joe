@@ -39,7 +39,7 @@ func (t *KafkaTopicsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kafka source to query.",
+				Description: "ID of the Kafka component to query.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -92,7 +92,7 @@ func (t *KafkaBrokersTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kafka source to query.",
+				Description: "ID of the Kafka component to query.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -146,7 +146,7 @@ func (t *KafkaConsumerGroupsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kafka source to query.",
+				Description: "ID of the Kafka component to query.",
 			},
 		},
 		Required: []string{"component_id"},

@@ -15,7 +15,7 @@ type Config struct {
 	AppKey string `yaml:"app_key" json:"app_key"` // Required: DD-APPLICATION-KEY
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

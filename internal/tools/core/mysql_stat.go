@@ -39,7 +39,7 @@ func (t *MySQLStatTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the MySQL source to query.",
+				Description: "ID of the MySQL component to query.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -63,7 +63,7 @@ func (t *MySQLStatTool) Execute(ctx context.Context, args map[string]any) (any, 
 	}, nil
 }
 
-// MySQLQueryTool executes a read-only SQL query against a MySQL source via joecored.
+// MySQLQueryTool executes a read-only SQL query against a MySQL component via joecored.
 type MySQLQueryTool struct {
 	Client MySQLClient
 }
@@ -88,7 +88,7 @@ func (t *MySQLQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the MySQL source to query.",
+				Description: "ID of the MySQL component to query.",
 			},
 			"query": {
 				Type:        "string",

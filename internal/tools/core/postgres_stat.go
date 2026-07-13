@@ -39,7 +39,7 @@ func (t *PostgresStatTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the PostgreSQL source to query.",
+				Description: "ID of the PostgreSQL component to query.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -63,7 +63,7 @@ func (t *PostgresStatTool) Execute(ctx context.Context, args map[string]any) (an
 	}, nil
 }
 
-// PostgresQueryTool executes a read-only SQL query against a PostgreSQL source via joecored.
+// PostgresQueryTool executes a read-only SQL query against a PostgreSQL component via joecored.
 type PostgresQueryTool struct {
 	Client PostgresClient
 }
@@ -88,7 +88,7 @@ func (t *PostgresQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the PostgreSQL source to query.",
+				Description: "ID of the PostgreSQL component to query.",
 			},
 			"query": {
 				Type:        "string",

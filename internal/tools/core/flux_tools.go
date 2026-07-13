@@ -40,7 +40,7 @@ func (t *FluxStatusTool) Name() string { return "flux_status" }
 func (t *FluxStatusTool) Description() string {
 	return "List all Flux CD resources (GitRepository, Kustomization, HelmRelease, HelmRepository) " +
 		"with their reconciliation status. Shows ready condition, last applied revision, " +
-		"and any error messages. Use component_id of a Kubernetes source. " +
+		"and any error messages. Use component_id of a Kubernetes component. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -50,7 +50,7 @@ func (t *FluxStatusTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Flux is installed).",
+				Description: "ID of the Kubernetes component (where Flux is installed).",
 			},
 			"namespace": {
 				Type:        "string",
@@ -115,7 +115,7 @@ func (t *FluxResourceTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Flux is installed).",
+				Description: "ID of the Kubernetes component (where Flux is installed).",
 			},
 			"kind": {
 				Type:        "string",

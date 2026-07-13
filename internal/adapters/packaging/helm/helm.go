@@ -114,7 +114,7 @@ func NewWithLister(lister secretsLister, cfg Config) *Adapter {
 	}
 }
 
-// Connect parses and stores the source config. The K8s client is built lazily
+// Connect parses and stores the component config. The K8s client is built lazily
 // on first use so that Connect succeeds even when no kubeconfig is available yet.
 func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	a.mu.Lock()
@@ -122,7 +122,7 @@ func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
-		return fmt.Errorf("parse source config: %w", err)
+		return fmt.Errorf("parse component config: %w", err)
 	}
 	a.config = cfg
 	a.connected = true

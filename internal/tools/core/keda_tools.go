@@ -37,7 +37,7 @@ func (t *KEDAScaledObjectsTool) Description() string {
 		"Shows target workload, trigger types (Kafka, Prometheus, Redis, etc.), " +
 		"min/max replicas, and current scaling status. " +
 		"Use to understand how workloads are scaled and whether autoscaling is healthy. " +
-		"Use component_id of a Kubernetes source where KEDA is installed. " +
+		"Use component_id of a Kubernetes component where KEDA is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -47,7 +47,7 @@ func (t *KEDAScaledObjectsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where KEDA is installed).",
+				Description: "ID of the Kubernetes component (where KEDA is installed).",
 			},
 			"namespace": {
 				Type:        "string",

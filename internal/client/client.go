@@ -237,23 +237,23 @@ func (c *Client) ListComponents(ctx context.Context) ([]*store.Component, error)
 	return result.Components, nil
 }
 
-// CreateComponent registers a new infrastructure source.
+// CreateComponent registers a new infrastructure component.
 func (c *Client) CreateComponent(ctx context.Context, source *store.Component) (*store.Component, error) {
 	payload, err := json.Marshal(source)
 	if err != nil {
-		return nil, fmt.Errorf("marshal source: %w", err)
+		return nil, fmt.Errorf("marshal component: %w", err)
 	}
 	var created store.Component
-	if err := c.doJSON(ctx, "POST", c.baseURL+apiComponentsPath, bytes.NewReader(payload), http.StatusCreated, &created, "create source"); err != nil {
+	if err := c.doJSON(ctx, "POST", c.baseURL+apiComponentsPath, bytes.NewReader(payload), http.StatusCreated, &created, "create component"); err != nil {
 		return nil, err
 	}
 
 	return &created, nil
 }
 
-// DeleteComponent removes a registered source by ID.
+// DeleteComponent removes a registered component by ID.
 func (c *Client) DeleteComponent(ctx context.Context, id string) error {
-	return c.doJSON(ctx, "DELETE", c.baseURL+apiComponentsPath+"/"+url.PathEscape(id), nil, http.StatusNoContent, nil, "delete source")
+	return c.doJSON(ctx, "DELETE", c.baseURL+apiComponentsPath+"/"+url.PathEscape(id), nil, http.StatusNoContent, nil, "delete component")
 }
 
 // GraphSummary returns a high-level summary of the graph.

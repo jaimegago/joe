@@ -15,7 +15,7 @@ type Config struct {
 	Token string `yaml:"token" json:"token"` // Required: API token with metrics.read / events.read scopes
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

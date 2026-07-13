@@ -21,7 +21,7 @@ import (
 // It creates a graph node for the source and attempts to discover metrics_in
 // edges by matching Prometheus scrape targets to existing service nodes.
 func (r *Refresher) refreshPrometheusComponent(ctx context.Context, source *store.Component, adapter prometheusadapter.PrometheusAdapter) error {
-	r.logger.Info("refreshing prometheus source", "component_id", source.ID, "type", source.Type)
+	r.logger.Info("refreshing prometheus component", "component_id", source.ID, "type", source.Type)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -57,12 +57,12 @@ func (r *Refresher) refreshPrometheusComponent(ctx context.Context, source *stor
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for prometheus source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for prometheus component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for prometheus source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for prometheus component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("prometheus refresh completed",
@@ -118,7 +118,7 @@ func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Compo
 // refreshLokiComponent refreshes a Loki source.
 // Discovers services sending logs to Loki via the label values API and emits logs_in edges.
 func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Component, adapter lokiadapter.LokiAdapter) error {
-	r.logger.Info("refreshing loki source", "component_id", source.ID)
+	r.logger.Info("refreshing loki component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -169,12 +169,12 @@ func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Comp
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for loki source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for loki component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for loki source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for loki component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("loki refresh completed",
@@ -188,7 +188,7 @@ func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Comp
 // refreshTempoComponent refreshes a Tempo source.
 // Discovers services sending traces to Tempo via the tag values API and emits traces_in edges.
 func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Component, adapter tempoadapter.TempoAdapter) error {
-	r.logger.Info("refreshing tempo source", "component_id", source.ID)
+	r.logger.Info("refreshing tempo component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -239,12 +239,12 @@ func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Com
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for tempo source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for tempo component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for tempo source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for tempo component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("tempo refresh completed",
@@ -258,7 +258,7 @@ func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Com
 // refreshJaegerComponent refreshes a Jaeger source and creates traces_in edges
 // for any services Jaeger has seen.
 func (r *Refresher) refreshJaegerComponent(ctx context.Context, source *store.Component, adapter jaegeradapter.JaegerAdapter) error {
-	r.logger.Info("refreshing jaeger source", "component_id", source.ID)
+	r.logger.Info("refreshing jaeger component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -309,12 +309,12 @@ func (r *Refresher) refreshJaegerComponent(ctx context.Context, source *store.Co
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for jaeger source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for jaeger component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for jaeger source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for jaeger component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("jaeger refresh completed",
@@ -333,7 +333,7 @@ func obsNodeID(sourceID, sourceType string) string {
 // refreshDatadogComponent refreshes a Datadog source and discovers metrics_in and logs_in
 // edges by querying the Datadog API for active hosts and recent log events.
 func (r *Refresher) refreshDatadogComponent(ctx context.Context, source *store.Component, adapter datadogadapter.DatadogAdapter) error {
-	r.logger.Info("refreshing datadog source", "component_id", source.ID)
+	r.logger.Info("refreshing datadog component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -382,12 +382,12 @@ func (r *Refresher) refreshDatadogComponent(ctx context.Context, source *store.C
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for datadog source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for datadog component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for datadog source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for datadog component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("datadog refresh completed",
@@ -458,7 +458,7 @@ func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Compon
 
 // refreshSplunkComponent creates a graph node for a Splunk source.
 func (r *Refresher) refreshSplunkComponent(ctx context.Context, source *store.Component, _ splunkadapter.SplunkAdapter) error {
-	r.logger.Info("refreshing splunk source", "component_id", source.ID)
+	r.logger.Info("refreshing splunk component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -479,12 +479,12 @@ func (r *Refresher) refreshSplunkComponent(ctx context.Context, source *store.Co
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for splunk source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for splunk component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for splunk source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for splunk component %s: %w", source.ID, err)
 	}
 
 	_ = existingEdges
@@ -494,7 +494,7 @@ func (r *Refresher) refreshSplunkComponent(ctx context.Context, source *store.Co
 
 // refreshDynatraceComponent creates a graph node for a Dynatrace source.
 func (r *Refresher) refreshDynatraceComponent(ctx context.Context, source *store.Component, _ dynatraceadapter.DynatraceAdapter) error {
-	r.logger.Info("refreshing dynatrace source", "component_id", source.ID)
+	r.logger.Info("refreshing dynatrace component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -515,12 +515,12 @@ func (r *Refresher) refreshDynatraceComponent(ctx context.Context, source *store
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for dynatrace source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for dynatrace component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for dynatrace source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for dynatrace component %s: %w", source.ID, err)
 	}
 
 	_ = existingEdges
@@ -530,7 +530,7 @@ func (r *Refresher) refreshDynatraceComponent(ctx context.Context, source *store
 
 // refreshNewRelicComponent creates a graph node for a New Relic source.
 func (r *Refresher) refreshNewRelicComponent(ctx context.Context, source *store.Component, _ newrelicadapter.NewRelicAdapter) error {
-	r.logger.Info("refreshing newrelic source", "component_id", source.ID)
+	r.logger.Info("refreshing newrelic component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := obsNodeID(source.ID, source.Type)
@@ -551,12 +551,12 @@ func (r *Refresher) refreshNewRelicComponent(ctx context.Context, source *store.
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for newrelic source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for newrelic component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for newrelic source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for newrelic component %s: %w", source.ID, err)
 	}
 
 	_ = existingEdges

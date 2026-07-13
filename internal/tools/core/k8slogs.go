@@ -35,7 +35,7 @@ func (t *K8sLogsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source/cluster.",
+				Description: "ID of the Kubernetes component/cluster.",
 			},
 			"namespace": {
 				Type:        "string",

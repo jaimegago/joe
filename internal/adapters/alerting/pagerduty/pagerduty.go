@@ -95,7 +95,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	var configMap map[string]any
 	if len(source.Config) > 0 {
 		if err := json.Unmarshal(source.Config, &configMap); err != nil {
-			return fmt.Errorf("parse source config JSON: %w", err)
+			return fmt.Errorf("parse component config JSON: %w", err)
 		}
 	} else {
 		configMap = make(map[string]any)
@@ -103,7 +103,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 
 	cfg, err := ParseConfig(configMap)
 	if err != nil {
-		return fmt.Errorf("parse source config: %w", err)
+		return fmt.Errorf("parse component config: %w", err)
 	}
 
 	// A003-W2: resolve the credential through the provider selected by the

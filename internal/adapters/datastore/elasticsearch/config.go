@@ -13,7 +13,7 @@ type Config struct {
 	APIKey   string `json:"api_key"`  // Optional: Bearer API key
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(raw map[string]any) (Config, error) {
 	var cfg Config
 

@@ -40,7 +40,7 @@ func (t *EnvoyClustersTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Envoy source.",
+				Description: "ID of the Envoy component.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -93,7 +93,7 @@ func (t *EnvoyConfigTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Envoy source.",
+				Description: "ID of the Envoy component.",
 			},
 			"section": {
 				Type:        "string",
@@ -148,7 +148,7 @@ func (t *EnvoyStatsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Envoy source.",
+				Description: "ID of the Envoy component.",
 			},
 			"filter": {
 				Type:        "string",

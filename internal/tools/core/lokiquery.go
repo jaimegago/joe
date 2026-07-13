@@ -37,7 +37,7 @@ func (t *LokiQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Loki source to query.",
+				Description: "ID of the Loki component to query.",
 			},
 			"query": {
 				Type:        "string",

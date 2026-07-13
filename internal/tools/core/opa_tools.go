@@ -44,7 +44,7 @@ func (t *OPAConstraintsTool) Description() string {
 		"Without a template filter, lists all ConstraintTemplates to show what policies are defined. " +
 		"With a template filter (e.g. K8sRequiredLabels), lists constraint instances of that type " +
 		"and shows how many violations each has from the last audit. " +
-		"Use component_id of a Kubernetes source where Gatekeeper is installed. " +
+		"Use component_id of a Kubernetes component where Gatekeeper is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -54,7 +54,7 @@ func (t *OPAConstraintsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Gatekeeper is installed).",
+				Description: "ID of the Kubernetes component (where Gatekeeper is installed).",
 			},
 			"template": {
 				Type:        "string",
@@ -165,7 +165,7 @@ func (t *OPAViolationsTool) Description() string {
 		"Requires the ConstraintTemplate kind (e.g. K8sRequiredLabels) and the constraint name. " +
 		"Returns the full list of audit violations: which resources are violating the policy and why. " +
 		"Use opa_constraints first to discover template kinds and constraint names. " +
-		"Use component_id of a Kubernetes source where Gatekeeper is installed. " +
+		"Use component_id of a Kubernetes component where Gatekeeper is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -175,7 +175,7 @@ func (t *OPAViolationsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Gatekeeper is installed).",
+				Description: "ID of the Kubernetes component (where Gatekeeper is installed).",
 			},
 			"template_kind": {
 				Type:        "string",

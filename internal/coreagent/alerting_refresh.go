@@ -16,7 +16,7 @@ import (
 // Creates a graph node for the source and builds alerts_in edges for any
 // services that have active alerts.
 func (r *Refresher) refreshAlertmanagerComponent(ctx context.Context, source *store.Component, adapter alertmanageradapter.AlertmanagerAdapter) error {
-	r.logger.Info("refreshing alertmanager source", "component_id", source.ID)
+	r.logger.Info("refreshing alertmanager component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
@@ -52,12 +52,12 @@ func (r *Refresher) refreshAlertmanagerComponent(ctx context.Context, source *st
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for alertmanager source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for alertmanager component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for alertmanager source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for alertmanager component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("alertmanager refresh completed",
@@ -125,7 +125,7 @@ func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Compon
 // refreshPagerDutyComponent refreshes a PagerDuty source.
 // Creates a graph node and builds paged_via edges for services with open incidents.
 func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store.Component, adapter pagerdutyadapter.PagerDutyAdapter) error {
-	r.logger.Info("refreshing pagerduty source", "component_id", source.ID)
+	r.logger.Info("refreshing pagerduty component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
@@ -181,12 +181,12 @@ func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for pagerduty source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for pagerduty component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for pagerduty source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for pagerduty component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("pagerduty refresh completed",
@@ -200,7 +200,7 @@ func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store
 // refreshGrafanaComponent refreshes a Grafana source.
 // Creates a graph node only; dashboard_in edges are discovered via .joe/ files.
 func (r *Refresher) refreshGrafanaComponent(ctx context.Context, source *store.Component, _ grafanaadapter.GrafanaAdapter) error {
-	r.logger.Info("refreshing grafana source", "component_id", source.ID)
+	r.logger.Info("refreshing grafana component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := alertingNodeID(source.ID, source.Type)
@@ -221,12 +221,12 @@ func (r *Refresher) refreshGrafanaComponent(ctx context.Context, source *store.C
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for grafana source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for grafana component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, nil)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for grafana source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for grafana component %s: %w", source.ID, err)
 	}
 
 	_ = existingEdges

@@ -35,7 +35,7 @@ func (t *AlertmanagerAlertsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Alertmanager source to query.",
+				Description: "ID of the Alertmanager component to query.",
 			},
 			"filter": {
 				Type:        "string",

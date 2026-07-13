@@ -42,7 +42,7 @@ func (t *HelmReleasesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Helm source.",
+				Description: "ID of the Helm component.",
 			},
 			"namespace": {
 				Type:        "string",
@@ -99,7 +99,7 @@ func (t *HelmGetReleaseTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Helm source.",
+				Description: "ID of the Helm component.",
 			},
 			"namespace": {
 				Type:        "string",
@@ -164,7 +164,7 @@ func (t *HelmHistoryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Helm source.",
+				Description: "ID of the Helm component.",
 			},
 			"namespace": {
 				Type:        "string",

@@ -26,7 +26,7 @@ func NewListComponentsTool(c ListComponentsClient) *ListComponentsTool {
 func (t *ListComponentsTool) Name() string { return "list_components" }
 
 func (t *ListComponentsTool) Description() string {
-	return "List all registered infrastructure components (Kubernetes clusters, Git repositories, etc.). Returns source IDs, types, and names. Use this to discover available component_id values for other tools."
+	return "List all registered infrastructure components (Kubernetes clusters, Git repositories, etc.). Returns component IDs, types, and names. Use this to discover available component_id values for other tools."
 }
 
 func (t *ListComponentsTool) Parameters() llm.ParameterSchema {

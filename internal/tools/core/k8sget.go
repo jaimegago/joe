@@ -36,7 +36,7 @@ func (t *K8sGetTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source/cluster to query.",
+				Description: "ID of the Kubernetes component/cluster to query.",
 			},
 			"resource": {
 				Type:        "string",

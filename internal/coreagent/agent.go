@@ -141,12 +141,12 @@ func (a *Agent) TriggerRefresh(ctx context.Context) error {
 	return a.refresher.refresh(ctx)
 }
 
-// TriggerRefreshComponent manually triggers refresh for a specific source
+// TriggerRefreshComponent manually triggers refresh for a specific component
 func (a *Agent) TriggerRefreshComponent(ctx context.Context, sourceID string) error {
-	a.logger.Info("manual source refresh triggered", "component_id", sourceID)
+	a.logger.Info("manual component refresh triggered", "component_id", sourceID)
 	source, err := a.services.Store.Components.Get(ctx, sourceID)
 	if err != nil {
-		return fmt.Errorf("get source: %w", err)
+		return fmt.Errorf("get component: %w", err)
 	}
 	if source == nil {
 		return fmt.Errorf("%w: %s", store.ErrComponentNotFound, sourceID)
@@ -451,7 +451,7 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("type is required and must be a string")
 	}
 	if !store.IsValidComponentType(sourceType) {
-		return nil, fmt.Errorf("unsupported source type %q (allowed: %s)", sourceType, strings.Join(store.AllowedComponentTypes(), ", "))
+		return nil, fmt.Errorf("unsupported component type %q (allowed: %s)", sourceType, strings.Join(store.AllowedComponentTypes(), ", "))
 	}
 
 	// Config is optional at registration (D-0029): a config-less registration
@@ -485,7 +485,7 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 
 	randBytes := make([]byte, 8)
 	if _, err := crypto_rand.Read(randBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate source ID: %w", err)
+		return nil, fmt.Errorf("failed to generate component ID: %w", err)
 	}
 	source := &store.Component{
 		ID:     fmt.Sprintf("%s-%x", sourceType, randBytes),
@@ -501,12 +501,12 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 	// record — actor is the Core Agent principal (agent:core).
 	actor, _ := rbac.AgentCorePrincipal()
 	if err := t.registerWithAudit(ctx, actor, source); err != nil {
-		t.logger.Error("failed to register source", "error", err, "name", name)
-		return nil, fmt.Errorf("failed to register source: %w", err)
+		t.logger.Error("failed to register component", "error", err, "name", name)
+		return nil, fmt.Errorf("failed to register component: %w", err)
 	}
 
-	t.logger.Info("registered new source", "id", source.ID, "name", name, "type", sourceType)
-	return fmt.Sprintf("Registered source %s (id: %s, type: %s)", name, source.ID, sourceType), nil
+	t.logger.Info("registered new component", "id", source.ID, "name", name, "type", sourceType)
+	return fmt.Sprintf("Registered component %s (id: %s, type: %s)", name, source.ID, sourceType), nil
 }
 
 // registerWithAudit commits the component insert and its audit row in one

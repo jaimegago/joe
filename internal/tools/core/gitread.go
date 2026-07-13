@@ -14,7 +14,7 @@ type GitReadClient interface {
 	GitListFiles(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error)
 }
 
-// GitReadTool reads files or lists directories from a Git repository source.
+// GitReadTool reads files or lists directories from a Git repository component.
 type GitReadTool struct {
 	client GitReadClient
 }
@@ -27,14 +27,14 @@ func NewGitReadTool(c GitReadClient) *GitReadTool {
 func (t *GitReadTool) Name() string { return "git_read" }
 
 func (t *GitReadTool) Description() string {
-	return "Read a file or list files in a directory from a connected Git repository source."
+	return "Read a file or list files in a directory from a connected Git repository component."
 }
 
 func (t *GitReadTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"component_id": {Type: "string", Description: "ID of the Git source."},
+			"component_id": {Type: "string", Description: "ID of the Git component."},
 			"path":         {Type: "string", Description: "File path to read, or directory path to list."},
 			"list":         {Type: "boolean", Description: "If true, list files in the directory instead of reading a file."},
 		},

@@ -15,7 +15,7 @@ type Config struct {
 	SSLMode  string `json:"ssl_mode"` // disable, require, verify-full
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(raw map[string]any) (Config, error) {
 	var cfg Config
 

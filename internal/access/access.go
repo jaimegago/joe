@@ -60,14 +60,14 @@ const GraphComponentID = "graph"
 var ErrPermissionDenied = errors.New("access denied by RBAC policy")
 
 // ErrComponentNotFound is returned when no adapter is registered for the
-// requested source. It wraps store.ErrComponentNotFound so existing HTTP error
+// requested component. It wraps store.ErrComponentNotFound so existing HTTP error
 // mapping (errors.Is(err, store.ErrComponentNotFound) → 404) is preserved.
 var ErrComponentNotFound = fmt.Errorf("%w", store.ErrComponentNotFound)
 
-// ErrWrongAdapterType is returned when the registered adapter for a source
+// ErrWrongAdapterType is returned when the registered adapter for a component
 // does not implement the requested typed interface (e.g. asking for a
-// Kubernetes operation on a Git source).
-var ErrWrongAdapterType = errors.New("source is not the expected adapter type")
+// Kubernetes operation on a Git component).
+var ErrWrongAdapterType = errors.New("component is not the expected adapter type")
 
 // ErrGraphUnavailable is returned when a graph operation is attempted but no
 // graph store is wired (services.Graph == nil).
@@ -178,7 +178,7 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 	}
 
 	if !allowed {
-		return fmt.Errorf("%w: principals=%v source=%q action=%q reason=%s", ErrPermissionDenied, principals, sourceID, action, reason)
+		return fmt.Errorf("%w: principals=%v component=%q action=%q reason=%s", ErrPermissionDenied, principals, sourceID, action, reason)
 	}
 	return nil
 }

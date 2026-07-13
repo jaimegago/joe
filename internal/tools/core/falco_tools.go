@@ -38,7 +38,7 @@ func (t *FalcoAlertsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Falco source to query.",
+				Description: "ID of the Falco component to query.",
 			},
 			"priority": {
 				Type:        "string",
@@ -112,7 +112,7 @@ func (t *FalcoRulesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Falco source to query.",
+				Description: "ID of the Falco component to query.",
 			},
 		},
 		Required: []string{"component_id"},

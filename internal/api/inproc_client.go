@@ -104,7 +104,7 @@ func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) 
 
 func (c *inProcessCoreClient) ListComponents(ctx context.Context) ([]*store.Component, error) {
 	if c.components == nil {
-		return nil, fmt.Errorf("source repository not configured")
+		return nil, fmt.Errorf("component repository not configured")
 	}
 	return c.components.List(ctx)
 }
@@ -677,7 +677,7 @@ func mapAccessError(err error, sourceID string) error {
 		return nil
 	}
 	if errors.Is(err, access.ErrPermissionDenied) {
-		return fmt.Errorf("access denied for source %q: %w", sourceID, err)
+		return fmt.Errorf("access denied for component %q: %w", sourceID, err)
 	}
 	return err
 }

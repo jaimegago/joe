@@ -16,7 +16,7 @@ type Config struct {
 	RegistryID string `yaml:"registry_id" json:"registry_id"` // AWS account ID; defaults to caller account
 }
 
-// ParseConfig parses raw source config (map[string]any) into a Config.
+// ParseConfig parses raw component config (map[string]any) into a Config.
 // Mirrors the pattern used by the AWS adapter in internal/adapters/aws/config.go.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config

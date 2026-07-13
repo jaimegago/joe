@@ -34,7 +34,7 @@ type Config struct {
 	AuthMethod string `json:"auth_method,omitempty"` // transport auth method discriminator (static-bearer today)
 }
 
-// ParseConfig extracts a K8s Config from raw JSON source config.
+// ParseConfig extracts a K8s Config from raw JSON component config.
 func ParseConfig(raw json.RawMessage) (Config, error) {
 	var cfg Config
 	if len(raw) == 0 {

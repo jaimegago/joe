@@ -120,7 +120,7 @@ func NewWithDoer(doer nginxDoer, cfg Config) *Adapter {
 	return &Adapter{doer: doer, cfg: cfg, connected: true}
 }
 
-// Connect parses and stores the source config. The K8s client is built lazily
+// Connect parses and stores the component config. The K8s client is built lazily
 // on first use so that Connect succeeds even when no kubeconfig is available yet.
 func (a *Adapter) Connect(_ context.Context, source store.Component) error {
 	cfg, err := ParseConfig(source.Config)

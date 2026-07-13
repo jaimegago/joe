@@ -42,7 +42,7 @@ func (t *RedisInfoTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Redis source to query.",
+				Description: "ID of the Redis component to query.",
 			},
 			"section": {
 				Type:        "string",
@@ -98,7 +98,7 @@ func (t *RedisSlowLogTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Redis source to query.",
+				Description: "ID of the Redis component to query.",
 			},
 			"count": {
 				Type:        "integer",

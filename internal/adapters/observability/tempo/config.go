@@ -13,7 +13,7 @@ type Config struct {
 	OrgID  string `yaml:"org_id" json:"org_id"`   // Optional: multi-tenancy X-Scope-OrgID
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

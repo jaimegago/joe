@@ -13,7 +13,7 @@ import (
 
 func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Component, adapter awsadapter.AWSAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing aws source", "component_id", source.ID)
+	r.logger.Info("refreshing aws component", "component_id", source.ID)
 
 	now := time.Now()
 	region := awsRegionFromComponent(source)

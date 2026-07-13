@@ -36,7 +36,7 @@ func (t *JaegerTracesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Jaeger source to query.",
+				Description: "ID of the Jaeger component to query.",
 			},
 			"action": {
 				Type:        "string",

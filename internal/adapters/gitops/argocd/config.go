@@ -12,7 +12,7 @@ type Config struct {
 	InsecureTLS bool   `json:"insecure_tls"`
 }
 
-// ParseConfig parses raw JSON source config into a Config.
+// ParseConfig parses raw JSON component config into a Config.
 func ParseConfig(raw []byte) (Config, error) {
 	var cfg Config
 	if len(raw) > 0 {

@@ -41,7 +41,7 @@ func (t *MongoDBStatTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the MongoDB source to query.",
+				Description: "ID of the MongoDB component to query.",
 			},
 			"action": {
 				Type:        "string",

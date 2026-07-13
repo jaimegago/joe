@@ -122,7 +122,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 
 	cfg, err := ParseConfig(source.Config)
 	if err != nil {
-		return fmt.Errorf("parse source config: %w", err)
+		return fmt.Errorf("parse component config: %w", err)
 	}
 
 	// A003-W2: resolve the credential through the provider selected by the

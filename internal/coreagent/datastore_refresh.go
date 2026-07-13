@@ -19,31 +19,31 @@ import (
 // Creates a graph node and attempts stores_in edge discovery by matching the
 // source name to existing service/deployment nodes.
 func (r *Refresher) refreshPostgreSQLComponent(ctx context.Context, source *store.Component, _ postgresadapter.PostgreSQLAdapter) error {
-	r.logger.Info("refreshing postgresql source", "component_id", source.ID)
+	r.logger.Info("refreshing postgresql component", "component_id", source.ID)
 	return r.refreshDataStoreComponent(ctx, source, "postgresql_component", graph.RelationStoresIn, "postgresql")
 }
 
 // refreshMySQLComponent refreshes a MySQL source.
 func (r *Refresher) refreshMySQLComponent(ctx context.Context, source *store.Component, _ mysqladapter.MySQLAdapter) error {
-	r.logger.Info("refreshing mysql source", "component_id", source.ID)
+	r.logger.Info("refreshing mysql component", "component_id", source.ID)
 	return r.refreshDataStoreComponent(ctx, source, "mysql_component", graph.RelationStoresIn, "mysql")
 }
 
 // refreshRedisComponent refreshes a Redis source.
 func (r *Refresher) refreshRedisComponent(ctx context.Context, source *store.Component, _ redisadapter.RedisAdapter) error {
-	r.logger.Info("refreshing redis source", "component_id", source.ID)
+	r.logger.Info("refreshing redis component", "component_id", source.ID)
 	return r.refreshDataStoreComponent(ctx, source, "redis_component", graph.RelationStoresIn, "redis")
 }
 
 // refreshMongoDBComponent refreshes a MongoDB source.
 func (r *Refresher) refreshMongoDBComponent(ctx context.Context, source *store.Component, _ mongodbadapter.MongoDBAdapter) error {
-	r.logger.Info("refreshing mongodb source", "component_id", source.ID)
+	r.logger.Info("refreshing mongodb component", "component_id", source.ID)
 	return r.refreshDataStoreComponent(ctx, source, "mongodb_component", graph.RelationStoresIn, "mongodb")
 }
 
 // refreshElasticsearchComponent refreshes an Elasticsearch source.
 func (r *Refresher) refreshElasticsearchComponent(ctx context.Context, source *store.Component, _ elasticsearchadapter.ElasticsearchAdapter) error {
-	r.logger.Info("refreshing elasticsearch source", "component_id", source.ID)
+	r.logger.Info("refreshing elasticsearch component", "component_id", source.ID)
 	return r.refreshDataStoreComponent(ctx, source, "elasticsearch_component", graph.RelationStoresIn, "elasticsearch")
 }
 
@@ -51,7 +51,7 @@ func (r *Refresher) refreshElasticsearchComponent(ctx context.Context, source *s
 // Creates a graph node and attempts queues_in edge discovery by matching
 // topic names to existing service/deployment nodes.
 func (r *Refresher) refreshKafkaComponent(ctx context.Context, source *store.Component, adapter kafkaadapter.KafkaAdapter) error {
-	r.logger.Info("refreshing kafka source", "component_id", source.ID)
+	r.logger.Info("refreshing kafka component", "component_id", source.ID)
 
 	now := time.Now()
 	nodeID := datastoreNodeID(source.ID, source.Type)
@@ -79,12 +79,12 @@ func (r *Refresher) refreshKafkaComponent(ctx context.Context, source *store.Com
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for kafka source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for kafka component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for kafka source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for kafka component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("kafka refresh completed",

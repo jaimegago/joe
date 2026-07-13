@@ -11,8 +11,8 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 )
 
-// ErrComponentNotFound is returned when a source cannot be found by ID.
-var ErrComponentNotFound = errors.New("source not found")
+// ErrComponentNotFound is returned when a component cannot be found by ID.
+var ErrComponentNotFound = errors.New("component not found")
 
 // ComponentRepository defines operations on components.
 type ComponentRepository interface {
@@ -87,7 +87,7 @@ func (r *sqlComponentRepository) create(ctx context.Context, exec execContext, s
 		source.Status, source.CreatedAt, source.UpdatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("insert source: %w", err)
+		return fmt.Errorf("insert component: %w", err)
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func (r *sqlComponentRepository) Get(ctx context.Context, id string) (source *Co
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("query source: %w", err)
+		return nil, fmt.Errorf("query component: %w", err)
 	}
 
 	s.Config = config
@@ -171,7 +171,7 @@ func scanComponents(rows *sql.Rows) ([]*Component, error) {
 			&s.ID, &s.Type, &s.Name, &config, &s.Status,
 			&lastSyncAt, &lastError, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan source: %w", err)
+			return nil, fmt.Errorf("scan component: %w", err)
 		}
 
 		s.Config = config
@@ -201,7 +201,7 @@ func (r *sqlComponentRepository) Update(ctx context.Context, source *Component) 
 		source.UpdatedAt, source.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("update source: %w", err)
+		return fmt.Errorf("update component: %w", err)
 	}
 	return nil
 }
@@ -260,7 +260,7 @@ func (r *sqlComponentRepository) DeleteTx(ctx context.Context, tx *sql.Tx, id st
 func (r *sqlComponentRepository) delete(ctx context.Context, exec execContext, id string) error {
 	_, err := exec.ExecContext(ctx, Rebind(r.driver, "DELETE FROM components WHERE id = ?"), id)
 	if err != nil {
-		return fmt.Errorf("delete source: %w", err)
+		return fmt.Errorf("delete component: %w", err)
 	}
 	return nil
 }

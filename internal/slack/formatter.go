@@ -119,7 +119,7 @@ func (f *Formatter) HelpBlocks() []gslack.Block {
 			gslack.NewTextBlockObject(gslack.MarkdownType, strings.Join([]string{
 				"*`/joe ask <query>`* — search the infrastructure graph and knowledge store",
 				"*`/joe status`* — show graph summary (node/edge counts by type)",
-				"*`/joe incidents`* — list active incidents (requires Alertmanager source)",
+				"*`/joe incidents`* — list active incidents (requires Alertmanager component)",
 				"*`/joe help`* — show this message",
 			}, "\n"), false, false),
 			nil, nil,

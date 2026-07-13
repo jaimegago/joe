@@ -21,7 +21,7 @@ type Config struct {
 	Repositories []string `json:"repositories"`
 }
 
-// ParseConfig parses raw JSON source config into a Config.
+// ParseConfig parses raw JSON component config into a Config.
 func ParseConfig(raw []byte) (Config, error) {
 	var cfg Config
 	if len(raw) > 0 {

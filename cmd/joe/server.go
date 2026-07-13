@@ -453,11 +453,11 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	}
 	encryptedSources, err := store.NewEncryptedComponentRepository(sqlStore.Components, encKey)
 	if err != nil {
-		slog.Error("failed to initialize encrypted source repository", "error", err)
+		slog.Error("failed to initialize encrypted component repository", "error", err)
 		return 1
 	}
 	sqlStore.Components = encryptedSources
-	slog.Info("source credential encryption enabled", "key_path", encKeyPath)
+	slog.Info("component credential encryption enabled", "key_path", encKeyPath)
 
 	// Initialize adapter registry and load saved components
 	adapterRegistry := deps.newAdapterRegistry()
@@ -1101,11 +1101,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range k8sSources {
 		adapter := k8s.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect k8s source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect k8s component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected k8s source", "id", src.ID, "name", src.Name)
+		slog.Info("connected k8s component", "id", src.ID, "name", src.Name)
 	}
 
 	gitComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeGit)
@@ -1115,11 +1115,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range gitComponents {
 		adapter := gitadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect git source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect git component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected git source", "id", src.ID, "name", src.Name)
+		slog.Info("connected git component", "id", src.ID, "name", src.Name)
 	}
 
 	awsSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeAWS)
@@ -1129,11 +1129,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range awsSources {
 		adapter := awsadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect aws source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect aws component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected aws source", "id", src.ID, "name", src.Name)
+		slog.Info("connected aws component", "id", src.ID, "name", src.Name)
 	}
 
 	azureSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeAzure)
@@ -1143,11 +1143,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range azureSources {
 		adapter := azureadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect azure source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect azure component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected azure source", "id", src.ID, "name", src.Name)
+		slog.Info("connected azure component", "id", src.ID, "name", src.Name)
 	}
 
 	falcoSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeFalco)
@@ -1157,11 +1157,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range falcoSources {
 		adapter := falcoadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect falco source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect falco component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected falco source", "id", src.ID, "name", src.Name)
+		slog.Info("connected falco component", "id", src.ID, "name", src.Name)
 	}
 
 	// Phase 6, Step 12 — proprietary observability vendors.
@@ -1172,11 +1172,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range datadogSources {
 		adapter := datadogadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect datadog source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect datadog component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected datadog source", "id", src.ID, "name", src.Name)
+		slog.Info("connected datadog component", "id", src.ID, "name", src.Name)
 	}
 
 	splunkComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeSplunk)
@@ -1186,11 +1186,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range splunkComponents {
 		adapter := splunkadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect splunk source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect splunk component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected splunk source", "id", src.ID, "name", src.Name)
+		slog.Info("connected splunk component", "id", src.ID, "name", src.Name)
 	}
 
 	dynatraceSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeDynatrace)
@@ -1200,11 +1200,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range dynatraceSources {
 		adapter := dynatraceadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect dynatrace source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect dynatrace component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected dynatrace source", "id", src.ID, "name", src.Name)
+		slog.Info("connected dynatrace component", "id", src.ID, "name", src.Name)
 	}
 
 	newrelicComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeNewRelic)
@@ -1214,11 +1214,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range newrelicComponents {
 		adapter := newrelicadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect newrelic source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect newrelic component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected newrelic source", "id", src.ID, "name", src.Name)
+		slog.Info("connected newrelic component", "id", src.ID, "name", src.Name)
 	}
 
 	// Phase 10 — GitHub and GitLab components for code review.
@@ -1229,11 +1229,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range githubComponents {
 		adapter := githubadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect github source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect github component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected github source", "id", src.ID, "name", src.Name)
+		slog.Info("connected github component", "id", src.ID, "name", src.Name)
 	}
 
 	gitlabComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeGitLab)
@@ -1243,11 +1243,11 @@ func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry 
 	for _, src := range gitlabComponents {
 		adapter := gitlabadapter.New()
 		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect gitlab source", "id", src.ID, "error", err)
+			slog.Warn("failed to connect gitlab component", "id", src.ID, "error", err)
 			continue
 		}
 		registry.Register(src.ID, adapter)
-		slog.Info("connected gitlab source", "id", src.ID, "name", src.Name)
+		slog.Info("connected gitlab component", "id", src.ID, "name", src.Name)
 	}
 }
 

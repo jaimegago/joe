@@ -50,7 +50,7 @@ func (h *Handler) HandleSlashCommand(ctx context.Context, cmd gslack.SlashComman
 
 	case "incidents":
 		h.postBlocks(cmd.ChannelID, h.fmt.ErrorBlock(
-			"Use `/joe ask 'show active incidents'` — or configure Alertmanager source IDs via `JOE_ALERTMANAGER_SOURCE`.",
+			"Use `/joe ask 'show active incidents'` — or configure Alertmanager component IDs via `JOE_ALERTMANAGER_SOURCE`.",
 		))
 
 	case "help", "":

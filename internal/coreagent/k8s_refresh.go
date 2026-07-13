@@ -47,7 +47,7 @@ type serviceInfo struct {
 
 func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing k8s source", "component_id", source.ID)
+	r.logger.Info("refreshing k8s component", "component_id", source.ID)
 
 	desiredNodes := make([]graph.Node, 0)
 	desiredEdges := make([]graph.Edge, 0)
@@ -61,7 +61,7 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 	for _, spec := range k8sRefreshResources {
 		items, err := adapter.ListResources(ctx, spec.Resource, "")
 		if err != nil {
-			return fmt.Errorf("list %s: %w", spec.Resource, err)
+			return fmt.Errorf("refresh k8s resource %s: %w", spec.Resource, err)
 		}
 
 		for i := range items {

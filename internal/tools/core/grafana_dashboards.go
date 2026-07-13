@@ -37,7 +37,7 @@ func (t *GrafanaDashboardsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Grafana source to query.",
+				Description: "ID of the Grafana component to query.",
 			},
 			"action": {
 				Type:        "string",

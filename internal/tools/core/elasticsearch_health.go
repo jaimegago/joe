@@ -39,7 +39,7 @@ func (t *ElasticsearchHealthTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Elasticsearch source to query.",
+				Description: "ID of the Elasticsearch component to query.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -88,7 +88,7 @@ func (t *ElasticsearchIndicesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Elasticsearch source to query.",
+				Description: "ID of the Elasticsearch component to query.",
 			},
 			"pattern": {
 				Type:        "string",

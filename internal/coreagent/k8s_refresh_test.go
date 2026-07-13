@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/adapters"
@@ -18,6 +19,10 @@ import (
 
 type fakeK8sAdapter struct {
 	items map[string][]unstructured.Unstructured
+	// errResource, when set, makes ListResources return err for that resource
+	// name instead of consulting items — used to test error wrapping.
+	errResource string
+	err         error
 }
 
 func (f *fakeK8sAdapter) Connect(_ context.Context, _ store.Component) error { return nil }
@@ -29,6 +34,9 @@ func (f *fakeK8sAdapter) Status() adapters.Status {
 }
 
 func (f *fakeK8sAdapter) ListResources(_ context.Context, resource, _ string) ([]unstructured.Unstructured, error) {
+	if f.errResource != "" && resource == f.errResource {
+		return nil, f.err
+	}
 	items, ok := f.items[resource]
 	if !ok {
 		return nil, nil
@@ -153,6 +161,38 @@ func TestRefreshK8sComponentMapping(t *testing.T) {
 	requireEdge(t, edges, "k8s/src-1/deployment/apps/api", "k8s/src-1/configmap/apps/app-config", "references")
 	requireEdge(t, edges, "k8s/src-1/deployment/apps/api", "k8s/src-1/configmap/apps/cm-vol", "references")
 	requireEdge(t, edges, "k8s/src-1/deployment/apps/api", "k8s/src-1/secret/apps/app-secret", "references")
+}
+
+// TestRefreshK8sComponentListResourcesError guards against reintroducing the
+// double-wrapped "list secrets: list secrets: ..." error: k8s adapter.ListResources
+// (internal/adapters/k8s/resources.go) already wraps the raw client-go error with
+// "list %s: %w", so the refresh loop must not wrap it again with the same message —
+// it adds distinct context instead.
+func TestRefreshK8sComponentListResourcesError(t *testing.T) {
+	graphStore := setupK8sGraphStore(t)
+	refresher := &Refresher{
+		services: &core.Services{Graph: graphStore},
+		logger:   slog.Default(),
+	}
+
+	source := &store.Component{ID: "src-1", Type: store.ComponentTypeKubernetes, Name: "test"}
+	underlying := errors.New("list secrets: secrets is forbidden: User \"x\" cannot list resource \"secrets\"")
+	adapter := &fakeK8sAdapter{
+		items:       map[string][]unstructured.Unstructured{},
+		errResource: "secrets",
+		err:         underlying,
+	}
+
+	err := refresher.refreshK8sComponent(context.Background(), source, adapter)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, underlying) {
+		t.Fatalf("error does not wrap the underlying adapter error: %v", err)
+	}
+	if got := strings.Count(err.Error(), "list secrets:"); got != 1 {
+		t.Fatalf("error message %q contains %d occurrences of \"list secrets:\", want 1 (no double-wrap)", err.Error(), got)
+	}
 }
 
 func TestRefreshK8sComponentMapping_NoSelectorMatch(t *testing.T) {

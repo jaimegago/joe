@@ -16,7 +16,7 @@ type Config struct {
 	Environment    string `yaml:"environment" json:"environment"`
 }
 
-// ParseConfig parses source config into Azure config.
+// ParseConfig parses component config into Azure config.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

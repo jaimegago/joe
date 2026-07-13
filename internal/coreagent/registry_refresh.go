@@ -17,7 +17,7 @@ import (
 // Creates a source node and repository nodes, then attempts image_stored_in
 // edge discovery by matching repository names to existing deployment nodes.
 func (r *Refresher) refreshOCIComponent(ctx context.Context, source *store.Component, adapter ociadapter.OCIAdapter) error {
-	r.logger.Info("refreshing oci registry source", "component_id", source.ID)
+	r.logger.Info("refreshing oci registry component", "component_id", source.ID)
 	return r.refreshRegistryComponent(ctx, source, "oci_registry", func() ([]string, error) {
 		return adapter.ListRepositories(ctx)
 	})
@@ -25,7 +25,7 @@ func (r *Refresher) refreshOCIComponent(ctx context.Context, source *store.Compo
 
 // refreshDockerHubComponent refreshes a DockerHub source using the OCI adapter.
 func (r *Refresher) refreshDockerHubComponent(ctx context.Context, source *store.Component, adapter ociadapter.OCIAdapter) error {
-	r.logger.Info("refreshing dockerhub source", "component_id", source.ID)
+	r.logger.Info("refreshing dockerhub component", "component_id", source.ID)
 	return r.refreshRegistryComponent(ctx, source, "dockerhub", func() ([]string, error) {
 		return adapter.ListRepositories(ctx)
 	})
@@ -34,7 +34,7 @@ func (r *Refresher) refreshDockerHubComponent(ctx context.Context, source *store
 // refreshArtifactoryComponent refreshes a JFrog Artifactory registry source.
 // Lists Docker and Helm repositories and creates image_stored_in edges.
 func (r *Refresher) refreshArtifactoryComponent(ctx context.Context, source *store.Component, adapter artifactoryadapter.ArtifactoryAdapter) error {
-	r.logger.Info("refreshing artifactory source", "component_id", source.ID)
+	r.logger.Info("refreshing artifactory component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := registryNodeID(source.ID, source.Type)
@@ -79,7 +79,7 @@ func (r *Refresher) refreshArtifactoryComponent(ctx context.Context, source *sto
 
 // refreshECRComponent refreshes an AWS ECR source.
 func (r *Refresher) refreshECRComponent(ctx context.Context, source *store.Component, adapter ecradapter.ECRAdapter) error {
-	r.logger.Info("refreshing ecr source", "component_id", source.ID)
+	r.logger.Info("refreshing ecr component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := registryNodeID(source.ID, source.Type)

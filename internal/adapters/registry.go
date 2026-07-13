@@ -8,7 +8,7 @@ import (
 
 var ErrAdapterNotFound = errors.New("adapter not found")
 
-// Registry manages adapter instances by source ID.
+// Registry manages adapter instances by component ID.
 type Registry struct {
 	mu       sync.RWMutex
 	adapters map[string]Adapter
@@ -21,19 +21,19 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Get returns the adapter for the given source ID.
+// Get returns the adapter for the given component ID.
 func (r *Registry) Get(sourceID string) (Adapter, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	a, ok := r.adapters[sourceID]
 	if !ok {
-		return nil, fmt.Errorf("%w: source %q", ErrAdapterNotFound, sourceID)
+		return nil, fmt.Errorf("%w: component %q", ErrAdapterNotFound, sourceID)
 	}
 	return a, nil
 }
 
-// Register adds an adapter instance for the given source ID and returns the
+// Register adds an adapter instance for the given component ID and returns the
 // previously registered adapter it displaced (nil if none, or if the same
 // instance is re-registered). The CALLER owns the displaced adapter's shutdown:
 // Register runs under the registry lock and a Disconnect can block on network
@@ -52,7 +52,7 @@ func (r *Registry) Register(sourceID string, adapter Adapter) Adapter {
 	return displaced
 }
 
-// Unregister removes and disconnects an adapter by source ID.
+// Unregister removes and disconnects an adapter by component ID.
 func (r *Registry) Unregister(sourceID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -66,7 +66,7 @@ func (r *Registry) Unregister(sourceID string) error {
 	return a.Disconnect()
 }
 
-// List returns all registered source IDs.
+// List returns all registered component IDs.
 func (r *Registry) List() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

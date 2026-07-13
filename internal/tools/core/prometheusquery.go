@@ -38,7 +38,7 @@ func (t *PrometheusQueryTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Prometheus or Mimir source to query.",
+				Description: "ID of the Prometheus or Mimir component to query.",
 			},
 			"query": {
 				Type:        "string",

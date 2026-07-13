@@ -41,7 +41,7 @@ func (t *CertManagerCertsTool) Description() string {
 	return "List cert-manager Certificate resources with expiry dates and readiness status. " +
 		"Shows DNS names, secret name, issuer reference, and whether the certificate is Ready. " +
 		"Use to check certificate health, upcoming renewals, or failed issuances. " +
-		"Use component_id of a Kubernetes source where cert-manager is installed. " +
+		"Use component_id of a Kubernetes component where cert-manager is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -51,7 +51,7 @@ func (t *CertManagerCertsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where cert-manager is installed).",
+				Description: "ID of the Kubernetes component (where cert-manager is installed).",
 			},
 			"namespace": {
 				Type:        "string",
@@ -139,7 +139,7 @@ func (t *CertManagerIssuersTool) Description() string {
 	return "List cert-manager Issuer and ClusterIssuer resources with their status. " +
 		"Shows issuer type (ACME, CA, Vault, Venafi), readiness, and error conditions. " +
 		"Use to check if certificate issuers are healthy and properly configured. " +
-		"Use component_id of a Kubernetes source where cert-manager is installed. " +
+		"Use component_id of a Kubernetes component where cert-manager is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -149,7 +149,7 @@ func (t *CertManagerIssuersTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where cert-manager is installed).",
+				Description: "ID of the Kubernetes component (where cert-manager is installed).",
 			},
 			"namespace": {
 				Type:        "string",

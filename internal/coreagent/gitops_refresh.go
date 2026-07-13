@@ -16,7 +16,7 @@ import (
 // Creates app nodes and builds managed_by edges from K8s workloads to their
 // managing Argo CD application.
 func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Component, adapter argocdadapter.ArgoCDAdapter) error {
-	r.logger.Info("refreshing argocd source", "component_id", source.ID)
+	r.logger.Info("refreshing argocd component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
@@ -62,12 +62,12 @@ func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Co
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for argocd source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for argocd component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for argocd source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for argocd component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("argocd refresh completed",
@@ -83,7 +83,7 @@ func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Co
 // Creates release nodes and builds managed_by edges from K8s workloads to their
 // managing Helm release.
 func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Component, adapter helmadapter.HelmAdapter) error {
-	r.logger.Info("refreshing helm source", "component_id", source.ID)
+	r.logger.Info("refreshing helm component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
@@ -129,12 +129,12 @@ func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Comp
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for helm source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for helm component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for helm source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for helm component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("helm refresh completed",
@@ -150,7 +150,7 @@ func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Comp
 // Creates resource nodes and builds provisions edges from TF resources to
 // matching cloud nodes in the graph.
 func (r *Refresher) refreshTerraformComponent(ctx context.Context, source *store.Component, adapter terraformadapter.TerraformAdapter) error {
-	r.logger.Info("refreshing terraform source", "component_id", source.ID)
+	r.logger.Info("refreshing terraform component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := gitopsNodeID(source.ID, source.Type)
@@ -199,12 +199,12 @@ func (r *Refresher) refreshTerraformComponent(ctx context.Context, source *store
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for terraform source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for terraform component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for terraform source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for terraform component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("terraform refresh completed",

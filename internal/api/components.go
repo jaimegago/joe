@@ -123,10 +123,10 @@ func (s *Server) handleListComponentTypes(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// newAdapterForType returns a fresh, unconnected adapter for the given source
+// newAdapterForType returns a fresh, unconnected adapter for the given component
 // type, or nil when the type has no live connection to establish (config-only or
-// metadata source types that are persisted as-is). It is the single source of
-// truth for the type→adapter mapping shared by source creation and connection
+// metadata component types that are persisted as-is). It is the single source of
+// truth for the type→adapter mapping shared by component creation and connection
 // testing, so the two paths can never disagree on which components have adapters.
 func newAdapterForType(sourceType string) adapters.Adapter {
 	switch sourceType {
@@ -233,7 +233,7 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !store.IsValidComponentType(req.Type) {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, "unsupported source type", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, "unsupported component type", map[string]any{
 			"type":    req.Type,
 			"allowed": store.AllowedComponentTypes(),
 		})
@@ -254,11 +254,11 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 	// Check if source already exists
 	existing, err := s.services.Store.Components.Get(r.Context(), req.ID)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if existing != nil {
-		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "source already exists", map[string]any{
+		writeError(w, http.StatusConflict, errorCodeInvalidRequest, "component already exists", map[string]any{
 			"component_id": req.ID,
 		})
 		return
@@ -280,7 +280,7 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
 		return s.services.Store.Components.CreateTx(r.Context(), tx, source)
 	}); err != nil {
-		writeInternalError(w, err, "create source")
+		writeInternalError(w, err, "create component")
 		return
 	}
 
@@ -347,7 +347,7 @@ func (s *Server) mutateWithAudit(ctx context.Context, ev audit.Event, mutate fun
 func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id", map[string]any{
 			"param": "id",
 		})
 		return
@@ -355,11 +355,11 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 
 	source, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if source == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found", map[string]any{
 			"component_id": id,
 		})
 		return
@@ -397,7 +397,7 @@ func (s *Server) handleComponentPromotionRequirements(w http.ResponseWriter, r *
 
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id", map[string]any{
 			"param": "id",
 		})
 		return
@@ -405,11 +405,11 @@ func (s *Server) handleComponentPromotionRequirements(w http.ResponseWriter, r *
 
 	comp, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if comp == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found", map[string]any{
 			"component_id": id,
 		})
 		return
@@ -478,7 +478,7 @@ func (s *Server) handleComponentPromotionCandidates(w http.ResponseWriter, r *ht
 
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id", map[string]any{
 			"param": "id",
 		})
 		return
@@ -486,11 +486,11 @@ func (s *Server) handleComponentPromotionCandidates(w http.ResponseWriter, r *ht
 
 	comp, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if comp == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found", map[string]any{
 			"component_id": id,
 		})
 		return
@@ -549,7 +549,7 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id", map[string]any{
 			"param": "id",
 		})
 		return
@@ -557,11 +557,11 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 
 	source, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if source == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found", map[string]any{
 			"component_id": id,
 		})
 		return
@@ -571,7 +571,7 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 	// not part of the DB transaction; a no-op for an inert (never-promoted)
 	// component, which has no resident adapter.
 	if err := s.services.Adapters.Unregister(id); err != nil {
-		writeInternalError(w, err, "unregister source")
+		writeInternalError(w, err, "unregister component")
 		return
 	}
 
@@ -588,7 +588,7 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
 		return s.services.Store.Components.DeleteTx(r.Context(), tx, id)
 	}); err != nil {
-		writeInternalError(w, err, "delete source")
+		writeInternalError(w, err, "delete component")
 		return
 	}
 
@@ -659,7 +659,7 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id", map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id", map[string]any{
 			"param": "id",
 		})
 		return
@@ -678,11 +678,11 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 
 	comp, err := s.services.Store.Components.Get(r.Context(), id)
 	if err != nil {
-		writeInternalError(w, err, "get source")
+		writeInternalError(w, err, "get component")
 		return
 	}
 	if comp == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found", map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found", map[string]any{
 			"component_id": id,
 		})
 		return
@@ -768,7 +768,7 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
 		return s.services.Store.Components.UpdateConfigTx(r.Context(), tx, id, armedConfig)
 	}); err != nil {
-		writeInternalError(w, err, "promote source")
+		writeInternalError(w, err, "promote component")
 		return
 	}
 

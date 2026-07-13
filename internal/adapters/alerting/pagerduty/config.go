@@ -14,7 +14,7 @@ type Config struct {
 	APIURL string `yaml:"api_url" json:"api_url"` // Optional: override base URL (for testing)
 }
 
-// ParseConfig parses a source config map into a Config.
+// ParseConfig parses a component config map into a Config.
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

@@ -845,10 +845,10 @@ func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleTestComponent tests whether a source connection is healthy by building a
+// handleTestComponent tests whether a component connection is healthy by building a
 // fresh adapter and actually connecting to the backend. On success the live
 // adapter is (re)registered — self-healing an "adapter not found" state left by
-// a failed startup connect — and the source's error status is cleared; on
+// a failed startup connect — and the component's error status is cleared; on
 // failure the live error is persisted so the components list reflects reality.
 //
 // HTTP 200 is returned for both connect outcomes (the JSON "ok" field carries
@@ -857,7 +857,7 @@ func (h *webUIHandler) handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing source id")
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing component id")
 		return
 	}
 
@@ -869,20 +869,20 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	src, err := h.server.services.Store.Components.Get(ctx, id)
 	if err != nil {
-		writeInternalError(w, err, "get source for test")
+		writeInternalError(w, err, "get component for test")
 		return
 	}
 	if src == nil {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, "source not found")
+		writeError(w, http.StatusNotFound, errorCodeNotFound, "component not found")
 		return
 	}
 
 	adapter := newAdapterForType(src.Type)
 	if adapter == nil {
-		// Config-only source type: nothing to connect to.
+		// Config-only component type: nothing to connect to.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      true,
-			"message": fmt.Sprintf("source %q is configured (type %q has no connection to test)", src.ID, src.Type),
+			"message": fmt.Sprintf("component %q is configured (type %q has no connection to test)", src.ID, src.Type),
 		})
 		return
 	}
@@ -890,7 +890,7 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 	if err := adapter.Connect(ctx, *src); err != nil {
 		// Persist the live failure so the list status agrees with the test.
 		if updateErr := h.server.services.Store.Components.UpdateSyncStatus(ctx, src.ID, time.Now(), err.Error()); updateErr != nil {
-			slog.Warn("failed to persist source test status", "component_id", src.ID, "error", updateErr)
+			slog.Warn("failed to persist component test status", "component_id", src.ID, "error", updateErr)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      false,
@@ -914,7 +914,7 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if updateErr := h.server.services.Store.Components.UpdateSyncStatus(ctx, src.ID, time.Now(), ""); updateErr != nil {
-		slog.Warn("failed to persist source test status", "component_id", src.ID, "error", updateErr)
+		slog.Warn("failed to persist component test status", "component_id", src.ID, "error", updateErr)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

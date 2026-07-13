@@ -13,7 +13,7 @@ type GitLogClient interface {
 	GitLog(ctx context.Context, sourceID string, limit int) ([]gitadapter.CommitInfo, error)
 }
 
-// GitLogTool retrieves commit history from a Git repository source.
+// GitLogTool retrieves commit history from a Git repository component.
 type GitLogTool struct {
 	client GitLogClient
 }
@@ -26,14 +26,14 @@ func NewGitLogTool(c GitLogClient) *GitLogTool {
 func (t *GitLogTool) Name() string { return "git_log" }
 
 func (t *GitLogTool) Description() string {
-	return "Get recent commit history from a connected Git repository source."
+	return "Get recent commit history from a connected Git repository component."
 }
 
 func (t *GitLogTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"component_id": {Type: "string", Description: "ID of the Git source."},
+			"component_id": {Type: "string", Description: "ID of the Git component."},
 			"limit":        {Type: "integer", Description: "Maximum number of commits to return. Defaults to 20."},
 		},
 		Required: []string{"component_id"},

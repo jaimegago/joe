@@ -19,7 +19,7 @@ type GraphDelta struct {
 func LoadGraphStateForComponent(ctx context.Context, store graph.GraphStore, sourceID string) ([]graph.Node, []graph.Edge, error) {
 	nodes, err := store.ListNodesByComponent(ctx, sourceID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list nodes for source %s: %w", sourceID, err)
+		return nil, nil, fmt.Errorf("list nodes for component %s: %w", sourceID, err)
 	}
 
 	if len(nodes) == 0 {
@@ -33,7 +33,7 @@ func LoadGraphStateForComponent(ctx context.Context, store graph.GraphStore, sou
 
 	edges, err := store.ListEdgesForNodes(ctx, nodeIDs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list edges for source %s: %w", sourceID, err)
+		return nil, nil, fmt.Errorf("list edges for component %s: %w", sourceID, err)
 	}
 
 	return nodes, edges, nil

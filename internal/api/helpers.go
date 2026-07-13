@@ -76,7 +76,7 @@ func handleAccessError(w http.ResponseWriter, err error, sourceID, expected stri
 		return true
 	}
 	if errors.Is(err, store.ErrComponentNotFound) {
-		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source not found: %s", sourceID), map[string]any{
+		writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("component not found: %s", sourceID), map[string]any{
 			"component_id": sourceID,
 		})
 		return true
@@ -95,7 +95,7 @@ func handleAccessError(w http.ResponseWriter, err error, sourceID, expected stri
 		if displayType == "AWS" {
 			article = "an"
 		}
-		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, fmt.Sprintf("source is not %s %s adapter", article, displayType), map[string]any{
+		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, fmt.Sprintf("component is not %s %s adapter", article, displayType), map[string]any{
 			"component_id": sourceID,
 			"expected":     expected,
 		})

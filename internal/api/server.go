@@ -500,9 +500,9 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) { //nolin
 	}
 
 	if err != nil {
-		// Check if source not found
+		// Check if component not found
 		if req.ComponentID != "" && errors.Is(err, store.ErrComponentNotFound) {
-			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("source '%s' not found", req.ComponentID))
+			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("component '%s' not found", req.ComponentID))
 			return
 		}
 		writeInternalError(w, err, "refresh")

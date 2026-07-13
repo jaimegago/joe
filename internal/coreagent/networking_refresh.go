@@ -16,7 +16,7 @@ import (
 // Creates ingress nodes from K8s Ingress resources and builds ingress_for
 // edges linking each ingress to the backend service it routes to.
 func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Component, adapter nginxadapter.NginxAdapter) error {
-	r.logger.Info("refreshing nginx source", "component_id", source.ID)
+	r.logger.Info("refreshing nginx component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := networkingNodeID(source.ID, source.Type)
@@ -66,12 +66,12 @@ func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Com
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for nginx source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for nginx component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for nginx source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for nginx component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("nginx refresh completed",
@@ -87,7 +87,7 @@ func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Com
 // Creates a source node and builds proxies edges from the Envoy instance to
 // service nodes matching its upstream cluster names.
 func (r *Refresher) refreshEnvoyComponent(ctx context.Context, source *store.Component, adapter envoypadapter.EnvoyAdapter) error {
-	r.logger.Info("refreshing envoy source", "component_id", source.ID)
+	r.logger.Info("refreshing envoy component", "component_id", source.ID)
 
 	now := time.Now()
 	sourceNodeID := networkingNodeID(source.ID, source.Type)
@@ -120,12 +120,12 @@ func (r *Refresher) refreshEnvoyComponent(ctx context.Context, source *store.Com
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return fmt.Errorf("load graph state for envoy source %s: %w", source.ID, err)
+		return fmt.Errorf("load graph state for envoy component %s: %w", source.ID, err)
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return fmt.Errorf("apply graph delta for envoy source %s: %w", source.ID, err)
+		return fmt.Errorf("apply graph delta for envoy component %s: %w", source.ID, err)
 	}
 
 	r.logger.Info("envoy refresh completed",

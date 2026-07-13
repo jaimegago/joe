@@ -33,7 +33,7 @@ func (t *GitLabMRGetTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"component_id": {Type: "string", Description: "GitLab source ID registered in Joe"},
+			"component_id": {Type: "string", Description: "GitLab component ID registered in Joe"},
 			"project_id":   {Type: "string", Description: "GitLab project ID or URL-encoded path (e.g. '42' or 'group%2Fproject')"},
 			"mr_iid":       {Type: "number", Description: "Merge request internal ID (iid)"},
 		},

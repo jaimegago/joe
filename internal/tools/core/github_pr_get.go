@@ -33,7 +33,7 @@ func (t *GitHubPRGetTool) Parameters() llm.ParameterSchema {
 	return llm.ParameterSchema{
 		Type: "object",
 		Properties: map[string]llm.Property{
-			"component_id": {Type: "string", Description: "GitHub source ID registered in Joe"},
+			"component_id": {Type: "string", Description: "GitHub component ID registered in Joe"},
 			"owner":        {Type: "string", Description: "Repository owner (org or user)"},
 			"repo":         {Type: "string", Description: "Repository name"},
 			"pr_number":    {Type: "number", Description: "Pull request number"},

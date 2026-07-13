@@ -29,7 +29,7 @@ func NewNginxIngressesTool(c NginxClient) *NginxIngressesTool {
 func (t *NginxIngressesTool) Name() string { return "nginx_ingresses" }
 
 func (t *NginxIngressesTool) Description() string {
-	return "List Kubernetes Ingress resources from an NGINX Ingress Controller source. " +
+	return "List Kubernetes Ingress resources from an NGINX Ingress Controller component. " +
 		"Shows hosts, paths, backend services, TLS settings, and load balancer addresses. " +
 		"Use to answer 'what is exposed?', 'which service handles /api?', or 'which ingress uses TLS?'. " +
 		"If you don't know the component_id, call list_components first."
@@ -41,7 +41,7 @@ func (t *NginxIngressesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the nginx-ingress source.",
+				Description: "ID of the nginx-ingress component.",
 			},
 			"namespace": {
 				Type:        "string",
@@ -90,7 +90,7 @@ func (t *NginxStatusTool) Name() string { return "nginx_status" }
 func (t *NginxStatusTool) Description() string {
 	return "Get NGINX Ingress Controller connection statistics from the status endpoint " +
 		"(active connections, reading/writing/waiting workers, total accepts/requests). " +
-		"Requires status_url to be configured in the source. " +
+		"Requires status_url to be configured in the component. " +
 		"Use to check if NGINX is under load or has connection issues. " +
 		"If you don't know the component_id, call list_components first."
 }
@@ -101,7 +101,7 @@ func (t *NginxStatusTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the nginx-ingress source.",
+				Description: "ID of the nginx-ingress component.",
 			},
 		},
 		Required: []string{"component_id"},
@@ -150,7 +150,7 @@ func (t *NginxConfigTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the nginx-ingress source.",
+				Description: "ID of the nginx-ingress component.",
 			},
 			"namespace": {
 				Type:        "string",

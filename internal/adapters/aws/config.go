@@ -15,7 +15,7 @@ type Config struct {
 	RoleARN   string `yaml:"role_arn" json:"role_arn"`     // IAM role ARN to assume (optional)
 }
 
-// ParseConfig parses source config into AWS config
+// ParseConfig parses component config into AWS config
 func ParseConfig(sourceConfig map[string]any) (Config, error) {
 	var cfg Config
 

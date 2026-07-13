@@ -191,7 +191,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if len(source.Config) > 0 {
 		err := json.Unmarshal(source.Config, &configMap)
 		if err != nil {
-			return fmt.Errorf("parse source config JSON: %w", err)
+			return fmt.Errorf("parse component config JSON: %w", err)
 		}
 	} else {
 		configMap = make(map[string]any)
@@ -199,7 +199,7 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 
 	cfg, err := ParseConfig(configMap)
 	if err != nil {
-		return fmt.Errorf("parse source config: %w", err)
+		return fmt.Errorf("parse component config: %w", err)
 	}
 	a.config = cfg
 

@@ -34,10 +34,10 @@ func (t *CiliumPoliciesTool) Name() string { return "cilium_policies" }
 
 func (t *CiliumPoliciesTool) Description() string {
 	return "List Cilium network policies (CiliumNetworkPolicy and CiliumClusterwideNetworkPolicy) " +
-		"from a Kubernetes source. " +
+		"from a Kubernetes component. " +
 		"Shows policy rules, selectors, and enforcement status. " +
 		"Use to understand what network traffic is allowed or denied between workloads. " +
-		"Use component_id of a Kubernetes source where Cilium is installed. " +
+		"Use component_id of a Kubernetes component where Cilium is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -47,7 +47,7 @@ func (t *CiliumPoliciesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Cilium is installed).",
+				Description: "ID of the Kubernetes component (where Cilium is installed).",
 			},
 			"namespace": {
 				Type:        "string",
@@ -103,7 +103,7 @@ func (t *CiliumEndpointsTool) Description() string {
 	return "List Cilium endpoints with their identity labels and health status. " +
 		"Each endpoint corresponds to a pod managed by Cilium. " +
 		"Use to check endpoint health, identity, and policy enforcement state. " +
-		"Use component_id of a Kubernetes source where Cilium is installed. " +
+		"Use component_id of a Kubernetes component where Cilium is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -113,7 +113,7 @@ func (t *CiliumEndpointsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Cilium is installed).",
+				Description: "ID of the Kubernetes component (where Cilium is installed).",
 			},
 			"namespace": {
 				Type:        "string",

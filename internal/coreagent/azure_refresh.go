@@ -12,7 +12,7 @@ import (
 
 func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Component, adapter azureadapter.AzureAdapter) error {
 	start := time.Now()
-	r.logger.Info("refreshing azure source", "component_id", source.ID)
+	r.logger.Info("refreshing azure component", "component_id", source.ID)
 
 	now := time.Now()
 	desiredNodes := make([]graph.Node, 0)

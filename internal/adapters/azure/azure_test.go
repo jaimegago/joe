@@ -61,7 +61,7 @@ func TestAdapter_ConnectValidatesConfig(t *testing.T) {
 
 	// Invalid JSON
 	invalidJSON := store.Component{ID: "az-1", Name: "azure", Type: "azure", Config: []byte(`{"subscription_id":`)}
-	if err := adapter.Connect(context.Background(), invalidJSON); err == nil || !strings.Contains(err.Error(), "parse source config JSON") {
+	if err := adapter.Connect(context.Background(), invalidJSON); err == nil || !strings.Contains(err.Error(), "parse component config JSON") {
 		t.Fatalf("expected wrapped JSON parse error, got %v", err)
 	}
 

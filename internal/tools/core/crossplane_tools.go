@@ -41,7 +41,7 @@ func (t *CrossplaneProvidersTool) Description() string {
 	return "List Crossplane Provider resources with their installation and health status. " +
 		"Shows provider package (e.g. provider-aws, provider-gcp), installed revision, " +
 		"and whether the provider is Healthy and ready to provision resources. " +
-		"Use component_id of a Kubernetes source where Crossplane is installed. " +
+		"Use component_id of a Kubernetes component where Crossplane is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -51,7 +51,7 @@ func (t *CrossplaneProvidersTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Crossplane is installed).",
+				Description: "ID of the Kubernetes component (where Crossplane is installed).",
 			},
 		},
 		Required: []string{"component_id"},
@@ -129,7 +129,7 @@ func (t *CrossplaneResourcesTool) Description() string {
 	return "List Crossplane CompositeResourceDefinitions (XRDs) and Compositions. " +
 		"XRDs define the API for composite resources; Compositions define how they are provisioned. " +
 		"Use to understand what composite resource types are available and how they map to cloud resources. " +
-		"Use component_id of a Kubernetes source where Crossplane is installed. " +
+		"Use component_id of a Kubernetes component where Crossplane is installed. " +
 		"If you don't know the component_id, call list_components first."
 }
 
@@ -139,7 +139,7 @@ func (t *CrossplaneResourcesTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Kubernetes source (where Crossplane is installed).",
+				Description: "ID of the Kubernetes component (where Crossplane is installed).",
 			},
 			"kind": {
 				Type:        "string",

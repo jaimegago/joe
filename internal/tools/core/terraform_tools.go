@@ -42,7 +42,7 @@ func (t *TerraformStateTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Terraform state source.",
+				Description: "ID of the Terraform state component.",
 			},
 			"resource_type": {
 				Type:        "string",
@@ -100,7 +100,7 @@ func (t *TerraformResourceTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Terraform state source.",
+				Description: "ID of the Terraform state component.",
 			},
 			"address": {
 				Type:        "string",
@@ -157,7 +157,7 @@ func (t *TerraformOutputsTool) Parameters() llm.ParameterSchema {
 		Properties: map[string]llm.Property{
 			"component_id": {
 				Type:        "string",
-				Description: "ID of the Terraform state source.",
+				Description: "ID of the Terraform state component.",
 			},
 		},
 		Required: []string{"component_id"},
