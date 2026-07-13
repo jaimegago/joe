@@ -30,7 +30,7 @@ func TestRefreshK8sCRDs_NoCRDsInstalled(t *testing.T) {
 	// Adapter returns nil for all resources — CRDs not installed.
 	adapter := &fakeK8sAdapter{items: map[string][]unstructured.Unstructured{}}
 
-	nodes, edges := r.refreshK8sCRDs(context.Background(), src, adapter)
+	nodes, edges, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
 	// No CRDs installed → no nodes or edges expected.
 	if len(nodes) != 0 {
 		t.Errorf("want 0 nodes, got %d", len(nodes))
@@ -57,7 +57,7 @@ func TestRefreshK8sCRDs_KEDAScaledObject(t *testing.T) {
 		},
 	}
 
-	nodes, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
+	nodes, _, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
 	if len(nodes) != 1 {
 		t.Fatalf("want 1 keda_scaledobject node, got %d", len(nodes))
 	}
@@ -81,7 +81,7 @@ func TestRefreshK8sCRDs_CertManagerCertificate(t *testing.T) {
 		},
 	}
 
-	nodes, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
+	nodes, _, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
 	found := false
 	for _, n := range nodes {
 		if n.Type == "certificate" {
@@ -108,7 +108,7 @@ func TestRefreshK8sCRDs_IstioVirtualService(t *testing.T) {
 		},
 	}
 
-	nodes, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
+	nodes, _, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
 	found := false
 	for _, n := range nodes {
 		if n.Type == "istio_virtual_service" {
@@ -143,7 +143,7 @@ func TestRefreshK8sCRDs_MeshForEdge(t *testing.T) {
 		},
 	}
 
-	nodes, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
+	nodes, _, _ := r.refreshK8sCRDs(context.Background(), src, adapter)
 	if len(nodes) == 0 {
 		t.Error("expected at least 1 node")
 	}

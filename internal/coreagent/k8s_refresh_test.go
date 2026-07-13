@@ -120,7 +120,7 @@ func TestRefreshK8sComponentMapping(t *testing.T) {
 		"nodes":       {makeNode("node-1")},
 	}}
 
-	if err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
+	if _, err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
 		t.Fatalf("refreshK8sComponent error: %v", err)
 	}
 
@@ -183,7 +183,7 @@ func TestRefreshK8sComponentListResourcesError(t *testing.T) {
 		err:         underlying,
 	}
 
-	err := refresher.refreshK8sComponent(context.Background(), source, adapter)
+	_, err := refresher.refreshK8sComponent(context.Background(), source, adapter)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -210,7 +210,7 @@ func TestRefreshK8sComponentMapping_NoSelectorMatch(t *testing.T) {
 		"nodes":       {makeNode("node-1")},
 	}}
 
-	if err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
+	if _, err := refresher.refreshK8sComponent(context.Background(), source, adapter); err != nil {
 		t.Fatalf("refreshK8sComponent error: %v", err)
 	}
 

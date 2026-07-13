@@ -3,14 +3,50 @@ package coreagent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// resourceSkip records that one resource type was omitted from a kubernetes
+// refresh tick because the component's credential lacked list permission on it
+// (a forbidden error). A tick that completes with skips is DEGRADED, not failed:
+// it still applies the delta built from the types it could list, and the skips
+// surface as the component's degraded status and last_error summary (D-0093).
+type resourceSkip struct {
+	// Type is the graph node type (core loop) or CRD short name (CRD loop) that
+	// was skipped.
+	Type string
+	// Reason is a short, non-sensitive explanation of why it was skipped.
+	Reason string
+}
+
+// forbiddenSkipReason is the uniform reason recorded for a resource type the
+// credential may not list. Degradation here is forbidden-only by design.
+const forbiddenSkipReason = "credential lacks list permission"
+
+// summarizeSkips renders a skip set into a concise, human-readable last_error
+// summary, e.g. "degraded: secrets forbidden — credential lacks list
+// permission". The type names are sorted for a stable string so transition
+// detection (D-0093 logging) does not fire on map-order churn. An empty skip set
+// yields the empty string (a healthy tick clears last_error).
+func summarizeSkips(skips []resourceSkip) string {
+	if len(skips) == 0 {
+		return ""
+	}
+	types := make([]string, 0, len(skips))
+	for _, s := range skips {
+		types = append(types, s.Type)
+	}
+	sort.Strings(types)
+	return fmt.Sprintf("degraded: %s forbidden — %s", strings.Join(types, ", "), forbiddenSkipReason)
+}
 
 type k8sResourceSpec struct {
 	Resource   string
@@ -45,7 +81,15 @@ type serviceInfo struct {
 	Selector  map[string]string
 }
 
-func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) error {
+// refreshK8sComponent refreshes one kubernetes component. It returns the set of
+// resource types skipped this tick because the credential could not list them
+// (forbidden), so the caller can surface a degraded status. A non-forbidden list
+// error aborts the whole component refresh with the wrapped error and applies no
+// delta — today's semantics, unchanged. A tick that completes with skips still
+// builds and applies its delta from the types it did list; the reconcile
+// consequence that a now-forbidden type's previously discovered nodes are diffed
+// out is intended (the graph reflects what the credential can observe, D-0093).
+func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) ([]resourceSkip, error) {
 	start := time.Now()
 	r.logger.Info("refreshing k8s component", "component_id", source.ID)
 
@@ -56,12 +100,24 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 	workloads := make([]workloadInfo, 0)
 	services := make([]serviceInfo, 0)
 
+	var skips []resourceSkip
+
 	now := time.Now()
 
 	for _, spec := range k8sRefreshResources {
 		items, err := adapter.ListResources(ctx, spec.Resource, "")
 		if err != nil {
-			return fmt.Errorf("refresh k8s resource %s: %w", spec.Resource, err)
+			// Forbidden: the credential may not list this type. Degrade — record
+			// the skip and continue to the next type — rather than aborting the
+			// whole component refresh (D-0093). The typed check unwraps the
+			// adapter's %w-wrapped client-go error; it is not string matching.
+			if apierrors.IsForbidden(err) {
+				skips = append(skips, resourceSkip{Type: spec.NodeType, Reason: forbiddenSkipReason})
+				continue
+			}
+			// Any other list error keeps today's semantics: abort with the
+			// wrapped error, no delta applied.
+			return nil, fmt.Errorf("refresh k8s resource %s: %w", spec.Resource, err)
 		}
 
 		for i := range items {
@@ -184,22 +240,25 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 	}
 
 	// Extend with CRD-based nodes and edges (KEDA, cert-manager, OPA, Cilium, Istio, Crossplane).
-	crdNodes, crdEdges := r.refreshK8sCRDs(ctx, source, adapter)
+	// A CRD type the credential may not list joins the same forbidden skip set;
+	// an uninstalled CRD is a silent skip, not degradation.
+	crdNodes, crdEdges, crdSkips := r.refreshK8sCRDs(ctx, source, adapter)
 	desiredNodes = append(desiredNodes, crdNodes...)
 	desiredEdges = append(desiredEdges, crdEdges...)
+	skips = append(skips, crdSkips...)
 
 	existingNodes, existingEdges, err := LoadGraphStateForComponent(ctx, r.services.Graph, source.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	delta := BuildGraphDelta(existingNodes, existingEdges, desiredNodes, desiredEdges)
 	if err := ApplyGraphDelta(ctx, r.services.Graph, delta); err != nil {
-		return err
+		return nil, err
 	}
 
-	r.logger.Info("k8s refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "duration_ms", time.Since(start).Milliseconds())
-	return nil
+	r.logger.Info("k8s refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "skipped", len(skips), "duration_ms", time.Since(start).Milliseconds())
+	return skips, nil
 }
 
 func k8sNodeID(sourceID, kind, namespace, name string) string {

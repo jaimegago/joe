@@ -10,6 +10,72 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0093 — The kubernetes graph refresher degrades per-resource-type on forbidden, surfacing a third `degraded` component status instead of hard-failing the tick
+
+- Date: 2026-07-13
+- Status: accepted
+- Session: refresher-rbac-degradation
+- Decision: the kubernetes refresher's core-resource loop
+  (`internal/coreagent/k8s_refresh.go`) no longer aborts the whole component
+  refresh on the first list error. A **forbidden** list error (detected via the
+  apimachinery typed-error helper `apierrors.IsForbidden` through error
+  unwrapping — never string matching) records a **skip** for that resource type
+  and continues to the next; the tick then builds and applies its delta from the
+  types it could list. **Forbidden is the only degradation trigger**: any
+  non-forbidden list error retains today's semantics exactly — abort the
+  component refresh with the wrapped error, apply no delta. The **reconcile
+  consequence is accepted and intended**: a now-forbidden type's
+  previously-discovered nodes are diffed out, so the graph reflects what the
+  credential can currently observe. The CRD path (`refreshCRDSpec`) gains the
+  same forbidden→skip behavior while keeping an uninstalled CRD (typed
+  `IsNotFound`) a silent Debug skip and every other CRD list error a tolerant
+  Debug skip (a CRD transport blip must not fail the tick). A tick that completes
+  with a non-empty skip set writes a **new third component status, `degraded`**,
+  with `last_error` carrying a concise summary (e.g. `degraded: secrets forbidden
+  — credential lacks list permission`); a clean tick writes the healthy status
+  and clears `last_error` as before; a genuine abort writes `error` as before.
+  The third state reuses the existing `status`/`last_error` columns (no
+  migration) via a new `store.UpdateSyncState(status, ...)` seam alongside the
+  existing derive-from-error `UpdateSyncStatus`. Per-tick logging for this class
+  is **transition-based**: Warn when the skip summary differs from the previously
+  persisted `last_error` (first appearance, change, or recovery to clean), Debug
+  when unchanged; aborted (non-forbidden) ticks keep their loud ERROR. The
+  connectivity-test ("Test Connection") success copy is amended to state its
+  scope — it verifies reachability and authentication only; resource-level list
+  permissions are exercised by the background refresher, directing the user to
+  the component's sync status after the first refresh interval. No permission
+  preflight is added in this session. The `register-kubernetes` public guide
+  gains a "What permissions Joe needs" section stating as shipped truth that Joe
+  works with the built-in `view` ClusterRole (graph fully populated except secret
+  nodes, which `view` excludes → degraded status naming the skip), that granting
+  `list` on secrets is an explicit opt-in that completes the graph, and that the
+  graph records only secret **key names** and object metadata, never secret
+  values (per D-0032 the excluded set is described as a delta from `view`, not
+  enumerated).
+- Scope: **kubernetes refresher only**. The aws, azure, and git refreshers share
+  the hard-fail-on-first-error pattern and are **explicitly deferred**
+  (`docs/backlog/refresher-rbac-degradation.md`), as are a
+  SelfSubjectAccessReview permission preflight in the connectivity test (gated on
+  the open `governed-connectivity-check-surface` item), the repo-wide
+  source→component terminology sweep of `internal/coreagent` log strings and
+  parameter names (D-0021 residue), and a structured per-resource-type skip field
+  should the UI later need per-type affordances.
+- Basis: this session's read of `internal/coreagent/{k8s_refresh,crd_refresh,refresh}.go`,
+  `internal/store/components.go`, `internal/adapters/k8s/resources.go` (confirmed
+  `ListResources` wraps with `%w`, preserving the typed error for `errors.As`
+  unwrapping — no adapter change needed), migration `001_initial`/`023` (confirmed
+  `components.status` is unconstrained `TEXT`, no CHECK), and the UI
+  (`ui/src/api/schemas.ts` `status: z.string()` open; `ui/src/lib/constants.ts`
+  `STATUS_CONFIG` already carries a `degraded` entry). `k8s.io/apimachinery`
+  v0.35.2 is a direct dependency and its `api/errors` provides `IsForbidden`/`IsNotFound`,
+  both unwrapping via `errors.As`.
+- Supersedes: nothing structurally; refines the graph-refresh read surface's
+  partial-tolerance semantics for kubernetes (the refresher previously hard-failed
+  any list error).
+- Status: accepted.
+
+---
+
 ## D-0092 — The operator release procedure is captured as a runbook at `docs/RELEASING.md`
 
 - Date: 2026-07-13

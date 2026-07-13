@@ -227,18 +227,52 @@ func (r *Refresher) resolveAdapter(ctx context.Context, source *store.Component)
 	return r.accessor.ResolveAdapter(ctx, principal, source.ID, rbac.ActionRead)
 }
 
-// refreshComponent refreshes a single infrastructure component
+// refreshComponent refreshes a single infrastructure component.
+//
+// The kubernetes path may complete DEGRADED: it returns a set of resource types
+// it could not list (forbidden) rather than aborting. When that skip set is
+// non-empty and the tick otherwise succeeded, the component's status is written
+// "degraded" with a concise last_error summary; a clean tick writes the healthy
+// status and clears last_error; a genuine (non-forbidden) failure writes "error"
+// exactly as before (D-0093). Degraded transitions are logged at Warn on change
+// and Debug when steady, against the previously persisted last_error baseline.
 func (r *Refresher) refreshComponent(ctx context.Context, source *store.Component) (err error) {
 	start := time.Now()
+	var skips []resourceSkip
+	// baseline is the last_error persisted by the previous tick — the comparison
+	// point for transition-based degraded logging (Warn on change, Debug steady).
+	baseline := source.LastError
 	defer func() {
 		lastError := ""
-		if err != nil {
+		status := "active"
+		switch {
+		case err != nil:
+			// Genuine failure (includes a non-forbidden k8s list abort): error.
 			lastError = err.Error()
+			status = "error"
+		case len(skips) > 0:
+			// Succeeded but with forbidden skips: degraded.
+			lastError = summarizeSkips(skips)
+			status = "degraded"
 		}
-		if updateErr := r.services.Store.Components.UpdateSyncStatus(ctx, source.ID, time.Now(), lastError); updateErr != nil {
+
+		// Transition-based logging for the degraded class. A genuine failure keeps
+		// its loud ERROR in the refresh() loop, so only log the degraded/recovery
+		// transitions here (err == nil).
+		if err == nil && lastError != baseline {
+			if lastError == "" {
+				r.logger.Warn("component refresh recovered", "component_id", source.ID, "previous", baseline)
+			} else {
+				r.logger.Warn("component refresh degraded", "component_id", source.ID, "detail", lastError)
+			}
+		} else if err == nil && lastError != "" {
+			r.logger.Debug("component refresh still degraded", "component_id", source.ID, "detail", lastError)
+		}
+
+		if updateErr := r.services.Store.Components.UpdateSyncState(ctx, source.ID, time.Now(), status, lastError); updateErr != nil {
 			r.logger.Warn("failed to update component sync status", "component_id", source.ID, "error", updateErr)
 		}
-		r.logger.Info("component refresh finished", "component_id", source.ID, "duration_ms", time.Since(start).Milliseconds(), "error", lastError)
+		r.logger.Info("component refresh finished", "component_id", source.ID, "status", status, "duration_ms", time.Since(start).Milliseconds(), "error", lastError)
 	}()
 
 	r.logger.Debug("refreshing component", "component_id", source.ID, "type", source.Type)
@@ -268,7 +302,10 @@ func (r *Refresher) refreshComponent(ctx context.Context, source *store.Componen
 		if !ok {
 			return fmt.Errorf("adapter for component %s is not kubernetes", source.ID)
 		}
-		return r.refreshK8sComponent(ctx, source, k8sAdapter)
+		// Capture skips into the enclosing scope so the deferred status write can
+		// distinguish a degraded tick (forbidden skips) from a clean one.
+		skips, err = r.refreshK8sComponent(ctx, source, k8sAdapter)
+		return err
 	case store.ComponentTypeGit:
 		gitAdapter, ok := adapter.(gitadapter.GitAdapter)
 		if !ok {

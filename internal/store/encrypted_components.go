@@ -86,6 +86,10 @@ func (r *encryptedComponentRepository) UpdateSyncStatus(ctx context.Context, id 
 	return r.inner.UpdateSyncStatus(ctx, id, syncedAt, lastError)
 }
 
+func (r *encryptedComponentRepository) UpdateSyncState(ctx context.Context, id string, syncedAt time.Time, status, lastError string) error {
+	return r.inner.UpdateSyncState(ctx, id, syncedAt, status, lastError)
+}
+
 func (r *encryptedComponentRepository) Delete(ctx context.Context, id string) error {
 	return r.inner.Delete(ctx, id)
 }

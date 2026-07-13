@@ -51,6 +51,7 @@ marker stripped); **status** = the leading clause of the file's `Status:` line
 | [`public-docs-feature-inventory`](public-docs-feature-inventory.md) | Public Docs Feature Inventory | open |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress |
+| [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 |

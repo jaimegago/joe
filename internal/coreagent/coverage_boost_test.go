@@ -117,7 +117,7 @@ func TestRefreshCRDSpec_WithTargetFieldAndMatchingNode(t *testing.T) {
 		},
 	}
 
-	nodes, edges := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
+	nodes, edges, _ := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
 	if len(nodes) != 1 {
 		t.Fatalf("want 1 node, got %d", len(nodes))
 	}
@@ -160,7 +160,7 @@ func TestRefreshCRDSpec_NamespaceMismatch_NoEdge(t *testing.T) {
 		},
 	}
 
-	_, edges := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
+	_, edges, _ := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
 	// Namespace mismatch → no edges.
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for namespace mismatch, got %d", len(edges))
@@ -198,7 +198,7 @@ func TestRefreshCRDSpec_MatchingNodeWrongType(t *testing.T) {
 		},
 	}
 
-	_, edges := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
+	_, edges, _ := r.refreshCRDSpec(ctx, src, adapter, spec, time.Now())
 	if len(edges) != 0 {
 		t.Errorf("want 0 edges for wrong target node type, got %d", len(edges))
 	}

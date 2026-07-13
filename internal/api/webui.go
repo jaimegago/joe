@@ -918,8 +918,11 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true,
-		"message": "connection successful",
+		"ok": true,
+		"message": "connection successful — this verifies reachability and authentication only. " +
+			"Resource-level list permissions are exercised by the background refresher; check the " +
+			"component's sync status after the first refresh interval to see whether any resource " +
+			"types were skipped (a degraded status names them).",
 	})
 }
 

@@ -170,6 +170,34 @@ reference where Joe runs, or re-promote with a corrected locator, and test again
 > component detail card after a successful Test Connection, status shown as connected and
 > arming as armed.
 
+## What permissions Joe needs
+
+Joe reads your cluster with the credential you promoted, so what it can see is
+bounded by what that credential is allowed to **list**. Joe is built to run with
+Kubernetes' built-in **`view`** ClusterRole — a standard, read-only role.
+
+With `view` bound to Joe's ServiceAccount, the graph populates fully **except for
+secret nodes**: the `view` role deliberately excludes `secrets`. When Joe cannot
+list a resource type, it does **not** fail the whole refresh — it records what it
+skipped and the component's status moves to **degraded**, with the detail naming
+what was left out (for example, that secrets were skipped for lack of list
+permission). Everything the credential *can* read still populates. You will see
+this on the component's detail card after the first refresh interval.
+
+If you want the graph to include secret nodes, grant Joe **`list` on `secrets`**
+as an explicit, opt-in addition to `view` — for example a small extra Role that
+adds `secrets` to the `list` verb. This is entirely optional. When you do, the
+degraded status clears on the next refresh and the secret nodes appear.
+
+> **What a secret node contains.** Even with the secrets grant, Joe records only
+> each secret's **key names** and object metadata (name, namespace, labels) — it
+> **never** records secret values. Granting `list` on secrets lets Joe map which
+> workloads reference which secrets; it does not put secret contents in the graph.
+
+Because `view` is a stable, well-known role, the simplest setup is: bind `view`,
+accept the degraded-on-secrets status, and add the secrets grant only if you want
+secret nodes in the graph.
+
 ## Step 6 — Ask Joe about the cluster
 
 Open **Chat** and ask something that exercises a cluster read, for example:

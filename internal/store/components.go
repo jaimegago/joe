@@ -34,6 +34,12 @@ type ComponentRepository interface {
 	// repository never commits or rolls back; the caller owns the transaction.
 	UpdateConfigTx(ctx context.Context, tx *sql.Tx, id string, config json.RawMessage) error
 	UpdateSyncStatus(ctx context.Context, id string, syncedAt time.Time, lastError string) error
+	// UpdateSyncState writes the sync outcome with an EXPLICIT status, for the
+	// callers that need a third state ("degraded") beyond the active/error
+	// derivation UpdateSyncStatus performs from lastError alone (the kubernetes
+	// refresher's partial-tolerance path, D-0093). It reuses the same status and
+	// last_error columns; no schema change.
+	UpdateSyncState(ctx context.Context, id string, syncedAt time.Time, status, lastError string) error
 	Delete(ctx context.Context, id string) error
 	// DeleteTx removes a component (the full row, including whatever in-config
 	// credential reference it carries) against the caller-supplied transaction,
@@ -225,16 +231,32 @@ func (r *sqlComponentRepository) UpdateSyncStatus(ctx context.Context, id string
 	start := time.Now()
 	defer func() { r.metrics.RecordDBOperation(ctx, "components.update_sync_status", time.Since(start), err) }()
 
+	// Derive the two-state status from lastError alone, as before: a non-empty
+	// error is "error", otherwise "active". Callers needing the third "degraded"
+	// state use UpdateSyncState with an explicit status.
+	status := "active"
+	if lastError != "" {
+		status = "error"
+	}
+	return r.updateSyncState(ctx, id, syncedAt, status, lastError)
+}
+
+func (r *sqlComponentRepository) UpdateSyncState(ctx context.Context, id string, syncedAt time.Time, status, lastError string) (err error) {
+	start := time.Now()
+	defer func() { r.metrics.RecordDBOperation(ctx, "components.update_sync_state", time.Since(start), err) }()
+	return r.updateSyncState(ctx, id, syncedAt, status, lastError)
+}
+
+// updateSyncState is the shared write body for UpdateSyncStatus (derived status)
+// and UpdateSyncState (explicit status), so the single UPDATE and its column
+// list cannot drift between the two entry points.
+func (r *sqlComponentRepository) updateSyncState(ctx context.Context, id string, syncedAt time.Time, status, lastError string) error {
 	query := Rebind(r.driver, `
 		UPDATE components
 		SET last_sync_at = ?, last_error = ?, status = ?, updated_at = ?
 		WHERE id = ?
 	`)
-	status := "active"
-	if lastError != "" {
-		status = "error"
-	}
-	_, err = r.db.ExecContext(ctx, query, syncedAt, lastError, status, time.Now(), id)
+	_, err := r.db.ExecContext(ctx, query, syncedAt, lastError, status, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("update sync status: %w", err)
 	}

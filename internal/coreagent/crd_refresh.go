@@ -9,6 +9,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters/k8s"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/store"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -81,33 +82,55 @@ var crdRefreshSpecs = []crdRefreshSpec{
 }
 
 // refreshK8sCRDs discovers CRD-based resources from a K8s source and returns
-// the nodes and edges to add to the graph. It is called by refreshK8sComponent
-// after the core resource refresh completes.
+// the nodes and edges to add to the graph, plus the set of CRD types skipped
+// because the credential could not list them (forbidden). It is called by
+// refreshK8sComponent after the core resource refresh completes.
 //
-// Errors from individual CRD list calls are logged and skipped — missing CRDs
-// are expected in clusters that don't have those operators installed.
-func (r *Refresher) refreshK8sCRDs(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) ([]graph.Node, []graph.Edge) {
+// A forbidden CRD list is DEGRADATION (surfaced as a skip); an uninstalled CRD
+// (not-found) is a silent Debug skip — an operator absence, not a permission
+// gap; any other list error keeps the existing tolerant Debug skip and never
+// aborts the refresh (a CRD transport blip must not fail the whole tick).
+func (r *Refresher) refreshK8sCRDs(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter) ([]graph.Node, []graph.Edge, []resourceSkip) {
 	now := time.Now()
 	var nodes []graph.Node
 	var edges []graph.Edge
+	var skips []resourceSkip
 
 	for _, spec := range crdRefreshSpecs {
-		crdNodes, crdEdges := r.refreshCRDSpec(ctx, source, adapter, spec, now)
+		crdNodes, crdEdges, crdSkip := r.refreshCRDSpec(ctx, source, adapter, spec, now)
 		nodes = append(nodes, crdNodes...)
 		edges = append(edges, crdEdges...)
+		if crdSkip != nil {
+			skips = append(skips, *crdSkip)
+		}
 	}
 
-	return nodes, edges
+	return nodes, edges, skips
 }
 
 // refreshCRDSpec discovers one CRD resource type, creates graph nodes, and
-// attempts to build edges to matching workload/service nodes.
-func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter, spec crdRefreshSpec, now time.Time) ([]graph.Node, []graph.Edge) {
+// attempts to build edges to matching workload/service nodes. It returns a
+// non-nil skip only when the list was forbidden (degradation); every other
+// error path returns a nil skip and a Debug log, unchanged.
+func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Component, adapter k8s.KubernetesAdapter, spec crdRefreshSpec, now time.Time) ([]graph.Node, []graph.Edge, *resourceSkip) {
 	items, err := adapter.ListResources(ctx, spec.Resource, "")
 	if err != nil {
-		// CRD not installed in this cluster — not an error condition.
-		r.logger.Debug("crd not available (skipping)", "resource", spec.Resource, "component_id", source.ID, "error", err)
-		return nil, nil
+		switch {
+		case apierrors.IsForbidden(err):
+			// The credential may not list this CRD type — degradation, not an
+			// operator absence. Record a skip keyed by the CRD short name.
+			r.logger.Debug("crd list forbidden (degraded)", "resource", spec.Resource, "component_id", source.ID)
+			return nil, nil, &resourceSkip{Type: crdShortName(spec.Resource), Reason: forbiddenSkipReason}
+		case apierrors.IsNotFound(err):
+			// CRD not installed in this cluster — expected, silent, not degradation.
+			r.logger.Debug("crd not installed (skipping)", "resource", spec.Resource, "component_id", source.ID)
+			return nil, nil, nil
+		default:
+			// Any other error (transport blip, GVR resolution) — tolerant Debug
+			// skip, unchanged; never aborts the refresh.
+			r.logger.Debug("crd not available (skipping)", "resource", spec.Resource, "component_id", source.ID, "error", err)
+			return nil, nil, nil
+		}
 	}
 
 	var nodes []graph.Node
@@ -168,7 +191,7 @@ func (r *Refresher) refreshCRDSpec(ctx context.Context, source *store.Component,
 		}
 	}
 
-	return nodes, edges
+	return nodes, edges, nil
 }
 
 // resolveCRDTarget extracts the target name from a CRD object.

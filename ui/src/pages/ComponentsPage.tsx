@@ -357,7 +357,13 @@ export function ComponentsPage() {
                 </div>
               </div>
               {selectedLive.last_error && (
-                <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                <p
+                  className={
+                    selectedLive.status === 'degraded'
+                      ? 'rounded bg-yellow-500/10 px-2 py-1 text-xs text-yellow-700 dark:text-yellow-500'
+                      : 'rounded bg-destructive/10 px-2 py-1 text-xs text-destructive'
+                  }
+                >
                   {selectedLive.last_error}
                 </p>
               )}

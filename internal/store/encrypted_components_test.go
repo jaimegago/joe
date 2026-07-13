@@ -83,6 +83,15 @@ func (m *mockComponentRepo) UpdateSyncStatus(_ context.Context, id string, synce
 	return nil
 }
 
+func (m *mockComponentRepo) UpdateSyncState(_ context.Context, id string, syncedAt time.Time, status, lastError string) error {
+	if s, ok := m.components[id]; ok {
+		s.LastSyncAt = &syncedAt
+		s.Status = status
+		s.LastError = lastError
+	}
+	return nil
+}
+
 func (m *mockComponentRepo) Delete(_ context.Context, id string) error {
 	delete(m.components, id)
 	return nil
@@ -521,6 +530,9 @@ func (e *errorComponentRepo) UpdateConfigTx(_ context.Context, _ *sql.Tx, _ stri
 }
 func (e *errorComponentRepo) UpdateSyncStatus(_ context.Context, _ string, _ time.Time, _ string) error {
 	return fmt.Errorf("inner update-sync error")
+}
+func (e *errorComponentRepo) UpdateSyncState(_ context.Context, _ string, _ time.Time, _, _ string) error {
+	return fmt.Errorf("inner update-sync-state error")
 }
 func (e *errorComponentRepo) Delete(_ context.Context, _ string) error {
 	return fmt.Errorf("inner delete error")

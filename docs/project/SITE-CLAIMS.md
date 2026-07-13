@@ -351,3 +351,36 @@ test(s)** · **binding note** (where applicable).
   expected to flip the moment the `v0.1.0` tag is pushed and cut (`release-pipeline-02`,
   `docs/backlog/release-pipeline.md`) — revise this entry and the Install and Build page's
   copy at that point; reaching that trigger is the cue to revise, not drift.
+
+---
+
+## Guides — `/guides/register-kubernetes/`
+
+### The graph records only secret key names and object metadata, never secret values
+
+- **Claim.** Even when Joe is granted `list` on secrets, the graph records only each secret's
+  **key names** and object metadata (name, namespace, labels) — it **never** records secret
+  values.
+- **Mechanism.** The kubernetes metadata builder extracts only the data map's KEY NAMES for a
+  secret node (`buildK8sMetadata` in `internal/coreagent/k8s_refresh.go`, secret case →
+  `data_keys` via `mapKeys`); the value bytes are never copied into the node, and no `data` map
+  is stored.
+- **Pinning tests.** `TestSecretNodeMetadataOnlyKeyNames`.
+
+### Joe works with the built-in `view` role; missing list permission degrades, it does not fail
+
+- **Claim.** Joe works with Kubernetes' built-in read-only `view` ClusterRole. With `view` the
+  graph populates fully except secret nodes (which `view` excludes), and the component shows a
+  **degraded** status naming what was skipped rather than failing the refresh. Granting `list`
+  on secrets completes the graph. The secrets grant is an explicit opt-in, not a requirement.
+- **Mechanism.** The kubernetes refresher degrades per-resource-type on a **forbidden** list
+  error only — it records a skip and continues instead of aborting, then writes status
+  `degraded` with a summary; a non-forbidden error still aborts (`refreshK8sComponent` +
+  `summarizeSkips` in `internal/coreagent/k8s_refresh.go`, forbidden detection via the
+  apimachinery typed-error helper through error unwrapping; the third `degraded` status written
+  via `store.UpdateSyncState`). D-0093.
+- **Pinning tests.** `TestRefreshK8sComponent_ForbiddenSkipsAndContinues`,
+  `TestRefreshK8sComponent_NonForbiddenAborts`,
+  `TestRefreshComponent_DegradedStatusWrittenAndCleared`, `TestRefreshCRDSpec_ForbiddenVsMissing`.
+- **Binding note.** The specific excluded-by-`view` set is described as a delta from the `view`
+  role, not enumerated (D-0032); the copy points at `view` rather than listing resource types.
