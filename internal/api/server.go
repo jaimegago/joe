@@ -272,7 +272,7 @@ func (h *alertingHandler) handleGrafanaAlerts(w http.ResponseWriter, r *http.Req
 // PARKED (D-0081): this function is retained but no longer called from
 // RegisterRoutes — the clarifications HTTP surface is unregistered for launch.
 // Re-enabling is restoring the call site in RegisterRoutes.
-func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) {
+func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) { //nolint:unused // PARKED (D-0081): retained, re-enabled by restoring the call site in RegisterRoutes
 	if s.services.Store == nil {
 		return
 	}
@@ -292,7 +292,7 @@ func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) 
 // unregistered for launch. The autonomous Refresher is launched from
 // Agent.Start and does not depend on the /refresh route. Re-enabling is
 // restoring the call site in RegisterRoutes.
-func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) {
+func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) { //nolint:unused // PARKED (D-0081): retained, re-enabled by restoring the call site in RegisterRoutes
 	mux.HandleFunc(fmt.Sprintf("POST %s/onboarding", prefix), s.handleOnboarding)
 	mux.HandleFunc(fmt.Sprintf("POST %s/refresh", prefix), s.handleRefresh)
 }
@@ -439,7 +439,7 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildinfo.Get())
 }
 
-func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) { //nolint:unused // PARKED (D-0081): reachable only via registerControlRoutes, whose call site is parked
 	if s.services.Agent == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
 		return
@@ -472,7 +472,7 @@ func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) { //nolint:unused // PARKED (D-0081): reachable only via registerControlRoutes, whose call site is parked
 	if s.services.Agent == nil {
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
 		return
