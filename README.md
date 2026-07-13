@@ -182,6 +182,12 @@ See [CLAUDE.md](CLAUDE.md) for repo conventions and [test/README.md](test/README
 
 ---
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, testing expectations, and the safety invariants a PR must not violate.
+
+---
+
 ## Documentation
 
 | Doc | What it covers |
