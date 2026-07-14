@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRegime } from '@/hooks/useRegime';
+import { useDeclareAffordanceClaimed } from './declareAffordance';
 
 // DeclareIncidentButton is the §12.10 GLOBAL declare-incident control: it lives in
 // top-level chrome (the sidebar) and is always reachable. Triggered outside a
@@ -12,10 +13,19 @@ import { useRegime } from '@/hooks/useRegime';
 // sessions area / chat view. While an incident is already active there is nothing
 // to declare (single global regime), so the control hides — the IncidentBanner
 // carries the active-incident state instead.
+//
+// It ALSO hides while the view in front of the user already offers its own declare
+// affordance for the session in view (the chat-view promote-in-place control), which
+// otherwise puts two "Declare incident" buttons on screen at once — most visibly on
+// a fresh chat (session fix-duplicate-declare-incident). "Always reachable" is
+// preserved: the control only stands down when an equivalent, more specific one is
+// on screen, and it returns the instant that one goes away.
 export function DeclareIncidentButton() {
   const navigate = useNavigate();
   const { data: regime } = useRegime();
+  const inViewAffordanceShown = useDeclareAffordanceClaimed();
   if (regime?.mode === 'incident') return null;
+  if (inViewAffordanceShown) return null;
 
   return (
     <Button

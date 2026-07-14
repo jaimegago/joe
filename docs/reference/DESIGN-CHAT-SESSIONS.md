@@ -718,7 +718,13 @@ These are recorded as deltas to be resolved in the diff/convergence layer, **not
     create-empty-then-promote**. A secondary **promote-this-session-to-incident**
     affordance lives in the **chat view**. Both resolve to the **promote-in-place**
     transition (§12.3). The incident regime and **captain banner** is **reused, not
-    rebuilt**.
+    rebuilt**. *(Amended 2026-07-14, session `fix-duplicate-declare-incident`.)* The two
+    entry points are **never on screen at the same time**: while the chat view is
+    offering its own declare affordance for the session in view, the global control
+    **stands down**, returning the moment that affordance goes away. Both entry points
+    are retained and unchanged — this is a visibility rule only, so the user is never
+    shown two "Declare incident" buttons at once (the common case being a fresh chat,
+    which is an owned, unlinked, default session under a normal regime).
 - **Admin surface.**
   - A **sessions console** alongside the existing component-governance admin pages.
   - A **cross-tenant list** filterable by **principal, type, and state**.

@@ -20,6 +20,7 @@ import { updateSessionTitle, linkSessionToIncident, promoteSessionToIncident } f
 import { resolveIncident, advanceIncidentState, type IncidentWorkState } from '@/api/regime';
 import { ApiRequestError } from '@/api/client';
 import { incidentAffordance } from '@/lib/incidentAffordance';
+import { useClaimDeclareAffordance } from '@/components/incident/declareAffordance';
 import { QUERY_KEYS } from '@/lib/queryKeys';
 import { Link } from 'react-router-dom';
 import {
@@ -167,6 +168,14 @@ export function ChatPage() {
   // only on the ACTIVE incident master ('manage') — a resolved master is terminal.
   const isCaptain = regime?.declaredByPrincipal != null && regime.declaredByPrincipal === principal;
   const canManageIncident = affordance?.kind === 'manage' && (isCaptain || isAdmin);
+
+  // The chat view's own declare affordance (row 1, rendered in the header below).
+  // While it is up it CLAIMS the declare slot, so the sidebar's global declare
+  // control stands down and the user sees exactly one "Declare incident" button
+  // (session fix-duplicate-declare-incident). The condition here and the render
+  // condition below are the same expression on purpose — they must not drift.
+  const showChatDeclare = isOwner && affordance?.kind === 'declare' && activeSessionId != null;
+  useClaimDeclareAffordance(showChatDeclare);
 
   // Each mutation takes the id to act on as a variable (captured at click time)
   // and, on success, hands the full response to applyUpdate, which writes it to
@@ -464,7 +473,7 @@ export function ChatPage() {
                 {/* Row 1: declare a fresh incident on this unlinked default session.
                     Only when the global regime is normal — never on an incident-type
                     session, so a resolved master no longer offers it (defects 1, 5). */}
-                {affordance?.kind === 'declare' && activeSessionId && (
+                {showChatDeclare && activeSessionId && (
                   <Button
                     variant="outline"
                     size="sm"
