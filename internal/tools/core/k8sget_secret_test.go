@@ -5,15 +5,21 @@ import (
 	"testing"
 )
 
-// mockK8sGetClient implements K8sGetClient for testing.
+// mockK8sGetClient implements K8sGetClient for testing. getCalls/listCalls
+// record invocations so a test can assert the tool short-circuited before
+// reaching the client.
 type mockK8sGetClient struct {
 	getResult  map[string]any
 	listResult []map[string]any
 	getErr     error
 	listErr    error
+
+	getCalls  int
+	listCalls int
 }
 
 func (m *mockK8sGetClient) K8sGetResource(_ context.Context, _, _, _, _ string) (map[string]any, error) {
+	m.getCalls++
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
@@ -21,6 +27,7 @@ func (m *mockK8sGetClient) K8sGetResource(_ context.Context, _, _, _, _ string) 
 }
 
 func (m *mockK8sGetClient) K8sListResources(_ context.Context, _, _, _ string) ([]map[string]any, error) {
+	m.listCalls++
 	if m.listErr != nil {
 		return nil, m.listErr
 	}

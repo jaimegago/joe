@@ -451,6 +451,7 @@ func TestK8sGetTool(t *testing.T) {
 		res, err := tool.Execute(context.Background(), map[string]any{
 			"component_id": "k8s-1",
 			"resource":     "pods",
+			"namespace":    "default",
 			"name":         "pod-1",
 		})
 		if err != nil {
