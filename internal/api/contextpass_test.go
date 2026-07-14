@@ -128,14 +128,20 @@ func TestBuildTaskRun_ContextBudgetLiveAdjustable(t *testing.T) {
 	}
 }
 
-// finalScriptLLM emits a scripted sequence of responses, ignoring input.
+// finalScriptLLM emits a scripted sequence of responses, ignoring input. Once
+// the script is exhausted it repeats the last response rather than running off
+// the end: a no-tool-call response costs one EXTRA Chat call, because the loop
+// probes it for an unfulfilled tool intent before accepting it as final (see
+// agentloop.probeUnfulfilledToolIntent). Every script here ends on a text-only
+// response, so repeating it models the probe faithfully — asked again, the model
+// still calls no tool, and the loop keeps the original answer.
 type finalScriptLLM struct {
 	responses []*llm.ChatResponse
 	i         int
 }
 
 func (s *finalScriptLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
-	r := s.responses[s.i]
+	r := s.responses[min(s.i, len(s.responses)-1)]
 	s.i++
 	return r, nil
 }

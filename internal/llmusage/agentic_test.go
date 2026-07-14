@@ -12,9 +12,15 @@ import (
 )
 
 // TestAgenticLoop_RecordsOnePerChatCall drives the real agentloop.Agent
-// with the recorder wrapping a scripted inner adapter. The loop runs to
-// a no-tool-call terminal response, so there's exactly one Chat call,
-// and we assert the row contains the principal, model, separated token
+// with the recorder wrapping a scripted inner adapter. The invariant under
+// test is one usage row per Chat call — the loop's call COUNT is not the
+// subject and is asserted against the adapter's own counter, because a
+// no-tool-call response now costs a second Chat call: the loop probes it for
+// an unfulfilled tool intent before accepting it as final (see
+// agentloop.probeUnfulfilledToolIntent). That probe is real spend and must be
+// billed like any other call, which is exactly what this test pins.
+//
+// We assert the row contains the principal, model, separated token
 // counts, configured currency, and the session AND task ids threaded
 // through context — matching how the production /tasks handler wires
 // things up at tasks.go:165.
@@ -49,8 +55,11 @@ func TestAgenticLoop_RecordsOnePerChatCall(t *testing.T) {
 	}
 
 	rows := repo.snapshot()
-	if len(rows) != 1 {
-		t.Fatalf("expected exactly 1 usage row per Chat call, got %d", len(rows))
+	if len(rows) != inner.chatCalls {
+		t.Fatalf("expected exactly 1 usage row per Chat call: %d Chat calls, %d rows", inner.chatCalls, len(rows))
+	}
+	if len(rows) == 0 {
+		t.Fatal("expected at least one usage row")
 	}
 	got := rows[0]
 	if got.Principal != "user:alice" {

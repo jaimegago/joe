@@ -14,6 +14,10 @@ type mockLLM struct {
 	responses []*llm.ChatResponse
 	callCount int
 	lastReq   *llm.ChatRequest
+	// onChat, when set, runs after each Chat call is served. It lets a test
+	// change the world mid-run (e.g. cancel the context) between the loop's
+	// calls.
+	onChat func()
 }
 
 func (m *mockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
@@ -25,6 +29,9 @@ func (m *mockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 
 	resp := m.responses[m.callCount]
 	m.callCount++
+	if m.onChat != nil {
+		m.onChat()
+	}
 	return resp, nil
 }
 

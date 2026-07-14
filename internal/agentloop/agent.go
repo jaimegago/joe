@@ -260,6 +260,23 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				ceiling, session.TotalTokens, ErrSessionTokenCeiling)
 		}
 
+		// A response with no tool calls is the loop's completion signal — but it
+		// is NOT self-evidently a final answer. A model can narrate the tool call
+		// it is about to make and then omit the call itself (reproduced on
+		// gemini-2.5-flash at roughly one turn in six). Taken at face value that
+		// narration ends the turn as a success, which surfaces to the user as Joe
+		// announcing a step and then silently stopping — no answer, no error.
+		//
+		// Probe once to disambiguate: a model that meant to act gets a chance to
+		// act, and the loop carries on with the narration preserved as the
+		// assistant's message. A model that is genuinely done falls through to the
+		// completion path below with its answer untouched.
+		if len(resp.ToolCalls) == 0 {
+			if recovered := a.probeUnfulfilledToolIntent(ctx, session, resp.Content); len(recovered) > 0 {
+				resp.ToolCalls = recovered
+			}
+		}
+
 		// If no tool calls, we have the final response
 		if len(resp.ToolCalls) == 0 {
 			// Add assistant's final response to history
@@ -383,6 +400,69 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 	// Wrap ErrMaxIterations so downstream code can errors.Is the typed
 	// sentinel while log readers still see the existing descriptive text.
 	return "", fmt.Errorf("max iterations (%d) reached without final response: %w", a.maxIterations, ErrMaxIterations)
+}
+
+// probeUnfulfilledToolIntent resolves the ambiguity in a response that carries
+// no tool calls: is it a final answer, or did the model narrate a tool call it
+// forgot to emit? (Session: silent-tool-intent-dead-end.) The loop's completion
+// signal is "no tool calls", so an unfulfilled intent is otherwise indistinguishable
+// from a finished turn — it ends the run as a success carrying the narration as
+// the answer, which is what the user sees as Joe stopping mid-investigation with
+// no message and no error.
+//
+// The probe replays the turn with the model's own text appended and a single
+// user-role instruction (prompts.UnfulfilledToolIntentProbe) asking it to make
+// the call it described, or to reply DONE if it is genuinely finished. Tools ARE
+// offered — that is the whole point, the model must be able to act.
+//
+// Only TOOL CALLS are harvested. The probe's text is discarded, never returned
+// and never written to history, so a genuine final answer reaches the user
+// exactly as the model first wrote it — the probe cannot reword, shorten, or
+// degrade a good answer, and the worst case for a finished turn is one cheap
+// DONE round-trip. The probe message itself is built on a LOCAL copy of the
+// history and is never persisted, so the conversation never carries a synthetic
+// user turn the user did not send; on recovery the caller writes back a single
+// coherent assistant message (the narration + the recovered calls), which is the
+// turn the model meant to produce in the first place.
+//
+// Errors are non-fatal: a failed probe returns no tool calls and the caller
+// treats the response as final, which is exactly the pre-probe behaviour.
+func (a *Agent) probeUnfulfilledToolIntent(ctx context.Context, session *Session, content string) []llm.ToolCall {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
+	messages := make([]llm.Message, len(session.Messages), len(session.Messages)+2)
+	copy(messages, session.Messages)
+	// An empty-content response has no assistant turn to replay — providers
+	// reject a contentless assistant message — but it is still a silent stop
+	// worth probing, so only the probe instruction is appended.
+	if content != "" {
+		messages = append(messages, llm.Message{Role: "assistant", Content: content})
+	}
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: prompts.UnfulfilledToolIntentProbe,
+	})
+
+	a.mu.RLock()
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		SystemPrompt: a.systemPrompt,
+		Messages:     messages,
+		Tools:        a.registry.ToDefinitions(),
+		MaxTokens:    a.maxOutputTokens,
+	})
+	a.mu.RUnlock()
+	if err != nil {
+		return nil
+	}
+
+	// Real spend, even when the probe confirms the turn was already finished.
+	session.AddTokenUsage(ctx, resp.Usage)
+
+	return resp.ToolCalls
 }
 
 // synthesizeFinalAnswer makes one forced-synthesis Chat call after the

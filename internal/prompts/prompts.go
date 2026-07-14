@@ -40,6 +40,37 @@ Be explicit about the boundary of your knowledge:
 
 Answer directly and concisely.`
 
+// UnfulfilledToolIntentProbe is the instruction appended as a final user-role
+// message on the probe Chat call the agentic loop makes when a response carries
+// text but no tool calls (Session: silent-tool-intent-dead-end). Some models —
+// gemini-2.5-flash reproducibly, in roughly one turn in six — narrate the tool
+// call they are about to make ("I'll start by listing the pods…") and then omit
+// the tool call itself. A loop that reads "no tool calls" as "final answer"
+// accepts that narration as the answer and ends the turn, which reads to the
+// user as Joe stopping mid-investigation with no error.
+//
+// The probe asks the model to disambiguate the turn it just produced. Tool calls
+// are offered, so a model that meant to act can simply act. A model that is
+// genuinely finished replies DONE — a one-word reply that keeps the probe's
+// output cost near zero. The probe's TEXT is never shown to the user or written
+// to history: only a returned tool call is acted on, so a true final answer is
+// preserved verbatim as the model first wrote it.
+// The wording is deliberately CONSERVATIVE, and measurably so. An earlier,
+// pushier draft ("if it described a tool call, make it now; otherwise reply
+// DONE") recovered the narration reliably but also talked a genuinely finished
+// model into a fresh tool call on 4 of 15 finished turns — it read "you did not
+// call a tool" as a nudge to go do more work, which would discard a completed
+// answer and re-derive it. So the probe now (a) frames the ONLY valid reason to
+// act as a promise the model already made, (b) forbids opening any new line of
+// investigation, and (c) makes DONE the explicit default under uncertainty.
+const UnfulfilledToolIntentProbe = `Your previous message did not call any tool. Exactly one of the following is true — decide which, and respond accordingly.
+
+1. Your previous message announced, described, or promised a tool call that you then did not actually make. If so, make exactly that tool call now.
+
+2. Your previous message promised no tool call — it was your final answer, a question to the user, or any other reply that stands on its own. If so, respond with the single word DONE and nothing else.
+
+Do not open any new line of investigation. Do not call a tool merely because further investigation is possible, or because you could answer more thoroughly — case 1 covers only a call your previous message already committed to making. If you are unsure which case applies, respond DONE.`
+
 // ChatTitleSystem instructs the model to distil a chat's opening message into a
 // short title. Used by the async title upgrade (DESIGN-CHAT-SESSIONS.md §11
 // Phase 2) that replaces the immediate first-words heuristic. The constraints

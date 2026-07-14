@@ -10,6 +10,51 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0103 — a tool-call-free response is probed for an unfulfilled tool intent before the loop accepts it as the final answer
+
+- Date: 2026-07-14
+- Session: silent-tool-intent-dead-end
+- Decision: the agentic loop's completion signal is "the model returned no tool
+  calls" (`internal/agentloop/agent.go`), and that signal is **ambiguous**: a model
+  can narrate the tool call it is about to make and then omit the call itself. Read
+  literally, the narration ends the run as a **success** carrying the narration as
+  the answer — the user sees Joe announce a step and stop, with no answer, no error,
+  and `status=completed iterations=2` in the log. `Agent.Run` now **probes** a
+  tool-call-free response before accepting it: one Chat call replaying the model's
+  own text plus a single user-role instruction (`prompts.UnfulfilledToolIntentProbe`)
+  asking it to make the call it promised, or to reply `DONE` if it is genuinely
+  finished. **Tools ARE offered** — a model that cannot call one cannot fulfil its
+  intent. **Only tool calls are harvested**: the probe's text is discarded, never
+  returned and never persisted, so a genuine final answer reaches the user exactly as
+  first written and the probe cannot reword or degrade it. On recovery the loop writes
+  back **one coherent assistant message** carrying the narration AND the recovered
+  calls — the turn the model meant to produce — and the probe's instruction is built
+  on a local copy of history so the conversation never carries a synthetic user turn.
+  A failed probe is **non-fatal** (falls back to the pre-probe behaviour: accept as
+  final). The probe is **provider-agnostic** (it lives in the loop, not an adapter)
+  and costs **exactly one extra Chat call per turn**, billed like any other call.
+- Basis: reproduced against the live model through Joe's own adapter with the real
+  registry (82 tools) and real system prompt, replaying the reported session's turn-2
+  state: `gemini-2.5-flash` narrates instead of calling on **4-5 of 25** turns
+  (~16-20%), input tokens 13,135 vs the reported session's 13,085. Two candidate root
+  causes were tested and **refuted**: the adapter's one-`genai.Tool`-per-declaration
+  payload shape (per-tool 4/25 prose vs merged 5/25 — no difference) and the
+  4096-token output cap interacting with 2.5-flash thinking (thinking measured at
+  ~100-225 tokens, finish reason `STOP`, never `MAX_TOKENS`). The probe's wording is
+  **empirically tuned, not asserted**: a first, pushier draft recovered the narration
+  but talked a genuinely finished model into a fresh tool call on **4 of 15** finished
+  turns, which would discard a completed answer and re-derive it. The shipped wording
+  — act only on a promise already made, open no new line of investigation, `DONE` when
+  unsure — measures **30/30 recovery, 0/30 spurious** across two runs. Verified live
+  end-to-end against the running daemon: six real task requests, exactly one probe per
+  turn, one mid-run recovery (run 3), and a clarifying-question turn correctly left
+  alone.
+- Supersedes: nothing. Complements D-0100 (iteration-cap forced synthesis): both make
+  a loop exit that used to lose the turn produce an answer instead.
+- Status: accepted, implemented.
+
+---
+
 ## D-0102 — `k8s_get` rejects a by-name get with an empty namespace up front; the unfulfillable call fails loudly and instructively rather than falling back to a list
 
 - Date: 2026-07-14
