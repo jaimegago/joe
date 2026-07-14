@@ -10,6 +10,36 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0104 — the five per-tool "read-only" description strings surveyed by the posture-prompt-conflation sweep are left unchanged
+
+- Date: 2026-07-14
+- Session: posture-prompt-conflation-02
+- Decision: item (b) of `docs/backlog/posture-prompt-conflation.md` asked whether
+  the per-tool "read-only" capability strings should be reworded so they cannot be
+  misread as a system-wide posture statement. Resolved no. Each string is a
+  capability statement about the individual tool, attached exclusively to
+  Read-classified tools, and cannot express or imply a system-wide posture;
+  rewording would trade precise capability descriptions for vaguer ones against a
+  conflation path that does not exist. The observation posture string (D-0101) now
+  explicitly owns the reads-are-unaffected boundary, so there is no gap for these
+  strings to fill. No code changes. Surveyed locations (re-verified live at this
+  session):
+  `internal/tools/core/postgres_stat.go:79`, `internal/tools/core/mysql_stat.go:79`,
+  `internal/tools/shared/httpreq/httpreq.go:80`,
+  `internal/tools/shared/httpreq/httpreq.go:93`,
+  `internal/tools/shared/websearch/websearch.go:40`.
+- Basis: re-read of the five cited strings against the live tree confirms each
+  describes only the tool's own permitted operations (which SQL statement kinds,
+  which HTTP methods, that search never fetches page bodies) and none references
+  observation mode, the write floor, or an inability to make changes — the
+  Phase-1 sweep recorded in the backlog file already established this. Item (b)
+  is closed by this entry rather than by code.
+- Supersedes: nothing. Closes the sweep leg of D-0101's axis; item (a) (OASIS
+  behavioral pinning) remains open in `docs/backlog/posture-prompt-conflation.md`.
+- Status: accepted, no implementation required.
+
+---
+
 ## D-0103 — a tool-call-free response is probed for an unfulfilled tool intent before the loop accepts it as the final answer
 
 - Date: 2026-07-14
