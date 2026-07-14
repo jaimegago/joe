@@ -1,11 +1,7 @@
 import { Eye } from 'lucide-react';
 import { useMutateStatus } from '@/hooks/useMutateStatus';
 
-// OBSERVATION_DOCS_URL points at the published Joe docs site (joeagent.dev).
-// There is no dedicated, deep-linked observation-mode page yet, so this targets
-// the site root — update it to the canonical observation-mode docs path once one
-// is published, but never a dead placeholder domain.
-const OBSERVATION_DOCS_URL = 'https://joeagent.dev/';
+const OBSERVATION_DOCS_URL = 'https://joeagent.dev/docs/concepts/observation-mode-and-the-write-floor/';
 
 // ObservationBanner is the app-shell-wide observation-mode indicator, the
 // write-floor counterpart to SafeModeBanner and IncidentBanner. It reads
