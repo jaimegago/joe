@@ -47,6 +47,7 @@ file for the full status, priority, blocked-by, and body.
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open |  |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |  |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open |  |
+| [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open |  |
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open |  |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open |  |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open |  |

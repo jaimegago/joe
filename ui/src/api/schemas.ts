@@ -223,6 +223,11 @@ export const ChatMessageSchema = z.object({
   tool_args: z.record(z.string(), z.unknown()).optional(),
   created_at: z.string(),
   toolCalls: z.array(ToolCallSchema).optional(),
+  // stop_reason mirrors the persisted assistant-message marker (currently only
+  // 'max_iterations', loop-budget-exhaustion) so a reloaded session renders the
+  // same truncation notice the live turn showed. Absent for user messages and
+  // normally-completed turns.
+  stop_reason: z.string().optional(),
 });
 
 export const SessionSchema = z.object({

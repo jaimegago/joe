@@ -10,6 +10,137 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0100 — Loop-budget exhaustion no longer hard-fails: the agentic loop makes one forced-synthesis call before returning ErrMaxIterations
+
+- Date: 2026-07-14
+- Session: loop-budget-exhaustion
+- Decision: when `Agent.Run` (`internal/agentloop/agent.go`) exhausts its iteration
+  budget without the model producing a tool-call-free answer, it no longer returns
+  `ErrMaxIterations` immediately. It makes **exactly one additional `Chat` call with
+  no tools offered**, reusing the accumulated session messages plus an appended
+  user-role instruction (`prompts.MaxIterationsSynthesis`) directing the model to
+  answer now from the evidence already gathered — stating explicitly what it
+  verified and what remains unverified because the step budget was reached. Content
+  extraction reuses the normal no-tool-call completion branch's logic (the raw
+  `resp.Content` string). If synthesis returns **non-empty** content the run is a
+  **success** carrying that answer; if it **errors or returns empty content** the run
+  falls through to the existing `ErrMaxIterations` return, unchanged. In-budget runs
+  are byte-identical to prior behaviour — the synthesis call happens only after the
+  loop has fully exhausted. The synthesis call is **observer-silent** (no `OnStep`),
+  so the reported iteration count still counts loop steps only, and it is built from
+  a local copy of the message slice writing nothing back into session history, so the
+  turn's pruning/truncation counters are unperturbed; its token usage IS recorded.
+- Basis: `internal/agentloop/agent.go` (post-loop synthesis seam + `synthesizeFinalAnswer`),
+  `internal/prompts/prompts.go` (`MaxIterationsSynthesis`), `TestMaxIterations_ForcedSynthesisSucceeds` /
+  `TestMaxIterations_SynthesisFailureFallsThrough` (`internal/agentloop/synthesis_test.go`),
+  `TestTaskEndpoint_MaxIterations_ForcedSynthesisCompletes` (`internal/api/tasks_test.go`).
+- Supersedes: the prior unconditional hard-fail at the loop's iteration cap. The
+  `ErrMaxIterations` sentinel and its `taskStatus` classification are retained for the
+  synthesis-failure path (see D-0098).
+- Status: accepted.
+
+---
+
+## D-0099 — A successful forced synthesis completes; an additive `stop_reason` field carries the truncation marker across the wire and into storage
+
+- Date: 2026-07-14
+- Session: loop-budget-exhaustion
+- Decision: a run that answers via forced synthesis (D-0100) reports terminal status
+  **`completed`**, not `max_iterations_reached`. A new **`stop_reason`** field —
+  additive, `omitempty`, a short string enum whose first value is **`max_iterations`**
+  — is introduced generically so the token-ceiling and context-overflow paths can
+  adopt sibling values later. It is surfaced on the non-streaming task response and
+  the SSE final event (`taskResponse.StopReason` in `internal/api/tasks.go`,
+  `stop_reason` in `FinalEventSchema`), carried off the session via
+  `Session.StopReason()` (`internal/agentloop/session.go`, set only on the synthesis
+  path), and **persisted on the assistant `chat_messages` row** via migration 030
+  (`stop_reason TEXT`, nullable). The persistence chain threads through
+  `sessionmodel.ChatMessage` (struct + `AddChatMessage` INSERT + `ListChatMessages`
+  SELECT/Scan + `InsertChatMessageTx` archive-restore), `persistTaskMessages`,
+  `webUIMessage`/`messageToWebUI`, `ChatMessageSchema`, and `historyToItems`, so a
+  reloaded session can still render the truncation marker. `max_iterations_reached`
+  remains a terminal **status** only for the synthesis-failure path.
+- Basis: `internal/store/migrations/030_chat_message_stop_reason.up.sql`,
+  `internal/sessionmodel/{types.go,repository.go,lifecycle.go}`,
+  `internal/api/{tasks.go,tasks_stream.go,webui.go}`,
+  `ui/src/api/{taskStream.ts,schemas.ts}`, `ui/src/hooks/useChat.ts`.
+- Supersedes: nothing; additive to the task response, SSE final event, and
+  `chat_messages` schema. No audit-schema migration is needed — see D-0097.
+- Status: accepted.
+
+---
+
+## D-0098 — The UI renders an amber truncation notice for a completed max_iterations turn, distinct from the red failure banner
+
+- Date: 2026-07-14
+- Session: loop-budget-exhaustion
+- Decision: when a **completed** turn carries `stop_reason` `max_iterations`,
+  `AssistantTurnView` renders a visible **amber/warning** truncation notice
+  (`data-testid="max-iterations-notice"`, reusing the existing amber write-failure
+  notice styling) below the answer, stating the step budget was reached and the answer
+  synthesizes the evidence gathered so far. This is deliberately distinct from the
+  **destructive red failure banner**, which stays exactly as-is and is reserved for
+  the `max_iterations_reached` **status** (the synthesis-failure path). The marker is
+  set on both a live turn (from the SSE final event's `stop_reason`) and a reloaded
+  turn (from the persisted `chat_messages.stop_reason` via `historyToItems`).
+- Basis: `ui/src/components/chat/AssistantTurnView.tsx`, `ui/src/hooks/useChat.ts`
+  (`AssistantTurn.stopReason`, `onFinal`, `historyToItems`),
+  `ui/src/components/chat/AssistantTurnView.test.tsx`.
+- Supersedes: nothing; the red-banner path for `max_iterations_reached` is unchanged.
+- Status: accepted.
+
+---
+
+## D-0097 — Cap hits are audited: one llm_max_iterations_reached row per hit, written agentloop-side whether or not synthesis succeeds
+
+- Date: 2026-07-14
+- Session: loop-budget-exhaustion
+- Decision: a new audit action **`ActionLLMMaxIterationsReached`
+  (`llm_max_iterations_reached`)** under the existing **`KindLLMLimitTriggered`** kind
+  records each iteration-cap hit. The writer (`writeMaxIterationsAudit`) lives
+  **agentloop-side on `a.auditRepo`**, mirroring `writeRunawayAudit` exactly: same
+  nil-tolerance (no repo wired → skip silently), same **fail-open-but-loud** posture
+  via `audit.FailurePosture(..., FailOpen)`, decision `deny`. The **Reason** value is
+  **`max_iterations_exhausted`**, a sibling to `session_token_ceiling_exceeded` and
+  `context_window_exceeded`. Exactly **one row per cap hit** is written whether or not
+  synthesis succeeded; the blob records the iteration count and a `synthesized`
+  boolean. No audit-schema migration is required — the `audit_log.kind` CHECK already
+  admits `KindLLMLimitTriggered` (migration 017); the CHECK enumerates kinds, not
+  actions.
+- Basis: `internal/audit/audit.go` (`ActionLLMMaxIterationsReached`),
+  `internal/agentloop/agent.go` (`writeMaxIterationsAudit`),
+  `internal/agentloop/synthesis_test.go`, `internal/api/tasks_test.go` (audit-row
+  assertions on both the success and failure paths).
+- Supersedes: nothing; extends the LLM-limit audit family
+  (D-0097 companion to `ActionLLMRunawayTerminated` / `ActionLLMContextOverflow`).
+- Status: accepted.
+
+---
+
+## D-0096 — DefaultMaxIterations raised from 10 to 20; the duplicated resolution is consolidated; errored tool calls still count full price
+
+- Date: 2026-07-14
+- Session: loop-budget-exhaustion
+- Decision: `agentloop.DefaultMaxIterations` is raised from **10 to 20**, giving
+  multi-step investigations more room before the cap fires; per-request override via
+  `taskConfig.MaxIterations` is unchanged. With the cap no longer a hard-fail
+  (D-0100) it now bounds tool spend, not the ability to answer. The two byte-identical
+  copies of the max-iterations resolution+validation (`internal/api/tasks.go` and
+  `internal/api/tasks_stream.go`) are consolidated into a single helper
+  `resolveMaxIterations`. **Errored tool calls continue to count full price against
+  the iteration budget** — a failed tool call consumes an iteration exactly as a
+  successful one does; this is recorded as an explicit decision, with no code change
+  (the loop already increments per iteration regardless of per-tool outcome).
+- Basis: `internal/agentloop/constants.go` (`DefaultMaxIterations = 20`),
+  `internal/api/tasks.go` (`resolveMaxIterations`), `internal/api/tasks_stream.go`,
+  `internal/agentloop/agent_test.go` (cap-behaviour test pinned to an explicit cap
+  rather than the default).
+- Supersedes: the prior `DefaultMaxIterations = 10` and the duplicated inline
+  resolution in the two task handlers.
+- Status: accepted.
+
+---
+
 ## D-0095 — The backlog file convention gains two optional lines, `Priority:` and `Blocked-by:`, and INDEX.md gains a blank-when-absent Priority column; a fuller relationship model is explicitly rejected
 
 - Date: 2026-07-13

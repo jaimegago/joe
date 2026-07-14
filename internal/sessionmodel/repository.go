@@ -724,11 +724,18 @@ func (r *SQLRepository) AddChatMessage(ctx context.Context, m ChatMessage) (*Cha
 		toolArgs = *m.ToolArgs
 	}
 
+	// stop_reason (migration 030): stored NULL when empty so the column reads as
+	// "no special stop reason" for the common case and for every pre-migration row.
+	var stopReason any
+	if m.StopReason != "" {
+		stopReason = m.StopReason
+	}
+
 	if _, err := r.db.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO chat_messages
-			(id, session_id, seq, role, content, tool_name, tool_args, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
-		m.ID, m.SessionID, m.Seq, m.Role, m.Content, toolName, toolArgs,
+			(id, session_id, seq, role, content, tool_name, tool_args, stop_reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		m.ID, m.SessionID, m.Seq, m.Role, m.Content, toolName, toolArgs, stopReason,
 		m.CreatedAt.Format(time.RFC3339)); err != nil {
 		return nil, fmt.Errorf("add chat message: %w", err)
 	}
@@ -745,7 +752,7 @@ func (r *SQLRepository) AddChatMessage(ctx context.Context, m ChatMessage) (*Cha
 // ListChatMessages returns a session's messages in seq order (oldest first).
 func (r *SQLRepository) ListChatMessages(ctx context.Context, sessionID string) ([]ChatMessage, error) {
 	rows, err := r.db.QueryContext(ctx, store.Rebind(r.driver, `
-		SELECT id, session_id, seq, role, content, tool_name, tool_args, created_at
+		SELECT id, session_id, seq, role, content, tool_name, tool_args, stop_reason, created_at
 		FROM chat_messages WHERE session_id = ? ORDER BY seq`), sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("list chat messages: %w", err)
@@ -758,10 +765,11 @@ func (r *SQLRepository) ListChatMessages(ctx context.Context, sessionID string) 
 			m            ChatMessage
 			toolName     sql.NullString
 			toolArgs     sql.NullString
+			stopReason   sql.NullString
 			createdAtStr string
 		)
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.Seq, &m.Role, &m.Content,
-			&toolName, &toolArgs, &createdAtStr); err != nil {
+			&toolName, &toolArgs, &stopReason, &createdAtStr); err != nil {
 			return nil, fmt.Errorf("scan chat message: %w", err)
 		}
 		if toolName.Valid {
@@ -769,6 +777,9 @@ func (r *SQLRepository) ListChatMessages(ctx context.Context, sessionID string) 
 		}
 		if toolArgs.Valid {
 			m.ToolArgs = &toolArgs.String
+		}
+		if stopReason.Valid {
+			m.StopReason = stopReason.String
 		}
 		m.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
 		out = append(out, m)

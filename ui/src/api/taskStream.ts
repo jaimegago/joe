@@ -95,6 +95,13 @@ export const FinalEventSchema = z.object({
   // how the chat UI learns a write was refused and why. Absent when no write
   // was denied.
   error_code: z.string().optional(),
+  // stop_reason marks a COMPLETED turn that did not end on a naturally
+  // tool-call-free answer (loop-budget-exhaustion). Currently only
+  // 'max_iterations': the loop exhausted its step budget and the answer was
+  // synthesized from evidence already gathered. Additive/optional — absent on a
+  // normally-completed turn — and drives the amber truncation notice, distinct
+  // from the red failure banner reserved for the max_iterations_reached status.
+  stop_reason: z.string().optional(),
 });
 
 export type StepEvent = z.infer<typeof StepEventSchema>;

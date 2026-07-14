@@ -38,6 +38,34 @@ describe('AssistantTurnView write-failure notice', () => {
   });
 });
 
+// loop-budget-exhaustion: a COMPLETED turn whose answer was synthesized after
+// the loop hit its step budget carries stop_reason 'max_iterations' and renders
+// an amber truncation notice — distinct from the red failure banner, which is
+// reserved for the max_iterations_reached STATUS (synthesis-failure path).
+describe('AssistantTurnView max-iterations truncation notice', () => {
+  it('shows the amber notice on a completed turn with stopReason max_iterations', () => {
+    render(<AssistantTurnView turn={turn({ stopReason: 'max_iterations' })} />);
+    const notice = screen.getByTestId('max-iterations-notice');
+    expect(notice).toHaveTextContent('Joe reached its step limit for this task.');
+    // The real answer still renders — this is a completed turn, not a failure.
+    expect(screen.getByText('Here is what I found.')).toBeInTheDocument();
+  });
+
+  it('renders no truncation notice for a normally-completed turn', () => {
+    render(<AssistantTurnView turn={turn({})} />);
+    expect(screen.queryByTestId('max-iterations-notice')).not.toBeInTheDocument();
+  });
+
+  it('does not show the truncation notice on a failed turn', () => {
+    render(
+      <AssistantTurnView
+        turn={turn({ status: 'failed', stopReason: 'max_iterations', failureLabel: 'Stopped' })}
+      />
+    );
+    expect(screen.queryByTestId('max-iterations-notice')).not.toBeInTheDocument();
+  });
+});
+
 describe('AssistantTurnView context-utilization badge', () => {
   it('renders input tokens against the context window with a percentage', () => {
     render(<AssistantTurnView turn={turn({ inputTokens: 30000, contextWindow: 200000 })} />);

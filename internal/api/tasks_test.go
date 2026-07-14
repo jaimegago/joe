@@ -15,6 +15,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/agentloop"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
@@ -294,6 +295,11 @@ func setupTaskServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.Se
 		SessionModel: sessionmodel.NewRepository(sqlStore.DB(), store.DriverSQLite),
 		Adapters:     adapters.NewRegistry(),
 		LLM:          llmAdapter,
+		// Wire the real audit repository so limit-hit audit rows (e.g. the
+		// iteration-cap row, Session: loop-budget-exhaustion) are actually
+		// written and can be asserted via srv.services.Store.DB(). Additive and
+		// inert for tests that never trip a limit.
+		Audit: audit.NewRepository(sqlStore.DB(), store.DriverSQLite),
 	}
 
 	srv := New(services)
@@ -637,6 +643,132 @@ func TestTaskEndpoint_MaxIterationsLimit(t *testing.T) {
 	}
 	if resp.Iterations != maxIter {
 		t.Errorf("iterations = %d, want %d", resp.Iterations, maxIter)
+	}
+}
+
+// taskSynthLLM drives the loop to its iteration cap, then answers on the
+// tool-less forced-synthesis call. It recognises that call by its appended final
+// user message (prompts.MaxIterationsSynthesis) and returns non-empty content;
+// every in-loop call returns a tool call so the loop runs to exhaustion. This is
+// the mock shape the Phase 1 item 9 note prescribed for the success path.
+type taskSynthLLM struct{}
+
+func (t *taskSynthLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Content == prompts.MaxIterationsSynthesis {
+		return &llm.ChatResponse{
+			Content: "Synthesized answer from the evidence gathered so far.",
+			Usage:   llm.TokenUsage{InputTokens: 20, OutputTokens: 8, TotalTokens: 28},
+		}, nil
+	}
+	return &llm.ChatResponse{
+		ToolCalls: []llm.ToolCall{{ID: "tc-loop", Name: "graph_query", Args: map[string]any{"query": "loop"}}},
+		Usage:     llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+	}, nil
+}
+
+func (t *taskSynthLLM) Embed(_ context.Context, _ string) ([]float32, error) {
+	return []float32{0.1}, nil
+}
+
+// countTaskAuditRows returns the audit_log row count for an action, read from
+// the same store the server writes to (audit.Repository exposes no list method).
+func countTaskAuditRows(t *testing.T, srv *Server, action string) int {
+	t.Helper()
+	var n int
+	if err := srv.services.Store.DB().QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM audit_log WHERE action = ?", action).Scan(&n); err != nil {
+		t.Fatalf("count audit rows: %v", err)
+	}
+	return n
+}
+
+// TestTaskEndpoint_MaxIterations_ForcedSynthesisCompletes proves the
+// loop-budget-exhaustion happy path end-to-end: loop exhaustion followed by a
+// successful forced synthesis yields terminal status "completed" (NOT
+// max_iterations_reached), a persisted assistant message carrying stop_reason
+// "max_iterations", the same stop_reason on the response, an iteration count
+// equal to the cap (the synthesis call is observer-silent), and exactly one
+// llm_max_iterations_reached audit row.
+func TestTaskEndpoint_MaxIterations_ForcedSynthesisCompletes(t *testing.T) {
+	srv, mux := setupTaskServer(t, &taskSynthLLM{})
+	const maxIter = 2
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "investigate the failing service",
+		"config":  map[string]any{"max_iterations": maxIter},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Status != "completed" {
+		t.Errorf("status = %q, want completed", resp.Status)
+	}
+	if resp.StopReason != agentloop.StopReasonMaxIterations {
+		t.Errorf("stop_reason = %q, want %q", resp.StopReason, agentloop.StopReasonMaxIterations)
+	}
+	if resp.FinalAnswer == "" {
+		t.Error("expected a synthesized final answer, got empty")
+	}
+	if resp.Iterations != maxIter {
+		t.Errorf("iterations = %d, want %d (synthesis call must be observer-silent)", resp.Iterations, maxIter)
+	}
+
+	// The assistant message persisted with the truncation marker so a reload can
+	// still render the notice.
+	msgs, err := srv.services.SessionModel.ListChatMessages(context.Background(), resp.SessionID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	var assistant *sessionmodel.ChatMessage
+	for i := range msgs {
+		if msgs[i].Role == "assistant" {
+			assistant = &msgs[i]
+		}
+	}
+	if assistant == nil {
+		t.Fatal("no assistant message persisted")
+	}
+	if assistant.Content == "" {
+		t.Error("persisted assistant message content is empty")
+	}
+	if assistant.StopReason != agentloop.StopReasonMaxIterations {
+		t.Errorf("persisted stop_reason = %q, want %q", assistant.StopReason, agentloop.StopReasonMaxIterations)
+	}
+
+	if n := countTaskAuditRows(t, srv, audit.ActionLLMMaxIterationsReached); n != 1 {
+		t.Errorf("llm_max_iterations_reached audit rows = %d, want 1", n)
+	}
+}
+
+// TestTaskEndpoint_MaxIterations_SynthesisFailureReported proves the fallback
+// path: when the forced-synthesis call cannot produce an answer (maxIterLLM
+// returns a tool call with empty content on the synthesis call too), the turn
+// reports terminal status "max_iterations_reached" with no stop_reason, and the
+// audit row is STILL written exactly once.
+func TestTaskEndpoint_MaxIterations_SynthesisFailureReported(t *testing.T) {
+	srv, mux := setupTaskServer(t, &maxIterLLM{})
+	const maxIter = 2
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{
+		"message": "loop forever",
+		"config":  map[string]any{"max_iterations": maxIter},
+	})
+
+	var resp taskResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Status != "max_iterations_reached" {
+		t.Errorf("status = %q, want max_iterations_reached", resp.Status)
+	}
+	if resp.StopReason != "" {
+		t.Errorf("stop_reason = %q, want empty on synthesis failure", resp.StopReason)
+	}
+	if n := countTaskAuditRows(t, srv, audit.ActionLLMMaxIterationsReached); n != 1 {
+		t.Errorf("llm_max_iterations_reached audit rows = %d, want 1 (written whether or not synthesis succeeds)", n)
 	}
 }
 

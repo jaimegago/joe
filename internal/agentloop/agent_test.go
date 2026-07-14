@@ -55,8 +55,8 @@ func TestNewAgent(t *testing.T) {
 	if agent.systemPrompt != systemPrompt {
 		t.Error("NewAgent() systemPrompt not set correctly")
 	}
-	if agent.maxIterations != 10 {
-		t.Errorf("NewAgent() maxIterations = %d, want 10", agent.maxIterations)
+	if agent.maxIterations != DefaultMaxIterations {
+		t.Errorf("NewAgent() maxIterations = %d, want %d", agent.maxIterations, DefaultMaxIterations)
 	}
 }
 
@@ -316,6 +316,13 @@ func TestAgent_Run_MaxIterations(t *testing.T) {
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	// Pin an explicit cap below the queued-response count so this test asserts
+	// the cap behaviour independent of DefaultMaxIterations (raised to 20 by
+	// loop-budget-exhaustion decision E). After the cap the loop makes the
+	// forced-synthesis call, which consumes one more queued response — a
+	// tool-call with empty content, so synthesis yields no answer and the run
+	// falls through to ErrMaxIterations, exactly as this test asserts.
+	agent.SetMaxIterations(3)
 
 	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Test")

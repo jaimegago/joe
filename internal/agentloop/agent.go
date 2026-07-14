@@ -11,6 +11,7 @@ import (
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/tools"
 )
@@ -362,9 +363,119 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		session.AddMessages(ctx, resultMessages)
 	}
 
+	// The iteration cap was reached without the model producing a
+	// tool-call-free final answer. Before surfacing ErrMaxIterations, make
+	// exactly one forced-synthesis Chat call — no tools offered — asking the
+	// model to answer now from the evidence already gathered (Session:
+	// loop-budget-exhaustion, decision A). Exactly one audit row is written for
+	// the cap hit whether or not synthesis succeeds (decision D). A successful
+	// synthesis turns the run into a success carrying that answer, marked with
+	// stop_reason max_iterations (decision B); an errored or empty-content
+	// synthesis falls through to the existing ErrMaxIterations return, unchanged
+	// from prior behaviour.
+	answer, synthesized := a.synthesizeFinalAnswer(ctx, session)
+	a.writeMaxIterationsAudit(ctx, a.maxIterations, synthesized)
+	if synthesized {
+		session.stopReason = StopReasonMaxIterations
+		return answer, nil
+	}
+
 	// Wrap ErrMaxIterations so downstream code can errors.Is the typed
 	// sentinel while log readers still see the existing descriptive text.
 	return "", fmt.Errorf("max iterations (%d) reached without final response: %w", a.maxIterations, ErrMaxIterations)
+}
+
+// synthesizeFinalAnswer makes one forced-synthesis Chat call after the
+// iteration cap is reached (Session: loop-budget-exhaustion, decision A). The
+// accumulated session messages are reused verbatim with a single appended
+// user-role instruction (prompts.MaxIterationsSynthesis) directing the model to
+// answer now from the evidence in hand — stating what it verified and what
+// remains unverified because the step budget was reached — and NO tools are
+// offered, so the model cannot spend another tool round. Content extraction
+// mirrors the normal no-tool-call completion branch exactly: the raw
+// resp.Content string. A non-empty string is a successful synthesis; an errored
+// call or empty content is a failure the caller turns back into
+// ErrMaxIterations (decision A + the bound requirement that empty content is
+// explicitly a failure).
+//
+// The call is deliberately OBSERVER-SILENT (no OnStep): the run's reported
+// iteration count is len(observer steps), so emitting a step here would inflate
+// it past the cap and change the shape of an already-exhausted run. Token usage
+// IS recorded (it is real spend and must appear in the turn's totals), but no
+// session token-ceiling check is applied — the loop has already exited and the
+// synthesis call is a bounded, tool-less single shot. The request is built from
+// a LOCAL copy of the message slice and nothing is written back into session
+// history, so the pruning/truncation counters the final event reports stay
+// exactly what the loop left them — the synthesis attempt has no observable
+// side effect beyond token usage and (on success) the returned answer.
+func (a *Agent) synthesizeFinalAnswer(ctx context.Context, session *Session) (string, bool) {
+	// Honour cancellation: a caller whose context is already done gets no
+	// synthesis attempt (mirrors the loop's per-iteration cancellation check).
+	select {
+	case <-ctx.Done():
+		return "", false
+	default:
+	}
+
+	messages := make([]llm.Message, len(session.Messages), len(session.Messages)+1)
+	copy(messages, session.Messages)
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: prompts.MaxIterationsSynthesis,
+	})
+
+	req := llm.ChatRequest{
+		SystemPrompt: a.systemPrompt,
+		Messages:     messages,
+		// No Tools: the synthesis turn must answer from evidence in hand.
+		MaxTokens: a.maxOutputTokens,
+	}
+
+	a.mu.RLock()
+	resp, err := a.llm.Chat(ctx, req)
+	a.mu.RUnlock()
+	if err != nil {
+		return "", false
+	}
+	// Real spend — record it in the turn's totals even though the loop has
+	// already decided to exit.
+	session.AddTokenUsage(ctx, resp.Usage)
+	if resp.Content == "" {
+		return "", false
+	}
+	return resp.Content, true
+}
+
+// writeMaxIterationsAudit records one KindLLMLimitTriggered audit row for an
+// iteration-cap hit (Session: loop-budget-exhaustion, decision D). It mirrors
+// writeRunawayAudit exactly: same sink (a.auditRepo, injected via
+// WithAuditRepo), same nil-tolerance (no repo wired → skip silently, the cap
+// has already been decided and the row is forensic not gating), same
+// fail-open-but-loud posture via audit.FailurePosture(FailOpen). It is called
+// once per cap hit whether or not synthesis succeeded; the blob's "synthesized"
+// flag records which, alongside the iteration count that was reached.
+func (a *Agent) writeMaxIterationsAudit(ctx context.Context, iterations int, synthesized bool) {
+	if a.auditRepo == nil {
+		return
+	}
+	blob, _ := json.Marshal(map[string]any{
+		"session_id":  agentctx.SessionID(ctx),
+		"task_id":     agentctx.TaskID(ctx),
+		"iterations":  iterations,
+		"synthesized": synthesized,
+	})
+	err := a.auditRepo.Insert(ctx, audit.Event{
+		Principal: string(rbac.PrincipalFromContext(ctx)),
+		Action:    audit.ActionLLMMaxIterationsReached,
+		Decision:  audit.DecisionDeny,
+		Reason:    "max_iterations_exhausted",
+		Kind:      audit.KindLLMLimitTriggered,
+		Context:   string(blob),
+	})
+	// Fail-open-but-loud: the cap decision has already been made; an audit-write
+	// failure must not mask the outcome the caller returns (a synthesized answer
+	// or the ErrMaxIterations sentinel). Same posture writeRunawayAudit uses.
+	_ = audit.FailurePosture(ctx, audit.ActionLLMMaxIterationsReached, err, "agentloop:max_iterations", audit.FailOpen)
 }
 
 // writeRunawayAudit records one KindLLMLimitTriggered audit row for a

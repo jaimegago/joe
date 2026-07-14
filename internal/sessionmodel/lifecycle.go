@@ -174,12 +174,18 @@ func (r *SQLRepository) InsertChatMessageTx(ctx context.Context, tx *sql.Tx, m C
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now().UTC()
 	}
+	// stop_reason (migration 030) round-trips through restore so the truncation
+	// marker survives an archive→restore cycle; NULL when empty, as on insert.
+	var stopReason any
+	if m.StopReason != "" {
+		stopReason = m.StopReason
+	}
 	if _, err := tx.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO chat_messages
-			(id, session_id, seq, role, content, tool_name, tool_args, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			(id, session_id, seq, role, content, tool_name, tool_args, stop_reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		m.ID, m.SessionID, m.Seq, m.Role, m.Content,
-		strPtrArg(m.ToolName), strPtrArg(m.ToolArgs),
+		strPtrArg(m.ToolName), strPtrArg(m.ToolArgs), stopReason,
 		m.CreatedAt.Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("insert chat message: %w", err)
 	}

@@ -48,6 +48,12 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
   // its specific reason as a dedicated notice on the completed turn. On a
   // failed turn the failure box already carries the mapped message.
   const writeFailure = !isFailed ? writeFailureMessage(turn.writeFailureCode) : undefined;
+  // A COMPLETED turn whose answer was synthesized after the loop hit its step
+  // budget (loop-budget-exhaustion). Not a failure — the turn carries a real
+  // answer — so it gets an amber truncation notice, deliberately distinct from
+  // the destructive red failure banner reserved for the max_iterations_reached
+  // STATUS (the synthesis-failure path).
+  const stepBudgetTruncated = !isFailed && turn.stopReason === 'max_iterations';
 
   return (
     <div className="flex justify-start">
@@ -120,6 +126,23 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
         {!isFailed && turn.finalAnswer && (
           <div className="rounded-2xl bg-muted px-4 py-2 text-sm text-foreground">
             <Markdown content={turn.finalAnswer} />
+          </div>
+        )}
+
+        {/* Step-budget truncation notice: the turn completed with a real answer,
+            but the loop reached its step limit and the answer synthesizes the
+            evidence gathered so far. Amber/warning styling — NOT the destructive
+            red failure banner below. */}
+        {stepBudgetTruncated && (
+          <div
+            className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+            data-testid="max-iterations-notice"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="min-w-0 whitespace-pre-wrap break-words">
+              Joe reached its step limit for this task. The answer above synthesizes the evidence
+              gathered so far and may be incomplete.
+            </p>
           </div>
         )}
 

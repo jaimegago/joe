@@ -1,0 +1,21 @@
+-- loop-budget-exhaustion: persist a per-message stop_reason marker.
+--
+-- When the agentic loop exhausts its iteration budget it now makes one
+-- forced-synthesis Chat call and returns that answer as a COMPLETED turn
+-- (Session: loop-budget-exhaustion, decision A/B) rather than hard-failing.
+-- Such a turn is still truncated: the assistant answered from evidence in hand
+-- because the step budget was reached. stop_reason records that fact on the
+-- assistant chat message so a RELOADED session can render the truncation notice
+-- — the live SSE final event carries the same marker for the in-flight turn.
+--
+-- The column is a short string enum, additive and nullable. Its only value
+-- today is 'max_iterations'; the token-ceiling and context-overflow paths can
+-- adopt sibling values later with no further migration. NULL (the default, and
+-- the value for every pre-existing row and every user message) means "no
+-- special stop reason". Validation of the value set is deferred to the app
+-- layer (no CHECK), which keeps the column droppable in the down migration on
+-- SQLite.
+--
+-- Postgres portability: plain nullable TEXT ADD COLUMN, no default expression,
+-- no SQLite-only construct.
+ALTER TABLE chat_messages ADD COLUMN stop_reason TEXT;

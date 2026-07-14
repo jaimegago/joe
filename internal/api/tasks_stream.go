@@ -106,13 +106,10 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 		timeout = parsed
 	}
 
-	maxIterations := agentloop.DefaultMaxIterations
-	if req.Config != nil && req.Config.MaxIterations != nil {
-		if *req.Config.MaxIterations < 1 {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "max_iterations must be >= 1")
-			return
-		}
-		maxIterations = *req.Config.MaxIterations
+	maxIterations, err := resolveMaxIterations(req.Config)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, err.Error())
+		return
 	}
 
 	// Once we commit to streaming, all further signalling is via SSE events;
@@ -150,7 +147,7 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(runErr, llm.ErrContextOverflow) {
 		h.writeContextOverflowAudit(ctx, prepared)
 	}
-	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, start)
+	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), start)
 	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
 
 	slog.Info("task stream completed",

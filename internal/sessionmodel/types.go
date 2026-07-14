@@ -95,7 +95,13 @@ type ChatMessage struct {
 	Content   string
 	ToolName  *string
 	ToolArgs  *string
-	CreatedAt time.Time
+	// StopReason marks an assistant message whose answer completed via a
+	// non-natural stop — currently only "max_iterations" (agentloop's
+	// forced-synthesis path, Session: loop-budget-exhaustion). Empty for the
+	// common case and for user messages. Persisted (migration 030) so a
+	// reloaded session can still render the truncation marker.
+	StopReason string
+	CreatedAt  time.Time
 }
 
 // TerminalAction is the §12.5 retention terminal-action selector: what the

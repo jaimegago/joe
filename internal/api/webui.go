@@ -286,7 +286,12 @@ type webUIMessage struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	ToolName  string `json:"tool_name,omitempty"`
-	CreatedAt string `json:"created_at"`
+	// StopReason mirrors the persisted assistant-message marker (currently only
+	// "max_iterations", Session: loop-budget-exhaustion). Additive/optional so a
+	// RELOADED session can render the same truncation notice the live SSE final
+	// event drives; absent for user messages and normally-completed turns.
+	StopReason string `json:"stop_reason,omitempty"`
+	CreatedAt  string `json:"created_at"`
 }
 
 func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession {
@@ -324,11 +329,12 @@ func sessionToWebUI(s sessionmodel.AgentSession, messageCount int) webUISession 
 
 func messageToWebUI(m sessionmodel.ChatMessage) webUIMessage {
 	out := webUIMessage{
-		ID:        m.Seq,
-		SessionID: m.SessionID,
-		Role:      m.Role,
-		Content:   m.Content,
-		CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		ID:         m.Seq,
+		SessionID:  m.SessionID,
+		Role:       m.Role,
+		Content:    m.Content,
+		StopReason: m.StopReason,
+		CreatedAt:  m.CreatedAt.Format(time.RFC3339),
 	}
 	if m.ToolName != nil {
 		out.ToolName = *m.ToolName

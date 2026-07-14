@@ -174,6 +174,18 @@ const (
 	// sibling failure already audited, overflow did not.
 	ActionLLMContextOverflow = "llm_context_overflow"
 
+	// ActionLLMMaxIterationsReached records that the agentic loop reached its
+	// per-request iteration cap without the model producing a tool-call-free
+	// answer (Session: loop-budget-exhaustion, decision D). Exactly one row is
+	// written per cap hit, whether or not the subsequent forced-synthesis Chat
+	// call produced an answer — the blob's "synthesized" flag records which. The
+	// decision on this row is "deny" (the loop refused to spend further steps),
+	// matching ActionLLMRunawayTerminated. Kind is KindLLMLimitTriggered, the
+	// SAME kind the runaway-ceiling and context-overflow enforcement events use;
+	// the audit_log.kind CHECK already admits it (migration 017), so no schema
+	// change is needed — the CHECK enumerates kinds, not actions.
+	ActionLLMMaxIterationsReached = "llm_max_iterations_reached"
+
 	// ActionLLMCostLimitRefused records the cost-window gate refusing
 	// an LLM call because a configured threshold would be exceeded.
 	// The decision on this row is "deny".

@@ -55,6 +55,15 @@ type Session struct {
 	// the session is built per-task in buildTaskRun.
 	toolResultsTruncated int
 	userMessageTruncated bool
+
+	// stopReason records why a run that reported terminal status "completed"
+	// nonetheless did not end on a naturally tool-call-free answer — set to
+	// StopReasonMaxIterations by Run's forced-synthesis path (Session:
+	// loop-budget-exhaustion, decision B). Empty for a normally-completed run.
+	// Like the fields above it describes this turn (a fresh session is built
+	// per task in buildTaskRun); the API layer reads it via StopReason() to
+	// stamp the final event and persist the assistant message's marker.
+	stopReason string
 }
 
 // NewSession creates a new session with empty conversation history
@@ -210,6 +219,11 @@ func (s *Session) ToolResultsTruncated() int { return s.toolResultsTruncated }
 // UserMessageTruncated reports whether the incoming user message was shortened
 // at ingestion this turn to fit its per-message cap.
 func (s *Session) UserMessageTruncated() bool { return s.userMessageTruncated }
+
+// StopReason reports why this turn completed via a non-natural stop (currently
+// only StopReasonMaxIterations, set by Run's forced-synthesis path). Empty for
+// a normally-completed run.
+func (s *Session) StopReason() string { return s.stopReason }
 
 // truncationLimit returns the per-message token cap for the given budget
 // fraction: max(fraction * TokenBudget, minTruncationTokenFloor). It returns 0

@@ -71,6 +71,13 @@ export interface AssistantTurn {
   // does NOT fail the turn (the LLM still answers), so the view renders a
   // dedicated notice — distinct from a generic failure — explaining why.
   writeFailureCode?: string;
+  // stopReason marks a COMPLETED turn that did not end on a naturally
+  // tool-call-free answer (currently only 'max_iterations': the loop hit its
+  // step budget and the answer was synthesized from evidence in hand). The view
+  // renders an amber truncation notice when it is set — distinct from the red
+  // failure banner. Set on both a live turn (final event) and a reloaded one
+  // (persisted marker).
+  stopReason?: string;
 }
 
 // writeFailureMessage maps a backend write-failure code to the user-facing
@@ -155,6 +162,9 @@ function historyToItems(messages: ChatMessage[]): DisplayItem[] {
         tokens: 0,
         inputTokens: 0,
         contextWindow: 0,
+        // Carry the persisted truncation marker so a reloaded max-iterations
+        // turn shows the same amber notice the live turn did.
+        stopReason: m.stop_reason,
       },
     };
   });
@@ -366,6 +376,7 @@ export function useChat(initialSessionId?: string) {
                 historyTrimmed: final.history_trimmed,
                 userMessageTruncated: final.user_message_truncated,
                 writeFailureCode: final.error_code,
+                stopReason: final.stop_reason,
               };
             }),
           onError: (message, preStream, code) =>

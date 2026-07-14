@@ -88,6 +88,16 @@ type taskResponse struct {
 	// returns the conservative non-zero default (D-0015(d)) for an unknown model,
 	// and the UI renders against that default rather than hiding the figure.
 	ContextWindowTokens int `json:"context_window_tokens,omitempty"`
+	// StopReason marks a COMPLETED turn that did not end on a naturally
+	// tool-call-free answer (Session: loop-budget-exhaustion, decision B).
+	// Currently the only value is "max_iterations": the loop exhausted its
+	// iteration budget and the answer came from a forced-synthesis call over the
+	// evidence already gathered. Additive/optional (omitempty) — absent on a
+	// normally-completed turn — and generic so the token-ceiling and overflow
+	// paths can adopt sibling values later. The UI renders a truncation notice
+	// (distinct from the destructive failure banner) when it is set; the
+	// max_iterations_reached STATUS is reserved for the synthesis-FAILURE path.
+	StopReason string `json:"stop_reason,omitempty"`
 	// ErrorCode is the turn-level write-failure classification: the first
 	// per-tool denial code observed across this turn's steps (Item 8). It lets
 	// the chat UI surface a specific "why the write failed" message even though
@@ -174,14 +184,11 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		timeout = parsed
 	}
 
-	// Resolve max iterations
-	maxIterations := agentloop.DefaultMaxIterations
-	if req.Config != nil && req.Config.MaxIterations != nil {
-		if *req.Config.MaxIterations < 1 {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "max_iterations must be >= 1")
-			return
-		}
-		maxIterations = *req.Config.MaxIterations
+	// Resolve max iterations (shared with the streaming task endpoint).
+	maxIterations, err := resolveMaxIterations(req.Config)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, err.Error())
+		return
 	}
 
 	// Build the agent + session (shared with the streaming task endpoint).
@@ -210,7 +217,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 
 	// Persist the raw (un-redacted) conversation, then build the redacted
 	// response — matching prior behavior where the store keeps the raw answer.
-	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, start)
+	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), start)
 	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
 
 	slog.Info("task completed",
@@ -242,6 +249,28 @@ type preparedTask struct {
 	// re-resolving the catalogue after the loop has returned.
 	caps  llmusage.ModelCapabilities
 	model string
+}
+
+// errMaxIterationsTooLow is returned by resolveMaxIterations when a request
+// supplies a max_iterations override below 1. Its message is surfaced verbatim
+// as the 400 body, matching the pre-consolidation text exactly.
+var errMaxIterationsTooLow = errors.New("max_iterations must be >= 1")
+
+// resolveMaxIterations resolves the per-request agentic iteration cap, shared by
+// the /tasks and /tasks/stream handlers (Session: loop-budget-exhaustion,
+// decision E — one place instead of the two byte-identical copies). It returns
+// DefaultMaxIterations when no override is present, the override when it is
+// >= 1, and errMaxIterationsTooLow when a present override is below 1 (a client
+// error the caller renders as a 400). Per-request override behaviour is
+// otherwise unchanged.
+func resolveMaxIterations(cfg *taskConfig) (int, error) {
+	if cfg == nil || cfg.MaxIterations == nil {
+		return agentloop.DefaultMaxIterations, nil
+	}
+	if *cfg.MaxIterations < 1 {
+		return 0, errMaxIterationsTooLow
+	}
+	return *cfg.MaxIterations, nil
 }
 
 // buildTaskRun constructs the core-tool agent + session for a task request.
@@ -551,7 +580,7 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 // generateTitleAsync): a client that disconnects mid-stream cancels r.Context(),
 // and losing the turn transcript because the viewer closed a tab would be a
 // silent data loss. Principal/session context values are preserved.
-func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer string, start time.Time) {
+func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer, stopReason string, start time.Time) {
 	if h.server.services.SessionModel == nil {
 		return
 	}
@@ -570,11 +599,12 @@ func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMs
 	h.maybeAutoTitle(ctx, sessionID, userMsg)
 	if answer != "" {
 		if _, err := h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
-			ID:        uid.New(),
-			SessionID: sessionID,
-			Role:      "assistant",
-			Content:   answer,
-			CreatedAt: time.Now().UTC(),
+			ID:         uid.New(),
+			SessionID:  sessionID,
+			Role:       "assistant",
+			Content:    answer,
+			StopReason: stopReason,
+			CreatedAt:  time.Now().UTC(),
 		}); err != nil {
 			slog.Warn("persist task transcript: assistant message write failed", "session_id", sessionID, "error", err)
 		}
@@ -688,6 +718,7 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		MessagesDropped:      session.MessagesDropped(),
 		ToolResultsTruncated: session.ToolResultsTruncated(),
 		UserMessageTruncated: session.UserMessageTruncated(),
+		StopReason:           session.StopReason(),
 		ErrorCode:            firstWriteFailureCode(outSteps),
 	}
 }
