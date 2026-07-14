@@ -23,6 +23,13 @@ Namespace `shop`, three Deployments, one Service each:
 `payments` and `orders`, so the dependency edges are discoverable just by reading
 its pod spec.
 
+The workload scripts in the manifests are deliberately left uncommented, with log
+lines that read like an ordinary service, because agents read specs: anything
+written inside a container's `args` comes back out of `kubectl get -o yaml`, so a
+comment explaining the staging would hand a copilot the diagnosis instead of
+making it work the symptoms. This README is the only place the engineering is
+explained, and it is not reachable from cluster state.
+
 ## Prerequisites
 
 - Any local Kubernetes cluster and a `kubectl` pointed at it. A

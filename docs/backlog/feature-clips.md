@@ -34,9 +34,40 @@ one Joe surface driven against a live cluster:
   commands updated to match; validated live on a kind cluster (fast phase to
   RESTARTS≥2 with OOMKilled, then a held Running steady window).
 
+- Camera-neutrality landed: the `orders` workload no longer narrates its own
+  staging in any surface an agent reads. A live run had Joe quote the container
+  args' design comments (excursion cadence, the OOM intent, the restart-count
+  narration) and the "holding steady near the memory limit" log line, and
+  correctly infer the memory pressure was intentional demo logic — the fixture
+  was handing the copilot its answer instead of making it diagnose the cluster.
+  The script's memory arithmetic and two-phase logic are unchanged (100Mi
+  baseline, 45Mi burst, three fast starts, ~13-min steady cadence); what changed
+  is that the `args` block carries no comments and the log lines now read like an
+  ordinary order service (a startup line, then uniform `processing batch N`
+  lines — the bursting cycle logs exactly what every other cycle logs, so nothing
+  marks the fatal one). The design comments moved out of `args` into a YAML
+  comment, which the API server strips on apply, plus a maintainer note warning
+  against reintroducing them. `payments`, `checkout`, and the namespace needed no
+  change: their explanatory comments already sat outside `args` and were already
+  stripped, and their labels/probe paths already read as a plausible app — the
+  believable-labels criterion from D-0076 held. Re-validated live on kind: three
+  OOMKilled restarts (exit 137) within 97s of apply, then a held `Running` 1/1
+  Ready steady window, with `kubectl get -o yaml` and `kubectl logs` grepping
+  clean of every self-describing string.
+
 ## Remaining
 
-- Record the three clips against the staged world.
+- Record the three clips against the staged world. **Recording requires
+  re-staging**, so the live specs match the neutralized manifests — a cluster
+  staged before this change still serves the old self-describing `args` (and a
+  second copy of them in the `last-applied-configuration` annotation) out of the
+  API, which is exactly what the camera would catch.
+- When staging to record, name the kind cluster something neutral. The cluster
+  name is visible from inside the cluster as `pod.spec.nodeName` (today:
+  `joe-demo-world-control-plane`), so the README's suggested
+  `--name joe-demo-world` is the one remaining string that tells a reading agent
+  it is looking at a demo. It is outside the manifests — an operator naming
+  choice, not a fixture defect — but it defeats the same goal on camera.
 - Encode the clips and commit them into the **joeagent.dev** repository (the
   landing-page site is a separate repo from this one); wire them into the landing
   page.
