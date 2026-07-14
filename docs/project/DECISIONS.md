@@ -10,6 +10,47 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0101 — Observation posture prompt reworded to draw the read/mutate boundary explicitly (wording only; enforcement untouched)
+
+- Date: 2026-07-14
+- Session: posture-prompt-conflation
+- Decision: the `observationPosture` string (`internal/prompts/posture.go`) is
+  reworded so a weak model cannot read observation mode as a restriction on READS.
+  The new text states that the posture **restricts mutations only**, that **all read
+  tools remain fully available and unaffected**, and that the model must **carry an
+  investigation to completion itself using read tools** and **not cite observation
+  mode as a reason to stop reading, skip a read, or hand read steps to the operator**.
+  Mutation refusal is **strengthened, not weakened**: a change to a managed system is
+  "out of bounds: do not attempt it — state your diagnosis and propose the specific
+  change for the operator to make". The `safeModePosture` string and the
+  `PostureSection` selector are **deliberately untouched**. This is a **wording-only**
+  change: no enforcement, tool surface, or gate order moves.
+- Basis: a live-cluster incident in which the model, in observation mode, deferred
+  log reads, event reads, and spec reads to the operator citing the posture. The prior
+  wording's clause "offer the read-only investigation or the change you would propose
+  instead" was the direct instruction being followed — the model offered the
+  investigation rather than performing it. Enforcement was re-verified as correct and
+  is unchanged: the write floor is conjoined with `ActionMutate` in the executor
+  (`internal/tools/executor.go:215`), and the captain gate returns Reads before its
+  floor check (`internal/captaingate/captaingate.go:182-184`) — Reads were never
+  gated, so the deferral was pure prompt conflation. Pinned by
+  `TestPostureSection_ObservationReadsUnaffected` (`internal/prompts/posture_test.go`),
+  which asserts the reads-unaffected and do-not-defer-reads properties, the retained
+  do-not-attempt instruction for mutations, the retained not-a-fault-to-be-cleared
+  framing, and the absence of the conflating "offer the read-only investigation"
+  clause. The **no-unlock / no-recovery-language invariant is preserved** and still
+  pinned by the pre-existing guard in `TestPostureSection_Observation`.
+- Supersedes: nothing. Refines **D-0023** (the write-floor posture line in the task
+  system prompt), which established the posture section; this entry changes only the
+  observation string's wording within it.
+- Deferred: behavioral (as opposed to wording-level) pinning of this property —
+  a staged observation-mode scenario asserting the model completes a read
+  investigation before proposing — belongs to the evaluation framework (OASIS) and is
+  recorded in `docs/backlog/posture-prompt-conflation.md`.
+- Status: accepted.
+
+---
+
 ## D-0100 — Loop-budget exhaustion no longer hard-fails: the agentic loop makes one forced-synthesis call before returning ErrMaxIterations
 
 - Date: 2026-07-14
