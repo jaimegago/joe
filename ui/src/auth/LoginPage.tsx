@@ -63,7 +63,7 @@ export function LoginPage() {
         <CardHeader>
           <CardTitle className="flex items-baseline gap-2">
             <span>Joe</span>
-            <span className="text-xs font-normal text-muted-foreground">infra copilot</span>
+            <span className="text-xs font-normal text-muted-foreground">Joe Operates Everything</span>
           </CardTitle>
           <CardDescription>
             {oidcEnabled

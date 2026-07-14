@@ -18,6 +18,8 @@ import {
   LogOut,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import lockupDark from '@/assets/joe-lockup-dark.svg';
+import lockupLight from '@/assets/joe-lockup.svg';
 import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useReadPosture } from '@/hooks/useReadPosture';
@@ -113,8 +115,8 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-10 flex w-60 flex-col border-r bg-background">
       <div className="flex h-16 items-center border-b px-6">
-        <span className="text-lg font-bold tracking-tight">Joe</span>
-        <span className="ml-1 text-xs text-muted-foreground">infra copilot</span>
+        <img src={lockupLight} alt="Joe" className="h-7 w-auto dark:hidden" />
+        <img src={lockupDark} alt="Joe" className="hidden h-7 w-auto dark:block" />
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {operatorNav.map((item) => (
