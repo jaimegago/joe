@@ -10,6 +10,42 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0105 — the two §12.10 Declare incident entry points are mutually exclusive on screen via a count-based claim registry in the app shell
+
+- Date: 2026-07-14
+- Session: fix-duplicate-declare-incident
+- Decision: section 12.10 (UI surface) establishes two **distinct** Declare incident entry
+  points: a **global control** in top-level chrome (Sidebar.tsx:157, DeclareIncidentButton.tsx:23)
+  that routes to the sessions area's promote-or-start-new disambiguation
+  (DeclareIncidentButton.tsx:35, `navigate('/sessions?declare=1')`), and a **secondary**
+  promote-this-session affordance in the chat view (ChatPage.tsx:476) that promotes the in-view
+  session in place (ChatPage.tsx:199, `promoteSessionToIncident`). Both are wanted because they
+  offer distinct capabilities, not duplicates. A fresh chat and any owned, unlinked, default
+  session under a normal regime matched both render conditions simultaneously, putting two
+  "Declare incident" buttons on screen. To retain both entry points and their distinct call
+  paths while showing exactly one affordance at a time, a **count-based declare-slot claim
+  registry** sits in the app shell (AppShell.tsx:6, DeclareAffordanceProvider.tsx). A
+  view-local affordance claims the slot on the same condition that governs its render
+  (ChatPage.tsx:178), and the global sidebar control returns null while any view claims the
+  slot (DeclareIncidentButton.tsx:26-28). The slot is released unconditionally on unmount,
+  and a count (not a boolean) is used so a route change mounting a new view's affordance
+  before the previous cleanup runs cannot strand the slot. **This is a visibility rule only.**
+  No control behaviour, endpoint, enforcement path, or CLI changed.
+- Basis: live verification end-to-end on the rebuilt binary (Dex-authenticated Chrome):
+  blank /chat renders one Declare incident (sidebar's, Sidebar.tsx:157);
+  /chat/{sessionId} on an owned, unlinked, default session renders one (chat header's,
+  ChatPage.tsx:476, sidebar null via DeclareIncidentButton.tsx:28); navigation to
+  /components (no chat view) renders one (sidebar's, back on screen). Regression test
+  (DeclareIncidentButton.test.tsx:43-44) asserts exactly one affordance is present when
+  both conditions are met, covers the return-after-unmount path (lines 62-68), and covers
+  the pre-existing hide-while-regime-is-incident rule (lines 71-74).
+- Supersedes: nothing. Layers a visibility rule on top of §12.10 rather than reversing
+  it. Removal of either control was rejected because it would cost a distinct capability
+  (the sidebar route to the disambiguation vs the chat header's in-place promote).
+- Status: accepted, implemented.
+
+---
+
 ## D-0104 — the five per-tool "read-only" description strings surveyed by the posture-prompt-conflation sweep are left unchanged
 
 - Date: 2026-07-14
