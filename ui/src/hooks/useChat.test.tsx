@@ -80,6 +80,8 @@ function Harness({ initialSessionId }: { initialSessionId?: string } = {}) {
       items={chat.messages}
       isSending={chat.isSending}
       onSend={(m) => void chat.send(m)}
+      onStop={chat.cancel}
+      onResend={(text) => void chat.send(text)}
     />
   );
 }
@@ -431,5 +433,92 @@ describe('useChat streaming lifecycle', () => {
     badges = screen.getAllByTestId('turn-tokens');
     expect(badges[0]).toHaveTextContent('10 tokens'); // first turn unchanged
     expect(badges[1]).toHaveTextContent('4 tokens');
+  });
+
+  it('cancel aborts the in-flight stream and finalizes the live turn as cancelled', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    // Begin a turn that streams a partial step but never settles.
+    await sendMessage('investigate');
+    act(() => captured[0].onStep(makeStep(1, { input: 10, output: 5, tool: 'k8s' })));
+    expect(screen.getByRole('textbox')).toBeDisabled();
+
+    // The composer shows a stop button while the turn is in flight. Clicking it
+    // aborts the request and finalizes the turn as cancelled.
+    await userEvent.click(screen.getByRole('button', { name: /stop/i }));
+
+    // The stream's controller was signalled.
+    expect(streamTaskMock.mock.calls[0][2]?.aborted).toBe(true);
+    // The live turn settles to the cancelled notice — no hanging spinner.
+    await waitFor(() => expect(screen.getByTestId('cancelled-notice')).toBeInTheDocument());
+    expect(screen.queryByText('Joe is working…')).not.toBeInTheDocument();
+    // The composer is immediately usable again.
+    expect(screen.getByRole('textbox')).not.toBeDisabled();
+    // Partial step content is kept.
+    expect(screen.getByText('k8s')).toBeInTheDocument();
+  });
+
+  it('switching sessions mid-stream aborts silently — no cancelled marker, no notice', async () => {
+    const { Wrapper } = createWrapper();
+    const { rerender } = render(<Harness initialSessionId="s-existing" />, { wrapper: Wrapper });
+
+    await sendMessage('investigate');
+    expect(screen.getByRole('textbox')).toBeDisabled();
+
+    // The route switches to a different session before the stream settles.
+    rerender(<Harness initialSessionId="s-other" />);
+    await waitFor(() => expect(screen.getByRole('textbox')).not.toBeDisabled());
+
+    // The abandoned stream was aborted, but the switch must NOT finalize it as a
+    // cancelled turn or surface any cancelled notice.
+    expect(streamTaskMock.mock.calls[0][2]?.aborted).toBe(true);
+    expect(screen.queryByTestId('cancelled-notice')).not.toBeInTheDocument();
+  });
+
+  it('resend re-sends the original user text as a brand-new turn', async () => {
+    const { Wrapper } = createWrapper();
+    render(<Harness />, { wrapper: Wrapper });
+
+    // Send, then cancel — the cancelled turn offers a resend affordance.
+    await sendMessage('original question');
+    await userEvent.click(screen.getByRole('button', { name: /stop/i }));
+    await waitFor(() => expect(screen.getByTestId('resend-button')).toBeInTheDocument());
+
+    // Resend fires a fresh streamTask carrying the original text, appended as a
+    // new turn (the cancelled turn is left in place — nothing is replaced).
+    const before = streamTaskMock.mock.calls.length;
+    await userEvent.click(screen.getByTestId('resend-button'));
+    await waitFor(() => expect(streamTaskMock.mock.calls.length).toBe(before + 1));
+    const lastBody = streamTaskMock.mock.calls[streamTaskMock.mock.calls.length - 1][0];
+    expect(lastBody.message).toBe('original question');
+    // Two user bubbles now: the original and the resent copy.
+    expect(screen.getAllByText('original question')).toHaveLength(2);
+  });
+
+  it('reload path renders a persisted cancelled row as a cancelled notice', async () => {
+    const fetchMessagesMock = vi.mocked(fetchMessages);
+    const persisted: ChatMessage[] = [
+      {
+        id: 1,
+        session_id: 's-reload',
+        role: 'user',
+        content: 'a question',
+        created_at: '2026-07-15T00:00:00Z',
+      },
+      {
+        id: 2,
+        session_id: 's-reload',
+        role: 'assistant',
+        content: 'This turn was stopped before a response was produced.',
+        created_at: '2026-07-15T00:00:01Z',
+        stop_reason: 'cancelled',
+      },
+    ];
+    fetchMessagesMock.mockResolvedValueOnce(persisted);
+    const { Wrapper } = createWrapper();
+    render(<Harness initialSessionId="s-reload" />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(screen.getByTestId('cancelled-notice')).toBeInTheDocument());
   });
 });

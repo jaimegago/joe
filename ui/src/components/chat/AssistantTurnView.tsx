@@ -1,5 +1,6 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { Markdown } from './Markdown';
@@ -21,15 +22,26 @@ function toToolCall(tc: TurnToolCall): ToolCall {
 
 interface AssistantTurnViewProps {
   turn: AssistantTurn;
+  // onResend, when provided, offers a resend affordance on a cancelled or failed
+  // turn: it re-sends the paired user message as a brand-new turn (appending
+  // only — no deletion, no replacement of the persisted rows). Already bound to
+  // the paired user text by the parent, so it takes no argument here.
+  onResend?: () => void;
 }
 
 // AssistantTurnView renders an agentic turn Claude-Code-style: each step's
 // reasoning line and tool activity appears as it streams in, a per-turn token
 // counter climbs alongside, and the final answer (or a failure box) settles at
 // the end.
-export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
+export function AssistantTurnView({ turn, onResend }: AssistantTurnViewProps) {
   const isFailed = turn.status === 'failed';
   const isStreaming = turn.status === 'streaming';
+  // A turn the user stopped in flight: a completed turn carrying the 'cancelled'
+  // stop reason. Same shape whether it settled live (cancel()) or was reloaded
+  // from a persisted marker row (historyToItems carries stop_reason). It renders
+  // an amber "stopped" notice — never the destructive red failure banner — and
+  // suppresses the (empty/marker) answer bubble in favor of that notice.
+  const isCancelled = !isFailed && turn.stopReason === 'cancelled';
   // Context-utilization badge: input tokens (X) against the model's context
   // window (Y). X is the per-turn input count — the figure that fills the
   // window — climbing while streaming and snapping to the server total at the
@@ -122,10 +134,27 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
           </div>
         )}
 
-        {/* Final answer for a completed turn. */}
-        {!isFailed && turn.finalAnswer && (
+        {/* Final answer for a completed turn. Suppressed for a cancelled turn:
+            it carries no real answer (only a minimal marker), and the stopped
+            notice below is the visible indicator. */}
+        {!isFailed && !isCancelled && turn.finalAnswer && (
           <div className="rounded-2xl bg-muted px-4 py-2 text-sm text-foreground">
             <Markdown content={turn.finalAnswer} />
+          </div>
+        )}
+
+        {/* Cancelled notice: the user stopped this turn before Joe answered.
+            Amber/warning styling — a deliberate stop, not a failure. Shown on
+            both a live-aborted turn and a reloaded persisted marker. */}
+        {isCancelled && (
+          <div
+            className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+            data-testid="cancelled-notice"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="min-w-0 whitespace-pre-wrap break-words">
+              You stopped this response before Joe finished. Resend to try again.
+            </p>
           </div>
         )}
 
@@ -156,6 +185,25 @@ export function AssistantTurnView({ turn }: AssistantTurnViewProps) {
                 <p className="mt-0.5 whitespace-pre-wrap break-words">{turn.errorMessage}</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Resend affordance: a cancelled or failed turn can be retried by
+            re-sending the original user message as a brand-new turn (appending
+            only — nothing is deleted or replaced). Owner-only: onResend is
+            omitted in read-only views. */}
+        {(isCancelled || isFailed) && onResend && (
+          <div className="px-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onResend}
+              data-testid="resend-button"
+              aria-label="Resend message"
+            >
+              <RotateCcw className="mr-1 h-3 w-3" />
+              Resend
+            </Button>
           </div>
         )}
 

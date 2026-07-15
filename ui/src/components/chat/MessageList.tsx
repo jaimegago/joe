@@ -6,6 +6,9 @@ import { MessageSquare } from 'lucide-react';
 
 interface MessageListProps {
   items: DisplayItem[];
+  // onResend, when provided, lets a cancelled/failed assistant turn re-send its
+  // paired user message as a new turn. Undefined in read-only views.
+  onResend?: (text: string) => void;
 }
 
 // findScrollParent walks up from the list container to the nearest ancestor
@@ -29,7 +32,7 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
 // has scrolled up to read history and we must not yank them back down.
 const NEAR_BOTTOM_THRESHOLD_PX = 120;
 
-export function MessageList({ items }: MessageListProps) {
+export function MessageList({ items, onResend }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // Whether the user is currently pinned to the bottom. Starts true (a freshly
@@ -68,15 +71,36 @@ export function MessageList({ items }: MessageListProps) {
     );
   }
 
+  // Pair each assistant turn with the text of the user message that prompted it
+  // (the nearest preceding user item) so a resend can re-send the original text.
+  // Precomputed before render so the map callback stays pure.
+  const pairedUserText = new Map<string, string>();
+  {
+    let lastUserText: string | null = null;
+    for (const item of items) {
+      if (item.kind === 'user') {
+        lastUserText = item.content;
+      } else if (lastUserText != null) {
+        pairedUserText.set(item.id, lastUserText);
+      }
+    }
+  }
+
   return (
     <div ref={containerRef} className="flex flex-col gap-4 py-4">
-      {items.map((item) =>
-        item.kind === 'user' ? (
-          <UserBubble key={item.id} content={item.content} createdAt={item.createdAt} />
-        ) : (
-          <AssistantTurnView key={item.id} turn={item.turn} />
-        )
-      )}
+      {items.map((item) => {
+        if (item.kind === 'user') {
+          return <UserBubble key={item.id} content={item.content} createdAt={item.createdAt} />;
+        }
+        const userText = pairedUserText.get(item.id);
+        return (
+          <AssistantTurnView
+            key={item.id}
+            turn={item.turn}
+            onResend={onResend && userText != null ? () => onResend(userText) : undefined}
+          />
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );

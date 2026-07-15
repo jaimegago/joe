@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
@@ -180,5 +182,93 @@ func TestHandleTaskStream_EmptyMessageRejected(t *testing.T) {
 	rec := postStream(t, mux, map[string]any{"message": ""})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// erroringLLM returns a fixed error from Chat so a test can drive the run's
+// terminal error path (cancellation, timeout, or a generic failure).
+type erroringLLM struct{ err error }
+
+func (l *erroringLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return nil, l.err
+}
+func (l *erroringLLM) Embed(context.Context, string) ([]float32, error) { return []float32{0.1}, nil }
+
+// streamedSessionID pulls the session id off the final SSE event so the test can
+// read back the persisted transcript.
+func streamedSessionID(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	for _, e := range parseRecordedSSE(rec.Body.String()) {
+		if e.event == sseEventFinal {
+			var resp taskResponse
+			if err := json.Unmarshal([]byte(e.data), &resp); err != nil {
+				t.Fatalf("decode final: %v (data=%s)", err, e.data)
+			}
+			return resp.SessionID
+		}
+	}
+	t.Fatal("no final SSE event emitted")
+	return ""
+}
+
+func assistantMessages(t *testing.T, srv *Server, sessionID string) []sessionmodel.ChatMessage {
+	t.Helper()
+	msgs, err := srv.services.SessionModel.ListChatMessages(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	var assistants []sessionmodel.ChatMessage
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			assistants = append(assistants, m)
+		}
+	}
+	return assistants
+}
+
+// A run the caller aborted (context.Canceled) persists a minimal assistant
+// marker row carrying stop_reason "cancelled", so a reloaded session shows the
+// turn was stopped rather than a question with no reply.
+func TestHandleTaskStream_ContextCanceled_PersistsCancelledMarker(t *testing.T) {
+	srv, mux := setupTaskServer(t, &erroringLLM{err: context.Canceled})
+
+	rec := postStream(t, mux, map[string]any{"message": "investigate"})
+	sessionID := streamedSessionID(t, rec)
+
+	assistants := assistantMessages(t, srv, sessionID)
+	if len(assistants) != 1 {
+		t.Fatalf("assistant rows = %d, want 1 (the cancelled marker)", len(assistants))
+	}
+	if assistants[0].StopReason != agentloop.StopReasonCancelled {
+		t.Errorf("stop_reason = %q, want %q", assistants[0].StopReason, agentloop.StopReasonCancelled)
+	}
+	if assistants[0].Content == "" {
+		t.Error("cancelled marker content is empty; want a minimal honest body")
+	}
+}
+
+// The timeout path (DeadlineExceeded) is deliberately NOT treated as a
+// cancellation: it persists no assistant row, exactly as before.
+func TestHandleTaskStream_DeadlineExceeded_NoCancelledMarker(t *testing.T) {
+	srv, mux := setupTaskServer(t, &erroringLLM{err: context.DeadlineExceeded})
+
+	rec := postStream(t, mux, map[string]any{"message": "slow"})
+	sessionID := streamedSessionID(t, rec)
+
+	if n := len(assistantMessages(t, srv, sessionID)); n != 0 {
+		t.Errorf("assistant rows = %d, want 0 (DeadlineExceeded must not persist a marker)", n)
+	}
+}
+
+// Every other terminal error keeps the existing skip-when-empty behavior: no
+// answer means no assistant row, and certainly no cancelled marker.
+func TestHandleTaskStream_GenericError_NoAssistantRow(t *testing.T) {
+	srv, mux := setupTaskServer(t, &erroringLLM{err: errors.New("boom")})
+
+	rec := postStream(t, mux, map[string]any{"message": "go"})
+	sessionID := streamedSessionID(t, rec)
+
+	if n := len(assistantMessages(t, srv, sessionID)); n != 0 {
+		t.Errorf("assistant rows = %d, want 0 (a generic error persists no assistant row)", n)
 	}
 }

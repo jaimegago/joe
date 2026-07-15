@@ -10,6 +10,50 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0106 — chat turn cancellation is client-driven abort with an additive `cancelled` stop_reason; resend re-sends as a new turn, replacement-style regenerate is out of scope
+
+- Date: 2026-07-15
+- Session: chat-stop-resend
+- Decision: the chat UI's stop control cancels an in-flight turn by **client-driven
+  abort** — the existing per-send `AbortController` (useChat.ts:287,337) is aborted, the
+  streaming `fetch` is cancelled, and `streamTask` returns silently (taskStream.ts:249-252).
+  **No server cancel endpoint was built.** The agentic loop is already ctx-cooperative (it
+  checks `ctx.Done()` each iteration, agent.go:213-216) and the streaming handler already runs
+  it under a child of the request context (tasks_stream.go:133-143), so aborting the HTTP
+  request already stops the loop; persistence is already detached from that cancellation via
+  `context.WithoutCancel` (tasks.go:587); and the `AbortController` is already load-bearing for
+  session-switch/unmount. A server endpoint would require a new taskID registry and mid-stream
+  taskID delivery to address a running turn — for no benefit, since a cancelled run has no
+  answer to salvage. A cancelled turn persists a **minimal assistant marker row** carrying the
+  new `stop_reason` value `cancelled` (agentloop.StopReasonCancelled), written from the shared
+  `persistTaskMessages` path when `Run` returns `context.Canceled` specifically (not
+  `DeadlineExceeded`, which stays on the timeout path). This is an **additive sibling** of
+  `max_iterations` under the D-0099 open-enum design (stop_reason is free TEXT end to end, not
+  an enum): the terminal status vocabulary is unchanged — no new status value, no zod enum edit,
+  no migration. The reload path renders the persisted marker as an amber "stopped" notice
+  (AssistantTurnView.tsx), matching what the live-aborted turn shows. A cancelled or failed turn
+  offers a **resend** affordance that re-sends the paired user message text through the existing
+  send path as a **brand-new appended turn**. **Replacement-style regenerate was explicitly
+  excluded**: mutating or deleting a persisted turn in place would introduce new mutation
+  semantics on team-readable transcripts (any authenticated principal may read any session),
+  which is out of scope for this change.
+- Basis: Phase-1 read-only verification confirmed all five load-bearing seams with file:line
+  citations (loop ctx-cooperation, detached persistence, free-string stop_reason end to end,
+  the internal AbortController, and the isSending threading ChatPage→ChatWindow→ChatInput). Go
+  handler tests over a real SQLite session store prove the cancelled marker persists on
+  `context.Canceled`, does not on `DeadlineExceeded`, and that other error paths keep the
+  existing assistant-row skip (tasks_stream_test.go). Vitest over the real ChatWindow /
+  MessageList / AssistantTurnView components (only the streamTask + chat-API boundary mocked)
+  proves cancel aborts and finalizes the live turn as cancelled, the stop button shows in flight
+  and invokes the callback, a session-switch abort produces no cancelled turn or notice, resend
+  sends the original text as a new turn, and a persisted cancelled row renders as a notice on
+  reload. All Go and Vitest suites green; `make build` re-embedded the UI.
+- Supersedes: nothing. Extends the D-0099/D-0100 stop_reason open-enum with one additive value
+  and adds UI affordances; changes no status vocabulary, endpoint, or migration.
+- Status: accepted, implemented.
+
+---
+
 ## D-0105 — the two §12.10 Declare incident entry points are mutually exclusive on screen via a count-based claim registry in the app shell
 
 - Date: 2026-07-14

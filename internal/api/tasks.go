@@ -217,7 +217,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 
 	// Persist the raw (un-redacted) conversation, then build the redacted
 	// response — matching prior behavior where the store keeps the raw answer.
-	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), start)
+	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), runErr, start)
 	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
 
 	slog.Info("task completed",
@@ -573,6 +573,12 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 	_ = audit.FailurePosture(ctx, audit.ActionLLMContextOverflow, err, "api:context_overflow", audit.FailOpen)
 }
 
+// cancelledTurnContent is the minimal, honest body persisted for a turn the
+// caller stopped in flight. The run produced no answer, so the row exists only
+// to record that the turn was stopped (paired with StopReasonCancelled); the UI
+// renders the cancelled notice, not this text, as the visible marker.
+const cancelledTurnContent = "This turn was stopped before a response was produced."
+
 // persistTaskMessages writes the user message and (if non-empty) the raw
 // assistant answer to the session store. The answer is persisted un-redacted;
 // response redaction happens separately in finalizeTaskResponse.
@@ -580,7 +586,15 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 // generateTitleAsync): a client that disconnects mid-stream cancels r.Context(),
 // and losing the turn transcript because the viewer closed a tab would be a
 // silent data loss. Principal/session context values are preserved.
-func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer, stopReason string, start time.Time) {
+//
+// runErr is the terminal error the run returned (nil on success). A run the
+// caller aborted returns context.Canceled with no answer; in that case we
+// substitute a minimal cancelled marker row (content + StopReasonCancelled) so a
+// reloaded session shows the turn was stopped rather than a question with no
+// reply. This is deliberately scoped to context.Canceled: DeadlineExceeded (the
+// timeout path) and every other error keep the existing skip-when-empty
+// behavior — they persist no assistant row.
+func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMsg, answer, stopReason string, runErr error, start time.Time) {
 	if h.server.services.SessionModel == nil {
 		return
 	}
@@ -597,6 +611,12 @@ func (h *taskHandler) persistTaskMessages(ctx context.Context, sessionID, userMs
 	// Title a freshly-started session from its opening message (heuristic now,
 	// async LLM upgrade after). A no-op once the session already has a title.
 	h.maybeAutoTitle(ctx, sessionID, userMsg)
+	// A cancelled-in-flight turn has no answer; persist a minimal marker so the
+	// reload path renders a stopped notice instead of dropping the turn.
+	if answer == "" && errors.Is(runErr, context.Canceled) {
+		answer = cancelledTurnContent
+		stopReason = agentloop.StopReasonCancelled
+	}
 	if answer != "" {
 		if _, err := h.server.services.SessionModel.AddChatMessage(ctx, sessionmodel.ChatMessage{
 			ID:         uid.New(),

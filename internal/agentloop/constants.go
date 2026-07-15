@@ -27,6 +27,16 @@ const (
 	// "completed") but the UI renders a truncation notice and the assistant
 	// message persists this marker so a reloaded session still shows it.
 	StopReasonMaxIterations = "max_iterations"
+
+	// StopReasonCancelled marks a turn the caller stopped in flight: the client
+	// aborted the streaming request (context.Canceled, distinct from the
+	// DeadlineExceeded timeout path), so the loop returned with no answer. The
+	// streaming handler persists a minimal assistant marker row carrying this
+	// value so a reloaded session shows the turn was stopped rather than a
+	// question with no reply. Additive sibling of StopReasonMaxIterations under
+	// the same open-enum design (D-0099) — the terminal status vocabulary is
+	// unchanged; stop_reason is the only new vocabulary.
+	StopReasonCancelled = "cancelled"
 )
 
 // Per-message ingestion-truncation caps. A single message entering session

@@ -85,6 +85,7 @@ function setChat(sessionId: string | null, locallyCreatedId: string | null = nul
     isLoading: false,
     isSending: false,
     send: vi.fn(),
+    cancel: vi.fn(),
     startNewSession: vi.fn(),
   });
 }
@@ -333,6 +334,7 @@ describe('ChatPage last-session restore', () => {
       isLoading: false,
       isSending: false,
       send: vi.fn(),
+      cancel: vi.fn(),
       startNewSession: vi.fn(),
     }));
     mockFetchSession.mockResolvedValue({

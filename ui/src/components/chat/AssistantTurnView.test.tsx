@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { AssistantTurnView } from './AssistantTurnView';
 import type { AssistantTurn } from '@/hooks/useChat';
 
@@ -63,6 +64,48 @@ describe('AssistantTurnView max-iterations truncation notice', () => {
       />
     );
     expect(screen.queryByTestId('max-iterations-notice')).not.toBeInTheDocument();
+  });
+});
+
+// A turn the user stopped in flight carries stop_reason 'cancelled' and renders
+// an amber "stopped" notice (not the red failure banner). Its answer bubble is
+// suppressed — the marker content is not shown — and a resend affordance appears
+// when the parent wires onResend.
+describe('AssistantTurnView cancelled notice', () => {
+  it('shows the cancelled notice and suppresses the answer bubble', () => {
+    render(
+      <AssistantTurnView turn={turn({ stopReason: 'cancelled', finalAnswer: 'marker text' })} />
+    );
+    expect(screen.getByTestId('cancelled-notice')).toBeInTheDocument();
+    // The (minimal marker) answer bubble is not shown for a cancelled turn.
+    expect(screen.queryByText('marker text')).not.toBeInTheDocument();
+    // Not a failure — no red failure banner text.
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+  });
+
+  it('offers a resend affordance on a cancelled turn when onResend is provided', async () => {
+    const onResend = vi.fn();
+    render(<AssistantTurnView turn={turn({ stopReason: 'cancelled' })} onResend={onResend} />);
+    await userEvent.click(screen.getByTestId('resend-button'));
+    expect(onResend).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a resend affordance on a failed turn when onResend is provided', async () => {
+    const onResend = vi.fn();
+    render(
+      <AssistantTurnView
+        turn={turn({ status: 'failed', failureLabel: 'Something went wrong', finalAnswer: '' })}
+        onResend={onResend}
+      />
+    );
+    await userEvent.click(screen.getByTestId('resend-button'));
+    expect(onResend).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no resend affordance on a normally-completed turn', () => {
+    const onResend = vi.fn();
+    render(<AssistantTurnView turn={turn({})} onResend={onResend} />);
+    expect(screen.queryByTestId('resend-button')).not.toBeInTheDocument();
   });
 });
 

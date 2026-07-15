@@ -186,12 +186,21 @@ export function useChat(initialSessionId?: string) {
   // is cancelled and its callbacks never fire for the session the user moved to.
   // Null when nothing streams.
   const abortRef = useRef<{ controller: AbortController; session: string | null } | null>(null);
-  // abortInFlight cancels the current stream (if any) and clears the ref. Used
+  // The turn the user could still stop: the in-flight controller paired with the
+  // id of the streaming assistant turn it belongs to. Distinct from abortRef,
+  // which the session-switch/unmount path uses to abort SILENTLY — this ref is
+  // what the user-driven cancel() reads so it can finalize the turn as cancelled.
+  // Set the instant a send starts, cleared when the turn settles or is aborted.
+  const activeRef = useRef<{ controller: AbortController; turnId: string } | null>(null);
+  // abortInFlight cancels the current stream (if any) and clears the refs. Used
   // by the session-switch effect and the unmount cleanup. It does NOT touch
-  // isSending — the callers own that, so they can reset it in the right order.
+  // isSending — the callers own that, so they can reset it in the right order —
+  // and it does NOT finalize the turn: a switch/unmount must leave no cancelled
+  // marker and fire no user-visible notice (only the deliberate stop button does).
   const abortInFlight = useCallback(() => {
     abortRef.current?.controller.abort();
     abortRef.current = null;
+    activeRef.current = null;
   }, []);
   // The id minted by this mount's own createSession() call (see send). History
   // is never fetched for it: its transcript lives in liveItems, and the server
@@ -275,6 +284,28 @@ export function useChat(initialSessionId?: string) {
     );
   }, []);
 
+  // cancel stops the in-flight turn on the user's explicit request (the composer's
+  // stop button). It reuses the same abort machinery the switch/unmount path
+  // uses, but — unlike that silent path — it FINALIZES the live turn as cancelled
+  // so it does not hang: the streaming turn settles to a completed turn carrying
+  // the 'cancelled' stop reason (the same amber notice the reload path renders),
+  // any partial step content already shown is kept, and isSending clears so the
+  // composer is usable at once. streamTask returns silently on the abort, so
+  // send()'s post-stream block is skipped and this owns the final state.
+  const cancel = useCallback(() => {
+    const active = activeRef.current;
+    if (!active) return;
+    active.controller.abort();
+    activeRef.current = null;
+    // Drop the switch/unmount ref too, so a later session change does not abort
+    // an already-settled controller.
+    if (abortRef.current?.controller === active.controller) abortRef.current = null;
+    updateTurn(active.turnId, (t) =>
+      t.status === 'streaming' ? { ...t, status: 'completed', stopReason: 'cancelled' } : t
+    );
+    setIsSending(false);
+  }, [updateTurn]);
+
   const send = useCallback(
     async (content: string) => {
       setIsSending(true);
@@ -289,6 +320,13 @@ export function useChat(initialSessionId?: string) {
       const seq = seqRef.current++;
       const userId = `u-${seq}`;
       const turnId = `a-${seq}`;
+
+      // Expose this turn's controller + id to cancel() from the outset (before
+      // the session is even resolved), so the stop button can abort during the
+      // brief createSession window too. abortRef (the switch/unmount path) is
+      // still registered only after the session resolves — its null-during-
+      // creation state is load-bearing for the fresh-chat sessionId effect.
+      activeRef.current = { controller, turnId };
 
       // Optimistic user message + a fresh streaming assistant turn. The token
       // counter starts at 0 for every new turn (per-turn, not cumulative).
@@ -406,9 +444,10 @@ export function useChat(initialSessionId?: string) {
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions });
       if (sid) void qc.invalidateQueries({ queryKey: [...QUERY_KEYS.session, sid] });
 
-      // This turn's controller is settled; clear the ref so a later switch does
-      // not abort an already-finished controller.
+      // This turn's controller is settled; clear the refs so a later switch (or
+      // a stray stop click) does not act on an already-finished controller.
       if (abortRef.current?.controller === controller) abortRef.current = null;
+      if (activeRef.current?.controller === controller) activeRef.current = null;
       setIsSending(false);
     },
     [sessionId, updateTurn, qc]
@@ -436,6 +475,9 @@ export function useChat(initialSessionId?: string) {
     isLoading: messagesQ.isLoading,
     isSending,
     send,
+    // cancel stops the in-flight turn and finalizes it as cancelled (see cancel
+    // above). Safe to call when nothing streams — it is a no-op.
+    cancel,
     startNewSession,
   };
 }

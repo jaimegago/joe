@@ -523,6 +523,10 @@ export function ChatPage() {
             onSend={(msg) => {
               void chat.send(msg);
             }}
+            onStop={chat.cancel}
+            onResend={(text) => {
+              void chat.send(text);
+            }}
             readOnly={readOnly}
           />
         )}

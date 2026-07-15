@@ -147,7 +147,7 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(runErr, llm.ErrContextOverflow) {
 		h.writeContextOverflowAudit(ctx, prepared)
 	}
-	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), start)
+	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), runErr, start)
 	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
 
 	slog.Info("task stream completed",

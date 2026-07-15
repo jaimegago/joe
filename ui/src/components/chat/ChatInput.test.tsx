@@ -54,4 +54,19 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(screen.getByRole('button')).toBeDisabled();
   });
+
+  it('shows a stop button while a turn is in flight and invokes onStop when clicked', async () => {
+    const onStop = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onStop={onStop} disabled />);
+    const stop = screen.getByRole('button', { name: /stop/i });
+    expect(stop).toBeEnabled();
+    await userEvent.click(stop);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the send button (not stop) when idle even if onStop is provided', () => {
+    render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /stop/i })).not.toBeInTheDocument();
+  });
 });
