@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { GraphNode } from '@/api/types';
-import { STATUS_CONFIG, NODE_KIND_CONFIG, DEFAULT_NODE_CONFIG } from '@/lib/constants';
+import { STATUS_CONFIG } from '@/lib/constants';
 
 interface NodeDetailsProps {
   node: GraphNode;
@@ -10,7 +10,6 @@ interface NodeDetailsProps {
 }
 
 export function NodeDetails({ node, onClose }: NodeDetailsProps) {
-  const cfg = NODE_KIND_CONFIG[node.kind] ?? DEFAULT_NODE_CONFIG;
   const status = STATUS_CONFIG[node.status ?? 'unknown'] ?? STATUS_CONFIG.unknown;
 
   const metaEntries = Object.entries(node.metadata ?? {}).slice(0, 12);
@@ -19,7 +18,6 @@ export function NodeDetails({ node, onClose }: NodeDetailsProps) {
     <div className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l bg-background">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{cfg.icon}</span>
           <div>
             <p className="font-semibold leading-none">{node.name}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{node.kind}</p>

@@ -17,7 +17,6 @@ import 'reactflow/dist/style.css';
 import type { Graph, GraphNode } from '@/api/types';
 import { GenericNode } from './nodes/GenericNode';
 import { DependencyEdge } from './edges/DependencyEdge';
-import { GraphLegend } from './GraphLegend';
 import { GraphControls } from './GraphControls';
 import { NodeDetails } from './NodeDetails';
 import { applyHierarchicalLayout, applyGridLayout } from '@/lib/graph-layout';
@@ -141,10 +140,6 @@ export function InfraGraph({ graph, onRefresh }: InfraGraphProps) {
               Refresh
             </Button>
           )}
-        </div>
-        {/* Legend */}
-        <div className="absolute bottom-16 left-4 z-10">
-          <GraphLegend />
         </div>
         <ReactFlow
           nodes={nodes}

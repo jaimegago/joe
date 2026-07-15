@@ -18,7 +18,6 @@ export const GenericNode = memo(function GenericNode({ data, selected }: NodePro
     >
       <Handle type="target" position={Position.Top} className="!border-0 !bg-gray-400" />
       <div className="flex items-center gap-1.5">
-        <span className="text-base leading-none">{cfg.icon}</span>
         <span className="truncate text-sm font-semibold" title={data.name}>
           {data.name}
         </span>
