@@ -67,6 +67,7 @@ file for the full status, priority, blocked-by, and body.
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred |  |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |  |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |  |
+| [`sessions-admin-delete-affordance`](sessions-admin-delete-affordance.md) | Admin delete affordance gap on non-owned sessions in the Sessions list | open | later |
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred |  |
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open |  |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |  |

@@ -1,0 +1,7 @@
+Admin delete affordance gap on non-owned sessions in the Sessions list
+Status: open
+Priority: later
+
+On the Sessions list, a session the current principal does not own renders read-only with no mutation affordance, by design (`SessionRow` renders rename and move-to-trash only when `read_only` is false, stamped server-side in `handleListSessions`). This is correct for the per-user route, whose seam instance is wired with `alwaysFalseAdminChecker` so even an admin resolves to `team_member` and DELETE 404s on non-owned sessions. The functional admin path exists and works: the Governance tab's two-step purge on `POST /api/v1/admin/sessions/{id}/purge`, which authorizes any creator including `svc:` principals. The gap is discoverability only: an admin looking at a non-owned session in the ordinary list gets no pointer to Governance and concludes deletion is impossible. Observed live 2026-07-14 with six `svc:server`-owned sessions created by a curl loop; the admin could not find a delete path from the list.
+
+Candidate remedies to evaluate when picked up: an admin-only affordance on read-only rows deep-linking to the Governance tab filtered to that session; or an admin-only inline purge on the list row that calls the admin route directly (keeping the per-user route untouched); or a note in the read-only badge tooltip. Do not weaken the per-user seam asymmetry: the `alwaysFalseAdminChecker` wiring on the per-user route is deliberate and must stay.
