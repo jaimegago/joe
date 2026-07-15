@@ -55,7 +55,7 @@ func newAdminServer(t *testing.T) (*httptest.Server, rbac.Repository) {
 	repo := rbac.NewRepository(db, "sqlite")
 
 	svc := &core.Services{RBAC: repo}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)

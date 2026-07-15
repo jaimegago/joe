@@ -302,7 +302,7 @@ func setupTaskServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.Se
 		Audit: audit.NewRepository(sqlStore.DB(), store.DriverSQLite),
 	}
 
-	srv := New(services)
+	srv := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	return srv, mux
@@ -1213,7 +1213,7 @@ func setupTaskServerWithRBAC(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, 
 		RBAC:     rbacRepo,
 	}
 
-	srv := New(services)
+	srv := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	return srv, mux

@@ -37,7 +37,7 @@ func setupKnowledgeTestServer(t *testing.T) (*http.ServeMux, *knowledge.Service)
 		Knowledge: knowledgeSvc,
 	}
 
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux, knowledgeSvc
@@ -434,7 +434,7 @@ func TestHandleSearch_Success(t *testing.T) {
 		Store:     sqlStore,
 		Adapters:  adapters.NewRegistry(),
 		Knowledge: knowledgeSvc,
-	}).RegisterRoutes(mux)
+	}, nil).RegisterRoutes(mux)
 
 	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/search", map[string]any{
 		"query": "deployment runbook",
@@ -463,7 +463,7 @@ func TestHandleSearch_DefaultTopK(t *testing.T) {
 		Store:     sqlStore,
 		Adapters:  adapters.NewRegistry(),
 		Knowledge: knowledgeSvc,
-	}).RegisterRoutes(mux)
+	}, nil).RegisterRoutes(mux)
 
 	// top_k=0 → uses default of 5.
 	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/search", map[string]any{
@@ -482,7 +482,7 @@ func setupKnowledgeNoServiceServer(t *testing.T) *http.ServeMux {
 		Config:    &config.Config{},
 		Adapters:  adapters.NewRegistry(),
 		Knowledge: nil,
-	}).RegisterRoutes(mux)
+	}, nil).RegisterRoutes(mux)
 	return mux
 }
 

@@ -47,7 +47,17 @@ func writeBadRequest(w http.ResponseWriter, err error, context, message string) 
 func writeAccessError(w http.ResponseWriter, err error) bool {
 	switch {
 	case errors.Is(err, access.ErrPermissionDenied):
-		// Mirror rbac.EnforcementMiddleware's 403 body exactly.
+		// 403 body carries the structured RBAC decision reason (no_grant,
+		// action_not_in_zone, …) under details.reason when the accessor returns
+		// the typed *access.PermissionDeniedError, so a caller (or an operator
+		// diagnosing a wiring bug) can see WHY without reading the audit table.
+		// The message is unchanged; this is additive observability.
+		var denied *access.PermissionDeniedError
+		if errors.As(err, &denied) && denied.Reason != "" {
+			writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied by RBAC policy",
+				map[string]any{"reason": denied.Reason})
+			return true
+		}
 		writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied by RBAC policy")
 		return true
 	case errors.Is(err, access.ErrGraphUnavailable):

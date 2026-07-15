@@ -41,7 +41,7 @@ func newRunsServer(t *testing.T) (*httptest.Server, sessionmodel.Repository, run
 		SessionModel: sessRepo,
 		RunModel:     runRepo,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)

@@ -38,6 +38,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/audit"
@@ -59,6 +60,32 @@ const GraphComponentID = "graph"
 // call is attempted on denial.
 var ErrPermissionDenied = errors.New("access denied by RBAC policy")
 
+// PermissionDeniedError is the typed permission-denied error the accessor
+// returns on a denied decision. It wraps ErrPermissionDenied (so every existing
+// errors.Is(err, ErrPermissionDenied) check keeps working unchanged) and carries
+// the structured decision Reason (rbac.ReasonNoGrant, rbac.ReasonActionNotInZone,
+// …) alongside the component and action. Transport layers extract it via
+// errors.As to surface WHY a request was denied (e.g. in the 403 body) without
+// re-parsing the message. This is observability only: the deny OUTCOME and the
+// human-readable message are byte-identical to the prior fmt.Errorf form.
+type PermissionDeniedError struct {
+	Principals rbac.PrincipalSet
+	Component  string
+	Action     string
+	Reason     string
+}
+
+// Error reproduces the exact message the prior fmt.Errorf(ErrPermissionDenied,…)
+// produced, so callers matching on the text (e.g. the loop's "access denied"
+// tool-error surface) are unaffected.
+func (e *PermissionDeniedError) Error() string {
+	return fmt.Sprintf("%s: principals=%v component=%q action=%q reason=%s",
+		ErrPermissionDenied.Error(), e.Principals, e.Component, e.Action, e.Reason)
+}
+
+// Unwrap ties the typed error to the ErrPermissionDenied sentinel.
+func (e *PermissionDeniedError) Unwrap() error { return ErrPermissionDenied }
+
 // ErrComponentNotFound is returned when no adapter is registered for the
 // requested component. It wraps store.ErrComponentNotFound so existing HTTP error
 // mapping (errors.Is(err, store.ErrComponentNotFound) → 404) is preserved.
@@ -79,10 +106,11 @@ var ErrGraphUnavailable = errors.New("graph store not available")
 type Accessor struct {
 	registry *adapters.Registry
 	graph    graph.GraphStore
-	// engine is the RBAC policy engine. A nil engine means RBAC is
-	// disabled (auth not configured) and every decision is permitted —
-	// mirroring rbac.EnforcementMiddleware(nil) on the HTTP transport, so
-	// the accessor's decision is identical to the middleware's.
+	// engine is the RBAC policy engine, constructed once at the composition
+	// root (cmd/joe/server.go) and injected via api.New. A nil engine means
+	// RBAC is disabled (auth not configured) and every decision is permitted;
+	// production always injects a non-nil governance-wired engine downstream of
+	// cmd/joe's refuse-to-start guard.
 	engine *rbac.PolicyEngine
 	// auditRepo is the append-only audit trail (Identity Phase F,
 	// docs/reference/joe-identity-design.md §2.6). Every decision the accessor
@@ -177,8 +205,23 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 		}
 	}
 
+	// One structured request-log line per decision at the single chokepoint
+	// (observability only — the outcome is unchanged): deny at Warn so an
+	// operator sees the reason a request was refused without reading the audit
+	// table; allow at Debug so the reason (e.g. team_flat_read) is available on
+	// demand without flooding steady-state logs.
+	if allowed {
+		slog.Debug("rbac decision",
+			"decision", "allow", "principal", primaryPrincipal,
+			"component", sourceID, "action", string(action), "zone", zone, "reason", reason)
+	} else {
+		slog.Warn("rbac decision",
+			"decision", "deny", "principal", primaryPrincipal,
+			"component", sourceID, "action", string(action), "zone", zone, "reason", reason)
+	}
+
 	if !allowed {
-		return fmt.Errorf("%w: principals=%v component=%q action=%q reason=%s", ErrPermissionDenied, principals, sourceID, action, reason)
+		return &PermissionDeniedError{Principals: principals, Component: sourceID, Action: string(action), Reason: reason}
 	}
 	return nil
 }

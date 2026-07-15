@@ -16,11 +16,11 @@ import (
 // regimeHandler exposes the system regime read + human declare/resolve
 // endpoints — Phase 1 Changes 4 (read) and 5 (declare/resolve).
 //
-// Declare and resolve are sourceless RBAC capabilities; they bypass the
-// source-keyed EnforcementMiddleware (which only fires on paths with
-// /api/v1/{adapter}/{componentID}/...) and instead authorize via
-// PolicyEngine.HasZoneAccess against the seeded "regime-control" zone.
-// See the §6-B finding in internal/store/migrations/012_regime_rbac.up.sql.
+// Declare and resolve are componentless RBAC capabilities: there is no
+// infrastructure component for the guarded accessor to gate on, so instead they
+// authorize via the injected PolicyEngine.HasZoneAccess against the seeded
+// "regime-control" zone. See the §6-B finding in
+// internal/store/migrations/012_regime_rbac.up.sql.
 //
 // Joe-autonomous declare/resolve are defined-but-inert seams added in
 // Change 12; this file does not implement them.
@@ -40,17 +40,16 @@ func (s *Server) registerRegimeRoutes(mux *http.ServeMux, prefix string) {
 	if s.services == nil || s.services.SessionModel == nil {
 		return
 	}
-	// The policy engine is constructed in cmd/joe/server.go from the
-	// same rbacRepo wired into services.RBAC. The Server doesn't currently
-	// hold a reference to the engine, so we construct one on demand from
-	// services.RBAC. When RBAC is unconfigured (nil), declare/resolve
-	// return 503 (no authorization layer to gate the regime-control
-	// capability).
-	var engine *rbac.PolicyEngine
-	if s.services.RBAC != nil {
-		engine = rbac.NewPolicyEngine(s.services.RBAC)
-	}
-	h := &regimeHandler{repo: s.services.SessionModel, policy: engine, auditRepo: s.services.Audit}
+	// The policy engine is constructed once at the composition root
+	// (cmd/joe/server.go, rbac.NewPolicyEngineWithGovernance) and injected into
+	// the Server; the regime-control zone check reads that SAME engine rather than
+	// building its own — HasZoneAccess consults neither the read-posture nor the
+	// auto_promote resolver (internal/rbac/policy.go), so the governance-wired
+	// engine yields byte-identical declare/resolve outcomes to the bare engine
+	// this path used to construct. When RBAC is disabled (s.engine nil),
+	// declare/resolve return 503 (no authorization layer to gate the
+	// regime-control capability).
+	h := &regimeHandler{repo: s.services.SessionModel, policy: s.engine, auditRepo: s.services.Audit}
 	mux.HandleFunc(fmt.Sprintf("GET %s/regime", prefix), h.read)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/declare", prefix), h.declare)
 	mux.HandleFunc(fmt.Sprintf("POST %s/regime/resolve", prefix), h.resolve)

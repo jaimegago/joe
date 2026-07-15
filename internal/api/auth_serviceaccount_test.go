@@ -57,7 +57,7 @@ func TestPhaseD_TwoServiceAccountsIndependentZones(t *testing.T) {
 		RBAC:     rbacRepo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
@@ -108,7 +108,7 @@ func TestPhaseD_UnknownKeyUnauthenticated(t *testing.T) {
 		RBAC:     rbac.NewRepository(sqlStore.DB(), sqlStore.Driver()),
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, accounts...)})(mux)
@@ -147,7 +147,7 @@ func TestPhaseD_ZeroZoneDeniedThenGrantAllows(t *testing.T) {
 		RBAC:     rbacRepo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
@@ -268,17 +268,17 @@ func TestPhaseD_ColocatedServerKeyReachesInfra(t *testing.T) {
 		RBAC:     rbacRepo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
 	// production route table).
 	srv.RegisterProbeRouteForTest(mux)
 
-	engine := rbac.NewPolicyEngine(rbacRepo)
+	// rbac-engine-split removed EnforcementMiddleware; the guarded accessor inside
+	// the handlers (built from the injected engine above) is the sole RBAC gate.
 	handler := api.Chain(mux,
 		auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, srvCfg.ServiceAccounts...)}),
-		rbac.EnforcementMiddleware(engine),
 	)
 
 	call := func() int {

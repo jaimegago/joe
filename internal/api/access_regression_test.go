@@ -105,7 +105,7 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 		RBAC:     repo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
@@ -113,15 +113,14 @@ func TestPhaseA_HTTPRBACOutcomesPreserved(t *testing.T) {
 	// not any product route.
 	srv.RegisterProbeRouteForTest(mux)
 
-	engine := rbac.NewPolicyEngine(repo)
 	// Production-shaped chain: EdgeAuth resolves the service-account key to its
-	// svc: principal, EnforcementMiddleware is the outer RBAC gate, and the
-	// accessor inside the handlers is the authoritative gate. The Phase A
-	// regression contract — middleware + accessor agree for the configured
-	// principal — holds identically through the Phase D service-account path.
+	// svc: principal, and the guarded accessor inside the handlers (built from the
+	// injected engine above) is the sole authoritative RBAC gate — rbac-engine-split
+	// removed the demoted EnforcementMiddleware leg this chain used to carry. The
+	// Phase A regression outcomes hold identically through the Phase D
+	// service-account path.
 	handler := api.Chain(mux,
 		auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: mustResolver(t, config.ServiceAccount{Name: "operator", Key: apiKey})}),
-		rbac.EnforcementMiddleware(engine),
 	)
 
 	cases := []struct {
@@ -166,19 +165,20 @@ func TestPhaseA_RBACDisabled_PermitsAll(t *testing.T) {
 		RBAC:     rbac.NewRepository(sqlStore.DB(), sqlStore.Driver()),
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
 	// production route table).
 	srv.RegisterProbeRouteForTest(mux)
 
-	// Mirror main.go: no policy engine when no service account is configured.
-	// EdgeAuth in disabled mode resolves every caller to the fallback principal
-	// and rejects nothing.
+	// Mirror main.go: no policy engine when no service account is configured, so
+	// the accessor (built from the nil injected engine) permits every decision —
+	// rbac-engine-split removed the pass-through EnforcementMiddleware leg. EdgeAuth
+	// in disabled mode resolves every caller to the fallback principal and rejects
+	// nothing.
 	handler := api.Chain(mux,
 		auth.EdgeAuth(auth.EdgeConfig{}),
-		rbac.EnforcementMiddleware(nil),
 	)
 
 	r := httptest.NewRequest("GET", "/api/v1/probe/s-1/read", nil)

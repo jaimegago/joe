@@ -71,7 +71,11 @@ func newRegimeServer(t *testing.T) (*httptest.Server, sessionmodel.Repository, r
 		SessionModel: sessRepo,
 		RBAC:         rbacRepo,
 	}
-	srv := api.New(svc)
+	// The regime-control zone check reads the injected engine (rbac-engine-split);
+	// this stack has RBAC wired but no service accounts, so pass the same bare
+	// engine the handler used to construct on demand — preserving the declare/
+	// resolve authorization outcomes these tests assert.
+	srv := api.New(svc, rbac.NewPolicyEngine(rbacRepo))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 

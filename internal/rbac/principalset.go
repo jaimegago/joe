@@ -8,9 +8,10 @@ package rbac
 // and with Kubernetes RBAC (docs/reference/joe-identity-design.md §2.7).
 //
 // At launch the set is constructed with exactly one member — the caller's own
-// principal. Both enforcement points lift the context-derived caller principal
-// into a size-1 set: rbac.EnforcementMiddleware on the HTTP transport and
-// access.Accessor below it. The set shape exists now so that group membership
+// principal. The guarded access.Accessor — the single authoritative RBAC gate on
+// both the HTTP transport and the in-process agent-loop path — lifts the
+// context-derived caller principal into a size-1 set. The set shape exists now so
+// that group membership
 // (group:<name> principals sourced from an IdP groups claim) drops in later as
 // additional members with no change to the evaluation (design §2.7, §6).
 //

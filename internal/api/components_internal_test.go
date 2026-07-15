@@ -39,7 +39,7 @@ func TestHandleListComponents_StoreError(t *testing.T) {
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
-	})
+	}, nil)
 	req := httptest.NewRequest("GET", "/api/v1/components", nil)
 	w := httptest.NewRecorder()
 	s.handleListComponents(w, req)
@@ -61,7 +61,7 @@ func TestHandleSummary_GraphError(t *testing.T) {
 	graphStore := graph.NewSQLiteStore(sqlStore.DB(), nil)
 	sqlStore.Close() // close DB → graph queries now fail
 
-	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()}, nil)
 	h := &graphHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/graph/summary", nil)
 	w := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestHandleGetFullGraph_GraphError(t *testing.T) {
 	graphStore := graph.NewSQLiteStore(sqlStore.DB(), nil)
 	sqlStore.Close() // close DB → ListAll queries fail
 
-	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/graph", nil)
 	w := httptest.NewRecorder()
@@ -99,7 +99,7 @@ func TestHandleTestComponent_StoreError(t *testing.T) {
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
-	})
+	}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("POST", "/api/v1/components/some-id/test", nil)
 	req.SetPathValue("id", "some-id")
@@ -124,7 +124,7 @@ func TestHandleCreateSession_StoreError(t *testing.T) {
 		Config:       &config.Config{},
 		SessionModel: closedSessionModel(t),
 		Adapters:     adapters.NewRegistry(),
-	})
+	}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("POST", "/api/v1/sessions", nil)
 	w := httptest.NewRecorder()
@@ -140,7 +140,7 @@ func TestHandleListSessions_StoreError(t *testing.T) {
 		Config:       &config.Config{},
 		SessionModel: closedSessionModel(t),
 		Adapters:     adapters.NewRegistry(),
-	})
+	}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/sessions", nil)
 	w := httptest.NewRecorder()
@@ -156,7 +156,7 @@ func TestHandleGetSessionMessages_StoreError(t *testing.T) {
 		Config:       &config.Config{},
 		SessionModel: closedSessionModel(t),
 		Adapters:     adapters.NewRegistry(),
-	})
+	}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/sessions/my-session/messages", nil)
 	req.SetPathValue("id", "my-session")
@@ -173,7 +173,7 @@ func TestHandleDeleteComponent_StoreError(t *testing.T) {
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
-	})
+	}, nil)
 	req := httptest.NewRequest("DELETE", "/api/v1/components/some-id", nil)
 	req.SetPathValue("id", "some-id")
 	w := httptest.NewRecorder()
@@ -189,7 +189,7 @@ func TestHandleGetComponent_StoreError(t *testing.T) {
 		Config:   &config.Config{},
 		Store:    newClosedStore(t),
 		Adapters: adapters.NewRegistry(),
-	})
+	}, nil)
 	req := httptest.NewRequest("GET", "/api/v1/components/some-id", nil)
 	req.SetPathValue("id", "some-id")
 	w := httptest.NewRecorder()
@@ -202,7 +202,7 @@ func TestHandleGetComponent_StoreError(t *testing.T) {
 // TestHandleGetComponent_EmptyID covers the id=="" guard by calling the handler
 // directly without setting a path value (defaults to "").
 func TestHandleGetComponent_EmptyID(t *testing.T) {
-	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	req := httptest.NewRequest("GET", "/api/v1/components/", nil)
 	// Do NOT call req.SetPathValue — PathValue("id") returns "".
 	w := httptest.NewRecorder()
@@ -214,7 +214,7 @@ func TestHandleGetComponent_EmptyID(t *testing.T) {
 
 // TestHandleDeleteComponent_EmptyID covers the id=="" guard in handleDeleteComponent.
 func TestHandleDeleteComponent_EmptyID(t *testing.T) {
-	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	req := httptest.NewRequest("DELETE", "/api/v1/components/", nil)
 	w := httptest.NewRecorder()
 	s.handleDeleteComponent(w, req)
@@ -291,7 +291,7 @@ func TestHandleAccessError_UnexpectedError(t *testing.T) {
 // ---------- handleGetNode error paths ----------
 
 func TestHandleGetNode_EmptyID(t *testing.T) {
-	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/graph/node/", nil)
 	// PathValue("id") returns "" when not set
@@ -313,7 +313,7 @@ func TestHandleGetNode_GraphError(t *testing.T) {
 	graphStore := graph.NewSQLiteStore(sqlStore.DB(), nil)
 	sqlStore.Close() // close DB → GetNode fails
 
-	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()})
+	s := New(&core.Services{Config: &config.Config{}, Graph: graphStore, Adapters: adapters.NewRegistry()}, nil)
 	h := &webUIHandler{server: s}
 	req := httptest.NewRequest("GET", "/api/v1/graph/node/some-id", nil)
 	req.SetPathValue("id", "some-id")

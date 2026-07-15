@@ -85,7 +85,7 @@ func setupAlertmanagerTestServer(t *testing.T, mock *mockAlertmanagerAdapter) *h
 	registry := adapters.NewRegistry()
 	registry.Register("test-am", mock)
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux
@@ -96,7 +96,7 @@ func setupPagerDutyTestServer(t *testing.T, mock *mockPagerDutyAdapter) *http.Se
 	registry := adapters.NewRegistry()
 	registry.Register("test-pd", mock)
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux
@@ -107,7 +107,7 @@ func setupGrafanaTestServer(t *testing.T, mock *mockGrafanaAdapter) *http.ServeM
 	registry := adapters.NewRegistry()
 	registry.Register("test-grafana", mock)
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux
@@ -180,7 +180,7 @@ func TestHandleAlertmanagerAlerts(t *testing.T) {
 func TestHandleAlertmanagerAlerts_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
@@ -210,7 +210,7 @@ func TestHandleAlertingWrongAdapterType(t *testing.T) {
 	registry := adapters.NewRegistry()
 	registry.Register("test-pd", &mockPagerDutyAdapter{})
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
@@ -294,7 +294,7 @@ func TestHandlePagerDutyIncidents_WithParams(t *testing.T) {
 func TestHandlePagerDutyIncidents_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
@@ -470,7 +470,7 @@ func TestHandleGrafanaGetDashboard(t *testing.T) {
 func TestHandleGrafanaGetDashboard_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
@@ -543,7 +543,7 @@ func TestHandleGrafanaAlerts(t *testing.T) {
 func TestHandleGrafanaAlerts_MissingComponent(t *testing.T) {
 	registry := adapters.NewRegistry()
 	services := &core.Services{Config: &config.Config{}, Adapters: registry}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 

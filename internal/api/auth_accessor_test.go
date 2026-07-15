@@ -55,7 +55,7 @@ func TestPhaseC_OIDCSessionPrincipalReachesAccessor(t *testing.T) {
 		RBAC:     rbacRepo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the

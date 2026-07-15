@@ -44,7 +44,7 @@ func setupModelServer(t *testing.T) (*Server, *llm.SwappableAdapter) {
 		},
 		LLM: sw,
 	}
-	return New(services), sw
+	return New(services, TestingPolicyEngine(services)), sw
 }
 
 // setupModelServerWithSettings wires a real (in-memory SQLite) llmsettings
@@ -82,7 +82,7 @@ func setupModelServerWithSettings(t *testing.T) (*Server, *llm.SwappableAdapter,
 		LLMSettings: svc,
 		Audit:       auditRepo,
 	}
-	return New(services), sw, s.DB()
+	return New(services, TestingPolicyEngine(services)), sw, s.DB()
 }
 
 func TestHandleListModels(t *testing.T) {
@@ -308,7 +308,7 @@ func TestHandleSetModel_MutationFailureLeavesLiveModelUnchanged(t *testing.T) {
 		LLM:         sw,
 		LLMSettings: svc,
 	}
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 

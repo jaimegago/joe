@@ -113,7 +113,7 @@ func newCascadeServer(t *testing.T) (
 		RBACEnabled:  true,
 		Audit:        auditRepo,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)

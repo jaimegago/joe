@@ -10,6 +10,68 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0107 — the one governance-wired RBAC PolicyEngine is built at the composition root and injected into api.New; EnforcementMiddleware is deleted, superseding the D-0008 demotion
+
+- Date: 2026-07-15
+- Session: rbac-engine-split
+- Decision: two `rbac.PolicyEngine` instances existed on the human transport path.
+  D-0041/D-0043 wired the governance resolvers (read-posture, auto_promote) into
+  `NewPolicyEngineWithGovernance`, but that engine's **sole consumer** was
+  `rbac.EnforcementMiddleware` — a pass-through since the D-0008 demotion that
+  **discards its engine argument**. The engine actually gating every accessor
+  decision was built **bare inside `api.New`** (`newPolicyEngine` → `rbac.NewPolicyEngine`,
+  carrying neither resolver), with a third bare engine constructed by the regime
+  handler. Consequence: the launch-default `team_flat` read admit
+  (`internal/rbac/policy.go`) was **structurally unreachable on the transport
+  path** — a non-admin principal got `403 no_grant` on `GET /api/v1/graph` under
+  the launch default. Fix: build the **one** governance-wired transport engine at
+  the composition root (`buildHTTPHandler`, extracted in `cmd/joe/server.go` so
+  `main` and the regression pin share a single assembly path), nil when
+  `!cfg.RBACEnabled()` (preserving the accessor's nil-engine permit-all), and
+  inject it into `api.New` (new signature `New(services, engine)`); the guarded
+  accessor **and** the regime handler both enforce with that injected engine.
+  `newPolicyEngine` and the regime handler's own `rbac.NewPolicyEngine` call are
+  deleted. `rbac.EnforcementMiddleware` is deleted entirely — its type/function,
+  the engine that fed only it, its place in the middleware chain,
+  `TestEnforcementMiddleware_Passthrough`, and the demoted-chain leg of the Phase E
+  equivalence test — so the guarded accessor (`internal/access`) is the sole
+  authoritative RBAC gate on both the HTTP and agent-loop paths; **this deletion
+  supersedes the D-0008 demotion posture** (the middleware is gone, not merely
+  inert). The `agent:core` refresh engine (`NewPolicyEngineWithPromote`, posture
+  seam nil per D-0043) and its refresh accessor are **untouched**. Observability
+  only (no decision outcome changes anywhere): the accessor returns a typed
+  `*access.PermissionDeniedError` carrying the decision reason, surfaced in the 403
+  body under `details.reason` and via **one per-decision request-log line at the
+  permit chokepoint** (deny at Warn, allow at Debug); the admit reason
+  (`team_flat_read`) is durably recorded in the `audit_log` `infra_access` row.
+- Basis: Phase-1 read-only verification confirmed the two-engine drift against the
+  live tree with file:line citations (governance engine feeding only the inert
+  middleware; the bare accessor engine in `api.New`; the bare regime engine;
+  `HasZoneAccess` consulting neither resolver, so injecting the governance engine
+  cannot change declare/resolve outcomes). The pin
+  `TestRBACEngineSplit_TeamFlatReadAdmit_Graph` (`cmd/joe`) drives the production
+  `buildHTTPHandler` assembly path with a temp SQLite DB, RBAC enabled, `team_flat`
+  posture, and a non-admin service account: `GET /api/v1/graph` → **200** with the
+  audit reason `team_flat_read`, the zoned posture → **403**, and an
+  unauthenticated request → **401**. Break-tested: on the pre-fix bare-engine
+  wiring the admit leg failed `403, want 200`; with the fix it passes. The static
+  guard `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot` (`internal/rbac`,
+  AST repo-scan in the style of `regime_invariant_test.go`) forbids any
+  `rbac.NewPolicyEngine*` constructor outside `cmd/joe` and `_test.go`. The
+  refresh-engine axis-separation invariant
+  `TestReadPosture_AxisSeparation_RefreshEngineIgnoresPosture` stays green; the
+  ~45 `api.New` callers were updated (a `_test.go` helper `TestingPolicyEngine`
+  replicating the deleted `newPolicyEngine` preserves each accessor test's
+  behaviour; regime-route test servers inject a bare `rbac.NewPolicyEngine`). Full
+  `go build ./...`, `go vet ./...`, `go test ./...`, and gofmt are green.
+- Supersedes: the D-0008 `EnforcementMiddleware` demotion posture (the middleware
+  is now deleted, not retained as a pass-through seam). Corrects the transport-path
+  drift introduced when D-0041/D-0043 wired the governance resolvers into an engine
+  whose only consumer had been inert since D-0008.
+- Status: accepted, implemented.
+
+---
+
 ## D-0106 — chat turn cancellation is client-driven abort with an additive `cancelled` stop_reason; resend re-sends as a new turn, replacement-style regenerate is out of scope
 
 - Date: 2026-07-15

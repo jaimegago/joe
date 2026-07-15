@@ -53,7 +53,9 @@ func newAdminSessionsServer(t *testing.T) (*httptest.Server, sessionmodel.Reposi
 		RBACEnabled:    true,
 		Audit:          auditRepo,
 	}
-	srv := api.New(svc)
+	// Injected engine (rbac-engine-split); this admin-sessions stack also serves
+	// the regime promote route, so pass the bare engine the handler used to build.
+	srv := api.New(svc, rbac.NewPolicyEngine(rbacRepo))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)
@@ -283,7 +285,7 @@ func TestB006_GovernAuditFailureFailsClosed(t *testing.T) {
 		Store: s, SessionModel: sessRepo, RBAC: rbacRepo, RBACEnabled: true,
 		Audit: failingAuditRepo{},
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, rbac.NewPolicyEngine(rbacRepo))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(rbac.IdentityMiddleware(testPrincipalProvider{})(mux))
@@ -322,7 +324,7 @@ func TestB006_RBACDisabledAsymmetry(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 	sessRepo := sessionmodel.NewRepository(s.DB(), store.DriverSQLite)
 	svc := &core.Services{Store: s, SessionModel: sessRepo, RBACEnabled: false} // RBAC OFF
-	srv := api.New(svc)
+	srv := api.New(svc, nil)                                                    // RBAC disabled → nil engine (admin routes gate via the seam, not the engine)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(rbac.IdentityMiddleware(testPrincipalProvider{})(mux))

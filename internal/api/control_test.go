@@ -62,7 +62,7 @@ func setupControlTestServer(t *testing.T, agent core.CoreAgent) *Server {
 		Agent:    agent,
 	}
 
-	return New(services)
+	return New(services, TestingPolicyEngine(services))
 }
 
 // TestOnboardingRouteParked asserts the parked contract (D-0081): the onboarding

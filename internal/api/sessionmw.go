@@ -22,8 +22,8 @@ import (
 //	                         hash(runID, toolName, argsHash).
 //
 // Installed AFTER IdentityMiddleware (so the principal is already on
-// the context for downstream handlers) and BEFORE EnforcementMiddleware
-// (the source-keyed RBAC check is unchanged and runs after this).
+// the context for downstream handlers) and BEFORE the handlers themselves,
+// inside which the guarded accessor performs the per-component RBAC check.
 func SessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

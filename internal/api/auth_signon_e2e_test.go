@@ -123,7 +123,7 @@ func newAuthServer(t *testing.T, adminEmail string) *authTestServer {
 		RBACEnabled: true,
 		OIDCEnabled: true,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)                 // /api/v1/me, /api/v1/auth/config, /api/v1/status, ...

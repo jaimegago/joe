@@ -49,7 +49,7 @@ func newClosedDBAdminHandler(t *testing.T) *adminHandler {
 	// RBACEnabled defaults to false → requireAdmin permits unconditionally
 	// (auth-disabled convention), so these repo-error tests still exercise
 	// the handler body and the closed-DB 500 path, not the gate.
-	srv := New(&core.Services{RBAC: repo})
+	srv := New(&core.Services{RBAC: repo}, nil)
 	return &adminHandler{repo: repo, server: srv}
 }
 

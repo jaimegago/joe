@@ -47,7 +47,7 @@ func newSessionModelServer(t *testing.T) (*httptest.Server, sessionmodel.Reposit
 		Findings:     findingsRepo,
 		Warnings:     warningsRepo,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Wire identity middleware so the author/creator principal is context-derived

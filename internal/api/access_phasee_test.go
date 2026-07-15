@@ -76,7 +76,7 @@ func TestPhaseE_LoopEnforcesAgainstRealCallerPrincipal(t *testing.T) {
 
 	run := func(principal rbac.Principal) (allowed bool, raw any) {
 		services.LLM = mockToolThenFinalLLM()
-		srv := api.New(services)
+		srv := api.New(services, api.TestingPolicyEngine(services))
 		mux := http.NewServeMux()
 		srv.RegisterRoutes(mux)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(`{"message":"poke"}`))
@@ -143,7 +143,7 @@ func TestPhaseE_LoopGraphAccessIsInProcess(t *testing.T) {
 	}
 
 	services.LLM = mockGraphQueryThenFinalLLM()
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -161,28 +161,19 @@ func TestPhaseE_LoopGraphAccessIsInProcess(t *testing.T) {
 	}
 }
 
-// --- Equivalence test (gates the EnforcementMiddleware demotion) ---
+// --- Accessor-as-sole-gate test (was the EnforcementMiddleware equivalence test) ---
 
-// TestPhaseE_AccessorAloneMatchesPriorOutcomes is the EQUIVALENCE test that
-// gated the EnforcementMiddleware demotion (Phase E req 6). It asserts that
-// the accessor ALONE on the HTTP path produces the SAME allow/deny/unauth
-// (200/403/401) outcomes the prior middleware-plus-accessor chain produced.
-//
-// Two chains are constructed over the same routes + RBAC state:
-//
-//   - "demoted-middleware-plus-accessor": EdgeAuth + the demoted
-//     EnforcementMiddleware (a pass-through in Phase E) + accessor. This is
-//     the production chain as it stands AFTER the demotion.
-//   - "accessor-alone": EdgeAuth + accessor (no middleware) — the strict
-//     interpretation of "accessor is the sole authoritative gate".
-//
-// Both chains must return identical status codes across the allow/deny/unauth
-// matrix. If a future change reintroduces middleware enforcement (or breaks
-// the accessor's path), this divergence is what fails the test. The legacy
-// pre-Phase-E "middleware + accessor with IsAllowed" arrangement no longer
-// exists in the codebase, so the test compares "demoted middleware +
-// accessor" against "accessor alone" — both should agree and both should
-// match the Phase A regression outcomes (`TestPhaseA_HTTPRBACOutcomesPreserved`).
+// TestPhaseE_AccessorAloneMatchesPriorOutcomes asserts that the guarded accessor
+// ALONE on the HTTP path produces the expected allow/deny/unauth (200/403/401)
+// outcomes. It originally gated the Phase E EnforcementMiddleware demotion by
+// comparing a "demoted-middleware-plus-accessor" chain against an
+// "accessor-alone" chain; rbac-engine-split deleted EnforcementMiddleware
+// entirely, so the demoted leg is gone and only the accessor-alone chain remains.
+// The assertion is unchanged: EdgeAuth + accessor (no RBAC middleware) must
+// return 200 for a granted read, 403 for an ungranted zone, and 401 for a
+// missing/invalid token — matching the Phase A regression outcomes
+// (`TestPhaseA_HTTPRBACOutcomesPreserved`). If a future change breaks the
+// accessor's path this is what fails.
 func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 	sqlStore := mustRegStore(t)
 	ctx := context.Background()
@@ -211,7 +202,7 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 		RBAC:     repo,
 		Adapters: registry,
 	}
-	srv := api.New(services)
+	srv := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Test-only protected route reaching the guarded accessor (never in the
@@ -219,14 +210,13 @@ func TestPhaseE_AccessorAloneMatchesPriorOutcomes(t *testing.T) {
 	// not any product route.
 	srv.RegisterProbeRouteForTest(mux)
 
-	engine := rbac.NewPolicyEngine(repo)
 	resolver := mustResolver(t, config.ServiceAccount{Name: "operator", Key: apiKey})
 
+	// rbac-engine-split removed rbac.EnforcementMiddleware, so the
+	// "demoted-middleware-plus-accessor" leg this test used to compare against is
+	// gone. The guarded accessor is the sole authoritative RBAC gate; the
+	// accessor-alone chain must still produce the allow/deny/unauth matrix below.
 	chains := map[string]http.Handler{
-		"demoted-middleware-plus-accessor": api.Chain(mux,
-			auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: resolver}),
-			rbac.EnforcementMiddleware(engine),
-		),
 		"accessor-alone": api.Chain(mux,
 			auth.EdgeAuth(auth.EdgeConfig{ServiceAccounts: resolver}),
 		),

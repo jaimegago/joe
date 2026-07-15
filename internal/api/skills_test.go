@@ -56,7 +56,7 @@ func newSkillsServer(t *testing.T, root string) (*httptest.Server, *skills.Atomi
 		Skills:        router,
 		SkillsWatcher: watcher,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -105,7 +105,7 @@ func TestSkillsReload_UnavailableWhenWatcherNil(t *testing.T) {
 	svc := &core.Services{
 		Skills: skills.NewAtomicRouter(skills.NewRouter(skills.NewRegistry())),
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -135,7 +135,7 @@ func newSkillsServerWithManager(t *testing.T, root string) (*httptest.Server, *s
 		Skills:        router,
 		SkillsManager: mgr,
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -248,7 +248,7 @@ func TestSkillsApprove_UnavailableWhenManagerNil(t *testing.T) {
 	svc := &core.Services{
 		Skills: skills.NewAtomicRouter(skills.NewRouter(skills.NewRegistry())),
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)

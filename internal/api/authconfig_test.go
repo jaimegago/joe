@@ -31,7 +31,7 @@ func TestAuthConfig_PublicNoCredentialReflectsConfigured(t *testing.T) {
 		{name: "not-configured", oidcEnabled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := api.New(&core.Services{OIDCEnabled: tc.oidcEnabled})
+			srv := api.New(&core.Services{OIDCEnabled: tc.oidcEnabled}, nil)
 			mux := http.NewServeMux()
 			srv.RegisterRoutes(mux)
 

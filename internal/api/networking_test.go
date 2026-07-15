@@ -70,7 +70,7 @@ func setupNetworkingServer(t *testing.T, sourceID string, mock adapters.Adapter)
 		Config:   &config.Config{},
 		Adapters: registry,
 	}
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux

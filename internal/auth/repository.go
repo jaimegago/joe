@@ -6,8 +6,8 @@
 // principal is carried by a server-side session: a row in SQLite plus an
 // HttpOnly, Secure, SameSite=Lax cookie holding only the opaque session id.
 // The principal then flows through the SAME context mechanism Phase B
-// established (rbac.WithPrincipal → rbac.PrincipalFromContext), so both the
-// EnforcementMiddleware and the guarded accessor see the real caller.
+// established (rbac.WithPrincipal → rbac.PrincipalFromContext), so the guarded
+// accessor sees the real caller.
 //
 // This package authenticates ONLY at the external HTTP edge. It does not touch
 // the agentic loop, the loopback, or service-account API keys (Phases D/E).

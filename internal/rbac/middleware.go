@@ -54,30 +54,13 @@ func IdentityMiddleware(provider IdentityProvider) func(http.Handler) http.Handl
 	}
 }
 
-// EnforcementMiddleware is a coarse outer gate that survives in the chain as a
-// defence-in-depth seam (docs/reference/joe-identity-design.md §3, Phase E demotion). Its
-// former per-zone IsAllowed decision has been moved into the guarded accessor
-// (internal/access), which is now the AUTHORITATIVE RBAC gate on BOTH the HTTP
-// path (Phase A) and the in-process agent-loop path (Phase E). The accessor
-// evaluates the real caller principal carried by Go context — there is no
-// loopback HTTP self-call any more, no svc:server re-authentication on the loop,
-// and no second IsAllowed call to keep in sync.
-//
-// This middleware is now a pass-through. It is kept (a) so existing test
-// harnesses that wire it in continue to compile, and (b) as a documented seam
-// for a future coarse "authenticated principal required on component-keyed paths"
-// belt-and-suspenders — EdgeAuth already rejects unauthenticated protected
-// paths, so requiring a principal here would only be redundant defence. The
-// engine argument is retained so the call sites are unchanged.
-//
-// The Phase E equivalence test
-// (internal/api/access_phasee_test.go::TestPhaseE_AccessorAloneMatchesPriorOutcomes)
-// gates this demotion: it proves that the accessor alone produces the same
-// allow/deny/unauth (200/403/401) outcomes the prior middleware+accessor chain
-// produced.
-func EnforcementMiddleware(engine *PolicyEngine) func(http.Handler) http.Handler {
-	_ = engine // intentionally unused after Phase E demotion
-	return func(next http.Handler) http.Handler {
-		return next
-	}
-}
+// EnforcementMiddleware was removed by rbac-engine-split. It had been a
+// pass-through since the Phase E demotion (D-0008) — a coarse outer gate that
+// discarded its engine argument and returned the next handler unchanged — while
+// the guarded accessor (internal/access) became the sole authoritative RBAC gate
+// on both the HTTP and agent-loop paths. Because its only production consumer
+// (the transport middleware chain) fed it the governance-wired engine and then
+// threw the decision away, keeping it around masked the accessor engine being
+// built bare and un-governed inside api.New. Deleting it, and injecting the ONE
+// composition-root engine into api.New instead, is what makes the transport and
+// accessor engines provably the same object.

@@ -62,7 +62,7 @@ func setupTestServer(t *testing.T) (*api.Server, graph.GraphStore) {
 		Adapters: adapters.NewRegistry(),
 	}
 
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	return server, graphStore
 }
 
@@ -102,10 +102,10 @@ func seedTestGraph(t *testing.T, store graph.GraphStore) {
 func TestNew_NilServices_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("api.New(nil) should panic")
+			t.Error("api.New(nil, nil) should panic")
 		}
 	}()
-	api.New(nil) //nolint:staticcheck // intentional nil to verify panic
+	api.New(nil, nil) //nolint:staticcheck // intentional nil to verify panic
 }
 
 func TestHandleStatus(t *testing.T) {

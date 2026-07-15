@@ -46,7 +46,7 @@ func setupClarificationsTestServer(t *testing.T) (*Server, *store.Store) {
 		Adapters: registry,
 	}
 
-	return New(services), sqlStore
+	return New(services, TestingPolicyEngine(services)), sqlStore
 }
 
 // TestClarificationsRoutesParked asserts the parked contract (D-0081): the three
@@ -83,7 +83,7 @@ func TestClarificationsRoutesParked(t *testing.T) {
 	t.Run("with nil store", func(t *testing.T) {
 		// The group is unregistered regardless of Store presence, so a nil-store
 		// server 404s the same way a store-backed one does.
-		server := New(&core.Services{Store: nil})
+		server := New(&core.Services{Store: nil}, nil)
 		mux := http.NewServeMux()
 		server.RegisterRoutes(mux)
 

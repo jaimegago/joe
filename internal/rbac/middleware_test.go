@@ -35,45 +35,9 @@ func TestIdentityMiddleware_InjectsContext(t *testing.T) {
 	}
 }
 
-// TestEnforcementMiddleware_Passthrough proves the Phase E demotion: the
-// middleware no longer evaluates per-zone IsAllowed and instead passes every
-// request through, regardless of component path, HTTP method, or engine
-// configuration. Per-zone enforcement now lives EXCLUSIVELY in the guarded
-// accessor (internal/access), which both HTTP handlers and the in-process
-// agent-loop reach. The Phase E equivalence test in internal/api proves the
-// accessor alone produces the same 200/403/401 outcomes the prior
-// middleware+accessor chain produced.
-func TestEnforcementMiddleware_Passthrough(t *testing.T) {
-	db := openTestDB(t)
-	repo := rbac.NewRepository(db, "sqlite")
-	engine := rbac.NewPolicyEngine(repo)
-
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	cases := []struct {
-		name   string
-		engine *rbac.PolicyEngine
-		method string
-		path   string
-	}{
-		{"non-component path with engine", engine, "GET", "/api/v1/status"},
-		{"component path GET with engine", engine, "GET", "/api/v1/probe/k8s-prod/read"},
-		{"component path POST with engine", engine, "POST", "/api/v1/probe/k8s-prod/read"},
-		{"component path DELETE with engine", engine, "DELETE", "/api/v1/probe/k8s-prod/read/pod/default/p"},
-		{"non-component path nil engine", nil, "GET", "/api/v1/status"},
-		{"component path GET nil engine", nil, "GET", "/api/v1/probe/k8s-prod/read"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			handler := rbac.EnforcementMiddleware(tc.engine)(next)
-			r := httptest.NewRequest(tc.method, tc.path, nil)
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, r)
-			if w.Code != http.StatusOK {
-				t.Errorf("expected 200 (middleware now pass-through), got %d", w.Code)
-			}
-		})
-	}
-}
+// TestEnforcementMiddleware_Passthrough was deleted by rbac-engine-split along
+// with rbac.EnforcementMiddleware itself. The middleware had been a pass-through
+// since the Phase E demotion (D-0008); with it removed the guarded accessor
+// (internal/access) is the sole authoritative RBAC gate, and the accessor's own
+// tests plus the cmd/joe rbac-engine-split regression pin cover the 200/403/401
+// outcomes this test used to assert against the pass-through.

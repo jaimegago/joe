@@ -49,6 +49,15 @@ type Server struct {
 	// point. The real-admin seam instance + the /api/v1/admin/sessions routes are
 	// B006's (sessionAuthzAdmin below).
 	sessionAuthz *sessionauthz.Seam
+	// engine is the RBAC policy engine constructed at the composition root
+	// (cmd/joe/server.go) and injected here — the SAME governance-wired engine
+	// the guarded accessor above enforces with. It is nil when RBAC is disabled
+	// (!cfg.RBACEnabled()), matching the accessor's nil-engine permit-all
+	// semantics. Handlers that need componentless zone checks (the regime
+	// declare/resolve path) read it instead of constructing their own engine, so
+	// there is exactly one engine per request path and the read-posture / promote
+	// resolvers wired into it at construction reach every consumer.
+	engine *rbac.PolicyEngine
 	// sessionAuthzAdmin is the ADMIN session-authorization seam instance (§12.7
 	// seam / §12.8 two-instance defense-in-depth, B006). It is built with the REAL
 	// D-0011 admin checker (newAdminSessionAuthz / rbacAdminChecker) and is the
@@ -67,10 +76,23 @@ type Server struct {
 	modelSwapMu sync.Mutex
 }
 
-// New creates a new API server with access to core services.
-// services must not be nil; callers that do not have all sub-services wired
-// should pass zero-value sub-service fields rather than a nil pointer.
-func New(services *core.Services) *Server {
+// New creates a new API server with access to core services and the RBAC policy
+// engine the guarded accessor enforces with. services must not be nil; callers
+// that do not have all sub-services wired should pass zero-value sub-service
+// fields rather than a nil pointer.
+//
+// engine is constructed once at the composition root (cmd/joe/server.go, via
+// rbac.NewPolicyEngineWithGovernance) and injected here, so the accessor gates
+// with the SAME governance-wired engine — carrying the read-posture and
+// auto_promote resolvers — that governs the rest of the transport. A nil engine
+// means RBAC is disabled and the accessor permits every decision (identical to
+// the prior rbac.EnforcementMiddleware(nil) posture); production reaches api.New
+// only downstream of cmd/joe's refuse-to-start guard, where the engine is
+// non-nil. There is no longer any api.New-internal engine construction — the
+// prior newPolicyEngine (which built a bare engine with neither resolver) is
+// gone, and with it the drift that left the launch-default team_flat read admit
+// structurally unreachable on the transport path.
+func New(services *core.Services, engine *rbac.PolicyEngine) *Server {
 	if services == nil {
 		panic("api.New: services must not be nil")
 	}
@@ -84,35 +106,15 @@ func New(services *core.Services) *Server {
 	if services.Audit != nil {
 		auditRepo = services.Audit
 	}
-	accessor := access.New(services.Adapters, services.Graph, newPolicyEngine(services), auditRepo)
+	accessor := access.New(services.Adapters, services.Graph, engine, auditRepo)
 	return &Server{
 		services:          services,
 		accessor:          accessor,
+		engine:            engine,
 		inproc:            newInProcessCoreClient(accessor, services),
 		sessionAuthz:      newPerUserSessionAuthz(services),
 		sessionAuthzAdmin: newAdminSessionAuthz(services),
 	}
-}
-
-// newPolicyEngine builds the RBAC policy engine the accessor enforces with.
-// It shares cmd/joe/server.go's enable decision through the SINGLE predicate
-// config.Config.RBACEnabled (a service account OR a configured OIDC issuer), so
-// the accessor's allow/deny decision cannot drift from the transport
-// middleware's for the same principal. The Config-nil and RBAC-nil guards below
-// are NOT part of that enable disjunction: they force a nil engine for api.New's
-// looser contract (callers may pass a zero-value Services), under which the
-// accessor permits every decision — identical to rbac.EnforcementMiddleware(nil).
-// In production api.New is only reached downstream of cmd/joe's refuse-to-start
-// guard with the same gated *config.Config, so RBACEnabled is already true here
-// and the engine is non-nil.
-func newPolicyEngine(services *core.Services) *rbac.PolicyEngine {
-	if services.Config == nil || services.RBAC == nil {
-		return nil
-	}
-	if !services.Config.RBACEnabled() {
-		return nil
-	}
-	return rbac.NewPolicyEngine(services.RBAC)
 }
 
 // RegisterRoutes registers all API routes on the given mux

@@ -33,8 +33,8 @@ import (
 // unresolved principal (401) before any state change, and the heartbeat /
 // transfer handlers additionally enforce captain/party identity at the
 // repository layer (RecordCaptainHeartbeat and the transfer service refuse
-// non-captain / non-party principals). They remain sourceless, so the
-// source-keyed RBAC EnforcementMiddleware never fires.
+// non-captain / non-party principals). They remain componentless, so the
+// component-keyed guarded accessor never gates them.
 type captainHandler struct {
 	repo sessionmodel.Repository
 	svc  *sessionmodel.CaptainService

@@ -86,7 +86,7 @@ func TestB007a_PerUserSoftDeleteAuditFailureRollsBack(t *testing.T) {
 		Store: s, SessionModel: sessRepo, RBACEnabled: false,
 		Audit: failingAuditRepo{},
 	}
-	srv := api.New(svc)
+	srv := api.New(svc, api.TestingPolicyEngine(svc))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	ts := httptest.NewServer(rbac.IdentityMiddleware(testPrincipalProvider{})(mux))

@@ -28,7 +28,10 @@ func setupIntegrationServer(t *testing.T) (*api.Server, *http.ServeMux, *store.S
 	}
 	t.Cleanup(func() { testStore.Close() })
 	services := core.New(&config.Config{}, testStore, testStore.DB(), testStore.Driver(), adapters.NewRegistry(), nil)
-	server := api.New(services)
+	// Empty config → RBAC disabled → nil engine (the accessor permits every
+	// decision), matching this integration store test's pre-rbac-engine-split
+	// behaviour.
+	server := api.New(services, nil)
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return server, mux, testStore

@@ -121,12 +121,12 @@ func (d *loginDedup) shouldRecord(key string) bool {
 // service-account key is tried. The absence of one mechanism never breaks the
 // other — Sessions may be nil (machine-only deployment) and ServiceAccounts may
 // be nil/empty (human-only deployment) independently. Both converge on a single
-// principal in context, which EnforcementMiddleware and the accessor evaluate
-// identically regardless of which mechanism produced it.
+// principal in context, which the guarded accessor evaluates identically
+// regardless of which mechanism produced it.
 //
 // It replaces the BearerAuth + IdentityMiddleware pair in the production chain;
-// the source-keyed rbac.EnforcementMiddleware remains the authoritative RBAC
-// gate beneath it (demotion is Phase E).
+// the guarded accessor (internal/access) is the authoritative RBAC gate beneath
+// it (rbac-engine-split removed the demoted-since-D-0008 EnforcementMiddleware).
 func EdgeAuth(cfg EdgeConfig) func(http.Handler) http.Handler {
 	disabledPrincipal := cfg.DisabledPrincipal
 	if disabledPrincipal == "" {

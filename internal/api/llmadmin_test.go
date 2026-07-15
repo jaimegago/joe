@@ -133,7 +133,7 @@ func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *l
 	services.Provisioner = auth.NewProvisioner(rbacRepo)
 	services.PrincipalAdmin = auth.NewPrincipalAdmin(rbacRepo, sessionsRepo)
 
-	srv := New(services)
+	srv := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 

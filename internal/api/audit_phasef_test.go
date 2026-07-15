@@ -52,7 +52,10 @@ func newRegimeServerWithAudit(t *testing.T) (
 		RunModel:     runRepo,
 		CaptainSvc:   captainSvc,
 	}
-	srv := api.New(svc)
+	// regime-control zone check reads the injected engine (rbac-engine-split);
+	// pass the same bare engine the handler used to build (no service accounts
+	// wired here) so the declare/resolve audit assertions are unchanged.
+	srv := api.New(svc, rbac.NewPolicyEngine(rbacRepo))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)

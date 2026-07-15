@@ -16,8 +16,8 @@ import (
 // upgrade to DB-minted, hashed, runtime-revocable keys replaces ONLY this
 // type's storage (the map) and its lookup (Resolve) — the downstream
 // principal-in-context flow (EdgeAuth → rbac.WithPrincipal →
-// rbac.PrincipalFromContext → accessor/EnforcementMiddleware) is untouched,
-// because it depends only on Resolve returning an rbac.Principal.
+// rbac.PrincipalFromContext → guarded accessor) is untouched, because it depends
+// only on Resolve returning an rbac.Principal.
 type ServiceAccountResolver struct {
 	byKey map[string]rbac.Principal
 }

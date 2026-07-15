@@ -201,13 +201,16 @@ is never created.
   among denials in the executor: `if e.floor.Up() && class == ActionMutate` →
   `WriteFloorError` (`internal/tools/executor.go:215`). Runtime-immutable; recovery is
   restart.
-- **RBAC, zones, read posture, promotion** — transport policy engine
-  `rbac.NewPolicyEngineWithGovernance(...)` (`server.go:856`); refresh engine
-  `NewPolicyEngineWithPromote(...)` with **no** posture seam (`server.go:722`) — the two
-  axes are separated at construction. Boot refuses to start without identity config
-  (`requireIdentityConfigured`, `server.go:829`). Admin REST: zones, component-zones,
-  policies, principals, read-promotions, read-posture (`internal/api/admin.go`,
-  registered `server.go:129`). Launch default read posture is `team_flat`.
+- **RBAC, zones, read posture, promotion** — the ONE transport policy engine is
+  constructed at the composition root (`rbac.NewPolicyEngineWithGovernance(...)` inside
+  `buildHTTPHandler`, `cmd/joe/server.go`) and injected into `api.New`, which hands it to
+  both the guarded accessor and the regime handler; the refresh engine
+  `NewPolicyEngineWithPromote(...)` carries **no** posture seam — the two axes are
+  separated at construction. A static guard forbids any `rbac.NewPolicyEngine*` constructor
+  outside `cmd/joe` and tests. Boot refuses to start without identity config
+  (`requireIdentityConfigured`). Admin REST: zones, component-zones, policies, principals,
+  read-promotions, read-posture (`internal/api/admin.go`). Launch default read posture is
+  `team_flat`.
 - **Skills (in-server)** — registry loaded at boot (`skills.LoadDir(~/.joe/skills)`,
   `server.go:512`); hot-reload watcher started unless disabled (`server.go:538-552`).
 - **MCP** — `joe mcp`; 8 tools registered in `internal/mcp/server.go:31-45`:
@@ -473,9 +476,10 @@ exact-match map built from `cfg.Server.ServiceAccounts`
 (`internal/auth/serviceaccount.go:21-69`; duplicate/empty keys are fatal at boot).
 `JOE_API_KEY` folds into the reserved `"server"` account → principal `svc:server`
 (`config.go:129-137,562-588`). Enforced by `auth.EdgeAuth` (session cookie first, then
-bearer; unknown key on a protected path → 401; `middleware.go:162-187`), with
-`rbac.EnforcementMiddleware` downstream (`server.go:934`). **Boot refuses to start
-without at least one service account OR a complete OIDC issuer**
+bearer; unknown key on a protected path → 401; `middleware.go:162-187`). Authorization
+is then performed by the guarded accessor (`internal/access`) — the sole RBAC gate; the
+former downstream `rbac.EnforcementMiddleware` was deleted by rbac-engine-split. **Boot
+refuses to start without at least one service account OR a complete OIDC issuer**
 (`requireIdentityConfigured`, `server.go:829`); there is no auth-disabled runtime mode.
 
 ### SHIPPED — admin bootstrap

@@ -39,7 +39,7 @@ func setupDriftTestServer(t *testing.T) (*http.ServeMux, *knowledge.Service) {
 		DriftDet:  driftDet,
 	}
 
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux, knowledgeSvc
@@ -68,7 +68,7 @@ func setupNoDriftDetectorServer(t *testing.T) *http.ServeMux {
 		// DriftDet intentionally nil; handlers return 503 when nil.
 	}
 
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux

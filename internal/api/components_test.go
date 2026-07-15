@@ -38,7 +38,7 @@ func setupFullTestServer(t *testing.T) *api.Server {
 		Adapters: adapters.NewRegistry(),
 	}
 
-	return api.New(services)
+	return api.New(services, api.TestingPolicyEngine(services))
 }
 
 func TestHandleListComponents_Empty(t *testing.T) {
@@ -200,7 +200,7 @@ func setupTestServerWithStore(t *testing.T) (*api.Server, *store.Store, *http.Se
 		Adapters: adapters.NewRegistry(),
 	}
 
-	server := api.New(services)
+	server := api.New(services, api.TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return server, sqlStore, mux

@@ -40,7 +40,7 @@ func setupWebUIServer(t *testing.T) (*Server, *http.ServeMux) {
 		Adapters:     adapters.NewRegistry(),
 	}
 
-	srv := New(services)
+	srv := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	return srv, mux
@@ -463,7 +463,7 @@ func TestWebUIListSessions_WithLimitParam(t *testing.T) {
 
 // TestWebUIListSessions_NilStore verifies nil store returns empty list (not an error).
 func TestWebUIListSessions_NilStore(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -480,7 +480,7 @@ func TestWebUIListSessions_NilStore(t *testing.T) {
 
 // TestWebUICreateSession_NilStore verifies nil store returns 503.
 func TestWebUICreateSession_NilStore(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -492,7 +492,7 @@ func TestWebUICreateSession_NilStore(t *testing.T) {
 
 // TestWebUIGetSessionMessages_NilStore verifies nil store returns empty list (not an error).
 func TestWebUIGetSessionMessages_NilStore(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -504,7 +504,7 @@ func TestWebUIGetSessionMessages_NilStore(t *testing.T) {
 
 // TestWebUITestComponent_NilStore covers the nil-store guard in handleTestComponent.
 func TestWebUITestComponent_NilStore(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	// Route "/api/v1/components/{id}/test" is registered; with nil store → 503.
@@ -516,7 +516,7 @@ func TestWebUITestComponent_NilStore(t *testing.T) {
 
 // TestWebUIGetGraph_NilGraph covers the early return when Graph service is nil.
 func TestWebUIGetGraph_NilGraph(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -534,7 +534,7 @@ func TestWebUIGetGraph_NilGraph(t *testing.T) {
 
 // TestWebUITestComponent_EmptyID covers the empty-id guard in handleTestComponent directly.
 func TestWebUITestComponent_EmptyID(t *testing.T) {
-	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()})
+	srv := New(&core.Services{Config: &config.Config{}, Adapters: adapters.NewRegistry()}, nil)
 	h := &webUIHandler{server: srv}
 
 	req := httptest.NewRequest("POST", "/api/v1/components//test", nil)

@@ -105,7 +105,7 @@ func newSkillsAdminFixture(t *testing.T, rbacEnabled bool) *skillsAdminFixture {
 	services.SkillsManager = mgr
 	services.SkillsWatcher = watcher
 
-	srv := New(services)
+	srv := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 

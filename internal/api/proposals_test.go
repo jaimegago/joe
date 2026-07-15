@@ -53,7 +53,7 @@ func setupProposalsTestServer(t *testing.T) (*http.ServeMux, *proposals.Service,
 		// DocDrafter intentionally nil; handleCreateProposal returns 503 when nil.
 	}
 
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux, proposalSvc, knowledgeSvc
@@ -91,7 +91,7 @@ func setupProposalsWithPublisherTestServer(t *testing.T) (*http.ServeMux, *propo
 		DocDrafter: docDrafter,
 	}
 
-	server := New(services)
+	server := New(services, TestingPolicyEngine(services))
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 	return mux, proposalSvc, knowledgeSvc
@@ -304,7 +304,7 @@ func TestProposalHandlers_ServiceUnavailable(t *testing.T) {
 		Config:    &config.Config{},
 		Adapters:  adapters.NewRegistry(),
 		Proposals: nil,
-	}).RegisterRoutes(mux)
+	}, nil).RegisterRoutes(mux)
 
 	cases := []struct {
 		name   string

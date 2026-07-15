@@ -34,7 +34,7 @@ func setupTestServer(t *testing.T) *Server {
 		Adapters: adapters.NewRegistry(),
 	}
 
-	return New(services)
+	return New(services, TestingPolicyEngine(services))
 }
 
 // TestRouteRegistration validates that routes are registered correctly without starting a server

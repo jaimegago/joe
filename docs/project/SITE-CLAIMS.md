@@ -88,12 +88,16 @@ test(s)** · **binding note** (where applicable).
 - **Claim.** The autonomous `agent:core` graph-refresh read surface is governed separately
   from human-facing transport reads and is named in the copy as a deliberate, tracked
   exception rather than a hidden gap.
-- **Mechanism.** Separated engine construction — the read-posture resolver is wired into the
-  transport policy engine only (`NewPolicyEngineWithGovernance`), never the refresh engine
-  (`NewPolicyEngineWithPromote`, posture seam nil); the autonomous read surface is governed by
-  `auto_promote_read` plus grants.
-- **Pinning tests.** None (documented tracked exception; the separation is an architectural
-  invariant, not a single break-test).
+- **Mechanism.** Separated engine construction at the composition root — the transport policy
+  engine (`NewPolicyEngineWithGovernance`, built in `cmd/joe/server.go`'s `buildHTTPHandler` and
+  injected into `api.New`) carries the read-posture resolver; the refresh engine
+  (`NewPolicyEngineWithPromote`, posture seam nil) never does; the autonomous read surface is
+  governed by `auto_promote_read` plus grants. rbac-engine-split moved both constructions to the
+  composition root and forbids engine construction elsewhere, so the two engines cannot share
+  state by accident.
+- **Pinning tests.** `TestReadPosture_AxisSeparation_RefreshEngineIgnoresPosture` (the refresh
+  engine ignores the posture) and `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot` (no
+  `rbac.NewPolicyEngine*` construction outside `cmd/joe`/tests).
 
 ### The guarded accessor is the audit point, fail-closed on mutate and fail-open on read, over an insert-only repository
 

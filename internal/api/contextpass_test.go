@@ -81,7 +81,7 @@ func setupContextPassServer(t *testing.T) (*Server, *capturingChatLLM, *llmsetti
 		LLMSettings:           svc,
 		ContextBudgetProvider: llmsettings.NewContextBudgetProvider(settingsRepo, agentloop.NewStaticContextBudget(), nil),
 	}
-	return New(services), cap, svc
+	return New(services, TestingPolicyEngine(services)), cap, svc
 }
 
 // TestBuildTaskRun_OutputCapStampedFromTable asserts the request the loop

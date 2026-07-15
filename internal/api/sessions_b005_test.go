@@ -49,7 +49,10 @@ func newPerUserAdminServer(t *testing.T) (*httptest.Server, sessionmodel.Reposit
 		RBAC:         rbacRepo,
 		RBACEnabled:  true, // a real admin capability is live — the per-user seam must STILL suppress it
 	}
-	srv := api.New(svc)
+	// promote-incident authorizes through the regime-control zone on the injected
+	// engine (rbac-engine-split); pass the bare engine the handler used to build
+	// so the admin-suppression assertions are unchanged.
+	srv := api.New(svc, rbac.NewPolicyEngine(rbacRepo))
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 	handler := rbac.IdentityMiddleware(testPrincipalProvider{})(mux)

@@ -95,7 +95,7 @@ type serverDeps struct {
 	registerBusinessMetric func(services *core.Services) error
 	newLLMAdapter          func(ctx context.Context, mc config.ModelConfig) (llm.LLMAdapter, error)
 	newCoreAgent           func(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observability.Metrics) coreAgentRunner
-	newAPIServer           func(services *core.Services) *api.Server
+	newAPIServer           func(services *core.Services, engine *rbac.PolicyEngine) *api.Server
 	startServer            func(server *http.Server, certFile, keyFile string) <-chan error
 	shutdownServer         func(ctx context.Context, server *http.Server) error
 	startMetricsServer     func(server *http.Server) error
@@ -826,23 +826,16 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Info("session retention sweeper started", "principal", string(sweeperPrincipal))
 	}
 
-	// Setup HTTP server
-	mux := http.NewServeMux()
-
-	// Register API routes
-	apiServer := deps.newAPIServer(services)
-	apiServer.RegisterRoutes(mux)
-
 	// Build the service-account resolver — the single machine-authentication
 	// input (Identity Phase D). It maps each configured key to its svc:<name>
 	// principal. An invalid configuration (duplicate/empty keys or names) is a
 	// fatal startup error, not a silently-dropped identity.
 	//
-	// This fatal gate runs BEFORE the refuse-to-start guard and engine build
-	// below: it is load-bearing, because it is what makes raw-config
-	// service-account presence (cfg.RBACEnabled) equivalent to the resolved
-	// resolver's saResolver.Configured() at the engine-build site — a malformed
-	// account map exits here rather than reaching the predicate.
+	// This fatal gate runs BEFORE the refuse-to-start guard and the engine build
+	// inside buildHTTPHandler below: it is load-bearing, because it is what makes
+	// raw-config service-account presence (cfg.RBACEnabled) equivalent to the
+	// resolved resolver's saResolver.Configured() at the engine-build site — a
+	// malformed account map exits here rather than reaching the predicate.
 	saResolver, saErr := auth.NewServiceAccountResolver(cfg.Server.ServiceAccounts)
 	if saErr != nil {
 		slog.Error("invalid service-account configuration", "error", saErr)
@@ -851,53 +844,18 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 
 	// Refuse to start without a usable identity configuration (JOE-IDBOOT). The
 	// guard's predicate IS the engine's own enable predicate (cfg.RBACEnabled),
-	// the same one both engine-construction sites call, so refuse-to-start and
-	// construct-the-engine cannot drift. It is positioned AFTER the SA-resolver
-	// fatal gate and just BEFORE engine construction. Once it passes, the policy
-	// engine is necessarily non-nil below: running ungoverned (nil engine,
-	// all-operations-permitted) is unreachable, in the same fail-fast tier and
-	// exit semantics as missing LLM credentials above.
+	// the same one buildHTTPHandler uses to decide whether to construct the
+	// engine, so refuse-to-start and construct-the-engine cannot drift. It is
+	// positioned AFTER the SA-resolver fatal gate and BEFORE handler assembly.
+	// Once it passes, the policy engine is necessarily non-nil: running ungoverned
+	// (nil engine, all-operations-permitted) is unreachable, in the same fail-fast
+	// tier and exit semantics as missing LLM credentials above.
 	if err := requireIdentityConfigured(cfg); err != nil {
 		slog.Error("no usable identity configuration", "error", err)
 		return 1
 	}
 
-	// Build RBAC policy engine. It is enabled when EITHER a service account OR
-	// OIDC is configured — both establish a real caller principal the engine
-	// must evaluate. The shared cfg.RBACEnabled predicate is the same one the
-	// refuse-to-start guard just enforced, so this is always true here and the
-	// engine is non-nil; the call is kept at the construction site so the
-	// engine-enable decision lives in exactly one predicate.
 	oidcConfigured := cfg.Auth.OIDC.Configured()
-	var policyEngine *rbac.PolicyEngine
-	if cfg.RBACEnabled() {
-		// Build the engine WITH both live governance resolvers (read-posture-latch):
-		// the auto_promote_reads resolver (A001-COREGOV CC-04) so the agent:core +
-		// ActionRead dynamic admit predicate is live, AND the read-posture resolver
-		// so the team_flat read admit is live per decision. With a fresh/upgraded
-		// install seeded team_flat, every authenticated HUMAN principal reads every
-		// component until an operator flips the posture to zoned.
-		//
-		// The read-posture resolver is wired ONLY here, on the human-facing
-		// transport engine — NOT on the agent:core refresh engine built above
-		// (read-posture-latch-02, D-0043). The read posture governs human-facing
-		// transport reads; the autonomous agent:core read surface is a separate
-		// axis governed solely by auto_promote_read plus grants. Keeping the
-		// posture resolver off the refresh engine makes that separation structural.
-		policyEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
-	}
-	// Stream G phase G5: surface the RBAC-enabled signal to handlers.
-	// Set once here at the engine-build site so the accessor's
-	// rbac-disabled short-circuit predicate, the policy engine
-	// nil-ness, and services.RBACEnabled are the SAME statement
-	// about the same configuration. Handlers (current-user, the admin
-	// gate) consult this field rather than re-deriving the predicate.
-	services.RBACEnabled = policyEngine != nil
-	// Stream H2: surface OIDC-configured to the current-user handler so the
-	// Web UI knows whether to offer the OIDC login button. Same build site,
-	// same single-source predicate (oidcConfigured) the auth endpoints are
-	// registered from below — no second auth-config endpoint.
-	services.OIDCEnabled = oidcConfigured
 
 	// Identity Phase C: server-side sessions + the OIDC login flow.
 	// authSessions (wired above for the disable path) persists sessions and
@@ -915,56 +873,21 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Warn("auth: insecure cookies enabled — session and OIDC state cookies are NOT marked Secure; for local HTTP dev only, never production")
 	}
 
-	// Register the OIDC login/callback/logout endpoints when an issuer is
-	// configured. Discovery is lazy, so a missing/unreachable IdP at startup is
-	// not fatal — only new logins fail (design §4).
-	if oidcConfigured {
-		authHandlers := auth.NewHandlers(auth.HandlerConfig{
-			Provider:             auth.NewOIDCProvider(cfg.Auth.OIDC),
-			Sessions:             sessionMgr,
-			Repo:                 authRepo,
-			RBAC:                 rbacRepo,
-			Principals:           rbacRepo,
-			AdminEmail:           cfg.Auth.AdminEmail,
-			PostLoginRedirect:    cfg.Auth.PostLoginRedirect,
-			Audit:                services.Audit,
-			AllowInsecureCookies: cfg.Server.InsecureCookies,
-		})
-		authHandlers.RegisterRoutes(mux, "/api/v1")
-		slog.Info("OIDC login enabled", "issuer", cfg.Auth.OIDC.Issuer, "admin_email", cfg.Auth.AdminEmail != "")
-	}
-
-	// Build middleware chain: CORS → rate limit → metrics → edge auth → session headers → RBAC → request size limit → mux
-	// CORS must be outermost so OPTIONS preflight requests are answered before auth runs.
-	//
-	// Identity Phase C/D: the edge-auth middleware replaces the prior
-	// BearerAuth + IdentityMiddleware pair. It resolves the caller principal
-	// from a session cookie (humans) or a service-account bearer key (machines),
-	// sets it in context via rbac.WithPrincipal (the Phase B mechanism), and
-	// rejects unauthenticated requests on protected paths with 401 — exactly as
-	// before. The source-keyed EnforcementMiddleware below it stays
-	// authoritative on the HTTP path (its demotion is Phase E).
-	handler := api.Chain(
-		mux,
-		api.CORS(),
-		api.RateLimit(cfg.Server.RateLimitRPS, cfg.Server.RateLimitBurst),
-		func(h http.Handler) http.Handler {
-			return observability.HTTPMetricsMiddleware(h, metrics)
-		},
-		auth.EdgeAuth(auth.EdgeConfig{
-			Sessions:         sessionMgr,
-			ServiceAccounts:  saResolver,
-			OIDCConfigured:   oidcConfigured,
-			Audit:            services.Audit,
-			AuditDedupWindow: cfg.Auth.SessionTTL,
-		}),
-		// Phase 1 Change 9: thread session/run/idempotency-key
-		// request headers into context AFTER identity is resolved
-		// and BEFORE source-keyed RBAC enforcement runs.
-		api.SessionMiddleware,
-		rbac.EnforcementMiddleware(policyEngine),
-		api.MaxRequestBody(api.DefaultMaxRequestBytes),
+	// Assemble the full HTTP handler at the composition root. buildHTTPHandler
+	// constructs the ONE governance-wired RBAC policy engine and injects it into
+	// api.New, so the guarded accessor and the regime handler both enforce with
+	// that exact engine; it registers the API routes and (when configured) the
+	// OIDC endpoints, wraps the middleware chain, and mounts the web UI. main and
+	// the rbac-engine-split regression pin call this SAME function, so the engine
+	// the transport enforces with cannot drift from the accessor's.
+	rootHandler, err := buildHTTPHandler(
+		services, cfg, rbacRepo, promoteReadsRepo, readPostureRepo,
+		authRepo, sessionMgr, saResolver, oidcConfigured, metrics, deps.newAPIServer,
 	)
+	if err != nil {
+		slog.Error("failed to assemble HTTP handler", "error", err)
+		return 1
+	}
 
 	switch {
 	case oidcConfigured && saResolver.Configured():
@@ -984,20 +907,6 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	}
 	if cfg.Server.RateLimitRPS > 0 {
 		slog.Info("API rate limiting enabled", "rps", cfg.Server.RateLimitRPS, "burst", cfg.Server.RateLimitBurst)
-	}
-
-	// Mount the embedded web UI outside the middleware chain. Requests under
-	// /api/v1 are delegated to the wrapped chain above unchanged (including its
-	// JSON 404s for unknown API paths); every other path is served same-origin
-	// from the embedded SPA with no edge auth, so the logged-out login UI loads
-	// without any credential. This is the H2 OIDC same-origin prerequisite.
-	rootHandler, err := webui.Mount(handler)
-	if err != nil {
-		slog.Error("failed to initialize embedded web UI handler", "error", err)
-		return 1
-	}
-	if !webui.Embedded() {
-		slog.Warn("web UI not embedded in this binary — only the API under /api/v1 and a fallback page are served; build with `make build` to produce a UI-complete binary")
 	}
 
 	// WriteTimeout is deliberately 0 (no server-wide write deadline): the task
@@ -1067,6 +976,128 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	slog.Info("joe stopped")
 
 	return 0
+}
+
+// buildHTTPHandler assembles the full HTTP handler stack at the composition
+// root, and is the SINGLE assembly path shared by the live daemon
+// (runServerWithDeps) and the rbac-engine-split regression pin. It constructs
+// the ONE governance-wired RBAC policy engine and injects it into api.New so the
+// guarded accessor AND the regime handler enforce with that exact engine —
+// closing the drift (D-0041/D-0043) where api.New built a second, bare engine
+// for the accessor that carried neither the read-posture nor the auto_promote
+// resolver, leaving the launch-default team_flat read admit structurally
+// unreachable on the transport path.
+//
+// The engine is built here, ahead of api.New, so the caller cannot pass an
+// accessor a different engine than the transport uses; there is exactly one
+// engine per request path. A nil engine (cfg.RBACEnabled() false) preserves the
+// accessor's nil-engine permit-all semantics. The read-posture resolver is wired
+// ONLY here, on the human-facing transport engine — never on the agent:core
+// refresh engine (read-posture-latch-02, D-0043), keeping the two read axes
+// separated by construction.
+func buildHTTPHandler(
+	services *core.Services,
+	cfg *config.Config,
+	rbacRepo *rbac.SQLRepository,
+	promoteReadsRepo promotereads.Repository,
+	readPostureRepo readposture.Repository,
+	authRepo *auth.SQLRepository,
+	sessionMgr *auth.SessionManager,
+	saResolver *auth.ServiceAccountResolver,
+	oidcConfigured bool,
+	metrics *observability.Metrics,
+	newAPIServer func(*core.Services, *rbac.PolicyEngine) *api.Server,
+) (http.Handler, error) {
+	// Build RBAC policy engine. It is enabled when EITHER a service account OR
+	// OIDC is configured (cfg.RBACEnabled) — both establish a real caller
+	// principal the engine must evaluate. The engine carries BOTH live governance
+	// resolvers: the auto_promote_reads resolver (A001-COREGOV CC-04) so the
+	// agent:core + ActionRead dynamic admit predicate is live, AND the read-posture
+	// resolver so the team_flat read admit is live per decision. With a
+	// fresh/upgraded install seeded team_flat, every authenticated HUMAN principal
+	// reads every component until an operator flips the posture to zoned.
+	var policyEngine *rbac.PolicyEngine
+	if cfg.RBACEnabled() {
+		policyEngine = rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)
+	}
+	// Stream G phase G5: surface the RBAC-enabled signal to handlers, and Stream
+	// H2 the OIDC-configured signal. Set once here, alongside the single engine
+	// build, so the accessor's rbac-disabled short-circuit, the policy engine's
+	// nil-ness, and services.RBACEnabled are the SAME statement about the same
+	// configuration. Set BEFORE RegisterRoutes so every handler observes them.
+	services.RBACEnabled = policyEngine != nil
+	services.OIDCEnabled = oidcConfigured
+
+	// Register API routes with the injected engine. api.New builds the guarded
+	// accessor and holds the engine for the regime handler; both enforce with the
+	// governance-wired engine constructed just above.
+	mux := http.NewServeMux()
+	apiServer := newAPIServer(services, policyEngine)
+	apiServer.RegisterRoutes(mux)
+
+	// Register the OIDC login/callback/logout endpoints when an issuer is
+	// configured. Discovery is lazy, so a missing/unreachable IdP at startup is
+	// not fatal — only new logins fail (design §4).
+	if oidcConfigured {
+		authHandlers := auth.NewHandlers(auth.HandlerConfig{
+			Provider:             auth.NewOIDCProvider(cfg.Auth.OIDC),
+			Sessions:             sessionMgr,
+			Repo:                 authRepo,
+			RBAC:                 rbacRepo,
+			Principals:           rbacRepo,
+			AdminEmail:           cfg.Auth.AdminEmail,
+			PostLoginRedirect:    cfg.Auth.PostLoginRedirect,
+			Audit:                services.Audit,
+			AllowInsecureCookies: cfg.Server.InsecureCookies,
+		})
+		authHandlers.RegisterRoutes(mux, "/api/v1")
+		slog.Info("OIDC login enabled", "issuer", cfg.Auth.OIDC.Issuer, "admin_email", cfg.Auth.AdminEmail != "")
+	}
+
+	// Build middleware chain: CORS → rate limit → metrics → edge auth → session
+	// headers → request size limit → mux. CORS must be outermost so OPTIONS
+	// preflight requests are answered before auth runs.
+	//
+	// Identity Phase C/D: the edge-auth middleware resolves the caller principal
+	// from a session cookie (humans) or a service-account bearer key (machines),
+	// sets it in context via rbac.WithPrincipal, and rejects unauthenticated
+	// requests on protected paths with 401. There is no per-request RBAC
+	// enforcement middleware in the chain: the guarded accessor (internal/access)
+	// is the sole authoritative RBAC gate on both the HTTP and agent-loop paths
+	// (rbac-engine-split removed the demoted-since-D-0008 EnforcementMiddleware).
+	handler := api.Chain(
+		mux,
+		api.CORS(),
+		api.RateLimit(cfg.Server.RateLimitRPS, cfg.Server.RateLimitBurst),
+		func(h http.Handler) http.Handler {
+			return observability.HTTPMetricsMiddleware(h, metrics)
+		},
+		auth.EdgeAuth(auth.EdgeConfig{
+			Sessions:         sessionMgr,
+			ServiceAccounts:  saResolver,
+			OIDCConfigured:   oidcConfigured,
+			Audit:            services.Audit,
+			AuditDedupWindow: cfg.Auth.SessionTTL,
+		}),
+		// Phase 1 Change 9: thread session/run/idempotency-key request headers
+		// into context AFTER identity is resolved and BEFORE the handlers run.
+		api.SessionMiddleware,
+		api.MaxRequestBody(api.DefaultMaxRequestBytes),
+	)
+
+	// Mount the embedded web UI outside the middleware chain. Requests under
+	// /api/v1 are delegated to the wrapped chain above unchanged (including its
+	// JSON 404s for unknown API paths); every other path is served same-origin
+	// from the embedded SPA with no edge auth, so the logged-out login UI loads
+	// without any credential. This is the H2 OIDC same-origin prerequisite.
+	rootHandler, err := webui.Mount(handler)
+	if err != nil {
+		return nil, fmt.Errorf("initialize embedded web UI handler: %w", err)
+	}
+	if !webui.Embedded() {
+		slog.Warn("web UI not embedded in this binary — only the API under /api/v1 and a fallback page are served; build with `make build` to produce a UI-complete binary")
+	}
+	return rootHandler, nil
 }
 
 func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
