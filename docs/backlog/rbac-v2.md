@@ -122,3 +122,21 @@ the slug read-posture-latch.
 - Is `internal/rbac` renamed to match what it actually implements?
 - How does per-session attenuation compose with the additive, allow-only grant
   model and the floor > incident > RBAC precedence chain?
+
+## Finding: ActionQuery and ActionDelete are unexercised verbs
+
+A grantable-verb exercise (ui-source-strings session) found that `rbac.ActionQuery`
+and `rbac.ActionDelete` (declared `internal/rbac/zones.go:15` and `:21`) are part
+of the grantable `allowed_actions` vocabulary on a zone but have no runtime call
+site that ever passes either as a decided action. `ActionQuery`'s only non-test,
+non-declaration appearance is a read-class comparison guard at
+`internal/access/access.go:217` (`if action != rbac.ActionRead && action !=
+rbac.ActionQuery`), which rejects mutating actions from a read-only seam rather
+than deciding a query action. `ActionDelete`'s only other appearance is a doc
+comment at `internal/access/access.go:114`. The tool executor's binary safety
+classification (`internal/safety/tier.go`, `ActionRead`/`ActionMutate`) never
+maps onto these finer rbac verbs, so a zone can name `query` or `delete` in its
+`allowed_actions` with no code path that ever checks for them. Whether v2 should
+trim these from the verb vocabulary, keep them for forward compatibility, or wire
+the executor onto a finer verb set instead of the current Read/Mutate binary is
+an open v2 design question, not resolved here.

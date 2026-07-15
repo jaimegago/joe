@@ -73,7 +73,7 @@ export function ComponentZoneAssign() {
       <ConfirmDialog
         open={unassigning !== null}
         onOpenChange={(o) => !o && setUnassigning(null)}
-        title="Unassign source"
+        title="Unassign component"
         description={
           unassigning
             ? `Remove the zone assignment for "${unassigning}"? It will fall back to the default unassigned zone until reassigned.`

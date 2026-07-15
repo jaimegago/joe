@@ -59,7 +59,7 @@ export function ZonesTable({ zones }: ZonesTableProps) {
       // message rather than a generic failure toast.
       if (e instanceof ApiRequestError && e.status === 409) {
         toast.error(
-          `Zone "${zone.name || zone.id}" still has source assignments and cannot be deleted. ` +
+          `Zone "${zone.name || zone.id}" still has component assignments and cannot be deleted. ` +
             `Reassign those components to another zone first (Components tab), then delete it.`
         );
         return;

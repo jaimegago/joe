@@ -35,8 +35,8 @@ export function UnassignedComponents({ unassigned, zones }: UnassignedComponents
   return (
     <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
       <p className="mb-3 text-sm font-medium text-yellow-800">
-        ⚠ {unassigned.length} unassigned source{unassigned.length > 1 ? 's' : ''} (require admin
-        action)
+        ⚠ {unassigned.length} unassigned component{unassigned.length > 1 ? 's' : ''} (require
+        admin action)
       </p>
       <div className="space-y-2">
         {unassigned.map(({ component_id }) => (

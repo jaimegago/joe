@@ -410,7 +410,7 @@ export function ComponentsPage() {
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           title={`Remove ${selected?.id}`}
-          description="This will remove the source and its graph nodes. This cannot be undone."
+          description="This will remove the component and its graph nodes. This cannot be undone."
           confirmLabel="Remove"
           variant="destructive"
           onConfirm={() => selected && deleteMut.mutate(selected.id)}
