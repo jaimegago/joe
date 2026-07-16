@@ -41,9 +41,12 @@ curl -s http://localhost:7777/api/v1/knowledge/proposals/<id>/approve \
   -X POST
 ```
 
-This moves the proposal from **pending** to **approved** and stamps who approved it.
-Nothing is written to the target system yet — approval only makes the proposal *eligible*
-to be published. (To discard one instead, `POST /api/v1/knowledge/proposals/{id}/reject`.)
+This moves the proposal from **pending** to **approved** and records the time of approval.
+Note that the approver's identity is **not** recorded today — the proposal carries
+`approved_at` but no approver field, so the audit question "who approved this?" is not
+answerable from the proposal itself. Nothing is written to the target system yet —
+approval only makes the proposal *eligible* to be published. (To discard one instead,
+`POST /api/v1/knowledge/proposals/{id}/reject`.)
 
 ## Step 2 — Publish (the separate, governed step)
 

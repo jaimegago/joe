@@ -45,6 +45,7 @@ file for the full status, priority, blocked-by, and body.
 | [`health-readiness-surface`](health-readiness-surface.md) | Health and readiness probe surface (/livez, /readyz) | open |  |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open |  |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |  |
+| [`knowledge-store-maturation`](knowledge-store-maturation.md) | Knowledge store maturation — governance, sync disposition, and orphaned-writer disposition | open | later |
 | [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer | open |  |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open |  |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |  |
@@ -62,7 +63,7 @@ file for the full status, priority, blocked-by, and body.
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open |  |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress |  |
 | [`read-posture-visibility`](read-posture-visibility.md) | Read posture is invisible in every UI and CLI surface | open | next |
-| [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open |  |
+| [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open |  |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open |  |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open |  |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 |  |

@@ -654,23 +654,29 @@ func TestRefresher_Refresh_WithUnsupportedSource(t *testing.T) {
 }
 
 // ============================================================
-// SaveKnowledgeEntryTool in TestToolNamesAndDescriptions
-// (verifies it's included in the registered tool set)
+// SaveKnowledgeEntryTool is PARKED out of the agent's tool set
 // ============================================================
 
-func TestSaveKnowledgeEntryTool_RegisteredInAgent(t *testing.T) {
+// Inverted by session knowledge-store-maturation: this test formerly asserted
+// save_knowledge_entry WAS registered. The tool is now parked per the D-0081
+// pattern, so the assertion flips to absence — checked here through the Agent's
+// public available-tools surface, complementing the registry-level pin in
+// registry_save_knowledge_parked_test.go.
+func TestSaveKnowledgeEntryTool_ParkedFromAgent(t *testing.T) {
 	svc := makeTestServices(t)
 	agent := New(svc, &mockLLMAdapter{}, nil)
 
-	found := false
 	for _, tool := range agent.GetAvailableTools() {
 		if tool.Name() == "save_knowledge_entry" {
-			found = true
-			break
+			t.Fatal("save_knowledge_entry must NOT be in the agent:core available-tools set — " +
+				"it is parked (session knowledge-store-maturation)")
 		}
 	}
-	if !found {
-		t.Error("save_knowledge_entry tool should be registered in the agent")
+
+	// Sanity: the agent still exposes its live tools, so an agent that exposed
+	// nothing wouldn't vacuously pass the check above.
+	if len(agent.GetAvailableTools()) == 0 {
+		t.Fatal("agent:core exposed no tools")
 	}
 }
 

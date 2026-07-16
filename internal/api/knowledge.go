@@ -53,8 +53,15 @@ func (h *knowledgeHandler) handleCreateEntry(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "title and content are required")
 		return
 	}
+	// A tier-less create defaults to derived — the MUTABLE tier. Curated is
+	// assigned only when the caller asks for it by name. The prior default was
+	// curated, which meant any authenticated principal could accidentally mint a
+	// permanently immutable row: Service.Update/Delete refuse curated entries, so
+	// a mis-tiered entry is unamendable and undeletable through this surface for
+	// the life of the install. Defaulting to the recoverable tier makes the
+	// irreversible act explicit rather than incidental.
 	if e.Tier == "" {
-		e.Tier = knowledge.TierCurated
+		e.Tier = knowledge.TierDerived
 	}
 
 	if err := svc.Create(r.Context(), &e); err != nil {

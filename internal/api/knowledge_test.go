@@ -81,14 +81,17 @@ func TestHandleCreateEntry_Success(t *testing.T) {
 	}
 }
 
-func TestHandleCreateEntry_DefaultsTierToCurated(t *testing.T) {
+// A tier-less create must land in the mutable derived tier, never the immutable
+// curated one: curated is unamendable and undeletable through this surface
+// (Service.Update/Delete refuse it), so it must never be reached by default.
+func TestHandleCreateEntry_DefaultsTierToDerived(t *testing.T) {
 	mux, _ := setupKnowledgeTestServer(t)
 
 	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/entries", map[string]any{
 		"title":   "Best Practice",
 		"content": "Always set resource limits.",
 		"type":    "best_practice",
-		// tier not set → defaults to curated
+		// tier not set → defaults to derived
 	})
 	if w.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
@@ -96,8 +99,41 @@ func TestHandleCreateEntry_DefaultsTierToCurated(t *testing.T) {
 
 	var resp knowledge.Entry
 	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Tier != knowledge.TierDerived {
+		t.Errorf("Tier = %q, want %q", resp.Tier, knowledge.TierDerived)
+	}
+}
+
+// The flipped default must not cost the caller the ability to author curated
+// ground truth deliberately — an explicit curated tier is still honoured, and
+// the entry it creates is still immutable.
+func TestHandleCreateEntry_ExplicitCuratedIsHonoured(t *testing.T) {
+	mux, _ := setupKnowledgeTestServer(t)
+
+	w := doRequest(mux, http.MethodPost, apiPrefix+"/knowledge/entries", map[string]any{
+		"title":   "Ground truth",
+		"content": "Payments runs in eu-west-1.",
+		"type":    "fact",
+		"tier":    knowledge.TierCurated,
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var resp knowledge.Entry
+	json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Tier != knowledge.TierCurated {
-		t.Errorf("Tier = %q, want %q", resp.Tier, knowledge.TierCurated)
+		t.Fatalf("Tier = %q, want %q", resp.Tier, knowledge.TierCurated)
+	}
+
+	// The explicitly-curated entry is immutable, as curated entries always were.
+	u := doRequest(mux, http.MethodPut, apiPrefix+"/knowledge/entries/"+resp.ID, map[string]any{
+		"title":   "Ground truth",
+		"content": "edited",
+		"type":    "fact",
+	})
+	if u.Code != http.StatusUnprocessableEntity {
+		t.Errorf("update explicit-curated: status = %d, want %d", u.Code, http.StatusUnprocessableEntity)
 	}
 }
 

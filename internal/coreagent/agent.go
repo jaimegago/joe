@@ -173,7 +173,21 @@ func registerCoreAgentTools(registry *tools.Registry, services *core.Services, l
 	registry.Register(NewGraphUpdateNodeTool(services, logger))
 	registry.Register(NewRegisterComponentTool(services, logger))
 	registry.Register(NewSaveOnboardingFactTool(services, logger))
-	registry.Register(NewSaveKnowledgeEntryTool(services, logger))
+	// Parked for launch (session knowledge-store-maturation), following the
+	// D-0081 pattern: the registration is the only thing removed. The tool
+	// implementation, its ActionRead classifier row, and its NeedsDurability
+	// declaration (internal/safety/tier.go) are all retained — re-enabling is
+	// restoring this one call site.
+	//
+	// Why park rather than leave it: it was already unreachable in fact (nothing
+	// drives this registry — Agent.ExecuteTool/GetAvailableTools have no callers,
+	// and coreagent runs no LLM loop), but nothing SAID so. Left registered, the
+	// day an autonomous loop is wired here it would silently acquire a
+	// knowledge-writing tool that is Read-classed — and so passes the write floor
+	// unconditionally, in observation mode included — with no audit row, no
+	// principal stamping, and no admin gate. Parking makes the absence
+	// deliberate and test-pinned rather than incidental.
+	//   registry.Register(NewSaveKnowledgeEntryTool(services, logger))
 
 	logger.Info("registered core agent tools", "count", len(registry.GetAll()))
 }
@@ -622,8 +636,16 @@ func (t *SaveOnboardingFactTool) Execute(ctx context.Context, args map[string]an
 	return fmt.Sprintf("Saved fact: %s", description), nil
 }
 
-// SaveKnowledgeEntryTool saves a Tier 3 (derived) knowledge entry.
-// Tier: T2 (Record) — records to the knowledge store, does not mutate infrastructure.
+// SaveKnowledgeEntryTool saves a derived-tier knowledge entry.
+//
+// Action class: ActionRead (internal/safety/tier.go) — per D-0020 Joe's own
+// model-maintenance tools are Reads: this writes to Joe's knowledge store, not
+// to a managed system. Being Read-classed, it passes the write floor
+// unconditionally, observation mode included.
+//
+// PARKED (session knowledge-store-maturation): not registered on the agent:core
+// registry — see registerCoreAgentTools. Pinned by
+// TestSaveKnowledgeEntryToolIsParked.
 type SaveKnowledgeEntryTool struct {
 	services *core.Services
 	logger   *slog.Logger

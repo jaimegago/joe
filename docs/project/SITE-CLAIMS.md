@@ -358,6 +358,106 @@ test(s)** · **binding note** (where applicable).
 
 ---
 
+## Knowledge — `/concepts/knowledge-graph/`, `/guides/knowledge-graph/`, `/guides/doc-proposals/`, `/api-reference/`
+
+### Curated knowledge is immutable once written; a tier-less create lands in derived
+
+- **Claim.** Curated entries can never be updated or deleted afterwards, and that
+  immutability is enforced in the store rather than left to convention. A create that does
+  not name a tier is filed as **derived** (the mutable tier); curated is assigned only when
+  the caller asks for it by name. An update to a curated entry returns `422`.
+- **Mechanism.** `knowledge.Service.Update` and `Service.Delete` refuse an entry whose
+  **persisted** tier is curated — the gate reads the stored row and compares before any
+  repository write, so a tier-downgrade payload cannot bypass it (`internal/knowledge/service.go`).
+  The tier-less create default is applied at the HTTP boundary in `handleCreateEntry`
+  (`internal/api/knowledge.go`), which maps the immutability error to `422`.
+- **Pinning tests.** `TestTierCuratedImmutable`, `TestHandleUpdateEntry_ImmutableTier1`,
+  `TestHandleDeleteEntry_Tier1_Protected`, `TestHandleCreateEntry_DefaultsTierToDerived`,
+  `TestHandleCreateEntry_ExplicitCuratedIsHonoured`.
+- **Binding note.** The derived default flipped from curated this session
+  (knowledge-store-maturation); the prior default let any authenticated principal mint a
+  permanently immutable row by omission.
+
+### No knowledge-writing tool is registered on any agent surface
+
+- **Claim.** Joe does not extract derived knowledge from sessions on its own; the derived
+  tier exists as the store's mutable tier, but no agent-originated knowledge write path is
+  registered. Every entry is one a human or a connected source put there.
+- **Mechanism.** `save_knowledge_entry` is **parked** — its registration is removed from
+  `registerCoreAgentTools` (`internal/coreagent/agent.go`) per the D-0081 pattern while the
+  implementation and its classifier row are retained. The agent-side knowledge surface is
+  `search_knowledge` plus the doc-copilot trio, registered on the user task loop only
+  (`internal/tools/default.go`).
+- **Pinning tests.** `TestSaveKnowledgeEntryToolIsParked`,
+  `TestSaveKnowledgeEntryTool_ParkedFromAgent`, `TestSaveKnowledgeEntryToolRetained`.
+- **Binding note. Launch-bound.** The copy is pinned to the parked posture. Registering any
+  knowledge writer — on either surface — revises the concepts and guides copy, and is gated
+  on the governance work in `docs/backlog/knowledge-store-maturation.md`.
+
+### The knowledge REST surface is authenticated, and that is the whole of its gate
+
+- **Claim.** The knowledge entry, source, and proposal endpoints are **authenticated**. The
+  api-reference says authenticated and no more — it claims no per-role gate, and none exists.
+- **Mechanism.** The edge-auth middleware resolves a principal from a session cookie or
+  service-account key and 401s anonymous callers on protected paths
+  (`auth.EdgeAuth`, wired once in `buildHTTPHandler`). Component RBAC does **not** reach these
+  routes: the guarded accessor is component-scoped and the knowledge paths carry no
+  componentID. These handlers write no audit row and stamp no principal.
+- **Pinning tests.** `TestEdgeAuth_RejectsUnauthenticatedOnProtectedPath`,
+  `TestEdgeAuth_SessionCookieResolvesPrincipal`, `TestKnowledgeHandlers_ServiceUnavailable`.
+- **Binding note. Launch-bound.** Thin governance (no audit, no principal stamping, no admin
+  gate for curated) is an accepted launch posture, deferred to
+  `docs/backlog/knowledge-store-maturation.md`. Adding any of the three revises the
+  api-reference copy. The copy must not be strengthened to imply a role gate that does not exist.
+
+### Proposal approval records the time, not the approver
+
+- **Claim.** Approving a proposal moves it pending → approved and records `approved_at`. The
+  approver's identity is **not** recorded; "who approved this?" is not answerable from the
+  proposal.
+- **Mechanism.** `proposals.Service.Approve` stamps `ApprovedAt` only and the `Proposal`
+  struct carries no approver field (`internal/knowledge/proposals/`); the HTTP handler passes
+  no principal down (`internal/api/proposals.go`).
+- **Pinning tests.** `TestService_Approve`, `TestService_Approve_NotPending`.
+- **Binding note. Launch-bound.** Approver identity is open work in
+  `docs/backlog/knowledge-store-maturation.md`; landing it revises the doc-proposals copy,
+  which currently states the gap explicitly.
+
+### Publishing a doc proposal is a Mutate and is floor-denied in the shipped posture
+
+- **Claim.** Publication writes to an external system, so it is a mutate and is denied
+  whenever the write floor is up — which it is in observation mode and in safe mode. An
+  observation-mode install will not publish however the proposal was approved. Drafting, by
+  contrast, is a read that touches nothing external.
+- **Mechanism.** `publish_doc_update` and its per-target variants are `ActionMutate` with
+  per-target policy keys in the `toolRegistry` (`internal/safety/tier.go`), so the executor's
+  floor check denies them under an up floor; `generate_doc_draft` and `detect_doc_drift` are
+  `ActionRead` and pass it. Proposal state gates the publish independently
+  (`Service.MarkPublished` refuses a non-approved proposal).
+- **Pinning tests.** `TestClassifyTool_KnownTools`, `TestCheckAccess_MutateDefaultDeny`,
+  `TestCheckAccess_ReadAlwaysAllowed`, `TestService_MarkPublished_NotApproved`.
+- **Binding note. Launch-bound.** Tied to the same forthcoming full-capabilities mode as the
+  write-floor claims above; the doc-proposals copy revises when `JOE_MODE=full` lands.
+  Note `generate_doc_draft` being Read-classed means an observation-mode Joe **does** write
+  proposal rows into Joe's own store — that is the stated Read/Mutate boundary (Joe's own
+  store is not a managed system), not a floor leak.
+
+### Confluence and Notion sync ships built but dormant
+
+- **Claim.** Synced knowledge is fetched from an external source you have connected, carrying
+  that source's provenance. Background sync is off unless enabled.
+- **Mechanism.** The confluence and notion syncers and the polling `Coordinator`
+  (`internal/knowledge/sync/`) are constructed and started at the composition root only when
+  `cfg.Knowledge.SyncEnabled` is true (`cmd/joe/server.go`); the config default is `false`
+  (`internal/config/config.go`). The `POST /knowledge/sources/{id}/sync` route is a validate-and-202
+  stub — the background poller is the only actual trigger.
+- **Pinning tests.** `TestDefaultConfig`, `TestHandleTriggerSync_Found`, `TestSync_SinglePage`
+  (confluence), `TestSync_Success` (notion).
+- **Binding note.** The configuration page documents `knowledge.sync_enabled` defaulting false;
+  the guides copy describes synced knowledge as coming from "a source you have connected",
+  which stays accurate for both the dormant and enabled cases. The stub sync route is open work
+  in `docs/backlog/knowledge-store-maturation.md`.
+
 ## Guides — `/guides/register-kubernetes/`
 
 ### The graph records only secret key names and object metadata, never secret values

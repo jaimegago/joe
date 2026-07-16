@@ -605,7 +605,9 @@ update to one returns `422`. See [The knowledge graph](../concepts/knowledge-gra
 ### Entries
 
 - `POST /api/v1/knowledge/entries` — creates an entry; body is a knowledge entry
-  (`title` and `content` required). Response `201`: the entry.
+  (`title` and `content` required). A body that omits `tier` defaults to `derived`, the
+  mutable tier; send `"tier": "curated"` explicitly to author immutable ground truth.
+  Response `201`: the entry.
 - `GET /api/v1/knowledge/entries` — lists entries; query filters `tier`, `source_type`,
   `source_id`. Response `200`: `{ "entries": [ … ], "count": N }`.
 - `GET /api/v1/knowledge/entries/{id}` — one entry; `404` if not found.

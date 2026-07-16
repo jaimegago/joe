@@ -10,6 +10,105 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0109 — the knowledge store ships with a live authenticated-only REST write surface and a live proposals arm; the tier-less create default flips to derived, save_knowledge_entry is parked, and thin governance is accepted for launch
+
+- Date: 2026-07-16
+- Session: knowledge-store-maturation
+- Decision: this session opened intending to record that the knowledge store ships
+  read-only from the agent's perspective with all write paths parked. **Phase 1
+  recon falsified that premise**, and this entry records the actual posture
+  instead. As shipped: (1) the **REST write surface is live and
+  authenticated-only** — `registerKnowledgeRoutes`, `registerProposalRoutes`, and
+  `registerDriftRoutes` are all called in `RegisterRoutes`, sitting directly
+  beneath the D-0081 parked block, so the parking pattern was available and
+  deliberately not applied; entry create/update/delete, source create/delete,
+  proposal create/approve/reject, and drift detection are reachable by **any**
+  authenticated principal, with no audit row, no principal stamping, no admin
+  gate, and no component RBAC (the guarded accessor is component-scoped; these
+  paths carry no componentID). (2) The **agent-side knowledge surface is
+  `search_knowledge` plus the doc-copilot trio** on the user task loop:
+  `generate_doc_draft` is **Read-classed and therefore writes proposal rows in
+  observation mode** (Joe's own store is not a managed system — the stated D-0020
+  boundary, not a floor leak), while `publish_doc_update` is **Mutate-classed and
+  floor-denied** in the shipped observation default. (3) **Confluence and Notion
+  sync ships built-but-dormant** behind `knowledge.sync_enabled` (default false).
+  (4) The **tier-less create default flips curated → derived this session**: the
+  prior default meant any authenticated principal could mint a permanently
+  immutable row by omission, since `Service.Update`/`Delete` refuse curated
+  entries — curated is now assigned only when named explicitly. (5)
+  **`save_knowledge_entry` is parked** out of the agent:core registry per the
+  D-0081 pattern (registration removed; implementation, `ActionRead` classifier
+  row, and `NeedsDurability` declaration retained). It was already unreachable in
+  fact, but nothing said so; left registered it would silently arm a
+  floor-passing, unaudited knowledge writer the day an autonomous loop is wired
+  to that registry. (6) **Curated immutability is retained as-is.** (7) **Thin
+  governance is accepted for launch** — no audit, no principal stamping, no admin
+  gate, no approver identity — and deferred whole to
+  `docs/backlog/knowledge-store-maturation.md`.
+- Basis: Phase 1 read-only verification against the live tree, cited at file:line.
+  Route registration is real, not parked: `internal/api/server.go:139` (knowledge),
+  `:141` (proposals), `:142` (drift), immediately below the commented-out
+  D-0081 block at `:129-138`. Governance is edge auth alone
+  (`cmd/joe/server.go:1074`); `handleCreateEntry`
+  (`internal/api/knowledge.go:34-65`) never populates `CreatedBy` from the request
+  principal, and `SourceTypeHuman` (`internal/knowledge/knowledge.go:43`) is
+  assigned nowhere in non-test code. Curated immutability gates on the
+  **persisted** tier before any repository write
+  (`internal/knowledge/service.go:64-71` Update, `:93-101` Delete), so a
+  tier-downgrade payload cannot bypass it; pinned by `TestTierCuratedImmutable`
+  (`internal/knowledge/knowledge_test.go:93`), suite green. Tool classifications:
+  `search_knowledge` ActionRead (`internal/safety/tier.go:183`),
+  `detect_doc_drift` ActionRead (`:184`), `generate_doc_draft` ActionRead +
+  NeedsDurability (`:217`), `publish_doc_update` ActionMutate (`:230`, per-target
+  variants `:226-228`); registered on the user loop at
+  `internal/tools/default.go:141,150,151,152`. `save_knowledge_entry` was
+  registered at `internal/coreagent/agent.go:176` and classified ActionRead at
+  `internal/safety/tier.go:209`, but unreachable: `Agent.ExecuteTool`
+  (`agent.go:158`) and `GetAvailableTools` (`agent.go:164`) have **zero** callers
+  in the non-test tree and coreagent runs no LLM loop (no `agentloop` import, no
+  `.Chat(` call) — `cmd/joe/server.go:714` already conceded "a no-op today — the
+  Core Agent issues only Reads". Sync: coordinator started at
+  `cmd/joe/server.go:680-689` under `cfg.Knowledge.SyncEnabled`, default false at
+  `internal/config/config.go:463`; the `POST /sources/{id}/sync` route
+  (`internal/api/knowledge.go:291-310`) is a validate-and-202 stub that queues
+  nothing. Proposal approval stamps `ApprovedAt` only
+  (`internal/knowledge/proposals/service.go:42-52`) and the struct has no approver
+  field (`proposal.go:37-54`). No UI affordance exists (`grep -ri knowledge ui/src`
+  → zero hits). This session's changes are pinned by
+  `TestHandleCreateEntry_DefaultsTierToDerived`,
+  `TestHandleCreateEntry_ExplicitCuratedIsHonoured` (which also re-asserts the 422
+  on an explicitly-curated entry), `TestSaveKnowledgeEntryToolIsParked`,
+  `TestSaveKnowledgeEntryTool_ParkedFromAgent` (inverted from the former
+  `TestSaveKnowledgeEntryTool_RegisteredInAgent`, which asserted the opposite), and
+  `TestSaveKnowledgeEntryToolRetained`. Full `go build ./...`, `go vet ./...`,
+  `go test ./...`, and gofmt are green.
+- Site-revision flag: the docs corrections in this session are a **joeagent.dev
+  republish trigger**, handled separately site-side. `docs/public/concepts/knowledge-graph.md`
+  and `docs/public/guides/knowledge-graph.md` claimed Joe's own reasoning extracts
+  derived knowledge from sessions and that its self-maintenance creates and
+  refreshes it — false, no live path produces a derived entry; both now state that
+  the derived tier is the store's mutable tier and that no knowledge-writing tool
+  is registered on any agent surface. `docs/public/guides/doc-proposals.md` claimed
+  approval "stamps who approved it" — false, only the time is recorded; the copy
+  now states the gap. The tier-default flip also required correcting the curated
+  authoring line in the guides page and the `POST /knowledge/entries` line in
+  `docs/public/api-reference/_index.md` to say a tier-less create lands in derived.
+  Per the D-0088 bidirectional duty, a **Knowledge section was added to
+  `docs/project/SITE-CLAIMS.md`** covering six load-bearing claims (curated
+  immutability and the derived default; no registered agent writer; the
+  authenticated-only surface; approval-time-not-approver; publish floor-denied;
+  sync built-but-dormant), several marked launch-bound.
+- Supersedes: nothing. Corrects the reputation the subsystem carried into this
+  session — that knowledge writes were parked or unregistered — which no decision
+  had ever recorded but which the Phase 2 brief assumed. Does not touch D-0020
+  (the Read/Mutate classification of Joe's own model-maintenance tools stands, and
+  is precisely why `generate_doc_draft` writes under an up floor) or D-0081 (whose
+  parking pattern is reused here, not amended).
+- Status: accepted, implemented. Governance maturation deferred to
+  `docs/backlog/knowledge-store-maturation.md` (Priority: later).
+
+---
+
 ## D-0108 — a behavior fix ships a regression test proven by revert-run-restore; a non-behavior change gets a recorded not-pinned rationale instead of a contrived test
 
 - Date: 2026-07-16
