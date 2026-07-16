@@ -8,7 +8,7 @@ description: Bring up joe slack as a Socket Mode daemon client.
 
 `joe slack` connects Joe to Slack so your team can talk to it from a channel. It runs
 over Slack **Socket Mode**, so it needs no public URL or inbound webhook. Like
-[`joe mcp`](mcp/), it is a **daemon client, not a second server**: it holds a Socket Mode
+[`joe mcp`](../mcp/), it is a **daemon client, not a second server**: it holds a Socket Mode
 connection to Slack and forwards to a running `joe` server over HTTP. It does not bind a
 port of its own.
 
@@ -46,5 +46,5 @@ daemon being reachable at `JOE_SERVER`.
 
 ## Where to go next
 
-- The other daemon front-end → [The MCP server](mcp/)
-- Running the daemon this client connects to → [Operations](../operations/)
+- The other daemon front-end → [The MCP server](../mcp/)
+- Running the daemon this client connects to → [Operations](../../operations/)

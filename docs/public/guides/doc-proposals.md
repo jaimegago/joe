@@ -61,7 +61,7 @@ two consequences you must plan for:
 - **The proposal must already be approved.** Joe refuses to publish a proposal that is
   still pending; approve it first.
 - **The deployment must not be read-only.** A mutate is denied whenever Joe's
-  [write floor](../concepts/observation-mode-and-the-write-floor/) is up — which it is in
+  [write floor](../../concepts/observation-mode-and-the-write-floor/) is up — which it is in
   **observation mode** and in **safe mode** after a panic. An observation-mode install
   will *not* publish, no matter how the proposal was approved. Publication succeeds only
   on a deployment whose write floor is down — the governed full-capabilities mode that
@@ -74,7 +74,7 @@ the proposal stays **approved** and you will see the read-only denial. Lowering 
 requires the governed full-capabilities mode, which is **forthcoming** (`JOE_MODE=full` is
 refused at boot pending implementation); once it lands you will be able to run with the
 floor down — subject to clearing any panic and restarting, see
-[Operations](../operations/) — and ask Joe to publish again.
+[Operations](../../operations/) — and ask Joe to publish again.
 
 ## The lifecycle at a glance
 
@@ -85,6 +85,6 @@ floor down — subject to clearing any panic and restarting, see
 
 ## Where to go next
 
-- Why a write is refused in observation or safe mode → [Observation mode and the write floor](../concepts/observation-mode-and-the-write-floor/)
-- Curated versus derived knowledge → [The knowledge graph](knowledge-graph/)
-- The governed full-capabilities mode that will let publication succeed (forthcoming) → [Operations](../operations/)
+- Why a write is refused in observation or safe mode → [Observation mode and the write floor](../../concepts/observation-mode-and-the-write-floor/)
+- Curated versus derived knowledge → [The knowledge graph](../knowledge-graph/)
+- The governed full-capabilities mode that will let publication succeed (forthcoming) → [Operations](../../operations/)

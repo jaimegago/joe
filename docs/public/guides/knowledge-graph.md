@@ -9,7 +9,7 @@ description: Query the graph and understand how components and relationships pop
 Joe keeps a graph of your infrastructure — services, clusters, the systems that hold
 their metrics and logs, and the relationships between them. This page covers how to query
 it and how it gets populated. For the model behind it, read
-[The knowledge graph](../concepts/knowledge-graph/) in Concepts.
+[The knowledge graph](../../concepts/knowledge-graph/) in Concepts.
 
 ## Query the graph
 
@@ -21,7 +21,7 @@ Over HTTP:
 
 The web UI renders the same graph (`GET /api/v1/graph` returns the full node-and-edge
 set, with `GET /api/v1/graph/node/{id}` and `…/related` for a single node), and the
-[MCP tools](mcp/) `joe_graph_query` and `joe_graph_related` expose the same two queries to
+[MCP tools](../mcp/) `joe_graph_query` and `joe_graph_related` expose the same two queries to
 an editor.
 
 ```sh
@@ -34,7 +34,7 @@ curl -s "http://localhost:7777/api/v1/graph/query?q=payment-svc" \
 You do not hand-author the graph node by node. It fills from two places:
 
 - **Components you register.** Registering a managed system (the
-  register → promote flow in [Components](../components/)) puts it under Joe's
+  register → promote flow in [Components](../../components/)) puts it under Joe's
   management. Registration alone is inert; once a component is promoted and armed, Joe's
   autonomous refresh cycle connects to it.
 - **Autonomous discovery.** The refresh cycle reads each armed component, discovers the
@@ -54,7 +54,7 @@ resolve their backend by following the matching edge from the named service, the
 translate and run the query against whatever system that edge points to. The MCP tools
 `joe_metrics`, `joe_logs`, `joe_traces`, `joe_alerts`, and `joe_k8s` are the same surface
 from an editor. Connect the backing systems and wire their edges through
-[Components](../components/) and these resolve automatically.
+[Components](../../components/) and these resolve automatically.
 
 ## Curated versus derived knowledge
 
@@ -77,11 +77,10 @@ when you read it back:
 
 Search and listing let you filter by this distinction, so you can ask for only curated
 entries when you need ground truth. Use the curated/synced/derived wording rather than
-bare tier numbers — the numbers collide with Joe's retired safety-tier vocabulary and
-will mislead.
+bare tier numbers — the names are self-describing and unambiguous.
 
 ## Where to go next
 
-- The model behind the graph and its knowledge tiers → [The knowledge graph](../concepts/knowledge-graph/)
-- Connecting the systems that populate it → [Components](../components/)
-- Promotion: why registering a component is inert until armed → [The component lifecycle](../concepts/component-lifecycle/)
+- The model behind the graph and its knowledge tiers → [The knowledge graph](../../concepts/knowledge-graph/)
+- Connecting the systems that populate it → [Components](../../components/)
+- Promotion: why registering a component is inert until armed → [The component lifecycle](../../concepts/component-lifecycle/)

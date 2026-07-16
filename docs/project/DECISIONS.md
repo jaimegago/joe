@@ -10,6 +10,106 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0112 — the published relative-link convention is depth-correct per page class, and the guide's knowledge-API claim is verified accurate and left standing; the knowledge subsystem's disposition is prune, filed to backlog
+
+- Date: 2026-07-16
+- Status: accepted
+- Session: knowledge-graph-guide-fixes
+- Decision: three corrections to `docs/public`, **no code, test, or migration touched**.
+  (1) **The relative-link convention is pinned by page class**, resolving a split that had
+  gone unnoticed because two sections were written by different sessions under different
+  assumptions: a **section index** (`_index.md`, published at `/docs/<section>/`) reaches a
+  sibling section with `../<section>/`; a **leaf page** (published at
+  `/docs/<section>/<slug>/`) reaches another section with `../../<section>/` and a
+  same-section sibling with `../<slug>/`. **D-0106** already established this — it re-based
+  the links in the content it moved into `components/connectable-systems.md` from `../` to
+  `../../` and verified them against the tree — but the rule was recorded only as an
+  incidental note inside that entry's basis, so later sessions did not apply it. **Fifty-four
+  links across eleven files** were one level short and 404ing: **forty-three** across the nine
+  `docs/public/guides/` leaf pages (the whole section, written in one pass that applied the
+  section-index form to leaf pages), and **eleven** more of the identical class found by
+  verification rather than by report — all ten internal links in `concepts/action-model.md`
+  and one in `concepts/joe-and-mcp.md`, both introduced by later single-page edits. Both
+  failure shapes are now corrected. (2) The **retired-safety-tier justification** is deleted
+  from `/guides/knowledge-graph/` per **D-0052**'s ban on self-referential meta-commentary:
+  the retired T1/T2/T3 vocabulary (collapsed by **D-0020**) never shipped publicly, so a
+  public page cannot explain a naming choice by pointing at it. The names-over-numbers
+  guidance itself is **kept**, re-grounded on the names being self-describing and
+  unambiguous. `CLAUDE.md`'s tier-collision note is **left untouched** — it is internal, it
+  addresses a reader who does know the retired vocabulary, and it is correct where it is.
+  (3) **The knowledge-API claim is verified accurate and left unchanged.** The session was
+  scoped on the premise that `POST /api/v1/knowledge/entries` was stale copy over an
+  unregistered route; it is not. `registerKnowledgeRoutes` is called from
+  `api.Server.RegisterRoutes` (`internal/api/server.go`), directly beneath the **D-0081**
+  parked block — so the parking pattern was available at that call site and deliberately not
+  applied — and the guide's description of the route, the `tier` field, and the
+  explicit-curated requirement all match the code.
+- Decision rule branch taken for the authoring path: **neither**. The governing rule offered
+  two branches — remove the endpoint reference if no knowledge HTTP route is registered, or
+  name the surface accurately if one exists under a different route or the admin API. The
+  route is registered at **exactly the path the guide names**, so the first branch does not
+  fire and the second is already satisfied by the existing sentence. Both branches presumed
+  the claim was wrong; it is right. Rewriting under either would have replaced a true,
+  specific, mechanism-backed statement with a vaguer one and deleted a working endpoint from
+  the published docs — a correction that makes the page **less** accurate is not a
+  correction. The sentence stands as written. Correspondingly `concepts/knowledge-graph.md`
+  needed no mirrored fix: it names no endpoint, so the claim was never mirrored there.
+- What verification exposed instead: the claim is accurate, but what it accurately describes
+  is a governance gap. Authoring **curated** knowledge — the tier the same page documents as
+  human-owned, highest-trust, authoritative, and **permanently immutable** — is available to
+  any authenticated principal with no admin gate, no audit row, and no principal stamping.
+  **D-0109**'s tier-default flip closed the accidental path to that act; the deliberate one is
+  open. The disposition taken is **prune, not park** — the knowledge subsystem is to be
+  deleted, on the **D-0074** rule that the tree describes only what the binary ships and that
+  a retained-but-inert subsystem is a standing claim that it works — filed as
+  `docs/backlog/knowledge-store-prune.md` (Priority: now), which supersedes
+  `docs/backlog/knowledge-store-maturation.md` wholesale. No route or gate was changed here;
+  the filing is the deliverable.
+- Basis: `knowledge-graph-guide-fixes` session, Phase-1 read-only verification against the
+  live tree before any write. Link convention: **D-0106**'s re-base precedent, cross-checked
+  against `concepts/knowledge-graph.md` and `components/connectable-systems.md` (both leaf
+  pages, both already using `../../` correctly), and confirmed by the reported live 404 at
+  `/docs/guides/concepts/knowledge-graph/`. The generator config lives in the separate
+  joeagent.dev repository and was **not** readable from here, so the URL scheme itself is
+  inferred from the observed 404 plus D-0106 rather than read from config. Correction
+  verified by a resolver modelling Hugo pretty-URL semantics over every internal link in
+  `docs/public`: **222 links checked, 0 broken** after the fix, against 54 before — the
+  eleven concepts-page breakages were surfaced by that sweep and would not have been found
+  from the reported symptom alone. Knowledge surface: `registerKnowledgeRoutes` call site
+  (`internal/api/server.go`); route and tier-default (`internal/api/knowledge.go`); `Tier`
+  constants and the `tier` JSON tag (`internal/knowledge/knowledge.go`); curated immutability
+  enforced against the persisted tier (`internal/knowledge/service.go`); agent-side surface
+  is `search_knowledge` plus `detect_doc_drift` / `generate_doc_draft` / `publish_doc_update`
+  on the user task loop only (`internal/tools/default.go`) with `save_knowledge_entry` parked
+  (`internal/coreagent/agent.go`) and its classifier row retained
+  (`internal/safety/tier.go`); `SITE-CLAIMS.md`'s `Knowledge` section already tracks all
+  three postures, including the authenticated-only gate as launch-bound. Prune-item facts
+  verified in the same pass: no seed rows in `004_knowledge.up.sql`; `sync_enabled` defaults
+  false (`internal/config/config.go`); `Embed` returns `embeddings not yet implemented` on
+  claude and gemini while `openai-compat` implements it, making search adapter-conditional
+  rather than uniformly dead; `handleTriggerSync` returns `202 sync_queued` without checking
+  for or invoking a coordinator; `Service.Create` treats embed failure as non-fatal and
+  stores the row unembedded, `Search` skips unembedded rows, and `EmbedAll` has zero
+  production callers — so entries written on a claude/gemini install are unsearchable by
+  construction with no repair path. One framing offered for that item — that all three entry
+  producers are closed — **did not survive verification** and is restated in the item: two are
+  closed (the parked agent writer, dormant sync), the third (the REST create path) is open,
+  which is why the store is empty on a stock install only in the sense that nothing has yet
+  chosen to write to it.
+- Supersedes: nothing. **Promotes D-0106**'s incidental link-depth note to a stated
+  convention and applies it to the two sections that missed it. Leaves **D-0109**'s parked
+  posture, **D-0052**'s explanation-only discipline, and **D-0032**'s no-volatile-counts rule
+  intact and applied. No security or safety invariant is touched — the write floor
+  (**D-0018**), denial precedence (**D-0022**), and the observation boot default (**D-0073**)
+  are unchanged; this session touched documentation only. `docs/backlog/knowledge-store-prune.md`
+  supersedes `docs/backlog/knowledge-store-maturation.md`, whose closure belongs to the prune
+  session, not this one. Because `docs/public` is the joeagent.dev publication source, the
+  corrected links across eleven pages and the reworded curated/derived paragraph are a
+  **site-revision flag** for a separate site-side republish; no separate site-repo file is
+  edited here.
+
+---
+
 ## D-0111 — the D-0058 trim extends to the twelve component types that fail the documentable gate; they are unregistrable at the single seam and the now-false "Not yet supported" docs paragraph is deleted
 
 - Date: 2026-07-16

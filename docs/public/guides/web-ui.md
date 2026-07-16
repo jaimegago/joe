@@ -6,13 +6,13 @@ description: Log a human in over OIDC, bootstrap the first admin, and read the a
 
 # The web UI and human login
 
-The [Quickstart](../quickstart/) deliberately authenticated with a service-account
+The [Quickstart](../../quickstart/) deliberately authenticated with a service-account
 bearer key and never logged a *human* in. This page covers the human path: people sign
 in to the web UI through **OIDC**, so the UI requires an OIDC provider to be configured
 before anyone can log in.
 
 For the exact configuration keys named below, see
-[Configuration](../configuration/); this page stays at the how-to level.
+[Configuration](../../configuration/); this page stays at the how-to level.
 
 ## Prerequisite: configure OIDC
 
@@ -58,7 +58,7 @@ to `/chat`. There is no dashboard landing page; do not look for one.
 The navigation is flat. Every signed-in operator sees the same top-level entries:
 
 - **Chat** — the default surface; talk to Joe and drive tasks.
-- **Sessions** — browse chat sessions (see [Chat sessions](chat-sessions/)).
+- **Sessions** — browse chat sessions (see [Chat sessions](../chat-sessions/)).
 - **Components** — the managed systems Joe knows about.
 
 Admins additionally see a single **Admin** subgroup, revealed only when the signed-in
@@ -69,6 +69,6 @@ redirected away; the subgroup is hidden, not merely disabled.
 
 ## Where to go next
 
-- The identity model behind these principals → [Principals and identity](../concepts/principals-and-identity/)
-- The full OIDC and admin configuration keys → [Configuration](../configuration/)
-- Who may read which components in the UI → [RBAC, zones, and read posture](../concepts/rbac-zones-and-read-posture/)
+- The identity model behind these principals → [Principals and identity](../../concepts/principals-and-identity/)
+- The full OIDC and admin configuration keys → [Configuration](../../configuration/)
+- Who may read which components in the UI → [RBAC, zones, and read posture](../../concepts/rbac-zones-and-read-posture/)

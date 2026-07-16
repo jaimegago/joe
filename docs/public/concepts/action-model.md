@@ -9,7 +9,7 @@ description: Every action Joe takes is classified Read or Mutate and governed ac
 Every action Joe can take is classified on a single binary axis — **Read** or
 **Mutate** — and that classification decides how the action is governed. A Read
 inspects a system's state without changing it; a Mutate changes something. Reads pass
-the [write floor](observation-mode-and-the-write-floor/) unconditionally. Mutates are
+the [write floor](../observation-mode-and-the-write-floor/) unconditionally. Mutates are
 denied by default and run only when governance explicitly allows them. That axis is the
 spine of this page.
 
@@ -20,7 +20,7 @@ not recognize is treated as a **Mutate** and denied — the default is closed, s
 unclassified action can never slip through as a read.
 
 Whether any action runs at all is still decided by governance —
-[identity, RBAC, zones, and the read posture](rbac-zones-and-read-posture/) govern *who*
+[identity, RBAC, zones, and the read posture](../rbac-zones-and-read-posture/) govern *who*
 may do *what*. This page is about the shape of the action surface and how each class is
 gated; those pages are about the rules applied to it.
 
@@ -51,7 +51,7 @@ separate is what keeps each one narrow and read-only.
 
 Web search is inert until an operator points Joe at a search backend; with none
 configured the tool is still offered but every call reports that no backend is set. The
-keys and backend choice live in [Configuration](../configuration/) — this page does not
+keys and backend choice live in [Configuration](../../configuration/) — this page does not
 repeat them.
 
 ### The component-backed observe surface
@@ -64,11 +64,11 @@ estate and are what its answers draw on. Think of it as an **observe surface**: 
 reading the managed system's live state into its own picture of the world.
 
 This surface is exactly as wide as the set of systems Joe knows how to talk to; that
-per-type set, and how each type is registered, live in [Components](../components/). Every
+per-type set, and how each type is registered, live in [Components](../../components/). Every
 read here flows through Joe's single governed accessor, so it is attributed to a principal
 and checked before it happens — RBAC, zones, and the install-wide read posture decide
 which principals may reach which components. See
-[RBAC, zones, and the read posture](rbac-zones-and-read-posture/) for how that governance
+[RBAC, zones, and the read posture](../rbac-zones-and-read-posture/) for how that governance
 is applied. What matters for the action map is the shape: these are all reads, and none of
 them change the system being observed.
 
@@ -137,12 +137,12 @@ of the process. The floor comes up when `JOE_MODE` is unset and, explicitly, wit
 full-capabilities mode that would let the gate chain above decide each mutation is
 forthcoming — `JOE_MODE=full` is refused at boot pending implementation — so today Joe
 boots read-only regardless. The
-[observation mode and the write floor](observation-mode-and-the-write-floor/) page
+[observation mode and the write floor](../observation-mode-and-the-write-floor/) page
 explains the mechanism and how to recover from it.
 
 ## Where to go next
 
-- Keys and the search backend → [Configuration](../configuration/)
-- The per-type set of registerable systems → [Components](../components/)
-- Registering a system, step by step → [Guides](../guides/)
-- Why every read and mutation is governed → [The governed-safety invariant](governed-safety/)
+- Keys and the search backend → [Configuration](../../configuration/)
+- The per-type set of registerable systems → [Components](../../components/)
+- Registering a system, step by step → [Guides](../../guides/)
+- Why every read and mutation is governed → [The governed-safety invariant](../governed-safety/)

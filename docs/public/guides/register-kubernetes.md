@@ -29,17 +29,17 @@ credential, never the secret itself, and Joe never ingests a human's kubeconfig.
 This page covers **Kubernetes only**. Other component types follow the same register →
 promote → activate spine but differ in their credential mechanism and activation path
 (some come live only at the next daemon restart). They are documented separately — see
-[Components](../components/) for the per-type routing index, and the sibling
+[Components](../../components/) for the per-type routing index, and the sibling
 how-to pages as they are added.
 
 For *why* the lifecycle is split the way it is — inert registration, governed promotion,
 and credentials held as references rather than stored secrets — see
-[The component lifecycle](../concepts/component-lifecycle/).
+[The component lifecycle](../../concepts/component-lifecycle/).
 
 ## Before you start
 
 - A running Joe with the web UI open, and a human session logged in. If you have not done
-  that yet, follow [The web UI and human login](web-ui/) first.
+  that yet, follow [The web UI and human login](../web-ui/) first.
 - An **admin principal**. Registering, assigning a zone, and promoting are all
   admin-gated — the affordances below do not appear for a non-admin. Running the
   connectivity test does not require admin.
@@ -53,7 +53,7 @@ and credentials held as references rather than stored secrets — see
     app registration's client secret.
 
   You supply a *reference* to the credential during promotion — never the credential
-  contents. See [The component lifecycle](../concepts/component-lifecycle/) for why.
+  contents. See [The component lifecycle](../../concepts/component-lifecycle/) for why.
 
 ## Step 1 — Open the Components page
 
@@ -98,7 +98,7 @@ A freshly registered component lands in no zone. Assign it one before promoting.
 
 The component moves out of the unassigned pool into the zone you chose. For what zones
 mean and how they gate access, see
-[RBAC, zones, and read posture](../concepts/rbac-zones-and-read-posture/).
+[RBAC, zones, and read posture](../../concepts/rbac-zones-and-read-posture/).
 
 > 📷 **Screenshot:** `images/guides/register-kubernetes/03-assign-zone.png` — the Zones
 > page unassigned-components panel with the Assign Zone dropdown open.
@@ -208,7 +208,7 @@ Joe uses the live connection you just established to answer. A working credentia
 connection lets Joe **read** the cluster; whether Joe may *change* anything is governed
 separately by the write floor and RBAC — arming a component does not by itself grant
 mutation. See
-[Observation mode and the write floor](../concepts/observation-mode-and-the-write-floor/).
+[Observation mode and the write floor](../../concepts/observation-mode-and-the-write-floor/).
 
 ## Screenshots to capture
 
@@ -225,7 +225,7 @@ target path under `images/guides/register-kubernetes/`:
 ## Where to go next
 
 - The per-type routing index, including which types come live at runtime versus only at
-  the next daemon restart → [Components](../components/)
+  the next daemon restart → [Components](../../components/)
 - Why registration and promotion are two separate, governed steps →
-  [The component lifecycle](../concepts/component-lifecycle/)
-- Zones and who may read a component → [RBAC, zones, and read posture](../concepts/rbac-zones-and-read-posture/)
+  [The component lifecycle](../../concepts/component-lifecycle/)
+- Zones and who may read a component → [RBAC, zones, and read posture](../../concepts/rbac-zones-and-read-posture/)

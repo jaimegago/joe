@@ -47,6 +47,7 @@ file for the full status, priority, blocked-by, and body.
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |  |
 | [`knowledge-store-maturation`](knowledge-store-maturation.md) | Knowledge store maturation — governance, sync disposition, and orphaned-writer disposition | open | later |
+| [`knowledge-store-prune`](knowledge-store-prune.md) | Knowledge store: prune the subsystem from the tree | open | now |
 | [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer | open |  |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open |  |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |  |

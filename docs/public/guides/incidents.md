@@ -9,7 +9,7 @@ description: Declare and resolve an incident, and what the regime changes while 
 The **incident regime** is Joe's "we are in an incident right now" switch. While it is
 active, Joe tightens what mutations it will perform. This page covers declaring and
 resolving an incident and what changes in between. For the model behind it, read
-[The incident regime](../concepts/incident-regime/) in Concepts.
+[The incident regime](../../concepts/incident-regime/) in Concepts.
 
 ## Declare an incident
 
@@ -45,8 +45,8 @@ While an incident is active, two things change:
   incident master while the regime is active. The gate is deny-only: it narrows *which
   session* may mutate during an incident; it never grants authority a principal does not
   otherwise have, and read operations are unaffected. This gate sits in the middle of
-  Joe's denial precedence — below the [write floor](../concepts/observation-mode-and-the-write-floor/),
-  above [RBAC](../concepts/rbac-zones-and-read-posture/).
+  Joe's denial precedence — below the [write floor](../../concepts/observation-mode-and-the-write-floor/),
+  above [RBAC](../../concepts/rbac-zones-and-read-posture/).
 - **The incident banner.** The web UI shows an app-wide banner while the regime is in
   incident mode, naming the captain and warning that writes may be blocked, with a link
   to the incident master session.
@@ -81,5 +81,5 @@ gate stops refusing non-master mutations and the banner clears.
 
 ## Where to go next
 
-- What "incident regime" means and how it composes with the write floor → [The incident regime](../concepts/incident-regime/)
-- Linking other sessions to the active incident → [Chat sessions](chat-sessions/)
+- What "incident regime" means and how it composes with the write floor → [The incident regime](../../concepts/incident-regime/)
+- Linking other sessions to the active incident → [Chat sessions](../chat-sessions/)

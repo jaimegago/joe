@@ -10,7 +10,7 @@ A **chat session** is a first-class, durable object: it has an owner (its creato
 persists the conversation and the actions Joe took, and it can be linked to an incident.
 This page is procedural. For the model behind it — team-public like a pull request,
 creator-mutates, admin-governs — read
-[Chat sessions](../concepts/chat-sessions/) in Concepts.
+[Chat sessions](../../concepts/chat-sessions/) in Concepts.
 
 ## Create a session
 
@@ -75,9 +75,9 @@ incident. There must be an incident active for the link to take; linking when no
 declared is refused.
 
 Promoting a session to *become* the incident master is a different, more privileged act —
-that is the **declare** step, covered in [The incident regime](incidents/).
+that is the **declare** step, covered in [The incident regime](../incidents/).
 
 ## Where to go next
 
-- Why sessions are owned and team-readable → [Chat sessions](../concepts/chat-sessions/)
-- Declaring and resolving incidents → [The incident regime](incidents/)
+- Why sessions are owned and team-readable → [Chat sessions](../../concepts/chat-sessions/)
+- Declaring and resolving incidents → [The incident regime](../incidents/)

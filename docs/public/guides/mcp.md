@@ -9,7 +9,7 @@ description: Connect an editor or other MCP client and the tool surface Joe expo
 `joe mcp` exposes Joe over the **Model Context Protocol** so an editor or other MCP
 client — Claude Code, Cursor, and anything else that speaks MCP — can query your live
 infrastructure through Joe. This is the page the
-[Components](../components/) section points to.
+[Components](../../components/) section points to.
 
 The MCP server is a **stdio** front-end: the client launches `joe mcp` as a subprocess
 and talks to it over standard input/output. It is a thin client of a running daemon — it
@@ -46,7 +46,7 @@ by client, but it is always "run this command with this environment." For exampl
 ## The tool surface
 
 Joe registers eight tools over MCP. They are **category-based**: you describe *what* you
-want, and Joe resolves the backend from its [knowledge graph](knowledge-graph/),
+want, and Joe resolves the backend from its [knowledge graph](../knowledge-graph/),
 translates the question, executes it, and returns a normalized result.
 
 | Tool | What it does |
@@ -67,6 +67,6 @@ daemon's posture and the credential in `JOE_API_KEY`, not by the MCP client.
 
 ## Where to go next
 
-- How backends are resolved from the graph → [The knowledge graph](knowledge-graph/)
-- Connecting the managed systems these tools reach → [Components](../components/)
-- Why Joe serves MCP but will not consume it → [Joe and MCP](../concepts/joe-and-mcp/)
+- How backends are resolved from the graph → [The knowledge graph](../knowledge-graph/)
+- Connecting the managed systems these tools reach → [Components](../../components/)
+- Why Joe serves MCP but will not consume it → [Joe and MCP](../../concepts/joe-and-mcp/)

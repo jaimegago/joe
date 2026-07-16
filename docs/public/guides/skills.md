@@ -75,4 +75,4 @@ or updated.
 
 ## Where to go next
 
-- How skills feed Joe's autonomy → [The agent loop and autonomy](../concepts/agent-loop-and-autonomy/)
+- How skills feed Joe's autonomy → [The agent loop and autonomy](../../concepts/agent-loop-and-autonomy/)
