@@ -168,11 +168,31 @@ func (a *Agent) GetAvailableTools() []tools.Tool {
 // registerCoreAgentTools registers the tools available to the Core Agent
 func registerCoreAgentTools(registry *tools.Registry, services *core.Services, logger *slog.Logger) {
 	// Register core agent tools
-	registry.Register(NewGraphAddNodeTool(services, logger))
-	registry.Register(NewGraphAddEdgeTool(services, logger))
-	registry.Register(NewGraphUpdateNodeTool(services, logger))
 	registry.Register(NewRegisterComponentTool(services, logger))
 	registry.Register(NewSaveOnboardingFactTool(services, logger))
+	// Parked for launch (session iac-graph-ingestion, D-0110), following the
+	// same D-0081/D-0109 pattern as save_knowledge_entry below: the registration
+	// is the only thing removed. The implementations, their ActionRead classifier
+	// rows (internal/safety/tier.go), and their parameter schemas are retained —
+	// re-enabling is restoring these three call sites.
+	//
+	// Why park: these three are the onboarding-era LLM-shaped graph writers. They
+	// call services.Graph.AddNode/AddEdge/UpdateNode DIRECTLY, bypassing the
+	// delta-reconcile seam (LoadGraphStateForComponent -> BuildGraphDelta ->
+	// ApplyGraphDelta) that every *_refresh.go writes through, so nothing
+	// reconciles or removes what they add. Being Read-classed they pass the write
+	// floor unconditionally, observation mode included. Like save_knowledge_entry
+	// they were already unreachable in fact — nothing drives this registry
+	// (Agent.ExecuteTool/GetAvailableTools have no production callers, and
+	// coreagent runs no LLM loop) — but nothing SAID so. Left registered, the day
+	// an autonomous loop is wired here it would silently acquire the ability to
+	// write LLM-inferred nodes and edges into the infrastructure graph, which
+	// D-0110 makes a deterministic-only structure. Parking makes the absence
+	// deliberate and test-pinned rather than incidental.
+	//   registry.Register(NewGraphAddNodeTool(services, logger))
+	//   registry.Register(NewGraphAddEdgeTool(services, logger))
+	//   registry.Register(NewGraphUpdateNodeTool(services, logger))
+	//
 	// Parked for launch (session knowledge-store-maturation), following the
 	// D-0081 pattern: the registration is the only thing removed. The tool
 	// implementation, its ActionRead classifier row, and its NeedsDurability

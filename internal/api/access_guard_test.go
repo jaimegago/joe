@@ -61,6 +61,14 @@ import (
 //     What coreagent's graph exemption DOES still cover is the Core Agent's graph WRITE half:
 //     ApplyGraphDelta -> raw services.Graph.AddNode/AddEdge/Delete* in the
 //     *_refresh.go files, plus the onboarding-tool graph mutations in agent.go.
+//     Those onboarding-tool call sites are RETAINED BUT PARKED as of session
+//     iac-graph-ingestion (D-0110): graph_add_node/graph_add_edge/graph_update_node
+//     are no longer registered on the agent:core registry, so they are unreachable,
+//     but their implementations (and thus their services.Graph.* call sites) remain.
+//     This guard scans CALL SITES, not registrations, so the exemption must stay —
+//     it is what keeps the legitimate ApplyGraphDelta refresh writes green, and the
+//     parked implementations sit in the same exempt package. The exemption's scope is
+//     unchanged by the parking; nothing here is weakened to accommodate it.
 //     This is INTENTIONAL, not a deferred or not-yet-governed gap: it is an
 //     internal Tier-3 knowledge write, governed upstream by the agent:core read
 //     floor (A001-COREGOV). A component whose refresh adapter read is denied

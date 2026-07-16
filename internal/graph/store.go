@@ -87,11 +87,24 @@ type ConfidenceLevel int
 // refresh-managed edge). Ambiguous legacy rows outside a refresh loop keep 3
 // and merely display as user-confirmed; no migration can recover which they
 // meant, so none is attempted.
+
+// Confidence records how strongly a DETERMINISTICALLY-DERIVED edge is
+// established — it is a heuristic-strength marker, not an authority tier. Every
+// edge in the graph is produced by Joe-authored adapter and refresher code
+// through the delta-reconcile seam; no LLM authors graph structure (D-0110).
+// The levels distinguish how the deriving code reached the relationship, not who
+// or what asserted it.
 const (
-	// Inferred means the edge was guessed by the LLM, not yet confirmed
+	// Inferred means the edge was derived by a heuristic match rather than a
+	// confirmed identifier — e.g. the gitops/terraform refreshers' name (plus
+	// namespace, where known) matching in buildManagedByEdges/buildProvidesEdges
+	// (internal/coreagent/gitops_refresh.go). Deterministic, but a same-named
+	// resource in scope can produce a wrong edge.
 	Inferred ConfidenceLevel = 1
 
-	// Explicit means the edge was discovered from API or .joe/ file
+	// Explicit means the edge rests on an identifier the source system confirmed,
+	// or on a relationship an API reported directly — e.g. an owner reference or
+	// a resource ID carried in the payload, not a name guessed to match.
 	Explicit ConfidenceLevel = 2
 
 	// UserConfirmed means the user explicitly confirmed this edge

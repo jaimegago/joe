@@ -10,6 +10,79 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0110 — the infrastructure graph is deterministic-only: nodes and edges come solely from adapter and refresher code through the delta-reconcile seam, never from LLM inference; the three onboarding-era graph-write tools are parked
+
+- Date: 2026-07-16
+- Session: iac-graph-ingestion
+- Decision: the infrastructure graph accepts **only deterministically-derived nodes
+  and edges**, produced by **Joe-authored adapter and refresher code**. The
+  **delta-reconcile seam** (`LoadGraphStateForComponent` → `BuildGraphDelta` →
+  `ApplyGraphDelta`, `internal/coreagent/graphdelta.go`) is the **production write
+  path**: every `*_refresh.go` builds a desired node/edge set and reconciles it, which
+  is what lets the graph remove structure that no longer exists. **LLM-inferred
+  understanding of any kind is never written to the graph** — not relationships, not
+  intent, not architecture, and specifically not any future IaC repository analysis.
+  It belongs in the **knowledge store's derived tier**, through whatever governed write
+  path `docs/backlog/knowledge-store-maturation.md` produces. IaC graph ingestion design
+  is **constrained by this invariant and deferred post-launch** to
+  `docs/backlog/iac-graph-ingestion.md`.
+- What this session changed: the invariant was **true in practice but unenforced**, and
+  this entry records it as now-enforced rather than merely intended. Phase 1 recon found
+  **three registered LLM-shaped graph-write tools** — `graph_add_node`, `graph_add_edge`,
+  `graph_update_node` (`internal/coreagent/agent.go`) — that call
+  `services.Graph.AddNode/AddEdge/UpdateNode` **directly, bypassing the delta seam**, so
+  nothing would reconcile away what they wrote. All three are **`ActionRead`-classed**
+  (`internal/safety/tier.go` — per D-0020 Joe's own model-maintenance tools are Reads), so
+  they **pass the write floor unconditionally, observation mode included**. They were
+  **unreachable in fact** (nothing drives that registry: `Agent.ExecuteTool` /
+  `GetAvailableTools` have no production callers and coreagent runs no LLM loop), but
+  nothing **said** so — the day an autonomous loop is wired there, it would silently
+  acquire the ability to write LLM-inferred structure into the graph. All three are now
+  **parked** per the D-0081 pattern: registrations removed, implementations and classifier
+  rows retained, pinned by `TestGraphWriteToolsAreParked`,
+  `TestGraphWriteTools_ParkedFromAgent`, and `TestGraphWriteToolsRetained`. This closes
+  **the same latency class as D-0109** — an unreachable-but-registered Read-classed writer
+  awaiting a loop — for the graph rather than the knowledge store.
+- Basis (Phase 1 recon, verified against the live tree):
+  - **D-0028 item f established the justification.** The autonomous graph writes are an
+    intentional non-gate — "the only data that can reach the graph is data a floored read
+    already admitted" — with a zero-orphan enumeration (no graph-write call site reachable
+    without a floored adapter read). That argument holds **only because** the writes are
+    deterministic derivations of floored reads; an LLM-authored write would break it by
+    introducing structure no read produced. This entry pins as normative what D-0028 item f
+    assumed.
+  - **D-0042 removed the historical counterexample.** The `.joe/` ingestion path — a
+    repo-authored file interpreted by an LLM into `graph_add_node` / `graph_add_edge` tool
+    calls — was the one shipped path writing model-authored structure into the graph. Its
+    deletion left the invariant true in fact; this entry states it.
+  - **The graph carries no authority axis.** `graph.Node` has no tier or authority field
+    (`internal/graph/store.go`: ID, Type, ComponentID, Metadata, FirstSeen, LastSeen).
+    `graph.Edge` carries `Confidence`, which is a **heuristic-strength marker on a
+    deterministic derivation, not an authority tier**: `Inferred` marks a name-plus-namespace
+    heuristic match (the gitops/terraform refreshers' `buildManagedByEdges` /
+    `buildProvidesEdges`), `Explicit` marks an identifier-confirmed or API-reported
+    relationship. Its docs were **stale in both directions** and are corrected this session —
+    `Inferred` read "guessed by the LLM, not yet confirmed", describing **no live writer**,
+    and `Explicit` still referenced ".joe/ file" discovery **deleted by D-0042**. No field,
+    type, or value changed.
+  - **The access guard scans call sites, not registrations**
+    (`TestInvariant_NoUngovernedAdapterOrGraphAccess`, `internal/api/access_guard_test.go`:
+    an AST scan for `services.Graph.<Method>(...)` exempted by file-path prefix). Because the
+    parked implementations are retained, their call sites remain, so `internal/coreagent/`
+    stays in `graphAccessAllowed` — it is also what keeps the legitimate `ApplyGraphDelta`
+    refresh writes green. The exemption's scope is **unchanged**; nothing was weakened to
+    accommodate the parking, and the guard's comment now records that the tools it covers are
+    parked.
+- Scope: this governs **what may author graph structure**, and is independent of the read
+  posture (D-0041), which governs who may read it, and of the write floor (D-0018/D-0020),
+  which governs mutations against managed systems. The graph write half remains an
+  intentional non-gate per D-0028 item f — this entry constrains its **inputs**, not its
+  permit.
+- Supersedes: none. Complements D-0028 (item f's justification), D-0042 (counterexample
+  removal), and D-0109 (the same parking pattern, applied to the knowledge store).
+
+---
+
 ## D-0109 — the knowledge store ships with a live authenticated-only REST write surface and a live proposals arm; the tier-less create default flips to derived, save_knowledge_entry is parked, and thin governance is accepted for launch
 
 - Date: 2026-07-16

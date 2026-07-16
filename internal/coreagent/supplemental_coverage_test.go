@@ -654,6 +654,35 @@ func TestRefresher_Refresh_WithUnsupportedSource(t *testing.T) {
 }
 
 // ============================================================
+// Graph-write tools are PARKED out of the agent's tool set
+// ============================================================
+
+// Session iac-graph-ingestion (D-0110) parked graph_add_node, graph_add_edge and
+// graph_update_node per the D-0081/D-0109 pattern. This checks the absence
+// through the Agent's public available-tools surface, complementing the
+// registry-level pin in registry_graph_write_parked_test.go.
+func TestGraphWriteTools_ParkedFromAgent(t *testing.T) {
+	svc := makeTestServices(t)
+	agent := New(svc, &mockLLMAdapter{}, nil)
+
+	for _, tool := range agent.GetAvailableTools() {
+		for _, parked := range parkedGraphWriteTools {
+			if tool.Name() == parked {
+				t.Fatalf("%s must NOT be in the agent:core available-tools set — it is "+
+					"parked (session iac-graph-ingestion, D-0110): the infrastructure graph is "+
+					"deterministic-only and takes writes through the delta-reconcile seam", parked)
+			}
+		}
+	}
+
+	// Sanity: the agent still exposes its live tools, so an agent that exposed
+	// nothing wouldn't vacuously pass the check above.
+	if len(agent.GetAvailableTools()) == 0 {
+		t.Fatal("agent:core exposed no tools")
+	}
+}
+
+// ============================================================
 // SaveKnowledgeEntryTool is PARKED out of the agent's tool set
 // ============================================================
 

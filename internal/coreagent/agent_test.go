@@ -66,11 +66,11 @@ func TestNewCoreAgent(t *testing.T) {
 		t.Error("Core Agent should have registered tools")
 	}
 
-	// Test that tools are registered correctly
+	// Test that tools are registered correctly. graph_add_node, graph_add_edge
+	// and graph_update_node were dropped from this set by session
+	// iac-graph-ingestion (D-0110) — they are parked out of the registry, and
+	// their absence is pinned by TestGraphWriteToolsAreParked.
 	expectedTools := map[string]bool{
-		"graph_add_node":       true,
-		"graph_add_edge":       true,
-		"graph_update_node":    true,
 		"register_component":   true,
 		"save_onboarding_fact": true,
 	}
@@ -464,14 +464,18 @@ func TestTriggerRefreshComponent_NoAdapter(t *testing.T) {
 	}
 }
 
+// TestExecuteTool covers the executor dispatch path. It formerly drove
+// graph_add_node; session iac-graph-ingestion (D-0110) parked that tool out of
+// the registry, so this repoints at save_onboarding_fact — a still-registered
+// tool — to keep exercising dispatch rather than the parked tool.
 func TestExecuteTool(t *testing.T) {
 	svc := makeTestServices(t)
 	agent := New(svc, &mockLLMAdapter{}, nil)
 	ctx := context.Background()
 
-	result, err := agent.ExecuteTool(ctx, "graph_add_node", map[string]any{
-		"node_id":   "exec-tool-node",
-		"node_type": "test",
+	result, err := agent.ExecuteTool(ctx, "save_onboarding_fact", map[string]any{
+		"fact_type":   "test",
+		"description": "exec-tool dispatch probe",
 	})
 	if err != nil {
 		t.Errorf("ExecuteTool() error = %v", err)

@@ -44,6 +44,7 @@ file for the full status, priority, blocked-by, and body.
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open |  |
 | [`health-readiness-surface`](health-readiness-surface.md) | Health and readiness probe surface (/livez, /readyz) | open |  |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open |  |
+| [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |  |
 | [`knowledge-store-maturation`](knowledge-store-maturation.md) | Knowledge store maturation — governance, sync disposition, and orphaned-writer disposition | open | later |
 | [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer | open |  |
