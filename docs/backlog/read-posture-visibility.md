@@ -1,6 +1,7 @@
 # Read posture is invisible in every UI and CLI surface
 
 Status: open
+Priority: next
 
 ## Context
 
