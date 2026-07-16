@@ -156,15 +156,17 @@ func TestPromotionCandidates_StaticBearerNotApplicable(t *testing.T) {
 
 // TestPromotionCandidates_UnwiredSorted proves an unwired type mirrors
 // promotion-requirements: 200, wired:false, sorted armable_types equal to the
-// wired-type registry.
+// wired-type registry. terraform is the unwired fixture — registrable but absent
+// from wiredTypes; see TestPromote_RejectsUnwiredType for why datadog no longer
+// serves.
 func TestPromotionCandidates_UnwiredSorted(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	registerComponent(t, f, "c-dd", "datadog", `{"site":"datadoghq.com"}`)
+	registerComponent(t, f, "c-tf", "terraform", `{"state_path":"/tmp/terraform.tfstate"}`)
 
-	body, _ := getPromotionCandidates(t, f, "c-dd", "user:alice")
-	if body.Wired || body.Type != "datadog" {
-		t.Fatalf("unwired shape: wired=%v type=%q; want false/datadog", body.Wired, body.Type)
+	body, _ := getPromotionCandidates(t, f, "c-tf", "user:alice")
+	if body.Wired || body.Type != "terraform" {
+		t.Fatalf("unwired shape: wired=%v type=%q; want false/terraform", body.Wired, body.Type)
 	}
 	if !sort.StringsAreSorted(body.ArmableTypes) {
 		t.Errorf("armable_types not sorted: %v", body.ArmableTypes)

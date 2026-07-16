@@ -1,9 +1,44 @@
 package store
 
+// UNREGISTRABLE component types.
+//
+// A constant marked UNREGISTRABLE below is deliberately ABSENT from
+// AllowedComponentTypes / IsValidComponentType. Every surface that admits a
+// component type consults that single seam, so all of them reject an
+// unregistrable type with exactly the invalid-type response a wholly unknown
+// type takes: the HTTP create endpoint (handleCreateComponent,
+// internal/api/components.go), the register_component LLM tool
+// (RegisterComponentTool.Execute, internal/coreagent/agent.go), the web
+// registration form (whose type selector is populated from
+// handleListComponentTypes → AllowedComponentTypes), and the auto_promote_reads
+// admin surface (listReadPromotions / setReadPromotion, internal/api/admin.go).
+// No surface is special-cased.
+//
+// An unregistrable constant stays DEFINED when code outside the two registrable
+// lists still names it — the boot connect pass (connectSourcesDefault,
+// cmd/joe/server.go), the coreagent refresh type-switch
+// (internal/coreagent/refresh.go), or the runtime adapter map (newAdapterForType,
+// internal/api/components.go). Those paths act on STORED rows, which registration
+// can no longer create, so they are dead but harmless and are left in place
+// deliberately. A constant that nothing outside the registrable lists references
+// is deleted outright instead.
+//
+// Read paths are type-agnostic — GET, list, and Test read and serialize the
+// stored type without validating it — so a row stored before a type became
+// unregistrable still lists and reads.
+//
+// Two trims populated this set. D-0058 removed the artifact-registry group for
+// having no construction path. trim-unsupported-component-types removed the
+// twelve types that fail the D-0055 documentable gate: none is credential-wired
+// (internal/credential/wiring.go), so promotion already rejected them and they
+// could never be completed into a working integration. Restoring any of them
+// means wiring its credential path first and only then adding it back to the two
+// lists below; that work is deferred, see
+// docs/backlog/trim-deadonarrival-component-types.md.
 const (
-	ComponentTypeAWS        = "aws"
-	ComponentTypeAzure      = "azure"
-	ComponentTypeGit        = "git"
+	ComponentTypeAWS        = "aws"   // UNREGISTRABLE — not credential-wired
+	ComponentTypeAzure      = "azure" // UNREGISTRABLE — not credential-wired
+	ComponentTypeGit        = "git"   // UNREGISTRABLE — not credential-wired
 	ComponentTypeKubernetes = "kubernetes"
 
 	ComponentTypePrometheus = "prometheus"
@@ -11,7 +46,7 @@ const (
 	ComponentTypeLoki       = "loki"
 	ComponentTypeTempo      = "tempo"
 	ComponentTypeJaeger     = "jaeger"
-	ComponentTypeDatadog    = "datadog"
+	ComponentTypeDatadog    = "datadog" // UNREGISTRABLE — not credential-wired
 	ComponentTypeSplunk     = "splunk"
 	ComponentTypeDynatrace  = "dynatrace"
 	ComponentTypeNewRelic   = "newrelic"
@@ -20,7 +55,8 @@ const (
 	ComponentTypePagerDuty    = "pagerduty"
 	ComponentTypeGrafana      = "grafana"
 
-	// Phase 6.7 data store source types.
+	// Phase 6.7 data store source types. UNREGISTRABLE as a group — none is
+	// credential-wired.
 	ComponentTypePostgreSQL    = "postgresql"
 	ComponentTypeMySQL         = "mysql"
 	ComponentTypeRedis         = "redis"
@@ -31,10 +67,10 @@ const (
 	// Phase 6.8 GitOps, CD & IaC source types.
 	ComponentTypeArgoCd    = "argocd"
 	ComponentTypeTerraform = "terraform"
-	ComponentTypeHelm      = "helm"
+	ComponentTypeHelm      = "helm" // UNREGISTRABLE — not credential-wired
 
 	// Phase 6.9 Networking & Ingress source types.
-	ComponentTypeNginx = "nginx-ingress"
+	ComponentTypeNginx = "nginx-ingress" // UNREGISTRABLE — not credential-wired
 	ComponentTypeEnvoy = "envoy"
 
 	// Phase 6.11 Security & runtime source types.
@@ -42,16 +78,13 @@ const (
 
 	// Phase 6.13 — Artifact registry source types.
 	//
-	// DEAD-ON-ARRIVAL / UNREGISTRABLE: these four are deliberately ABSENT from
-	// AllowedComponentTypes / IsValidComponentType below, so no surface (HTTP
-	// create, register_component tool, web form) will accept them. The constants
-	// remain defined only because the coreagent refresh type-switch
-	// (internal/coreagent/refresh.go) still names them; their adapter packages
-	// and refresh/query paths exist but are never wired into any construction map
-	// (neither connectSourcesDefault in cmd/joe/server.go nor newAdapterForType in
-	// internal/api/components.go builds them), so those refresh cases can never be
-	// reached — they are dead but harmless. Wiring these four into a construction
-	// map is deferred post-launch work; see
+	// UNREGISTRABLE as a group (D-0058), for a reason distinct from the
+	// credential-wiring gate above: these four have no construction path at all.
+	// Their adapter packages and refresh/query paths exist but are wired into
+	// neither construction map (neither connectSourcesDefault nor
+	// newAdapterForType builds them), so their refresh cases can never be
+	// reached. The constants remain defined because the refresh type-switch
+	// still names them. Wiring them into a construction map is deferred; see
 	// docs/backlog/trim-deadonarrival-component-types.md.
 	ComponentTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
 	ComponentTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
@@ -63,35 +96,27 @@ const (
 	ComponentTypeGitLab = "gitlab"
 )
 
-// AllowedComponentTypes returns the supported source types.
+// AllowedComponentTypes returns the registrable source types. It and
+// IsValidComponentType are the single authoritative seam every registration
+// surface consults; a type absent from both is unregistrable everywhere. Keep
+// the two in lockstep — see the UNREGISTRABLE note on the constant block for
+// which types are deliberately excluded and why.
 func AllowedComponentTypes() []string {
 	return []string{
-		ComponentTypeAWS,
-		ComponentTypeAzure,
-		ComponentTypeGit,
 		ComponentTypeKubernetes,
 		ComponentTypePrometheus,
 		ComponentTypeMimir,
 		ComponentTypeLoki,
 		ComponentTypeTempo,
 		ComponentTypeJaeger,
-		ComponentTypeDatadog,
 		ComponentTypeSplunk,
 		ComponentTypeDynatrace,
 		ComponentTypeNewRelic,
 		ComponentTypeAlertmanager,
 		ComponentTypePagerDuty,
 		ComponentTypeGrafana,
-		ComponentTypePostgreSQL,
-		ComponentTypeMySQL,
-		ComponentTypeRedis,
-		ComponentTypeMongoDB,
-		ComponentTypeKafka,
-		ComponentTypeElasticsearch,
 		ComponentTypeArgoCd,
 		ComponentTypeTerraform,
-		ComponentTypeHelm,
-		ComponentTypeNginx,
 		ComponentTypeEnvoy,
 		ComponentTypeFalco,
 		ComponentTypeGitHub,
@@ -99,36 +124,25 @@ func AllowedComponentTypes() []string {
 	}
 }
 
-// IsValidComponentType reports whether the source type is supported.
+// IsValidComponentType reports whether the source type is registrable. It must
+// admit exactly the set AllowedComponentTypes returns.
 func IsValidComponentType(sourceType string) bool {
 	switch sourceType {
 	case
-		ComponentTypeAWS,
-		ComponentTypeAzure,
-		ComponentTypeGit,
 		ComponentTypeKubernetes,
 		ComponentTypePrometheus,
 		ComponentTypeMimir,
 		ComponentTypeLoki,
 		ComponentTypeTempo,
 		ComponentTypeJaeger,
-		ComponentTypeDatadog,
 		ComponentTypeSplunk,
 		ComponentTypeDynatrace,
 		ComponentTypeNewRelic,
 		ComponentTypeAlertmanager,
 		ComponentTypePagerDuty,
 		ComponentTypeGrafana,
-		ComponentTypePostgreSQL,
-		ComponentTypeMySQL,
-		ComponentTypeRedis,
-		ComponentTypeMongoDB,
-		ComponentTypeKafka,
-		ComponentTypeElasticsearch,
 		ComponentTypeArgoCd,
 		ComponentTypeTerraform,
-		ComponentTypeHelm,
-		ComponentTypeNginx,
 		ComponentTypeEnvoy,
 		ComponentTypeFalco,
 		ComponentTypeGitHub,

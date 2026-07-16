@@ -682,8 +682,9 @@ func TestAllowedComponentTypes(t *testing.T) {
 		t.Fatal("AllowedComponentTypes() returned empty slice")
 	}
 
-	// Check a few well-known types are present.
-	want := []string{"kubernetes", "git", "prometheus", "github"}
+	// Check a few well-known registrable types are present. Deliberately no count
+	// assertion (D-0032) — the set is expected to change.
+	want := []string{"kubernetes", "prometheus", "github", "grafana"}
 	found := make(map[string]bool, len(types))
 	for _, tp := range types {
 		found[tp] = true
@@ -701,23 +702,34 @@ func TestIsValidComponentType(t *testing.T) {
 		want       bool
 	}{
 		{"kubernetes", true},
-		{"git", true},
-		{"aws", true},
 		{"prometheus", true},
 		{"github", true},
 		{"gitlab", true},
 		// Boot-only group stays registrable (constructed at boot only).
-		{"datadog", true},
 		{"splunk", true},
-		// Dead-on-arrival types removed from the registrable set by
-		// trim-deadonarrival-component-types: no construction path, so
-		// unregistrable through every surface.
+		// Removed from the registrable set by trim-deadonarrival-component-types:
+		// no construction path, so unregistrable through every surface.
 		{"oci_registry", false},
 		{"dockerhub", false},
 		{"artifactory", false},
 		{"ecr", false},
 		{"cloudwatch", false},
 		{"azuremonitor", false},
+		// Removed from the registrable set by trim-unsupported-component-types:
+		// not credential-wired, so promotion could never complete them into a
+		// working integration.
+		{"azure", false},
+		{"helm", false},
+		{"nginx-ingress", false},
+		{"git", false},
+		{"aws", false},
+		{"datadog", false},
+		{"postgresql", false},
+		{"mysql", false},
+		{"redis", false},
+		{"mongodb", false},
+		{"kafka", false},
+		{"elasticsearch", false},
 		{"unknown", false},
 		{"", false},
 		{"KUBERNETES", false},

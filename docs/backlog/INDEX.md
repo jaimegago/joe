@@ -76,6 +76,6 @@ file for the full status, priority, blocked-by, and body.
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred |  |
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open |  |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open |  |
-| [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Dead-on-arrival component types — deferred wiring and a related Test-control UX bug | open |  |
+| [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open |  |
 | [`unauth-health-surface`](unauth-health-surface.md) | Unauthenticated health surface — auth-posture and information-exposure analysis | open |  |
 | [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open |  |

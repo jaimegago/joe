@@ -64,12 +64,3 @@ connectivity test, and they function.
 | --- | --- | --- | --- |
 | Terraform | `terraform` | none — reads local state | runtime (`/test`) |
 | Envoy | `envoy` | none — unauthenticated admin API | runtime (`/test`) |
-
-## Not yet supported
-
-You will see other component types named in the type enum, but they cannot be completed
-into a working integration at launch and are not documented here: `azure`, `helm`,
-`nginx-ingress`, `git`, `aws`, `datadog`, `postgresql`, `mysql`, `redis`, `mongodb`,
-`kafka`, `elasticsearch`, `cloudwatch`, `azuremonitor`, `oci_registry`, `dockerhub`,
-`artifactory`, and `ecr`. They are either not yet connected, have no governed credential
-path, or have no usable adapter. Do not rely on them yet.

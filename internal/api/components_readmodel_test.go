@@ -109,15 +109,18 @@ func TestComponentReadModel_ArmedHidesLocators_GetAndList(t *testing.T) {
 // more leak a credential locator or the raw Config blob than a read can. The
 // submitted config deliberately carries locator-shaped keys that PASS the
 // credential-less-at-registration guard (audience is excluded from the
-// credential-bearing set; datastore secret names uri/password/api_key are unknown
-// to it), so the record registers 201 and those keys land in the stored Config —
-// making the absence assertion on the 201 body a genuine regression guard: were the
-// handler to echo the raw store.Component, the blob (and its audience key) would
-// appear. RBAC is disabled in the test harness, so requireAdmin permits the create.
+// credential-bearing set; the secret names uri/password/api_key are unknown to it),
+// so the record registers 201 and those keys land in the stored Config — making the
+// absence assertion on the 201 body a genuine regression guard: were the handler to
+// echo the raw store.Component, the blob (and its audience key) would appear. RBAC
+// is disabled in the test harness, so requireAdmin permits the create. The type is
+// incidental to what this pins — RejectCredentialFields inspects the config blob
+// alone, never the type — so the fixture moved from mongodb to kubernetes when
+// trim-unsupported-component-types made the datastore group unregistrable.
 func TestComponentReadModel_CreateEchoHidesLocators(t *testing.T) {
 	_, _, mux := setupTestServerWithStore(t)
 
-	body := `{"id":"echo-src","type":"mongodb","name":"Echo Store","config":` +
+	body := `{"id":"echo-src","type":"kubernetes","name":"Echo Store","config":` +
 		`{"audience":"github","uri":"mongodb://user:password@host:27017/db","password":"p","api_key":"k","endpoint":"mongodb://host:27017"}}`
 	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 	w := httptest.NewRecorder()
@@ -141,8 +144,8 @@ func TestComponentReadModel_CreateEchoHidesLocators(t *testing.T) {
 	if err := json.Unmarshal([]byte(createBody), &got); err != nil {
 		t.Fatalf("decode create echo: %v", err)
 	}
-	if got.ID != "echo-src" || got.Type != "mongodb" || got.Name != "Echo Store" {
-		t.Errorf("create echo identity = %+v, want id=echo-src type=mongodb name=Echo Store", got)
+	if got.ID != "echo-src" || got.Type != "kubernetes" || got.Name != "Echo Store" {
+		t.Errorf("create echo identity = %+v, want id=echo-src type=kubernetes name=Echo Store", got)
 	}
 	if got.Armed {
 		t.Errorf("create echo armed = true, want false for a credential-less registration")

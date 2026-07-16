@@ -284,14 +284,16 @@ func TestPromotionRequirements_NoValueLeakage(t *testing.T) {
 
 // TestPromotionRequirements_UnwiredSorted proves an unwired type answers the
 // capability question with 200, wired:false, and a SORTED armable_types list.
+// terraform is the unwired fixture — registrable but absent from wiredTypes; see
+// TestPromote_RejectsUnwiredType for why datadog no longer serves.
 func TestPromotionRequirements_UnwiredSorted(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	registerComponent(t, f, "c-dd", "datadog", `{"site":"datadoghq.com"}`)
+	registerComponent(t, f, "c-tf", "terraform", `{"state_path":"/tmp/terraform.tfstate"}`)
 
-	body, _ := getPromotionRequirements(t, f, "c-dd", "user:alice")
-	if body.Wired || body.Type != "datadog" {
-		t.Fatalf("unwired shape: wired=%v type=%q; want false/datadog", body.Wired, body.Type)
+	body, _ := getPromotionRequirements(t, f, "c-tf", "user:alice")
+	if body.Wired || body.Type != "terraform" {
+		t.Fatalf("unwired shape: wired=%v type=%q; want false/terraform", body.Wired, body.Type)
 	}
 	if len(body.ArmableTypes) == 0 {
 		t.Fatalf("armable_types empty; want the sorted wired-type set")

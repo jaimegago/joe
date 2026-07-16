@@ -235,36 +235,40 @@ func TestHandleCreateComponent_DuplicateSource(t *testing.T) {
 	}
 }
 
-// TestHandleCreateComponent_NoConnectProbe_GitEmptyConfig pins the A003 Stream G
-// probe removal: an empty git config used to FAIL at registration because the
-// handler eagerly called the git adapter's Connect (url required). Registration
-// no longer connects — a credential-less record cannot authenticate — so the
-// same request now succeeds (201). This is the behavioural half of the
+// TestHandleCreateComponent_NoConnectProbe_KubernetesEmptyConfig pins the A003
+// Stream G probe removal: an empty config used to FAIL at registration because the
+// handler eagerly called the adapter's Connect (kubernetes requires api_server).
+// Registration no longer connects — a credential-less record cannot authenticate —
+// so the same request now succeeds (201). This is the behavioural half of the
 // "probe is gone" guarantee (the structural half is the AST guard in
-// components_governance_test.go).
-func TestHandleCreateComponent_NoConnectProbe_GitEmptyConfig(t *testing.T) {
+// components_governance_test.go). The fixture was git until
+// trim-unsupported-component-types made it unregistrable; kubernetes carries the
+// same premise (a Connect that requires config the empty blob lacks).
+func TestHandleCreateComponent_NoConnectProbe_KubernetesEmptyConfig(t *testing.T) {
 	_, _, mux := setupTestServerWithStore(t)
 
-	body := `{"id":"git-1","type":"git","name":"test repo","config":{}}`
+	body := `{"id":"k8s-1","type":"kubernetes","name":"test cluster","config":{}}`
 	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusCreated {
-		t.Errorf("status = %d, want %d — registration must not connect, so empty git config is accepted", w.Code, http.StatusCreated)
+		t.Errorf("status = %d, want %d — registration must not connect, so an empty kubernetes config is accepted", w.Code, http.StatusCreated)
 	}
 }
 
-// TestHandleCreateComponent_AdapterTypesRegisterInert confirms every adapter
-// type registers as an inert, credential-less record with an empty config — no
-// Connect probe runs at registration (A003 Stream G), so types that previously
-// failed Connect with empty config now persist successfully (201).
+// TestHandleCreateComponent_AdapterTypesRegisterInert confirms every registrable
+// adapter type registers as an inert, credential-less record with an empty config —
+// no Connect probe runs at registration (A003 Stream G), so types that previously
+// failed Connect with empty config now persist successfully (201). The
+// adapter-bearing types that trim-unsupported-component-types made unregistrable
+// (aws, azure, and the datastore group) moved to
+// TestHandleCreateComponent_UnregistrableTypesRejected.
 func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 	adapterTypes := []string{
-		"kubernetes", "aws", "azure",
+		"kubernetes",
 		"prometheus", "mimir", "loki", "tempo", "jaeger",
 		"alertmanager", "pagerduty", "grafana",
-		"postgresql", "mysql", "redis", "mongodb", "kafka", "elasticsearch",
 		"argocd", "terraform", "envoy", "falco",
 	}
 
@@ -285,17 +289,17 @@ func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 // TestHandleCreateComponent_FallthroughTypes exercises source types that have no
 // adapter connect step (fall through the switch) and are saved directly.
 func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
-	// Types that have no connect step (fall through the switch) plus types whose
-	// Connect() succeeds with empty config. The boot-only group
-	// (github/gitlab/datadog/splunk/dynatrace/newrelic) is constructed only at
-	// boot (connectSourcesDefault), so it registers OK here with no runtime
-	// connect step. oci_registry/artifactory/ecr were REMOVED from this list by
-	// trim-deadonarrival-component-types: they are no longer registrable (see
-	// TestHandleCreateComponent_DeadOnArrivalTypesRejected).
+	// Types that have no connect step (fall through the switch). The boot-only
+	// group (github/gitlab/splunk/dynatrace/newrelic) is constructed only at boot
+	// (connectSourcesDefault), so it registers OK here with no runtime connect
+	// step. Types removed from this list because they are no longer registrable
+	// (see TestHandleCreateComponent_UnregistrableTypesRejected):
+	// oci_registry/artifactory/ecr by trim-deadonarrival-component-types, and
+	// datadog (boot-only) plus helm/nginx-ingress (whose Connect succeeded with
+	// empty config) by trim-unsupported-component-types.
 	fallthroughTypes := []string{
 		"github", "gitlab",
-		"datadog", "splunk", "dynatrace", "newrelic",
-		"helm", "nginx-ingress",
+		"splunk", "dynatrace", "newrelic",
 	}
 
 	for _, srcType := range fallthroughTypes {
@@ -313,22 +317,28 @@ func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 	}
 }
 
-// TestHandleCreateComponent_DeadOnArrivalTypesRejected asserts the six types that
-// have no construction path (oci_registry, dockerhub, artifactory, ecr have adapter
-// packages but are wired into no construction map; cloudwatch and azuremonitor have
-// no adapter code at all) are rejected by the HTTP create endpoint with exactly the
-// same invalid-type response a wholly unknown type gets — they were removed from the
-// registrable set by trim-deadonarrival-component-types.
-func TestHandleCreateComponent_DeadOnArrivalTypesRejected(t *testing.T) {
-	deadTypes := []string{
+// TestHandleCreateComponent_UnregistrableTypesRejected asserts every type absent
+// from the registrable set is rejected by the HTTP create endpoint with exactly the
+// same invalid-type response a wholly unknown type gets. Two trims populated the
+// set. trim-deadonarrival-component-types removed six with no construction path
+// (oci_registry, dockerhub, artifactory, ecr have adapter packages wired into no
+// construction map; cloudwatch and azuremonitor have no adapter code at all).
+// trim-unsupported-component-types removed twelve that are not credential-wired, so
+// promotion could never complete them into a working integration.
+func TestHandleCreateComponent_UnregistrableTypesRejected(t *testing.T) {
+	unregistrableTypes := []string{
+		// No construction path (trim-deadonarrival-component-types).
 		"oci_registry", "dockerhub", "artifactory", "ecr",
 		"cloudwatch", "azuremonitor",
+		// Not credential-wired (trim-unsupported-component-types).
+		"azure", "helm", "nginx-ingress", "git", "aws", "datadog",
+		"postgresql", "mysql", "redis", "mongodb", "kafka", "elasticsearch",
 	}
 
-	for _, srcType := range deadTypes {
+	for _, srcType := range unregistrableTypes {
 		t.Run(srcType, func(t *testing.T) {
 			_, _, mux := setupTestServerWithStore(t)
-			body := `{"id":"src-doa","type":"` + srcType + `","name":"dead on arrival","config":{}}`
+			body := `{"id":"src-unreg","type":"` + srcType + `","name":"unregistrable","config":{}}`
 			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)

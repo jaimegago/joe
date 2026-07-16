@@ -10,6 +10,101 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0111 — the D-0058 trim extends to the twelve component types that fail the documentable gate; they are unregistrable at the single seam and the now-false "Not yet supported" docs paragraph is deleted
+
+- Date: 2026-07-16
+- Status: accepted
+- Session: trim-unsupported-component-types
+- Decision: twelve component types that fail the **D-0055 documentable gate** —
+  `azure`, `helm`, `nginx-ingress`, `git`, `aws`, `datadog`, `postgresql`, `mysql`,
+  `redis`, `mongodb`, `kafka`, `elasticsearch` — are removed from the authoritative
+  registrable-type set (`store.AllowedComponentTypes` / `store.IsValidComponentType`,
+  `internal/store/constants.go`), extending **D-0058** by the same mechanism to a
+  different failure mode. D-0058's six were dead on arrival for having **no
+  construction path**; these twelve all have adapters and construction entries but
+  **no credential path** — none appears in `wiredTypes`
+  (`internal/credential/wiring.go`), so promotion already rejected them as unwired and
+  none could ever be completed into a working integration. The operator-visible defect
+  is the same either way: a type you can register that can never function.
+  **All twelve constants remain DEFINED** — every one is still named outside the two
+  registrable lists (the boot pass `connectSourcesDefault`, the refresh type-switch,
+  and/or the runtime adapter map `newAdapterForType`) — and carry an UNREGISTRABLE
+  marker plus a block comment recording the rule. Per D-0058, no constant deletion was
+  forced, so the boot pass and refresh type-switch are **untouched**; their now-dead
+  cases act on stored rows and are left in place as dead but harmless. The
+  **"Not yet supported" paragraph and its heading** are deleted from
+  `docs/public/components/connectable-systems.md` with no replacement: its premise —
+  that these types are visible in the registration type enum — is what this change
+  makes false, so the honest edit is removal, not rewording. No count of component
+  types is introduced anywhere (D-0032).
+- The fourth seam consumer: D-0058 named three registration surfaces (the HTTP create
+  endpoint `handleCreateComponent`, the `register_component` LLM tool, and the web
+  form via `handleListComponentTypes`). There is a **fourth** consumer, recorded here
+  for the first time — the **auto_promote_reads admin surface**: `listReadPromotions`
+  composes its per-type view by iterating `AllowedComponentTypes`, and
+  `setReadPromotion` validates against `IsValidComponentType`
+  (`internal/api/admin.go`). The twelve therefore also drop out of that admin view and
+  become 400-rejected by its setter. **Enforcement bypasses the enum**: the resolver
+  `IsPromoted` (`internal/promotereads/promotereads.go`) queries
+  `agent_read_promotions` by `component_type` directly, so a pre-existing ON row for a
+  removed type would keep admitting `agent:core` reads while becoming invisible and
+  unflippable in the admin view. This is **accepted latent residue**, not fixed here:
+  it is the same shape as the read-path tolerance D-0058 accepted, and it is
+  unreachable in practice because no version permitting these registrations was ever
+  tagged. Tracked in `docs/backlog/trim-deadonarrival-component-types.md` §5, which
+  states the two candidate fixes and why the choice between them is a decision rather
+  than a patch.
+- Basis: re-derived from the live tree this session, not from D-0058's record. All
+  twelve were verified present in both registrable lists and absent from `wiredTypes`
+  and from `envPrefixSegments` (`internal/credential/references.go`). Read paths were
+  re-confirmed type-agnostic: `IsValidComponentType` has exactly three production call
+  sites (create handler, register_component tool, read-promotion setter) and no GET,
+  list, or Test handler validates a stored type, so a row stored before the trim still
+  lists and reads — no read-path tolerance was needed and none was added. Registration
+  was confirmed **probe-free**: `newAdapterForType` is called only from
+  `handleTestComponent` (`internal/api/webui.go`), never from create, which is what
+  makes the type-level trim sufficient. Verified by tests: the two D-0058 rejection
+  tests were **extended to a single eighteen-type table each** and renamed to reflect
+  that they now cover unregistrable types generally rather than dead-on-arrival ones —
+  `TestHandleCreateComponent_UnregistrableTypesRejected` (HTTP, all eighteen →
+  400/`invalid_component`) and `TestRegisterComponentTool_UnregistrableTypesRejected`
+  (tool path, all eighteen plus an unknown-type baseline → error, nothing persisted) —
+  plus twelve added negative cases in `TestIsValidComponentType`. Six existing tests
+  used a now-unregistrable type as an incidental fixture and were re-anchored to a
+  registrable one with the substitution recorded in each: three promotion-governance
+  tests moved from `datadog` to `terraform` (the registrable-but-unwired intersection
+  is now exactly `{terraform, envoy}`, both credential-less, which is what keeps the
+  promotion reject-unwired guard reachable at all), the create-echo read-model test and
+  the no-Connect-probe test moved to `kubernetes`, and the fallthrough and
+  adapter-inert tables dropped the removed types. `go build`, `go vet`, and the full
+  `go test ./...` suite pass. `docs/public` carries **no** inbound link to the deleted
+  paragraph — the only references to the page are three unanchored page-level links
+  from `docs/public/components/_index.md`, and nothing anywhere links
+  `#not-yet-supported` (independently corroborated by D-0078's own zero-inbound
+  finding when that content was moved) — so no published URL dies and no alias is
+  added.
+- Rejected alternatives: (1) documenting the twelve as unsupported-but-registrable and
+  leaving the set alone — rejected as the status quo this session exists to end; the
+  paragraph was a docs-side apology for a code-side defect, and D-0055's gate says a
+  type that cannot be completed should not be offered. (2) wiring credential providers
+  for some or all twelve now — rejected as a feature change unfit for launch; deferred
+  to `docs/backlog/trim-deadonarrival-component-types.md` §3, which records the
+  credential shape each needs. (3) deleting the constants outright — rejected because
+  all twelve are still referenced outside the registrable lists, and D-0058's rule is
+  that such a constant stays defined rather than forcing a boot-map or refresh edit.
+  (4) making `IsPromoted` fail closed for an unregistrable type as part of this change
+  — rejected as an unbudgeted change to an authz-adjacent path; recorded as residue
+  instead.
+- Supersedes: nothing. Extends **D-0058** to a second failure mode by the identical
+  mechanism, and corrects that entry's three-surface count to four by naming the
+  auto_promote_reads consumer. Applies the **D-0055** documentable gate and the
+  **D-0032** no-volatile-counts rule. Removes content **D-0078** relocated to
+  `connectable-systems.md`; that entry's routing structure is otherwise unchanged. No
+  security or safety invariant is touched — the write floor, RBAC, and read posture are
+  untouched, and narrowing what may be registered only shrinks the governed surface.
+
+---
+
 ## D-0110 — the infrastructure graph is deterministic-only: nodes and edges come solely from adapter and refresher code through the delta-reconcile seam, never from LLM inference; the three onboarding-era graph-write tools are parked
 
 - Date: 2026-07-16

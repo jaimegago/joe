@@ -49,19 +49,25 @@ func TestRegisterComponentTool_RejectsCredentialFields(t *testing.T) {
 	}
 }
 
-// TestRegisterComponentTool_DeadOnArrivalTypesRejected proves the tool rejects
-// the six dead-on-arrival types (oci_registry/dockerhub/artifactory/ecr have
-// adapter packages wired into no construction map; cloudwatch/azuremonitor have no
-// adapter code) with an error and persists nothing — the SAME outcome a wholly
-// unknown type gets, because both flow through store.IsValidComponentType. They
-// were removed from the registrable set by trim-deadonarrival-component-types.
-func TestRegisterComponentTool_DeadOnArrivalTypesRejected(t *testing.T) {
-	deadTypes := []string{
+// TestRegisterComponentTool_UnregistrableTypesRejected proves the tool rejects
+// every type absent from the registrable set with an error and persists nothing —
+// the SAME outcome a wholly unknown type gets, because both flow through
+// store.IsValidComponentType. Two trims populated the set:
+// trim-deadonarrival-component-types removed six with no construction path
+// (oci_registry/dockerhub/artifactory/ecr have adapter packages wired into no
+// construction map; cloudwatch/azuremonitor have no adapter code), and
+// trim-unsupported-component-types removed twelve that are not credential-wired.
+func TestRegisterComponentTool_UnregistrableTypesRejected(t *testing.T) {
+	unregistrableTypes := []string{
+		// No construction path (trim-deadonarrival-component-types).
 		"oci_registry", "dockerhub", "artifactory", "ecr",
 		"cloudwatch", "azuremonitor",
+		// Not credential-wired (trim-unsupported-component-types).
+		"azure", "helm", "nginx-ingress", "git", "aws", "datadog",
+		"postgresql", "mysql", "redis", "mongodb", "kafka", "elasticsearch",
 		"totally-unknown-type", // unknown-type baseline: identical outcome
 	}
-	for _, srcType := range deadTypes {
+	for _, srcType := range unregistrableTypes {
 		t.Run(srcType, func(t *testing.T) {
 			svc := makeTestServices(t)
 			tool := NewRegisterComponentTool(svc, slog.Default())
