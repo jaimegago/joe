@@ -10,6 +10,62 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0108 — a behavior fix ships a regression test proven by revert-run-restore; a non-behavior change gets a recorded not-pinned rationale instead of a contrived test
+
+- Date: 2026-07-16
+- Session: demo-bugfix-pins
+- Decision: an audit of the nine behavior-correcting bug fixes on `main` from the
+  four days to 2026-07-15 (the launch demo-recording push) found seven already
+  pinned and two unpinned. The two unpinned ones were **not** treated alike, and
+  that asymmetry is the decision. **`6b770ba` (graph-ui-declutter) is pinned**: it
+  corrected real rendered behavior — every graph node drew the `⚙️`
+  `DEFAULT_NODE_CONFIG` fallback because `NODE_KIND_CONFIG` is keyed by TitleCase
+  K8s names while the emitted kinds are snake_case (`deployment`, `git_repo`, ...),
+  so the lookup never hit; and `GraphLegend` advertised eight node types the product
+  never emits. Both legs now have tests
+  (`ui/src/components/graph/nodes/GenericNode.test.tsx`,
+  `ui/src/components/graph/InfraGraph.test.tsx`). **`a4ade60` (Joe favicon) and
+  `a4fdac7` (four legacy "source" → "component" UI strings, D-0021) are
+  deliberately NOT pinned**, and this entry is that rationale: the favicon is a
+  static `index.html` asset swap with no runtime surface — the only available test
+  asserts the file's contents back at itself and pins nothing a reader would call
+  behavior; the string rename changes labels, not behavior, and a test over it
+  pins the copy against the very edits it is meant to permit. The general standard,
+  to be carried into the dev-standards skill
+  (`docs/backlog/dev-skill-test-pinning.md`, cross-repo): a commit that corrects
+  behavior ships a test **proven to fail without the fix** by the
+  revert-run-restore method, and a commit that does not correct behavior records
+  **why it is not pinned** rather than carrying a test written to satisfy a rule.
+  "No test" and "forgot the test" must be distinguishable in review.
+- Basis: every pin claim in this session was verified empirically, not by reading:
+  the fix hunk was reverted in the working tree, the specific test run and observed
+  to fail for the expected reason, then the tree restored and the test re-run green.
+  All seven pre-existing pins held — `bf3f506` (`k8sget_namespace_test.go`),
+  `3fa0610` (`TestCRDRefreshSpecsResolveGVR` failing `ResolveGVR` on all six specs),
+  `10fd026` (`TestProbe_*`), `3c1be9f` (`TestPostureSection_ObservationReadsUnaffected`),
+  `14f430b` (`TestRefreshK8sComponentListResourcesError`, observed count 2 of
+  `"list secrets:"` when reverted), `28df1a5` (`ChatPage.test.tsx`), `732e11d`
+  (`DeclareIncidentButton.test.tsx`, observed 2 buttons when reverted). Two of
+  those required a **hunk-wise** revert rather than a whole-file one, because later
+  commits had changed the same file and the parent version no longer compiled
+  (`14f430b`'s wrap line, whose file `40ffe1d` later re-signatured) — recorded
+  because a whole-file revert is the obvious first attempt and it fails misleadingly.
+  The new graph tests were proven the same way: with `6b770ba` reverted, 9 of the 11
+  fail on the exact production symptom (`'⚙️ordersshop◌deployment'`, and the legend's
+  `🚀`/`Deployment` palette); the 2 that pass either way are deliberate
+  anti-trivial guards asserting the kept-live chrome (filters, node name/kind text)
+  still renders, so the suite cannot pass by rendering nothing. Rendering the graph
+  surface under jsdom required a no-op `ResizeObserver` shim in
+  `ui/src/test/setup.ts` (ReactFlow constructs one on mount), added in the idiom of
+  the existing `scrollIntoView` and Pointer-Capture shims there; full `ui` suite
+  (37 files, 295 tests), `npm run lint`, and `go build ./...` are green.
+- Supersedes: nothing. Complements D-0107, whose finding is the converse failure
+  mode — unit-level pins that pass while the wiring they assume is inert — and which
+  is carried into the same skill item as the second worked example.
+- Status: accepted, implemented.
+
+---
+
 ## D-0107 — the one governance-wired RBAC PolicyEngine is built at the composition root and injected into api.New; EnforcementMiddleware is deleted, superseding the D-0008 demotion
 
 - Date: 2026-07-15

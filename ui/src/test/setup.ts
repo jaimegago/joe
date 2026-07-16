@@ -16,3 +16,15 @@ if (!Element.prototype.hasPointerCapture) {
   Element.prototype.setPointerCapture = () => undefined;
   Element.prototype.releasePointerCapture = () => undefined;
 }
+
+// jsdom does not implement ResizeObserver, which ReactFlow constructs on mount to
+// track its container size. Without it the graph surface throws "ResizeObserver is
+// not defined" before rendering anything. A no-op is enough: jsdom reports zero
+// dimensions regardless, and no test here asserts on measured layout.
+if (!('ResizeObserver' in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe = () => undefined;
+    unobserve = () => undefined;
+    disconnect = () => undefined;
+  };
+}
