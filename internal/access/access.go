@@ -26,12 +26,11 @@
 //
 // The Core Agent's graph WRITE (internal/coreagent ApplyGraphDelta ->
 // raw services.Graph.AddNode/AddEdge/Delete*) remains outside this seam by
-// intent — NOT a deferred or not-yet-governed gap. It is an internal Tier-3
-// knowledge write, governed upstream by the agent:core read floor
+// intent — NOT a deferred or not-yet-governed gap. It is a write to Joe's own
+// graph, governed upstream by the agent:core read floor
 // (A001-COREGOV): a component the refresh read denies yields no delta, so no
 // write occurs. The write carries the agent:core principal for audit and
-// takes no write permit by design. See the allowlist in
-// api/access_guard_test.go.
+// takes no write permit by design. See the allowlist in guard_test.go.
 package access
 
 import (

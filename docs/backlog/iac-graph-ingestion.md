@@ -60,10 +60,15 @@ declared side has no repository anchor.
 - **Graph ingestion is deterministic parsing only**, per D-0110. Nodes and edges come solely
   from adapter and refresher code through the delta-reconcile seam. LLM-inferred
   understanding of a repository — intent, conventions, architecture — is **never** written to
-  the graph. It belongs in the knowledge store's **derived** tier, and is additionally
-  blocked on the governed write path that `knowledge-store-maturation` must produce (today
-  the store's writes are authenticated-only with no audit, no principal stamping, and no
-  admin gate, and `save_knowledge_entry` is parked).
+  the graph. **It now has nowhere to go.** It was destined for the knowledge store's
+  **derived** tier, but D-0113 deleted the knowledge store outright, so that destination no
+  longer exists and `knowledge-store-maturation` (which was to produce its governed write
+  path) is archived as superseded. The D-0110 bar on the graph is unaffected and still
+  absolute. This is the one real forward dependency the prune left open: **whatever consumes
+  IaC-derived inference must decide its home before that work starts**, and "put it in the
+  graph" is not available. Designing a knowledge-store v2 to receive it is one option; so is
+  a different structure entirely. That decision is unmade — do not resolve it by widening
+  the graph.
 - `Confidence` on a graph edge is a **heuristic-strength marker on a deterministic
   derivation**, not an authority tier — `Inferred` means "name-matched", not "LLM-guessed".
   Do not reintroduce it as a trust axis.

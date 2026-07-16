@@ -10,6 +10,145 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0113 — the knowledge store, its doc-proposals arm, and embeddings are deleted from the tree, not parked; the act-policy opt-in seam is left standing but no registered tool can reach it
+
+- Date: 2026-07-16
+- Status: accepted
+- Session: knowledge-store-prune
+- Decision: the **entire knowledge subsystem is deleted**. Removed: the `internal/knowledge`
+  tree (entry store, repository, semantic search, the Confluence/Notion syncers and their
+  polling coordinator, the drift detector, the doc-drafter, and the proposals service); the
+  knowledge, drift, and proposals HTTP route groups and their `RegisterRoutes` call sites;
+  the four registered tools `search_knowledge` / `detect_doc_drift` / `generate_doc_draft` /
+  `publish_doc_update` with their `internal/tools/default.go` registrations and their
+  `internal/safety/tier.go` classifier rows; the parked `SaveKnowledgeEntryTool` and its
+  parking guards; the MCP `joe_knowledge_search` tool across tool listing, dispatcher, and
+  client (the MCP roster is now **seven** tools, pinned by `TestNewServer_ToolCount`); the
+  Slack `SearchKnowledge` call and its related-knowledge rendering; the `knowledge` config
+  block including `sync_enabled`; the boot wiring for the embedder, service, doc-drafter, and
+  sync coordinator; the orphaned `internal/prompts/knowledge.go`; and the
+  `knowledge_entries` / `knowledge_sources` / `doc_proposals` tables via a new **migration
+  031** (historical migrations 004, 005, 008, and 023 are untouched; the 008 partial unique
+  index `idx_proposals_pending_unique_target` is dropped by name).
+- Grounding: the disposition is **prune, not park**, per the **D-0074** rule that the tree
+  describes only what the binary ships — a subsystem retained-but-inert is a standing claim
+  that it works. The specific findings, re-derived against the live tree this session:
+  (1) **The tables start empty, but not because every write path is shut — state this
+  precisely.** The **REST create path was open and ungated**: `POST /api/v1/knowledge/entries`
+  was live (`registerKnowledgeRoutes` called from `api.Server.RegisterRoutes`, directly
+  beneath the D-0081 parked block, so the parking pattern was available at that call site and
+  deliberately not applied), **authenticated-only** — no admin gate, no audit row, no
+  principal stamping, no component RBAC — and any authenticated principal could mint a
+  permanently-immutable **curated** entry by naming the tier. The **closed** paths were the
+  other two: the parked agent writer `save_knowledge_entry` (D-0109) and the
+  Confluence/Notion sync, dormant behind a `sync_enabled` defaulting `false`. So the store is
+  empty on a stock install because **nothing chooses to write to it**, not because it cannot
+  be written. That strengthens the prune case rather than weakening it: the one open producer
+  was the least governed write surface in the binary.
+  (2) **Search hard-errors on the default provider.** `Service.Search` embedded the query
+  before matching, and `Embed` returned `embeddings not yet implemented` on both `claude` and
+  `gemini`. Only `openai-compat` implemented it, against `/v1/embeddings`. Worse than a dead
+  feature: `Service.Create` treated an embed failure as **non-fatal**, storing the row without
+  an embedding, and `Search` skipped embedding-less entries — so on a claude or gemini install
+  every entry written through the live route was stored unsearchable by construction, and
+  `EmbedAll`, the backfill that would repair it, had **zero production callers**.
+  (3) **`generate_doc_draft` dies with the store by explicit decision**, and the whole
+  proposals pipeline with it. `drafts.Generator.Generate` was the **sole producer** of
+  `doc_proposals` rows — `proposalSvc.Create` had exactly one caller in the tree — and the
+  REST create route did not bypass it (`handleCreateProposal` called `DocDrafter.Generate`).
+  The generator read the knowledge store to compose a draft, so the arm cannot outlive the
+  store it drafts from. With the sole producer gone, `publish_doc_update` (the one
+  Mutate-classed member), the approve/reject review path, and the publish path to
+  Confluence/Notion/Git are all consumers of rows nothing can create; the decision rule fired
+  and the pipeline was deleted end to end rather than left as a registered mutating tool over
+  a deleted store.
+  (4) **Embeddings were knowledge-only, so they go too.** The `embeddings` package had one
+  importer (`cmd/joe/server.go`) and the only real consumers of `LLMAdapter.Embed` were
+  `knowledge.Service.Create` and `Search`; the other three call sites (`instrumented`,
+  `swappable`, `llmusage.RecorderAdapter`) were pure decorator pass-throughs implementing the
+  interface without consuming it. `Embed` is removed from the `llm.LLMAdapter` interface and
+  from all three adapter implementations. A future embedding consumer re-adds it deliberately
+  rather than inheriting a stub that two of three providers never implemented.
+- Consequence accepted — **the act-policy opt-in seam is now vestigial**: `publish_doc_update_git`
+  under `git_push` was the **only registered tool whose `PolicyKey` resolved to a live
+  `ActPolicy` field**, so with it gone **no registered tool can reach `IsT3Allowed`'s allow
+  branch** and every registered Mutate (`github_comment`, `gitlab_comment`,
+  `github_request_changes` — all naming policy keys with no `ActPolicy` field) is denied
+  regardless of policy configuration. The seam (`ActPolicy`, `ActionToggle`, `IsT3Allowed`,
+  `DefaultPolicy`) is **deliberately left structurally intact**: this session's scope was the
+  knowledge store, and `git_push` merely joins three keys (`k8s_write`, `pagerduty_ack`,
+  `alertmanager_silence`) that were **already** orphaned before this prune — no classifier row
+  has ever named them. CLAUDE.md's Action Safety invariant is **reworded to stay true** rather
+  than left stale or deleted. The allow-branch coverage that rode on
+  `publish_doc_update_git` had no replacement fixture — no other tool name reaches that branch
+  — so `TestCheckAccess_MutateEnabled`, `TestExecutor_SafetyGate_T3_AllowedByPolicy`, and the
+  two `TestExecutor_Notifier_T3_*` tests are **deleted with an in-place comment at each site**,
+  to be reconstituted when full mode ships a real opt-in tool
+  (`docs/backlog/act-policy-vestigial.md`). `IsT3Allowed`'s own true branch stays covered
+  directly by `TestIsT3Allowed` in `policy_test.go`. Deny-branch fixtures migrated to
+  `github_comment`; the durability test's "Mutate + undeclared" case moved to an unclassified
+  name, which takes `ClassifyTool`'s unknown-tool default (Mutate, `NeedsDurability` unset).
+  The unknown-tool default itself is untouched — the four deleted tool names now fall through
+  to it, deny-by-default, exactly as D-0074 left the `internal/tools/local/` names.
+- Scope boundary held — **`review_jobs` is NOT dropped**. The governing instruction assumed it
+  belonged to the proposals pipeline; verification refutes that. It is the **Phase 10
+  code-review** PR/MR job queue (migration 007), unrelated to `doc_proposals`, and migration
+  023 touched it only for the D-0021 `source_id` → `component_id` rename. It has **zero Go
+  references anywhere in the tree** — a genuinely orphaned table, but orphaned for a different
+  reason and disposable only by its own decision, not buried inside a knowledge-store
+  migration. Filed as `docs/backlog/review-jobs-orphaned-table.md`.
+- v2 design consideration carried forward from the archived
+  `knowledge-store-maturation.md` § 6, so the constraint survives that file's archival:
+  **future IaC-repo LLM-derived inferences** (ownership, intent, drift from declared state)
+  were destined for the knowledge store's **derived** tier, while **D-0110** bars such
+  inferences from the infrastructure graph. The derived tier no longer exists and the graph
+  bar is unchanged and absolute, so **those inferences now have no designated home**. This is
+  the one real forward dependency the prune leaves open: whatever consumes IaC-derived
+  inference must decide where it lands **before** that work starts, and "put it in the graph"
+  is not available. A knowledge-store v2 is **not** committed to here — this decision removes
+  the current implementation and makes no promise of a successor; a v2 would be a ground-up
+  design, and the deleted code is explicitly **not** a head start.
+- Supersedes: **D-0109** in full — its tier-less-create-defaults-to-derived flip, its parking
+  of `save_knowledge_entry` (the tool is now deleted, not parked), and its "the agent's
+  knowledge surface is `search_knowledge` plus the doc-copilot trio" statement all describe
+  code that no longer exists. **D-0080**'s curated-versus-derived **enforced-in-code** branch
+  is superseded: the immutability enforcement in `knowledge.Service.Update`/`Delete` and its
+  pinning test `TestTierCuratedImmutable` are deleted with the store, so the claim that
+  curated immutability is enforced rather than conventional is no longer a statement about
+  this tree. The **curated/synced/derived tier vocabulary is retired entirely**, and with it
+  **D-0112**'s names-over-numbers guidance and CLAUDE.md's tier-collision note against the
+  retired D-0020 action-safety tiers — the collision guidance dies with the vocabulary, as
+  there is no longer a competing tier taxonomy to confuse. **D-0021**'s note that the
+  unrelated `knowledge_sources` concept keeps its name is superseded by that table's drop.
+  `docs/backlog/knowledge-store-maturation.md` is archived to `done/` as **superseded
+  wholesale** — it was a plan to mature what this deletes — and
+  `docs/backlog/knowledge-store-prune.md`, the filing of this decision, is archived with it.
+  `docs/backlog/learn-from-sessions-fate.md` is **reopened**: its "decided — the feature will
+  be revived, not retired" disposition was made against a store that no longer exists (and
+  cited `internal/knowledge/learning/`, already absent from the tree before this session), so
+  its premise is void and its hard constraint on the B001 sessions consolidation — retain the
+  legacy `sessions` / `session_messages` tables *because the feature will be revived* — now
+  lacks its justification and must be re-decided rather than silently inherited or silently
+  dropped. Nothing in this prune touched those tables.
+- Site-revision flag: **yes**. `docs/public` is the joeagent.dev publication source and the
+  knowledge-store copy described a shipped feature that no longer exists. Revised: the
+  curated-versus-derived sections deleted from `/concepts/knowledge-graph/` and
+  `/guides/knowledge-graph/` (**both were still live** — the `knowledge-graph-guide-fixes`
+  session removed only the retired-tier meta-commentary from the guide and did not touch the
+  concepts page at all, so the premise that they were already purged did not survive
+  verification); `/guides/doc-proposals/` deleted outright with its Guides-index entry; the
+  entries/search/sources/proposals endpoint blocks and the documentation-drift mention removed
+  from `/api-reference/`; the `knowledge` block removed from `/configuration/`; the
+  `joe_knowledge_search` row removed from the `/guides/mcp/` tool table; the doc-proposal
+  approval example removed from `/concepts/action-model/`; and the knowledge-entries mention
+  removed from the `/operations/` backup copy. Every remaining "knowledge graph" mention on
+  the site refers to the **infrastructure graph** and is untouched. All 213 internal links in
+  `docs/public` re-verified against a resolver modelling Hugo pretty-URL semantics: 0 broken.
+  `docs/project/SITE-CLAIMS.md`'s `Knowledge` section — six entries, two launch-bound — is
+  removed with the copy it pointed at.
+
+---
+
 ## D-0112 — the published relative-link convention is depth-correct per page class, and the guide's knowledge-API claim is verified accurate and left standing; the knowledge subsystem's disposition is prune, filed to backlog
 
 - Date: 2026-07-16

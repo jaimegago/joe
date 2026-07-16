@@ -210,57 +210,6 @@ func (i *InstrumentedAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatR
 	return resp, nil
 }
 
-// Embed implements LLMAdapter with instrumentation
-func (i *InstrumentedAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	ctx, span := i.tracer.Start(ctx, "llm.embed",
-		trace.WithAttributes(
-			attribute.String("llm.provider", i.provider),
-			attribute.String("llm.model", i.model),
-			attribute.Int("llm.text.length", len(text)),
-		),
-	)
-	defer span.End()
-
-	start := time.Now()
-	i.totalCalls.Add(1)
-
-	attrs := []attribute.KeyValue{
-		attribute.String("llm.provider", i.provider),
-		attribute.String("llm.model", i.model),
-		attribute.String("operation", "embed"),
-	}
-
-	safeAddCounter(ctx, i.requestCounter, 1, attrs...)
-
-	embedding, err := i.adapter.Embed(ctx, text)
-	duration := time.Since(start)
-
-	latencyAttrs := append(attrs, attribute.Bool("error", err != nil))
-	safeRecordHistogram(ctx, i.latencyHistogram, float64(duration.Milliseconds()), latencyAttrs...)
-
-	if err != nil {
-		i.totalErrors.Add(1)
-		safeAddCounter(ctx, i.errorCounter, 1, attrs...)
-		i.logger.Error("llm_embed_error",
-			"error", err,
-			"provider", i.provider,
-			"model", i.model,
-			"duration_ms", duration.Milliseconds(),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-
-	span.SetAttributes(
-		attribute.Int("llm.embedding.dimensions", len(embedding)),
-		attribute.Int64("llm.duration_ms", duration.Milliseconds()),
-	)
-
-	span.SetStatus(codes.Ok, "")
-	return embedding, nil
-}
-
 // Stats holds instrumentation statistics
 type Stats struct {
 	TotalCalls        int64

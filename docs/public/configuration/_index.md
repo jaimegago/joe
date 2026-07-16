@@ -86,12 +86,6 @@ logging:
   level: info                         # debug | info | warn | error
   file: ""                            # log file path ("" = stderr only)
 
-knowledge:
-  embedding_model: ""                 # "" → falls back to llm.current
-  semantic_top_k: 5
-  derived_min_confidence: 0.0
-  sync_enabled: false
-
 database:
   driver: ""                          # "" → sqlite (the only functional driver today); "pgx" is present but not yet operational — see note below
   dsn: ""                             # "" → default SQLite path ~/.joe/joe.db
@@ -147,15 +141,6 @@ web_search:                           # optional; web search is inert until a pr
 | --- | --- | --- |
 | `logging.level` | `info` | `debug` / `info` / `warn` / `error`. |
 | `logging.file` | `""` | Log file path; empty logs to stderr only. |
-
-### `knowledge`
-
-| Key | Default | Effect |
-| --- | --- | --- |
-| `knowledge.embedding_model` | `""` | Model key for embeddings; empty falls back to `llm.current`. |
-| `knowledge.semantic_top_k` | `5` | Number of results returned by semantic search. |
-| `knowledge.derived_min_confidence` | `0.0` | Confidence threshold for surfacing derived knowledge. |
-| `knowledge.sync_enabled` | `false` | Enable background knowledge-source sync. |
 
 ### `database`
 

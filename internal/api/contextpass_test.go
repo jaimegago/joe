@@ -36,8 +36,6 @@ func (c *capturingChatLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.Ch
 	c.mu.Unlock()
 	return &llm.ChatResponse{Content: "done", Usage: llm.TokenUsage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
 }
-func (c *capturingChatLLM) Embed(_ context.Context, _ string) ([]float32, error) { return nil, nil }
-
 func (c *capturingChatLLM) lastReq() llm.ChatRequest {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -145,7 +143,6 @@ func (s *finalScriptLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 	s.i++
 	return r, nil
 }
-func (s *finalScriptLLM) Embed(context.Context, string) ([]float32, error) { return nil, nil }
 
 // bigResultTool registers under a T1 (read-only) name so the default executor
 // policy permits it, and returns a large payload to drive result truncation.

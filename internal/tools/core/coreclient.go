@@ -52,13 +52,9 @@ type CoreToolsClient interface {
 	OPAK8sClient
 	CrossplaneK8sClient
 	FalcoClient
-	KnowledgeSearchClient
 	OCIRegistryClient
 	ArtifactoryClient
 	ECRClient
-	DocDriftClient
-	DocDraftClient
-	PublishDocClient
 	GitHubPRGetClient
 	GitHubPRDiffClient
 	GitHubCommentClient

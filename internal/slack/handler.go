@@ -101,7 +101,7 @@ func (h *Handler) handleCallbackEvent(ctx context.Context, inner slackevents.Eve
 	}
 }
 
-// handleAsk runs the graph/knowledge query and posts the result.
+// handleAsk runs the graph query and posts the result.
 func (h *Handler) handleAsk(ctx context.Context, channelID, query string) {
 	answer, err := h.agent.Ask(ctx, query)
 	if err != nil {

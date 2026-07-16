@@ -98,7 +98,3 @@ func (alwaysToolCallLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 		}},
 	}, nil
 }
-
-func (alwaysToolCallLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, errors.New("not implemented")
-}

@@ -221,42 +221,6 @@ func TestEnvoyClusters_Error(t *testing.T) {
 	}
 }
 
-// --- drift.go error paths ---
-
-func TestDetectDriftByEntry_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.DetectDriftByEntry(context.Background(), "entry-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-// --- knowledge.go error paths ---
-
-func TestGetKnowledgeEntry_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.GetKnowledgeEntry(context.Background(), "entry-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-// --- proposals.go error paths ---
-
-func TestGetProposal_Error(t *testing.T) {
-	ts := errorServer(t)
-	defer ts.Close()
-	c := New(ts.URL)
-	_, err := c.GetProposal(context.Background(), "prop-1")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 // --- registry.go error paths ---
 
 func TestOCIListRepos_Error(t *testing.T) {

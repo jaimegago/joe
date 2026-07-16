@@ -136,18 +136,10 @@ func registerCoreTools(registry *Registry, coreClient coretools.CoreToolsClient)
 	registry.Register(coretools.NewFalcoAlertsTool(coreClient))
 	registry.Register(coretools.NewFalcoRulesTool(coreClient))
 
-	// Knowledge store tools
-	registry.Register(coretools.NewSearchKnowledgeTool(coreClient))
-
 	// Artifact registry tools
 	registry.Register(coretools.NewRegistryQueryTool(coreClient))
 	registry.Register(coretools.NewArtifactoryQueryTool(coreClient))
 	registry.Register(coretools.NewECRQueryTool(coreClient))
-
-	// Documentation co-pilot tools
-	registry.Register(coretools.NewDetectDocDriftTool(coreClient))
-	registry.Register(coretools.NewGenerateDocDraftTool(coreClient))
-	registry.Register(coretools.NewPublishDocUpdateTool(coreClient))
 
 	// Code review tools
 	registry.Register(coretools.NewGitHubPRGetTool(coreClient))

@@ -90,9 +90,8 @@ systems. Every tool reachable over MCP is one of Joe's reads.
 Joe is not only a reader. A real mutation surface exists, and it is deliberately narrow.
 It is registered **only on the human-facing task loop** and scoped to **external
 collaboration writes** — never to your running infrastructure. What it comprises is the
-ability to comment on a GitHub pull request or a GitLab merge request, to submit a GitHub
-request-changes review, and to publish an already-approved documentation proposal to
-Confluence, Notion, or a Git repository. That is the whole of it. But in every
+ability to comment on a GitHub pull request or a GitLab merge request, and to submit a
+GitHub request-changes review. That is the whole of it. But in every
 configuration Joe currently boots, none of it runs: the boot-resolved write floor denies
 the entire Mutate class, because observation is the boot default and full mode is refused
 at boot (the [observation-mode section](#running-joe-read-only) below has the mechanism).
@@ -122,8 +121,7 @@ Every mutate is subject to the same executor gate chain, checked in order:
    `safety_tier` can only narrow this further, never widen it.
 
 Authority to mutate is therefore constrained by default, not granted by default. It is
-bounded by the compiled default-deny policy, plus a human approval step in the proposal
-workflow before a documentation proposal is published, plus the captain-only restriction
+bounded by the compiled default-deny policy, plus the captain-only restriction
 that narrows who may act during an incident. There is no per-action confirmation prompt in
 the server flow — the authority is the compiled policy and the approval the workflow
 already captured, not a live dialog at the moment of the write.

@@ -25,10 +25,6 @@ func (m *mockLLMAdapter) Chat(ctx context.Context, req llm.ChatRequest) (*llm.Ch
 	}, nil
 }
 
-func (m *mockLLMAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	return []float32{0.1, 0.2, 0.3}, nil
-}
-
 func TestNewCoreAgent(t *testing.T) {
 	// Create in-memory database for testing
 	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)

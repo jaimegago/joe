@@ -37,13 +37,6 @@ func (f *fakeInnerAdapter) Chat(_ context.Context, _ llm.ChatRequest) (*llm.Chat
 	return f.resp, nil
 }
 
-func (f *fakeInnerAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
-	if f.embedErr != nil {
-		return nil, f.embedErr
-	}
-	return nil, errors.New("not implemented")
-}
-
 // fakeRepo is an in-memory llmusage.Repository for tests. The
 // optional insertErr forces Insert to return that error on every
 // call, which the fail-open test uses to prove the call still
@@ -533,26 +526,5 @@ func TestRecorder_Chat_ConfiguredCurrencyAppliedAtRecord(t *testing.T) {
 	}
 	if got.EstimatedCostNano != 81_000_000 {
 		t.Errorf("row cost = %d nano-EUR, want 81_000_000", got.EstimatedCostNano)
-	}
-}
-
-// TestRecorder_Embed_NotImplementedPropagatesNoRow proves the early
-// fail-open exercise: Embed is stubbed and returns not-implemented in
-// both production providers. The recorder must NOT crash, must NOT
-// record a row, and must return the inner error verbatim.
-func TestRecorder_Embed_NotImplementedPropagatesNoRow(t *testing.T) {
-	inner := &fakeInnerAdapter{}
-	repo := &fakeRepo{}
-	rec, _ := newTestRecorder("claude", "claude-sonnet-4-20250514", "USD", 1.0, repo, inner)
-
-	emb, err := rec.Embed(context.Background(), "hello")
-	if emb != nil {
-		t.Errorf("Embed returned non-nil vector %v on a stub", emb)
-	}
-	if err == nil {
-		t.Fatalf("Embed returned nil error; expected the inner stub error to propagate")
-	}
-	if rows := repo.snapshot(); len(rows) != 0 {
-		t.Errorf("Embed recorded %d rows; want 0", len(rows))
 	}
 }

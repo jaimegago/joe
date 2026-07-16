@@ -56,31 +56,8 @@ translate and run the query against whatever system that edge points to. The MCP
 from an editor. Connect the backing systems and wire their edges through
 [Components](../../components/) and these resolve automatically.
 
-## Curated versus derived knowledge
-
-The knowledge Joe stores is not all the same trust level, and the distinction matters
-when you read it back:
-
-- **Curated** knowledge is human-owned and highest-trust. It is authored through the
-  knowledge API (`POST /api/v1/knowledge/entries`) with `"tier": "curated"` set
-  explicitly, and is treated as authoritative. Ask for it by name: because curated
-  entries can never be updated or deleted afterwards, a create that does not name a tier
-  is filed as derived rather than committing you to something irreversible.
-- **Synced** knowledge is fetched from an external source you have connected (for
-  example a wiki), and carries that source's provenance.
-- **Derived** knowledge is the lower-trust, **mutable** tier — it carries a confidence
-  score, and unlike curated it can be updated and deleted through the API. It is the tier
-  an entry lands in when you create one without naming a tier, and the tier reserved for
-  machine-extracted knowledge. Joe does **not** write it for you today: no
-  knowledge-writing tool is registered on any of Joe's agent surfaces, so every entry in
-  the store is one you or a connected source put there.
-
-Search and listing let you filter by this distinction, so you can ask for only curated
-entries when you need ground truth. Use the curated/synced/derived wording rather than
-bare tier numbers — the names are self-describing and unambiguous.
-
 ## Where to go next
 
-- The model behind the graph and its knowledge tiers → [The knowledge graph](../../concepts/knowledge-graph/)
+- The model behind the graph → [The knowledge graph](../../concepts/knowledge-graph/)
 - Connecting the systems that populate it → [Components](../../components/)
 - Promotion: why registering a component is inert until armed → [The component lifecycle](../../concepts/component-lifecycle/)

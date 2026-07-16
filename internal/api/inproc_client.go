@@ -37,10 +37,6 @@ import (
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/knowledge"
-	"github.com/jaimegago/joe/internal/knowledge/drafts"
-	"github.com/jaimegago/joe/internal/knowledge/drift"
-	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	"time"
@@ -54,9 +50,9 @@ import (
 // hop and NO re-authentication: identity is established once at the edge and
 // carried by context, per docs/reference/joe-identity-design.md §1.
 //
-// For tools that do not touch an adapter or the graph store (list_components,
-// search_knowledge, doc-drafter, proposals/publish), the client reaches the
-// in-process service directly. These services are not principal-gated today
+// For tools that do not touch an adapter or the graph store (list_components),
+// the client reaches the in-process service directly. These services are not
+// principal-gated today
 // (they predate Phase A's accessor) and are NOT what the no-ungoverned-access
 // invariant covers — that invariant guards adapters and the graph store only
 // (internal/api/access_guard_test.go).
@@ -64,10 +60,6 @@ type inProcessCoreClient struct {
 	accessor   *access.Accessor
 	services   *core.Services
 	components store.ComponentRepository
-	knowledge  *knowledge.Service
-	drafts     *drafts.Generator
-	proposals  *proposals.Service
-	drift      *drift.Detector
 }
 
 // newInProcessCoreClient builds the in-process accessor-backed client used by
@@ -81,12 +73,8 @@ func newInProcessCoreClient(accessor *access.Accessor, services *core.Services) 
 		panic("api.newInProcessCoreClient: services must not be nil")
 	}
 	c := &inProcessCoreClient{
-		accessor:  accessor,
-		services:  services,
-		knowledge: services.Knowledge,
-		drafts:    services.DocDrafter,
-		proposals: services.Proposals,
-		drift:     services.DriftDet,
+		accessor: accessor,
+		services: services,
 	}
 	if services.Store != nil {
 		c.components = services.Store.Components
@@ -530,19 +518,6 @@ func (c *inProcessCoreClient) FalcoRules(ctx context.Context, sourceID string) (
 	return v, mapAccessError(err, sourceID)
 }
 
-// --- Knowledge search (uses services.Knowledge — not an adapter) ---
-
-func (c *inProcessCoreClient) SearchKnowledge(ctx context.Context, query string, topK int, tierFilter []knowledge.Tier) ([]knowledge.SearchResult, error) {
-	if c.knowledge == nil {
-		return nil, fmt.Errorf("knowledge service not configured")
-	}
-	return c.knowledge.Search(ctx, knowledge.SearchRequest{
-		Query:      query,
-		TopK:       topK,
-		TierFilter: tierFilter,
-	})
-}
-
 // --- Registries (OCI / Artifactory / ECR) ---
 
 func (c *inProcessCoreClient) OCIListRepos(ctx context.Context, sourceID string) ([]string, error) {
@@ -588,46 +563,6 @@ func (c *inProcessCoreClient) ECRListImages(ctx context.Context, sourceID, repo 
 func (c *inProcessCoreClient) ECRGetImage(ctx context.Context, sourceID, repo, tag string) (*ecradapter.ImageDetail, error) {
 	v, err := c.accessor.ECRGetImageDetails(ctx, rbac.PrincipalFromContext(ctx), sourceID, repo, tag)
 	return v, mapAccessError(err, sourceID)
-}
-
-// --- Doc co-pilot (uses services.DriftDet / .DocDrafter / .Proposals) ---
-
-func (c *inProcessCoreClient) DetectDrift(ctx context.Context, sourceType knowledge.SourceType) ([]*drift.DriftReport, error) {
-	if c.drift == nil {
-		return nil, fmt.Errorf("drift detector not configured")
-	}
-	return c.drift.DetectAll(ctx, sourceType)
-}
-
-func (c *inProcessCoreClient) DetectDriftByEntry(ctx context.Context, entryID string) (*drift.DriftReport, error) {
-	if c.drift == nil {
-		return nil, fmt.Errorf("drift detector not configured")
-	}
-	return c.drift.Detect(ctx, entryID)
-}
-
-func (c *inProcessCoreClient) CreateProposal(ctx context.Context, req drafts.GenerateRequest) (*proposals.Proposal, error) {
-	if c.drafts == nil {
-		return nil, fmt.Errorf("doc drafter not configured")
-	}
-	return c.drafts.Generate(ctx, req)
-}
-
-func (c *inProcessCoreClient) PublishProposal(ctx context.Context, id string) error {
-	if c.proposals == nil {
-		return fmt.Errorf("proposal service not configured")
-	}
-	p, err := c.proposals.Get(ctx, id)
-	if err != nil {
-		return fmt.Errorf("get proposal: %w", err)
-	}
-	if p.Status != proposals.StatusApproved {
-		return fmt.Errorf("proposal must be approved before publishing")
-	}
-	if err := publishProposalToTarget(ctx, c.services, p); err != nil {
-		return err
-	}
-	return c.proposals.MarkPublished(ctx, id)
 }
 
 // --- VCS review (GitHub / GitLab) ---

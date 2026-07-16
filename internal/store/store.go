@@ -16,7 +16,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" database/sql driver
 	_ "modernc.org/sqlite"
 
-	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/observability"
 )
 
@@ -31,7 +30,6 @@ type Store struct {
 	Sessions       SessionRepository
 	Clarifications ClarificationRepository
 	Facts          FactRepository
-	Knowledge      knowledge.Repository
 	Metrics        *observability.Metrics
 }
 
@@ -160,7 +158,6 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 		Sessions:       &sqlSessionRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Clarifications: &sqlClarificationRepository{db: db, driver: cfg.Driver, metrics: metrics},
 		Facts:          &sqlFactRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Knowledge:      knowledge.NewRepository(db, cfg.Driver, metrics),
 		Metrics:        metrics,
 	}
 

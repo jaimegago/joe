@@ -227,40 +227,6 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	return result, nil
 }
 
-// --- embeddings ---
-
-type embeddingRequest struct {
-	Model string `json:"model"`
-	Input string `json:"input"`
-}
-
-type embeddingResponse struct {
-	Data []struct {
-		Embedding []float32 `json:"embedding"`
-	} `json:"data"`
-}
-
-// Embed generates an embedding via /v1/embeddings. If the endpoint does not
-// support embeddings (404 / not found), it returns a clear, actionable error
-// rather than a generic failure.
-func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
-	body := embeddingRequest{Model: c.model, Input: text}
-
-	var parsed embeddingResponse
-	if err := c.post(ctx, "/embeddings", body, &parsed); err != nil {
-		var apiErr *APIError
-		if ok := asAPIError(err, &apiErr); ok && (apiErr.Code == http.StatusNotFound || apiErr.Code == http.StatusNotImplemented) {
-			return nil, fmt.Errorf("the configured openai-compat endpoint at %s does not support embeddings (/v1/embeddings returned %d). Point embedding_model at an endpoint that implements /v1/embeddings, or disable embedding-backed features: %w", c.baseURL, apiErr.Code, err)
-		}
-		return nil, err
-	}
-
-	if len(parsed.Data) == 0 || len(parsed.Data[0].Embedding) == 0 {
-		return nil, fmt.Errorf("openai-compat endpoint at %s returned no embedding data", c.baseURL)
-	}
-	return parsed.Data[0].Embedding, nil
-}
-
 // --- shared HTTP plumbing ---
 
 // post marshals body, POSTs it to baseURL+path, and decodes a successful

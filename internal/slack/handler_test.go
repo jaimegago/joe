@@ -9,7 +9,6 @@ import (
 	"github.com/slack-go/slack/slackevents"
 
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/knowledge"
 )
 
 // mockSlackPoster captures PostMessage calls.
@@ -282,7 +281,7 @@ func TestStripMention(t *testing.T) {
 }
 
 func TestBuildAskResponse_NoResults(t *testing.T) {
-	got := buildAskResponse("unknown", nil, nil)
+	got := buildAskResponse("unknown", nil)
 	if !contains(got, "didn't find anything") {
 		t.Errorf("expected no-results message, got: %q", got)
 	}
@@ -293,32 +292,16 @@ func TestBuildAskResponse_NodesTruncatedAt5(t *testing.T) {
 	for i := range nodes {
 		nodes[i] = graph.Node{ID: "node", Type: "deployment"}
 	}
-	got := buildAskResponse("test", nodes, nil)
+	got := buildAskResponse("test", nodes)
 	if !contains(got, "and 3 more") {
 		t.Errorf("expected truncation note, got: %q", got)
 	}
 }
 
-func TestBuildAskResponse_IncludesKnowledgeEntries(t *testing.T) {
-	results := []knowledge.SearchResult{
-		{Entry: knowledge.Entry{Title: "DB Runbook", Content: "How to restart the database"}},
-	}
-	got := buildAskResponse("database", nil, results)
-	if !contains(got, "DB Runbook") {
-		t.Errorf("expected knowledge entry title, got: %q", got)
-	}
-}
-
-func TestBuildAskResponse_NodesAndKnowledge(t *testing.T) {
+func TestBuildAskResponse_IncludesNodeID(t *testing.T) {
 	nodes := []graph.Node{{ID: "payment-svc", Type: "deployment"}}
-	results := []knowledge.SearchResult{
-		{Entry: knowledge.Entry{Title: "Payment Runbook", Content: "Restart steps"}},
-	}
-	got := buildAskResponse("payment", nodes, results)
+	got := buildAskResponse("payment", nodes)
 	if !contains(got, "payment-svc") {
 		t.Errorf("expected node ID in response, got: %q", got)
-	}
-	if !contains(got, "Payment Runbook") {
-		t.Errorf("expected knowledge entry title in response, got: %q", got)
 	}
 }

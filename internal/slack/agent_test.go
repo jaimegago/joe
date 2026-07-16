@@ -6,17 +6,14 @@ import (
 	"testing"
 
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/knowledge"
 )
 
 // mockJoeClient is a test double for JoeClient.
 type mockJoeClient struct {
-	nodes     []graph.Node
-	summary   *graph.GraphSummary
-	results   []knowledge.SearchResult
-	queryErr  error
-	sumErr    error
-	searchErr error
+	nodes    []graph.Node
+	summary  *graph.GraphSummary
+	queryErr error
+	sumErr   error
 }
 
 func (m *mockJoeClient) GraphQuery(_ context.Context, _ string) ([]graph.Node, error) {
@@ -25,10 +22,6 @@ func (m *mockJoeClient) GraphQuery(_ context.Context, _ string) ([]graph.Node, e
 
 func (m *mockJoeClient) GraphSummary(_ context.Context) (*graph.GraphSummary, error) {
 	return m.summary, m.sumErr
-}
-
-func (m *mockJoeClient) SearchKnowledge(_ context.Context, _ string, _ int, _ []knowledge.Tier) ([]knowledge.SearchResult, error) {
-	return m.results, m.searchErr
 }
 
 func TestAgent_Ask(t *testing.T) {
@@ -51,21 +44,9 @@ func TestAgent_Ask(t *testing.T) {
 			wantContain: "payment-svc",
 		},
 		{
-			name: "returns knowledge entries in response",
-			client: &mockJoeClient{
-				nodes: []graph.Node{},
-				results: []knowledge.SearchResult{
-					{Entry: knowledge.Entry{Title: "Payment Runbook", Content: "Steps to restart payment service"}},
-				},
-			},
-			query:       "payment runbook",
-			wantContain: "Payment Runbook",
-		},
-		{
 			name: "returns no-results message when nothing found",
 			client: &mockJoeClient{
-				nodes:   []graph.Node{},
-				results: nil,
+				nodes: []graph.Node{},
 			},
 			query:       "unknown-xyz",
 			wantContain: "didn't find anything",
@@ -77,15 +58,6 @@ func TestAgent_Ask(t *testing.T) {
 			},
 			query:   "test",
 			wantErr: true,
-		},
-		{
-			name: "continues if knowledge search fails",
-			client: &mockJoeClient{
-				nodes:     []graph.Node{{ID: "aws/src1/ec2/i-123", Type: "ec2_instance"}},
-				searchErr: errors.New("knowledge store unavailable"),
-			},
-			query:       "ec2",
-			wantContain: "i-123",
 		},
 	}
 
@@ -131,23 +103,6 @@ func TestAgent_Status_Error(t *testing.T) {
 	_, err := a.Status(context.Background())
 	if err == nil {
 		t.Fatal("Status() expected error, got nil")
-	}
-}
-
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		s    string
-		n    int
-		want string
-	}{
-		{"hello", 10, "hello"},
-		{"hello world", 5, "hello…"},
-		{"", 5, ""},
-	}
-	for _, tt := range tests {
-		if got := truncate(tt.s, tt.n); got != tt.want {
-			t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
-		}
 	}
 }
 

@@ -54,7 +54,7 @@ HTTPS — it is not the server switch.) The key reference is in
 Joe keeps its state in two places under its home directory (`~/.joe` by default):
 
 - **The database** — an embedded SQLite store at `~/.joe/joe.db`. This is the graph,
-  the knowledge entries, sessions, RBAC state, the panic row, and the audit log. It is
+  sessions, RBAC state, the panic row, and the audit log. It is
   a single file; no external database server is involved. Back it up as a unit, and
   treat it as sensitive — the audit log and identity state live here. Note that Joe
   **deletes some of this data automatically on a timer**: a background retention sweeper

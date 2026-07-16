@@ -374,8 +374,7 @@ var (
 
 // SQLRepository implements Repository on top of *sql.DB. It uses raw
 // *sql.DB rather than the store.Store wrapper, parallel to the established
-// secondary-repo pattern (RBAC, graph, knowledge, review, proposals,
-// panic-state). The shared persistence interface seam is preserved by
+// secondary-repo pattern (RBAC, graph, panic-state). The shared persistence interface seam is preserved by
 // using ? placeholders + store.Rebind for cross-driver portability — see
 // the session-model design (Phase 0) §5b-6 and Invariant 6.
 type SQLRepository struct {

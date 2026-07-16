@@ -58,11 +58,10 @@ translates the question, executes it, and returns a normalized result.
 | `joe_logs` | Search logs for a service; Joe resolves the log backend from the graph. |
 | `joe_traces` | Find recent traces for a service; Joe resolves the tracing backend. |
 | `joe_alerts` | List active alerts for a service; Joe resolves the alerting backend. |
-| `joe_knowledge_search` | Semantic search over Joe's knowledge store — runbooks, wiki pages, learned patterns. |
 
 The observability tools (`joe_metrics`, `joe_logs`, `joe_traces`, `joe_alerts`,
-`joe_k8s`) take a `service` plus a natural-language `question`; the graph and knowledge
-tools take a `query`. Every tool reaches the daemon — what it can see is governed by the
+`joe_k8s`) take a `service` plus a natural-language `question`; the graph tools take a
+`query`. Every tool reaches the daemon — what it can see is governed by the
 daemon's posture and the credential in `JOE_API_KEY`, not by the MCP client.
 
 ## Where to go next

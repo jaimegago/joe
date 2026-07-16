@@ -41,8 +41,6 @@ func NewServer(c *client.Client) *mcpserver.MCPServer {
 			s.AddTool(tool, d.HandleTraces)
 		case "joe_alerts":
 			s.AddTool(tool, d.HandleAlerts)
-		case "joe_knowledge_search":
-			s.AddTool(tool, d.HandleKnowledgeSearch)
 		}
 	}
 

@@ -13,7 +13,6 @@ import (
 	"github.com/jaimegago/joe/internal/componentgov"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/knowledge"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -171,18 +170,18 @@ func registerCoreAgentTools(registry *tools.Registry, services *core.Services, l
 	registry.Register(NewRegisterComponentTool(services, logger))
 	registry.Register(NewSaveOnboardingFactTool(services, logger))
 	// Parked for launch (session iac-graph-ingestion, D-0110), following the
-	// same D-0081/D-0109 pattern as save_knowledge_entry below: the registration
-	// is the only thing removed. The implementations, their ActionRead classifier
-	// rows (internal/safety/tier.go), and their parameter schemas are retained —
-	// re-enabling is restoring these three call sites.
+	// D-0081 pattern: the registration is the only thing removed. The
+	// implementations, their ActionRead classifier rows (internal/safety/tier.go),
+	// and their parameter schemas are retained — re-enabling is restoring these
+	// three call sites.
 	//
 	// Why park: these three are the onboarding-era LLM-shaped graph writers. They
 	// call services.Graph.AddNode/AddEdge/UpdateNode DIRECTLY, bypassing the
 	// delta-reconcile seam (LoadGraphStateForComponent -> BuildGraphDelta ->
 	// ApplyGraphDelta) that every *_refresh.go writes through, so nothing
 	// reconciles or removes what they add. Being Read-classed they pass the write
-	// floor unconditionally, observation mode included. Like save_knowledge_entry
-	// they were already unreachable in fact — nothing drives this registry
+	// floor unconditionally, observation mode included. They were already
+	// unreachable in fact — nothing drives this registry
 	// (Agent.ExecuteTool/GetAvailableTools have no production callers, and
 	// coreagent runs no LLM loop) — but nothing SAID so. Left registered, the day
 	// an autonomous loop is wired here it would silently acquire the ability to
@@ -192,22 +191,6 @@ func registerCoreAgentTools(registry *tools.Registry, services *core.Services, l
 	//   registry.Register(NewGraphAddNodeTool(services, logger))
 	//   registry.Register(NewGraphAddEdgeTool(services, logger))
 	//   registry.Register(NewGraphUpdateNodeTool(services, logger))
-	//
-	// Parked for launch (session knowledge-store-maturation), following the
-	// D-0081 pattern: the registration is the only thing removed. The tool
-	// implementation, its ActionRead classifier row, and its NeedsDurability
-	// declaration (internal/safety/tier.go) are all retained — re-enabling is
-	// restoring this one call site.
-	//
-	// Why park rather than leave it: it was already unreachable in fact (nothing
-	// drives this registry — Agent.ExecuteTool/GetAvailableTools have no callers,
-	// and coreagent runs no LLM loop), but nothing SAID so. Left registered, the
-	// day an autonomous loop is wired here it would silently acquire a
-	// knowledge-writing tool that is Read-classed — and so passes the write floor
-	// unconditionally, in observation mode included — with no audit row, no
-	// principal stamping, and no admin gate. Parking makes the absence
-	// deliberate and test-pinned rather than incidental.
-	//   registry.Register(NewSaveKnowledgeEntryTool(services, logger))
 
 	logger.Info("registered core agent tools", "count", len(registry.GetAll()))
 }
@@ -654,119 +637,4 @@ func (t *SaveOnboardingFactTool) Execute(ctx context.Context, args map[string]an
 
 	t.logger.Info("saved onboarding fact", "id", fact.ID, "type", factType)
 	return fmt.Sprintf("Saved fact: %s", description), nil
-}
-
-// SaveKnowledgeEntryTool saves a derived-tier knowledge entry.
-//
-// Action class: ActionRead (internal/safety/tier.go) — per D-0020 Joe's own
-// model-maintenance tools are Reads: this writes to Joe's knowledge store, not
-// to a managed system. Being Read-classed, it passes the write floor
-// unconditionally, observation mode included.
-//
-// PARKED (session knowledge-store-maturation): not registered on the agent:core
-// registry — see registerCoreAgentTools. Pinned by
-// TestSaveKnowledgeEntryToolIsParked.
-type SaveKnowledgeEntryTool struct {
-	services *core.Services
-	logger   *slog.Logger
-}
-
-func NewSaveKnowledgeEntryTool(services *core.Services, logger *slog.Logger) *SaveKnowledgeEntryTool {
-	return &SaveKnowledgeEntryTool{
-		services: services,
-		logger:   logger.With("tool", "save_knowledge_entry"),
-	}
-}
-
-func (t *SaveKnowledgeEntryTool) Name() string { return "save_knowledge_entry" }
-
-func (t *SaveKnowledgeEntryTool) Description() string {
-	return "Save a derived (Tier 3) knowledge entry — a reusable pattern, insight, or failure mode learned during a session."
-}
-
-func (t *SaveKnowledgeEntryTool) Parameters() llm.ParameterSchema {
-	return llm.ParameterSchema{
-		Type: "object",
-		Properties: map[string]llm.Property{
-			"title": {
-				Type:        "string",
-				Description: "Short descriptive title (≤80 chars)",
-			},
-			"content": {
-				Type:        "string",
-				Description: "Full description of the knowledge item",
-			},
-			"entry_type": {
-				Type:        "string",
-				Description: "One of: pattern, failure_mode, best_practice, insight, runbook, doc, fact",
-			},
-			"session_id": {
-				Type:        "string",
-				Description: "Session ID this was derived from (for provenance)",
-			},
-			"confidence": {
-				Type:        "number",
-				Description: "Confidence score 0-1 (how reusable this is)",
-			},
-			"related_nodes": {
-				Type:        "array",
-				Description: "Graph node IDs this knowledge applies to",
-				Items:       &llm.Property{Type: "string"},
-			},
-		},
-		Required: []string{"title", "content", "entry_type"},
-	}
-}
-
-func (t *SaveKnowledgeEntryTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	if t.services.Knowledge == nil {
-		return nil, fmt.Errorf("knowledge service not available")
-	}
-
-	title, _ := args["title"].(string)
-	content, _ := args["content"].(string)
-	entryType, _ := args["entry_type"].(string)
-	sessionID, _ := args["session_id"].(string)
-
-	if title == "" || content == "" || entryType == "" {
-		return nil, fmt.Errorf("title, content, and entry_type are required")
-	}
-
-	confidence := 0.8
-	if c, ok := args["confidence"].(float64); ok && c > 0 {
-		confidence = c
-	}
-
-	var relatedNodes []string
-	if rn, ok := args["related_nodes"].([]any); ok {
-		for _, n := range rn {
-			if s, ok := n.(string); ok {
-				relatedNodes = append(relatedNodes, s)
-			}
-		}
-	}
-
-	metaBytes, _ := json.Marshal(map[string]string{
-		"session_id": sessionID,
-	})
-
-	entry := &knowledge.Entry{
-		Tier:         knowledge.TierDerived,
-		Type:         knowledge.EntryType(entryType),
-		Title:        title,
-		Content:      content,
-		SourceType:   knowledge.SourceTypeSession,
-		SourceID:     sessionID,
-		Confidence:   confidence,
-		RelatedNodes: relatedNodes,
-		Metadata:     metaBytes,
-	}
-
-	if err := t.services.Knowledge.Create(ctx, entry); err != nil {
-		t.logger.Error("failed to save knowledge entry", "error", err)
-		return nil, fmt.Errorf("save knowledge entry: %w", err)
-	}
-
-	t.logger.Info("saved knowledge entry", "id", entry.ID, "title", title, "type", entryType)
-	return map[string]any{"id": entry.ID, "title": title, "tier": "derived"}, nil
 }

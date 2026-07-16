@@ -15,6 +15,7 @@ file for the full status, priority, blocked-by, and body.
 
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
+| [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open |  |
 | [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open |  |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open |  |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 |  |
@@ -46,11 +47,9 @@ file for the full status, priority, blocked-by, and body.
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open |  |
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred |  |
-| [`knowledge-store-maturation`](knowledge-store-maturation.md) | Knowledge store maturation — governance, sync disposition, and orphaned-writer disposition | open | later |
-| [`knowledge-store-prune`](knowledge-store-prune.md) | Knowledge store: prune the subsystem from the tree | open | now |
 | [`launch-positioning-and-employer-decoupling`](launch-positioning-and-employer-decoupling.md) | Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer | open |  |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open |  |
-| [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | decided |  |
+| [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open |  |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open |  |
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open |  |
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open |  |
@@ -71,6 +70,7 @@ file for the full status, priority, blocked-by, and body.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 |  |
 | [`release-pipeline`](release-pipeline.md) | Release pipeline — tag cut and distribution-posture doc sweep (-02) | in-progress |  |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred |  |
+| [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open |  |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred |  |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open |  |
 | [`sessions-admin-delete-affordance`](sessions-admin-delete-affordance.md) | Admin delete affordance gap on non-owned sessions in the Sessions list | open | later |

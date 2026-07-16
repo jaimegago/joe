@@ -173,21 +173,11 @@ var toolRegistry = map[string]ToolClassification{
 	"helm_release":       {Class: ActionRead, Description: "Get full details for a specific Helm release"},
 	"helm_history":       {Class: ActionRead, Description: "Get revision history for a Helm release"},
 
-	// Knowledge store search + drift detection (Phase 8) — read-only.
-	// search_knowledge queries Joe's own knowledge store and mutates no managed
-	// system, so it is a Read and passes the write floor unconditionally. Without
-	// this explicit row ClassifyTool would default it to ActionMutate
-	// (deny-by-default) and the advertised tool would be floor-blocked and
-	// policy-denied on every call even though it only reads. Pinned by
-	// TestClassifySearchKnowledgeIsRead.
-	"search_knowledge": {Class: ActionRead, Description: "Search Joe's knowledge store for relevant entries"},
-	"detect_doc_drift": {Class: ActionRead, Description: "Detect documentation drift between knowledge store and external components"},
-
 	// === Read — Joe's own model maintenance ===
 	//
 	// Per D-0018/D-0019, a "write" is an operation that mutates the *managed
 	// system* (live infrastructure + the code/config that governs it). These
-	// tools only record observed state into Joe's own graph/store/knowledge —
+	// tools only record observed state into Joe's own graph/store —
 	// the managed system is in the same state after they run — so by the
 	// write definition they are reads, not writes. Keeping them read-class
 	// also means Joe never freezes its own model in safe mode or while an
@@ -198,36 +188,15 @@ var toolRegistry = map[string]ToolClassification{
 	"graph_add_node":    {Class: ActionRead, Description: "Add node to Joe's knowledge graph"},
 	"graph_add_edge":    {Class: ActionRead, Description: "Add edge to Joe's knowledge graph"},
 	"graph_update_node": {Class: ActionRead, Description: "Update node in Joe's knowledge graph"},
-	// register_component / save_onboarding_fact / save_knowledge_entry are
-	// plain INSERTs whose row identity is generated server-side OUTSIDE the
-	// args (register_component: crypto-random ID; save_onboarding_fact:
-	// autoincrement; save_knowledge_entry: uid.New()), with no natural unique
-	// key — an in-run retry or crash-resume would create a second row. They
-	// declare NeedsDurability so the §D5 key dedups them per run (D-0020).
+	// register_component / save_onboarding_fact are plain INSERTs whose row
+	// identity is generated server-side OUTSIDE the args (register_component:
+	// crypto-random ID; save_onboarding_fact: autoincrement), with no natural
+	// unique key — an in-run retry or crash-resume would create a second row.
+	// They declare NeedsDurability so the §D5 key dedups them per run (D-0020).
 	"register_component":   {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
 	"save_onboarding_fact": {Class: ActionRead, Description: "Save an onboarding fact to Joe's store", NeedsDurability: true},
-	"save_knowledge_entry": {Class: ActionRead, Description: "Save a derived knowledge entry to Joe's knowledge store", NeedsDurability: true},
-
-	// Phase 8: doc draft generation — creates a proposal in Joe's own state.
-	// The proposal must be human-approved before publish_doc_update (mutate)
-	// can push it to any external system, so drafting itself mutates nothing
-	// outside Joe. The proposal ID is uid.New() (server-side, outside args)
-	// and the insert has no natural unique key, so a retry would create a
-	// second proposal — declares NeedsDurability (D-0020).
-	"generate_doc_draft": {Class: ActionRead, Description: "Generate a documentation draft proposal in Joe's store", NeedsDurability: true},
 
 	// === Mutate (managed-system mutations) ===
-
-	// Phase 8: doc publish (writes to external systems). publish_doc_update*
-	// is guarded at the data layer: PublishProposal requires status==approved
-	// and flips it to published, so a re-publish of the same proposal fails
-	// closed rather than duplicating — a natural idempotency key. No
-	// NeedsDurability (D-0020).
-	"publish_doc_update_confluence": {Class: ActionMutate, PolicyKey: "confluence_publish", Description: "Publish doc proposal to Confluence page"},
-	"publish_doc_update_notion":     {Class: ActionMutate, PolicyKey: "notion_publish", Description: "Publish doc proposal to Notion page"},
-	"publish_doc_update_git":        {Class: ActionMutate, PolicyKey: "git_push", Description: "Commit and push doc proposal to Git repo"},
-	// publish_doc_update selects the runtime-specific policy key per target type.
-	"publish_doc_update": {Class: ActionMutate, PolicyKey: "confluence_publish", Description: "Publish an approved doc proposal to its target system"},
 
 	// === Phase 10: Code Review Integration ===
 

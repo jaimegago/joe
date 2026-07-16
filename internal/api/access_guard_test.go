@@ -69,8 +69,8 @@ import (
 //     it is what keeps the legitimate ApplyGraphDelta refresh writes green, and the
 //     parked implementations sit in the same exempt package. The exemption's scope is
 //     unchanged by the parking; nothing here is weakened to accommodate it.
-//     This is INTENTIONAL, not a deferred or not-yet-governed gap: it is an
-//     internal Tier-3 knowledge write, governed upstream by the agent:core read
+//     This is INTENTIONAL, not a deferred or not-yet-governed gap: it is a write
+//     to Joe's own graph, governed upstream by the agent:core read
 //     floor (A001-COREGOV). A component whose refresh adapter read is denied
 //     yields no delta, so the write is fenced by the floored read; the write
 //     carries the agent:core principal for audit and takes no write permit by

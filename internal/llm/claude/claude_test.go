@@ -349,17 +349,6 @@ func TestSuggestedModels(t *testing.T) {
 	}
 }
 
-func TestEmbed_NotImplemented(t *testing.T) {
-	os.Setenv("ANTHROPIC_API_KEY", "test-key")
-	defer os.Unsetenv("ANTHROPIC_API_KEY")
-
-	client, _ := NewClient("")
-	_, err := client.Embed(context.Background(), "test text")
-	if err == nil {
-		t.Fatal("Expected error from unimplemented Embed")
-	}
-}
-
 func TestConvertResponse_WithText(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "test-key")
 	defer os.Unsetenv("ANTHROPIC_API_KEY")

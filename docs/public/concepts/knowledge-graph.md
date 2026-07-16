@@ -45,23 +45,6 @@ against that backend. The edge *is* the resolution mechanism. This is why regist
 your systems and letting their relationships form is what makes Joe's observability
 answers work without per-question backend wiring.
 
-## Curated versus derived knowledge
-
-Separate from the graph, Joe keeps a **knowledge store** of runbooks, docs, and facts,
-and not all of it carries the same authority. **Curated** knowledge is established by a
-human and treated as ground truth. **Derived** is the store's lower-trust, **mutable**
-tier, the one an entry lands in by default and the one reserved for machine-extracted
-knowledge. Curated entries are **immutable once written** — nothing can overwrite what a
-human deliberately asserted, and that immutability is enforced in the store rather than
-left to convention.
-
-Today the derived tier is written by people, not by Joe: **no knowledge-writing tool is
-registered on any of Joe's agent surfaces**, so Joe does not extract knowledge from your
-sessions on its own. The tier exists, and the immutability boundary around curated is real
-and enforced now; the machinery that would let Joe populate derived by itself is
-deliberately not wired. This authority distinction lives in the knowledge store; it is not
-a property of the infrastructure graph above.
-
 For connecting the systems that become components and their backends, see
 [Components](../../components/); for working with the graph through Joe, see
 [Guides](../../guides/).

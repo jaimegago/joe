@@ -43,8 +43,6 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"graph_update_node", ActionRead},
 		{"register_component", ActionRead},
 		{"save_onboarding_fact", ActionRead},
-		{"save_knowledge_entry", ActionRead},
-		{"generate_doc_draft", ActionRead},
 		{"registry_query", ActionRead},
 		{"artifactory_query", ActionRead},
 		{"ecr_query", ActionRead},
@@ -139,8 +137,7 @@ func TestClassifyTool_ExternalCommentsAreMutate(t *testing.T) {
 func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
 	needs := []string{
 		// Read-class creates with server-generated identity outside the args.
-		"register_component", "save_onboarding_fact", "save_knowledge_entry",
-		"generate_doc_draft",
+		"register_component", "save_onboarding_fact",
 		// Mutate-class non-idempotent external appends.
 		"github_comment", "gitlab_comment", "github_request_changes",
 	}
@@ -159,7 +156,6 @@ func TestClassifyTool_IdempotentToolsAreNotDurable(t *testing.T) {
 	notDurable := []string{
 		"graph_query", "list_components", // reads
 		"graph_add_node", "graph_add_edge", "graph_update_node", // arg-keyed upserts
-		"publish_doc_update", "publish_doc_update_git", // data-layer status guard, no Joe-side record
 	}
 	for _, tool := range notDurable {
 		if ClassifyTool(tool).NeedsDurability {
@@ -202,8 +198,7 @@ func TestCheckAccess_ModelMaintenanceAlwaysAllowed(t *testing.T) {
 
 	for _, tool := range []string{
 		"graph_add_node", "graph_add_edge", "graph_update_node",
-		"register_component", "save_onboarding_fact", "save_knowledge_entry",
-		"generate_doc_draft",
+		"register_component", "save_onboarding_fact",
 	} {
 		if err := CheckAccess(tool, policy); err != nil {
 			t.Errorf("CheckAccess(%q) = %v, want nil (read-class, always allowed)", tool, err)
@@ -231,11 +226,11 @@ func TestCheckAccess_ExternalCommentDeniedByDefault(t *testing.T) {
 }
 
 func TestCheckAccess_MutateDefaultDeny(t *testing.T) {
-	policy := DefaultPolicy() // git_push is disabled by default
+	policy := DefaultPolicy() // no act toggle is enabled by default
 
-	err := CheckAccess("publish_doc_update_git", policy)
+	err := CheckAccess("github_comment", policy)
 	if err == nil {
-		t.Fatal("expected error for disabled publish_doc_update_git, got nil")
+		t.Fatal("expected error for disabled github_comment, got nil")
 	}
 	var denied *AccessDeniedError
 	if !errors.As(err, &denied) {
@@ -246,15 +241,15 @@ func TestCheckAccess_MutateDefaultDeny(t *testing.T) {
 	}
 }
 
-func TestCheckAccess_MutateEnabled(t *testing.T) {
-	policy := DefaultPolicy()
-	policy.Act.GitPush.Enabled = true
-
-	err := CheckAccess("publish_doc_update_git", policy)
-	if err != nil {
-		t.Errorf("CheckAccess(publish_doc_update_git) = %v, want nil (enabled)", err)
-	}
-}
+// The former TestCheckAccess_MutateEnabled is deleted, not migrated
+// (knowledge-store-prune). It exercised CheckAccess's policy-allows branch via
+// publish_doc_update_git under the git_push toggle — the only registered tool
+// whose PolicyKey resolved to a live ActPolicy field. With the doc-publish arm
+// gone, every remaining Mutate tool carries a PolicyKey that IsT3Allowed has no
+// case for, so the allow branch is unreachable by any real tool name and has no
+// replacement fixture. IsT3Allowed's own true branch stays covered directly in
+// policy_test.go. Reconstitute this coverage when full mode ships a tool with a
+// real opt-in — see docs/backlog/act-policy-vestigial.md.
 
 func TestCheckAccess_UnknownToolDenied(t *testing.T) {
 	policy := DefaultPolicy()

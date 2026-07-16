@@ -16,10 +16,6 @@ func (f *fakeAdapter) Chat(_ context.Context, _ ChatRequest) (*ChatResponse, err
 	return &ChatResponse{Content: f.id}, nil
 }
 
-func (f *fakeAdapter) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{float32(len(f.id))}, nil
-}
-
 func TestSwappableAdapter_DelegatesAndSwaps(t *testing.T) {
 	sw := NewSwappableAdapter(&fakeAdapter{id: "first"}, "model-a")
 
@@ -46,18 +42,6 @@ func TestSwappableAdapter_DelegatesAndSwaps(t *testing.T) {
 	}
 	if resp.Content != "second" {
 		t.Fatalf("Chat after swap delegated to %q, want %q", resp.Content, "second")
-	}
-}
-
-func TestSwappableAdapter_EmbedDelegate(t *testing.T) {
-	sw := NewSwappableAdapter(&fakeAdapter{id: "abc"}, "m")
-
-	vec, err := sw.Embed(context.Background(), "x")
-	if err != nil {
-		t.Fatalf("Embed: %v", err)
-	}
-	if len(vec) != 1 || vec[0] != 3 {
-		t.Fatalf("Embed delegated unexpectedly: %v", vec)
 	}
 }
 

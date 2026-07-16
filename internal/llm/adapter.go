@@ -7,9 +7,6 @@ import "context"
 type LLMAdapter interface {
 	// Chat sends a chat request and returns a response
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
-
-	// Embed generates an embedding vector for the given text
-	Embed(ctx context.Context, text string) ([]float32, error)
 }
 
 // ChatRequest represents a request to the LLM

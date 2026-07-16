@@ -12,13 +12,13 @@ import (
 // swaps the inner adapter via Swap.
 //
 // Swap deliberately does NOT close the superseded adapter. The same underlying
-// adapter instance may be shared with other consumers (e.g. the knowledge
-// embedder, which must stay on a stable model and must not follow chat-model
-// swaps), so closing it on swap could break them. The bounded resource leak of
-// a superseded provider client is acceptable given how rarely an operator
-// switches models interactively.
+// adapter instance may be shared with other consumers (e.g. background services
+// that must stay on a stable model and must not follow chat-model swaps), so
+// closing it on swap could break them. The bounded resource leak of a superseded
+// provider client is acceptable given how rarely an operator switches models
+// interactively.
 //
-// Chat/Embed snapshot the inner adapter under a read lock and then
+// Chat snapshots the inner adapter under a read lock and then
 // release it before issuing the (potentially long-running) call. A concurrent
 // Swap therefore never blocks for the duration of an in-flight request: the
 // in-flight call completes against the previous adapter while new calls use the
@@ -45,11 +45,6 @@ func (s *SwappableAdapter) get() LLMAdapter {
 // Chat delegates to the active inner adapter.
 func (s *SwappableAdapter) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	return s.get().Chat(ctx, req)
-}
-
-// Embed delegates to the active inner adapter.
-func (s *SwappableAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	return s.get().Embed(ctx, text)
 }
 
 // Swap replaces the active adapter and the reported current-model key. The

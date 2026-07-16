@@ -32,5 +32,3 @@ binary. For the *why* behind any of these, the pages link back to
 - [The Slack bot](slack/) — bring up `joe slack` as a Socket Mode daemon client.
 - [The knowledge graph](knowledge-graph/) — query the graph and understand how it
   populates.
-- [Documentation proposals](doc-proposals/) — draft, approve, and publish a doc
-  update, and why approval and publication are two separate steps.

@@ -197,9 +197,6 @@ type silentLLMAdapter struct{}
 func (silentLLMAdapter) Chat(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (silentLLMAdapter) Embed(context.Context, string) ([]float32, error) {
-	return nil, fmt.Errorf("not implemented")
-}
 
 // stubAdapterFactory replaces newModelAdapter with one that always
 // returns a silent adapter so the SetActiveModel admin write does not

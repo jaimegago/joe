@@ -35,10 +35,6 @@ func (m *mockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 	return resp, nil
 }
 
-func (m *mockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, errors.New("not implemented")
-}
-
 func TestNewAgent(t *testing.T) {
 	mockLLM := &mockLLM{}
 	registry := tools.NewRegistry()

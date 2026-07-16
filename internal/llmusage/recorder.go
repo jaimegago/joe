@@ -2,9 +2,8 @@
 //
 // The package wraps the raw llm.LLMAdapter at a single wire site in
 // cmd/joe/server.go so every downstream consumer — the swappable
-// hot-swap wrapper, the knowledge embedder, the doc drafter, the Core
-// Agent — invokes the recorder transparently through the
-// same interface. The recorder reads the caller principal, session id,
+// hot-swap wrapper, the Core Agent — invokes the recorder transparently
+// through the same interface. The recorder reads the caller principal, session id,
 // and task id from context and writes one row to the llm_usage table
 // (migration 017) after a successful inner Chat returns.
 //
@@ -213,17 +212,6 @@ func (r *RecorderAdapter) Chat(ctx context.Context, req llm.ChatRequest) (*llm.C
 	}
 	r.record(ctx, resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	return resp, nil
-}
-
-// Embed calls through to the inner adapter and records nothing. Embed
-// is stubbed in both production provider clients and currently returns
-// a not-implemented error; the recorder must NOT crash on that error
-// and must return it transparently. This is the early exercise of
-// fail-open: when there is no usage to record, the call's outcome is
-// unaffected. When embeddings are implemented later, embedding token
-// recording lands in this method.
-func (r *RecorderAdapter) Embed(ctx context.Context, text string) ([]float32, error) {
-	return r.inner.Embed(ctx, text)
 }
 
 // record builds and writes the per-call usage row. All input is taken

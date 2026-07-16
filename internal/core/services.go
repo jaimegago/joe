@@ -10,10 +10,6 @@ import (
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/graph"
-	"github.com/jaimegago/joe/internal/knowledge"
-	"github.com/jaimegago/joe/internal/knowledge/drafts"
-	"github.com/jaimegago/joe/internal/knowledge/drift"
-	"github.com/jaimegago/joe/internal/knowledge/proposals"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/llmsettings"
 	"github.com/jaimegago/joe/internal/llmusage"
@@ -63,10 +59,6 @@ type Services struct {
 	Adapters       *adapters.Registry
 	Metrics        *observability.Metrics
 	Clarifications *ClarificationService
-	Knowledge      *knowledge.Service
-	Proposals      *proposals.Service
-	DocDrafter     *drafts.Generator
-	DriftDet       *drift.Detector
 	RBAC           rbac.Repository // nil when RBAC is not configured
 	// Principals is the authoritative identity registry (migration 021),
 	// satisfied by the same *rbac.SQLRepository wired into RBAC. Read path for
@@ -193,13 +185,6 @@ type Services struct {
 func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, adapterRegistry *adapters.Registry, metrics *observability.Metrics) *Services {
 	metrics = observability.EnsureMetrics(metrics)
 	graphStore := graph.NewSQLStore(db, driver, metrics)
-	// Knowledge service starts without an embedder; one is attached later via
-	// services.Knowledge = knowledge.NewService(repo, embedder) once the LLM
-	// adapter is wired in cmd/joecored/main.go.
-	knowledgeSvc := knowledge.NewService(sqlStore.Knowledge, nil)
-	proposalRepo := proposals.NewRepository(db, driver)
-	proposalSvc := proposals.NewService(proposalRepo)
-	driftDet := drift.New(knowledgeSvc)
 	return &Services{
 		Config:         cfg,
 		Store:          sqlStore,
@@ -207,10 +192,6 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, a
 		Adapters:       adapterRegistry,
 		Metrics:        metrics,
 		Clarifications: NewClarificationService(graphStore, sqlStore),
-		Knowledge:      knowledgeSvc,
-		Proposals:      proposalSvc,
-		DriftDet:       driftDet,
-		// DocDrafter is wired later in cmd/joecored/main.go.
 	}
 }
 

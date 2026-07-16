@@ -4,7 +4,6 @@ package integration
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/llm"
@@ -282,10 +281,6 @@ type MockLLMWithAPIError struct {
 
 func (m *MockLLMWithAPIError) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	return nil, APIError{message: "Rate limit exceeded", code: m.errorCode}
-}
-
-func (m *MockLLMWithAPIError) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, errors.New("not implemented")
 }
 
 // Scenario: Error with API Code

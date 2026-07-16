@@ -227,10 +227,6 @@ func (s *taskStubLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	}, nil
 }
 
-func (s *taskStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
-}
-
 // taskToolLLM returns a tool call on the first call, then a final answer.
 type taskToolLLM struct {
 	callCount int
@@ -252,10 +248,6 @@ func (t *taskToolLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	}, nil
 }
 
-func (t *taskToolLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
-}
-
 // maxIterLLM always returns tool calls, never a final answer.
 type maxIterLLM struct{}
 
@@ -266,10 +258,6 @@ func (m *maxIterLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespon
 		},
 		Usage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 	}, nil
-}
-
-func (m *maxIterLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
 }
 
 func setupTaskServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http.ServeMux) {
@@ -495,10 +483,6 @@ func (s *titleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatRe
 	}, nil
 }
 
-func (s *titleStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
-}
-
 // TestTaskAutoTitle_SurvivesReasoningModelThinkingBudget verifies the title call
 // is given enough output budget that a reasoning model still emits a title after
 // its thinking — i.e. the cap is not regressed back to a starving value.
@@ -573,10 +557,6 @@ func (s *sentinelTitleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*ll
 		Content: "ok",
 		Usage:   llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 	}, nil
-}
-
-func (s *sentinelTitleStubLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
 }
 
 // TestTaskAutoTitle_SentinelLeavesSessionUntitled verifies that when the title
@@ -664,10 +644,6 @@ func (t *taskSynthLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatRe
 		ToolCalls: []llm.ToolCall{{ID: "tc-loop", Name: "graph_query", Args: map[string]any{"query": "loop"}}},
 		Usage:     llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 	}, nil
-}
-
-func (t *taskSynthLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
 }
 
 // countTaskAuditRows returns the audit_log row count for an action, read from
@@ -926,10 +902,6 @@ func (m *floorMutateLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRe
 		Content: "I could not write the file.",
 		Usage:   llm.TokenUsage{InputTokens: 5, OutputTokens: 2, TotalTokens: 7},
 	}, nil
-}
-
-func (m *floorMutateLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
 }
 
 // TestTaskEndpoint_WriteFloorBlocksMutate closes the D-0022 floor-coverage hole:
@@ -1243,10 +1215,6 @@ func (z *zoneViolationLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.Chat
 		Content: "I cannot access that resource.",
 		Usage:   llm.TokenUsage{InputTokens: 50, OutputTokens: 20},
 	}, nil
-}
-
-func (z *zoneViolationLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return []float32{0.1}, nil
 }
 
 // TestTaskEndpoint_ZoneViolationBlocked verifies that when allowed_zones is set,

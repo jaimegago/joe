@@ -25,10 +25,6 @@ const (
 	providerGemini       = "gemini"
 	providerOpenAICompat = "openai-compat"
 
-	// Default knowledge configuration.
-	defaultKnowledgeSemanticTopK  = 5
-	defaultKnowledgeMinConfidence = float32(0.0)
-
 	// LLM cost-recording currency. Stream G phase G1: the configured
 	// currency that LLM cost rows (llm_usage.currency) are stamped with
 	// at record time, and that cost caps (llm_cost_limits) are

@@ -137,11 +137,6 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	return c.convertResponse(response), nil
 }
 
-// Embed is not yet implemented
-func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, fmt.Errorf("embeddings not yet implemented")
-}
-
 // convertToolDefinition converts our tool definition to Anthropic format
 func (c *Client) convertToolDefinition(tool llm.ToolDefinition) anthropic.ToolUnionParam {
 	// Convert properties

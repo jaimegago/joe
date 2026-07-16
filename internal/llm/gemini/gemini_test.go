@@ -279,20 +279,6 @@ func TestAPIError_Methods(t *testing.T) {
 	}
 }
 
-func TestEmbed_NotImplemented(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
-	defer os.Unsetenv("GEMINI_API_KEY")
-
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "")
-	defer client.Close()
-
-	_, err := client.Embed(ctx, "test text")
-	if err == nil {
-		t.Fatal("Expected error from unimplemented Embed")
-	}
-}
-
 func TestConvertToolDefinition_AllTypes(t *testing.T) {
 	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")

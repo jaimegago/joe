@@ -198,11 +198,6 @@ func applyMaxOutputTokens(model *genai.GenerativeModel, maxTokens int) {
 	}
 }
 
-// Embed is not yet implemented
-func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, fmt.Errorf("embeddings not yet implemented")
-}
-
 // convertToolDefinition converts our tool definition to Gemini format.
 // Returns an error if the schema is invalid — e.g. an array property with no
 // Items defined. Gemini rejects such schemas with a silent 400, so we catch

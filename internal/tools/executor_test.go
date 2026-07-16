@@ -495,34 +495,15 @@ func TestExecutor_SafetyGate_T3_DeniedByDefault(t *testing.T) {
 	}
 }
 
-func TestExecutor_SafetyGate_T3_AllowedByPolicy(t *testing.T) {
-	registry := NewRegistry()
-	called := false
-	registry.Register(&mockTool{
-		name: "publish_doc_update_git",
-		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
-			called = true
-			return "output", nil
-		},
-	})
-
-	// Policy that enables publish_doc_update_git
-	policy := safety.DefaultPolicy()
-	policy.Act.GitPush.Enabled = true
-
-	executor := NewExecutor(registry, nil, WithPolicy(policy))
-
-	result, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{"command": "ls"})
-	if err != nil {
-		t.Fatalf("publish_doc_update_git should be allowed by policy, got: %v", err)
-	}
-	if !called {
-		t.Error("tool Execute was not called")
-	}
-	if result != "output" {
-		t.Errorf("result = %v, want output", result)
-	}
-}
+// TestExecutor_SafetyGate_T3_AllowedByPolicy is deleted (knowledge-store-prune).
+// It registered a mock under "publish_doc_update_git" and enabled the git_push
+// toggle to drive a Mutate THROUGH the safety gate to execution. That was the
+// only registered tool whose PolicyKey resolved to a live ActPolicy field; with
+// the doc-publish arm gone, every remaining Mutate carries a PolicyKey
+// IsT3Allowed has no case for, so no real tool name reaches the allow branch and
+// there is no replacement fixture. The deny branch stays covered below and in
+// internal/safety. Reconstitute when full mode ships a tool with a real opt-in —
+// see docs/backlog/act-policy-vestigial.md.
 
 func TestExecutor_SafetyGate_UnknownTool_Denied(t *testing.T) {
 	registry := NewRegistry()
@@ -541,63 +522,13 @@ func TestExecutor_SafetyGate_UnknownTool_Denied(t *testing.T) {
 	}
 }
 
-func TestExecutor_Notifier_T3_CalledBeforeAndAfter(t *testing.T) {
-	registry := NewRegistry()
-	registry.Register(&mockTool{
-		name: "publish_doc_update_git",
-		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
-			return "ok", nil
-		},
-	})
-
-	policy := safety.DefaultPolicy()
-	policy.Act.GitPush.Enabled = true
-
-	notifier := &trackingNotifier{}
-	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
-
-	_, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !notifier.beforeCalled {
-		t.Error("NotifyBefore was not called for T3 action")
-	}
-	if !notifier.afterCalled {
-		t.Error("NotifyAfter was not called for T3 action")
-	}
-	if notifier.beforeInfo.ToolName != "publish_doc_update_git" {
-		t.Errorf("NotifyBefore tool = %q, want publish_doc_update_git", notifier.beforeInfo.ToolName)
-	}
-}
-
-func TestExecutor_Notifier_T3_CancelledDuringBefore(t *testing.T) {
-	registry := NewRegistry()
-	registry.Register(&mockTool{
-		name: "publish_doc_update_git",
-		executeFunc: func(ctx context.Context, args map[string]any) (any, error) {
-			t.Fatal("tool should not execute when NotifyBefore returns error")
-			return nil, nil
-		},
-	})
-
-	policy := safety.DefaultPolicy()
-	policy.Act.GitPush.Enabled = true
-
-	notifier := &trackingNotifier{
-		beforeErr: context.Canceled,
-	}
-	executor := NewExecutor(registry, nil, WithPolicy(policy), WithNotifier(notifier))
-
-	_, err := executor.Execute(context.Background(), "publish_doc_update_git", map[string]any{})
-	if err == nil {
-		t.Fatal("expected error when NotifyBefore returns error")
-	}
-	if !contains(err.Error(), "cancelled") {
-		t.Errorf("error = %v, want 'cancelled' message", err)
-	}
-}
+// TestExecutor_Notifier_T3_CalledBeforeAndAfter and
+// TestExecutor_Notifier_T3_CancelledDuringBefore are deleted for the same reason
+// (knowledge-store-prune). The executor fires NotifyBefore/NotifyAfter only for
+// ActionMutate and only AFTER safety.CheckAccess passes, so with no
+// policy-allowed Mutate the notifier path cannot be driven from a real tool
+// name. The notifier implementation is untouched; only its unreachable coverage
+// is removed. Reconstitute alongside the allow-branch case above.
 
 // TestExecutor_Notifier_ModelMaintenance_NoNotification verifies that Joe's
 // own model maintenance (graph_add_node), now observe-tier per D-0018/D-0019,

@@ -252,9 +252,8 @@ func TestDurableExecutor_D5Ordering(t *testing.T) {
 	dur := coreagent.NewDurableExecutor(spyExec, f.repo)
 
 	// register_component DECLARES NeedsDurability (a non-idempotent create) — the
-	// durability wrapper engages for it. (publish_doc_update_git is Mutate but idempotent
-	// and no longer declares durability, so it would bypass the wrapper now;
-	// see TestDurableExecutor_DrivenByProperty.)
+	// durability wrapper engages for it. (A Mutate tool that does not declare
+	// durability bypasses the wrapper; see TestDurableExecutor_DrivenByProperty.)
 	_, err := dur.Execute(f.withRunCtx(""), "register_component", map[string]any{"id": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -420,15 +419,16 @@ func TestDurableExecutor_UndeclaredBypass(t *testing.T) {
 
 func TestDurableExecutor_DrivenByProperty(t *testing.T) {
 	// register_component is ActionRead but declares NeedsDurability → wrapped
-	// (repo touched). publish_doc_update_git is ActionMutate but does not declare it →
-	// bypassed (repo untouched). This pins that the durability decision no
-	// longer consumes the Read/Mutate class.
+	// (repo touched). An unclassified name takes ClassifyTool's unknown-tool
+	// default — ActionMutate with NeedsDurability unset — so it is Mutate and
+	// undeclared → bypassed (repo untouched). This pins that the durability
+	// decision no longer consumes the Read/Mutate class.
 	cases := []struct {
 		tool        string
 		wantWrapped bool
 	}{
-		{"register_component", true},      // Read + declared  → wrapped
-		{"publish_doc_update_git", false}, // Mutate + undeclared → bypassed
+		{"register_component", true},   // Read + declared    → wrapped
+		{"unclassified_mutate", false}, // Mutate + undeclared → bypassed
 	}
 	for _, tc := range cases {
 		f := newFixture(t)

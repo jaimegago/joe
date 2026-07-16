@@ -7,7 +7,7 @@ import (
 )
 
 // TestNewServer_RegistersAllTools verifies that NewServer registers
-// all 8 expected Joe tools.
+// all 7 expected Joe tools.
 func TestNewServer_RegistersAllTools(t *testing.T) {
 	s := mcp.NewServer(nil) // nil client is OK for registration test
 
@@ -21,7 +21,6 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"joe_logs",
 		"joe_traces",
 		"joe_alerts",
-		"joe_knowledge_search",
 	}
 
 	for _, name := range expected {
@@ -31,12 +30,12 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 	}
 }
 
-// TestNewServer_ToolCount verifies exactly 8 tools are registered.
+// TestNewServer_ToolCount verifies exactly 7 tools are registered.
 func TestNewServer_ToolCount(t *testing.T) {
 	s := mcp.NewServer(nil)
 	toolMap := s.ListTools()
-	if len(toolMap) != 8 {
-		t.Errorf("expected 8 tools, got %d", len(toolMap))
+	if len(toolMap) != 7 {
+		t.Errorf("expected 7 tools, got %d", len(toolMap))
 	}
 }
 
@@ -65,7 +64,6 @@ func TestToolDefs_RequiredParams(t *testing.T) {
 		{"joe_logs", []string{"service", "question"}},
 		{"joe_traces", []string{"service", "question"}},
 		{"joe_alerts", []string{"service"}},
-		{"joe_knowledge_search", []string{"query"}},
 	}
 
 	s := mcp.NewServer(nil)

@@ -34,8 +34,6 @@ func (r *recordingLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatRe
 	}, nil
 }
 
-func (r *recordingLLM) Embed(context.Context, string) ([]float32, error) { return []float32{0.1}, nil }
-
 func (r *recordingLLM) firstRequest(t *testing.T) llm.ChatRequest {
 	t.Helper()
 	r.mu.Lock()
@@ -192,7 +190,6 @@ type erroringLLM struct{ err error }
 func (l *erroringLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
 	return nil, l.err
 }
-func (l *erroringLLM) Embed(context.Context, string) ([]float32, error) { return []float32{0.1}, nil }
 
 // streamedSessionID pulls the session id off the final SSE event so the test can
 // read back the persisted transcript.

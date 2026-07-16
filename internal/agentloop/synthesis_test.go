@@ -36,10 +36,6 @@ func (m *synthesizingLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.Cha
 	}, nil
 }
 
-func (m *synthesizingLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, errors.New("not implemented")
-}
-
 func maxIterAuditRows(rows []audit.Event) []audit.Event {
 	var out []audit.Event
 	for _, e := range rows {

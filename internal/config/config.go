@@ -18,7 +18,6 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Refresh   RefreshConfig   `yaml:"refresh"`
 	Logging   LoggingConfig   `yaml:"logging"`
-	Knowledge KnowledgeConfig `yaml:"knowledge"`
 	Database  DatabaseConfig  `yaml:"database"`
 	Skills    SkillsConfig    `yaml:"skills"`
 	Auth      AuthConfig      `yaml:"auth"`
@@ -110,20 +109,6 @@ type DatabaseConfig struct {
 	// For pgx:    a libpq-style connection string (e.g. postgres://user:pass@host:5432/joe).
 	// When empty with Driver "sqlite", joecored uses the default database path.
 	DSN string `yaml:"dsn"`
-}
-
-// KnowledgeConfig configures the Phase 7 Knowledge Store.
-type KnowledgeConfig struct {
-	// EmbeddingModel is the model key (from LLM.Available) used for embeddings.
-	// Defaults to the LLM.Current model when empty.
-	EmbeddingModel string `yaml:"embedding_model"`
-	// SemanticTopK is the default number of results returned by semantic search.
-	SemanticTopK int `yaml:"semantic_top_k"`
-	// DerivedMinConfidence is the minimum confidence for Tier 3 (derived) entries
-	// to appear in semantic search results. 0 means include all.
-	DerivedMinConfidence float32 `yaml:"derived_min_confidence"`
-	// SyncEnabled controls whether background sync of external knowledge components runs.
-	SyncEnabled bool `yaml:"sync_enabled"`
 }
 
 // serverServiceAccountName is the reserved name of the service account that
@@ -456,11 +441,6 @@ func defaultConfig() *Config {
 		Logging: LoggingConfig{
 			Level: "info",
 			File:  "",
-		},
-		Knowledge: KnowledgeConfig{
-			SemanticTopK:         defaultKnowledgeSemanticTopK,
-			DerivedMinConfidence: defaultKnowledgeMinConfidence,
-			SyncEnabled:          false,
 		},
 		Auth: AuthConfig{
 			SessionTTL:        defaultAuthSessionTTL,

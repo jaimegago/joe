@@ -132,16 +132,10 @@ func TestNewCoreRegistry(t *testing.T) {
 		"crossplane_resources": true,
 		"falco_alerts":         true,
 		"falco_rules":          true,
-		// Knowledge store tools (Phase 7)
-		"search_knowledge": true,
 		// Artifact registry tools (Phase 6.13)
 		"registry_query":    true,
 		"artifactory_query": true,
 		"ecr_query":         true,
-		// Documentation co-pilot tools (Phase 8)
-		"detect_doc_drift":   true,
-		"generate_doc_draft": true,
-		"publish_doc_update": true,
 		// Code review tools (Phase 10)
 		"github_pr_get":          true,
 		"github_pr_diff":         true,

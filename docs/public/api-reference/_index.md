@@ -594,71 +594,6 @@ The web UI consumes a presentation-shaped view of the same graph. These are
 
 ---
 
-## Knowledge entries, sources, and proposals
-
-These endpoints manage curated and derived knowledge and documentation proposals. They
-are **authenticated**. Tier-1 (curated) entries are immutable through this surface — an
-update to one returns `422`. See [The knowledge graph](../concepts/knowledge-graph/),
-[Knowledge graph guide](../guides/knowledge-graph/), and the
-[Doc proposals guide](../guides/doc-proposals/).
-
-### Entries
-
-- `POST /api/v1/knowledge/entries` — creates an entry; body is a knowledge entry
-  (`title` and `content` required). A body that omits `tier` defaults to `derived`, the
-  mutable tier; send `"tier": "curated"` explicitly to author immutable ground truth.
-  Response `201`: the entry.
-- `GET /api/v1/knowledge/entries` — lists entries; query filters `tier`, `source_type`,
-  `source_id`. Response `200`: `{ "entries": [ … ], "count": N }`.
-- `GET /api/v1/knowledge/entries/{id}` — one entry; `404` if not found.
-- `PUT /api/v1/knowledge/entries/{id}` — replaces an entry (id taken from the path).
-  Response `200`: the entry. `422` for an immutable tier-1 entry.
-- `DELETE /api/v1/knowledge/entries/{id}` — Response `200`:
-  `{ "status": "deleted", "id": "string" }`.
-
-An entry carries `id`, `tier`, `type`, `title`, `content`, `content_hash`, embedding
-fields, `source_type`/`source_id`/`source_url`, `related_nodes`, `confidence`,
-`created_by`, `created_at`, `updated_at`, `last_synced_at`, and `metadata`.
-
-### Search
-
-- `POST /api/v1/knowledge/search` — body
-  `{ "query": "string", "top_k": N, "tier_filter": ["string"], "min_confidence": 0.0 }`
-  (`query` required). Response `200`:
-  `{ "results": [ { "entry": { … }, "similarity": 0.0 } ], "count": N, "query": "string" }`.
-
-### Sources
-
-- `POST /api/v1/knowledge/sources` — creates a knowledge source (`type` and `name`
-  required). Response `201`: the source (`id`, `type`, `name`, `config`, `status`,
-  `sync_interval_minutes`, `last_sync_at`, `last_error`, `created_at`).
-- `GET /api/v1/knowledge/sources` — Response `200`: `{ "sources": [ … ], "count": N }`.
-- `DELETE /api/v1/knowledge/sources/{id}` — Response `200`:
-  `{ "status": "deleted", "id": "string" }`.
-- `POST /api/v1/knowledge/sources/{id}/sync` — queues a sync. Response `202`:
-  `{ "status": "sync_queued", "source": { … }, "message": "string" }`.
-
-### Proposals
-
-- `POST /api/v1/knowledge/proposals` — body
-  `{ "topic": "string", "target_type": "string", "target_id": "string", "context": "string" }`
-  (`topic`, `target_type`, `target_id` required). Response `201`: the proposal.
-- `GET /api/v1/knowledge/proposals` — query filters `status`, `target_type`. Response
-  `200`: `{ "proposals": [ … ], "count": N }`.
-- `GET /api/v1/knowledge/proposals/{id}` — one proposal; `404` if not found.
-- `POST /api/v1/knowledge/proposals/{id}/approve` — Response `200`:
-  `{ "status": "approved", "id": "string" }`.
-- `POST /api/v1/knowledge/proposals/{id}/reject` — optional body `{ "reason": "string" }`.
-  Response `200`: `{ "status": "rejected", "id": "string" }`.
-
-A proposal carries `id`, `title`, `target_type`, `target_id`, `target_url`,
-`current_content`, `proposed_content`, `diff`, `status`, `context`,
-`knowledge_entry_ids`, `rejected_reason`, `created_at`, `updated_at`, `approved_at`, and
-`published_at`. There is no HTTP route that publishes an approved proposal to its target;
-publishing is handled outside this surface.
-
----
-
 ## Incident regime
 
 These endpoints read and change the install-wide incident regime and a session's
@@ -822,7 +757,7 @@ surface above. They are grouped here rather than documented one by one.
   (`/api/v1/models…`, `/api/v1/llm/settings…`, `/api/v1/llm/usage…`,
   `/api/v1/llm/providers`) and skills management (`/api/v1/skills…`). LLM-settings writes
   and the per-principal usage breakdown are admin-gated; the rest are authenticated.
-- **Drift and warnings** — `/api/v1/warnings` and the documentation-drift endpoints.
+- **Warnings** — `/api/v1/warnings`.
 
 There is no `POST /api/v1/chat` endpoint; conversational turns go through
 [Tasks](#tasks) and are recorded against [Sessions](#sessions). There is no HTTP endpoint

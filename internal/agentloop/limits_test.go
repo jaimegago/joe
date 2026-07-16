@@ -210,10 +210,6 @@ func (f *fixedUsageLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRes
 	}, nil
 }
 
-func (f *fixedUsageLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, errors.New("not implemented")
-}
-
 // finalAnswerLLM returns a single non-tool-call response that ends the
 // loop cleanly on iteration 1.
 type finalAnswerLLM struct {
@@ -223,10 +219,6 @@ type finalAnswerLLM struct {
 
 func (f *finalAnswerLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
 	return &llm.ChatResponse{Content: f.response, Usage: f.usage}, nil
-}
-
-func (f *finalAnswerLLM) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, errors.New("not implemented")
 }
 
 // tightSessionLimits is a SessionLimits stub returning a configurable

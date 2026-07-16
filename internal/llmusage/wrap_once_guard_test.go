@@ -18,10 +18,8 @@ import (
 // cmd/joe/server.go's runServerWithDeps, and that single call site is
 // immediately followed by the assignment to the recording wrapper.
 //
-// Why this matters. The downstream consumers — the
-// SwappableAdapter, the knowledge embedder, the doc drafter, and the
-// Core Agent — all read the same llmAdapter
-// handle by name. If a future change adds a SECOND call to
+// Why this matters. The downstream consumers — the SwappableAdapter and
+// the Core Agent — all read the same llmAdapter handle by name. If a future change adds a SECOND call to
 // deps.newLLMAdapter, that second call yields a fresh, unwrapped raw
 // adapter; whichever consumer then takes that handle bypasses the
 // recorder and its Chat calls vanish from llm_usage. This test catches

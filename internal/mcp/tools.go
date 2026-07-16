@@ -79,16 +79,5 @@ func toolDefs() []mcp.Tool {
 				mcp.Description("Optional filter hint (e.g. 'critical only', 'severity=warning') — passed to the alerting backend as a filter"),
 			),
 		),
-		mcp.NewTool("joe_knowledge_search",
-			mcp.WithDescription("Semantic search over Joe's knowledge store — runbooks, wiki pages, and learned operational patterns."),
-			mcp.WithString("query",
-				mcp.Description("Natural language query (e.g. 'payment service database connection errors')"),
-				mcp.Required(),
-			),
-			mcp.WithNumber("top_k",
-				mcp.Description("Maximum number of results to return (default 5)"),
-				mcp.DefaultNumber(5),
-			),
-		),
 	}
 }

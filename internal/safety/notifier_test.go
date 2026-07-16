@@ -41,12 +41,12 @@ func TestActionInfo_FormatAfter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := ActionInfo{ToolName: "publish_doc_update_git", Class: ActionMutate, Description: "Commit and push doc proposal to Git repo"}
+			info := ActionInfo{ToolName: "github_comment", Class: ActionMutate, Description: "Post a review comment on a GitHub pull request"}
 			msg := info.FormatAfter(tt.err)
 			if !strings.Contains(msg, tt.wantContains) {
 				t.Errorf("FormatAfter() = %q, want to contain %q", msg, tt.wantContains)
 			}
-			if !strings.Contains(msg, "publish_doc_update_git") {
+			if !strings.Contains(msg, "github_comment") {
 				t.Errorf("FormatAfter() = %q, want to contain tool name", msg)
 			}
 			if tt.err != nil && !strings.Contains(msg, tt.err.Error()) {

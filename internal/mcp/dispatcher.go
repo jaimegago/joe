@@ -8,7 +8,6 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/jaimegago/joe/internal/client"
-	"github.com/jaimegago/joe/internal/knowledge"
 )
 
 // Dispatcher routes MCP tool calls to the appropriate CoreClient method.
@@ -151,28 +150,6 @@ func (d *Dispatcher) HandleAlerts(ctx context.Context, req mcpgo.CallToolRequest
 	}
 
 	return jsonResult(result)
-}
-
-// HandleKnowledgeSearch handles the joe_knowledge_search MCP tool.
-func (d *Dispatcher) HandleKnowledgeSearch(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return nil, err
-	}
-	topK := int(req.GetFloat("top_k", 5))
-	if topK < 1 {
-		topK = 5
-	}
-
-	results, err := d.c.SearchKnowledge(ctx, query, topK, []knowledge.Tier{})
-	if err != nil {
-		return errorResult(fmt.Errorf("knowledge search failed: %w", err)), nil
-	}
-
-	return jsonResult(map[string]any{
-		"results": results,
-		"count":   len(results),
-	})
 }
 
 // --- helpers ---

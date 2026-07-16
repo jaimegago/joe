@@ -34,10 +34,9 @@ type Server struct {
 	// registry uses (Identity Phase E, design §3). It implements every
 	// coretools.CoreToolsClient method by reading the caller principal from
 	// ctx and dispatching to the accessor (for adapter/graph operations) or
-	// directly to in-process services (for list_components, search_knowledge,
-	// doc tools — none of which touch an adapter). It replaces the loopback
-	// *client.Client; no HTTP self-call remains for in-process tool
-	// execution.
+	// directly to in-process services (for list_components, which does not
+	// touch an adapter). It replaces the loopback *client.Client; no HTTP
+	// self-call remains for in-process tool execution.
 	inproc *inProcessCoreClient
 	// sessionAuthz is the PER-USER session-authorization seam instance (§12.7
 	// seam / §12.8 two-instance defense-in-depth, B003+B005), separate from the
@@ -136,10 +135,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// unaffected.
 	//   s.registerClarificationRoutes(mux, apiPrefix)
 	//   s.registerControlRoutes(mux, apiPrefix)
-	s.registerKnowledgeRoutes(mux, apiPrefix)
 	s.registerRegistryRoutes(mux, apiPrefix)
-	s.registerProposalRoutes(mux, apiPrefix)
-	s.registerDriftRoutes(mux, apiPrefix)
 	s.registerPanicRoutes(mux, apiPrefix)
 	// Read-only mutate-status endpoint: reports the boot-resolved write floor
 	// (D-0018/D-0019) as {can_mutate, reason} where reason is one of

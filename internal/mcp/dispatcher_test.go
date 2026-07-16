@@ -67,11 +67,6 @@ func mockJoecored(t *testing.T) *httptest.Server {
 				"alerts":       []any{},
 				"count":        0,
 			})
-		case r.URL.Path == "/api/v1/knowledge/search":
-			json.NewEncoder(w).Encode(map[string]any{
-				"results": []map[string]any{{"id": "entry-1", "content": "payment runbook"}},
-				"count":   1,
-			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -357,51 +352,6 @@ func TestDispatcher_Alerts_ErrorResult(t *testing.T) {
 
 	result, err := d.HandleAlerts(ctx, makeRequest("joe_alerts", map[string]any{
 		"service": "payment-svc",
-	}))
-	if err != nil {
-		t.Fatalf("unexpected hard error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatal("expected IsError=true when backend unreachable")
-	}
-}
-
-func TestDispatcher_KnowledgeSearch(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-
-	result, err := d.HandleKnowledgeSearch(context.Background(), makeRequest("joe_knowledge_search", map[string]any{
-		"query": "payment service errors",
-		"top_k": float64(3),
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("got error result: %v", result.Content)
-	}
-}
-
-func TestDispatcher_KnowledgeSearch_MissingQuery(t *testing.T) {
-	srv := mockJoecored(t)
-	c := client.New(srv.URL)
-	d := mcp.NewDispatcher(c)
-
-	_, err := d.HandleKnowledgeSearch(context.Background(), makeRequest("joe_knowledge_search", map[string]any{}))
-	if err == nil {
-		t.Fatal("expected error for missing query")
-	}
-}
-
-func TestDispatcher_KnowledgeSearch_ErrorResult(t *testing.T) {
-	c := client.New("http://127.0.0.1:1")
-	d := mcp.NewDispatcher(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	result, err := d.HandleKnowledgeSearch(ctx, makeRequest("joe_knowledge_search", map[string]any{
-		"query": "payment errors",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected hard error: %v", err)

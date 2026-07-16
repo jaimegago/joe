@@ -71,20 +71,6 @@ func (m *MockLLM) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespo
 	return m.DefaultResponse, nil
 }
 
-// Embed implements llm.LLMAdapter
-func (m *MockLLM) Embed(ctx context.Context, text string) ([]float32, error) {
-	if m.ShouldError {
-		errMsg := m.ErrorMessage
-		if errMsg == "" {
-			errMsg = "mock LLM error"
-		}
-		return nil, errors.New(errMsg)
-	}
-
-	// Return a simple mock embedding
-	return []float32{0.1, 0.2, 0.3}, nil
-}
-
 // SetResponse sets a specific response for a given input message
 func (m *MockLLM) SetResponse(userMessage string, response *llm.ChatResponse) {
 	m.Responses[userMessage] = response

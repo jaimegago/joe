@@ -28,8 +28,6 @@ func (o *overflowLLM) Chat(context.Context, llm.ChatRequest) (*llm.ChatResponse,
 	return nil, fmt.Errorf("provider rejected: prompt is too long: %w", llm.ErrContextOverflow)
 }
 
-func (o *overflowLLM) Embed(context.Context, string) ([]float32, error) { return nil, nil }
-
 // recordingAudit records every Insert/InsertTx for later inspection. Thread-safe
 // so an assertion never races the writer.
 type recordingAudit struct {
