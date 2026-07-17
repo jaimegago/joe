@@ -57,6 +57,7 @@ file for the full status, priority, blocked-by, and body.
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open |  |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open |  |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open |  |
+| [`observe-k8s-resolver`](observe-k8s-resolver.md) | Node-type vocabulary re-encoded by consumers — the gitops provides-matcher's phantom arms and the test fixtures that green them | open | next |
 | [`openai-compat-adapter`](openai-compat-adapter.md) | Backlog — OpenAI-compatible adapter fast-follows | in-progress |  |
 | [`postgres-backend-completion`](postgres-backend-completion.md) | Backlog — Make the PostgreSQL (pgx) backend functional | open |  |
 | [`posture-endpoint-grants-signal`](posture-endpoint-grants-signal.md) | Posture endpoint: a coarse "any write grants exist" signal (full-mode only) | deferred |  |

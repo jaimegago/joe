@@ -10,6 +10,62 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0116 — the observe/k8s resolver binds a service to its cluster by component-type lookup, not node-type vocabulary; the deterministic refresher's output is the authoritative vocabulary and consumers must not re-encode it
+
+- Date: 2026-07-17
+- Status: accepted
+- Session: observe-k8s-resolver
+- Decision: **`resolveK8sComponentForService`** (`internal/api/observe.go`) resolves the kubernetes
+  component behind a service by walking the service's related subgraph, looking each node's owning
+  **`ComponentID` up in the component store**, and returning the first whose **component type** is
+  `store.ComponentTypeKubernetes`. It **does not match on node-type vocabulary** — not the old
+  `k8s_` prefix, not the refresher's real type names either. Node types are the refresher's
+  private output vocabulary; the component row is the authoritative statement of what a node
+  belongs to, and it is the only thing a consumer may bind against. Store lookups are deduplicated
+  per distinct `ComponentID`, and a node whose component has been deleted out from under it is
+  skipped rather than aborting the walk, so one orphan cannot mask a live cluster in the same
+  subgraph.
+- Grounding — measured this session, and the headline is that the feature had **never worked**:
+  (1) **The predicate demanded a vocabulary no production writer has ever emitted.** The resolver
+  required `strings.HasPrefix(node.Type, "k8s_")`. The kubernetes refresher's `nodeSpecs` table
+  (`internal/coreagent/k8s_refresh.go:58-65`) writes **unprefixed** types — `deployment`,
+  `statefulset`, `daemonset`, `service`, `configmap`, `secret`, `namespace`, `node` — via
+  `Type: spec.NodeType` with `ComponentID: source.ID` stamped on every node (`:136-137`). A
+  repo-wide sweep found **zero** production writers of a `k8s_`-prefixed node type: every hit is a
+  different field (`Source: "k8s_api"`), a tool name (`k8s_get`), or the `is_k8s_node` relation.
+  The single place the `k8s_pod`/`k8s_service` vocabulary exists in production is the *description
+  string* of `graph_add_node` (`internal/coreagent/agent.go:229`) — a tool **parked** out of the
+  registry per D-0081, which has therefore never written a node. The reader was matching a
+  vocabulary invented by an inert tool's doc string.
+  (2) **Zero test coverage on the path**, which is why inception-to-now breakage went unseen: no
+  `observe_test.go` existed and neither `handleObserveK8s` nor the resolver appeared in any test.
+  A break-test staging the refresher's real shape (service + deployment nodes, `ComponentID` set,
+  a kubernetes component row) failed on the pre-fix code with the resolver's own error message.
+  (3) **The error message was actively misleading in the exact case that mattered.** It read
+  "ensure the service has k8s nodes in the graph" — told to an operator whose service *did* have
+  k8s nodes, sending them to inspect a graph that was already correct. It now names the real
+  condition (no kubernetes-type component found related to the service) and what to check
+  (component promoted and refreshed, service present in the graph under it). An honest error was
+  treated as part of the fix, not a nicety: the misdirection is what made the bug survivable.
+  (4) **The obvious wrong fix is pinned against.** "Return the first node with any non-empty
+  `ComponentID`" passes a naively-staged multi-component test, because the subgraph yields nodes
+  `ORDER BY n.id` and the k8s service node usually sorts first. The multi-component test therefore
+  names its observability node so it sorts **before** the kubernetes nodes; a mutation check
+  confirmed the naive resolver resolves `jaeger-prod` there — sending a Kubernetes query to a
+  tracing backend. All three tests were mutation-verified to fail against the wrong predicate.
+- Consistent with **D-0110**: the graph is deterministic-only, built solely by Joe-authored adapter
+  and refresher code through the delta-reconcile seam. This entry states the consumer-side
+  corollary the graph invariant implies but never spelled out — **when the writer is the sole
+  authority on the graph's vocabulary, a reader that hardcodes its own copy of that vocabulary has
+  forked the authority**, and the fork is silent: both halves compile, both look reasonable, and
+  the failure surfaces only as a feature that quietly returns nothing. Bind to the durable
+  identity (the component row), not to the writer's naming.
+- Supersedes: nothing. It **fixes** `resolveK8sComponentForService`, which has been non-functional
+  since inception — `POST /api/v1/observe/k8s` and the MCP `joe_k8s` tool that rides it could never
+  resolve a cluster and always returned 404.
+
+---
+
 ## D-0115 — `joe db restore` is the counterpart to backup: a pre-flighted restore that converts the documented silent failures into refusals; the stale-WAL substitution hazard is real but bites the hand-restore, not the command
 
 - Date: 2026-07-17

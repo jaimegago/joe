@@ -10,6 +10,7 @@ import (
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/observe"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // registerObserveCategoryRoutes registers the category-based observe endpoints.
@@ -387,8 +388,16 @@ func (s *Server) handleObserveK8s(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// resolveK8sComponentForService finds a k8s source for a service by locating k8s-type nodes
-// in the graph that are related to the service.
+// resolveK8sComponentForService finds the kubernetes component backing a service by
+// walking the nodes related to it in the graph and looking each node's owning
+// component up by ID, returning the first one whose component type is kubernetes.
+//
+// The bind is on COMPONENT type, never on node-type vocabulary. Node types are the
+// deterministic refresher's output (internal/coreagent/k8s_refresh.go writes
+// "service", "deployment", ... — D-0110), and a consumer that re-encodes that
+// vocabulary silently breaks the moment the two copies disagree. This resolver
+// previously matched a "k8s_" node-type prefix no production writer has ever
+// emitted, so it never resolved anything.
 func (s *Server) resolveK8sComponentForService(r *http.Request, service string) (string, error) {
 	ctx := r.Context()
 	principal := rbac.PrincipalFromContext(ctx)
@@ -406,17 +415,33 @@ func (s *Server) resolveK8sComponentForService(r *http.Request, service string) 
 		}
 	}
 
-	// Depth 2 to catch k8s nodes linked via intermediate nodes.
+	// Depth 2 to catch cluster-owned nodes linked via an intermediate node.
 	subgraph, err := s.accessor.GraphRelated(ctx, principal, serviceNodeID, 2)
 	if err != nil {
 		return "", fmt.Errorf("graph related failed: %w", err)
 	}
 
+	// Look each distinct owning component up once. A node whose component has been
+	// deleted out from under it is skipped rather than failing the walk, so one
+	// orphaned node cannot mask a live kubernetes component elsewhere in the subgraph.
+	checked := make(map[string]struct{}, len(subgraph.Nodes))
 	for _, node := range subgraph.Nodes {
-		if strings.HasPrefix(node.Type, "k8s_") && node.ComponentID != "" {
-			return node.ComponentID, nil
+		if node.ComponentID == "" {
+			continue
+		}
+		if _, seen := checked[node.ComponentID]; seen {
+			continue
+		}
+		checked[node.ComponentID] = struct{}{}
+
+		component, cErr := s.services.Store.Components.Get(ctx, node.ComponentID)
+		if cErr != nil || component == nil {
+			continue
+		}
+		if component.Type == store.ComponentTypeKubernetes {
+			return component.ID, nil
 		}
 	}
 
-	return "", fmt.Errorf("no Kubernetes component found for service %q — ensure the service has k8s nodes in the graph", service)
+	return "", fmt.Errorf("no kubernetes component found related to service %q in the graph — check that a kubernetes component is promoted and has refreshed, and that the service appears in the graph under it", service)
 }
