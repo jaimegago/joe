@@ -262,6 +262,32 @@ test(s)** · **binding note** (where applicable).
   Postgres migration run — at which point the "present but not operational" framing and the
   skipped-test posture both change.
 
+### The database path is configurable, its documented default is a resolved location, and `~` is not expanded
+
+- **Claim.** `database.dsn` (or `JOE_DATABASE_DSN`) relocates the database file. The documented
+  default is a **resolved location** — `joe.db` in the `.joe` directory under the home directory
+  of the account running `joe` — not a literal string to paste. An explicit value must be an
+  absolute path (or one relative to the working directory): Joe does **not** expand a leading
+  `~`, so `~/.joe/joe.db` is taken literally and creates a directory named `~`. Relocating the
+  database does **not** move the encryption key, which stays in the `.joe` directory regardless.
+  Restated on `/operations/persistence-and-backup/`.
+- **Mechanism.** `config.Load` assigns `cfg.Database.DSN` **verbatim** from YAML and from the
+  `JOE_DATABASE_DSN` override, with no expansion step; `paths.ExpandPath` (which *does* expand
+  `~`) is applied only to the **config-file path**, never to the DSN. The composition root and
+  `defaultOpenBackupStore` pass the value straight through to `store.New`. The default is
+  computed by `paths.DatabasePath` → `paths.JoeDirPath` → `getSecureHomeDir`, which deliberately
+  bypasses `$HOME`; the key path is computed by the parallel `paths.EncryptionKeyPath` from the
+  same `.joe` directory and takes no config input, which is what splits the two locations apart
+  when the DSN moves.
+- **Pinning tests.** **None.** No test asserts that a `~`-prefixed DSN is left unexpanded, and
+  none asserts the key path ignores the DSN. Both properties hold by the *absence* of an
+  expansion call and the *absence* of a config input respectively — a shape that a well-meant
+  "expand the DSN like we expand the config path" change would silently break, taking this copy
+  with it. Recorded as unguarded rather than implied to be guarded.
+- **Binding note. Mechanism-bound.** Revises when `docs/backlog/encryption-key-path.md` makes
+  the key path configurable — at which point the "the key does not follow the DSN" half becomes
+  conditional on the new key.
+
 ---
 
 ## Operations — `/operations/`
@@ -330,6 +356,84 @@ test(s)** · **binding note** (where applicable).
   `llm_usage` retention/roll-up, a review-jobs/clarifications disposition, or a DB-size
   operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition
   changes (`learn-from-sessions-fate`).
+
+### The store runs in WAL journal mode, on every pooled connection — `/operations/persistence-and-backup/`
+
+- **Claim.** Joe's SQLite store runs in WAL (write-ahead logging) mode, so committed data can
+  live in the `-wal` sidecar rather than the main database file until a checkpoint folds it in.
+  This is the load-bearing premise under both the backup command's existence and the
+  copy-from-a-running-Joe warning below.
+- **Mechanism.** `sqlitePragmas` in `internal/store/store.go` carries `journal_mode(WAL)` (with
+  `busy_timeout(5000)` and `foreign_keys(1)`), encoded into the DSN by `withSQLitePragmas` so
+  the driver applies it to **every** connection the pool opens rather than to one arbitrary
+  pooled connection.
+- **Pinning tests.** `TestWithSQLitePragmas`, `TestNew_SQLitePragmasOnEveryPooledConnection`.
+- **Binding note.** Stable. WAL is not a tuning choice the copy hedges on; if the journal mode
+  ever changed, the backup page's entire rationale section revises with it.
+
+### `joe db backup` is safe against a live Joe — `/operations/persistence-and-backup/`
+
+- **Claim.** `joe db backup DEST` takes a consistent copy of committed data while Joe is
+  running, leaves the source untouched (including its schema version), and produces a
+  standalone file.
+- **Mechanism.** `runDBBackup` (`cmd/joe/db.go`) executes SQLite's `VACUUM INTO` with the
+  destination **bound as a parameter**, over a second independent open of the database file;
+  concurrent access is safe by the same WAL-plus-`busy_timeout` property D-0018 established for
+  `joe unlock`'s second open, generalized from a single row to the whole file. The command
+  deliberately does **not** run migrations, so the source's schema version is not altered by a
+  command that promises a copy. An up-front `os.Stat` refuses an occupied destination ahead of
+  any SQL — the engine's own guard accepts a 0- or 1-byte destination as a fresh database and
+  silently overwrites it.
+- **Pinning tests.** `TestRunDBBackup_LiveDatabaseWithConcurrentWriter` (the live-safety test:
+  a real file-backed store on joe's own pragma path, populated, held open by a first handle with
+  an in-flight write transaction, backed up through the real command path via a second
+  independent open; asserts the destination opens standalone, holds the committed rows, excludes
+  the uncommitted one, and passes `integrity_check`). Error paths:
+  `TestRunDBBackup_OccupiedDestRefused`, `TestRunDBBackup_ZeroByteDestRefused`,
+  `TestRunDBBackup_ForceOverwritesExisting` (which also pins the bound-not-interpolated
+  destination), `TestRunDBBackup_MissingParentDirectory`, `TestRunDBBackup_NonSQLiteDriverRefused`.
+- **Binding note. Mechanism-bound.** The SQLite-only framing revises if the `pgx` driver ever
+  becomes operational — `VACUUM INTO` has no cross-engine equivalent, and the command refuses a
+  non-SQLite driver rather than emit something that is not a backup.
+
+### Copying the database file from a running Joe can yield a backup missing recent or all data — `/operations/persistence-and-backup/`
+
+- **Claim.** Copying `joe.db` alone out from under a running Joe can produce a valid SQLite file
+  that opens without error and is missing recent data — or every table — because the committed
+  rows are still in the uncopied `-wal` sidecar. Stop-then-copy is the safe dependency-free
+  alternative: a clean shutdown checkpoints and removes the sidecars, leaving one complete file.
+- **Mechanism.** No guard of its own — this is an **operator-procedure warning that rests
+  entirely on the WAL claim above** and inherits its pinning tests. Nothing in the binary
+  prevents an operator from running `cp`; the claim describes a consequence of WAL, and the
+  binary's contribution is offering `joe db backup` as the alternative.
+- **Pinning tests.** None specific to this warning. It inherits `TestWithSQLitePragmas` and
+  `TestNew_SQLitePragmasOnEveryPooledConnection` via the WAL claim it rests on — stated here
+  rather than implied, so the register does not suggest a guard that does not exist.
+- **Binding note.** Revises with the WAL claim; it has no independent mechanism.
+
+### The encryption key is required for a usable restore, and its absence fails silently — `/operations/persistence-and-backup/`
+
+- **Claim.** A restored database is not a restored Joe without the matching `encryption.key`.
+  With the key absent, Joe **generates a fresh one and boots cleanly**: the server starts, but
+  every registered component's config was encrypted under the old key, so Joe connects to
+  nothing, warns in its logs, and the components API errors. There is no recovery, no key
+  rotation, and no re-encrypt path.
+- **Mechanism.** `crypto.LoadOrCreateKey` (`internal/crypto/crypto.go`) treats a missing key
+  file as a first-run condition and writes a new random 32-byte key rather than failing;
+  `store.NewEncryptedComponentRepository` wraps only the component `Config` blob (the rest of
+  the database is plaintext), so a wrong key surfaces as an AES-GCM authentication failure on
+  read; `connectSourcesDefault` (`cmd/joe/server.go`) logs the resulting list error at Warn and
+  ranges over an empty slice, registering no adapters and leaving boot to succeed.
+- **Pinning tests.** **Partial, and worth stating precisely.** The silent-generation half is
+  pinned: `TestLoadOrCreateKey_CreatesNew`, `TestLoadOrCreateKey_LoadsExisting`,
+  `TestLoadOrCreateKey_Idempotent`. The unreadable-config half is pinned only *indirectly* by
+  `TestDecrypt_Tampered` (the GCM authentication-failure class a wrong key also lands in) —
+  there is **no** test that a wrong key fails to decrypt a component through the repository, and
+  **no** end-to-end test that a keyless boot succeeds while connecting nothing. The
+  boot-behavior claim rests on code reading, not a guard.
+- **Binding note. Mechanism-bound.** Revises when `docs/backlog/encryption-key-path.md` lands
+  either half of its scope: a configurable key path, or a decision to fail boot loudly instead
+  of regenerating silently. The second would invalidate this claim outright.
 
 ---
 

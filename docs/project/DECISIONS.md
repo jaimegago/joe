@@ -10,6 +10,123 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0114 — persistence is addressed at launch by a documented durability story plus a first-class `joe db backup`; the durable unit is the whole `.joe` directory, not the database file
+
+- Date: 2026-07-17
+- Status: accepted
+- Session: db-persistence-backup
+- Decision: Joe launches with persistence **addressed rather than assumed**, in two parts that
+  are deliberately coupled. (1) A published Operations page,
+  `docs/public/operations/persistence-and-backup/`, states the durability, backup, and restore
+  story including its unrecoverable failure mode. (2) A first-class **`joe db backup DEST`**
+  command (`cmd/joe/db.go`) takes a consistent copy of the SQLite store while Joe is running.
+  Documentation alone was rejected: the honest instruction without the command would have been
+  "stop Joe to back it up", because copying the file from a live daemon is unsafe (see
+  Grounding (2)) — a bad answer for the one operation an operator must be able to perform on a
+  running system.
+
+  **The durable unit is the `.joe` directory, not `joe.db`.** The database and
+  `encryption.key` are useless apart: component config is encrypted at rest, so a database
+  restored without its key yields a Joe that boots, connects nothing, and cannot be repaired.
+  The prescription throughout — page, command output, and Kubernetes guidance (a
+  PersistentVolume covering the directory) — is therefore to persist the **directory**. This
+  reframes the pre-existing `_index.md` "State on disk" wording, which named the two paths
+  without stating that one is inert without the other.
+
+  **`joe db` is established as a namespace**, two-level-dispatched on the skills/incident
+  precedent, with `backup` its first member and further database utilities anticipated. Scope
+  is bounded now to prevent a later misreading: `backup` **produces a SQLite file and is
+  explicitly not a dialect-migration mechanism**. It refuses a non-SQLite driver outright
+  rather than emitting something that is not a backup; `VACUUM INTO` has no cross-engine
+  equivalent, and nothing here constitutes progress toward the latent `pgx` value.
+- Grounding — each point verified against the live tree this session, not assumed:
+  (1) **`VACUUM INTO` works on the pinned driver, verified empirically.** The store pins
+  `modernc.org/sqlite v1.18.1` (go.mod), a **CGo-free reimplementation**, so the statement's
+  availability is a property of *that translation* and not of upstream SQLite — which is
+  exactly why it was measured rather than assumed from SQLite's 3.27 availability. The
+  embedded engine reports `sqlite_version() = 3.39.2`. `VACUUM INTO` executes and produces a
+  standalone, `integrity_check`-clean database.
+  (2) **The copy-the-file trap is real, measured twice, and has two distinct shapes — both
+  silent.** *Synthetic:* on a freshly migrated store with twelve committed rows, the main
+  `joe.db` was a **4 KiB header** while the `-wal` sidecar held **~1.9 MB** — i.e. *all* of it,
+  schema included; a naive copy of `joe.db` alone opened **without error** and reported `no such
+  table: audit_log`. *Real, and the more instructive case:* against this machine's live
+  development install (933 KB `joe.db`, **4.1 MB `-wal`**), a `cp` of `joe.db` alone produced a
+  file that opened cleanly, carried **all 42 tables**, **passed `integrity_check`**, and was
+  **missing 5 of 927 `audit_log` rows** — with nothing whatsoever to signal the loss. The same
+  `joe db backup` run matched the source exactly (927/927, `integrity_check` ok). So the failure
+  is a valid, consistent-looking SQLite file that is either silently **empty** (young database,
+  unpromoted WAL) or silently **stale** (mature database) — and `integrity_check` does **not**
+  catch it, because the copy is not corrupt; it is merely an older, internally consistent
+  snapshot. That is precisely why the page's warning says "missing recent or even all data" and
+  why an operator cannot self-verify a naive copy. Figures recorded here as evidence and
+  deliberately kept **out** of the published copy as volatile (D-0032).
+  (3) **The engine's destination guard is not sufficient, measured precisely — and the Phase 1
+  addendum understated it.** `VACUUM INTO` refuses a destination it recognizes as a database
+  (`output file already exists`) and refuses ≥2-byte non-database files (`file is not a
+  database`), but **silently accepts and clobbers a 0-byte *or* 1-byte destination**, treating
+  it as a freshly created database. The addendum recorded only the zero-byte case; the
+  acceptance window is `size ∈ {0, 1}`. `touch dest.db` and `> dest.db` both land in it. An
+  **up-front `os.Stat` before any SQL** closes the window, and additionally replaces the
+  engine's two unhelpful errors with one instructive refusal naming the occupied path and the
+  `--force` recovery. Pinned by `TestRunDBBackup_ZeroByteDestRefused` and
+  `TestRunDBBackup_OccupiedDestRefused`.
+  (4) **The destination is bound as a parameter, never interpolated.** `VACUUM INTO` takes an
+  expression, so an operator-supplied path needs no string surgery to reach it. Pinned by
+  `TestRunDBBackup_ForceOverwritesExisting`, which asserts both that the path is absent from
+  the statement text and present in the bound args.
+  (5) **Backup deliberately does NOT run migrations — a considered divergence from the `joe
+  unlock` precedent.** `defaultOpenPanicStore` calls `Migrate` so the panic row exists,
+  mirroring boot. `defaultOpenBackupStore` does not, for three reasons that compound: backup is
+  read-only with respect to the source; `VACUUM INTO` is schema-version-indifferent, so
+  migrating buys nothing; and migrating would **silently upgrade the operator's database as a
+  side effect of a command whose name promises a copy**. The third is decisive in the case the
+  command most exists for — an operator backing up *because* they suspect damage, who must not
+  have the source altered on the way out. The divergence is recorded here so it is not later
+  "fixed" into consistency with unlock.
+  (6) **The whole-directory framing exposed a real gap, filed rather than fixed.**
+  `paths.EncryptionKeyPath` takes **no config input**: it composes the `.joe` directory with the
+  key filename, so relocating the database via `database.dsn` / `JOE_DATABASE_DSN` **splits
+  durable state across two locations** and the key does not follow. In a container with an
+  ephemeral home, that mints a fresh key per restart while the persisted database survives —
+  Joe boots and reaches nothing. Filed as `docs/backlog/encryption-key-path.md` (**Priority:
+  now**) carrying two separable pieces: the small change (a configurable key path mirroring the
+  DSN pattern) and a design question for its own session (whether a keyless boot should fail
+  loudly, given `crypto.LoadOrCreateKey` cannot distinguish a first run from a disaster, and
+  `connectSourcesDefault` logs at Warn and registers zero adapters while boot succeeds). Also
+  found and documented: **`database.dsn` is never tilde-expanded** — `paths.ExpandPath` is
+  applied only to the config-file path — so the Configuration page's rendered `~/.joe/joe.db`
+  default was a **paste-and-break trap** and is corrected to a described resolved location.
+  (7) **Export/import is deferred**, filed as `docs/backlog/export-import-components.md`
+  (**Priority: later**). It needs a new admin-gated API surface, a versioned format, and a
+  decision on the crux — component config blobs are encrypted with the install's key, and the
+  point of export is to reach an install without it (plaintext export vs. re-encrypt-on-import
+  vs. structure-without-secrets). Scope needs deciding first: components alone are not the
+  durable state (zones, grants, admin principals, audit history are not covered), so it is a
+  registration convenience, not a migration path.
+- Predecessor: **D-0018**, whose safe-second-open argument this **generalizes from a single-row
+  read to a whole-database read**. D-0018 justified `joe unlock` opening the store beside a live
+  daemon on the grounds that the CLI "only READS the row — no write — and SQLite WAL +
+  `busy_timeout(5000)` make the short-lived second open non-disruptive". Backup is the same
+  argument at a different scale, and the generalization is **not free — state the one term that
+  does not carry**: D-0018 leaned on *short-lived*, and a whole-database `VACUUM INTO` is not
+  short-lived. It still holds, because WAL readers take a snapshot and never block writers
+  regardless of duration; what duration actually costs is **WAL growth**, since a checkpoint
+  cannot pass an active reader — a backup of a large database transiently grows the sidecar
+  rather than stalling the daemon. That is the honest shape of the generalization. Pinned by
+  `TestRunDBBackup_LiveDatabaseWithConcurrentWriter`, the first live-safety test of its kind
+  here: a real file-backed store on joe's own pragma path, held open by a first handle with an
+  **in-flight uncommitted write transaction**, backed up through the real command path via a
+  **second independent open**, asserting both survive, the destination opens standalone, holds
+  the committed rows (compared against the seeded count, not a hardcoded number, per D-0032),
+  **excludes the uncommitted row**, and passes `integrity_check`.
+- Supersedes: nothing. It **extends** the Operations section's "State on disk" framing (which
+  named the database and session archive as paths to back up, without stating that the database
+  is inert without its key) and corrects the Configuration page's tilde-rendered
+  `database.dsn` default.
+
+---
+
 ## D-0113 — the knowledge store, its doc-proposals arm, and embeddings are deleted from the tree, not parked; the act-policy opt-in seam is left standing but no registered tool can reach it
 
 - Date: 2026-07-16

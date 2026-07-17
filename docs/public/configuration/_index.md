@@ -88,7 +88,7 @@ logging:
 
 database:
   driver: ""                          # "" → sqlite (the only functional driver today); "pgx" is present but not yet operational — see note below
-  dsn: ""                             # "" → default SQLite path ~/.joe/joe.db
+  dsn: ""                             # "" → joe.db in Joe's .joe directory; an explicit value is an absolute path, and ~ is NOT expanded
 
 skills:
   trusted_sources: []                 # repos auto-trusted for skill install ([] = allowlist off)
@@ -147,7 +147,15 @@ web_search:                           # optional; web search is inert until a pr
 | Key | Default | Effect |
 | --- | --- | --- |
 | `database.driver` | `sqlite` | **SQLite is the supported database.** `sqlite` (the default) is the only functional value. A `pgx` (PostgreSQL) value is present in the configuration surface but is **not yet operational** — see the note below. |
-| `database.dsn` | `~/.joe/joe.db` (SQLite) | Database path or DSN. |
+| `database.dsn` | `joe.db` in Joe's `.joe` directory, resolved under the home directory of the account running `joe` (SQLite) | Database path or DSN. |
+
+**The default above is a resolved location, not a literal to copy.** An explicit
+`database.dsn` must be an **absolute path** (or one relative to the working directory):
+Joe does **not** expand a leading `~` in this value, so `~/.joe/joe.db` is taken literally
+and creates a directory named `~` in the working directory. Note also that relocating the
+database does **not** move the encryption key, which stays in the `.joe` directory
+regardless — see [Persistence and
+backup](../operations/persistence-and-backup/).
 
 **PostgreSQL is not yet functional.** The `pgx` driver value exists in the configuration surface — the store opens the configured driver, the repositories are dialect-aware, and the migration runner has a PostgreSQL branch — but the embedded migration set is written in SQLite dialect only. Setting `database.driver: "pgx"` today fails at startup during the migration step, before the server begins serving, because those migrations use SQLite-only constructs (`AUTOINCREMENT` and SQLite-specific append-only trigger DDL) that PostgreSQL rejects. Use the default SQLite backend. PostgreSQL support is planned.
 
@@ -202,7 +210,7 @@ plain config/env like the LLM provider keys — not the component credential-ref
 | `JOE_LOG_LEVEL` | Overrides `logging.level`. |
 | `JOE_SERVER_ADDRESS` | Overrides `server.address`. |
 | `JOE_API_KEY` | Sets the key of the reserved `server` service account (principal `svc:server`), creating it if absent. |
-| `JOE_DATABASE_DSN` | Overrides `database.dsn`. |
+| `JOE_DATABASE_DSN` | Overrides `database.dsn`. Same rule as the key: an absolute path, with no `~` expansion. |
 | `JOE_WEBSEARCH_PROVIDER` | Overrides `web_search.provider`. |
 | `JOE_WEBSEARCH_BASE_URL` | Overrides `web_search.base_url`. |
 | `JOE_WEBSEARCH_API_KEY` | Overrides `web_search.api_key` (keep the key out of the config file). |

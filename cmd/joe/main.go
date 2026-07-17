@@ -48,6 +48,11 @@ type runDeps struct {
 	// contacting a running process) so recovery works while Joe is down after a
 	// panic exit. Injectable so unlock tests can supply a fake row.
 	openPanicStore func() (panicRowStore, func() error, error)
+	// openBackupStore opens the database `joe db backup` copies from, returning
+	// it, a closer, and any error. Like openPanicStore it opens the file directly
+	// rather than contacting the daemon. Injectable so the backup command's
+	// routing and error-path tests need no real database.
+	openBackupStore func() (backupStore, func() error, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -63,8 +68,9 @@ func defaultRunDeps() runDeps {
 		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
 			return skills.LoadPolicy(joeDir)
 		},
-		runServer:      runServer,
-		openPanicStore: defaultOpenPanicStore,
+		runServer:       runServer,
+		openPanicStore:  defaultOpenPanicStore,
+		openBackupStore: defaultOpenBackupStore,
 	}
 }
 
@@ -601,6 +607,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
 		case "incident":
 			return runIncidentCommand(ctx, args[1:], stdout, stderr, deps)
+		case "db":
+			return runDBCommand(ctx, args[1:], stdout, stderr, deps)
 		default:
 			fmt.Fprintf(stderr, "Unknown command: %q\n\n", args[0])
 			printUsage(stderr)
@@ -610,7 +618,7 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 
 	// No subcommand (bare `joe`) or server flags only (e.g. `joe --config ...`):
 	// run the HTTP API daemon, which is Joe's default behavior. Its subcommands
-	// (mcp, slack, panic, unlock, skills, incident) ride alongside. RBAC
+	// (mcp, slack, panic, unlock, skills, incident, db) ride alongside. RBAC
 	// zone/admin provisioning is no longer a CLI surface — it runs over the admin
 	// REST API (internal/api/admin.go), the single audited writer.
 	return deps.runServer(ctx)
@@ -627,6 +635,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  slack    Run Joe as a Slack bot")
 	fmt.Fprintln(w, "  skills   Manage Agent Skills components")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
+	fmt.Fprintln(w, "  db       Operate on Joe's database file (backup)")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
 }
