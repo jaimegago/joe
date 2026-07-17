@@ -45,7 +45,7 @@ by client, but it is always "run this command with this environment." For exampl
 
 ## The tool surface
 
-Joe registers eight tools over MCP. They are **category-based**: you describe *what* you
+Joe registers seven tools over MCP. They are **category-based**: you describe *what* you
 want, and Joe resolves the backend from its [knowledge graph](../knowledge-graph/),
 translates the question, executes it, and returns a normalized result.
 
