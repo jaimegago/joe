@@ -23,7 +23,6 @@ type fakeInnerAdapter struct {
 	mu        sync.Mutex
 	resp      *llm.ChatResponse
 	chatErr   error
-	embedErr  error
 	chatCalls int
 }
 
