@@ -154,9 +154,11 @@ with use. Size backups and disk capacity accordingly:
   current session subsystem. Nothing writes to it now and it has no deletion path; it is
   deliberately **retained** (a future feature depends on it) and simply does not change in
   size.
-- **The infrastructure graph self-reconciles.** Graph edges are *not* in this list: they
-  are added and removed as Joe reconciles the live topology, so the graph does not grow
-  without bound.
+- **The infrastructure graph is bounded, not just self-reconciling.** Graph nodes and
+  edges are *not* in this list. While a component is live, Joe reconciles its topology
+  on each refresh, adding and removing nodes and edges to match what the component
+  currently reports. When a component is deleted, its graph rows are removed with it.
+  Together, the two keep the graph from growing without bound.
 
 Where any of this needs to change — audit rotation, a usage-retention or roll-up policy,
 a database-size signal for operators — it is tracked as deferred work. None of it blocks
