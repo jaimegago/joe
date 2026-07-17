@@ -3,8 +3,6 @@ package store_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -161,121 +159,6 @@ func TestComponentRepository(t *testing.T) {
 	})
 }
 
-func TestClarificationRepository(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	t.Run("create and list pending", func(t *testing.T) {
-		c := &store.Clarification{
-			ID:       "clar-1",
-			Type:     store.ClarificationNewService,
-			Context:  json.RawMessage(`{"deployment": "mystery-svc"}`),
-			Question: "What is mystery-svc?",
-			Options:  []string{"API Gateway", "Auth Service", "Unknown"},
-		}
-		if err := s.Clarifications.Create(ctx, c); err != nil {
-			t.Fatalf("Create() error = %v", err)
-		}
-
-		pending, err := s.Clarifications.ListPending(ctx)
-		if err != nil {
-			t.Fatalf("ListPending() error = %v", err)
-		}
-		if len(pending) != 1 {
-			t.Fatalf("ListPending() returned %d, want 1", len(pending))
-		}
-		if pending[0].Question != "What is mystery-svc?" {
-			t.Errorf("Question = %q, want %q", pending[0].Question, "What is mystery-svc?")
-		}
-		if !reflect.DeepEqual(pending[0].Options, []string{"API Gateway", "Auth Service", "Unknown"}) {
-			t.Errorf("Options = %v, want [API Gateway Auth Service Unknown]", pending[0].Options)
-		}
-	})
-
-	t.Run("get", func(t *testing.T) {
-		c, err := s.Clarifications.Get(ctx, "clar-1")
-		if err != nil {
-			t.Fatalf("Get() error = %v", err)
-		}
-		if c == nil {
-			t.Fatal("Get() returned nil")
-		}
-		if c.Status != store.ClarificationPending {
-			t.Errorf("Status = %q, want %q", c.Status, store.ClarificationPending)
-		}
-	})
-
-	t.Run("get nonexistent returns nil", func(t *testing.T) {
-		c, err := s.Clarifications.Get(ctx, "nonexistent")
-		if err != nil {
-			t.Fatalf("Get() error = %v", err)
-		}
-		if c != nil {
-			t.Errorf("Get() = %v, want nil", c)
-		}
-	})
-
-	t.Run("answer clarification", func(t *testing.T) {
-		if err := s.Clarifications.Answer(ctx, "clar-1", "Auth Service", "user"); err != nil {
-			t.Fatalf("Answer() error = %v", err)
-		}
-
-		c, _ := s.Clarifications.Get(ctx, "clar-1")
-		if c.Status != store.ClarificationAnswered {
-			t.Errorf("Status = %q, want %q", c.Status, store.ClarificationAnswered)
-		}
-		if c.Answer != "Auth Service" {
-			t.Errorf("Answer = %q, want %q", c.Answer, "Auth Service")
-		}
-		if c.AnsweredBy != "user" {
-			t.Errorf("AnsweredBy = %q, want %q", c.AnsweredBy, "user")
-		}
-
-		pending, _ := s.Clarifications.ListPending(ctx)
-		if len(pending) != 0 {
-			t.Errorf("ListPending() returned %d, want 0", len(pending))
-		}
-	})
-
-	t.Run("dismiss clarification", func(t *testing.T) {
-		c2 := &store.Clarification{
-			ID:       "clar-2",
-			Type:     store.ClarificationEdgeConfirm,
-			Context:  json.RawMessage(`{}`),
-			Question: "Does svc-a depend on svc-b?",
-		}
-		s.Clarifications.Create(ctx, c2)
-
-		if err := s.Clarifications.Dismiss(ctx, "clar-2"); err != nil {
-			t.Fatalf("Dismiss() error = %v", err)
-		}
-
-		c, _ := s.Clarifications.Get(ctx, "clar-2")
-		if c.Status != store.ClarificationDismissed {
-			t.Errorf("Status = %q, want %q", c.Status, store.ClarificationDismissed)
-		}
-	})
-
-	t.Run("mark notified", func(t *testing.T) {
-		c3 := &store.Clarification{
-			ID:       "clar-3",
-			Type:     store.ClarificationNewComponent,
-			Context:  json.RawMessage(`{}`),
-			Question: "New source detected?",
-		}
-		s.Clarifications.Create(ctx, c3)
-
-		if err := s.Clarifications.MarkNotified(ctx, "clar-3"); err != nil {
-			t.Fatalf("MarkNotified() error = %v", err)
-		}
-
-		c, _ := s.Clarifications.Get(ctx, "clar-3")
-		if c.NotifiedAt == nil {
-			t.Error("NotifiedAt should not be nil")
-		}
-	})
-}
-
 func TestSessionRepository(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
@@ -391,92 +274,6 @@ func TestSessionRepository(t *testing.T) {
 	})
 }
 
-func TestFactRepository(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	t.Run("create and get by subject", func(t *testing.T) {
-		fact := &store.OnboardingFact{
-			FactType: "service_purpose",
-			Subject:  "payments",
-			Content:  "Handles credit card processing",
-			Source:   "onboarding",
-		}
-		if err := s.Facts.Create(ctx, fact); err != nil {
-			t.Fatalf("Create() error = %v", err)
-		}
-		if fact.ID == 0 {
-			t.Error("expected non-zero ID after insert")
-		}
-
-		facts, err := s.Facts.GetBySubject(ctx, "payments")
-		if err != nil {
-			t.Fatalf("GetBySubject() error = %v", err)
-		}
-		if len(facts) != 1 {
-			t.Fatalf("GetBySubject() returned %d, want 1", len(facts))
-		}
-		if facts[0].Content != "Handles credit card processing" {
-			t.Errorf("Content = %q, want %q", facts[0].Content, "Handles credit card processing")
-		}
-	})
-
-	t.Run("get by type", func(t *testing.T) {
-		s.Facts.Create(ctx, &store.OnboardingFact{
-			FactType:    "team_ownership",
-			Subject:     "payments",
-			Content:     "Owned by billing team",
-			Source:      "clarification",
-			ComponentID: "clar-1",
-		})
-
-		facts, err := s.Facts.GetByType(ctx, "team_ownership")
-		if err != nil {
-			t.Fatalf("GetByType() error = %v", err)
-		}
-		if len(facts) != 1 {
-			t.Fatalf("GetByType() returned %d, want 1", len(facts))
-		}
-		if facts[0].ComponentID != "clar-1" {
-			t.Errorf("ComponentID = %q, want %q", facts[0].ComponentID, "clar-1")
-		}
-	})
-
-	t.Run("search", func(t *testing.T) {
-		facts, err := s.Facts.Search(ctx, "credit card")
-		if err != nil {
-			t.Fatalf("Search() error = %v", err)
-		}
-		if len(facts) != 1 {
-			t.Fatalf("Search() returned %d, want 1", len(facts))
-		}
-
-		facts, err = s.Facts.Search(ctx, "payments")
-		if err != nil {
-			t.Fatalf("Search() error = %v", err)
-		}
-		if len(facts) != 2 {
-			t.Errorf("Search(payments) returned %d, want 2", len(facts))
-		}
-	})
-
-	t.Run("delete", func(t *testing.T) {
-		facts, _ := s.Facts.GetByType(ctx, "service_purpose")
-		if len(facts) == 0 {
-			t.Fatal("expected at least one fact")
-		}
-
-		if err := s.Facts.Delete(ctx, facts[0].ID); err != nil {
-			t.Fatalf("Delete() error = %v", err)
-		}
-
-		remaining, _ := s.Facts.GetByType(ctx, "service_purpose")
-		if len(remaining) != 0 {
-			t.Errorf("expected 0 after delete, got %d", len(remaining))
-		}
-	})
-}
-
 func TestComponentRepository_ListAfterSync(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
@@ -528,35 +325,6 @@ func TestComponentRepository_ListAfterSync(t *testing.T) {
 	}
 }
 
-func TestClarification_AnswerAlreadyAnswered(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	c := &store.Clarification{
-		ID:       "clar-race",
-		Type:     store.ClarificationNewService,
-		Context:  json.RawMessage(`{}`),
-		Question: "Race condition test?",
-	}
-	if err := s.Clarifications.Create(ctx, c); err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-
-	// First answer succeeds.
-	if err := s.Clarifications.Answer(ctx, "clar-race", "Yes", "user1"); err != nil {
-		t.Fatalf("Answer() first call error = %v", err)
-	}
-
-	// Second answer on an already-answered clarification must return ErrAlreadyAnswered.
-	err := s.Clarifications.Answer(ctx, "clar-race", "No", "user2")
-	if err == nil {
-		t.Fatal("Answer() second call: expected ErrAlreadyAnswered, got nil")
-	}
-	if !errors.Is(err, store.ErrAlreadyAnswered) {
-		t.Errorf("Answer() second call error = %v, want ErrAlreadyAnswered", err)
-	}
-}
-
 func TestForeignKeyEnforcement(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
@@ -600,40 +368,6 @@ func TestMigrateErrorHandling(t *testing.T) {
 func TestRepositoryErrorPaths(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
-
-	t.Run("clarification list by invalid status", func(t *testing.T) {
-		// This should still work, just return empty list
-		clarifications, err := s.Clarifications.ListByStatus(ctx, "invalid_status")
-		if err != nil {
-			t.Fatalf("ListByStatus() error = %v", err)
-		}
-		if len(clarifications) != 0 {
-			t.Errorf("expected empty list for invalid status, got %d", len(clarifications))
-		}
-	})
-
-	t.Run("fact repository with empty component_id", func(t *testing.T) {
-		fact := &store.OnboardingFact{
-			FactType:    "test",
-			Subject:     "test-subject",
-			Content:     "test content",
-			Source:      "test",
-			ComponentID: "", // empty component_id
-		}
-		if err := s.Facts.Create(ctx, fact); err != nil {
-			t.Fatalf("Create() with empty ComponentID error = %v", err)
-		}
-		facts, err := s.Facts.GetBySubject(ctx, "test-subject")
-		if err != nil {
-			t.Fatalf("GetBySubject() error = %v", err)
-		}
-		if len(facts) != 1 {
-			t.Fatalf("expected 1 fact, got %d", len(facts))
-		}
-		if facts[0].ComponentID != "" {
-			t.Errorf("expected empty ComponentID, got %q", facts[0].ComponentID)
-		}
-	})
 
 	t.Run("session with metadata", func(t *testing.T) {
 		session := &store.Session{ID: "sess-meta"}
@@ -819,34 +553,6 @@ func TestPanicStore_StateTransitions(t *testing.T) {
 	}
 	if info != nil {
 		t.Errorf("PanicInfo() = %+v after clear, want nil", info)
-	}
-}
-
-func TestClarification_WithGraphOperations(t *testing.T) {
-	s := setupTestStore(t)
-	ctx := context.Background()
-
-	graphOps := json.RawMessage(`[{"type":"add_edge","from":"svc-a","to":"svc-b"}]`)
-	c := &store.Clarification{
-		ID:              "clar-graphops",
-		Type:            store.ClarificationEdgeConfirm,
-		Context:         json.RawMessage(`{"service":"svc-a"}`),
-		Question:        "Does svc-a depend on svc-b?",
-		GraphOperations: graphOps,
-	}
-	if err := s.Clarifications.Create(ctx, c); err != nil {
-		t.Fatalf("Create() with GraphOperations error = %v", err)
-	}
-
-	got, err := s.Clarifications.Get(ctx, "clar-graphops")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if got == nil {
-		t.Fatal("Get() returned nil")
-	}
-	if string(got.GraphOperations) != string(graphOps) {
-		t.Errorf("GraphOperations = %s, want %s", got.GraphOperations, graphOps)
 	}
 }
 

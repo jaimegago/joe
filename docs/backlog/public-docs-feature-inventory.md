@@ -233,12 +233,10 @@ is never created.
 
 ### PARTIAL
 
-- **Autonomy "Needs-Human / clarification queue" from the autonomous refresh** — the
-  top-level `refresh()` is an explicit MVP stub: the deterministic graph-delta apply
-  ships, but the "queue ambiguous findings for clarification" branch is **not built**
-  (`internal/coreagent/refresh.go:168-192`). Clarifications as a subsystem exist and are
-  served (`/api/v1/clarifications`) but are populated by onboarding/discovery, not the
-  periodic loop.
+- **Autonomy "Needs-Human" branch from the autonomous refresh is not built** — the
+  top-level `refresh()` ships the deterministic graph-delta apply only; there is no branch
+  that escalates an ambiguous finding to a person, and no queue or human-review handoff
+  exists in the codebase (`internal/coreagent/refresh.go:168-192`).
 - **Refresh interval is hardcoded 5 minutes** (`internal/coreagent/refresh.go:88,145`),
   **not** config-driven; `cfg.Refresh.IntervalMinutes` is logged at boot
   (`server.go:249`) but does not change the loop cadence. Docs must not present the
@@ -335,8 +333,7 @@ machine (`internal/api/captain.go:55-59`); runs (`internal/api/runs.go:62-81`); 
 - Knowledge: entries CRUD + `POST /api/v1/knowledge/search`, sources (+`/sync`),
   proposals (+`/approve`,`/reject`), drift (`internal/api/knowledge.go`, `proposals.go`,
   `drift.go`).
-- Control: `POST /api/v1/onboarding` (server.go:269), `POST /api/v1/refresh`
-  (server.go:270), clarifications (server.go:262-264), skills (`skills.go:35-38`).
+- Control: skills (`skills.go:35-38`).
 - Per-componentID observability/adapter routes (`/api/v1/{adapter}/{componentID}/...`)
   are where RBAC enforcement middleware fires; they exist for the alerting/datastore/
   networking/security/registry families (registry routes mount but resolve to no adapter
@@ -553,7 +550,7 @@ The public docs must not describe any of these as a working feature.
 | aws adapter | REAL but SDK-chain creds, not the Joe credential seam | `aws.go:185` |
 | datadog adapter | REAL but boot-only (absent from `newAdapterForType`); inline creds | server.go:1133; components.go:131-178 |
 | postgres/mysql/redis/mongodb/kafka/elasticsearch | REAL but no governed credential path (inline only) | components.go:155-166; wiring.go:43 |
-| autonomous "Needs-Human" clarification queue | refresh stub never queues clarifications | `coreagent/refresh.go:168-192` |
+| autonomous "Needs-Human" escalation branch | refresh stub never escalates ambiguous findings | `coreagent/refresh.go:168-192` |
 | configurable refresh interval | hardcoded 5m; config value logged but unused | `coreagent/refresh.go:88,145`; server.go:249 |
 | doc-proposal HTTP approve | does not publish to external target | `internal/api/proposals.go:110` |
 | non-USD cost reporting | rate parsed/validated but no consumer | config.go:251-261; validation.go:136-155 |

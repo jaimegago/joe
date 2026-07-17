@@ -36,7 +36,6 @@ type Agent struct {
 	tools     *tools.Registry
 	executor  ToolExecutor
 	refresher *Refresher
-	discovery *Engine
 	logger    *slog.Logger
 	metrics   *observability.Metrics
 }
@@ -96,7 +95,6 @@ func New(services *core.Services, llmAdapter llm.LLMAdapter, metrics *observabil
 		tools:     toolRegistry,
 		executor:  executor,
 		refresher: NewRefresher(services, llmAdapter, logger, metrics),
-		discovery: NewEngine(services, llmAdapter, logger, metrics),
 		logger:    logger,
 		metrics:   metrics,
 	}
@@ -126,12 +124,6 @@ func (a *Agent) Stop(ctx context.Context) error {
 
 	a.logger.Info("core agent stopped")
 	return nil
-}
-
-// ProcessOnboarding handles infrastructure discovery during onboarding
-func (a *Agent) ProcessOnboarding(ctx context.Context, input string) error {
-	a.logger.Info("processing onboarding input", "input_length", len(input))
-	return a.discovery.ProcessInput(ctx, input)
 }
 
 // TriggerRefresh manually triggers a full refresh cycle
@@ -168,7 +160,6 @@ func (a *Agent) GetAvailableTools() []tools.Tool {
 func registerCoreAgentTools(registry *tools.Registry, services *core.Services, logger *slog.Logger) {
 	// Register core agent tools
 	registry.Register(NewRegisterComponentTool(services, logger))
-	registry.Register(NewSaveOnboardingFactTool(services, logger))
 	// Parked for launch (session iac-graph-ingestion, D-0110), following the
 	// D-0081 pattern: the registration is the only thing removed. The
 	// implementations, their ActionRead classifier rows (internal/safety/tier.go),
@@ -567,74 +558,4 @@ func (t *RegisterComponentTool) registerWithAudit(ctx context.Context, actor rba
 		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
-}
-
-// SaveOnboardingFactTool saves facts discovered during onboarding
-type SaveOnboardingFactTool struct {
-	services *core.Services
-	logger   *slog.Logger
-}
-
-func NewSaveOnboardingFactTool(services *core.Services, logger *slog.Logger) *SaveOnboardingFactTool {
-	return &SaveOnboardingFactTool{
-		services: services,
-		logger:   logger.With("tool", "save_onboarding_fact"),
-	}
-}
-
-func (t *SaveOnboardingFactTool) Name() string {
-	return "save_onboarding_fact"
-}
-
-func (t *SaveOnboardingFactTool) Description() string {
-	return "Save a fact discovered during onboarding"
-}
-
-func (t *SaveOnboardingFactTool) Parameters() llm.ParameterSchema {
-	return llm.ParameterSchema{
-		Type: "object",
-		Properties: map[string]llm.Property{
-			"fact_type": {
-				Type:        "string",
-				Description: "Type of fact (architecture, component, dependency, etc.)",
-			},
-			"description": {
-				Type:        "string",
-				Description: "Human-readable description of the fact",
-			},
-			"metadata": {
-				Type:        "object",
-				Description: "Additional structured data about the fact",
-			},
-		},
-		Required: []string{"fact_type", "description"},
-	}
-}
-
-func (t *SaveOnboardingFactTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	factType, ok := args["fact_type"].(string)
-	if !ok || factType == "" {
-		return nil, fmt.Errorf("fact_type is required and must be a string")
-	}
-
-	description, ok := args["description"].(string)
-	if !ok || description == "" {
-		return nil, fmt.Errorf("description is required and must be a string")
-	}
-
-	fact := &store.OnboardingFact{
-		FactType: factType,
-		Subject:  "onboarding",
-		Content:  description,
-		Source:   "core-agent",
-	}
-
-	err := t.services.Store.Facts.Create(ctx, fact)
-	if err != nil {
-		t.logger.Error("failed to save onboarding fact", "error", err, "type", factType)
-		return nil, fmt.Errorf("failed to save fact: %w", err)
-	}
-
-	t.logger.Info("saved onboarding fact", "id", fact.ID, "type", factType)
-	return fmt.Sprintf("Saved fact: %s", description), nil
 }

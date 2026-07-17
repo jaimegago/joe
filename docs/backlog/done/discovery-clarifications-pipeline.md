@@ -1,6 +1,8 @@
 Discovery-to-clarifications pipeline — unpark and finish the onboarding, facts, and needs-human surfaces
 
-Status: open
+> **Superseded by D-0118 (session `onboarding-feature-removal`, 2026-07-17):** the onboarding and clarifications subsystems were deleted wholesale — prune, not park. There is no surface left to unpark; a future needs-human/discovery capability is a ground-up design decision, unmade.
+
+Status: superseded
 
 ## Context
 

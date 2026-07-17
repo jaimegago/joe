@@ -24,13 +24,11 @@ var migrationsFS embed.FS
 
 // Store provides access to all repositories.
 type Store struct {
-	db             *sql.DB
-	driver         string
-	Components     ComponentRepository
-	Sessions       SessionRepository
-	Clarifications ClarificationRepository
-	Facts          FactRepository
-	Metrics        *observability.Metrics
+	db         *sql.DB
+	driver     string
+	Components ComponentRepository
+	Sessions   SessionRepository
+	Metrics    *observability.Metrics
 }
 
 // DatabaseConfig carries the driver name and connection DSN for Store.New.
@@ -152,13 +150,11 @@ func New(cfg DatabaseConfig, metrics *observability.Metrics) (*Store, error) {
 	metrics = observability.EnsureMetrics(metrics)
 
 	store := &Store{
-		db:             db,
-		driver:         cfg.Driver,
-		Components:     &sqlComponentRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Sessions:       &sqlSessionRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Clarifications: &sqlClarificationRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Facts:          &sqlFactRepository{db: db, driver: cfg.Driver, metrics: metrics},
-		Metrics:        metrics,
+		db:         db,
+		driver:     cfg.Driver,
+		Components: &sqlComponentRepository{db: db, driver: cfg.Driver, metrics: metrics},
+		Sessions:   &sqlSessionRepository{db: db, driver: cfg.Driver, metrics: metrics},
+		Metrics:    metrics,
 	}
 
 	return store, nil

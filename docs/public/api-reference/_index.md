@@ -741,12 +741,6 @@ surface above. They are grouped here rather than documented one by one.
   `/api/v1/sessions/{id}/runs`, `/api/v1/runs/{id}/…`, `/api/v1/solicitations/{id}/…`,
   `/api/v1/sessions/{id}/findings`, and `/api/v1/sessions/{id}/captain/…`. These are
   machine-facing and not part of the stable public surface.
-- **Clarifications and control (parked for this release)** — the
-  `/api/v1/clarifications…`, `/api/v1/onboarding`, and `/api/v1/refresh` routes are
-  **not exposed in this release**. The clarifications, onboarding, and manual-refresh
-  subsystems exist in the codebase, but their HTTP routes are unregistered, so these
-  paths return `404`. This does not affect the autonomous background refresh loop,
-  which does not depend on the `/refresh` route.
 - **Typed per-backend passthroughs** — direct, component-scoped read endpoints for
   specific backends (Alertmanager, PagerDuty, Grafana, Falco, nginx, Envoy, the
   datastores PostgreSQL/MySQL/Redis/MongoDB/Kafka/Elasticsearch, and the OCI/Artifactory/

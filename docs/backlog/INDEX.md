@@ -34,11 +34,10 @@ file for the full status, priority, blocked-by, and body.
 | [`crd-gvr-resolution`](crd-gvr-resolution.md) | CRD GVR resolution in the on-demand core tools (deferred from crd-gvr-resolution / D-0094) | open |  |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred |  |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 |  |
-| [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs/clarifications pruning, legacy-session disposition, DB-size observability) | open |  |
+| [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability) | open |  |
 | [`demo-runbooks-e2e`](demo-runbooks-e2e.md) | Demo runbooks as E2E tests | open | later |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred |  |
 | [`dev-skill-test-pinning`](dev-skill-test-pinning.md) | Strengthen dev standard skill on regression tests and pinning | open | next |
-| [`discovery-clarifications-pipeline`](discovery-clarifications-pipeline.md) | Discovery-to-clarifications pipeline — unpark and finish the onboarding, facts, and needs-human surfaces | open |  |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open |  |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |  |
 | [`encryption-key-path`](encryption-key-path.md) | Encryption key: a configurable path, and whether a keyless boot should fail loudly | open | now |

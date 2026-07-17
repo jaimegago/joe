@@ -1,4 +1,4 @@
-# Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs/clarifications pruning, legacy-session disposition, DB-size observability)
+# Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability)
 
 Status: open
 
@@ -35,11 +35,11 @@ time-window retention policy and a roll-up/aggregation mechanism (e.g. periodic 
 into summary rows), and implement it. The Prometheus token counters already give
 live spend signal, so this is about bounding the per-call detail table, not about metrics.
 
-### 3. Disposition for review-jobs and clarifications
+### 3. Disposition for review-jobs
 
-`review_jobs` and `clarifications` both accrue with use and have no deletion path. Decide
-their retention posture (purge-after-completion, time-window, or roll-up) and implement it,
-or explicitly record that unbounded growth is acceptable for their expected volume.
+`review_jobs` accrues with use and has no deletion path. Decide its retention posture
+(purge-after-completion, time-window, or roll-up) and implement it, or explicitly record
+that unbounded growth is acceptable for its expected volume.
 
 ### 4. Legacy `sessions` / `session_messages` disposition
 

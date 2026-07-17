@@ -29,8 +29,8 @@ of human involvement that is safe for it:
    unambiguous graph delta when it observes that the world changed.
 2. **LLM + Auto** — high-confidence inferences the model can act on without a human in
    the loop.
-3. **Needs-Human** — ambiguous findings that should be queued for a person to resolve
-   rather than guessed at.
+3. **Needs-Human** — ambiguous findings a person should resolve rather than have Joe
+   guess at.
 
 This is the intended shape of the spectrum, from fully mechanical to "ask a human."
 
@@ -41,16 +41,13 @@ part of it is explicitly incomplete:
 
 - The background refresh loop **does** ship the deterministic, *Autonomous*-tier
   behavior: it applies graph deltas it can derive unambiguously.
-- The refresh loop does **not** ship the *Needs-Human* branch. The step that would
-  queue an ambiguous finding from the periodic loop for human clarification is a
-  stub — it is not built. Clarifications exist as a subsystem in the codebase but are
-  not exposed in this release; where they are populated at all, it is by the onboarding
-  and discovery flows, not by the periodic refresh.
+- The refresh loop does **not** ship the *Needs-Human* branch. There is no path that
+  escalates an ambiguous finding from the periodic loop to a person — no queue and no
+  human-review handoff exists in the codebase. Ambiguity in the periodic loop is simply
+  not acted on rather than recorded for follow-up.
 
-So if you read about Joe "queuing ambiguous findings for clarification," understand
-that this is true of its onboarding/discovery path, not (yet) of the autonomous
-refresh loop. Treat the refresh loop as a deterministic graph-keeper, not as a system
-that escalates its own uncertainty.
+Treat the refresh loop as a deterministic graph-keeper, not as a system that escalates
+its own uncertainty.
 
 One related detail to set expectations: the refresh loop runs on a **fixed cadence**.
 It is not a tunable interval today, regardless of what a configuration field might

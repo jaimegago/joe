@@ -29,7 +29,6 @@ import (
 
 // CoreAgent interface for control operations
 type CoreAgent interface {
-	ProcessOnboarding(ctx context.Context, input string) error
 	TriggerRefresh(ctx context.Context) error
 	TriggerRefreshComponent(ctx context.Context, sourceID string) error
 }
@@ -55,11 +54,10 @@ type Services struct {
 	// process-wide source. Read by the tool executors — which deny Mutate when
 	// it is up — and by the panic status handler. The zero value is "down".
 	// There is no setter that lowers it; recovery is restart.
-	WriteFloor     safety.WriteFloor
-	Adapters       *adapters.Registry
-	Metrics        *observability.Metrics
-	Clarifications *ClarificationService
-	RBAC           rbac.Repository // nil when RBAC is not configured
+	WriteFloor safety.WriteFloor
+	Adapters   *adapters.Registry
+	Metrics    *observability.Metrics
+	RBAC       rbac.Repository // nil when RBAC is not configured
 	// Principals is the authoritative identity registry (migration 021),
 	// satisfied by the same *rbac.SQLRepository wired into RBAC. Read path for
 	// the admin Users page (GET /api/v1/admin/principals). nil when RBAC is not
@@ -186,12 +184,11 @@ func New(cfg *config.Config, sqlStore *store.Store, db *sql.DB, driver string, a
 	metrics = observability.EnsureMetrics(metrics)
 	graphStore := graph.NewSQLStore(db, driver, metrics)
 	return &Services{
-		Config:         cfg,
-		Store:          sqlStore,
-		Graph:          graphStore,
-		Adapters:       adapterRegistry,
-		Metrics:        metrics,
-		Clarifications: NewClarificationService(graphStore, sqlStore),
+		Config:   cfg,
+		Store:    sqlStore,
+		Graph:    graphStore,
+		Adapters: adapterRegistry,
+		Metrics:  metrics,
 	}
 }
 

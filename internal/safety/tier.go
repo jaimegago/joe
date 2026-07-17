@@ -188,13 +188,11 @@ var toolRegistry = map[string]ToolClassification{
 	"graph_add_node":    {Class: ActionRead, Description: "Add node to Joe's knowledge graph"},
 	"graph_add_edge":    {Class: ActionRead, Description: "Add edge to Joe's knowledge graph"},
 	"graph_update_node": {Class: ActionRead, Description: "Update node in Joe's knowledge graph"},
-	// register_component / save_onboarding_fact are plain INSERTs whose row
-	// identity is generated server-side OUTSIDE the args (register_component:
-	// crypto-random ID; save_onboarding_fact: autoincrement), with no natural
-	// unique key — an in-run retry or crash-resume would create a second row.
-	// They declare NeedsDurability so the §D5 key dedups them per run (D-0020).
-	"register_component":   {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
-	"save_onboarding_fact": {Class: ActionRead, Description: "Save an onboarding fact to Joe's store", NeedsDurability: true},
+	// register_component is a plain INSERT whose row identity is generated
+	// server-side OUTSIDE the args (a crypto-random ID), with no natural unique
+	// key — an in-run retry or crash-resume would create a second row. It declares
+	// NeedsDurability so the §D5 key dedups it per run (D-0020).
+	"register_component": {Class: ActionRead, Description: "Record an infrastructure source in Joe's store", NeedsDurability: true},
 
 	// === Mutate (managed-system mutations) ===
 

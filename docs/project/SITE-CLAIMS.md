@@ -341,8 +341,8 @@ test(s)** · **binding note** (where applicable).
 ### Several other tables grow unbounded with no prune path; the graph self-reconciles and the legacy session tables are frozen
 
 - **Claim.** Beyond the audit log, several table classes have no automatic deletion path in
-  this version and grow monotonically with use — per-model-call usage records, code-review
-  jobs, and clarifications accumulate with no prune path. The legacy session/messages tables
+  this version and grow monotonically with use — per-model-call usage records and code-review
+  jobs accumulate with no prune path. The legacy session/messages tables
   are frozen: nothing writes to them, they have no deletion path, and they are deliberately
   retained for a future feature. The infrastructure graph is **not** in this class — a live
   component's nodes and edges are added and removed as Joe reconciles its topology, and when a
@@ -364,7 +364,7 @@ test(s)** · **binding note** (where applicable).
   The unbounded-tables and frozen-legacy halves remain a growth-posture / absence-of-delete
   property with no single break-test (the audit half carries the append-only guards above).
 - **Binding note. Mechanism-bound.** Revises when any of the deferred retention work lands — an
-  `llm_usage` retention/roll-up, a review-jobs/clarifications disposition, or a DB-size
+  `llm_usage` retention/roll-up, a review-jobs disposition, or a DB-size
   operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition
   changes (`learn-from-sessions-fate`).
 

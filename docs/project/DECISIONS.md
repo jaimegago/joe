@@ -10,6 +10,81 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0118 — the onboarding feature and the clarifications subsystem are deleted wholesale, not parked: prune supersedes D-0081's park for all five routes, clarifications is settled onboarding-internal (no producer, no consumer, an ApplyAnswer that bypasses the delta-reconcile seam), and the save_onboarding_fact tool wrote to a zero-reader table on every boot
+
+- Date: 2026-07-17
+- Status: accepted
+- Session: onboarding-feature-removal
+- Decision: the onboarding, clarifications, and manual-refresh surfaces that D-0081 parked
+  are **deleted**, not parked — prune, following the D-0113 precedent and the D-0074 rule
+  that the tree describes only what the binary ships. Removed: `internal/api/clarifications.go`
+  (the three clarification handlers); `registerClarificationRoutes`, `registerControlRoutes`,
+  `handleOnboarding`, `handleRefresh`, and the parked comment block in
+  `internal/api/server.go`; `internal/core/clarification_service.go` (the `ClarificationService`
+  and the `GraphOperation`/`GraphOperations`/`OperationProvenance` types), the
+  `Services.Clarifications` field, and `ProcessOnboarding` from the `core.CoreAgent` interface;
+  `internal/coreagent/discovery.go` (the discovery `Engine`), the `Agent.discovery` field, and
+  `Agent.ProcessOnboarding`; the `save_onboarding_fact` tool (implementation, registration in
+  `registerCoreAgentTools`, and its `ActionRead` classifier row in `internal/safety/tier.go`);
+  `internal/store/clarifications.go`, `internal/store/facts.go`, the `Store.Clarifications`/`Store.Facts`
+  fields, and the `Clarification`/`OnboardingFact` model structs plus `ClarificationServicePurpose`;
+  and the `RecordDiscoveryInput` metric with its `coreAgentMetrics` discovery instruments and
+  metric-name constants (a metric function kept alive only by its own test is dead code under
+  D-0074). The `clarifications` and `onboarding_facts` tables are dropped by migration
+  **`033_drop_onboarding_clarifications`** (up drops both tables and the four indexes
+  `idx_clarifications_status`, `idx_clarifications_type`, `idx_facts_subject`, `idx_facts_type`
+  by name; down restores `clarifications` as migration 001 defined it and `onboarding_facts`
+  with `component_id`, the post-023 column name; round-trip pinned by
+  `TestMigration033_DropOnboardingClarifications_UpDownUp_RoundTrip`).
+- Grounding (clarifications is onboarding-internal): (1) **no producer** — no production path
+  calls `Clarifications.Create`; the only writer was the onboarding/discovery flow now deleted.
+  (2) **no consumer** — the three clarifications routes were parked (unregistered) by D-0081, so
+  nothing served them. (3) **delta-seam bypass** — `ClarificationService.ApplyAnswer`
+  (`internal/core/clarification_service.go`) replayed caller-supplied `graph_operations` JSON
+  directly against the graph store through `AddNode`/`AddEdge`/`DeleteNode`/`DeleteEdge`,
+  bypassing the `LoadGraphStateForComponent` → `BuildGraphDelta` → `ApplyGraphDelta`
+  delta-reconcile seam that **D-0110** fixes as the sole production graph write path — so it
+  could never re-enter as a legitimate deterministic writer. Together these settle it as an
+  onboarding-internal appendage with no independent standing.
+- Grounding (the save_onboarding_fact finding): it was a **live-registered** (in
+  `registerCoreAgentTools`, so present in the agent:core registry on every boot),
+  **`ActionRead`-classified** (so it passed the write floor unconditionally, observation mode
+  included), tool whose only sink was `onboarding_facts` — a table with **zero readers**
+  (`FactRepository.GetBySubject`/`GetByType`/`Search` had no production caller once the
+  onboarding path was parked). A floor-passing writer registered every boot against a dead
+  table; deleted with the feature.
+- Grounding (build/test): `go build`/`go vet`/`go test ./...` green. The three D-0081/D-0110
+  parked graph-write tools and both their guard tests (`TestGraphWriteToolsAreParked`,
+  `TestGraphWriteTools_ParkedFromAgent`) are **untouched** and still pass —
+  `register_component` keeps the registry non-empty, so the non-emptiness sanity checks hold.
+  No classifier-completeness test exists, so removing the tool and its classifier row in the
+  same change is sufficient; the shared `register_component`/`save_onboarding_fact` comment in
+  `tier.go` was trimmed to `register_component` only rather than deleted.
+- Scope and consistency: consistent with **D-0110** — deleting an LLM-shaped graph writer that
+  bypassed the delta seam strengthens the deterministic-only invariant; D-0110's own
+  onboarding-era phrasing about the parked graph writers is left as-is. **D-0081's out-of-scope
+  declarations stand verbatim**: the autonomous Refresher is launched from `Agent.Start`
+  independently of the deleted `/refresh` route (`Agent.TriggerRefresh`/`TriggerRefreshComponent`
+  remain), and the session findings routes are unaffected (untouched). The vestigial `ActPolicy`
+  opt-in seam (**D-0113**) is left standing; the now-doubly-vestigial `Record.OnboardingFacts`
+  policy field is noted in `docs/backlog/act-policy-vestigial.md`. Per **D-0032** the CLAUDE.md
+  and SITE-CLAIMS revisions carry no volatile counts.
+- Rejected alternatives: **(a) keep parking / unpark-and-finish** — the parked surface had
+  accreted a delta-seam-bypassing graph writer (`ApplyAnswer`) and a floor-passing tool writing
+  to a dead table; retained as reachable-but-orphaned code, both hazards sat one call site from
+  live. **(b) retain the manual-refresh handler alone** — a handler with no registered route is
+  the same reachable-but-orphaned shape the prune removes; a future manual-refresh affordance is
+  trivial new work against the live Refresher, so it is deleted with the group rather than kept.
+  **(c) keep `RecordDiscoveryInput`** — a metric whose sole caller died and whose only remaining
+  reference was its own test is dead code.
+- Supersedes: **D-0081's park disposition for all five onboarding/clarifications/manual-refresh
+  routes** — the routes and their handlers no longer exist at any release, so the park is moot;
+  D-0081's other determinations are left intact. The backlog item
+  `discovery-clarifications-pipeline` (unpark-and-finish) is moved to `docs/backlog/done/` as
+  superseded. A future needs-human/discovery capability is a ground-up design decision, unmade.
+
+---
+
 ## D-0117 — component deletion cascades graph state transactionally: a deleted component's graph_nodes rows die in the same transaction as the components row and the audit insert, edges die with their endpoints by FK cascade, and pre-existing orphans are swept once by migration — no recurring startup sweep
 
 - Date: 2026-07-17

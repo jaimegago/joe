@@ -84,31 +84,6 @@ func TestRouteRegistration(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			description:    "should return 200 with empty list",
 		},
-		// Clarification and control routes are PARKED for launch (D-0081): the
-		// clarifications, onboarding, and manual-refresh HTTP surfaces are
-		// unregistered, so each path now 404s. Handlers, services, and store code
-		// are retained; only the mux registration is gone.
-		{
-			name:           "clarifications list endpoint parked",
-			method:         "GET",
-			path:           "/api/v1/clarifications",
-			expectedStatus: http.StatusNotFound,
-			description:    "parked (D-0081): route unregistered, returns 404",
-		},
-		{
-			name:           "onboarding endpoint parked",
-			method:         "POST",
-			path:           "/api/v1/onboarding",
-			expectedStatus: http.StatusNotFound,
-			description:    "parked (D-0081): route unregistered, returns 404",
-		},
-		{
-			name:           "refresh endpoint parked",
-			method:         "POST",
-			path:           "/api/v1/refresh",
-			expectedStatus: http.StatusNotFound,
-			description:    "parked (D-0081): route unregistered, returns 404",
-		},
 	}
 
 	server := setupTestServer(t)

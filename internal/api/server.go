@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -19,7 +18,6 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionauthz"
-	"github.com/jaimegago/joe/internal/store"
 )
 
 // Server handles HTTP API requests for joecored
@@ -125,16 +123,6 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerDatastoreRoutes(mux, apiPrefix)
 	s.registerNetworkingRoutes(mux, apiPrefix)
 	s.registerSecurityRoutes(mux, apiPrefix)
-	// Parked for launch (D-0081, session discovery-clarifications-pipeline): the
-	// onboarding, clarifications, and manual-refresh HTTP surfaces are left
-	// unregistered as reachable-but-orphaned code. The register functions,
-	// handlers, ClarificationService/Repository, discovery.ProcessInput, the facts
-	// repository, and all tables/migrations are retained; re-enabling is restoring
-	// these two call sites. The autonomous Refresher (launched from Agent.Start,
-	// independent of the /refresh route) and the session findings routes are
-	// unaffected.
-	//   s.registerClarificationRoutes(mux, apiPrefix)
-	//   s.registerControlRoutes(mux, apiPrefix)
 	s.registerRegistryRoutes(mux, apiPrefix)
 	s.registerPanicRoutes(mux, apiPrefix)
 	// Read-only mutate-status endpoint: reports the boot-resolved write floor
@@ -260,39 +248,6 @@ func (h *alertingHandler) handleGrafanaGetDashboard(w http.ResponseWriter, r *ht
 }
 func (h *alertingHandler) handleGrafanaAlerts(w http.ResponseWriter, r *http.Request) {
 	h.server.handleGrafanaAlerts(w, r)
-}
-
-// registerClarificationRoutes registers clarification management routes.
-// Routes are only registered when the store sub-service is available;
-// callers that omit the store (e.g. lightweight deployments) get no
-// clarification endpoints rather than a panic at request time.
-//
-// PARKED (D-0081): this function is retained but no longer called from
-// RegisterRoutes — the clarifications HTTP surface is unregistered for launch.
-// Re-enabling is restoring the call site in RegisterRoutes.
-func (s *Server) registerClarificationRoutes(mux *http.ServeMux, prefix string) { //nolint:unused // PARKED (D-0081): retained, re-enabled by restoring the call site in RegisterRoutes
-	if s.services.Store == nil {
-		return
-	}
-	handler := &clarificationHandler{
-		storeInst:            s.services.Store,
-		clarificationService: s.services.Clarifications,
-	}
-	mux.HandleFunc(fmt.Sprintf("GET %s/clarifications", prefix), handler.handleListClarifications)
-	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/answer", prefix), handler.handleAnswerClarification)
-	mux.HandleFunc(fmt.Sprintf("POST %s/clarifications/{id}/dismiss", prefix), handler.handleDismissClarification)
-}
-
-// registerControlRoutes registers control plane routes
-//
-// PARKED (D-0081): this function is retained but no longer called from
-// RegisterRoutes — the onboarding and manual-refresh HTTP routes are
-// unregistered for launch. The autonomous Refresher is launched from
-// Agent.Start and does not depend on the /refresh route. Re-enabling is
-// restoring the call site in RegisterRoutes.
-func (s *Server) registerControlRoutes(mux *http.ServeMux, prefix string) { //nolint:unused // PARKED (D-0081): retained, re-enabled by restoring the call site in RegisterRoutes
-	mux.HandleFunc(fmt.Sprintf("POST %s/onboarding", prefix), s.handleOnboarding)
-	mux.HandleFunc(fmt.Sprintf("POST %s/refresh", prefix), s.handleRefresh)
 }
 
 // graphHandler handles graph-related requests
@@ -435,82 +390,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // does not carry the digest.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildinfo.Get())
-}
-
-func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) { //nolint:unused // PARKED (D-0081): reachable only via registerControlRoutes, whose call site is parked
-	if s.services.Agent == nil {
-		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
-		return
-	}
-
-	var req struct {
-		Input string `json:"input"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON payload", map[string]any{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if req.Input == "" {
-		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "missing required field 'input'")
-		return
-	}
-
-	if err := s.services.Agent.ProcessOnboarding(r.Context(), req.Input); err != nil {
-		writeInternalError(w, err, "onboarding processing")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"message": "onboarding input processed successfully",
-	})
-}
-
-func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) { //nolint:unused // PARKED (D-0081): reachable only via registerControlRoutes, whose call site is parked
-	if s.services.Agent == nil {
-		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "core agent not available")
-		return
-	}
-
-	var req struct {
-		ComponentID string `json:"component_id,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Empty body is OK, treat as full refresh
-		if !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, "invalid JSON payload", map[string]any{
-				"error": err.Error(),
-			})
-			return
-		}
-	}
-
-	var err error
-	if req.ComponentID != "" {
-		err = s.services.Agent.TriggerRefreshComponent(r.Context(), req.ComponentID)
-	} else {
-		err = s.services.Agent.TriggerRefresh(r.Context())
-	}
-
-	if err != nil {
-		// Check if component not found
-		if req.ComponentID != "" && errors.Is(err, store.ErrComponentNotFound) {
-			writeError(w, http.StatusNotFound, errorCodeNotFound, fmt.Sprintf("component '%s' not found", req.ComponentID))
-			return
-		}
-		writeInternalError(w, err, "refresh")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"message": "refresh completed successfully",
-	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

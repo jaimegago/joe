@@ -42,7 +42,6 @@ func TestClassifyTool_KnownTools(t *testing.T) {
 		{"graph_add_edge", ActionRead},
 		{"graph_update_node", ActionRead},
 		{"register_component", ActionRead},
-		{"save_onboarding_fact", ActionRead},
 		{"registry_query", ActionRead},
 		{"artifactory_query", ActionRead},
 		{"ecr_query", ActionRead},
@@ -137,7 +136,7 @@ func TestClassifyTool_ExternalCommentsAreMutate(t *testing.T) {
 func TestClassifyTool_NonIdempotentCreatesNeedDurability(t *testing.T) {
 	needs := []string{
 		// Read-class creates with server-generated identity outside the args.
-		"register_component", "save_onboarding_fact",
+		"register_component",
 		// Mutate-class non-idempotent external appends.
 		"github_comment", "gitlab_comment", "github_request_changes",
 	}
@@ -198,7 +197,7 @@ func TestCheckAccess_ModelMaintenanceAlwaysAllowed(t *testing.T) {
 
 	for _, tool := range []string{
 		"graph_add_node", "graph_add_edge", "graph_update_node",
-		"register_component", "save_onboarding_fact",
+		"register_component",
 	} {
 		if err := CheckAccess(tool, policy); err != nil {
 			t.Errorf("CheckAccess(%q) = %v, want nil (read-class, always allowed)", tool, err)

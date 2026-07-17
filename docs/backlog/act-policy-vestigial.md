@@ -50,3 +50,5 @@ were orphaned before this prune, not by it. So `ActPolicy` now has four fields
 all four: either the seam gets its first real opt-in tool in full mode and the field set is
 rebuilt around it, or the whole `ActPolicy`/`IsT3Allowed` mechanism follows the D-0074 rule
 and goes. Do not resolve half of it.
+
+The `Record.OnboardingFacts` policy field (`internal/safety/policy.go`) is now doubly vestigial: session `onboarding-feature-removal` (D-0118) deleted the onboarding-facts subsystem it is named for, so it neither gates a live tool nor names a subsystem that still exists — it rides this same cleanup-or-revive decision.

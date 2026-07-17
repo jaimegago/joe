@@ -319,12 +319,9 @@ func (m *Metrics) RecordDBOperation(ctx context.Context, operation string, durat
 }
 
 type coreAgentMetrics struct {
-	refreshCounter    metric.Int64Counter
-	refreshErrors     metric.Int64Counter
-	refreshDuration   metric.Float64Histogram
-	discoveryCounter  metric.Int64Counter
-	discoveryErrors   metric.Int64Counter
-	discoveryDuration metric.Float64Histogram
+	refreshCounter  metric.Int64Counter
+	refreshErrors   metric.Int64Counter
+	refreshDuration metric.Float64Histogram
 }
 
 func (m *Metrics) getCoreAgentMetrics() *coreAgentMetrics {
@@ -350,34 +347,10 @@ func (m *Metrics) getCoreAgentMetrics() *coreAgentMetrics {
 		)
 		logMetricInitError(MetricCoreRefreshDuration, err)
 
-		discoveryCounter, err := m.meter.Int64Counter(
-			MetricCoreDiscoveryInputs,
-			metric.WithDescription("Discovery inputs"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCoreDiscoveryInputs, err)
-
-		discoveryErrors, err := m.meter.Int64Counter(
-			MetricCoreDiscoveryErrors,
-			metric.WithDescription("Discovery errors"),
-			metric.WithUnit(metricUnitCount),
-		)
-		logMetricInitError(MetricCoreDiscoveryErrors, err)
-
-		discoveryDuration, err := m.meter.Float64Histogram(
-			MetricCoreDiscoveryDuration,
-			metric.WithDescription("Discovery processing duration"),
-			metric.WithUnit(metricUnitMS),
-		)
-		logMetricInitError(MetricCoreDiscoveryDuration, err)
-
 		m.coreAgent = coreAgentMetrics{
-			refreshCounter:    refreshCounter,
-			refreshErrors:     refreshErrors,
-			refreshDuration:   refreshDuration,
-			discoveryCounter:  discoveryCounter,
-			discoveryErrors:   discoveryErrors,
-			discoveryDuration: discoveryDuration,
+			refreshCounter:  refreshCounter,
+			refreshErrors:   refreshErrors,
+			refreshDuration: refreshDuration,
 		}
 	})
 	return &m.coreAgent
@@ -389,15 +362,6 @@ func (m *Metrics) RecordRefreshCycle(ctx context.Context, duration time.Duration
 	safeRecordHistogram(ctx, metrics.refreshDuration, float64(duration.Milliseconds()))
 	if err != nil {
 		safeAddCounter(ctx, metrics.refreshErrors, 1)
-	}
-}
-
-func (m *Metrics) RecordDiscoveryInput(ctx context.Context, duration time.Duration, err error) {
-	metrics := m.getCoreAgentMetrics()
-	safeAddCounter(ctx, metrics.discoveryCounter, 1)
-	safeRecordHistogram(ctx, metrics.discoveryDuration, float64(duration.Milliseconds()))
-	if err != nil {
-		safeAddCounter(ctx, metrics.discoveryErrors, 1)
 	}
 }
 

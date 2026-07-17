@@ -67,8 +67,7 @@ func TestNewCoreAgent(t *testing.T) {
 	// iac-graph-ingestion (D-0110) — they are parked out of the registry, and
 	// their absence is pinned by TestGraphWriteToolsAreParked.
 	expectedTools := map[string]bool{
-		"register_component":   true,
-		"save_onboarding_fact": true,
+		"register_component": true,
 	}
 
 	tools := agent.GetAvailableTools()
@@ -130,55 +129,6 @@ func TestCoreAgentStartStop(t *testing.T) {
 	}
 }
 
-func TestCoreAgentProcessOnboarding(t *testing.T) {
-	// Create in-memory database for testing
-	sqlStore, err := store.New(store.DatabaseConfig{Driver: store.DriverSQLite, DSN: ":memory:"}, nil)
-	if err != nil {
-		t.Fatalf("failed to create test store: %v", err)
-	}
-	defer sqlStore.Close()
-
-	if err := sqlStore.Migrate(); err != nil {
-		t.Fatalf("failed to migrate test database: %v", err)
-	}
-
-	// Create test config
-	cfg := &config.Config{
-		Logging: config.LoggingConfig{Level: "info"},
-		Refresh: config.RefreshConfig{IntervalMinutes: 1},
-	}
-
-	// Create mock services
-	adapterRegistry := adapters.NewRegistry()
-	services := core.New(cfg, sqlStore, sqlStore.DB(), sqlStore.Driver(), adapterRegistry, nil)
-	defer services.Close()
-
-	// Create mock LLM adapter
-	llmAdapter := &mockLLMAdapter{}
-
-	// Create Core Agent
-	agent := New(services, llmAdapter, nil)
-	ctx := context.Background()
-
-	// Test onboarding processing
-	testInput := "I have a Kubernetes cluster with nginx pods"
-	if err := agent.ProcessOnboarding(ctx, testInput); err != nil {
-		t.Fatalf("failed to process onboarding input: %v", err)
-	}
-
-	// Verify that the fact was stored
-	facts, err := sqlStore.Facts.GetByType(ctx, "user_input")
-	if err != nil {
-		t.Fatalf("failed to retrieve facts: %v", err)
-	}
-
-	if len(facts) == 0 {
-		t.Error("expected onboarding fact to be stored")
-	} else if facts[0].Content != testInput {
-		t.Errorf("expected fact content %q, got %q", testInput, facts[0].Content)
-	}
-}
-
 // makeTestServices creates a fully migrated in-memory services for unit tests.
 func makeTestServices(t *testing.T) *core.Services {
 	t.Helper()
@@ -218,7 +168,6 @@ func TestToolNamesAndDescriptions(t *testing.T) {
 		{NewGraphAddEdgeTool(svc, logger), "graph_add_edge"},
 		{NewGraphUpdateNodeTool(svc, logger), "graph_update_node"},
 		{NewRegisterComponentTool(svc, logger), "register_component"},
-		{NewSaveOnboardingFactTool(svc, logger), "save_onboarding_fact"},
 	}
 	for _, tt := range tools {
 		t.Run(tt.name, func(t *testing.T) {
@@ -243,7 +192,6 @@ func TestToolParameters(t *testing.T) {
 		NewGraphAddEdgeTool(svc, logger),
 		NewGraphUpdateNodeTool(svc, logger),
 		NewRegisterComponentTool(svc, logger),
-		NewSaveOnboardingFactTool(svc, logger),
 	}
 	for _, tool := range tools {
 		p := tool.Parameters()
@@ -388,32 +336,6 @@ func TestRegisterComponentTool_Execute(t *testing.T) {
 	}
 }
 
-// ── SaveOnboardingFactTool.Execute ───────────────────────────────────────────
-
-func TestSaveOnboardingFactTool_Execute(t *testing.T) {
-	svc := makeTestServices(t)
-	ctx := context.Background()
-	tool := NewSaveOnboardingFactTool(svc, slog.Default())
-
-	tests := []struct {
-		name    string
-		args    map[string]any
-		wantErr bool
-	}{
-		{"success", map[string]any{"fact_type": "architecture", "description": "uses microservices"}, false},
-		{"missing fact_type", map[string]any{"description": "info"}, true},
-		{"missing description", map[string]any{"fact_type": "arch"}, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := tool.Execute(ctx, tt.args)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // ── Agent methods ────────────────────────────────────────────────────────────
 
 func TestTriggerRefresh(t *testing.T) {
@@ -461,17 +383,19 @@ func TestTriggerRefreshComponent_NoAdapter(t *testing.T) {
 }
 
 // TestExecuteTool covers the executor dispatch path. It formerly drove
-// graph_add_node; session iac-graph-ingestion (D-0110) parked that tool out of
-// the registry, so this repoints at save_onboarding_fact — a still-registered
-// tool — to keep exercising dispatch rather than the parked tool.
+// graph_add_node and later save_onboarding_fact; both were removed from the
+// registry (D-0110 parked the graph writers; the onboarding-feature-removal
+// session deleted save_onboarding_fact), so this repoints at register_component
+// — the remaining registered tool — to keep exercising dispatch.
 func TestExecuteTool(t *testing.T) {
 	svc := makeTestServices(t)
 	agent := New(svc, &mockLLMAdapter{}, nil)
 	ctx := context.Background()
 
-	result, err := agent.ExecuteTool(ctx, "save_onboarding_fact", map[string]any{
-		"fact_type":   "test",
-		"description": "exec-tool dispatch probe",
+	result, err := agent.ExecuteTool(ctx, "register_component", map[string]any{
+		"name":   "exec-tool-dispatch-probe",
+		"type":   "kubernetes",
+		"config": map[string]any{},
 	})
 	if err != nil {
 		t.Errorf("ExecuteTool() error = %v", err)

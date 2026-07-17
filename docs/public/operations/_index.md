@@ -147,9 +147,8 @@ with use. Size backups and disk capacity accordingly:
   sanctioned way to reclaim its space is to drop and recreate the table wholesale, which
   discards the **entire** audit history; there is no selective trim. A retention/rotation
   mechanism is planned as a later extension, not shipped today.
-- **LLM-usage, code-review-job, and clarification records accumulate.** One usage record
-  is written per model call, and review-job and clarification records accrue as Joe runs;
-  none of these has a prune path today.
+- **LLM-usage and code-review-job records accumulate.** One usage record is written per
+  model call, and review-job records accrue as Joe runs; neither has a prune path today.
 - **The legacy session tables are frozen.** An older sessions/messages store predates the
   current session subsystem. Nothing writes to it now and it has no deletion path; it is
   deliberately **retained** (a future feature depends on it) and simply does not change in

@@ -42,9 +42,6 @@ func TestNew(t *testing.T) {
 	if svc.Metrics == nil {
 		t.Error("Metrics is nil (EnsureMetrics should have created one)")
 	}
-	if svc.Clarifications == nil {
-		t.Error("Clarifications is nil")
-	}
 }
 
 func TestNew_WithMetrics(t *testing.T) {

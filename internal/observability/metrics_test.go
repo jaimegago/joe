@@ -44,8 +44,6 @@ func TestMetrics_Recorders(t *testing.T) {
 
 	m.RecordRefreshCycle(ctx, 1*time.Second, nil)
 	m.RecordRefreshCycle(ctx, 1*time.Second, errors.New("boom"))
-	m.RecordDiscoveryInput(ctx, 500*time.Millisecond, nil)
-	m.RecordDiscoveryInput(ctx, 500*time.Millisecond, errors.New("boom"))
 
 	m.RecordAgentRun(ctx, 100*time.Millisecond, nil)
 	m.RecordAgentRun(ctx, 100*time.Millisecond, errors.New("boom"))
