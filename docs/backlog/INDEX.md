@@ -26,6 +26,7 @@ file for the full status, priority, blocked-by, and body.
 | [`capability-map`](capability-map.md) | Capability-map Concepts page — deferred follow-ups | open |  |
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred |  |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open |  |
+| [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open |  |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress |  |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open |  |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open |  |

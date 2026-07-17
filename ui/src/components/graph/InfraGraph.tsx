@@ -20,8 +20,6 @@ import { DependencyEdge } from './edges/DependencyEdge';
 import { GraphControls } from './GraphControls';
 import { NodeDetails } from './NodeDetails';
 import { applyHierarchicalLayout, applyGridLayout } from '@/lib/graph-layout';
-import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
 
 const nodeTypes: NodeTypes = {
   generic: GenericNode,
@@ -33,10 +31,9 @@ const edgeTypes: EdgeTypes = {
 
 interface InfraGraphProps {
   graph: Graph;
-  onRefresh?: () => void;
 }
 
-export function InfraGraph({ graph, onRefresh }: InfraGraphProps) {
+export function InfraGraph({ graph }: InfraGraphProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [filterNamespace, setFilterNamespace] = useState('all');
   const [filterKind, setFilterKind] = useState('all');
@@ -134,12 +131,6 @@ export function InfraGraph({ graph, onRefresh }: InfraGraphProps) {
             onFilterStatus={setFilterStatus}
             onLayoutChange={setLayout}
           />
-          {onRefresh && (
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onRefresh}>
-              <RefreshCw className="mr-1 h-3 w-3" />
-              Refresh
-            </Button>
-          )}
         </div>
         <ReactFlow
           nodes={nodes}

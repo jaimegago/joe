@@ -4,6 +4,7 @@ package coreagent
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"testing"
@@ -114,6 +115,12 @@ func (e *errorGraphStore) ListAll(ctx context.Context) (*graph.Subgraph, error) 
 		return e.underlying.ListAll(ctx)
 	}
 	return &graph.Subgraph{}, nil
+}
+func (e *errorGraphStore) DeleteNodesByComponentTx(ctx context.Context, tx *sql.Tx, componentID string) error {
+	if e.underlying != nil {
+		return e.underlying.DeleteNodesByComponentTx(ctx, tx, componentID)
+	}
+	return nil
 }
 
 // makeErrRefresher creates a Refresher backed by an errorGraphStore.

@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 )
@@ -49,6 +50,14 @@ type GraphStore interface {
 
 	// ListAll returns all nodes and edges in the graph (capped at 5000 nodes).
 	ListAll(ctx context.Context) (*Subgraph, error)
+
+	// DeleteNodesByComponentTx removes every graph_nodes row carrying
+	// componentID against the caller-supplied transaction, so component
+	// deletion cascades graph state atomically with the components row and its
+	// audit insert. Edges die with their endpoint nodes via the migration-002
+	// graph_edges FK ON DELETE CASCADE. The store never commits or rolls back;
+	// the caller owns the transaction.
+	DeleteNodesByComponentTx(ctx context.Context, tx *sql.Tx, componentID string) error
 }
 
 // Node represents a node in the infrastructure graph

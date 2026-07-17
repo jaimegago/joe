@@ -10,6 +10,93 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0117 — component deletion cascades graph state transactionally: a deleted component's graph_nodes rows die in the same transaction as the components row and the audit insert, edges die with their endpoints by FK cascade, and pre-existing orphans are swept once by migration — no recurring startup sweep
+
+- Date: 2026-07-17
+- Status: accepted
+- Session: component-delete-graph-orphans
+- Decision: deleting a component now removes **every `graph_nodes` row carrying its
+  `component_id`** in the **same transaction** as the `components` row and the governed
+  audit insert. `handleDeleteComponent` (`internal/api/components.go`) calls the new
+  graph-store operation **`graph.GraphStore.DeleteNodesByComponentTx`**
+  (`internal/graph/sqlite.go`, following the component store's Tx-suffixed `execContext`
+  idiom) inside its `mutateWithAudit` closure, alongside `Components.DeleteTx`. Ownership
+  of the graph tables stays with the graph store — the component store never touches
+  them. `graph_edges` rows die with their endpoint nodes via the **migration-002 FK
+  `ON DELETE CASCADE`**, which fires on the transaction's connection because
+  `foreign_keys=1` is DSN-encoded on every pooled SQLite connection; **cross-component
+  edges dying with their dead endpoint is correct** — a per-component reconcile never
+  manages them (`edgesBetween` requires both endpoints in the loaded node set), so
+  endpoint-node death is their only cleanup. Pre-existing orphans in existing installs are
+  remediated **once** by migration `032_prune_orphaned_graph_nodes`, deleting every
+  `graph_nodes` row whose `component_id` names no live component. There is **no recurring
+  startup sweep**: a boot-time sweep would mask a future regression of the cascade
+  invariant instead of letting a regression test catch it. The two web-UI **Refresh
+  buttons** (the Components page header and the graph page's `InfraGraph`) are **removed**
+  with no replacement — honest client-side refetches whose label collided with the
+  refresher domain term and which shipped with no in-flight feedback; per-component Last
+  Sync already covers freshness. Their `refetch` handlers survive only where an error-state
+  Retry affordance still uses them.
+- Grounding (Phase 1 recon + demonstrated pre/post-fix, verified against the live tree):
+  (1) **The orphan was real and known-live.** `graph_nodes.component_id` carries **no FK to
+  components** (migration 002 declared it nullable and FK-less; 023 only renamed it), so
+  deleting a component stranded its nodes. A break-test (`TestDeleteComponent_
+  OrphansGraphState`) deleting a component through the **real handler-to-store chain**
+  passed pre-fix as an orphan demonstration: the component's two nodes survived and both
+  its intra- and cross-component edges survived. The immediately-preceding D-0116 had
+  already shipped a consumer-side workaround for exactly this orphan (`observe.go` skips a
+  node whose component was deleted); that skip is **left standing** as defence for the
+  pre-migration window and any hand-authored row.
+  (2) **The cascade fires inside the transaction.** The break-test inverted into the
+  regression pin (`TestDeleteComponent_CascadesGraphState`) shows post-fix: zero nodes
+  under the deleted id, the intra-component edge gone, the **cross-component edge gone**
+  (its endpoint died — no explicit edge delete was needed), and the surviving component's
+  nodes and self-owned edge untouched. A transactionality pin
+  (`TestDeleteComponent_CascadeRollback`) forces the in-transaction audit insert to fail
+  after the graph delete and before commit, and asserts the **entire** transaction rolls
+  back — component row, graph_nodes rows, cascaded graph_edges, and audit row all intact —
+  proving the graph delete is genuinely part of the same transaction, not a separable
+  write.
+  (3) **The sweep predicate is `NOT EXISTS`, and its NULL/empty disposition is stated, not
+  accidental.** Migration 032 deletes a `graph_nodes` row when no `components` row carries
+  its `component_id`; `NOT EXISTS` sweeps a **NULL** `component_id` (`c.id = NULL` is never
+  true) and an **empty-string** one alike, where a bare `component_id NOT IN (SELECT id …)`
+  would silently leave the NULL row behind (`NULL NOT IN (…)` evaluates NULL). No live Joe
+  writer produces a NULL or empty `component_id` (the delta seam always stamps it; the
+  parked onboarding graph-write tools are unreachable per D-0110/D-0081), so the sweep is a
+  backfill for degenerate legacy rows that can never name a live component. Pinned by
+  `TestMigration032_PruneOrphanedGraphNodes` (seeded dead/NULL/empty orphans plus live
+  rows; asserts orphans and their edges gone, live rows untouched). 032's down is a
+  documented no-op (irreversible data prune, no schema change), verified by the store
+  suite's down/up round-trip.
+- Scope and consistency: consistent with **D-0110** — the cascade is deterministic
+  Joe-authored code on the component delete path; it **writes nothing** to the graph and so
+  is orthogonal to the deterministic-only inputs constraint. The new graph WRITE call site
+  in `internal/api` is a **governed-upstream** write (gated by `requireAdmin` on the delete
+  handler and run inside the audited `mutateWithAudit` transaction), the same governance
+  model the coreagent `ApplyGraphDelta` writes use; the access guard
+  (`TestInvariant_NoUngovernedAdapterOrGraphAccess`) recognizes `DeleteNodesByComponentTx`
+  as graph access and exempts it by a **narrow (method, file)** carve-out — not a
+  package-wide exemption — so any other ungoverned graph call in `internal/api` (including a
+  read) is still caught. Per **D-0032** the new CLAUDE.md invariant and the SITE-CLAIMS
+  revision state the mechanism structurally, with no volatile counts.
+- Rejected alternatives: **(a) tombstone the component and sweep its graph rows on a
+  background timer** — introduces an eventually-consistent window where a deleted
+  component's topology lingers, and a background sweeper is exactly the recurring masker
+  this decision rejects. **(b) refuse to delete a component while it has graph rows** —
+  turns a routine deregistration into a two-step chore and punishes the operator for
+  Joe's own bookkeeping; the graph rows are Joe-derived, not operator-authored. **(c) a
+  recurring startup sweep** instead of the one-time migration — would hide a future
+  regression of the transactional cascade behind a boot-time broom. **(d) relabel and keep
+  the Refresh buttons** — the term collision with the refresher domain and the absent
+  in-flight feedback are the problems; a rename keeps a low-value control that per-component
+  Last Sync already subsumes.
+- Supersedes: nothing. Completes the orphan story D-0116 worked around (that workaround is
+  retained); complements the delta-reconcile seam (D-0110) by handling the one lifecycle
+  event — component deletion — that per-component reconcile structurally cannot.
+
+---
+
 ## D-0116 — the observe/k8s resolver binds a service to its cluster by component-type lookup, not node-type vocabulary; the deterministic refresher's output is the authoritative vocabulary and consumers must not re-encode it
 
 - Date: 2026-07-17

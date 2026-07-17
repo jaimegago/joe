@@ -2,6 +2,7 @@ package access_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -267,6 +268,10 @@ func (f fakeGraph) ListEdgesForNodes(context.Context, []string) ([]graph.Edge, e
 func (f fakeGraph) ListAll(context.Context) (*graph.Subgraph, error) {
 	*f.called = true
 	return &graph.Subgraph{}, nil
+}
+func (f fakeGraph) DeleteNodesByComponentTx(context.Context, *sql.Tx, string) error {
+	*f.called = true
+	return nil
 }
 
 const (

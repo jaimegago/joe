@@ -126,7 +126,24 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 		"AddNode": true, "AddEdge": true, "GetNode": true, "Query": true,
 		"Related": true, "Path": true, "DeleteNode": true, "DeleteEdge": true,
 		"Summary": true, "ListNodesByComponent": true, "ListEdgesForNodes": true,
-		"ListAll": true,
+		"ListAll": true, "DeleteNodesByComponentTx": true,
+	}
+
+	// graphWriteExemptByMethod carves out graph-store WRITE call sites whose
+	// governance is established UPSTREAM of the write, not by the read accessor —
+	// the same rationale as coreagent's ApplyGraphDelta exemption above, but keyed
+	// narrowly by (method, file) so it cannot widen into a blanket graph-access
+	// exemption for a whole package (which would let an ungoverned graph READ
+	// elsewhere in that package pass silently). Exactly one entry today:
+	//   DeleteNodesByComponentTx from internal/api/components.go — the
+	//   component-delete cascade (session component-delete-graph-orphans). It is a
+	//   Tx-only primitive callable only inside a caller-owned transaction; the sole
+	//   caller is handleDeleteComponent, gated by requireAdmin and run inside
+	//   mutateWithAudit's audited transaction alongside Components.DeleteTx. The
+	//   graph store still owns the graph tables; the handler only invokes the
+	//   cascade within that one transaction.
+	graphWriteExemptByMethod := map[string]string{
+		"DeleteNodesByComponentTx": filepath.FromSlash("internal/api/components.go"),
 	}
 
 	type violation struct {
@@ -203,6 +220,12 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 			// services.Graph.<GraphStoreMethod>(...) — graph access. Exempt for
 			// graphAccessAllowed (includes coreagent's intentional Tier-3 write).
 			if recv.Sel.Name == "Graph" && graphMethods[sel.Sel.Name] && !graphExempt {
+				// A governed-upstream graph WRITE (e.g. the component-delete
+				// cascade) is exempt only at its one documented (method, file)
+				// call site — not package-wide.
+				if exemptFile, ok := graphWriteExemptByMethod[sel.Sel.Name]; ok && strings.HasPrefix(rel, exemptFile) {
+					return true
+				}
 				violations = append(violations, violation{rel, line,
 					"services.Graph." + sel.Sel.Name + "(...) — reach the graph store through the guarded accessor instead"})
 			}

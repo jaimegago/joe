@@ -42,7 +42,7 @@ import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { STATUS_CONFIG } from '@/lib/constants';
 import type { Component } from '@/api/types';
-import { Database, RefreshCw } from 'lucide-react';
+import { Database } from 'lucide-react';
 
 function StatusDot({ status }: { status: Component['status'] }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
@@ -204,10 +204,6 @@ export function ComponentsPage() {
         title="Components"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void componentsQ.refetch()}>
-              <RefreshCw className="mr-1 h-3 w-3" />
-              Refresh
-            </Button>
             {isAdmin && (
               <Button size="sm" onClick={() => setShowRegisterComponent(true)}>
                 + Register Component

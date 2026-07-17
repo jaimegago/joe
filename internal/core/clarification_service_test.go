@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -76,6 +77,10 @@ func (m *mockGraphStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string
 
 func (m *mockGraphStore) ListAll(ctx context.Context) (*graph.Subgraph, error) {
 	return &graph.Subgraph{}, nil
+}
+
+func (m *mockGraphStore) DeleteNodesByComponentTx(ctx context.Context, tx *sql.Tx, componentID string) error {
+	return nil
 }
 
 func setupClarificationServiceTest(t *testing.T) (*ClarificationService, *mockGraphStore, *store.Store) {

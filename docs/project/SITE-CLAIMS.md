@@ -344,14 +344,25 @@ test(s)** · **binding note** (where applicable).
   this version and grow monotonically with use — per-model-call usage records, code-review
   jobs, and clarifications accumulate with no prune path. The legacy session/messages tables
   are frozen: nothing writes to them, they have no deletion path, and they are deliberately
-  retained for a future feature. The infrastructure graph is **not** in this class — its edges
-  are added and removed as Joe reconciles the live topology, so it does not grow without bound.
+  retained for a future feature. The infrastructure graph is **not** in this class — a live
+  component's nodes and edges are added and removed as Joe reconciles its topology, and when a
+  component is deleted its graph rows are removed with it, so the graph does not grow without
+  bound.
 - **Mechanism.** Absence of any production delete-site for the unbounded tables; the frozen
   legacy store (`internal/store/sessions.go`, its inserts unreachable by any live caller, one
-  dormant reader); the graph reconciler adding and removing edges. Described structurally, per
-  D-0032 — the set of unbounded tables is named by class, not pinned to a fixed count.
-- **Pinning tests.** None (a growth posture / absence-of-delete-path property, not a single
-  break-test; the audit half of it carries the append-only guards above).
+  dormant reader); for the graph, two paths together — the per-component delta reconciler
+  adding and removing a live component's nodes and edges, **and** the component-delete cascade
+  (D-0117) removing a deleted component's `graph_nodes` in the same transaction as the
+  `components` row, with `graph_edges` following by FK `ON DELETE CASCADE`. Described
+  structurally, per D-0032 — the set of unbounded tables is named by class, not pinned to a
+  fixed count. (Before D-0117 the reconciler alone did not bound the graph: it is
+  per-component, and a deleted component never refreshes again, so its rows were orphaned
+  permanently — the cascade closes that leak.)
+- **Pinning tests.** `TestDeleteComponent_CascadesGraphState` and
+  `TestDeleteComponent_CascadeRollback` (the delete-path cascade and its transactionality) and
+  `TestMigration032_PruneOrphanedGraphNodes` (the one-time backfill of pre-existing orphans).
+  The unbounded-tables and frozen-legacy halves remain a growth-posture / absence-of-delete
+  property with no single break-test (the audit half carries the append-only guards above).
 - **Binding note. Mechanism-bound.** Revises when any of the deferred retention work lands — an
   `llm_usage` retention/roll-up, a review-jobs/clarifications disposition, or a DB-size
   operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition

@@ -586,6 +586,15 @@ func (s *Server) handleDeleteComponent(w http.ResponseWriter, r *http.Request) {
 		Context:     string(blob),
 	}
 	if err := s.mutateWithAudit(r.Context(), ev, func(tx *sql.Tx) error {
+		// Cascade the graph state in the SAME transaction as the components row
+		// and the audit insert: delete every graph_nodes row owned by this
+		// component; its graph_edges (intra- and cross-component alike) die with
+		// their endpoint nodes via the FK ON DELETE CASCADE. Ownership of the
+		// graph tables stays with the graph store — the component store never
+		// touches them. Order is free: no FK links components to graph_nodes.
+		if err := s.services.Graph.DeleteNodesByComponentTx(r.Context(), tx, id); err != nil {
+			return err
+		}
 		return s.services.Store.Components.DeleteTx(r.Context(), tx, id)
 	}); err != nil {
 		writeInternalError(w, err, "delete component")

@@ -21,6 +21,13 @@ type sqlGraphStore struct {
 	metrics *observability.Metrics
 }
 
+// execContext is the subset of *sql.DB / *sql.Tx a write body needs, so a
+// transactional path can share one SQL body against whichever executor it is
+// handed — the same idiom the component store uses (internal/store/components.go).
+type execContext interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // SQLiteStore is a backward-compatible alias kept for test helpers.
 // New code should use NewSQLStore.
 type SQLiteStore = sqlGraphStore
@@ -306,6 +313,32 @@ func (s *sqlGraphStore) DeleteNode(ctx context.Context, id string) (err error) {
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return ErrNodeNotFound
+	}
+	return nil
+}
+
+// DeleteNodesByComponentTx removes every graph_nodes row carrying componentID
+// against the caller-supplied transaction. Component deletion cascades graph
+// state through here — the component delete handler invokes it inside the same
+// mutateWithAudit transaction as Components.DeleteTx and the audit insert, so
+// the graph rows die atomically with the component row (or all three roll back
+// together). graph_edges rows die with their endpoint nodes via the migration-002
+// FK ON DELETE CASCADE, which fires on the transaction's connection because
+// foreign_keys=1 is DSN-encoded on every pooled connection (internal/store);
+// no explicit edge delete is needed. There is intentionally NO pooled
+// (non-Tx) sibling: the only caller is the audited delete transaction.
+func (s *sqlGraphStore) DeleteNodesByComponentTx(ctx context.Context, tx *sql.Tx, componentID string) (err error) {
+	start := time.Now()
+	defer func() { s.metrics.RecordGraphOperation(ctx, "delete_nodes_by_component_tx", time.Since(start), err) }()
+	return s.deleteNodesByComponent(ctx, tx, componentID)
+}
+
+// deleteNodesByComponent is the shared body, taking an execContext so the SQL
+// cannot drift from any future pooled variant.
+func (s *sqlGraphStore) deleteNodesByComponent(ctx context.Context, exec execContext, componentID string) error {
+	_, err := exec.ExecContext(ctx, store.Rebind(s.driver, "DELETE FROM graph_nodes WHERE component_id = ?"), componentID)
+	if err != nil {
+		return fmt.Errorf("delete graph nodes for component %s: %w", componentID, err)
 	}
 	return nil
 }
