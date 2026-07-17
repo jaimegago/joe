@@ -406,7 +406,7 @@ func seedDatabase(t *testing.T, path string, marker string, encryptedConfig bool
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("seed migrate %s: %v", path, err)
 	}
-	cfg := `{"api_server":"https://example"}`
+	var cfg string
 	if encryptedConfig {
 		// Mirror the at-rest shape: a JSON-encoded string carrying the enc: marker.
 		cfg = `"enc:` + base64.StdEncoding.EncodeToString([]byte("ciphertext")) + `"`
