@@ -434,6 +434,88 @@ test(s)** · **binding note** (where applicable).
 - **Binding note. Mechanism-bound.** Revises when `docs/backlog/encryption-key-path.md` lands
   either half of its scope: a configurable key path, or a decision to fail boot loudly instead
   of regenerating silently. The second would invalidate this claim outright.
+- **Amendment (D-0115, session `db-persistence-backup-02`) — a third revision trigger, and a
+  distinction the copy must keep.** `joe db restore` now refuses a backup carrying encrypted
+  component config when no key file is present (overridable only by the dedicated
+  `--allow-missing-key`). Read the scope precisely: that is a guard on the **restore route**,
+  before boot. **The boot path itself is unchanged and still carries no guard** — Joe started
+  by any other means, or after a hand-restore, or after `--allow-missing-key`, still mints a
+  fresh key and comes up reaching nothing. The claim above therefore stands as written and must
+  not be read, or reworded, as the trap being closed generally; the published copy states this
+  as "nothing at boot guards this — `joe db restore` is the only thing that checks". The
+  pinning note above stays true as well: the restore-side refusal is pinned
+  (`TestRunDBRestore_MissingKeyGate`), the **boot-side behaviour is still code-reading, not a
+  guard**.
+
+### `joe db restore` pre-flights a backup and clears stale WAL sidecars — `/operations/persistence-and-backup/`
+
+- **Claim.** `joe db restore SRC` puts a backup back at the configured database path after
+  checking, before writing anything, that: the backup passes an integrity check; it is
+  recognizably a Joe database; a key is present if its component config is encrypted
+  (overridable by `--allow-missing-key`); and no process holds the target open. An existing
+  database is replaced only under `--force`. Restoring over a database left by an unclean stop
+  is safe — the stale `-wal`/`-shm` are cleared. SRC is never written to.
+- **Mechanism.** `runDBRestore` (`cmd/joe/db.go`). SRC is opened through `defaultOpenSourceDB`
+  with the `file:` URI and `mode=ro` — enforced at open, not a flippable pragma — and
+  deliberately **not** `immutable=1`, which reads only the main file and silently ignores a
+  `-wal`, misreading a WAL-carrying source as empty. The copy is `VACUUM INTO` executed from
+  that read-only handle, with the destination bound; it reads through a transaction, so a SRC
+  still carrying a live `-wal` is normalized into one complete file. Encrypted-config detection
+  mirrors the production read path (`internal/store/encrypted_components.go`): the config column
+  is JSON-unmarshalled to a string and only then tested with the exported `crypto.IsEncrypted`;
+  an unmarshal failure means plaintext, not an error. SQL `LIKE` detection is not used and would
+  not work — the value is JSON-quoted *and* lands with BLOB storage class despite the TEXT
+  declaration. Restore never opens the target through `store.New`, which would create the very
+  sidecars it removes, and runs no migrations (the D-0114 rationale).
+- **Sidecar deletion — state its role precisely.** The stale-WAL substitution hazard is real and
+  measured: a `-wal` left beside the target replays over a newly placed file, resurrects the
+  prior database wholesale, passes `integrity_check` (the result is a coherent old database, not
+  a corrupt one), then checkpoints itself into the main file and deletes its own evidence.
+  **But that hazard bites the byte-copy shape — the manual procedure — not this command.** With
+  the copy done by `VACUUM INTO`, the engine finds no destination file, treats it as new, and
+  resets the WAL rather than recovering it, so the guarantee already holds without the deletion
+  (measured both ways). The explicit deletion is **defence in depth**: the engine's reset is
+  observed behaviour rather than a documented contract, and it keeps the outcome independent of
+  the copy mechanism. Do not write copy claiming the deletion is what saves the operator here;
+  what it does save is the **hand-restore**, which the published page now warns about at length.
+- **Three-way occupancy matrix, as documented.** Sidecars absent + lock acquirable → clean
+  shutdown, proceed. Sidecars present + lock BUSY → a process holds it open, refuse ("stop Joe
+  first"), **no override by design** — a restore under a live daemon races writes it cannot see,
+  and the daemon would still hold the pre-restore database in memory. Sidecars present + lock
+  acquirable → unclean shutdown, proceed. Sidecar presence alone cannot separate the last two
+  from the second; `defaultProbeTargetOccupied` is the discriminator, using a write-free
+  `BEGIN IMMEDIATE` under `locking_mode=exclusive` on a short-lived connection with the pool
+  **pinned to one connection** (a second pooled connection contends with the first and reports
+  the caller's own probe as busy). It classifies the driver's typed error by SQLITE_BUSY code,
+  never by message text.
+- **The direction that holds, and the one that does not — measured end-to-end.** BUSY ⇒ someone
+  holds the database: sound, and the refusal rests on it. The converse does **not** hold. What the
+  probe observes is a **held connection that has actually accessed the database**, not the
+  existence of a process. Measured against the real binary across processes: a holder that had
+  connected *and read* was detected and the restore refused; a holder that had only **connected
+  without reading** was **not** detected and the restore proceeded. A real Joe reads at boot
+  (migrations, component load), so the realistic running daemon is caught — but "lock acquirable"
+  is a *safety net having found nothing*, not proof that no daemon exists. The published copy
+  therefore leads with "stop Joe first" and presents the check as a refusal that can fire, never
+  as a guarantee that makes stopping Joe unnecessary.
+- **Stated limits — published, not buried.** The probe rests on **POSIX advisory locks**: it is
+  unreliable on NFS and across some container boundaries (**UNVERIFIED** — not probed, and the
+  copy claims nothing there). It is **point-in-time**: a daemon starting immediately after the
+  probe is not prevented. With the connected-but-unread gap above, it is a guard against the
+  common mistake, not mutual exclusion.
+- **Pinning tests.** `TestRunDBRestore_StaleSidecarsRemoved` (fails without the explicit
+  deletion — the stale `-shm` survives `VACUUM INTO`),
+  `TestRunDBRestore_UncleanStopTargetRestoresToBackupNotPriorDatabase` (the outcome guarantee;
+  passes with or without the deletion today, and is held to catch the copy mechanism changing),
+  `TestRunDBRestore_SrcWithLiveWALRestoresFully`, `TestRunDBRestore_SrcUnchangedByPreflight`,
+  `TestRunDBRestore_MissingKeyGate`, `TestRunDBRestore_RunningDaemonRefused`,
+  `TestProbeTargetOccupied_RealLock`, `TestRunDBRestore_NotAJoeDatabase`,
+  `TestRunDBRestore_OccupiedTargetWithoutForce`, `TestRunDBRestore_ForceOverCleanTarget`,
+  `TestRunDBRestore_SameFileRefused`.
+- **Binding note. Mechanism-bound.** The SQLite-only framing revises if the `pgx` value becomes
+  operational. The sidecar-deletion paragraph revises if the copy mechanism ever changes from
+  `VACUUM INTO` to a byte copy — at which point the deletion stops being defensive and becomes
+  the only thing preventing substitution.
 
 ---
 

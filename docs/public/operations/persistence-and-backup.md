@@ -111,20 +111,76 @@ and you are racing the daemon.
 
 ## Restoring
 
-1. Stop Joe.
-2. Put the backup file at the configured database path (the `.joe` directory's `joe.db`,
-   or wherever `database.dsn` points).
-3. Put the **matching** `encryption.key` back in the `.joe` directory — the key that was
-   current when that backup was taken.
-4. Start Joe.
+### `joe db restore` — the primary method
 
-Step 3 is the one that gets skipped, and it fails quietly. Read the next section before
+```bash
+# stop joe first, then:
+joe db restore /backups/joe-2026-07-17.db --force
+```
+
+Restore puts a backup back at the configured database path. **Stop Joe first.** Restore
+refuses to run when it finds a process holding the database open, and that refusal has no
+override — but treat it as a backstop that catches the common mistake, not a licence to skip
+stopping Joe. It cannot promise to notice every running process, and nothing stops a daemon
+starting the moment after it looks.
+
+Before it writes anything, it checks the things that otherwise fail silently later:
+
+- **The backup is sound.** It opens the file read-only and runs an integrity check. A
+  damaged backup is refused, and nothing is touched.
+- **The backup is Joe's.** A valid SQLite database that is not a Joe database is refused,
+  naming what it looked for.
+- **The key is present.** If the backup carries encrypted component configuration and no
+  `encryption.key` is in place, restore refuses and names the path it looked at — because
+  restoring without it produces a Joe that starts cleanly and reaches nothing (see
+  [below](#what-a-restore-does-not-bring-back)). `--allow-missing-key` accepts that outcome
+  deliberately. It is a separate flag from `--force`, and neither implies the other.
+- **The database is not visibly in use.** If it finds another process holding the database
+  open, restore stops and tells you to stop Joe. See the caveat above: a clean result here is
+  the absence of a signal, not a guarantee.
+- **It clears stale WAL sidecars.** Restoring over a database left behind by an unclean stop
+  is safe: the leftover `joe.db-wal` and `joe.db-shm` are removed as part of the restore, so
+  the file you asked for is the file you get.
+
+An existing database is replaced only with `--force`. Back it up first — `joe db restore`
+overwrites, and the database it overwrites is not recoverable from anything but a backup.
+Restore never writes to the backup file; it reads it through a read-only handle throughout.
+
+Afterwards, put the **matching** `encryption.key` back in the `.joe` directory if it is not
+already there, and start Joe.
+
+### The manual procedure
+
+If you would rather not use the command, the equivalent by hand is:
+
+1. Stop Joe.
+2. **Delete the `-wal` and `-shm` files beside the configured database path** — for the
+   default location, `joe.db-wal` and `joe.db-shm`. Do this even though they look like
+   scratch files.
+3. Put the backup file at the configured database path (the `.joe` directory's `joe.db`, or
+   wherever `database.dsn` points).
+4. Put the **matching** `encryption.key` back in the `.joe` directory — the key that was
+   current when that backup was taken.
+5. Start Joe.
+
+**Do not skip step 2.** If a `joe.db-wal` from the previous database is still sitting there
+when Joe next starts, SQLite treats it as unwritten changes belonging to the file you just
+put down and applies it on top. The backup you restored is silently discarded and **the old
+database comes back in its place** — all of it. You get no error. The restored file passes
+an integrity check, because the result is not corrupt: it is simply the wrong database,
+intact. Then the leftover file is folded in and deleted, so the evidence of what happened
+removes itself. Sidecars are only absent after a clean shutdown; after a crash, a `kill -9`,
+or a container stop that did not wait, they are still there. This is the trap `joe db
+restore` exists to close.
+
+Step 4 is the other one that gets skipped, and it also fails quietly. Read on before
 deciding you can do without it.
 
 ### What a restore does not bring back
 
-**Without the matching key, Joe boots cleanly and is broken.** There is no guard on this
-path, and the behavior is worth stating exactly:
+**Without the matching key, Joe boots cleanly and is broken.** Nothing at boot guards this —
+Joe starts either way, and `joe db restore` is the only thing that checks. Restore by hand,
+or override the check with `--allow-missing-key`, and the behavior is worth stating exactly:
 
 - Joe finds no key file, **generates a fresh one**, and continues starting. This is not an
   error condition; it is the same code path that gives a first-run install its key.

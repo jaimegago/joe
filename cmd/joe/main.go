@@ -53,6 +53,23 @@ type runDeps struct {
 	// rather than contacting the daemon. Injectable so the backup command's
 	// routing and error-path tests need no real database.
 	openBackupStore func() (backupStore, func() error, error)
+	// resolveDatabaseConfig reports the driver and DSN the daemon would use, so
+	// `joe db restore` knows which file it is replacing WITHOUT opening it —
+	// opening the target through store.New would create the sidecars restore
+	// exists to remove. Injectable so tests can target a temp directory.
+	resolveDatabaseConfig func() (store.DatabaseConfig, error)
+	// openSourceDB opens a database file READ-ONLY, for restore's pre-flight
+	// checks and for the copy itself. Injectable so refusal tests need no real
+	// database.
+	openSourceDB func(path string) (sourceDB, func() error, error)
+	// encryptionKeyPath reports where the component-config encryption key lives.
+	// Injectable so tests can control whether a key appears present.
+	encryptionKeyPath func() (string, error)
+	// probeTargetOccupied reports whether another process holds the database at
+	// path open — the discriminator between a running daemon and an unclean
+	// shutdown, which look identical on disk. Injectable so tests can force
+	// either answer without spawning a daemon.
+	probeTargetOccupied func(path string) (bool, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -68,9 +85,13 @@ func defaultRunDeps() runDeps {
 		loadSkillsPolicy: func(joeDir string) (*skills.Policy, error) {
 			return skills.LoadPolicy(joeDir)
 		},
-		runServer:       runServer,
-		openPanicStore:  defaultOpenPanicStore,
-		openBackupStore: defaultOpenBackupStore,
+		runServer:             runServer,
+		openPanicStore:        defaultOpenPanicStore,
+		openBackupStore:       defaultOpenBackupStore,
+		resolveDatabaseConfig: resolveDatabaseConfig,
+		openSourceDB:          defaultOpenSourceDB,
+		encryptionKeyPath:     paths.EncryptionKeyPath,
+		probeTargetOccupied:   defaultProbeTargetOccupied,
 	}
 }
 
@@ -635,7 +656,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  slack    Run Joe as a Slack bot")
 	fmt.Fprintln(w, "  skills   Manage Agent Skills components")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
-	fmt.Fprintln(w, "  db       Operate on Joe's database file (backup)")
+	fmt.Fprintln(w, "  db       Operate on Joe's database file (backup, restore)")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
 }

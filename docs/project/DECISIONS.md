@@ -10,6 +10,125 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0115 — `joe db restore` is the counterpart to backup: a pre-flighted restore that converts the documented silent failures into refusals; the stale-WAL substitution hazard is real but bites the hand-restore, not the command
+
+- Date: 2026-07-17
+- Status: accepted
+- Session: db-persistence-backup-02
+- Decision: **`joe db restore SRC`** (`cmd/joe/db.go`) restores a backup to the configured
+  database path, gated by a pre-flight that refuses, before writing anything, the failures the
+  Operations page documented as silent: a damaged backup, a backup that is not Joe's, encrypted
+  component config with no key present, a database another process holds open, and an existing
+  database without `--force`. The two overrides are **deliberately separate flags and neither
+  implies the other** — `--force` (replace an existing database) and `--allow-missing-key`
+  (accept a keyless restore); a test pins that `--force` does not stand in for the latter. The
+  **running-daemon refusal carries no override by design**: a restore under a live daemon races
+  writes it cannot see, and the daemon would still hold the pre-restore database in memory
+  afterwards, so there is no outcome worth offering a flag for. Restore performs **no Migrate**,
+  extending D-0114's rationale from the copy to the restore — a command that promises to put a
+  file back must not silently upgrade its schema on the way in.
+- Grounding — measured this session; two findings corrected the approved plan's own premises:
+  (1) **Copy mechanism: the item-1 branch is `VACUUM INTO` from the read-only handle, verified.**
+  `VACUUM INTO` executes from a connection opened `file:SRC?mode=ro`. Against a clean single-file
+  SRC it wrote a consistent 12,288-byte destination (rows and `integrity_check` ok). Against the
+  probe-2b setup — a SRC whose main file is a 4,096-byte header with all 40 committed rows still
+  in a live `-wal` — it captured **all 40**, and SRC's three files were **byte-for-byte unchanged**
+  (sizes identical before and after). A plain byte copy of that same SRC main file yielded
+  `no such table` — the contrast that settles the branch. So restore normalizes a WAL-carrying
+  source into one complete file and reuses the engine path D-0114 already verified; the "refuse a
+  SRC with sidecars" fallback branch is not taken and not built.
+  (2) **`mode=ro` chosen, `immutable=1` rejected — and this one is a trap, not a preference.**
+  Both block writes ("attempt to write a readonly database"). But against the WAL-carrying SRC,
+  `mode=ro` read 40 rows and `immutable=1` read **0, reporting `no such table: t`**: immutable
+  tells the engine the file cannot change, so it reads the main file and ignores the `-wal`
+  entirely. An immutable pre-flight would therefore report a perfectly good hand-copied backup as
+  empty or schemaless — the exact misreading restore exists to catch. joe's pragmas are not
+  applied either; `journal_mode(WAL)` is meaningless on a read-only handle.
+  (3) **THE PLAN'S SIDECAR-DELETION JUSTIFICATION IS FALSIFIED FOR THIS COMMAND — recorded
+  because the copy and the register must not repeat it.** The Phase 1 stale-WAL finding is real
+  and reproduces: a `-wal` left beside the target replays over a newly placed file, resurrects the
+  prior database **wholesale**, passes `integrity_check` (the result is a coherent old database,
+  not a corrupt one), then checkpoints itself into the main file and **deletes its own evidence**.
+  Measured across five scenarios, what matters is *how the file is laid down*: byte copy **over**
+  an existing main file → resurrection; main file unlinked, then byte copy → **still**
+  resurrection (so unlinking is not the protection); main file unlinked, then `VACUUM INTO` →
+  **safe**, and the engine removed the stale `-wal` itself; no main file at all + stale sidecars +
+  `VACUUM INTO` → **safe**. The mechanism: `VACUUM INTO` finds no destination file, treats it as a
+  brand-new database, and **resets** the WAL rather than recovering it. Every path through this
+  command reaches `VACUUM INTO` with the main file absent, so **the deletion is never
+  load-bearing here**. The approved plan asserted the break-test "fails against a naive
+  implementation that skips sidecar deletion"; **it does not — it passed before the fix**, which
+  is how this was caught. The deletion is **kept as defence in depth** on two honest grounds: the
+  engine's WAL reset is observed behaviour, not a documented contract, and the deletion keeps the
+  outcome independent of the copy mechanism (the byte-copy shape is one change away and is
+  measurably unsafe). The hazard is load-bearing **for the manual procedure**, which is why the
+  published page's correction — a mandatory "delete the sidecars" step with a plain-language
+  account of the silent substitution — is the real remedy this session ships.
+  (4) **Break-test discipline, honestly reported.** Written first, the specified test passed
+  before the fix (see (3)). Rather than claim a break-test that does not break, the outcome
+  assertion was kept and renamed
+  (`TestRunDBRestore_UncleanStopTargetRestoresToBackupNotPriorDatabase`) as a **guarantee pin**
+  that would catch the copy mechanism changing, and a second test was added that **does** fail
+  without the fix: `TestRunDBRestore_StaleSidecarsRemoved`, because `VACUUM INTO` clears the stale
+  `-wal` but leaves the stale `-shm`. Verified by disabling the deletion and observing the failure
+  ("stale -shm survived the restore") and its absence with the deletion restored.
+  (5) **Encrypted-config detection mirrors the production read path, not SQL — because both
+  obvious shortcuts are wrong.** Against the real database, the config column reads
+  `"enc:OFtr…` with a **leading double quote**: `encryptConfig` (`internal/store/
+  encrypted_components.go`) `json.Marshal`s the ciphertext, so the stored value is a JSON-encoded
+  string. And `typeof(config)` is **`blob`** despite the DDL declaring `config TEXT NOT NULL`,
+  because `json.RawMessage` binds as `[]byte` and TEXT affinity does not coerce BLOBs. Measured:
+  `config LIKE 'enc:%'` → 0; the quote-aware `config LIKE '"enc:%'` → **still 0** (LIKE against a
+  BLOB operand matches nothing); `CAST(config AS TEXT) LIKE '"enc:%'` → 1. Restore therefore scans
+  rows in Go and mirrors `decryptComponent` exactly — JSON-unmarshal to a string, and only on
+  success apply the **exported** `crypto.IsEncrypted`; unmarshal failure means plaintext (the
+  repository's backward-compat branch), not an error. The CAST form works today but encodes both
+  accidents. The prefix constant `encPrefix` is unexported and is not reachable, as intended.
+  (6) **Three-way occupancy matrix and the limits it ships with.** Sidecar presence separates a
+  clean shutdown from {running, unclean} but cannot separate those two — measured: an idle holder
+  leaves `-wal=0 -shm=32768`, an unclean SIGKILL leaves `-wal=82432 -shm=32768`, and a plain write
+  probe **succeeds against both** (it detects only a daemon caught mid-write). The discriminator is
+  a write-free `BEGIN IMMEDIATE` under `locking_mode=exclusive`, which **does** observe an idle
+  holder (BUSY) because a WAL-mode connection holds a shared lock on the main file for its whole
+  lifetime. It requires the pool **pinned to one connection**: otherwise a second pooled connection
+  contends with the first and reports the caller's own probe as busy — a false positive. It
+  classifies by the driver's typed error and SQLITE_BUSY code, never message text, per the same
+  stance the kubernetes refresher's forbidden-detection takes.
+  **One direction holds and the other does not — found by exercising the real binary across
+  processes, after the unit tests were already green.** BUSY ⇒ someone holds the database, which
+  is what the refusal rests on. The converse is weaker than the plan assumed: the probe observes a
+  **held connection that has actually accessed the database**, not a process. A holder that
+  connected *and read* was detected and the restore refused; a holder that had only **connected
+  without reading** was **not** detected and the restore proceeded to completion. In WAL mode the
+  shared lock is taken on first access, not at open. This is not a practical hole for a real Joe —
+  it migrates and loads components at boot, so a running daemon has always read — but it means
+  "lock acquirable" is *a safety net having found nothing*, not proof of absence, and the copy is
+  worded accordingly: "stop Joe first" leads, and the check is presented as a refusal that can
+  fire rather than a guarantee that stopping Joe is unnecessary. Further limits, published rather
+  than buried: POSIX advisory locks are unreliable on NFS and across some container boundaries
+  (**UNVERIFIED** — not probeable here, and claimed nowhere), and the probe is point-in-time.
+  (7) **Seams.** Restore does not reuse `openBackupStore`, which opens the **configured** database
+  through `store.New` — precisely what restore must never do to its target, since that open creates
+  the sidecars restore removes. Four sibling seams were added to `runDeps`: `resolveDatabaseConfig`
+  (which file, without opening it), `openSourceDB` (the read-only SRC open), `encryptionKeyPath`,
+  and `probeTargetOccupied`. `sourceDB` is behavioural rather than a statement executor because
+  `*sql.Row` cannot be constructed by a test, so a query-shaped seam would not be fakeable.
+- Deviation from the approved plan, with its reason: a **same-file guard** was added (refuse when
+  SRC and the resolved target are the same file, via `os.SameFile`). It is not in the plan, and the
+  plan's own step 5 is what makes it necessary: unconditional sidecar deletion against a SRC that
+  *is* the live database would delete the `-wal` holding the very rows the copy is about to read.
+  Pinned by `TestRunDBRestore_SameFileRefused`.
+- Predecessor: **D-0114**, which established the `joe db` namespace, the no-Migrate stance, and
+  `VACUUM INTO` on the pinned `modernc.org/sqlite v1.18.1` (engine 3.39.2). Restore is its
+  counterpart and inherits all three. D-0114's anticipation that "further database utilities" would
+  follow is discharged here.
+- Supersedes: nothing. It **corrects** the restore procedure published under D-0114, which said only
+  "put the backup file at the configured database path" and named no sidecar step — an instruction
+  that, followed after an unclean stop, silently restores the wrong database. That correction, not
+  the command, is the most important thing this entry records.
+
+---
+
 ## D-0114 — persistence is addressed at launch by a documented durability story plus a first-class `joe db backup`; the durable unit is the whole `.joe` directory, not the database file
 
 - Date: 2026-07-17
