@@ -73,7 +73,7 @@ func (f *fakeSkillManager) Reject(_ context.Context, name string) ([]string, err
 	return f.rejectResp, f.rejectErr
 }
 
-func skillsDeps(t *testing.T, joeDir string, mgr *fakeSkillManager) runDeps {
+func skillsDeps(_ *testing.T, joeDir string, mgr *fakeSkillManager) runDeps {
 	deps := testDeps(joeDir)
 	deps.newSkillManager = func(root string, trusted []string, policy *skills.Policy) skillManager {
 		return mgr
