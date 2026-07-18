@@ -1,4 +1,4 @@
-.PHONY: run run-joe run-ui run-stack build build-joe build-ui test clean fmt vet deps test-coverage-packages
+.PHONY: run run-joe run-ui run-stack build build-joe build-ui test clean fmt vet vet-tagged precommit deps test-coverage-packages
 
 # Directory the production UI build is staged into for go:embed. go:embed
 # cannot reach ui/dist directly (it lives outside the webui package subtree),
@@ -122,6 +122,27 @@ fmt:
 # Run linter
 vet:
 	go vet ./...
+
+# Vet the build-tagged test trees, which a bare `go vet ./...` never sees.
+# test/integration and test/e2e are gated by //go:build, so they are invisible
+# to the default build, vet, and test gates — a deleted symbol can leave them
+# uncompilable while the whole default toolchain stays green (D-0118 did
+# exactly that). This target is vet-only and does not run either suite.
+vet-tagged:
+	go vet -tags=integration ./...
+	go vet -tags=e2e ./test/e2e/...
+
+# The pre-commit gate: everything CI checks that is cheap enough to run
+# locally. Deliberately excludes the e2e suite, whose `make build`
+# prerequisite rebuilds the web UI (npm ci) and is far too slow for a commit
+# gate — `vet-tagged` proves that tree still compiles, which is the failure
+# mode that actually bites. Roughly 10s warm.
+precommit: fmt vet vet-tagged
+	@if [ -n "$$(gofmt -s -l .)" ]; then \
+		echo "not gofmt-clean:"; gofmt -s -l .; exit 1; \
+	fi
+	go test -count=1 -failfast -tags=integration ./test/integration/... -timeout 2m
+	@echo "precommit OK"
 
 # Install dependencies
 deps:

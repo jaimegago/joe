@@ -3,6 +3,13 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  # Without these, the linter silently skips every file behind
+  # //go:build integration and //go:build e2e — i.e. all of test/integration
+  # and test/e2e. A subsystem deletion could leave those trees referencing
+  # removed symbols and still lint clean. See `make precommit`.
+  build-tags:
+    - integration
+    - e2e
 
 linters:
   disable:
