@@ -57,11 +57,11 @@ func (s *CaptainService) ReachableThresholdSeconds() int {
 
 // Errors specific to the captain state machine.
 var (
-	ErrAttachToNonIncident     = errors.New("sessionmodel: attach only meaningful in incident regime per §B4")
+	ErrAttachToNonIncident     = errors.New("sessionmodel: attach only meaningful in incident regime")
 	ErrAlreadyCaptainAttached  = errors.New("sessionmodel: session already has an active captain")
 	ErrTransferAlreadyInFlight = errors.New("sessionmodel: transfer already in flight on this session")
 	ErrNoTransferInFlight      = errors.New("sessionmodel: no transfer in flight on this session")
-	ErrOnlyHumansInPhase1      = errors.New("sessionmodel: only captain_type=human is implemented in Phase 1; joe is a Change 12 inert seam")
+	ErrOnlyHumansInPhase1      = errors.New("sessionmodel: only captain_type=human is implemented; joe is an inert seam (not yet enabled)")
 	// ErrNotSolicitedIncoming is returned when a principal that is not the
 	// solicited incoming principal named in the in-flight record tries to
 	// confirm a transfer. Confirm is reserved to that one principal — the

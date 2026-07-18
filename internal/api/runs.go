@@ -127,7 +127,7 @@ func (h *runsHandler) startRun(w http.ResponseWriter, r *http.Request) {
 		// internal/runmodel/schema_test.go.
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict",
-				"a run is already running for this session (§D3 single-threaded)")
+				"a run is already running for this session (single-threaded)")
 			return
 		}
 		writeInternalError(w, err, "start run")
@@ -577,7 +577,7 @@ func (h *runsHandler) recordWorldHandle(w http.ResponseWriter, r *http.Request) 
 		// an idempotency key. The executor wrapper in Change 9 actually
 		// records intent; here we just enforce the field's presence.
 		writeBadRequest(w, nil, "record world handle",
-			"idempotency_key is required for world-mutating effects (§D5 invariant)")
+			"idempotency_key is required for world-mutating effects")
 		return
 	}
 	if req.Locator == "" {
@@ -640,7 +640,7 @@ func (h *runsHandler) observeWorldHandle(w http.ResponseWriter, r *http.Request)
 	}
 	if req.IdempotencyKey == "" {
 		writeBadRequest(w, nil, "observe world handle",
-			"idempotency_key is required (§D5 invariant)")
+			"idempotency_key is required")
 		return
 	}
 	handle, err := h.repo.GetWorldHandle(r.Context(), handleID)

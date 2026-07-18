@@ -685,7 +685,8 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		// the day an autonomous managed-system Mutate exists.
 		gated := captaingate.New(durable, services.SessionModel, services.Audit, captaingate.WithFloor(services.WriteFloor))
 		concrete.SetToolExecutor(gated)
-		slog.Info("core agent: §C captain-session gate + §D5 durable executor wrapper installed (gate runs upstream)")
+		// §C gate + §D5 durable executor, per the session-model spine.
+		slog.Info("core agent: captain-session gate + durable executor wrapper installed (gate runs upstream)")
 	}
 
 	// A001-COREGOV CC-05: floor the autonomous refresh read. Build a SECOND

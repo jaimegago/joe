@@ -89,7 +89,7 @@ func (h *captainHandler) attach(w http.ResponseWriter, r *http.Request) {
 			captainType = sessionmodel.CaptainTypeHuman
 		case "joe":
 			writeError(w, http.StatusForbidden, "forbidden",
-				"captain_type=joe is a Change 12 inert seam (not enabled in Phase 1)")
+				"captain_type=joe is an inert seam (not yet enabled)")
 			return
 		default:
 			writeBadRequest(w, nil, "captain attach", "captain_type must be 'human' or 'joe'")

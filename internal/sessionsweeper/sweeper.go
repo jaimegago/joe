@@ -175,7 +175,7 @@ func (s *Sweeper) Start(ctx context.Context) error {
 		return fmt.Errorf("session sweeper: refusing to start with unwired dependencies (db/sessions/flows)")
 	}
 	if s.principal == "" {
-		return fmt.Errorf("session sweeper: refusing to start without a service principal (automated expirations would be unattributed, §12.5)")
+		return fmt.Errorf("session sweeper: refusing to start without a service principal (automated expirations would be unattributed)")
 	}
 	s.logger.Info("starting session retention sweeper", "interval", s.interval, "principal", string(s.principal))
 	loopCtx, cancel := context.WithCancel(ctx)

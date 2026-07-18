@@ -621,9 +621,10 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 	// and return follow the §4 split (derived from the action, so it cannot
 	// drift). A fail-open caller logs loudly but says PROCEEDED; a
 	// fail-closed caller says ABORTED.
-	msg := "AUDIT WRITE FAILED — mutating action ABORTED (fail-closed per §4)"
+	// Wording per the §4 fail-open/fail-closed split (comment, not log text).
+	msg := "AUDIT WRITE FAILED — mutating action ABORTED (fail-closed)"
 	if posture == FailOpen {
-		msg = "AUDIT WRITE FAILED — action PROCEEDED without audit row (fail-open-but-loud per §4); investigate audit store"
+		msg = "AUDIT WRITE FAILED — action PROCEEDED without audit row (fail-open-but-loud); investigate audit store"
 	}
 	if isFailOpen(action) {
 		// Reads and queries proceed despite a missing audit row. The

@@ -65,13 +65,14 @@ type GateRefusalError struct {
 }
 
 func (e *GateRefusalError) Error() string {
+	// §C gate refusal; §B2 null-authority vs §A4 finding-path branches.
 	if e.CaptainSessionID == "" {
-		return fmt.Sprintf("captaingate: §C gate refused tool %q from session %q — "+
-			"incident has no captain attached yet (§B2 null authority)",
+		return fmt.Sprintf("captaingate: gate refused tool %q from session %q — "+
+			"incident has no captain attached yet",
 			e.Tool, e.SessionID)
 	}
-	return fmt.Sprintf("captaingate: §C gate refused tool %q from session %q — "+
-		"redirect to captain session %q (§A4 finding path)",
+	return fmt.Sprintf("captaingate: gate refused tool %q from session %q — "+
+		"redirect to captain session %q",
 		e.Tool, e.SessionID, e.CaptainSessionID)
 }
 
@@ -201,7 +202,7 @@ func (w *Wrapper) Execute(ctx context.Context, name string, args map[string]any)
 	// 3. §C gate.
 	decision, err := sessiongate.Check(ctx, w.sessRepo, sessionID, callerPrincipal, classification.Class)
 	if err != nil {
-		return nil, fmt.Errorf("captaingate: §C gate: %w", err)
+		return nil, fmt.Errorf("captaingate: gate check: %w", err)
 	}
 	if !decision.Allow {
 		refusal := &GateRefusalError{
