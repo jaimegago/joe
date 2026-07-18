@@ -68,8 +68,6 @@ func TestIntegration_API_NotImplemented(t *testing.T) {
 	// All major endpoints are now implemented (phases 1-4 complete):
 	// - /api/v1/status - Status endpoint
 	// - /api/v1/refresh - Control endpoint (Milestone 2)
-	// - /api/v1/onboarding - Control endpoint (Milestone 2)
-	// - /api/v1/clarifications - Clarifications system (Milestone 3)
 	// - /api/v1/graph/* - Graph queries (Milestone 1)
 	// - /api/v1/k8s/* - K8s adapter (Milestone 1)
 	// - /api/v1/git/* - Git adapter (Milestone 1)
@@ -187,38 +185,6 @@ func TestIntegration_Store_CRUD(t *testing.T) {
 		session, _ = testStore.Sessions.Get(ctx, "test-session")
 		if session.EndedAt == nil {
 			t.Error("expected EndedAt to be set")
-		}
-	})
-
-	// Test clarifications
-	t.Run("clarifications", func(t *testing.T) {
-		clarification := &store.Clarification{
-			ID:       "test-clar",
-			Type:     store.ClarificationNewService,
-			Context:  json.RawMessage(`{"service":"unknown"}`),
-			Question: "What is this service?",
-			Options:  []string{"API", "Worker", "Database"},
-		}
-		if err := testStore.Clarifications.Create(ctx, clarification); err != nil {
-			t.Fatalf("create clarification failed: %v", err)
-		}
-
-		// List pending
-		pending, err := testStore.Clarifications.ListPending(ctx)
-		if err != nil {
-			t.Fatalf("list pending failed: %v", err)
-		}
-		if len(pending) != 1 {
-			t.Errorf("expected 1 pending, got %d", len(pending))
-		}
-
-		// Answer
-		if err := testStore.Clarifications.Answer(ctx, "test-clar", "API", "test-user"); err != nil {
-			t.Fatalf("answer failed: %v", err)
-		}
-		c, _ := testStore.Clarifications.Get(ctx, "test-clar")
-		if c.Status != store.ClarificationAnswered {
-			t.Errorf("expected %q status, got %q", store.ClarificationAnswered, c.Status)
 		}
 	})
 }
