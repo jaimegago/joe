@@ -10,6 +10,73 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0119 — promotion is an activation step, not only an arming step: a successful promote eagerly connects and registers the live adapter, best-effort behind the committed arm; this makes promote the second runtime construction site and corrects D-0056's Basis
+
+- Date: 2026-07-19
+- Status: accepted
+- Session: promote-adapter-activation
+- Decision: `handlePromoteComponent` (`internal/api/components.go`), after the arm
+  transaction commits, re-reads the component and brings its adapter up through a new
+  `connectAndRegisterAdapter` helper, registering the live instance in
+  `services.Adapters`. Three properties define the shape:
+  - **Best-effort, strictly downstream of the commit.** A `Connect` failure is logged at
+    Warn and **not** returned: the arm is already committed and must not be rolled back by
+    a transient backend outage. Promote's status code and response body are unchanged —
+    activation can only add a registration, never change the promotion outcome. The
+    refresher's next tick and the manual Test Connection remain the retry paths.
+  - **The re-read is load-bearing, not defensive.** The adapter resolves its credential
+    reference at `Connect` through `credential.Select` + `Provider.Resolve`, and that
+    reference lands in the component config **only** as part of promotion. Connecting the
+    pre-promotion record in hand would resolve against a config that does not yet carry the
+    locator. The component MUST be re-read after the commit.
+  - **The displaced-adapter Disconnect is carried over, not invented.** `Registry.Register`
+    returns the instance it displaces, which still holds live resources (redis/postgres/mysql
+    pools, mongodb monitor goroutines). The helper Disconnects it best-effort, which is why
+    the registration logic is factored into a helper rather than duplicated — the subtlety
+    already existed in `handleTestComponent` and is now shared by both call sites.
+  A nil registry degrades to arm-succeeds-nothing-registered rather than panicking inside a
+  governed handler. A config-only type whose `newAdapterForType` returns nil is a no-op, so
+  the D-0056 runtime/boot-only split is preserved: the five boot-config-only types
+  (`github`, `gitlab`, `splunk`, `dynatrace`, `newrelic`) hit the `default: return nil` and
+  still come live only at the next daemon restart. Promote does not become an activation
+  step for them.
+- Basis: reported from a live run, not derived from reading. Registering and promoting a
+  kubernetes component (`prod-shop-eu`) against a running daemon produced, every refresh
+  interval: `msg="component refresh finished" component_id=prod-shop-eu status=error
+  error="adapter not found for component prod-shop-eu"`. The registry is populated at
+  exactly two sites — the boot connect pass `connectSourcesDefault` (`cmd/joe/server.go`)
+  and the connectivity test `handleTestComponent` (`internal/api/webui.go`) — so a component
+  armed after boot was invisible to the refresher until a restart or a manual Test
+  Connection click, with the refresher logging loudly the whole time. The operator-visible
+  defect is that the UI's register→promote spine appears to complete successfully while the
+  component never activates.
+  Pinned by `TestPromote_RegistersLiveAdapter` (`internal/api/components_promote_activation_test.go`),
+  **proven by revert-run-restore**: with the `connectAndRegisterAdapter` call removed from
+  `handlePromoteComponent` it fails carrying `adapter not found: component "c-prom"` — the
+  same error as the reported log line. Two siblings pin the surrounding properties:
+  `TestPromote_ConnectFailureDoesNotRollBackArm` (unreachable backend → still 200, reference
+  persisted, nothing registered) and `TestPromote_NilRegistryTolerated`.
+  The prior session left this unpinned, reasoning that a successful in-process `Connect`
+  needed either a live backend or a new injectable adapter-factory seam in production code.
+  That was wrong on the facts: `prometheus` is credential-wired (`internal/credential/wiring.go`)
+  and its `Connect` probes `/api/v1/status/buildinfo` over plain HTTP, so an `httptest.Server`
+  drives a real end-to-end success with no network and **no production seam**. The blocker
+  was the choice of `kubernetes`/`git` as the exemplar, not the path. The shared
+  `newLLMAdminFixture` passes nil for the registry, which is the second half of why the gap
+  looked untestable — with no registry there is nothing to observe; the test wires one.
+- Supersedes: nothing. **Corrects the Basis of D-0056**, which recorded as fact that "of the
+  four lifecycle steps, only the connectivity test calls `newAdapterForType`… promote…
+  never constructs an adapter." That is no longer true: promote is now the **second** runtime
+  construction site. D-0056's *decision* — the runtime-registerable (13) vs boot-config-only
+  (5) split and the rule that the Integrations page must never route a boot-only type down
+  the runtime spine — is **unchanged and still binding**; only its statement of which
+  lifecycle steps construct is superseded here. Reinforces (does not resolve) the open
+  `adapter-dispatch-consolidation` backlog item: this adds a third caller of
+  `newAdapterForType` alongside the boot pass's separate hand-rolled construction, so the
+  fragmentation that item tracks is now slightly wider, not narrower.
+
+---
+
 ## D-0118 — the onboarding feature and the clarifications subsystem are deleted wholesale, not parked: prune supersedes D-0081's park for all five routes, clarifications is settled onboarding-internal (no producer, no consumer, an ApplyAnswer that bypasses the delta-reconcile seam), and the save_onboarding_fact tool wrote to a zero-reader table on every boot
 
 - Date: 2026-07-17

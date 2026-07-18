@@ -149,11 +149,12 @@ The row's arming state flips to **armed**. Promotion records the reference only;
 > Promote dialog showing the cluster coordinates, the authentication-method selector, and
 > the fields for the selected method.
 
-## Step 5 — Take it live with a connectivity test
+## Step 5 — Confirm it is live with a connectivity test
 
-Kubernetes is **runtime-registerable**: the connectivity test constructs the adapter,
-authenticates with the armed reference, and registers the live connection immediately — no
-restart needed.
+Kubernetes is **runtime-registerable**: a successful promote already brought the connection
+up, so Joe begins reading the cluster on its next refresh — no restart needed. The
+connectivity test confirms that, and is also how you retry if promotion armed the component
+but could not reach the cluster at that moment.
 
 > Running the test does **not** require an admin principal.
 

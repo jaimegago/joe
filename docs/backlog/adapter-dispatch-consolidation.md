@@ -15,6 +15,12 @@ The type→adapter decision is duplicated across multiple sites with divergent t
 - A third type switch for refresh-handler routing — last seen near internal/coreagent/refresh.go.
 - Query-time operation routing — last seen near internal/access/observe.go — keys on the Go adapter INTERFACE type, not the type string. This one is arguably fine; note it but the goal is not to force it onto the string switch.
 
+- **Added by D-0119 (2026-07-19):** `handlePromoteComponent` is now a THIRD caller of
+  `newAdapterForType`, via the `connectAndRegisterAdapter` helper it shares with
+  `handleTestComponent`. This does not change the divergence between the API path and the
+  boot path — it widens the API-path side. The consolidation this item asks for should fold
+  all three call sites onto the one canonical constructor, not just the original two.
+
 ## The actual problem
 
 Two construction paths (sources.go vs server.go) with non-identical type coverage means "which types can Joe actually connect" depends on which path ran. The "single source of truth" comment is contradicted by the boot path.

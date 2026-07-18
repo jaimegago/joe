@@ -20,6 +20,11 @@ activation path (D-0056):
   `tempo`, `jaeger`, `alertmanager`, `pagerduty`, `grafana`, `argocd`, `falco`.
   These differ from Kubernetes only in the promotion form — a static env-var
   reference (`JOE_<SEGMENT>_<LABEL>`) instead of a kubeconfig locator.
+  **D-0119 changed the framing these pages must use:** promote itself now
+  connects and registers the adapter, so Test Connection is a *confirmation and
+  retry* step, not the activation step. `register-kubernetes.md` Step 5 was
+  reworded accordingly; write the sibling pages the same way rather than copying
+  the pre-D-0119 "take it live with a connectivity test" heading.
 - **Credential-less** types that register and test live with nothing to promote:
   `terraform`, `envoy`.
 - **Boot-config-only** types (`github`, `gitlab`, `splunk`, `dynatrace`,

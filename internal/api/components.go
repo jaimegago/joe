@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"time"
@@ -179,6 +180,39 @@ func newAdapterForType(sourceType string) adapters.Adapter {
 	default:
 		return nil
 	}
+}
+
+// connectAndRegisterAdapter builds a fresh adapter for the (armed) component,
+// connects it, and registers the live instance so the autonomous refresher and
+// the tool paths can resolve it immediately — without waiting for a restart or a
+// manual Test Connection. It mirrors the registration self-heal in
+// handleTestComponent, including the displaced-adapter Disconnect: registering
+// over an existing entry displaces the old connected instance, which still holds
+// live resources (redis/postgres/mysql pools, mongodb monitor goroutines), so the
+// displaced adapter is Disconnected best-effort to avoid a per-registration leak.
+//
+// It returns the Connect error (nil on success). A config-only type with no
+// adapter to connect is a no-op that returns nil. The comp passed MUST carry the
+// armed, decrypted config (re-read from the store after promotion), because the
+// credential reference an adapter resolves at Connect lives only in the armed
+// config, not in the pre-promotion record.
+func (s *Server) connectAndRegisterAdapter(ctx context.Context, comp *store.Component) error {
+	adapter := newAdapterForType(comp.Type)
+	if adapter == nil {
+		return nil
+	}
+	if err := adapter.Connect(ctx, *comp); err != nil {
+		return err
+	}
+	if s.services.Adapters != nil {
+		if displaced := s.services.Adapters.Register(comp.ID, adapter); displaced != nil {
+			if derr := displaced.Disconnect(); derr != nil {
+				slog.Warn("failed to disconnect displaced adapter after connect-and-register",
+					"component_id", comp.ID, "error", derr)
+			}
+		}
+	}
+	return nil
 }
 
 // createComponentRequest is the JSON body for POST /api/v1/components.
@@ -779,6 +813,25 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 	}); err != nil {
 		writeInternalError(w, err, "promote component")
 		return
+	}
+
+	// The arm is now persisted. Bring the live adapter up eagerly so the
+	// autonomous refresher can resolve it on the very next tick instead of
+	// logging "adapter not found" until a restart or a manual Test Connection —
+	// the registry is otherwise only populated at boot (connectSourcesDefault) and
+	// by handleTestComponent. Re-read the component so the adapter sees the armed,
+	// decrypted config (the credential reference it resolves at Connect lands only
+	// in the promoted config). This is best-effort: a Connect failure does NOT roll
+	// back the (committed) arm — the refresher will retry each tick and Test
+	// Connection remains the explicit self-heal — so it is logged, not returned.
+	if armed, gErr := s.services.Store.Components.Get(r.Context(), id); gErr != nil {
+		slog.Warn("promote succeeded but re-read for adapter registration failed; refresher will self-heal",
+			"component_id", id, "error", gErr)
+	} else if armed != nil {
+		if cErr := s.connectAndRegisterAdapter(r.Context(), armed); cErr != nil {
+			slog.Warn("component armed but live adapter connect failed; refresher will retry, or use Test Connection to self-heal",
+				"component_id", id, "error", cErr)
+		}
 	}
 
 	// Response carries the promotion OUTCOME only — never echoes the Config blob,
