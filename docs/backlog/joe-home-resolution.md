@@ -1,5 +1,6 @@
 How does `joe` actually resolve its home directory?
 Status: open
+Priority: next
 
 Opened from an observation made during the `v0.1.0` go/no-go
 released-binary integrity check (session `release-pipeline-03`, D-0123).

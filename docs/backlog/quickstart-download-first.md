@@ -1,5 +1,6 @@
 Should Quickstart lead with the download instead of build-from-source?
 Status: open
+Priority: next
 
 Split out of `docs/backlog/release-pipeline.md` at that item's closure
 (session `release-pipeline-03`, D-0123), per that item's own instruction that
