@@ -46,6 +46,14 @@ condition (unchanged): the first post-launch release. `-02`'s tag-cut is that
 release, so this becomes actionable once `v0.1.0` publishes — evaluate then,
 don't build it speculatively now.
 
+## Operator runbook and first-run corrections
+
+The operator release procedure is captured at `docs/RELEASING.md` (session
+`releasing-runbook`, D-0092). The runbook's "Correct this after the first real
+release" section (bottom of that file) owns the first-run correction obligation
+for this tag cut: once `v0.1.0` publishes, revisit that section to replace
+UNVERIFIED claims about GitHub/goreleaser behavior with what was observed.
+
 ## Out of scope for `-02`
 
 Homebrew/Scoop taps, `install.sh`, and binary signing were not decided or
