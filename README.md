@@ -11,6 +11,8 @@
   <strong>Joe</strong> (Joe Operates Everything): a self-hosted, open-source AI agent for infrastructure operations. Single Go binary with embedded web UI (<code>go:embed</code>), MCP server, SQLite persistence. Every action — from every surface — passes one governed executor.
 </p>
 
+**Why Joe exists** — read the launch essay: [Announcing Joe, and why I was the safety layer](https://jaimegago.dev/writing/announcing-joe-safety-layer/)
+
 ---
 
 ## What Joe does
