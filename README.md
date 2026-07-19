@@ -207,4 +207,4 @@ Published documentation lives at [joeagent.dev](https://joeagent.dev).
 
 ## License
 
-Joe is licensed under the Apache License 2.0 — see [LICENSE](LICENSE). It is distributed build-from-source only; there are no published release binaries.
+Joe is licensed under the Apache License 2.0 — see [LICENSE](LICENSE). It is distributed as published release binaries — archives plus a checksums file, attached to a GitHub Release — and as source you can build yourself. There is no signing, installer, or package-manager tooling.

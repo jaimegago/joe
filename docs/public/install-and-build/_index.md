@@ -1,25 +1,78 @@
 ---
 title: Install and Build
 weight: 40
-description: Build the joe binary from source, run it, and wire the identity it refuses to boot without.
+description: Download a released joe binary or build it from source, run it, and wire the identity it refuses to boot without.
 ---
 
 # Install and Build
 
-Joe is distributed as **source only**. There are no published release binaries,
-install scripts, or package-manager artifacts today — you build the `joe` binary
-yourself from this repository. A release pipeline is armed and publishes signed
-archives and checksums to a GitHub Release when a version tag is pushed, but no
-version has been tagged yet.
+Joe is available two ways: as **published release binaries** for the supported platform
+set, or **built from source**. Both produce the same single self-contained artifact —
+the server daemon, every subcommand, and the web UI compiled into one `joe` binary.
 
-This page is the procedure: build the binary, run the daemon, and configure the
+A published release carries the built archives and a `checksums.txt` file, and nothing
+else. There is no signing, no install script, and no package-manager artifact — no
+Homebrew tap, no Scoop bucket, no distribution package. Downloading an archive and
+verifying it against the checksums file by hand is the whole of the install path.
+
+This page is the procedure: obtain the binary, run the daemon, and configure the
 identity it requires. If you just want a guided first run from nothing to one answer,
 follow the [Quickstart](../quickstart/) instead — it is the on-rails version of what
 follows. For *why* identity is mandatory and what observation mode protects, see
 [Concepts](../concepts/). For the full configuration surface, see
 [Configuration](../configuration/).
 
-## Prerequisites
+## Download a released binary
+
+This is the shortest path to a running `joe`, and it needs neither a Go toolchain nor
+Node.js — only a shell and a SHA-256 utility, both of which your system already has.
+
+**1. Fetch the archive for your platform.** Open the repository's **GitHub Releases**
+page and download the archive matching your operating system and CPU architecture from
+the release's asset list, along with the `checksums.txt` file published beside it. The
+platforms a release covers are exactly the `builds.goos` and `builds.goarch` matrix
+declared in `.goreleaser.yaml` in the repository root — read that file rather than
+trusting a list restated here, and let the Releases page's own asset list be the
+authority on what a given release actually shipped.
+
+**2. Verify the download against the published checksums.** Run this from the directory
+holding both the archive and `checksums.txt`. On Linux:
+
+```sh
+sha256sum --ignore-missing --check checksums.txt
+```
+
+On macOS:
+
+```sh
+shasum --algorithm 256 --ignore-missing --check checksums.txt
+```
+
+`--ignore-missing` is what lets you verify the one archive you downloaded against a
+checksums file that lists every published asset. Each verified file prints `OK`. If any
+file prints `FAILED`, stop — do not extract or run it.
+
+**3. Extract and run.** The archives are gzipped tarballs:
+
+```sh
+tar -xzf <the archive you downloaded>
+./joe --help
+```
+
+A downloaded release binary reports **real injected build identity** — its version,
+commit, and build time are stamped in at release time, so `GET /api/v1/version` and the
+`joe_build_info` metric identify precisely which release is running. This is the
+practical difference from a plain `go build`, described below.
+
+## Build from source
+
+Building from source is a first-class path, not a fallback. Reach for it when you are
+contributing to Joe, when you want to run an untagged commit from `main`, or when your
+platform is not in the release matrix.
+
+### Prerequisites for building
+
+These apply to the build path only — the download path above needs none of them.
 
 - **Go 1.25 or newer** — to compile the binary.
 - **Node.js and npm** — to build the web UI, which is compiled and embedded into the
@@ -28,7 +81,7 @@ follows. For *why* identity is mandatory and what observation mode protects, see
 - **git** — to clone the source and to stamp build identity (`make build` reads the
   current commit and tag).
 
-## Build from source
+### Building
 
 From the repository root:
 
@@ -45,14 +98,6 @@ subcommands, with the UI served from inside it.
 A plain `go build ./...` also compiles, but it does **not** embed a freshly built UI
 or inject build identity — such a binary reports the unset `dev` build defaults. Use
 `make build` for anything you intend to run.
-
-### Why nothing is published yet
-
-The repository carries a GoReleaser configuration, and CI runs a snapshot build on
-every change to prove the release path stays healthy. That configuration publishes a
-GitHub Release automatically when a `v`-prefixed version tag is pushed — the pipeline
-is armed, not disabled. No version has been tagged yet, so building from source is the
-only supported way to obtain `joe` today.
 
 ## Run the daemon
 

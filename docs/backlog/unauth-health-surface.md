@@ -117,9 +117,14 @@ is the auth flow itself." Each health candidate punches a differently-sized hole
   clock (`time`). Version alone is a coarse fingerprint.
 - **`version` as-is, unauthenticated**: leaks `version` + `commit` + `build_time` +
   `ui_digest`. The `commit` pins the exact source tree; combined with a public repo
-  (Joe is Apache-2.0, build-from-source) this is a precise map from a running
-  instance to its exact code, i.e. to any known issue at that commit. This is the
-  strongest reconnaissance signal of the options.
+  (Joe is Apache-2.0, and its source is public whether an operator downloaded a
+  published release binary or built that commit themselves) this is a precise map
+  from a running instance to its exact code, i.e. to any known issue at that commit.
+  Published releases sharpen this rather than blunting it: a leaked `version` that
+  matches a release tag also identifies a widely distributed, byte-identical binary,
+  so the `ui_digest` and `commit` are known-in-advance constants for every operator
+  running that release rather than per-install values. This is the strongest
+  reconnaissance signal of the options.
 - **Readiness reflecting dependency health**: by construction reveals *which*
   dependencies are healthy/unhealthy (DB up/down; if it ever included adapters,
   which backends are reachable). That is operationally useful and also the most

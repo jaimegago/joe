@@ -51,7 +51,7 @@ deliberate act — change the boot inputs and restart — never accidental and n
 
 - New to Joe and want it running? → [Quickstart](../quickstart/)
 - Want to understand *why* it works this way? → [Concepts](../concepts/)
-- Building the binary from source? → [Install and Build](../install-and-build/)
+- Getting the binary, by download or from source? → [Install and Build](../install-and-build/)
 - Configuring the daemon? → [Configuration](../configuration/)
 - Connecting it to your systems? → [Components](../components/)
 - Running and recovering it in production? → [Operations](../operations/)

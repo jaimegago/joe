@@ -19,7 +19,7 @@ does.
 - [Overview](overview/) — what Joe is and the governed-safety invariant.
 - [Quickstart](quickstart/) — get a Joe daemon running.
 - [Concepts](concepts/) — explanation: why Joe is governed, how its parts fit.
-- [Install and Build](install-and-build/) — build the `joe` binary from source.
+- [Install and Build](install-and-build/) — download a released `joe` binary, or build it from source.
 - [Configuration](configuration/) — the YAML config and environment surface.
 - [Components](components/) — the systems Joe connects to.
 - [Guides](guides/) — task-focused how-to.

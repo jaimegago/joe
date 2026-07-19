@@ -631,14 +631,20 @@ and becomes load-bearing.
 
 ## Install and Build — `/install-and-build/`
 
-### Distribution posture: build-from-source today, release pipeline armed to publish on tag
+### Distribution posture: published release binaries plus build-from-source; archives and checksums only, no signing
 
-- **Claim.** Joe is distributed build-from-source only today — no published release binaries
-  exist. The release pipeline is **armed to publish**: a `v`-prefixed tag push triggers a
-  dedicated release workflow that runs `goreleaser release --clean`, publishing a GitHub Release
-  with the built archives and a checksums file. Until an operator pushes such a tag, no release
-  exists and building from source is the only way to obtain `joe`.
-- **Mechanism.** `.goreleaser.yaml` (`release.disable` unset/false; `before.hooks` stage the real
+- **Claim.** Joe is distributed two ways: as **published release binaries** for the platforms in
+  the `.goreleaser.yaml` build matrix, and as **source** anyone can build. A release is published
+  by a `v`-prefixed tag push, which triggers a dedicated release workflow running
+  `goreleaser release --clean`; the resulting GitHub Release carries the built archives and a
+  `checksums.txt` file. The published artifact set is **exactly that** — the pipeline does **not**
+  sign archives, and ships no install script, Homebrew tap, Scoop bucket, or distribution package.
+  Build-from-source remains a first-class peer path, not a fallback.
+- **Mechanism.** `.goreleaser.yaml` (`release.disable` unset/false; **no `signs:` block — signing
+  is unconfigured, which is what makes the "no signing" half of the claim structural rather than
+  editorial**; `archives.formats: tar.gz`; `checksum.name_template: checksums.txt`;
+  `builds.goos` = linux/darwin and `builds.goarch` = amd64/arm64 define the supported platform
+  set; `before.hooks` stage the real
   web UI via `scripts/stage-ui-for-release.sh` — the same source/dest the Makefile's `build-ui`
   target uses — before every goreleaser build or release, so a published binary cannot ship the
   placeholder embed); the tag-triggered `.github/workflows/release.yml` (`contents: write`,
@@ -647,10 +653,14 @@ and becomes load-bearing.
   publishes.
 - **Pinning tests.** None (no Go test guards this; the CI snapshot job's `ui_digest`-based
   verification step is a CI-level guard proving the staged UI is real, not a named Go test).
-- **Binding note. Launch-bound.** The "no published release binaries" half of this claim is
-  expected to flip the moment the `v0.1.0` tag is pushed and cut (`release-pipeline-02`,
-  `docs/backlog/release-pipeline.md`) — revise this entry and the Install and Build page's
-  copy at that point; reaching that trigger is the cue to revise, not drift.
+- **Binding note.** No longer launch-bound: the `release-pipeline-02` doc sweep rewrote this
+  entry and the Install and Build page to the release-exists state on the same commit the
+  operator tags `v0.1.0`, discharging the previous launch-bound note. The claim is now
+  **mechanism-bound in two directions**: adding a `signs:` block (or any tap, bucket, installer,
+  or package target) to `.goreleaser.yaml` obliges a revision of the "archives and checksums
+  only, no signing" half, and changing `builds.goos`/`builds.goarch` obliges re-checking the
+  supported-platform-set half. The published page states no archive filename and no restated
+  platform list, so a matrix change does not silently falsify page copy (D-0032).
 
 ---
 

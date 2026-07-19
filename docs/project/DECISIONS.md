@@ -10,6 +10,94 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0122 — `v0.1.0` is cut as Joe's first public release: distribution moves from build-from-source-only to published binaries plus source, the Install and Build page is restructured download-first with source as a first-class peer, and the unfounded "signed archives" claim is removed
+
+- Date: 2026-07-19
+- Status: accepted
+- Session: release-pipeline-02
+- Decision: Joe cuts **`v0.1.0`**, its first public release, completing the two-session split
+  reserved by D-0091. `release-pipeline-01` armed the pipeline; this session performs the
+  distribution-posture doc sweep, and the **operator** cuts and pushes the tag on **this
+  commit's SHA** — not this session, and not CI. The same-SHA discipline is the point: the
+  doc sweep and the tag land together, so the repository is never in a state where its own
+  copy claims a release exists before one does, nor one where a release exists that the docs
+  still deny.
+
+  **Distribution posture.** From build-from-source-only to **published release binaries plus
+  build-from-source, as first-class peers**. Source is explicitly *not* demoted to a fallback:
+  it remains the right path for contributing, for running an untagged commit, and for any
+  platform outside the release matrix.
+
+  **What a release contains, stated as a bound.** Archives and a `checksums.txt` file, and
+  nothing else. **No signing**, no install script, no Homebrew tap, no Scoop bucket, no
+  distribution package. This is not a roadmap hedge — it is what `.goreleaser.yaml` is
+  configured to produce, and adding any of it is its own posture decision (unchanged from
+  `release-pipeline-01`'s out-of-scope list).
+
+  **Signing-claim correction.** `docs/public/install-and-build/_index.md` claimed the pipeline
+  "publishes signed archives and checksums". `.goreleaser.yaml` has **no `signs:` block** and
+  never had one, so the claim was unfounded at the moment it was written — a published `v0.1.0`
+  would not have made it true. It is **removed rather than softened**: the page now states the
+  absence of signing affirmatively, and the SITE-CLAIMS entry records the missing `signs:`
+  block as the mechanism, which makes the negative claim structural rather than editorial.
+  A tree-wide sweep confirmed the page was the only site carrying it.
+
+  **Install and Build restructure.** The page leads with **download-and-verify** (fetch the
+  archive for your platform from the GitHub Releases page, verify against `checksums.txt` with
+  real copy-pasteable `sha256sum`/`shasum --ignore-missing --check` commands, extract, run),
+  followed by build-from-source as a peer section. Prerequisites are **split**, so the download
+  path is no longer gated on Go, Node, or git — it needs only a shell and a SHA-256 utility.
+  Per D-0032 the page states **no archive filename** (no `archives.name_template` is configured,
+  so the resolved default is not verifiable from the config) and **no restated platform list**
+  (it points at `.goreleaser.yaml`'s `builds.goos`/`builds.goarch` and at the Releases page's
+  own asset list). `checksums.txt` *is* named, because `checksum.name_template` explicitly sets
+  it. The "Why nothing is published yet" section is **deleted, not rewritten** — its premise is
+  gone, and a mirror-image "why we publish" section would be explanation smuggled into a
+  procedure page (D-0052).
+
+  **Swept sites.** `README.md`'s License-heading distribution statement; the Install and Build
+  page; `docs/backlog/unauth-health-surface.md`'s reconnaissance-surface parenthetical (which
+  leaned on "build-from-source" — the argument *strengthens* post-release, since a version
+  matching a release tag identifies a widely distributed byte-identical binary whose `commit`
+  and `ui_digest` are known-in-advance constants rather than per-install values);
+  `docs/project/SITE-CLAIMS.md`'s Install and Build / Distribution entry, whose launch-bound
+  binding note is **discharged** and replaced with a two-direction mechanism binding (a `signs:`
+  block or any tap/installer target obliges revision; a `builds.goos`/`goarch` change obliges
+  re-checking the platform half). Two inbound `docs/public` blurbs that narrowed the page to
+  source-only (`_index.md`, `overview/_index.md`) were corrected. `.goreleaser.yaml`'s own
+  header comment, which asserted "distribution stays build-from-source only", was made
+  tense-neutral in the same pass.
+
+  **Quickstart, deliberately minimal.** Its false "There are no release downloads — building
+  from source is how you get `joe`" sentence is removed and its Go/Node/git prerequisites are
+  reframed as what the *build path* needs, with a pointer to the download path. Quickstart is
+  **not** restructured download-first; whether it should be is recorded as an open post-tag
+  question on the backlog item, not decided here.
+
+  **Doc-footer stamping — premise superseded mid-session.** This session was briefed to note
+  that D-0052's stamping re-open condition was "now met and evaluated next". That is stale:
+  **D-0121 (landed at `5eb62a3`, one commit before this work began) already built it** as
+  seed-time stamping in the joeagent.dev repo, discharging D-0052's deferral outright. Nothing
+  is evaluated or built here. What survives into post-tag work is D-0121's operational
+  consequence — the published footer flips only when joeagent.dev is re-seeded from a checkout
+  at the tag, which the tag push alone does not do.
+- Basis: `.goreleaser.yaml` read in full — `builds.goos` linux/darwin, `builds.goarch`
+  amd64/arm64, `archives.formats: tar.gz`, `checksum.name_template: checksums.txt`,
+  `release.github` owner/name set, and **no `signs:` block present**, which is the ground truth
+  contradicting the removed page claim. `git tag -l` empty at the time of this commit, so no
+  release exists yet and the operator's tag push on this SHA is the first. `docs/RELEASING.md`'s
+  pre-tag checklist: this commit satisfies its doc-sweep box and its DECISIONS-entry box; its
+  CI-green box and clean-tree-on-`origin/main` box are the operator's to check post-push.
+  D-0121 (`DECISIONS.md`, and `docs/backlog/release-pipeline.md`'s doc-footer section as
+  rewritten at `5eb62a3`) is the basis for the superseded-premise paragraph above.
+- Supersedes: the "no published release binaries" / build-from-source-only half of D-0091's
+  distribution posture, and the launch-bound binding note on the SITE-CLAIMS Install and Build /
+  Distribution entry. D-0091's pipeline mechanism is unchanged — this fires it, it does not
+  redesign it. Does **not** supersede D-0121; it records that D-0121 already discharged the
+  doc-footer obligation this session was briefed to open.
+
+---
+
 ## D-0121 — doc-version stamping for joeagent.dev is seed-time stamping in the joeagent.dev repo, not a tag-gated CI step: the stamp is written when the seeded docs copy is refreshed from a joe checkout, so the "these docs are from joe commit X" claim is true by construction
 
 - Date: 2026-07-19

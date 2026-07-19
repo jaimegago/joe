@@ -8,8 +8,11 @@
 # `release` and `build` are separate goreleaser subcommands, and only the
 # tag-triggered workflow ever invokes `release`.
 #
-# Until a `v`-prefixed tag is pushed, no release exists and distribution stays
-# build-from-source only (see LICENSE / CLAUDE.md / docs/backlog/release-pipeline.md).
+# Distribution is published release binaries plus build-from-source, as peers
+# (D-0122). The published artifact set is archives + checksums ONLY: there is
+# deliberately no `signs:` block below, and no tap/bucket/installer target —
+# adding any of those is its own posture decision (see CLAUDE.md /
+# docs/backlog/release-pipeline.md). The operator cuts the tag, never CI.
 version: 2
 
 project_name: joe

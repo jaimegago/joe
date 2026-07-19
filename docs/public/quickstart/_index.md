@@ -22,11 +22,15 @@ through its real interaction surface.
 
 ## Before you start
 
-You need three things installed:
+This quickstart builds `joe` from source, so you need three things installed:
 
 - **Go 1.25 or newer**
 - **Node.js and npm** (the web UI is built and embedded into the binary)
 - **git**
+
+These are requirements of the build path, not of running Joe. If you would rather skip
+the toolchain entirely, you can download a released binary instead — see
+[Install and Build](../install-and-build/) — and pick this guide back up at Step 2.
 
 You also need two credentials ready:
 
@@ -54,8 +58,9 @@ From the repository root:
 make build
 ```
 
-This builds the web UI, embeds it, and compiles a single `./joe` binary. There are no
-release downloads — building from source is how you get `joe`.
+This builds the web UI, embeds it, and compiles a single `./joe` binary. Downloading a
+published release binary is the other way to get `joe`, and leaves you at the same place
+— see [Install and Build](../install-and-build/).
 
 ## Step 2 — Set the three environment variables
 
