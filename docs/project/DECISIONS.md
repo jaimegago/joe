@@ -10,6 +10,54 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0121 — doc-version stamping for joeagent.dev is seed-time stamping in the joeagent.dev repo, not a tag-gated CI step: the stamp is written when the seeded docs copy is refreshed from a joe checkout, so the "these docs are from joe commit X" claim is true by construction
+
+- Date: 2026-07-19
+- Status: accepted
+- Session: docs-version-stamp-02
+- Decision: the published joeagent.dev docs carry a version/commit footer, implemented as
+  **seed-time stamping inside the joeagent.dev repo**. The stamp is generated at the moment
+  the seeded docs copy in joeagent.dev is refreshed from a joe checkout, which is the only
+  moment at which the identity of the source commit is knowable — so the claim the footer
+  makes ("these docs are from joe commit X") is true by construction rather than by a
+  separately-maintained assertion that can drift from the bytes it describes. CI never needs
+  a joe checkout and **no workflow changed**. This supersedes the tag-gated re-open condition
+  restated in the `release-pipeline-01` entry (D-0091); D-0052's frame — **no versioned doc
+  tree** — stands unchanged, since a single stamp on one published tree is not a version tree.
+
+  **Mechanism, recorded verbatim as the cross-repo contract** (joe does not own this code;
+  this paragraph is the interface joe relies on):
+
+  - Seed invocation, run in joeagent.dev:
+    `./scripts/sync-docs.sh --seed-from /path/to/joe`
+  - Committed data file `data/joe.yaml`, exactly four quoted-string fields:
+    `version` (`git describe --tags` in the joe checkout; the literal `"pre-release"` on any
+    non-zero exit), `commit` (full 40-char HEAD SHA), `commit_short`
+    (`git rev-parse --short HEAD`), `seeded_at` (UTC, format `2006-01-02T15:04:05Z`).
+  - Rendered by the Hextra `custom/footer.html` hook partial, on docs pages only, as:
+    `Documentation for Joe <version>, synced from commit <short sha>` — with the version
+    parenthesized in the pre-release case.
+  - The stamp is written atomically (`mktemp` + `mv`); the script fails loudly on unreadable
+    git metadata; **no version string is hardcoded anywhere in either tree**.
+
+  **Departure from D-0052's wording, stated explicitly.** D-0052 named a
+  "commit-and-`ui_digest`" stamp. `ui_digest` is **omitted**: it is computed at boot from the
+  binary's embedded UI filesystem and is not derivable from a checkout by a seed script.
+  Commit SHA plus version carry the stamp's identity claim instead.
+
+  **Consequence for the release pipeline.** Cutting `v0.1.0` does **not** by itself update the
+  published footer. The version flips only when a post-tag re-seed (`--seed-from` a checkout
+  at the tag) is run and pushed in joeagent.dev. This replaces the deferred stamping
+  copy-sweep with a single command run at tag time.
+- Basis: joeagent.dev commit `a898855` (session slug `docs-version-stamp-01`), which also
+  re-seeded the drifted seeded copy (3 files) to joe HEAD `00344fa`; the currently committed
+  stamp reads version `"pre-release"`, `commit_short` `00344fa`.
+- Supersedes: the re-open condition in the `release-pipeline-01` entry's doc-footer paragraph
+  (D-0091), and discharges D-0052's deferral of doc-version stamping. D-0052's frame — no
+  versioned doc tree — is unchanged.
+
+---
+
 ## D-0120 — boot fails closed on a key/database mismatch: an absent key is a first run only if the database says so, and a present-but-wrong key refuses too; the key path becomes configurable alongside the DSN
 
 - Date: 2026-07-19

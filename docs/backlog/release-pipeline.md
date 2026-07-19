@@ -22,6 +22,10 @@ lands.
    `git tag v0.1.0 <sha> && git push origin v0.1.0`.
 4. The tag push triggers `.github/workflows/release.yml`, which runs
    `goreleaser release --clean` and publishes the GitHub Release.
+5. In the joeagent.dev repo, re-seed the published docs from a joe checkout at
+   the tag — `./scripts/sync-docs.sh --seed-from <joe checkout at v0.1.0>` — and
+   push. This flips the published doc footer to `v0.1.0` (D-0121); the tag push
+   alone does not.
 
 ## Update-at-tag-time sites (stay true until the tag; `-02` rewrites these to
 ## reflect a published release existing)
@@ -39,12 +43,14 @@ lands.
   added in `release-pipeline-01` is launch-bound; revise its claim text once
   `v0.1.0` publishes (per the D-0077/D-0088 bidirectional register obligation).
 
-## Doc-footer version stamping — still deferred (D-0052)
+## Doc-footer version stamping — implemented (D-0121)
 
-Doc-footer version stamping on published pages stays deferred. Re-open
-condition (unchanged): the first post-launch release. `-02`'s tag-cut is that
-release, so this becomes actionable once `v0.1.0` publishes — evaluate then,
-don't build it speculatively now.
+Doc-footer version stamping is **built and live**, as seed-time stamping in the
+joeagent.dev repo (D-0121). It is no longer deferred and no longer gated on the
+first release. What it costs `-02` is one tag-time step: after pushing the
+`v0.1.0` tag, run `./scripts/sync-docs.sh --seed-from <joe checkout at the tag>`
+in joeagent.dev and push that commit. That re-seed is what flips the published
+footer from `pre-release` to `v0.1.0` — cutting the tag alone does not touch it.
 
 ## Operator runbook and first-run corrections
 
