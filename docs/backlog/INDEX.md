@@ -41,7 +41,6 @@ file for the full status, priority, blocked-by, and body.
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open |  |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |  |
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
-| [`feature-clips`](feature-clips.md) | Landing-page demo clips — record, encode, and commit to joeagent.dev | in-progress |  |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred |  |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open |  |
 | [`health-readiness-surface`](health-readiness-surface.md) | Health and readiness probe surface (/livez, /readyz) | open |  |

@@ -233,6 +233,76 @@ test(s)** · **binding note** (where applicable).
 - **Binding note. Launch-bound** in the same sense as the Safety deep-dive write-floor entry:
   the "observation is the only posture Joe boots into" framing revises when full mode lands.
 
+### Demo clips — what the three recorded clips assert
+
+The "What Joe does" section carries three screen-capture clips recorded against a live kind
+cluster staged from `examples/demo-world/`. Their claims are unlike every other entry in this
+register: the **mechanism is recorded footage**, not code, so no Go test can pin them and no
+repository change can break them. What breaks them is **re-recording**. Each entry below therefore
+states its invalidation trigger — the condition under which the footage and the copy stop agreeing
+— in place of a pinning test.
+
+The general rule: a caption may assert only what the footage actually shows. Where a fact is
+visible in frame, the caption does not restate it; where it is not visible, the caption carries it
+and becomes load-bearing.
+
+#### The feature-chat clip and caption assert the recorded run was on `gemini-2.5-flash`
+
+- **Claim.** The chat-and-streamed-agentic-loop clip was recorded on `gemini-2.5-flash`, named in
+  the caption as "a budget-tier model" — a deliberate claim that Joe's agentic loop reaches a real
+  diagnosis without a frontier model.
+- **Mechanism.** The recorded footage of `static/media/feature-chat.{mp4,webm}` and the caption on
+  the first feature row of `content/_index.md`. The model is **not** frame-visible; the caption is
+  the sole carrier of the claim, which is what makes it load-bearing.
+- **Pinning tests.** None possible — see the section preamble.
+- **Binding note. Recording-bound.** Invalidated if the clip is re-recorded on a different model;
+  the caption must change with it. The budget-tier framing is the point of the claim, so
+  re-recording on a frontier model does not merely require a name swap — it removes the claim.
+
+#### The feature-graph clip and caption assert the recorded diagnosis ran on `gemini-2.5-flash`
+
+- **Claim.** The clip shows Joe's live map of the infrastructure and a proposed fix held behind the
+  write floor, and the caption asserts the recorded diagnosis ran on `gemini-2.5-flash`, "a
+  budget-tier model".
+- **Mechanism.** The recorded footage of `static/media/feature-graph.{mp4,webm}` and the caption on
+  the second feature row of `content/_index.md`. As with feature-chat, the model is carried by the
+  caption rather than shown in frame. The write-floor half of the caption rests on the shipped
+  mechanism recorded in the Safety deep-dive entries above; only the model half is footage-bound.
+- **Pinning tests.** None possible for the footage half. The write-floor half inherits
+  `TestResolveWriteFloor_Precedence` and the executor gate-order tests via the Safety entries.
+- **Binding note. Recording-bound.** Invalidated if the clip is re-recorded on a different model;
+  the caption must change with it.
+
+#### The feature-mcp clip asserts a Claude Code session answered from Joe-served live prod state over MCP
+
+- **Claim.** The recorded Claude Code session reads a diff, queries Joe over MCP, and answers from
+  live prod state — the evidence path runs through Joe rather than through the agent's own cluster
+  access.
+- **Mechanism.** The recorded footage of `static/media/feature-mcp.{mp4,webm}` and the caption on
+  the third feature row of `content/_index.md`. **The model (`claude-opus-4-8`) is frame-visible in
+  the footage rather than claimed in the caption** — the inverse of the two clips above, and the
+  reason this caption names no model. The claim the caption does carry is the **grounding path**:
+  that the answer came from Joe-served state over MCP.
+- **Pinning tests.** None possible for the footage. The underlying server-only MCP posture is
+  covered by the Safety deep-dive entry "Joe speaks MCP in one direction only", which records that
+  it too is not yet test-pinned.
+- **Binding note. Recording-bound.** Invalidated if the clip is re-recorded such that either the
+  frame-visible model or the Joe-grounded evidence path changes. Because the model here is shown
+  rather than stated, a re-record on a different model invalidates the footage-to-claim mapping in
+  this register even though the caption text would need no edit — which is precisely why it is
+  recorded here.
+
+#### Body-copy note — the third beat was reworded to match recorded footage
+
+- The third feature row's body copy was reworded from "check the change against Joe's **live
+  infrastructure graph**" to "check the change against Joe's **live view of prod**", and its
+  caption from "queries Joe's live graph over MCP, and answers from prod state" to "queries Joe
+  over MCP, and answers from live prod state". The recorded session reaches live prod state through
+  Joe's MCP tool surface generally, not specifically through a rendered graph, so the prior wording
+  asserted more than the footage shows. Recorded here because the change was made **to match
+  footage**, which makes it a recording-bound editorial constraint rather than free copy: a future
+  copy pass that restores "infrastructure graph" would re-introduce the mismatch.
+
 ---
 
 ## Configuration — `/configuration/`
