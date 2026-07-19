@@ -10,6 +10,65 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0123 — first-run correction pass has run against `v0.1.0`'s observed release: `docs/RELEASING.md` corrected, the release-pipeline item closes, two follow-ups split out
+
+- Date: 2026-07-19
+- Session: release-pipeline-03
+- Decision: The first-run correction pass obliged by `docs/RELEASING.md`'s
+  closing section and reserved by D-0092 has run, against `v0.1.0` run
+  29697892534 (tag push on fa8e3ba, success, 9m27s total / 9m22s GoReleaser
+  Release job). `docs/RELEASING.md` is corrected in place: the Honesty note
+  now records that `release.yml` has fired once and succeeded; the
+  watch-the-run guidance carries observed timing; the go/no-go section
+  carries the observed Node.js 20 deprecation annotation (three actions —
+  `actions/checkout@v4`, `actions/setup-go@v5`, `actions/setup-node@v4` —
+  force-upgraded to Node 24 by the runner, unrelated to the workflow's own
+  Node 22 setup-node step), observed changelog behavior (full commit history,
+  no prior tag to bound it, changelog trimming left as an open consideration
+  not a decision), and observed archive/checksum defaults (four
+  `joe_0.1.0_<os>_<arch>.tar.gz` archives each carrying `joe` + `LICENSE` +
+  `README.md`, `checksums.txt` verified clean); the integrity-check step now
+  states its previously-undocumented auth prerequisite (`GET /api/v1/version`
+  requires a live session against the configured identity provider when auth
+  is enabled) and a caution that a `HOME` env-var override did not isolate
+  the release binary from the operator's real `~/.joe` on run 1. The
+  rollback section's UNVERIFIED partial-failure claims are left tagged
+  UNVERIFIED — run 1 succeeded end to end, so nothing about failure handling
+  was observed; the prose now says so explicitly rather than implying
+  coverage.
+
+  `v0.1.0`'s go/no-go verification (`docs/RELEASING.md`) passed in full,
+  including the `ui_digest` match (ffc3ec0c8328b1ed735e837d81e03accb6a9e955e434770790bcf9d8bed46e3e
+  against an independent `scripts/verify-ui-digest` run over
+  `internal/webui/dist` staged at the tag).
+
+  `docs/backlog/release-pipeline.md`'s three closure conditions are all met
+  — the tag published (D-0122), the joeagent.dev re-seed flipped the
+  published footer (D-0121's tag-time step), and this correction pass has
+  run — so the item closes and moves to `docs/backlog/done/`. Its open
+  Quickstart download-first question splits out to
+  [`docs/backlog/quickstart-download-first.md`](../backlog/quickstart-download-first.md)
+  per the item's own instruction that closure need not block on it. The
+  `HOME`-override isolation observation opens a new item,
+  [`docs/backlog/joe-home-resolution.md`](../backlog/joe-home-resolution.md),
+  scoped as a read-only investigation of how `joe` resolves its home
+  directory — any resulting behavior change is a separate future decision.
+- Basis: `gh run list --workflow=release.yml` (run 29697892534, success,
+  createdAt/updatedAt 9m27s apart); `gh api .../check-runs/88221698927/annotations`
+  (the Node.js 20 warning, verbatim action list); `gh release view v0.1.0`
+  (543-line full-history changelog body, four archives + checksums.txt);
+  the operator's first-run report of the auth prerequisite, the `HOME`
+  isolation gap, and the `ui_digest` match (session-supplied ground truth,
+  not independently re-derived per this session's read-only-Phase-1 scope).
+- Supersedes: nothing directly — corrects the prose of `docs/RELEASING.md`
+  (session `releasing-runbook`, D-0092) against real behavior rather than
+  reversing a prior decision. Discharges D-0092's reserved
+  pending-first-run-correction status; D-0092 itself is not edited (this log
+  is append-only).
+- Status: accepted. `docs/backlog/release-pipeline.md` closes.
+
+---
+
 ## D-0122 — `v0.1.0` is cut as Joe's first public release: distribution moves from build-from-source-only to published binaries plus source, the Install and Build page is restructured download-first with source as a first-class peer, and the unfounded "signed archives" claim is removed
 
 - Date: 2026-07-19

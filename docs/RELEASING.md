@@ -23,12 +23,11 @@ tags automatically. The tag push is the single irreversible trigger for a
 public, consumable artifact — that decision belongs to a human, made
 deliberately, on a commit the operator has already verified.
 
-**Honesty note.** As of this writing, `release.yml` has never fired — its own
-file history is a single commit, and no tag exists in this repository
-(`git tag -l` is empty). `v0.1.0` will be its first-ever invocation. Treat
-this runbook as a pre-flight checklist, not a description of proven behavior.
-Correct it against what actually happens on that first run (see the closing
-section).
+**Honesty note.** `release.yml` has fired once: the `v0.1.0` tag push
+(commit fa8e3ba) triggered run 29697892534, which succeeded. Its behavior on
+that run is recorded below and in the closing section; everything else in
+this runbook — repeat runs, partial-failure behavior, multi-release
+sequencing — remains a pre-flight checklist, not proven behavior.
 
 ## Pre-tag checklist
 
@@ -100,7 +99,19 @@ restated copy here, which would go stale the next time the matrix changes
 (D-0032).
 
 Watch the run under the repository's Actions tab, filtered to the `Release`
-workflow, for the run triggered by your tag push.
+workflow, for the run triggered by your tag push. **Observed timing (run 1,
+`v0.1.0`):** total run 9m27s; the `GoReleaser Release` job itself was 9m22s
+of that. Treat this as one data point, not a guaranteed bound.
+
+**Observed run-1 annotation.** The run carried one warning-level annotation,
+not a failure: GitHub's runner reported that `actions/checkout@v4`,
+`actions/setup-go@v5`, and `actions/setup-node@v4` each internally target the
+now-deprecated Node.js 20 and were force-upgraded to Node.js 24 by the
+runner. This is unrelated to the workflow's own `actions/setup-node` step,
+which requests Node 22 for the workflow's script steps — the warning is about
+those three actions' own internal implementation, not the workflow's
+requested runtime. Harmless as observed (the run succeeded); revisit if a
+future run's annotation set changes shape.
 
 ## Go/no-go verification on the published release
 
@@ -110,10 +121,23 @@ the release as done:
 - [ ] A GitHub Release exists for the tag, with archives for each
       `builds.goos`/`goarch` combination in `.goreleaser.yaml` and a
       `checksums.txt` file (`checksum.name_template`,
-      [.goreleaser.yaml:55-56](.goreleaser.yaml#L55-L56)).
+      [.goreleaser.yaml:55-56](.goreleaser.yaml#L55-L56)). **Observed on run 1
+      (`v0.1.0`, historical, not a restated spec — `.goreleaser.yaml` is
+      current truth per D-0032):** four archives named
+      `joe_0.1.0_<os>_<arch>.tar.gz` (darwin/amd64, darwin/arm64,
+      linux/amd64, linux/arm64), each containing the `joe` binary plus
+      `LICENSE` and `README.md`; `checksums.txt` named all four and verified
+      clean with `shasum -a 256 --check` (four `OK` lines).
 - [ ] Release notes were generated (goreleaser's default commit-log
       changelog — no `changelog:` block is configured, so this is
-      goreleaser's stock behavior, not custom copy).
+      goreleaser's stock behavior, not custom copy). **Observed on run 1:**
+      because no prior tag existed, the changelog enumerated the entire
+      commit history back to the repository root, not just commits since a
+      previous release. Expected stock behavior for a first release, not a
+      defect — but note for future releases the changelog will instead scope
+      to commits since the prior tag. Whether to configure changelog
+      trimming (e.g. excluding certain commit prefixes) for future releases
+      is an open consideration, not decided here.
 - [ ] **Released-binary integrity check:** download one of the published
       archives, extract the `joe` binary, boot it, and call
       `GET /api/v1/version`. Confirm:
@@ -123,12 +147,46 @@ the release as done:
     ([scripts/verify-ui-digest/main.go:1-24](../scripts/verify-ui-digest/main.go#L1-L24)),
     the same helper CI's `goreleaser-build` guard uses.
   - It does **not** match the placeholder digest (the digest computed over a
-    directory containing only `internal/webui/dist/.gitkeep`).
+    directory containing only `internal/webui/dist/.gitkeep`). On run 1 the
+    placeholder-mismatch half was discharged transitively rather than
+    re-run standalone: CI's `goreleaser-build` guard already proves it on
+    the same SHA (pre-tag checklist item above), so the operator's own check
+    was the positive match only.
   - `version` and `commit` reported match the tag and SHA you released.
+  - **Credential prerequisite (undocumented until run 1):** if the operator's
+    config has auth enabled — the expected posture for a real install —
+    `GET /api/v1/version` requires an authenticated request. The operator
+    needs a live session against the configured identity provider (dex, in
+    the run-1 environment) before this call will succeed; a bare `curl`
+    against an auth-enabled instance returns a 401, not the version payload.
+    Plan for this before starting the integrity check, not after hitting the
+    401.
+  - **Isolation caution.** Booting the release binary with an overridden
+    `HOME` environment variable does **not** isolate it from the operator's
+    real state: on run 1, doing this still resolved the operator's actual
+    `~/.joe` (database, encryption key, registered components, session
+    archive) and ran live refreshers against real data. Do not assume a
+    `HOME` override is sufficient sandboxing for this check. How `joe`
+    actually resolves its home directory is an open investigation
+    ([`docs/backlog/joe-home-resolution.md`](backlog/joe-home-resolution.md)),
+    not settled here — until it is, treat every integrity-check boot as
+    touching real state and plan the check accordingly (e.g. a disposable
+    machine or container, not just an env var).
+  - **Run-1 result:** `version` 0.1.0, `commit` fa8e3baaded73cae4cdf7043d89235970b3ca0eb,
+    `ui_digest` ffc3ec0c8328b1ed735e837d81e03accb6a9e955e434770790bcf9d8bed46e3e —
+    matched an independent `scripts/verify-ui-digest` run over
+    `internal/webui/dist` staged at the tag via
+    `scripts/stage-ui-for-release.sh`.
 
 If any of these fail, treat the release as broken — see rollback below.
 
 ## Rollback / failure handling
+
+One real run exists (`v0.1.0`, run 29697892534) and it succeeded end to end
+— nothing below about failure or partial-failure handling was exercised by
+it. These claims remain UNVERIFIED operator judgment, not observed behavior;
+do not treat run 1's clean success as evidence either way about how a failed
+run behaves.
 
 - **Workflow fails mid-publish** (e.g. `goreleaser release` errors out).
   UNVERIFIED operator judgment, not asserted GoReleaser/GitHub behavior: a
@@ -155,16 +213,26 @@ If any of these fail, treat the release as broken — see rollback below.
 
 ## Correct this after the first real release
 
-This runbook was written before `release.yml` had ever run. Once `v0.1.0`
-actually publishes, revisit:
+The first-run correction pass has run (session `release-pipeline-03`,
+D-0123), against `v0.1.0` run 29697892534 (success). What it found is folded
+into the sections above: the Honesty note, run timing, the Node.js 20
+annotation, release-notes/changelog behavior, observed archive/checksum
+defaults, the auth prerequisite on the version-endpoint check, and the
+`HOME`-override isolation caution.
 
-- Whether the `goreleaser-build` CI guard was in fact a faithful proxy for
-  the real `release` run, or whether `goreleaser release` surfaced any
-  behavior (auth, changelog content, asset naming) the snapshot job didn't.
-- The rollback section's UNVERIFIED claims about GitHub's/goreleaser's
-  actual behavior on partial failure — replace with what was actually
-  observed.
-- Timing: how long the workflow actually took, so "watch the run" guidance
-  can be more concrete.
-- Whether the go/no-go verification steps above were sufficient, or missed
-  something only visible on a real published release.
+What remains unverified after this pass, because run 1 succeeded and
+exercised none of it:
+
+- The rollback section's claims about GitHub's/goreleaser's actual behavior
+  on partial or mid-publish failure — still UNVERIFIED operator judgment,
+  not observed. A future failed run is what would settle these.
+- Whether the `goreleaser-build` CI guard remains a faithful proxy for the
+  real `release` run on a *second* release — run 1 is one data point; a
+  second tag cut may surface behavior (e.g. changelog scoping now that a
+  prior tag exists) the snapshot job still doesn't model.
+- How `joe` actually resolves its home directory — opened as its own
+  investigation, [`docs/backlog/joe-home-resolution.md`](backlog/joe-home-resolution.md),
+  not settled here.
+- Whether changelog trimming is worth configuring for future releases, given
+  run 1's full-history changelog — recorded as an open consideration above,
+  not decided.
