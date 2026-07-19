@@ -40,7 +40,6 @@ file for the full status, priority, blocked-by, and body.
 | [`dev-skill-test-pinning`](dev-skill-test-pinning.md) | Strengthen dev standard skill on regression tests and pinning | open | next |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open |  |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open |  |
-| [`encryption-key-path`](encryption-key-path.md) | Encryption key: a configurable path, and whether a keyless boot should fail loudly | open | now |
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
 | [`feature-clips`](feature-clips.md) | Landing-page demo clips — record, encode, and commit to joeagent.dev | in-progress |  |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred |  |

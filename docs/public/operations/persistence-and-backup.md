@@ -11,9 +11,10 @@ produces something that looks like a backup and restores into a Joe that cannot 
 of its components. This page covers what to persist, how to copy it safely while Joe is
 running, and what a restore honestly recovers.
 
-For the config keys named here — `database.dsn`, `database.driver`, and their environment
-equivalents — see [Configuration](../../configuration/); this page names the keys but does
-not restate their defaults.
+For the config keys named here — `database.dsn`, `database.driver`,
+`database.encryption_key_path`, and their environment equivalents — see
+[Configuration](../../configuration/); this page names the keys but does not restate their
+defaults.
 
 ## What to persist
 
@@ -27,8 +28,8 @@ sense together:
   this file is the only thing that turns it back into a working component.
 
 **Persist the directory, not the database file.** The two are useless apart: a database
-without its key restores into a Joe that starts and connects nothing, and a key without its
-database is a key to nothing. In Kubernetes, that means a PersistentVolume covering the
+without its key restores into a Joe that refuses to start, and a key without its database is
+a key to nothing. In Kubernetes, that means a PersistentVolume covering the
 `.joe` directory — mounting only the database file reproduces exactly the failure this page
 exists to prevent.
 
@@ -39,19 +40,30 @@ too.
 ### If you relocate the database
 
 `database.dsn` (or `JOE_DATABASE_DSN`) moves the database file. **The encryption key does
-not follow it.** The key path is not configurable: it is resolved from Joe's `.joe`
-directory under the home directory of the account running `joe`, regardless of where the
-DSN points. Relocate the database and you have split your durable state across two
-locations, and **both must be persistent**. A container that mounts a volume at the
-relocated DSN path and leaves the home directory ephemeral will mint a fresh key on every
-restart — see [What a restore does not bring back](#what-a-restore-does-not-bring-back).
+not follow it automatically — move it deliberately** with
+`database.encryption_key_path` (or `JOE_DATABASE_ENCRYPTION_KEY_PATH`). Set only the DSN
+and the key stays in Joe's `.joe` directory under the home directory of the account running
+`joe`, which splits your durable state across two locations that must **both** be
+persistent. A container that mounts a volume at the relocated DSN path and leaves the home
+directory ephemeral loses its key on every restart.
 
-Two constraints on the DSN value itself:
+Point both at the same volume:
 
-- It must be an **absolute path**, or one relative to the working directory.
-- **A leading `~` is not expanded.** Joe does not perform tilde expansion on this value; it
-  is passed to the storage engine as written, and `~/joe.db` creates a directory literally
-  named `~`. Write the path out in full.
+```yaml
+database:
+  dsn: /var/lib/joe/joe.db
+  encryption_key_path: /var/lib/joe/encryption.key
+```
+
+The same two constraints apply to **both** values, deliberately — they behave identically:
+
+- Each must be an **absolute path**, or one relative to the working directory.
+- **A leading `~` is not expanded.** Joe does not perform tilde expansion on either value;
+  each is used as written, and `~/joe.db` creates a directory literally named `~`. Write
+  the paths out in full.
+
+If the key does go missing, Joe will not start rather than starting broken — see
+[What a restore does not bring back](#what-a-restore-does-not-bring-back).
 
 This page is SQLite-only, because SQLite is the only functional store. A PostgreSQL
 (`pgx`) driver value exists in the configuration surface but is not operational — see the
@@ -132,9 +144,11 @@ Before it writes anything, it checks the things that otherwise fail silently lat
   naming what it looked for.
 - **The key is present.** If the backup carries encrypted component configuration and no
   `encryption.key` is in place, restore refuses and names the path it looked at — because
-  restoring without it produces a Joe that starts cleanly and reaches nothing (see
-  [below](#what-a-restore-does-not-bring-back)). `--allow-missing-key` accepts that outcome
-  deliberately. It is a separate flag from `--force`, and neither implies the other.
+  restoring without it produces a database Joe will refuse to boot from (see
+  [below](#what-a-restore-does-not-bring-back)). Boot checks this too; restore checks it
+  *first*, which is the point — refusing here means nothing has been overwritten yet.
+  `--allow-missing-key` accepts that outcome deliberately. It is a separate flag from
+  `--force`, and neither implies the other.
 - **The database is not visibly in use.** If it finds another process holding the database
   open, restore stops and tells you to stop Joe. See the caveat above: a clean result here is
   the absence of a signal, not a guarantee.
@@ -146,7 +160,8 @@ An existing database is replaced only with `--force`. Back it up first — `joe 
 overwrites, and the database it overwrites is not recoverable from anything but a backup.
 Restore never writes to the backup file; it reads it through a read-only handle throughout.
 
-Afterwards, put the **matching** `encryption.key` back in the `.joe` directory if it is not
+Afterwards, put the **matching** `encryption.key` back where Joe expects it — the path in
+`database.encryption_key_path`, or the `.joe` directory if that is unset — if it is not
 already there, and start Joe.
 
 ### The manual procedure
@@ -159,8 +174,9 @@ If you would rather not use the command, the equivalent by hand is:
    scratch files.
 3. Put the backup file at the configured database path (the `.joe` directory's `joe.db`, or
    wherever `database.dsn` points).
-4. Put the **matching** `encryption.key` back in the `.joe` directory — the key that was
-   current when that backup was taken.
+4. Put the **matching** `encryption.key` back where `database.encryption_key_path` points,
+   or in the `.joe` directory if it is unset — the key that was current when that backup was
+   taken.
 5. Start Joe.
 
 **Do not skip step 2.** If a `joe.db-wal` from the previous database is still sitting there
@@ -173,26 +189,39 @@ removes itself. Sidecars are only absent after a clean shutdown; after a crash, 
 or a container stop that did not wait, they are still there. This is the trap `joe db
 restore` exists to close.
 
-Step 4 is the other one that gets skipped, and it also fails quietly. Read on before
+Step 4 is the other one that gets skipped. It no longer fails quietly — Joe refuses to
+start without the key — but the database is just as unusable either way. Read on before
 deciding you can do without it.
 
 ### What a restore does not bring back
 
-**Without the matching key, Joe boots cleanly and is broken.** Nothing at boot guards this —
-Joe starts either way, and `joe db restore` is the only thing that checks. Restore by hand,
-or override the check with `--allow-missing-key`, and the behavior is worth stating exactly:
+**Without the matching key, Joe refuses to start.** This is checked in two places: `joe db
+restore` catches it before anything is overwritten, and boot catches it if you restored by
+hand or overrode the check with `--allow-missing-key`. Two distinct refusals:
 
-- Joe finds no key file, **generates a fresh one**, and continues starting. This is not an
-  error condition; it is the same code path that gives a first-run install its key.
-- The server comes up. The API serves. Nothing announces a problem at the top of the log.
-- But every registered component's configuration was encrypted with the *old* key and
-  cannot be decrypted with the new one. Joe connects to **nothing**, warns in its logs, and
-  the components API returns errors.
+- **The key file is missing** and the database holds encrypted component configuration. Joe
+  does **not** mint a replacement — a fresh key cannot read a single stored value, and
+  writing one would make the loss permanent and silent. It stops, names the key path it
+  looked at, and names the database. A genuine first run — no key, nothing encrypted yet —
+  still generates a key and starts normally; the database is what tells the two apart.
+- **The key file is present but wrong.** Joe stops and lists **every component whose
+  configuration it could not decrypt**. Read that list: if *every* component is named, the
+  key is the wrong one and the fix is finding the right one. If a *single* component is
+  named, that row is damaged rather than the key wrong — restore from a backup, or delete
+  that component and re-register it.
 
-There is **no recovery** from this and no repair path: no key rotation, no re-encrypt, no
-prompt to supply the original key. The component configuration in that database is
-permanently unreadable. The only fix is restoring the original key file — so if it is gone,
-re-registering every component by hand is the whole of the recovery procedure.
+That list is the diagnosis, and it is worth knowing why Joe cannot narrow it further: the
+encryption cannot distinguish "wrong key" from "altered data". Both are one failure, and
+which one it is can only be inferred from how many components failed. That is also why a
+single damaged row stops boot rather than being skipped — Joe will not guess which of the
+two it is looking at.
+
+There is **no recovery** from a genuinely lost key and no repair path: no key rotation, no
+re-encrypt, no prompt to supply the original. The component configuration in that database
+is permanently unreadable. The only fix is restoring the original key file — so if it is
+gone, re-registering every component by hand is the whole of the recovery procedure. What
+changed is that you find this out at start-up, immediately, instead of discovering weeks
+later that Joe has been running and reaching nothing.
 
 **Service-account keys are not in the database.** They live in the config file under
 `server.service_accounts`, so restoring a database does not restore them, and losing the

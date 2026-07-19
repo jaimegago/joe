@@ -10,6 +10,107 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0120 — boot fails closed on a key/database mismatch: an absent key is a first run only if the database says so, and a present-but-wrong key refuses too; the key path becomes configurable alongside the DSN
+
+- Date: 2026-07-19
+- Status: accepted
+- Session: encryption-key-path
+- Decision: two independent halves of `docs/backlog/encryption-key-path.md`, landed together
+  because the second makes the first survivable — an operator told to "put the key back" needs
+  somewhere to put it that the database will follow.
+
+  **Rule A — an absent key is a first run only if the DATABASE says so.**
+  `crypto.LoadOrCreateKey` takes a second parameter, an `EncryptedDataProbe`, and its
+  generate-on-absence branch is conditional on that probe reporting no encrypted data. The
+  composition root supplies it from `store.ScanComponentConfigs` (`internal/store/component_scan.go`),
+  which counts component rows whose config carries the `enc:` marker. No encrypted rows →
+  genuine first boot, generate as before. Encrypted rows present → refuse, naming the key path
+  and the recovery. Three properties are deliberate: the probe answers about **data, not rows**
+  (a backward-compat plaintext install is still a first run, or the guard would refuse that boot
+  forever); a **probe error refuses** rather than assuming a first run, because minting is the
+  irreversible direction; and a **nil probe is an error**, because the implied "no data" answer
+  is precisely the unconditional-generate behaviour being removed and a caller that forgot to
+  wire the database must not silently get it back. The refusal writes no key file.
+
+  **Rule B — a key that is present but wrong fails boot.** `EncryptedComponentRepository.VerifyConfigs`
+  runs once at boot immediately after wiring and decrypts every stored component config.
+  Warning and continuing would reproduce, from the other direction, the exact silent-degradation
+  shape Rule A removes. **Accepted trade-off, stated plainly: one corrupted row also prevents
+  boot.** AES-GCM cannot distinguish a wrong key from an altered ciphertext, and no heuristic
+  separates them honestly, so none was invented. The mitigation is diagnosability rather than
+  tolerance — the check does **not** stop at the first failure (unlike Get/List, whose callers
+  want a result); it collects **every** failing component and enumerates them, so "all of them"
+  reads as a wrong key and "one of them" as a damaged row, and the two recovery paths are
+  named separately in the boot error. Scope is the authentication class only: a transient store
+  error keeps its prior posture. That required a typed seam at the decrypt boundary, where the
+  wrap had been a string — `crypto.ErrAuthentication` (wrapping every `gcm.Open` failure) and
+  `store.ConfigAuthError{ComponentID, Err}` — so the boot path branches on the class, never on
+  message text.
+
+  **The key path becomes configurable.** `database.encryption_key_path` /
+  `JOE_DATABASE_ENCRYPTION_KEY_PATH`, mirroring `database.dsn` / `JOE_DATABASE_DSN` and sitting
+  in the same config block. It **inherits the DSN's sharp edge knowingly**: the value is used
+  verbatim and `~` is NOT expanded. The backlog item named the three outcomes and ranked them —
+  fixing expansion for the key alone, leaving the DSN inconsistent, is the worst; this takes the
+  consistent-and-documented option, and the doc comment on the field says so in the same breath.
+  Resolution goes through one helper, `encryptionKeyPathFor` (`cmd/joe/db.go`), used by both the
+  daemon's boot load and `joe db restore`'s missing-key pre-flight, so the command that warns
+  about a missing key and the process that would mint one can never name different files.
+
+  **Ride-alongs.** The `component credential encryption enabled` log moved **below** the
+  verification pass: it previously printed unconditionally, including on the boot where a key
+  had just been minted over an unreadable database, and now asserts something proven. `joe db
+  restore`'s missing-key refusal and its `--allow-missing-key` warning were rewritten — both
+  described an outcome ("the restored Joe will start but reach none of its components") that
+  Rule A has made false. The restore-route gate is **kept and kept first**: refusing there means
+  nothing was overwritten, whereas catching it at boot means the restore already happened.
+  `store.ScanComponentConfigs` is the single home for the encrypted-marker detection; `joe db
+  restore`'s `InspectComponents` now delegates to it, keeping only its SQLite-specific
+  table-existence check (it alone inspects a foreign file that may not be a Joe database).
+  `NewEncryptedComponentRepository` returns the exported concrete `*EncryptedComponentRepository`
+  rather than the `ComponentRepository` interface, so `VerifyConfigs` cannot be reached by a
+  type assertion the composition root could silently skip.
+
+  **Deliberately not built:** an escape hatch for an operator who genuinely wants to start over.
+  Deleting the database, or `joe db restore`, are the existing paths, and a `--force-new-key`
+  flag would be a loaded gun aimed at exactly the state this decision protects.
+- Basis: boot order was **verified, not assumed** — the backlog item required it. The store is
+  opened at `cmd/joe/server.go` and migrated immediately after, both well above the key load, so
+  the probe has a migrated database to query.
+  The behaviour was verified **against the real binary**, not only in unit tests, using the new
+  config keys to relocate both halves of durable state into a scratch directory. First boot:
+  key and database created side by side, `component credential encryption enabled` logged.
+  Encrypted component rows seeded through the production repository. Key deleted → exit 1,
+  `REFUSING TO BOOT — the encryption key is missing but this database holds encrypted component
+  configuration`, and **no key minted** (the scratch directory held only the database
+  afterwards). Key replaced with 32 random bytes → exit 1, `REFUSING TO BOOT — component
+  configuration could not be decrypted with the loaded key`, with both seeded components
+  enumerated by ID. Correct key restored → boot proceeds past the encryption stage (it then
+  stops on an unrelated missing `GEMINI_API_KEY`, which is downstream).
+  Unit pinning: Rule A by `TestLoadOrCreateKey_AbsentKeyWithEncryptedDataRefuses` (which also
+  asserts no key is written on the refusal path), `TestLoadOrCreateKey_ProbeErrorFailsClosed`,
+  `TestLoadOrCreateKey_NilProbeRefused`, `TestLoadOrCreateKey_ProbeNotConsultedWhenKeyPresent`,
+  and `TestScanComponentConfigs_PlaintextRowsAreNotEncryptedData` for the data-not-rows
+  boundary. Rule B by `TestVerifyConfigs_WrongKeyFailsEveryComponent`,
+  `TestVerifyConfigs_NamesOnlyTheDamagedRow`, and `TestVerifyConfigs_PassesWhenKeyMatches`; the
+  typed seam by `TestDecrypt_WrongKeyIsAuthenticationClass`, which also asserts a base64 decode
+  failure does **not** carry the sentinel. The first two of those close the two coverage gaps
+  `SITE-CLAIMS.md` had recorded by name as missing — "no test that a wrong key fails to decrypt
+  a component through the repository" chief among them.
+  `TestScanComponentConfigs_DetectsEncryptedThroughTheRealWritePath` writes its rows through the
+  production repository rather than hand-crafting them, so the detection is proven against the
+  actual at-rest shape — which is JSON-quoted **and** carries BLOB storage class despite the
+  TEXT declaration, the pair of accidents that makes a SQL `LIKE` match nothing.
+- Supersedes: nothing structurally, but it **invalidates the published claim** on
+  `/operations/persistence-and-backup/` that Joe "boots cleanly and breaks silently" without its
+  key, and the `SITE-CLAIMS.md` entry recording that behaviour — both rewritten in this session,
+  which is the register-maintenance duty CLAUDE.md makes bidirectional. Amends D-0115's scope
+  note: the restore-route gate is no longer "the only thing that checks". Rule A's absent-key
+  branch supersedes the unconditional generate-on-absence that `crypto.LoadOrCreateKey` has had
+  since the encryption layer was introduced.
+
+---
+
 ## D-0119 — promotion is an activation step, not only an arming step: a successful promote eagerly connects and registers the live adapter, best-effort behind the committed arm; this makes promote the second runtime construction site and corrects D-0056's Basis
 
 - Date: 2026-07-19

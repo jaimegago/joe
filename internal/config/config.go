@@ -109,6 +109,21 @@ type DatabaseConfig struct {
 	// For pgx:    a libpq-style connection string (e.g. postgres://user:pass@host:5432/joe).
 	// When empty with Driver "sqlite", joecored uses the default database path.
 	DSN string `yaml:"dsn"`
+	// EncryptionKeyPath is where the AES-256 key that encrypts component config
+	// at rest is read from, and written to on a first run. When empty, Joe uses
+	// ~/.joe/encryption.key.
+	//
+	// It sits beside DSN because it must MOVE with DSN. The key and the database
+	// are one unit of durable state: relocating the database onto a persistent
+	// volume while the key stays under a home directory that a container discards
+	// on restart produces a Joe that mints a fresh key each boot and can read
+	// none of the component config the volume preserved perfectly.
+	//
+	// Semantics mirror DSN deliberately, INCLUDING its sharp edge: the value is
+	// used as given and "~" is NOT expanded. Write an absolute path. Fixing
+	// expansion here alone would leave the two paths in the same config block
+	// behaving differently, which is worse than either consistent choice.
+	EncryptionKeyPath string `yaml:"encryption_key_path"`
 }
 
 // serverServiceAccountName is the reserved name of the service account that
@@ -483,6 +498,7 @@ func loadFromFile(cfg *Config, path string) (currentSet bool, err error) {
 //   - JOE_LOG_LEVEL: override logging level (debug, info, warn, error)
 //   - JOE_SERVER_ADDRESS: override server address
 //   - JOE_DATABASE_DSN: override database path/DSN
+//   - JOE_DATABASE_ENCRYPTION_KEY_PATH: override the component-config encryption key path
 //
 // Returns a slice of environment variable names that were applied.
 func applyEnvOverrides(cfg *Config) []string {
@@ -541,6 +557,15 @@ func applyEnvOverrides(cfg *Config) []string {
 	if dsn := os.Getenv("JOE_DATABASE_DSN"); dsn != "" {
 		cfg.Database.DSN = dsn
 		overrides = append(overrides, "JOE_DATABASE_DSN")
+	}
+
+	// Encryption key path override — the DSN's companion, and overridable by the
+	// same mechanism so a deployment that relocates one can relocate the other
+	// without a config file. See DatabaseConfig.EncryptionKeyPath: no "~"
+	// expansion, matching JOE_DATABASE_DSN.
+	if keyPath := os.Getenv("JOE_DATABASE_ENCRYPTION_KEY_PATH"); keyPath != "" {
+		cfg.Database.EncryptionKeyPath = keyPath
+		overrides = append(overrides, "JOE_DATABASE_ENCRYPTION_KEY_PATH")
 	}
 
 	// Web-search overrides. Web search is a global, boot-only capability

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -434,23 +435,81 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		slog.Info("WRITE FLOOR UP (observation) — Joe is in read-only observation mode, the day-one default (JOE_MODE unset or =observation); set JOE_MODE explicitly and restart to change posture")
 	}
 
-	// Load or create encryption key for source configs.
-	encKeyPath, err := paths.EncryptionKeyPath()
+	// Load or create the encryption key for component configs, and prove it
+	// belongs to this database before anything reads through it.
+	//
+	// Boot FAILS CLOSED on a key/database mismatch, in two rules. Both live here
+	// rather than in the key loader because both need the database, and the
+	// database is only available at the composition root — the store is opened
+	// and migrated above, well before this point.
+	//
+	// The posture this replaces was the worst available shape: a lost key made
+	// Joe mint a fresh one, log a Warn per unreadable component, register zero
+	// adapters, and BOOT SUCCESSFULLY. The operator got a server that started
+	// cleanly, served its API, and silently did nothing — discovered late, and
+	// unrecoverable by the time it was.
+	encKeyPath, err := encryptionKeyPathFor(cfg)
 	if err != nil {
 		slog.Error("failed to get encryption key path", "error", err)
 		return 1
 	}
-	encKey, err := crypto.LoadOrCreateKey(encKeyPath)
+	// Rule A — an absent key is a first run only if the DATABASE says so. The key
+	// loader cannot tell a fresh install from a lost key (the file is absent in
+	// both cases), so it is handed the discriminator: does any component row
+	// already hold an encrypted config?
+	encKey, err := crypto.LoadOrCreateKey(encKeyPath, func() (bool, error) {
+		scan, scanErr := store.ScanComponentConfigs(ctx, sqlStore.DB())
+		if scanErr != nil {
+			return false, scanErr
+		}
+		return scan.Encrypted > 0, nil
+	})
 	if err != nil {
+		if errors.Is(err, crypto.ErrKeyAbsentWithEncryptedData) {
+			slog.Error("REFUSING TO BOOT — the encryption key is missing but this database holds encrypted component configuration",
+				"key_path", encKeyPath,
+				"database", dbCfg.DSN)
+			slog.Error("Joe will not mint a replacement key: a fresh key cannot read the existing configuration, and the loss would be silent and permanent.")
+			slog.Error("Restore encryption.key alongside the database, or point database.encryption_key_path (JOE_DATABASE_ENCRYPTION_KEY_PATH) at where it actually lives.")
+			return 1
+		}
 		slog.Error("failed to load encryption key", "error", err)
 		return 1
 	}
-	encryptedSources, err := store.NewEncryptedComponentRepository(sqlStore.Components, encKey)
+	encryptedComponents, err := store.NewEncryptedComponentRepository(sqlStore.Components, encKey)
 	if err != nil {
 		slog.Error("failed to initialize encrypted component repository", "error", err)
 		return 1
 	}
-	sqlStore.Components = encryptedSources
+	// Rule B — a key that is present but wrong fails boot too. Warning and
+	// continuing would reproduce the silent-degradation shape Rule A exists to
+	// remove, just from the other direction. The accepted trade-off is that a
+	// single corrupted row also stops boot: AES-GCM cannot distinguish a wrong
+	// key from an altered ciphertext, and no heuristic separates them honestly.
+	// The mitigation is diagnosability, not tolerance — the failure enumerates
+	// every component that failed to authenticate, so "all of them" (wrong key)
+	// reads differently from "one of them" (damaged row).
+	if err := encryptedComponents.VerifyConfigs(ctx); err != nil {
+		var authErr *store.ConfigAuthError
+		if errors.As(err, &authErr) {
+			slog.Error("REFUSING TO BOOT — component configuration could not be decrypted with the loaded key",
+				"key_path", encKeyPath,
+				"database", dbCfg.DSN)
+			for line := range strings.SplitSeq(err.Error(), "\n") {
+				slog.Error("decryption failure", "detail", line)
+			}
+			slog.Error("Every component failing points at the wrong key: restore the encryption.key that was current when this database was written.")
+			slog.Error("A single component failing points at a damaged row: restore from a backup with 'joe db restore', or delete that component.")
+			return 1
+		}
+		slog.Error("failed to verify component configuration", "error", err)
+		return 1
+	}
+	sqlStore.Components = encryptedComponents
+	// Printed only now, and only because it is true: the key exists and has been
+	// proven to read every stored component config. Before the two rules above,
+	// this line printed unconditionally — including on the boot where the key had
+	// just been minted over an unreadable database.
 	slog.Info("component credential encryption enabled", "key_path", encKeyPath)
 
 	// Initialize adapter registry and load saved components

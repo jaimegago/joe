@@ -262,31 +262,39 @@ test(s)** · **binding note** (where applicable).
   Postgres migration run — at which point the "present but not operational" framing and the
   skipped-test posture both change.
 
-### The database path is configurable, its documented default is a resolved location, and `~` is not expanded
+### The database path and the encryption key path are both configurable, their documented defaults are resolved locations, and `~` is not expanded for either
 
-- **Claim.** `database.dsn` (or `JOE_DATABASE_DSN`) relocates the database file. The documented
-  default is a **resolved location** — `joe.db` in the `.joe` directory under the home directory
-  of the account running `joe` — not a literal string to paste. An explicit value must be an
+- **Claim.** `database.dsn` (or `JOE_DATABASE_DSN`) relocates the database file, and
+  `database.encryption_key_path` (or `JOE_DATABASE_ENCRYPTION_KEY_PATH`) relocates the
+  component-config encryption key. The documented defaults are **resolved locations** —
+  `joe.db` and `encryption.key` in the `.joe` directory under the home directory of the account
+  running `joe` — not literal strings to paste. An explicit value of **either** must be an
   absolute path (or one relative to the working directory): Joe does **not** expand a leading
-  `~`, so `~/.joe/joe.db` is taken literally and creates a directory named `~`. Relocating the
-  database does **not** move the encryption key, which stays in the `.joe` directory regardless.
-  Restated on `/operations/persistence-and-backup/`.
-- **Mechanism.** `config.Load` assigns `cfg.Database.DSN` **verbatim** from YAML and from the
-  `JOE_DATABASE_DSN` override, with no expansion step; `paths.ExpandPath` (which *does* expand
-  `~`) is applied only to the **config-file path**, never to the DSN. The composition root and
-  `defaultOpenBackupStore` pass the value straight through to `store.New`. The default is
-  computed by `paths.DatabasePath` → `paths.JoeDirPath` → `getSecureHomeDir`, which deliberately
-  bypasses `$HOME`; the key path is computed by the parallel `paths.EncryptionKeyPath` from the
-  same `.joe` directory and takes no config input, which is what splits the two locations apart
-  when the DSN moves.
-- **Pinning tests.** **None.** No test asserts that a `~`-prefixed DSN is left unexpanded, and
-  none asserts the key path ignores the DSN. Both properties hold by the *absence* of an
-  expansion call and the *absence* of a config input respectively — a shape that a well-meant
-  "expand the DSN like we expand the config path" change would silently break, taking this copy
+  `~` for either key, so `~/.joe/joe.db` is taken literally and creates a directory named `~`.
+  Relocating the database no longer strands the key: the two are relocated by the same
+  mechanism and are expected to move together. Restated on `/operations/persistence-and-backup/`.
+- **Mechanism.** `config.Load` assigns `cfg.Database.DSN` and `cfg.Database.EncryptionKeyPath`
+  **verbatim** from YAML and from their `JOE_DATABASE_*` overrides, with no expansion step;
+  `paths.ExpandPath` (which *does* expand `~`) is applied only to the **config-file path**,
+  never to either of these. The DSN default is computed by `paths.DatabasePath` →
+  `paths.JoeDirPath` → `getSecureHomeDir`, which deliberately bypasses `$HOME`. The key path is
+  resolved by the single helper `encryptionKeyPathFor` (`cmd/joe/db.go`) — configured value if
+  set, else `paths.EncryptionKeyPath` — and **every** consumer goes through it: the daemon's
+  boot key load (`cmd/joe/server.go`) and `joe db restore`'s missing-key pre-flight, via
+  `resolveEncryptionKeyPath` on the `runDeps` seam. One resolver is what keeps the command that
+  warns about a missing key and the process that would mint one naming the same file.
+- **Pinning tests.** The key-path half is **guarded**: `TestEncryptionKeyPath_EnvOverride`,
+  `TestEncryptionKeyPath_UnsetLeavesEmpty`, `TestEncryptionKeyPath_ParsesFromYAML`
+  (`internal/config`), and `TestEncryptionKeyPathFor_ConfiguredWins` /
+  `TestEncryptionKeyPathFor_DefaultsToJoeDir` (`cmd/joe`). The **no-`~`-expansion** property is
+  still **unguarded for both keys**: no test asserts that a `~`-prefixed value is left
+  unexpanded. It holds by the *absence* of an expansion call — a shape that a well-meant
+  "expand these like we expand the config path" change would silently break, taking this copy
   with it. Recorded as unguarded rather than implied to be guarded.
-- **Binding note. Mechanism-bound.** Revises when `docs/backlog/encryption-key-path.md` makes
-  the key path configurable — at which point the "the key does not follow the DSN" half becomes
-  conditional on the new key.
+- **Binding note. Mechanism-bound.** Revised by D-0120 (session `encryption-key-path`), which
+  added the config key and retired the "the key does not follow the DSN" half. Revises again if
+  `~` expansion is ever added — which, per the same decision, must be done to **both** keys
+  together or to neither.
 
 ---
 
@@ -422,41 +430,62 @@ test(s)** · **binding note** (where applicable).
   rather than implied, so the register does not suggest a guard that does not exist.
 - **Binding note.** Revises with the WAL claim; it has no independent mechanism.
 
-### The encryption key is required for a usable restore, and its absence fails silently — `/operations/persistence-and-backup/`
+### The encryption key is required for a usable restore, and boot now fails closed without it — `/operations/persistence-and-backup/`
 
-- **Claim.** A restored database is not a restored Joe without the matching `encryption.key`.
-  With the key absent, Joe **generates a fresh one and boots cleanly**: the server starts, but
-  every registered component's config was encrypted under the old key, so Joe connects to
-  nothing, warns in its logs, and the components API errors. There is no recovery, no key
-  rotation, and no re-encrypt path.
-- **Mechanism.** `crypto.LoadOrCreateKey` (`internal/crypto/crypto.go`) treats a missing key
-  file as a first-run condition and writes a new random 32-byte key rather than failing;
-  `store.NewEncryptedComponentRepository` wraps only the component `Config` blob (the rest of
-  the database is plaintext), so a wrong key surfaces as an AES-GCM authentication failure on
-  read; `connectSourcesDefault` (`cmd/joe/server.go`) logs the resulting list error at Warn and
-  ranges over an empty slice, registering no adapters and leaving boot to succeed.
-- **Pinning tests.** **Partial, and worth stating precisely.** The silent-generation half is
-  pinned: `TestLoadOrCreateKey_CreatesNew`, `TestLoadOrCreateKey_LoadsExisting`,
-  `TestLoadOrCreateKey_Idempotent`. The unreadable-config half is pinned only *indirectly* by
-  `TestDecrypt_Tampered` (the GCM authentication-failure class a wrong key also lands in) —
-  there is **no** test that a wrong key fails to decrypt a component through the repository, and
-  **no** end-to-end test that a keyless boot succeeds while connecting nothing. The
-  boot-behavior claim rests on code reading, not a guard.
-- **Binding note. Mechanism-bound.** Revises when `docs/backlog/encryption-key-path.md` lands
-  either half of its scope: a configurable key path, or a decision to fail boot loudly instead
-  of regenerating silently. The second would invalidate this claim outright.
-- **Amendment (D-0115, session `db-persistence-backup-02`) — a third revision trigger, and a
-  distinction the copy must keep.** `joe db restore` now refuses a backup carrying encrypted
-  component config when no key file is present (overridable only by the dedicated
-  `--allow-missing-key`). Read the scope precisely: that is a guard on the **restore route**,
-  before boot. **The boot path itself is unchanged and still carries no guard** — Joe started
-  by any other means, or after a hand-restore, or after `--allow-missing-key`, still mints a
-  fresh key and comes up reaching nothing. The claim above therefore stands as written and must
-  not be read, or reworded, as the trap being closed generally; the published copy states this
-  as "nothing at boot guards this — `joe db restore` is the only thing that checks". The
-  pinning note above stays true as well: the restore-side refusal is pinned
-  (`TestRunDBRestore_MissingKeyGate`), the **boot-side behaviour is still code-reading, not a
-  guard**.
+- **Claim.** A restored database is not a restored Joe without the matching `encryption.key`,
+  and **Joe refuses to boot rather than starting without it**. Two rules, both fatal:
+  a key file that is **absent** while the database holds encrypted component config is treated
+  as a lost key, not a first run — Joe will not mint a replacement over it; and a key that is
+  **present but cannot authenticate** any stored component config fails boot too, naming every
+  component that failed. There is still no recovery, no key rotation, and no re-encrypt path —
+  the change is that the loss is now loud and immediate instead of silent and permanent.
+  A genuine first run (no key, nothing encrypted) still generates a key and boots normally.
+- **Mechanism.** `crypto.LoadOrCreateKey` (`internal/crypto/crypto.go`) takes an
+  `EncryptedDataProbe` and its generate-on-absence branch is **conditional** on that probe
+  reporting no encrypted data; the composition root supplies it from
+  `store.ScanComponentConfigs`, which counts rows whose config carries the `enc:` marker
+  (unmarshal-then-test, mirroring the production read path). A nil probe and a probe error both
+  refuse — fail-closed, since minting is the irreversible direction. Rule B is
+  `EncryptedComponentRepository.VerifyConfigs` (`internal/store/encrypted_components.go`), run
+  once at boot immediately after wiring: it decrypts every stored config, collects **all**
+  authentication failures rather than stopping at the first, and returns them joined. The
+  authentication class is a typed seam — `crypto.ErrAuthentication` wrapped by
+  `store.ConfigAuthError{ComponentID}` — so the boot path branches on the class rather than on
+  message text, and only that class refuses; transient store errors keep their prior posture.
+  The `component credential encryption enabled` log now prints **after** verification, so it
+  asserts something proven rather than something assumed.
+- **Pinning tests.** **Guarded on both rules, including the two gaps this register previously
+  recorded as missing.** Rule A: `TestLoadOrCreateKey_AbsentKeyWithEncryptedDataRefuses` (which
+  also asserts no key file is written on the way out — a key minted during the refusal would
+  turn the next boot into the very disaster it prevented),
+  `TestLoadOrCreateKey_ProbeNotConsultedWhenKeyPresent`,
+  `TestLoadOrCreateKey_ProbeErrorFailsClosed`, `TestLoadOrCreateKey_NilProbeRefused`, and
+  `TestScanComponentConfigs_PlaintextRowsAreNotEncryptedData` (the boundary: rows are not
+  encrypted data, so a backward-compat plaintext install is still a first run). Rule B:
+  `TestVerifyConfigs_WrongKeyFailsEveryComponent` — **this is the "wrong key fails to decrypt a
+  component through the repository" test the register recorded as absent** — plus
+  `TestVerifyConfigs_NamesOnlyTheDamagedRow` and `TestVerifyConfigs_PassesWhenKeyMatches`. The
+  typed seam is pinned by `TestDecrypt_WrongKeyIsAuthenticationClass`, which also asserts a
+  base64 decode failure does **not** carry the sentinel. The end-to-end boot behaviour was
+  verified against the **real binary** in session `encryption-key-path` (relocated state dir,
+  seeded encrypted rows, key deleted then replaced with a random one: exit 1 both times, no key
+  minted, both components enumerated) but is **not** pinned by an automated test — that half
+  still rests on the unit guards plus a recorded manual run.
+- **Binding note. Mechanism-bound.** Revised by D-0120 (session `encryption-key-path`), which
+  landed both halves of `docs/backlog/encryption-key-path.md` and **invalidated the prior claim
+  outright** — the published copy's "Joe boots cleanly and breaks silently" and "nothing at boot
+  guards this" sentences are now false and were rewritten with this entry. Revises again if
+  full mode changes the trade-off, or if an escape hatch for a deliberate start-over is added
+  (deliberately not built: `joe db restore` and deleting the database are the existing paths).
+- **Prior amendment, retained as trail (D-0115, session `db-persistence-backup-02`).** `joe db
+  restore` refuses a backup carrying encrypted component config when no key file is present
+  (overridable by `--allow-missing-key`, pinned by `TestRunDBRestore_MissingKeyGate`). That was
+  a guard on the **restore route only**, and this register recorded precisely that the boot path
+  carried no guard. As of D-0120 the boot path carries one, so the restore-side gate is no
+  longer the only thing that checks — it is now the **earlier, better-diagnosed** of two gates.
+  Note the consequence for `--allow-missing-key`: it still lets the restore proceed, but the
+  resulting Joe now **refuses to boot** instead of coming up reaching nothing, which is the
+  outcome that flag's warning text describes and should be reread against this entry.
 
 ### `joe db restore` pre-flights a backup and clears stale WAL sidecars — `/operations/persistence-and-backup/`
 

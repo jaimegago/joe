@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -999,5 +1001,40 @@ func TestRunDBRestore_SameFileRefused(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "onto itself") {
 		t.Errorf("error should explain the self-restore, got: %s", stderr.String())
+	}
+}
+
+// TestEncryptionKeyPathFor_ConfiguredWins pins the whole point of the config
+// key: an operator who relocates the database can relocate the key with it. The
+// value is used VERBATIM — no "~" expansion — deliberately matching
+// database.dsn, so the two paths in the same config block behave identically.
+func TestEncryptionKeyPathFor_ConfiguredWins(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Database.EncryptionKeyPath = "/var/lib/joe/encryption.key"
+
+	got, err := encryptionKeyPathFor(cfg)
+	if err != nil {
+		t.Fatalf("encryptionKeyPathFor() error = %v", err)
+	}
+	if got != "/var/lib/joe/encryption.key" {
+		t.Errorf("path = %q, want the configured value verbatim", got)
+	}
+}
+
+// TestEncryptionKeyPathFor_DefaultsToJoeDir pins the fallback every existing
+// install depends on: with nothing configured, the key stays where it has always
+// been.
+func TestEncryptionKeyPathFor_DefaultsToJoeDir(t *testing.T) {
+	want, err := paths.EncryptionKeyPath()
+	if err != nil {
+		t.Skipf("cannot resolve the default key path in this environment: %v", err)
+	}
+
+	got, err := encryptionKeyPathFor(&config.Config{})
+	if err != nil {
+		t.Fatalf("encryptionKeyPathFor() error = %v", err)
+	}
+	if got != want {
+		t.Errorf("path = %q, want %q", got, want)
 	}
 }

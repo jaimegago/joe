@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	sqlitedrv "modernc.org/sqlite"
 
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/crypto"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -96,6 +94,33 @@ func resolveDatabaseConfig() (store.DatabaseConfig, error) {
 	return dbCfg, nil
 }
 
+// resolveEncryptionKeyPath reports where the component-config encryption key
+// lives: database.encryption_key_path when set, else ~/.joe/encryption.key.
+//
+// It is the single resolver every consumer goes through — the daemon's boot key
+// load and `joe db restore`'s missing-key pre-flight — so the command that warns
+// about a missing key and the process that would mint one always name the same
+// file. A second resolution site is how the two would drift apart.
+//
+// The configured value is used verbatim: no "~" expansion, matching
+// database.dsn. See config.DatabaseConfig.EncryptionKeyPath.
+func resolveEncryptionKeyPath() (string, error) {
+	cfg, err := config.Load(paths.DefaultConfigPath())
+	if err != nil {
+		return "", fmt.Errorf("load config: %w", err)
+	}
+	return encryptionKeyPathFor(cfg)
+}
+
+// encryptionKeyPathFor is resolveEncryptionKeyPath's pure half, for callers that
+// already hold a config (the daemon boot path, which must not re-read it).
+func encryptionKeyPathFor(cfg *config.Config) (string, error) {
+	if cfg != nil && cfg.Database.EncryptionKeyPath != "" {
+		return cfg.Database.EncryptionKeyPath, nil
+	}
+	return paths.EncryptionKeyPath()
+}
+
 // componentInspection is what the read-only pre-flight open learns about SRC's
 // component rows without decrypting anything.
 type componentInspection struct {
@@ -157,14 +182,14 @@ func (s *roSourceDB) IntegrityCheck(ctx context.Context) (string, error) {
 	return result, nil
 }
 
-// InspectComponents counts component rows and how many carry an encrypted config,
-// mirroring the production read path in internal/store/encrypted_components.go:
-// the config column is JSON-unmarshalled to a string first and only then tested
-// for the encrypted marker. Two accidents make the obvious shortcuts wrong: the
-// value is stored JSON-quoted, and it lands in the column with BLOB storage class
-// despite the TEXT declaration, so a SQL LIKE against it matches nothing. An
-// unmarshal failure means a plaintext config (the repository's backward-compat
-// branch), not an error.
+// InspectComponents counts component rows and how many carry an encrypted config.
+//
+// The table-existence check is here because it is SQLite-specific (sqlite_master)
+// and restore is the only caller inspecting a FOREIGN file that might not be a
+// Joe database at all. The counting itself delegates to store.ScanComponentConfigs,
+// which is the single home for the encrypted-marker detection — the daemon's boot
+// key loader asks the same question of the live database, and two copies of that
+// subtle unmarshal-then-test rule would be one copy too many.
 func (s *roSourceDB) InspectComponents(ctx context.Context) (componentInspection, error) {
 	var name string
 	err := s.db.QueryRowContext(ctx,
@@ -176,28 +201,11 @@ func (s *roSourceDB) InspectComponents(ctx context.Context) (componentInspection
 		return componentInspection{}, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT config FROM components`)
+	scan, err := store.ScanComponentConfigs(ctx, s.db)
 	if err != nil {
 		return componentInspection{}, err
 	}
-	defer rows.Close()
-
-	var insp componentInspection
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return componentInspection{}, err
-		}
-		insp.total++
-		var unquoted string
-		if err := json.Unmarshal(raw, &unquoted); err != nil {
-			continue // not a JSON string: a plaintext config, not an error
-		}
-		if crypto.IsEncrypted(unquoted) {
-			insp.encrypted++
-		}
-	}
-	return insp, rows.Err()
+	return componentInspection{total: scan.Total, encrypted: scan.Encrypted}, nil
 }
 
 // CopyTo writes a consistent copy of SRC to dest with VACUUM INTO, executed from
@@ -486,8 +494,11 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 		return 1
 	}
 
-	// (d) Encrypted configs with no key is the trap the Operations page documents:
-	// it is invisible at boot, so it is caught here.
+	// (d) Encrypted configs with no key. Since D-0120 boot ALSO refuses this, so
+	// this gate is no longer the only thing standing between the operator and a
+	// broken install — it is the earlier and better-diagnosed of the two. It is
+	// kept, and kept first, because refusing here means nothing was overwritten:
+	// catching it at boot means the restore already happened.
 	if insp.encrypted > 0 {
 		keyPath, keyErr := deps.encryptionKeyPath()
 		if keyErr != nil {
@@ -498,13 +509,15 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 			if !*allowMissingKey {
 				fmt.Fprintf(stderr, "Error: this backup has encrypted component configuration, but no encryption key is present at\n  %s\n", keyPath)
 				fmt.Fprintln(stderr, "Restoring without the key that was current when the backup was taken produces a Joe that")
-				fmt.Fprintln(stderr, "starts cleanly and reaches none of its components: it would mint a fresh key, the existing")
-				fmt.Fprintln(stderr, "component configuration would stay unreadable, and there is no way to repair it afterwards.")
+				fmt.Fprintln(stderr, "reaches none of its components: the existing component configuration would stay unreadable,")
+				fmt.Fprintln(stderr, "and there is no way to repair it afterwards. Joe refuses to boot in that state rather than")
+				fmt.Fprintln(stderr, "starting up broken, so the restore would leave you with a database you cannot run.")
 				fmt.Fprintln(stderr, "Put the matching encryption.key back first, or pass --allow-missing-key to accept that outcome.")
 				return 1
 			}
 			fmt.Fprintf(stdout, "Warning: no encryption key at %s; --allow-missing-key was given.\n", keyPath)
-			fmt.Fprintln(stdout, "The restored Joe will start but will reach none of its components, and this cannot be undone.")
+			fmt.Fprintln(stdout, "The restored Joe reaches none of its components and will refuse to boot until the matching")
+			fmt.Fprintln(stdout, "encryption.key is put back. This cannot be undone.")
 		}
 	}
 

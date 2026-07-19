@@ -62,8 +62,10 @@ type runDeps struct {
 	// checks and for the copy itself. Injectable so refusal tests need no real
 	// database.
 	openSourceDB func(path string) (sourceDB, func() error, error)
-	// encryptionKeyPath reports where the component-config encryption key lives.
-	// Injectable so tests can control whether a key appears present.
+	// encryptionKeyPath reports where the component-config encryption key lives,
+	// honouring database.encryption_key_path so restore checks the same file the
+	// daemon would load. Injectable so tests can control whether a key appears
+	// present.
 	encryptionKeyPath func() (string, error)
 	// probeTargetOccupied reports whether another process holds the database at
 	// path open — the discriminator between a running daemon and an unclean
@@ -90,7 +92,7 @@ func defaultRunDeps() runDeps {
 		openBackupStore:       defaultOpenBackupStore,
 		resolveDatabaseConfig: resolveDatabaseConfig,
 		openSourceDB:          defaultOpenSourceDB,
-		encryptionKeyPath:     paths.EncryptionKeyPath,
+		encryptionKeyPath:     resolveEncryptionKeyPath,
 		probeTargetOccupied:   defaultProbeTargetOccupied,
 	}
 }

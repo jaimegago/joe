@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -866,5 +867,57 @@ func TestLoad_AcceptsDefaultsWhenNoFile(t *testing.T) {
 	}
 	if cfg.LLM.Currency == "" {
 		t.Errorf("defaults left Currency empty; defaultConfig must populate it so the validator's empty-treated-as-USD shim isn't load-bearing here")
+	}
+}
+
+// TestEncryptionKeyPath_EnvOverride pins that the key path follows the same
+// override mechanism as the DSN. The two are one unit of durable state — a
+// deployment that relocates the database onto a volume must be able to relocate
+// the key with it, or it silently splits its state across two locations and
+// mints a fresh key on every restart.
+func TestEncryptionKeyPath_EnvOverride(t *testing.T) {
+	t.Setenv("JOE_DATABASE_ENCRYPTION_KEY_PATH", "/var/lib/joe/encryption.key")
+
+	cfg := &Config{}
+	overrides := applyEnvOverrides(cfg)
+
+	if cfg.Database.EncryptionKeyPath != "/var/lib/joe/encryption.key" {
+		t.Errorf("EncryptionKeyPath = %q, want /var/lib/joe/encryption.key", cfg.Database.EncryptionKeyPath)
+	}
+	if !slices.Contains(overrides, "JOE_DATABASE_ENCRYPTION_KEY_PATH") {
+		t.Errorf("overrides = %v, want it to report JOE_DATABASE_ENCRYPTION_KEY_PATH", overrides)
+	}
+}
+
+// TestEncryptionKeyPath_UnsetLeavesEmpty pins that an unset variable does not
+// invent a value: an empty field is what lets the resolver fall back to
+// ~/.joe/encryption.key, which is the default every existing install depends on.
+func TestEncryptionKeyPath_UnsetLeavesEmpty(t *testing.T) {
+	t.Setenv("JOE_DATABASE_ENCRYPTION_KEY_PATH", "")
+
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+
+	if cfg.Database.EncryptionKeyPath != "" {
+		t.Errorf("EncryptionKeyPath = %q, want empty", cfg.Database.EncryptionKeyPath)
+	}
+}
+
+// TestEncryptionKeyPath_ParsesFromYAML pins the config-file half of the surface
+// alongside the env half.
+func TestEncryptionKeyPath_ParsesFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	body := "database:\n  dsn: /var/lib/joe/joe.db\n  encryption_key_path: /var/lib/joe/encryption.key\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Database.EncryptionKeyPath != "/var/lib/joe/encryption.key" {
+		t.Errorf("EncryptionKeyPath = %q, want /var/lib/joe/encryption.key", cfg.Database.EncryptionKeyPath)
 	}
 }
