@@ -63,7 +63,6 @@ file for the full status, priority, blocked-by, and body.
 | [`posture-prompt-conflation`](posture-prompt-conflation.md) | Observation-posture conflation — deferred follow-ups | open | later |
 | [`promotion-requirements-single-source`](promotion-requirements-single-source.md) | Backlog — Drive component promotion validation from a single per-Kind requirements source | open |  |
 | [`public-docs-feature-inventory`](public-docs-feature-inventory.md) | Public Docs Feature Inventory | open |  |
-| [`quickstart-download-first`](quickstart-download-first.md) | Should Quickstart lead with the download instead of build-from-source? | open | next |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open |  |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress |  |
 | [`read-posture-visibility`](read-posture-visibility.md) | Read posture is invisible in every UI and CLI surface | open | next |

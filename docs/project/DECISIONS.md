@@ -10,6 +10,77 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0125 — Quickstart leads with downloading a verified release binary; build-from-source is demoted to a callout within that tutorial only, and the peer distribution posture is unchanged
+
+- Date: 2026-07-20
+- Session: quickstart-download-first
+- Decision: `docs/public/quickstart/_index.md` Step 1 becomes **download and
+  verify**, replacing `make build`. The reader fetches the archive for their
+  platform plus `checksums.txt` from the repository's GitHub Releases page,
+  verifies with `sha256sum --ignore-missing --check checksums.txt` (Linux) or
+  `shasum --algorithm 256 --ignore-missing --check checksums.txt` (macOS),
+  extracts, and has a runnable `./joe`. Verification is **inlined into the
+  step rather than delegated** to Install and Build, and is a required beat
+  rather than an optional aside: the prose states why (nothing is signed, so
+  the checksum is the only proof the bytes are the built bytes, and the
+  binary is about to be handed a production cluster credential). Install and
+  Build remains the fuller treatment and is linked as such. Building from
+  source is demoted **within Quickstart** to a short callout naming its three
+  legitimate reasons — contributing, running an untagged commit from `main`,
+  a platform outside the release matrix — and naming its own toolchain
+  requirements there; the build procedure is not inlined and is not a second
+  numbered step, because a tutorial carries one path. The page's
+  prerequisites block consequently loses Go, Node.js, and git (build-path
+  requirements only) and keeps the Anthropic API key and the Kubernetes reach
+  details unchanged, since those are needed however the binary is obtained.
+  Both former download pointers are removed — the one in the prerequisites
+  block (which carried a now-dangling "pick this guide back up at Step 2")
+  and the one closing the old Step 1 — since the page no longer redirects
+  readers away from a build it no longer leads with. Steps 2–5 are **not**
+  restructured and not renumbered; the only corrections made are the intro's
+  "empty checkout" → "nothing", "build-and-run procedure" →
+  "obtain-and-run procedure", and the "What you just did" bullet that
+  asserted building from source was "the only supported way to get the
+  binary" — false against D-0122 — now recording the download-and-verify.
+  Per D-0032 the page states **no archive filename and no restated platform
+  list**, pointing at the Releases page's own asset list; `checksums.txt` is
+  named because its name is explicitly configured.
+- Basis: read this session. `.goreleaser.yaml:53-56` — `archives:` carries
+  `id` and `formats: [tar.gz]` and **no `name_template`**, so archive names
+  are goreleaser defaults and naming one on a page would be an unpinned
+  claim; `.goreleaser.yaml:58-59` — `checksum.name_template: checksums.txt`
+  is explicitly configured, which is what makes naming that file safe;
+  `.goreleaser.yaml:35-41` — the linux/darwin × amd64/arm64 matrix,
+  deliberately not restated on the page. The two verify commands and the
+  `--ignore-missing` rationale are the same ones already published at
+  `docs/public/install-and-build/_index.md:38-54`, so the inlined step
+  cannot drift from the procedure page by inventing its own. The prior
+  Quickstart state — build-first prerequisites at
+  `docs/public/quickstart/_index.md:23-33` with download pointer #1, Step 1
+  `make build` at `:53-63` with download pointer #2, and the false
+  "only supported way" bullet at `:144` — was read in full before editing.
+  `docs/project/SITE-CLAIMS.md:654-686` was checked first: the Install and
+  Build "Distribution posture" entry already binds this exact mechanism, so
+  no new register entry is created and the existing entry's binding note is
+  revised to record that Quickstart now states the same claim.
+- Supersedes: nothing. D-0122's position that **published release binaries
+  and build-from-source are first-class peers is explicitly unchanged**, and
+  `docs/public/install-and-build/_index.md` is **not edited** — it still
+  opens on the two-ways framing and still calls building from source "a
+  first-class path, not a fallback". This decision is scoped to **Quickstart's
+  tutorial path only**: which of the two peer paths the on-rails guided first
+  run walks a reader down is an editorial choice about a tutorial, not a
+  distribution-posture change. It resolves the open question recorded in
+  `docs/backlog/quickstart-download-first.md`, split out of the
+  release-pipeline item at D-0123.
+- Status: accepted. `docs/backlog/quickstart-download-first.md` moves to
+  `docs/backlog/done/` and `docs/backlog/INDEX.md` is regenerated. CLAUDE.md
+  is unchanged: no architectural invariant, command, or convention moved —
+  the distribution posture paragraph it carries still describes the pipeline
+  accurately.
+
+---
+
 ## D-0124 — the act-policy opt-in is characterized as structurally intact but reachable by no registered tool: every registered Mutate is denied unconditionally, and the two reference docs are reconciled against the live tree after being missed by the D-0113 and D-0118 prunes
 
 - Date: 2026-07-20

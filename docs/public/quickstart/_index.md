@@ -6,7 +6,7 @@ description: From nothing to a running Joe reading a live cluster and answering 
 
 # Quickstart
 
-This tutorial takes you from an empty checkout to a running `joe` daemon that answers
+This tutorial takes you from nothing to a running `joe` daemon that answers
 one real question about your infrastructure — in **observation mode**, where Joe can
 read and reason but cannot change anything. You will do nothing irreversible. Follow the
 steps in order; each one builds on the last.
@@ -16,23 +16,14 @@ cluster *before* you ask anything. When you finish, you will have a Joe running 
 in read-only observation mode, reading a live cluster and answering a question about it
 through its real interaction surface.
 
-> This is the on-rails path. For the full build-and-run procedure, the complete
+> This is the on-rails path. For the full obtain-and-run procedure, the complete
 > authentication options, and production setup, see [Install and Build](../install-and-build/).
 > For *why* Joe works this way, see [Concepts](../concepts/).
 
 ## Before you start
 
-This quickstart builds `joe` from source, so you need three things installed:
-
-- **Go 1.25 or newer**
-- **Node.js and npm** (the web UI is built and embedded into the binary)
-- **git**
-
-These are requirements of the build path, not of running Joe. If you would rather skip
-the toolchain entirely, you can download a released binary instead — see
-[Install and Build](../install-and-build/) — and pick this guide back up at Step 2.
-
-You also need two credentials ready:
+You need a shell, a SHA-256 utility (your system already has one), and two credentials
+ready:
 
 - An **Anthropic API key**, because Joe's default model is Claude. Have it ready as a
   string.
@@ -50,17 +41,47 @@ You also need two credentials ready:
   quickstart uses the static-bearer path. See
   [Register a Kubernetes component](../guides/register-kubernetes/) for both methods.)
 
-## Step 1 — Build the binary
+## Step 1 — Download and verify the binary
 
-From the repository root:
+Open the repository's [GitHub Releases](https://github.com/jaimegago/joe/releases) page
+and download two files from the latest release: the archive matching your operating
+system and CPU architecture, and the `checksums.txt` published beside it. The release's
+own asset list is the authority on which platforms that release shipped.
+
+Now verify the archive before you run it. You are about to execute this binary against a
+production cluster credential, and a checksum is the only thing a release publishes that
+proves the bytes you got are the bytes that were built — nothing here is signed. From the
+directory holding both files, on Linux:
 
 ```sh
-make build
+sha256sum --ignore-missing --check checksums.txt
 ```
 
-This builds the web UI, embeds it, and compiles a single `./joe` binary. Downloading a
-published release binary is the other way to get `joe`, and leaves you at the same place
-— see [Install and Build](../install-and-build/).
+On macOS:
+
+```sh
+shasum --algorithm 256 --ignore-missing --check checksums.txt
+```
+
+`--ignore-missing` lets you check the one archive you downloaded against a file that
+lists every published asset. You should see `OK`. If anything prints `FAILED`, stop —
+do not extract it.
+
+Then extract:
+
+```sh
+tar -xzf <the archive you downloaded>
+./joe --help
+```
+
+You now have a runnable `joe` in the current directory. The rest of this tutorial runs it
+from here.
+
+> **Building from source instead?** That is a first-class peer path, not a fallback —
+> reach for it if you are contributing to Joe, running an untagged commit from `main`, or
+> on a platform outside the release matrix. It needs a Go toolchain, Node.js, and git.
+> [Install and Build](../install-and-build/) has the procedure; rejoin this tutorial at
+> Step 2 with a `./joe` in hand.
 
 ## Step 2 — Set the three environment variables
 
@@ -141,7 +162,8 @@ and a live component read.
 
 ## What you just did
 
-- Built `joe` from source — the only supported way to get the binary.
+- Obtained `joe` as a published release binary and verified it against the release
+  checksums before running it.
 - Gave Joe the minimal identity it requires (one service account via `JOE_API_KEY`),
   so it agreed to boot.
 - Ran it in observation mode, with the write floor up, so nothing it did could change a

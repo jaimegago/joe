@@ -681,6 +681,16 @@ and becomes load-bearing.
   only, no signing" half, and changing `builds.goos`/`builds.goarch` obliges re-checking the
   supported-platform-set half. The published page states no archive filename and no restated
   platform list, so a matrix change does not silently falsify page copy (D-0032).
+  **Two pages now rest on this one mechanism.** Since D-0125, `/quickstart/` Step 1 also
+  states the obtain-the-binary claim — fetch the archive plus `checksums.txt` from the
+  Releases asset list, verify with `sha256sum`/`shasum --ignore-missing --check
+  checksums.txt`, extract — inlined rather than delegated, and it too names no archive
+  filename and no platform list. A revision obliged by this entry must sweep **both**
+  `/install-and-build/` and `/quickstart/`. The `checksums.txt` filename is safe to state on
+  both because `checksum.name_template` configures it explicitly; the archive filenames are
+  not, because `archives:` carries no `name_template`. That Quickstart *leads* with the
+  download rather than the build is an editorial choice about a tutorial (D-0125) and is
+  **not** part of this claim — the peer posture above is what binds, and it is unchanged.
 
 ---
 

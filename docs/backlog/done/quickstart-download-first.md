@@ -1,5 +1,5 @@
 Should Quickstart lead with the download instead of build-from-source?
-Status: open
+Status: resolved — yes; D-0125 (session `quickstart-download-first`)
 Priority: next
 
 Split out of `docs/backlog/release-pipeline.md` at that item's closure
