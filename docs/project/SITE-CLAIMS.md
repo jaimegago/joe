@@ -83,13 +83,14 @@ test(s)** · **binding note** (where applicable).
   `github_request_changes`. No key is in both sets, so `CheckAccess`'s policy-allows branch is
   unreachable by any real tool name. `publish_doc_update_git` under `git_push` was the last
   tool reaching it and was deleted with the knowledge store (D-0113).
-- **Pinning tests.** **None — this property is currently unpinned.** The fixture that
-  exercised the allow branch (`TestCheckAccess_MutateEnabled`) was deleted with its only real
-  tool rather than migrated to a synthetic name; see the retained explanatory comment in
-  `internal/safety/tier_test.go`. `TestCheckAccess_MutateDefaultDeny` pins denial under the
-  default policy but **not** the stronger "no configuration can grant it" claim. Closing this
-  gap is tracked in `docs/backlog/reference-docs-prune-reconcile.md`; the seam's future is
-  tracked in `docs/backlog/act-policy-vestigial.md`.
+- **Pinning tests.** `TestRegisteredMutatesAreUngrantable` — derives the Mutate set from
+  `toolRegistry` itself and asserts `IsT3Allowed` returns false for every such row's
+  `PolicyKey`, and that `CheckAccess` denies it, under a policy with **every** `act` toggle
+  enabled. It fails the moment a registered Mutate becomes grantable, which is the event that
+  obligates a revision of this claim. `TestCheckAccess_MutateDefaultDeny` remains, pinning the
+  weaker denial-under-`DefaultPolicy()` claim. The seam's future is tracked in
+  `docs/backlog/act-policy-vestigial.md`; the residual thread in
+  `docs/backlog/security-authority-claims.md`.
 
 ### The layered pipeline checks the floor at every layer; mutating tools live only in the governed loops' registry
 

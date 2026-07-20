@@ -138,7 +138,7 @@ Every tool is classified into one of **two** classes (`internal/safety/tier.go`)
 
 | Class | Description | Default | Examples |
 |-------|-------------|---------|----------|
-| **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
+| **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `git_log`, `k8s_get`, `graph_query`, `register_component`; also the parked `graph_add_node`, which carries a Read row but is registered on no surface (§3.6) |
 | **Mutate** (`ActionMutate`) | Mutates the managed system (external PR/MR threads; infrastructure/deployments as adapters gain mutate verbs). | Denied. The policy shape provides a per-action opt-in, but no registered tool's key resolves to a live `act` field, so today the denial is unconditional (§3.2) | `github_comment`, `gitlab_comment`, `github_request_changes` |
 
 Per **D-0020** (see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. Operations that mutate Joe's own internal state are Reads on this axis, because they do not change the managed system.
@@ -460,12 +460,14 @@ Under the launch-default `team_flat` posture, *read* decisions short-circuit to 
 | Table | LLM tool can read | LLM tool can write | Mutated via |
 |-------|-------------------|--------------------|-------------|
 | `components` | ✅ (queries) | ✅ (register_component) | Component tools + admin |
-| `graph_*` | ✅ | ✅ | Model-maintenance tools (Read class) |
+| `graph_*` | ✅ (`graph_query`, `graph_related`) | ❌ — no registered tool writes them | Deterministic refreshers through the delta-reconcile seam; component delete cascades (admin, audited) |
 | `security_zones` | — | ❌ **never** | Admin API only (audited) |
 | `component_zone_assignments` | — | ❌ **never** | Admin API only (audited) |
 | `rbac_policies` | — | ❌ **never** | Admin API only (audited) |
 | `read_posture`, `auto_promote_reads` | — | ❌ **never** | Admin API only (audited) |
 | audit rows | — | append-only | Audit layer |
+
+The `graph_*` row rests on a different mechanism than the rows below it, and is worth stating precisely. Nothing architecturally forbids a graph-writing tool: the three that exist — `graph_add_node`, `graph_add_edge`, `graph_update_node` — carry Read rows and would pass the write floor even in observation mode. They are **parked**, registered on no surface, pinned by `TestGraphWriteToolsAreParked` (§3.6). The registered graph tools, `graph_query` and `graph_related`, are read-only. So no LLM-invokable path writes the graph tables; the writes come from the deterministic refreshers through the delta-reconcile seam, which is what makes the graph a deterministic-only structure (D-0110).
 
 > There is intentionally **no** `CanWriteTable`/`writeProtectedTables` guard inside the tool executor, and such a guard is not the mechanism protecting these tables. Protection comes from the tool surface itself: the LLM's tools write only operational data through typed repositories, and security configuration is a different surface (admin REST, admin-gated, audited).
 

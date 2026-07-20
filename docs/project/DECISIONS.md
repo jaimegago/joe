@@ -10,6 +10,98 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0127 — the security authority asserts only claims that are true, and the unconditional-denial property it rests on is guarded by a test rather than by prose
+
+- Date: 2026-07-20
+- Session: security-authority-claims
+- Decision: `docs/reference/security-in-layers.md` is the sole security
+  authority (`CLAUDE.md`, Reference Documents), and other documents — including
+  the published site, via `docs/project/SITE-CLAIMS.md` — defer to it. Two of its
+  claims failed that standard and are corrected here, and the correction is held
+  to a stronger bar than the tense-and-subject sweep of D-0126: **a false claim in
+  the security authority is not documentation debt, it is a defect**, and where
+  the claim is load-bearing, prose asserting it is not sufficient — it is pinned.
+
+  **The false claim (§8.2).** The protected-configuration table's `graph_*` row
+  read `✅` under **LLM tool can write**, attributed to "Model-maintenance tools
+  (Read class)". Re-derived against the tree: the three graph writers
+  (`graph_add_node`, `graph_add_edge`, `graph_update_node`) are **parked** — the
+  sole registration site is commented out at
+  `internal/coreagent/agent.go:182-184`, no other registry registers them, and
+  the absence is pinned by `TestGraphWriteToolsAreParked`
+  (`internal/coreagent/registry_graph_write_parked_test.go:33`); the registered
+  graph tools `graph_query` and `graph_related` are read-only GETs
+  (`internal/tools/core/graphquery.go:45`, `internal/client/client.go:174`); and
+  no non-test caller under `internal/tools/` writes the graph at all. **No
+  LLM-invokable path writes those tables.** The row asserted the opposite, and it
+  contradicted §3.6 (`:232`, "the parked `graph_add_*`") in the same document.
+  The **direction** of the error is why it ranks as a defect rather than a
+  cleanup: an overstatement of the model's reach over Joe's own state is a false
+  *safety* claim, the kind a security reader relies on, not a false *capability*
+  claim that merely disappoints. The row now states LLM-read `✅`, LLM-write `❌`,
+  and names what actually mutates the tables — the deterministic refreshers
+  through the delta-reconcile seam, plus the D-0117 component-delete cascade. The
+  §3.1 classification table's Examples column, which listed `graph_add_node`
+  beside four registered tools with no caveat, is corrected in the same shape.
+  `docs/reference/joe-architecture.md:177` already stated the park correctly and
+  needed no change, so the two reference docs now agree.
+
+  **The unguarded claim (§3.2).** The doc asserts that every registered Mutate is
+  denied **unconditionally, regardless of how the policy is configured** — the
+  stronger form of deny-by-default. The mechanism is disjointness between two
+  hardcoded sets: `IsT3Allowed` (`internal/safety/policy.go:60-73`) switches on
+  `k8s_write`, `pagerduty_ack`, `alertmanager_silence`, `git_push`; the
+  `ActionMutate` rows (`internal/safety/tier.go:216-222`) declare
+  `github_comment`, `gitlab_comment`, `github_request_changes`. Nothing pinned
+  it. `TestCheckAccess_MutateDefaultDeny` pins denial under `DefaultPolicy()`,
+  which is the **weaker** claim — it passes unchanged if a key is grantable but
+  merely defaulted off. `TestRegisteredMutatesAreUngrantable`
+  (`internal/safety/tier_mutate_ungrantable_test.go`) now asserts the stronger
+  one: for every `ActionMutate` row in `toolRegistry`, `IsT3Allowed` on that
+  row's `PolicyKey` is false and `CheckAccess` denies, under a policy with
+  **every** `act` toggle enabled. Both the Mutate set and the toggle set are
+  derived structurally — the set from `toolRegistry` itself, the toggles by
+  reflection over `ActPolicy` — so a tool or a toggle added later is covered
+  without the test being edited (D-0032: the tree owns the roster, not the test).
+  A hand-kept list would have to be updated by the very change the test exists to
+  catch. The test carries an explicit note that its failure means **the docs now
+  overstate the denial**, not that safety broke: the property is a consequence of
+  what D-0113 deleted, not a designed invariant, and the correct response to a
+  failure is to revise the claim and the test together, never to revert the tool.
+- Basis: the false-claim derivation is cited inline above, each point re-derived
+  against the live tree in a read-only phase before any edit. The guard was
+  demonstrated to fail on the property it pins: temporarily adding a
+  `case "github_comment"` arm to `IsT3Allowed` made
+  `TestRegisteredMutatesAreUngrantable` fail on both assertions while
+  `TestCheckAccess_MutateDefaultDeny` **continued to pass** — a direct
+  demonstration that the pre-existing test does not cover this property and that
+  the new one does. The edit was reverted (`git diff` on
+  `internal/safety/policy.go` empty). The only non-doc change in this commit is
+  the new `_test.go` file; no production code is touched. `go build ./...`,
+  `go vet ./...`, `gofmt -l .`, `go test ./...`, and `make precommit` (which adds
+  the `integration`/`e2e` tagged trees) all pass.
+- Backlog: the two threads were split off
+  `docs/backlog/reference-docs-prune-reconcile.md` onto
+  `docs/backlog/security-authority-claims.md` before being worked. The split is
+  itself part of the decision: those two were false-or-unguarded claims in the
+  security authority while the remainder is documentation cleanup, and one
+  `INDEX.md` row cannot represent both at their true priority — the cleanup is
+  `next`, a false safety claim is `now`. Both threads are discharged here, so the
+  file moves to `docs/backlog/done/`.
+- Register: `docs/project/SITE-CLAIMS.md`'s "Every registered Mutate is denied
+  unconditionally" entry loses its **UNPINNED** state per D-0077 and now names
+  `TestRegisteredMutatesAreUngrantable`; its backlog pointer is repointed off the
+  reference-docs file. **No joeagent.dev revision is implied** — the published
+  copy was already accurate; what changed is that the claim it rests on is now
+  guarded rather than asserted.
+- Supersedes: nothing. It completes D-0126's sweep of `security-in-layers.md`,
+  which corrected tense and subject but did not re-derive every factual claim
+  against the tree — a gap this entry closes for the two claims where the doc was
+  wrong rather than merely dated.
+- Status: accepted.
+
+---
+
 ## D-0126 — reference documentation is governed by a tense-and-subject test: past-tense statements about the repository are deleted, present-tense statements about the binary are kept, and `DECISIONS.md` is the sole home of change history
 
 - Date: 2026-07-20
