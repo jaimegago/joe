@@ -2,7 +2,7 @@
 
 This document captures Joe's security posture, known gaps, remediation plan, and — critically — the **Action Safety Framework** that governs what Joe is allowed to change and under what conditions.
 
-Joe runs as a single `joe` binary: bare `joe` starts the server (HTTP API on `:7777`, Core Agent, adapters, graph); subcommands (`joe mcp`, `joe slack`, `joe panic`, `joe unlock`, …) dispatch ahead of it. There is no separate daemon — the earlier two-binary `joecored` split is retired. Where this document and [`docs/project/DECISIONS.md`](../project/DECISIONS.md) conflict, the decision log is the source of truth.
+Joe runs as a single `joe` binary: bare `joe` starts the server (HTTP API on `:7777`, Core Agent, adapters, graph); subcommands (`joe mcp`, `joe slack`, `joe panic`, `joe unlock`, …) dispatch ahead of it. There is no separate daemon. Where this document and [`docs/project/DECISIONS.md`](../project/DECISIONS.md) conflict, the decision log is the source of truth.
 
 This is a living document — update it as fixes land.
 
@@ -16,7 +16,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 1. **Joe must always announce mutations.** Even when authorized, Joe notifies the human before and after any managed-system mutation. The tool executor enforces a blocking pre-execution notification (cancellable) and a post-execution summary for every mutating action — this is compiled in, not an LLM instruction.
 
-2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The guarantee is **architectural**: the server process ships no local file tool (Part 2), so no LLM-invokable tool can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) at all. The compile-time path exclusion that once backstopped this (`internal/safety/invariants.go`) was removed with the file tools it guarded (D-0074); the guarantee rests entirely on the absence of any file tool, and a guard of that shape would have to return with any reintroduced file tool.
+2. **Safety config is outside Joe's reach.** Joe cannot read, write, or influence its own safety configuration. The guarantee is **architectural**: the server process ships no local file tool (Part 2), so no LLM-invokable tool can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) at all. The guarantee rests entirely on the absence of any file tool; a guard of that shape would have to accompany any reintroduced file tool.
 
 3. **The write floor is boot-resolved and runtime-immutable.** Joe resolves a read-only "write floor" once at boot (observation mode or a sticky safe-mode/panic state). Nothing in the running binary can lower it — recovery is a restart, never a live down-transition (`internal/safety/floor.go`, D-0018).
 
@@ -37,7 +37,7 @@ These principles fall into two categories: **invariants** that hold at every sta
 | Area | Detail |
 |------|--------|
 | SQL injection | All datastore-query tools use parameterized statements (`?`/`$n` placeholders) via `database/sql` |
-| Local mutation surface removed | The server process ships **no** local file or arbitrary-command tool — `read_file` / `write_file` / `run_command` / `local_git_*` / `ask_user` were removed with the `internal/tools/local/` tree (Part 2). The only mutating tools that remain are the code-review paths |
+| No local mutation surface | The server process ships **no** local file or arbitrary-command tool (Part 2). The only mutating tools it registers are the code-review paths |
 | Default bind | The `joe` server binds to `localhost:7777` by default |
 | API keys | LLM keys loaded from environment variables, not config files |
 | URL encoding | Client uses `url.PathEscape` / `url.QueryEscape` for all HTTP calls |
@@ -45,9 +45,10 @@ These principles fall into two categories: **invariants** that hold at every sta
 | Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
 | Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
 | Safety policy | Compiled `DefaultPolicy()` (no on-disk file); default-deny for mutating actions, modulated per request only by the task `safety_tier`. No registered tool's policy key resolves to a live `act` field, so the deny is unconditional (§3.2, `internal/safety/policy.go`) |
-| Self-protection invariants | Structural, not code-enforced: Joe registers no tool that writes a local file or runs a shell command, so it has no way to reach `~/.joe/` or terminate a process. The former compiled-in guards (`internal/safety/invariants.go`) that constrained those tools were retired with the local-tool tree once it was confirmed no live caller invoked them (D-0074) |
+| Self-protection invariants | Structural, not code-enforced: Joe registers no tool that writes a local file or runs a shell command, so it has no way to reach `~/.joe/` or terminate a process |
 | Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
-| API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
+| API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/auth/middleware.go`, `internal/api/authconfig.go`) |
+| Identity model | Every authenticated caller resolves to a **principal** — session cookie for humans, service-account key for machines — set in request context by the edge-auth middleware and carried into every authorization decision and audit row (`internal/rbac/identity.go`, `internal/rbac/principals.go`) |
 | Request size limits | `http.MaxBytesReader` wraps all request bodies (`internal/api/middleware.go`) |
 | RBAC | Zone-scoped access control: zones carry an action ceiling, components are assigned to zones, grants map principals to zones (`internal/rbac/`) |
 | Emergency shutdown | Panic/safe-mode persisted to the `cluster_panic_state` DB row; safe mode raises the write floor on the next boot (`internal/store/panic_store.go`, `internal/safety/panic.go`) |
@@ -59,13 +60,13 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 Every place Joe can change state, by axis. The organizing question is the one the action classification asks: **does this operation mutate the managed system** (live infrastructure + the code/config that governs it)?
 
-### Local file/command tools — removed
+### Local file/command tools — none registered
 
-Earlier versions of Joe shipped a local-tool tree (`internal/tools/local/`: `read_file`, `write_file`, `run_command`, `local_git_status` / `local_git_diff`, `ask_user`) that ran in the `joe` process against the operator's machine. **That tree was removed.** `internal/tools/` now holds only `core/` (tools that reach managed systems through the typed API client) and `shared/` (Go-native read-only diagnostics). `NewCoreRegistry` registers only the shared and core tools and explicitly omits the local set (`internal/tools/default.go:25-46`, see the doc comment at `:26-28`); no constructor for `read_file` / `write_file` / `run_command` / `ask_user` / `local_git_*` survives anywhere in the tree (`internal/agentloop/echotool_test.go:11` records the removal).
+Joe registers **no** local file or arbitrary-command tool on any surface. `internal/tools/` holds exactly two trees: `core/` (tools that reach managed systems through the typed API client) and `shared/` (Go-native read-only diagnostics). `NewCoreRegistry` registers only those two sets (`internal/tools/default.go:25-46`, see the doc comment at `:26-28`), and no constructor for `read_file` / `write_file` / `run_command` / `ask_user` / `local_git_*` exists anywhere in the tree.
 
-The practical effect is a smaller attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command. The only mutating tools Joe ships are the code-review paths below.
+The consequence is a bounded attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command, and therefore no LLM-invokable path to `~/.joe/` or to a process-control verb. The only mutating tools Joe ships are the code-review paths below.
 
-> **Orphaned registrations — removed (D-0074).** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` previously kept *classification* entries in `internal/safety/tier.go`, and `write_file` / `run_command` kept *policy* entries in `internal/safety/policy.go`, even though no backing tool remained. That two-binary-era residue — the classification rows, the `write_file` / `run_command` policy surface, and the latent self-protection guards — was deleted. `ClassifyTool` now returns the unknown-tool default (Mutate, deny-by-default) for those names.
+> **These names are unknown to the classifier.** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` carry no classification entry in `internal/safety/tier.go` and no policy entry in `internal/safety/policy.go`. `ClassifyTool` returns the unknown-tool default for them — **Mutate, deny-by-default** — so even a call fabricated under one of these names is denied before it can dispatch.
 
 ### Joe's own model maintenance — classified as Read (not a managed-system mutation)
 
@@ -76,7 +77,7 @@ Per D-0018/D-0019/D-0020, a "write" is an operation that mutates the *managed sy
 | `graph_add_node`, `graph_add_edge`, `graph_update_node` | Joe's infrastructure graph | Read (idempotent UPSERTs) — **parked**, not registered on `agent:core` (D-0081 pattern) |
 | `register_component` | Joe's component store | Read (non-idempotent insert; carries a per-run durability key) |
 
-These tools carry Read rows in `internal/safety/tier.go`. The classification is the load-bearing claim: it is *why* the LLM may maintain Joe's model autonomously without a mutation gate, while still being unable to touch live infrastructure. The three `graph_*` tools retain their classification rows and implementations but are **parked out of the `agent:core` registry** — they bypassed the delta-reconcile seam, and being Read-classed they would have passed the write floor in observation mode (pinned by `TestGraphWriteToolsAreParked`).
+These tools carry Read rows in `internal/safety/tier.go`. The classification is the load-bearing claim: it is *why* the LLM may maintain Joe's model autonomously without a mutation gate, while still being unable to touch live infrastructure. The three `graph_*` tools retain their classification rows and implementations but are **parked out of the `agent:core` registry** — they bypass the delta-reconcile seam, and being Read-classed they would pass the write floor in observation mode (pinned by `TestGraphWriteToolsAreParked`).
 
 > **D-0020 note.** `register_component` generates row identity server-side and is not idempotent on retry. It declares `NeedsDurability`, so the durable executor persists a per-run idempotency key and dedups a crash-resume replay. This is independent of the Read/Mutate axis — "does this need crash-resume" is a different question than "does this mutate the managed system."
 
@@ -94,7 +95,9 @@ These are the **only** mutating tools the binary registers. They live under `int
 **Enforcement path — a single in-process seam.** These tools reach managed systems through one in-process path: tool executor → in-process core client → RBAC accessor → vendor adapter. There is **no HTTP route that mutates a managed system**, so the agentic tool path is the sole managed-system mutation surface. The two enforcement seams sit at distinct layers and do not overlap:
 
 - The **write floor is checked only in the executor** (`internal/tools/executor.go:215` — floor up + `ActionMutate` → deny). The accessor carries **no** floor check (the `internal/access/` package references no write floor), so the executor is the only place the floor gates a mutation.
-- **RBAC and the append-only audit row are written only by the accessor** (`internal/access/access.go:132`, `permit`). The accessor is the **sole** RBAC gate on this path: the HTTP transport's `rbac.EnforcementMiddleware` is a pass-through (`internal/rbac/middleware.go:81`, `return next`), so authorization is enforced at the accessor, not on the transport.
+- **RBAC and the append-only audit row are decided and written only by the accessor** (`internal/access/access.go:159`, `permit` — "the single enforcement chokepoint"; the audit insert at `:190`). The accessor is the **sole** RBAC gate on this path, and the transport carries no enforcement leg at all: the middleware chain runs CORS → rate limit → metrics → edge auth → session headers → request size limit → mux, with **no per-request RBAC enforcement middleware** in it (`cmd/joe/server.go:1090-1097`). Edge auth resolves the caller principal into request context; the authorization decision itself happens downstream, in the accessor.
+
+The one policy engine both paths share is constructed at the **composition root** and injected, never built downstream: `rbac.NewPolicyEngineWithGovernance(rbacRepo, promoteReadsRepo, readPostureRepo)` at `cmd/joe/server.go:1051` is passed into `api.New`, which hands that same governance-wired engine to both the guarded accessor and the regime handler (`internal/api/server.go:82-91`). There is no `api.New`-internal engine construction. A static guard, `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot` (`internal/rbac/engine_construction_guard_test.go:34`), fails the build if any `rbac.NewPolicyEngine*` constructor is called outside `cmd/joe` and `_test.go` files — so the accessor cannot silently come to enforce with a differently-wired engine than the transport governs with.
 
 The VCS tools route through the accessor in-process (`internal/api/inproc_client.go`).
 
@@ -138,7 +141,7 @@ Every tool is classified into one of **two** classes (`internal/safety/tier.go`)
 | **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
 | **Mutate** (`ActionMutate`) | Mutates the managed system (external PR/MR threads; infrastructure/deployments as adapters gain mutate verbs). | Denied. The policy shape provides a per-action opt-in, but no registered tool's key resolves to a live `act` field, so today the denial is unconditional (§3.2) | `github_comment`, `gitlab_comment`, `github_request_changes` |
 
-This **replaces the former three-tier scheme** (Observe/Record/Act, T1/T2/T3). Per **D-0020** (collapse to a binary axis; see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. The old "Record" band (internal-state mutations) is gone: those operations are now Reads, because they do not change the managed system.
+Per **D-0020** (see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. Operations that mutate Joe's own internal state are Reads on this axis, because they do not change the managed system.
 
 Classification is hardcoded per tool at registration time. The LLM cannot change a tool's class. **Unknown tools are classified Mutate and denied by default.**
 
@@ -147,23 +150,21 @@ Classification is hardcoded per tool at registration time. The LLM cannot change
 There is **no on-disk safety-policy file** in this build. The runtime policy is
 constructed at boot from `DefaultPolicy()` (`internal/safety/policy.go`) and
 modulated per request by the task `safety_tier` (`observe` / `record` / `act`),
-which can only *restrict* a task below the default, never widen it. The former
-`~/.joe/safety-policy.yaml` loader was never wired into the production boot path
-and has been removed; `DefaultPolicy()` is the single source of policy truth.
+which can only *restrict* a task below the default, never widen it.
+`DefaultPolicy()` is the single source of policy truth: there is no runtime
+decode of `SafetyPolicy` anywhere in the binary, so no on-disk file can widen it.
 
 `DefaultPolicy()` denies every managed-system mutation.
 
 **The opt-in seam is structurally intact but currently reachable by no registered tool.** `ActPolicy` still carries per-action toggles and `IsT3Allowed` still switches on them, so the mechanism by which an operator grants a single mutating action is present and unchanged in shape. What is absent is any tool that can be granted: `IsT3Allowed` recognizes exactly `k8s_write`, `pagerduty_ack`, `alertmanager_silence`, and `git_push`, while the three registered Mutate tools declare the keys `github_comment`, `gitlab_comment`, and `github_request_changes`. The two sets are disjoint. Every lookup therefore falls to `default: return false`, the allow branch of `CheckAccess` is unreachable, and **every registered Mutate is denied unconditionally, regardless of how the policy is configured**.
 
-This is a consequence of **D-0113**: `publish_doc_update_git`, gated under `git_push`, was the last registered tool whose `PolicyKey` resolved to a live `ActPolicy` field, and it was deleted with the knowledge store. The seam becomes exercisable again only when full mode ships a tool carrying a live policy key — tracked in [`docs/backlog/act-policy-vestigial.md`](../backlog/act-policy-vestigial.md). Until then, the four surviving `act` fields gate nothing that exists.
+This state of the seam is the standing consequence of **D-0113**. It becomes exercisable again only when full mode ships a tool carrying a live policy key — tracked in [`docs/backlog/act-policy-vestigial.md`](../backlog/act-policy-vestigial.md). Until then, the four surviving `act` fields gate nothing that exists.
 
-Although no file is loaded, Joe still cannot reach `~/.joe/`: the server ships no
-LLM-invokable file tool (Part 2), so no code path can open that directory. The
-compile-time path exclusion that formerly backstopped this
-(`internal/safety/invariants.go`) was removed with the file tools it guarded
-(D-0074); the guarantee now rests entirely on the absence of any file tool.
+Joe also cannot reach `~/.joe/`: the server ships no LLM-invokable file tool
+(Part 2), so no code path can open that directory. The guarantee rests entirely
+on the absence of any file tool.
 
-> **Legacy inert struct fields.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`), retained as a backward-compat shim: the model-maintenance tools it once gated are now classified Read, so the executor's `CheckAccess` consults only the `act` keys. The former `act.write_file` / `act.run_command` fields — and the long-standing tension of `DefaultPolicy()` shipping `act.run_command.enabled: true` while the policy is otherwise default-deny — were removed with the tools they gated (D-0074). The four surviving `act` fields are now themselves inert in the same sense: no registered tool's `PolicyKey` reaches them (above). The default-deny guarantee is not merely unchanged but strictly stronger than before — every registered mutating tool is denied with no configuration able to change it (D-0018/D-0019/D-0020, D-0113).
+> **Inert struct fields.** The `SafetyPolicy` struct *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`) that gates nothing: the model-maintenance tools it names are classified Read, so the executor's `CheckAccess` consults only the `act` keys. The four `act` fields are inert in the same sense — no registered tool's `PolicyKey` reaches them (above). The net default-deny guarantee is therefore absolute: every registered mutating tool is denied, with no configuration able to change it (D-0018/D-0019/D-0020, D-0113).
 
 ### 3.3 Hardcoded enforcement points
 
@@ -188,7 +189,7 @@ These checks are compiled into the binary and cannot be bypassed by configuratio
 
 The **incident** half of the precedence sits one layer up, in the §C captain-session gate (`internal/captaingate/`), which checks the same floor before its own gate (see §3.4).
 
-**2. Self-protection (structural, not a runtime guard).** Joe registers no tool that writes a local file or runs a shell command, so nothing can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) or terminate a process (`joe`, `kill`, `pkill`, `killall`). This once had a compiled-in backstop — `IsPathAllowed` / `IsCommandAllowed` in `internal/safety/invariants.go` — but those guards had **no live caller** after the local-tool tree was removed, so they were deleted (D-0074). The guarantee does not depend on them: with no file or command tool registered on any surface, there is no LLM-invokable path that would need guarding. If such a tool were ever reintroduced, a guard of this shape would have to come back with it.
+**2. Self-protection (structural, not a runtime guard).** Joe registers no tool that writes a local file or runs a shell command, so nothing can reach `~/.joe/` (its config, DB, and the `safety-policy.yaml` / `skills-policy.yaml` names) or terminate a process (`joe`, `kill`, `pkill`, `killall`). The guarantee is structural rather than enforced by a runtime path/command allowlist: with no file or command tool registered on any surface, there is no LLM-invokable path that would need guarding. If such a tool were ever introduced, a compiled-in guard of that shape would have to accompany it.
 
 **3. Notification contract** (hardcoded for every mutating action, `internal/safety/notifier.go`):
 
@@ -251,8 +252,6 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 
 | Gap | Severity | Status | Detail |
 | --- | -------- | ------ | ------ |
-| ~~No authentication~~ | ~~CRITICAL~~ | **FIXED** | Edge auth middleware on all `/api/v1/` routes (`internal/api/middleware.go`) |
-| ~~No request size limits~~ | ~~HIGH~~ | **FIXED** | `http.MaxBytesReader` wraps all request bodies |
 | Rate limiting | — | **Configurable** | Rate-limit middleware (`server.rate_limit_rps`/`burst`) |
 | Plaintext HTTP | HIGH | Partially addressed | TLS is configurable (`server.tls_*`); plaintext is the default for localhost binds |
 | CORS / security headers | MEDIUM | Partial | CORS middleware present; some response security headers still missing |
@@ -271,7 +270,6 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 
 | Gap | Severity | Status | Detail |
 | --- | -------- | ------ | ------ |
-| ~~No path sandboxing on local file tools~~ | ~~CRITICAL~~ | **REMOVED** | The local `read_file` / `write_file` tools were removed entirely (Part 2); the server process ships no local file read or write tool. The sandbox question is moot — there is no local-file surface to sandbox |
 | Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system — every registered Mutate is denied unconditionally today (§3.2) — and no tool that reaches security config; but the input channel itself is unsanitized |
 
 **Key files:** `internal/tools/default.go` (registration; omits the local set), `internal/tools/core/` (the live tool surface)
@@ -280,8 +278,6 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 
 | Gap | Severity | Status | Detail |
 | --- | -------- | ------ | ------ |
-| ~~No per-component access control~~ | ~~HIGH~~ | **FIXED** | Zone-scoped RBAC + middleware enforce per-component access (`internal/rbac/`) |
-| ~~No user identity model~~ | ~~HIGH~~ | **FIXED** | API-key → principal mapping; OIDC where configured (`internal/rbac/`, `internal/api/authconfig.go`) |
 | Audit logging | — | **Present** | Admin acts and infra access write append-only audit rows (`internal/audit/`) |
 
 ---
@@ -294,7 +290,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 - Compiled default safety policy (no on-disk file): `internal/safety/policy.go` (`DefaultPolicy`)
 - Executor gate (floor → scope → policy → notify) before every `Execute()`: `internal/tools/executor.go`
 - Default-deny for unknown tools (classified Mutate)
-- Self-protection is structural: no file/command tool is registered, so there is nothing to guard (the former `internal/safety/invariants.go` guards were removed in D-0074)
+- Self-protection is structural: no file/command tool is registered, so there is nothing to guard
 - Mutation notification contract: `internal/safety/notifier.go`
 - Edge auth + request size limits: `internal/api/middleware.go`
 
@@ -471,13 +467,13 @@ Under the launch-default `team_flat` posture, *read* decisions short-circuit to 
 | `read_posture`, `auto_promote_reads` | — | ❌ **never** | Admin API only (audited) |
 | audit rows | — | append-only | Audit layer |
 
-> There is intentionally **no** `CanWriteTable`/`writeProtectedTables` guard inside the tool executor. Earlier drafts of this document described one; it was never the mechanism. Protection comes from the tool surface itself: the LLM's tools write only operational data through typed repositories, and security configuration is a different surface (admin REST, admin-gated, audited).
+> There is intentionally **no** `CanWriteTable`/`writeProtectedTables` guard inside the tool executor, and such a guard is not the mechanism protecting these tables. Protection comes from the tool surface itself: the LLM's tools write only operational data through typed repositories, and security configuration is a different surface (admin REST, admin-gated, audited).
 
 ### 8.3 Deployment
 
 Joe runs as a **single `joe` process** with one SQLite database. Security enforcement (write floor, safety policy, zone RBAC, read posture, incident gate) is in-process. The admin REST surface is admin-gated and audited.
 
-> An earlier draft described an optional second `joe-security` process with its own `security.db` for hardened/remote deployments. That mode is **not built** — there is no `cmd/joe-security` or `internal/securitysvc` in the tree. If a future hardened split is pursued, it gets its own decision entry.
+> There is **no** split-process hardened deployment mode: no separate security process, no second `security.db`, and no `cmd/joe-security` or `internal/securitysvc` in the tree. Security enforcement is in-process, as described above. If a future hardened split is pursued, it gets its own decision entry.
 
 ### 8.4 Admin API
 

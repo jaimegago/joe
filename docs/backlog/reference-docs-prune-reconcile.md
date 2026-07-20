@@ -59,6 +59,39 @@ Neither was in this session's scope. Note that `learn-from-sessions-current-stat
 same condition but is **already** tracked, at the tail of
 [`learn-from-sessions-fate`](learn-from-sessions-fate.md) — do not open a second item for it.
 
+## 4 — `joe-architecture.md` needs the same tense-and-subject sweep
+
+`reference-docs-prune-reconcile-02` established the tense-and-subject convention for
+`docs/reference/` (CLAUDE.md, D-0126) and swept `security-in-layers.md` under it.
+`joe-architecture.md` was surveyed in the same session but deliberately **not** edited — it is
+a comparable-size job and belongs in its own commit.
+
+Phase-1 survey counts, to be re-derived against the live file before editing:
+
+- **23 HISTORY candidates** (past tense, subject is the repo — delete under the convention).
+- **7 AMBIGUOUS** (a historical clause and a live claim in one sentence — cut the clause, keep
+  the claim): lines 80, 186, 288, 539, 541, 545, 555.
+- Clusters, densest first: the Action Safety Framework section (~515–549, 7 items);
+  Implementation Phases (~553–571, 4 items, highest per-line density); Core Agent / decision
+  flow (~159–240, 4 items); Data Layer + LLM adapter (~280–394, 3 items); singletons at ~32,
+  ~80, ~100.
+
+**Three units are structurally organized around a removal**, so this is a structural edit, not
+only a sentence sweep. Each must be rebuilt as a present-tense description of what the thing
+now is:
+
+- `### Self-protection invariants` (~543) — the subsection exists only to explain that guards
+  *were retired* and why their absence is safe; it documents no live mechanism. Becomes a
+  statement of the structural guarantee itself.
+- The blockquote at ~186 — "`.joe/` ingestion removed (D-0042)", a pure deletion notice
+  wrapping a live invariant (Joe ingests no repo-authored `.joe/`) and live behaviour (it still
+  builds a `git_repo` node).
+- The blockquote at ~569 — closing note to Implementation Phases, whose sole purpose is
+  explaining which phases were deleted and why they are absent from the table.
+
+Note `### Designed but not yet built` (~547) is organized around *never-built*, not removed —
+the convention permits it; do not sweep it.
+
 ## Why this class of drift happened
 
 Recorded in the decision entry: the D-0113 prune swept code, tests, migrations, and CLAUDE.md,

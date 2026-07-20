@@ -10,6 +10,101 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0126 — reference documentation is governed by a tense-and-subject test: past-tense statements about the repository are deleted, present-tense statements about the binary are kept, and `DECISIONS.md` is the sole home of change history
+
+- Date: 2026-07-20
+- Session: reference-docs-prune-reconcile-02
+- Decision: `docs/reference/` describes **what the binary is**, not **what the
+  repository did**. The governing test is **tense and subject together**, and it
+  is now written into `CLAUDE.md`'s Reference Documents section so it binds all
+  reference docs, not only the one swept here.
+
+  **Delete:** a past-tense statement whose subject is the repository or the
+  codebase — that a subsystem was removed, a surface deleted, a guard collapsed,
+  a tree used to hold something. Three reasons, all independent: a reader cannot
+  verify it against the binary; it decays into trivia as the change recedes; and
+  `DECISIONS.md` is already its home **and its authority**, so the reference doc
+  is a second, unowned copy that drifts. Such statements are **deleted, not
+  rewritten, not footnoted, and not relocated into a historical-notes section** —
+  a historical-notes section is the failure mode this decision forecloses, since
+  it legitimizes the accumulation rather than ending it. If a candidate for
+  deletion carries a fact **not** already recorded in `DECISIONS.md`, that is a
+  **separate defect to report**, not a licence to keep the prose.
+
+  **Keep:** a present-tense statement whose subject is the binary, **including a
+  negative one**. That Joe registers no file or command tool on any surface, that
+  it is not an MCP client, that it ingests no kubeconfig, that the act-policy
+  allow branch is reachable by no registered tool — these are structural
+  invariants, checkable against the tree, and several are the **surviving form of
+  a guarantee whose enforcing code was deliberately deleted** (D-0074's
+  self-protection guarantee is the canonical case: the guards went, the guarantee
+  did not). Deleting them is a real loss of meaning. The convention therefore
+  names its own dominant failure mode explicitly: **over-deletion, not
+  under-deletion**.
+
+  **Three resolution rules** for the cases that are not clean: (1) a citation
+  attached to a present-tense claim is a **pointer, not history**, and stays —
+  the D-0113 cross-references added by `reference-docs-prune-reconcile` sit on
+  live claims and survived this sweep intact; (2) where one sentence carries a
+  historical clause **and** a live claim, **cut the clause and keep the claim**
+  rather than dropping the sentence; (3) where a whole section's organizing
+  premise is what used to exist, the sweep is a **structural edit** — rebuild the
+  section as a present-tense description of what the thing now is.
+
+  Applied to `docs/reference/security-in-layers.md` in the same session: 16
+  HISTORY deletions, 6 AMBIGUOUS resolutions, and two structural rebuilds. The
+  subsection `### Local file/command tools — removed` became `— none registered`,
+  restated as what the tool tree **is** (`core/` + `shared/` only, no constructor
+  for the local names anywhere, those names classified Mutate-and-denied as
+  unknowns). Part 4's five `~~struck~~ / **FIXED**|**REMOVED**` gap rows were cut
+  — that row format is a repo-history device by construction — leaving Part 4 a
+  register of **currently open** gaps only, which is what its heading already
+  claimed; each row's live content was confirmed restated in Part 1 or Part 2
+  first, and Part 1 gained an explicit **Identity model** row so the cut
+  identity-model row stranded nothing. `docs/reference/joe-architecture.md` was
+  surveyed (23 HISTORY, 7 AMBIGUOUS, three removal-premised units) and recorded
+  as thread 4 of `docs/backlog/reference-docs-prune-reconcile.md`, deliberately
+  unedited: it is a comparable-size job and belongs in its own commit.
+- Basis: the sweep is `docs/reference/security-in-layers.md` in this commit; a
+  residual scan of the swept file for past-tense repo markers (`was/were
+  removed|deleted`, `former`, `formerly`, `retired`, `no longer`, `used to`,
+  `previously`, `earlier draft`, `once had`, `legacy`) returns **zero** hits.
+  Only one heading changed (`### Local file/command tools`), and a repo-wide grep
+  for `security-in-layers.md#` anchor links returns none, so no inbound link
+  needed repair. The diff is **docs-only** — no file outside `docs/` and
+  `CLAUDE.md` is touched; `go build ./...`, `go vet ./...`, `gofmt -l`, and
+  `go test ./...` were run to prove the tree is unaffected. `docs/public/` was
+  scanned for the same prose class and is clean, so **no site revision is
+  implied**.
+- Separately, and **not** an instance of this convention: the §Part 2
+  enforcement-seam passage reasoned from `rbac.EnforcementMiddleware` being a
+  pass-through to the conclusion that the guarded accessor is the sole RBAC gate.
+  That premise is false — rbac-engine-split **deleted** the middleware; only a
+  tombstone comment remains at `internal/rbac/middleware.go:57`. The topology was
+  re-derived against the live tree before touching the passage, and the
+  **sole-gate conclusion still holds and is strengthened**: RBAC is decided in
+  exactly one place (`internal/access/access.go:159`, `permit`, "the single
+  enforcement chokepoint"), the audit row is written there (`:190`), the
+  transport chain carries **no** RBAC enforcement leg at all
+  (`cmd/joe/server.go:1090-1097`), and the one governance-wired engine is built
+  at the composition root (`cmd/joe/server.go:1051`) and injected into `api.New`,
+  which hands it to both the accessor and the regime handler
+  (`internal/api/server.go:82-91`), with `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot`
+  (`internal/rbac/engine_construction_guard_test.go:34`) failing the build on any
+  construction elsewhere. The passage was restated with that mechanism and those
+  citations. This **falsifies no `SITE-CLAIMS.md` entry**: the register already
+  recorded rbac-engine-split and the construction guard, so the correction closes
+  a drift between the reference doc and the register rather than opening one.
+- Supersedes: nothing. This is a new convention. It does not alter D-0052
+  (`docs/public/` is the sole published surface) or the D-0074 rule that the tree
+  describes only what the binary ships — it extends that rule's spirit from code
+  to reference prose, which is precisely the gap that let `docs/reference/` keep
+  describing a deleted subsystem across two decision cycles (recorded as the
+  drift post-mortem in `docs/backlog/reference-docs-prune-reconcile.md`).
+- Status: accepted.
+
+---
+
 ## D-0125 — Quickstart leads with downloading a verified release binary; build-from-source is demoted to a callout within that tutorial only, and the peer distribution posture is unchanged
 
 - Date: 2026-07-20
