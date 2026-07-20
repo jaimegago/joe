@@ -10,6 +10,87 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0124 — the act-policy opt-in is characterized as structurally intact but reachable by no registered tool: every registered Mutate is denied unconditionally, and the two reference docs are reconciled against the live tree after being missed by the D-0113 and D-0118 prunes
+
+- Date: 2026-07-20
+- Session: reference-docs-prune-reconcile
+- Decision: `docs/reference/security-in-layers.md` and
+  `docs/reference/joe-architecture.md` presented Joe's remaining mutating
+  tools as denied-by-default *pending an operator opt-in via the safety
+  policy's `act` section*. That characterization is **false and is corrected
+  to a positive statement**: the opt-in seam is structurally intact —
+  `ActPolicy` carries its per-action toggles and `IsT3Allowed` still switches
+  on them — but it is **reachable by no registered tool**, so every
+  registered Mutate is denied **unconditionally, regardless of
+  configuration**, and no operator act can grant one. The two hardcoded sets
+  are disjoint: `IsT3Allowed` has cases for exactly `k8s_write`,
+  `pagerduty_ack`, `alertmanager_silence`, `git_push`; the three
+  `ActionMutate` registry rows declare `github_comment`, `gitlab_comment`,
+  `github_request_changes`. Every lookup therefore falls to
+  `default: return false` and `CheckAccess`'s allow branch is dead code with
+  respect to real tool names. The seam is described accurately rather than
+  deleted, and becomes exercisable again only when full mode ships a tool
+  carrying a live policy key. The same correction is applied to the Part 6
+  staged-trust narrative, which had presented stages 3–4 operator opt-in as a
+  working mechanism for tools that ship today; Joe is stated to ship at stage
+  2 with stages 3–4 not reachable. Both docs are additionally swept of the
+  knowledge store, doc proposals, drift detection, Confluence/Notion
+  publishing, and the `publish_doc_update` family (D-0113), with no parked or
+  historical note left behind per D-0074; and — beyond the session's opening
+  scope, on re-derivation against the live tree — of the onboarding and
+  clarifications subsystem (D-0118), the nonexistent `/api/v1/refresh` and
+  `/api/v1/unlock` routes, the removed `LLMAdapter.Embed` method, and a
+  `joe review` subcommand the same doc elsewhere correctly denied existing.
+  The MCP roster is corrected to drop `joe_knowledge_search` and its size is
+  expressed by pointing at its pinning tests rather than as a literal, per
+  D-0032.
+- Basis: `internal/safety/policy.go:26-31` (the four `ActPolicy` fields) and
+  `:60-73` (`IsT3Allowed`'s four cases plus `default: return false`);
+  `internal/safety/tier.go:216-222` (the three and only `ActionMutate` rows
+  and their `PolicyKey` values) and `:255` (the allow branch);
+  `internal/tools/default.go:148-152` (all three are in fact registered in
+  production, so this is a live surface, not a dormant one). The tree states
+  the same conclusion independently in the explanatory comment left at
+  `internal/safety/tier_test.go:243-251`, which records that
+  `TestCheckAccess_MutateEnabled` was deleted rather than migrated *because*
+  the allow branch became unreachable by any real tool name. Deletions
+  verified by absence: `internal/knowledge`, `internal/api/publish.go`, every
+  `publish_doc_update*` symbol, `internal/knowledge/learning`,
+  `internal/safety/invariants.go`; `internal/store/migrations/031` and `033`
+  for the dropped tables; no `HandleFunc` registration for `refresh`,
+  `unlock`, `knowledge`, `onboarding`, or `clarifications` anywhere in
+  `internal/api`. `go build`, `go vet`, `gofmt -l`, and `go test ./...` all
+  clean (87 packages ok) with `git status --porcelain` showing docs-only
+  changes, proving the diff touched no code.
+- Why the drift existed: the two reference docs were **never swept by the
+  D-0113 prune**. That session corrected code, tests, migrations, and
+  CLAUDE.md, but nothing in the convention pointed it at `docs/reference/`,
+  so both files continued describing a subsystem the binary no longer
+  shipped. D-0118 then landed on top without either file being touched,
+  compounding one unswept prune into two. The act-policy misstatement is a
+  direct consequence: `publish_doc_update_git` under `git_push` was the last
+  registered tool whose `PolicyKey` resolved to a live `ActPolicy` field, so
+  its deletion silently converted a true "denied pending opt-in" into a false
+  one, and no reader of either doc would have known. The durable fix — a
+  prune checklist naming `docs/reference/`, or a test grepping the reference
+  docs for symbols absent from the tree — is deferred to
+  `docs/backlog/reference-docs-prune-reconcile.md`.
+- Supersedes: nothing. Corrects the prose of the two reference docs against
+  D-0113, D-0118, and the live tree; reverses no prior decision. The
+  corrected phrasing is aligned to CLAUDE.md's Action Safety Framework
+  wording, which D-0113 had already reworded correctly and which is the
+  reference phrasing both docs now match.
+- Status: accepted. `docs/project/SITE-CLAIMS.md` gains a register entry for
+  the unconditional-denial claim, recording that the property is currently
+  **unpinned** — `TestCheckAccess_MutateDefaultDeny` pins the weaker
+  default-policy denial, not "no configuration can grant it."
+  `docs/backlog/reference-docs-prune-reconcile.md` opens (Priority: next)
+  carrying that test gap, a light implied revision to
+  `docs/public/concepts/action-model.md`, and two backlog files still citing
+  deleted symbols.
+
+---
+
 ## D-0123 — first-run correction pass has run against `v0.1.0`'s observed release: `docs/RELEASING.md` corrected, the release-pipeline item closes, two follow-ups split out
 
 - Date: 2026-07-19

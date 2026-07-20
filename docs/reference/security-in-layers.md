@@ -22,9 +22,9 @@ These principles fall into two categories: **invariants** that hold at every sta
 
 ### Policy structure (how humans express trust)
 
-4. **Humans authorize every mutating action.** Joe never executes a managed-system mutation that a human has not explicitly opted into via the safety policy's `act` section. Within an authorized action, Joe may decide *which specific call* fits the situation, but enabling the action is always a human act.
+4. **Humans authorize every mutating action.** Joe never executes a managed-system mutation that a human has not explicitly opted into via the safety policy's `act` section. Within an authorized action, Joe may decide *which specific call* fits the situation, but enabling the action is always a human act. **This is the policy shape, not a currently-exercisable mechanism** — as of D-0113 no registered tool carries a policy key the `act` section can grant, so today the opt-in cannot be extended to anything (§3.2).
 
-5. **Default is deny.** Every mutating capability starts disabled. Humans opt in per action, not opt out. An unknown/unregistered tool is classified as a mutation and denied by default.
+5. **Default is deny.** Every mutating capability starts disabled. Humans opt in per action, not opt out. An unknown/unregistered tool is classified as a mutation and denied by default. Today the deny is *unconditional* for every registered mutating tool, because none of them has a grantable policy key (§3.2).
 
 6. **Allowlists, not blocklists.** We enumerate what's permitted, never what's forbidden.
 
@@ -37,14 +37,14 @@ These principles fall into two categories: **invariants** that hold at every sta
 | Area | Detail |
 |------|--------|
 | SQL injection | All datastore-query tools use parameterized statements (`?`/`$n` placeholders) via `database/sql` |
-| Local mutation surface removed | The server process ships **no** local file or arbitrary-command tool — `read_file` / `write_file` / `run_command` / `local_git_*` / `ask_user` were removed with the `internal/tools/local/` tree (Part 2). The only mutating tools that remain are the doc-publish and code-review paths |
+| Local mutation surface removed | The server process ships **no** local file or arbitrary-command tool — `read_file` / `write_file` / `run_command` / `local_git_*` / `ask_user` were removed with the `internal/tools/local/` tree (Part 2). The only mutating tools that remain are the code-review paths |
 | Default bind | The `joe` server binds to `localhost:7777` by default |
 | API keys | LLM keys loaded from environment variables, not config files |
 | URL encoding | Client uses `url.PathEscape` / `url.QueryEscape` for all HTTP calls |
-| Adapters are read-only | K8s, Git, AWS, Azure, observability, datastore, GitOps adapters expose only read/list/describe operations. The only mutating adapters are the doc-publish path (Git commit/push, Confluence, Notion) and the code-review path (GitHub/GitLab comment + request-changes) |
+| Adapters are read-only | K8s, Git, AWS, Azure, observability, datastore, GitOps adapters expose only read/list/describe operations. The only mutating adapter path is code review (GitHub/GitLab comment + request-changes) |
 | Action classification | Every tool is classified on a **binary Read/Mutate axis** at registration; the executor gate checks the write floor and the safety policy before every `Execute()` (`internal/safety/tier.go`, `internal/tools/executor.go`) |
 | Write floor | Boot-resolved, runtime-immutable read-only floor (observation mode or sticky safe mode); denies every mutate independent of policy or RBAC (`internal/safety/floor.go`, D-0018) |
-| Safety policy | Compiled `DefaultPolicy()` (no on-disk file); default-deny for mutating actions, modulated per request only by the task `safety_tier` (`internal/safety/policy.go`) |
+| Safety policy | Compiled `DefaultPolicy()` (no on-disk file); default-deny for mutating actions, modulated per request only by the task `safety_tier`. No registered tool's policy key resolves to a live `act` field, so the deny is unconditional (§3.2, `internal/safety/policy.go`) |
 | Self-protection invariants | Structural, not code-enforced: Joe registers no tool that writes a local file or runs a shell command, so it has no way to reach `~/.joe/` or terminate a process. The former compiled-in guards (`internal/safety/invariants.go`) that constrained those tools were retired with the local-tool tree once it was confirmed no live caller invoked them (D-0074) |
 | Mutation notification contract | Blocking pre-execution notification with cancel; post-execution summary, for every mutating action (`internal/safety/notifier.go`) |
 | API authentication | Edge auth middleware on all `/api/v1/` routes (Bearer service-account tokens; OIDC where configured) (`internal/api/middleware.go`) |
@@ -63,42 +63,40 @@ Every place Joe can change state, by axis. The organizing question is the one th
 
 Earlier versions of Joe shipped a local-tool tree (`internal/tools/local/`: `read_file`, `write_file`, `run_command`, `local_git_status` / `local_git_diff`, `ask_user`) that ran in the `joe` process against the operator's machine. **That tree was removed.** `internal/tools/` now holds only `core/` (tools that reach managed systems through the typed API client) and `shared/` (Go-native read-only diagnostics). `NewCoreRegistry` registers only the shared and core tools and explicitly omits the local set (`internal/tools/default.go:25-46`, see the doc comment at `:26-28`); no constructor for `read_file` / `write_file` / `run_command` / `ask_user` / `local_git_*` survives anywhere in the tree (`internal/agentloop/echotool_test.go:11` records the removal).
 
-The practical effect is a smaller attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command. The only mutating tools Joe ships are the doc-publish and code-review paths below.
+The practical effect is a smaller attack surface: the server process has **no** tool that writes an arbitrary local file or runs an arbitrary shell command. The only mutating tools Joe ships are the code-review paths below.
 
 > **Orphaned registrations — removed (D-0074).** `read_file`, `write_file`, `run_command`, `ask_user`, `local_git_status`, and `local_git_diff` previously kept *classification* entries in `internal/safety/tier.go`, and `write_file` / `run_command` kept *policy* entries in `internal/safety/policy.go`, even though no backing tool remained. That two-binary-era residue — the classification rows, the `write_file` / `run_command` policy surface, and the latent self-protection guards — was deleted. `ClassifyTool` now returns the unknown-tool default (Mutate, deny-by-default) for those names.
 
 ### Joe's own model maintenance — classified as Read (not a managed-system mutation)
 
-Per D-0018/D-0019/D-0020, a "write" is an operation that mutates the *managed system*. The tools below only record observed state into Joe's own graph/store/knowledge — the managed system is in the same state after they run — so on the action axis they are **reads**, not mutations. They are always allowed and never frozen by the write floor or the incident gate (Joe must keep its own model current even in safe mode).
+Per D-0018/D-0019/D-0020, a "write" is an operation that mutates the *managed system*. The tools below only record observed state into Joe's own graph/store — the managed system is in the same state after they run — so on the action axis they are **reads**, not mutations. They are always allowed and never frozen by the write floor or the incident gate (Joe must keep its own model current even in safe mode).
 
 | Tool | Writes to | Classification |
 |------|-----------|----------------|
-| `graph_add_node`, `graph_add_edge`, `graph_update_node` | Joe's knowledge graph | Read (idempotent UPSERTs) |
+| `graph_add_node`, `graph_add_edge`, `graph_update_node` | Joe's infrastructure graph | Read (idempotent UPSERTs) — **parked**, not registered on `agent:core` (D-0081 pattern) |
 | `register_component` | Joe's component store | Read (non-idempotent insert; carries a per-run durability key) |
-| `save_onboarding_fact` | Joe's facts store | Read (durability key) |
-| `save_knowledge_entry`, `generate_doc_draft` | Joe's knowledge / proposal store | Read (durability key) |
-| `detect_doc_drift` | — (read-only comparison) | Read |
 
-These tools are registered Read in `internal/safety/tier.go`. The classification is the load-bearing claim: it is *why* the LLM may maintain Joe's graph autonomously without a mutation gate, while still being unable to touch live infrastructure.
+These tools carry Read rows in `internal/safety/tier.go`. The classification is the load-bearing claim: it is *why* the LLM may maintain Joe's model autonomously without a mutation gate, while still being unable to touch live infrastructure. The three `graph_*` tools retain their classification rows and implementations but are **parked out of the `agent:core` registry** — they bypassed the delta-reconcile seam, and being Read-classed they would have passed the write floor in observation mode (pinned by `TestGraphWriteToolsAreParked`).
 
-> **D-0020 note.** Some of these inserts (e.g. `register_component`, `save_knowledge_entry`) generate row identity server-side and are not idempotent on retry. They declare `NeedsDurability`, so the durable executor persists a per-run idempotency key and dedups a crash-resume replay. This is independent of the Read/Mutate axis — "does this need crash-resume" is a different question than "does this mutate the managed system."
+> **D-0020 note.** `register_component` generates row identity server-side and is not idempotent on retry. It declares `NeedsDurability`, so the durable executor persists a per-run idempotency key and dedups a crash-resume replay. This is independent of the Read/Mutate axis — "does this need crash-resume" is a different question than "does this mutate the managed system."
 
 ### Managed-system mutations
 
-| Tool | What it changes | Policy key (in `act`) | Notification |
-|------|-----------------|-----------------------|--------------|
-| `publish_doc_update` (`_confluence` / `_notion` / `_git`) | External docs (Confluence page, Notion page, Git repo) | `confluence_publish` / `notion_publish` / `git_push` (selected per target) | Before + after |
-| `github_comment` / `gitlab_comment` | External PR/MR thread | `github_comment` / `gitlab_comment` | Before + after |
-| `github_request_changes` | External GitHub review (gates merge) | `github_request_changes` | Before + after |
+| Tool | What it changes | `PolicyKey` declared | Resolves to a live `act` field? | Notification |
+|------|-----------------|----------------------|-------------------------------|--------------|
+| `github_comment` / `gitlab_comment` | External PR/MR thread | `github_comment` / `gitlab_comment` | **No** — denied unconditionally | Before + after |
+| `github_request_changes` | External GitHub review (gates merge) | `github_request_changes` | **No** — denied unconditionally | Before + after |
 
-These are the **only** mutating tools the binary registers. They live under `internal/tools/core/` (`publish_doc_update.go`, `github_comment.go`, `gitlab_comment.go`, `github_request_changes.go`) and are wired in `internal/tools/default.go`. All managed-system mutations are denied unless their `act` policy key is enabled. Unknown tools default to Mutate and are denied.
+These are the **only** mutating tools the binary registers. They live under `internal/tools/core/` (`github_comment.go`, `gitlab_comment.go`, `github_request_changes.go`) and are wired in `internal/tools/default.go`. Unknown tools default to Mutate and are denied.
 
-**Enforcement path — a single in-process seam.** These four tools reach managed systems through one in-process path: tool executor → in-process core client → RBAC accessor → vendor adapter. There is **no HTTP route that mutates a managed system** — the former direct-HTTP `vcs`/`gitops`/proposal-publish routes were removed in `540f5e5`, so the agentic tool path is the sole managed-system mutation surface. The two enforcement seams sit at distinct layers and do not overlap:
+**Each of these is denied regardless of configuration.** `ActPolicy` and `IsT3Allowed` (`internal/safety/policy.go`) recognize only `k8s_write`, `pagerduty_ack`, `alertmanager_silence`, and `git_push`; none of the three declared policy keys above is among them, so `IsT3Allowed` falls through to its `default: return false` and the allow branch of `CheckAccess` is never taken. There is no configuration that enables these tools — see §3.2 and `docs/backlog/act-policy-vestigial.md`.
+
+**Enforcement path — a single in-process seam.** These tools reach managed systems through one in-process path: tool executor → in-process core client → RBAC accessor → vendor adapter. There is **no HTTP route that mutates a managed system**, so the agentic tool path is the sole managed-system mutation surface. The two enforcement seams sit at distinct layers and do not overlap:
 
 - The **write floor is checked only in the executor** (`internal/tools/executor.go:215` — floor up + `ActionMutate` → deny). The accessor carries **no** floor check (the `internal/access/` package references no write floor), so the executor is the only place the floor gates a mutation.
 - **RBAC and the append-only audit row are written only by the accessor** (`internal/access/access.go:132`, `permit`). The accessor is the **sole** RBAC gate on this path: the HTTP transport's `rbac.EnforcementMiddleware` is a pass-through (`internal/rbac/middleware.go:81`, `return next`), so authorization is enforced at the accessor, not on the transport.
 
-The VCS tools route through the accessor in-process (`internal/api/inproc_client.go:646,651,666`); `publish_doc_update` dispatches through `publishProposalToTarget` (`internal/api/publish.go:19`) after the executor floor gate and human proposal approval.
+The VCS tools route through the accessor in-process (`internal/api/inproc_client.go`).
 
 ### API endpoints that mutate Joe's own state
 
@@ -107,9 +105,6 @@ The VCS tools route through the accessor in-process (`internal/api/inproc_client
 | `/api/v1/components` | POST | Registers a component **inert** — credential-less, no adapter connected | Admin-gated + audited |
 | `/api/v1/components/{id}` | DELETE | Removes a component (+ its credential reference) and unregisters any resident adapter | Admin-gated + audited |
 | `/api/v1/components/{id}/promote` | POST | Arms a component (readonly → armed): writes a credential **reference**, performs no Connect/Probe | Admin-gated + audited |
-| `/api/v1/clarifications/{id}/answer` | POST | Marks answered + applies stored graph ops | Edge auth |
-| `/api/v1/onboarding` | POST | Triggers LLM → graph mutations | Edge auth |
-| `/api/v1/refresh` | POST | Triggers graph reconciliation | Edge auth |
 | `/api/v1/admin/*` | various | Zones, policies, read-posture, read-promotions, sessions | Admin-gated + audited |
 
 All `/api/v1/` routes sit behind edge auth middleware; admin routes additionally require the admin gate and write an append-only audit row. Request bodies are limited by `MaxRequestBody` middleware.
@@ -125,9 +120,8 @@ Credential entry is owned by a **single governed transition** — the read-only-
 | Adapter family | Can mutate external systems? | Detail |
 |----------------|------------------------------|--------|
 | K8s, AWS, Azure, datastore, observability, GitOps, networking, security/runtime, registries | **No** | Read/list/describe/query only |
-| Git (read path) | **No** | `ReadFile`, `ListFiles`, `Log`, `Diff` (can `Pull`, never commit/push) |
-| Git (doc-publish path) | **Yes** | `CommitAndPush`, gated behind `act.git_push` and the doc-proposal approval flow |
-| GitHub / GitLab | **Yes** | Comment + request-changes, gated behind their `act` keys |
+| Git | **No** | `ReadFile`, `ListFiles`, `Log`, `Diff` (can `Pull`, never commit/push) |
+| GitHub / GitLab | **Yes** | Comment + request-changes — the only mutating adapter verbs; their tools are denied unconditionally today (§3.2) |
 
 ---
 
@@ -142,7 +136,7 @@ Every tool is classified into one of **two** classes (`internal/safety/tier.go`)
 | Class | Description | Default | Examples |
 |-------|-------------|---------|----------|
 | **Read** (`ActionRead`) | Does **not** mutate the managed system. Includes component queries, Joe's own graph/model maintenance, and notifications to humans. | Always allowed, no policy check | `git_log`, `k8s_get`, `graph_query`, `graph_add_node`, `register_component` |
-| **Mutate** (`ActionMutate`) | Mutates the managed system (external PR/MR threads, published docs; infrastructure/deployments as adapters gain mutate verbs). | Denied by default; per-action opt-in via the `act` policy | `publish_doc_update_*`, `github_comment`, `gitlab_comment`, `github_request_changes` |
+| **Mutate** (`ActionMutate`) | Mutates the managed system (external PR/MR threads; infrastructure/deployments as adapters gain mutate verbs). | Denied. The policy shape provides a per-action opt-in, but no registered tool's key resolves to a live `act` field, so today the denial is unconditional (§3.2) | `github_comment`, `gitlab_comment`, `github_request_changes` |
 
 This **replaces the former three-tier scheme** (Observe/Record/Act, T1/T2/T3). Per **D-0020** (collapse to a binary axis; see also D-0018/D-0019), severity-of-mutation is deliberately *not* encoded as a classification tier — a static blast-radius taxonomy is hard to get right and hard to evaluate on a non-deterministic LLM. Blast-radius safety lives elsewhere (tools, skills, the per-zone/per-capability graduation ladder); the classification carries only the action axis. The old "Record" band (internal-state mutations) is gone: those operations are now Reads, because they do not change the managed system.
 
@@ -157,18 +151,11 @@ which can only *restrict* a task below the default, never widen it. The former
 `~/.joe/safety-policy.yaml` loader was never wired into the production boot path
 and has been removed; `DefaultPolicy()` is the single source of policy truth.
 
-`DefaultPolicy()` denies every managed-system mutation:
+`DefaultPolicy()` denies every managed-system mutation.
 
-```
-# Effective compiled default (illustrative — NOT a file you edit):
-#   every managed-system mutation is disabled.
-git_push:               disabled   # commit + push a doc proposal to a Git repo
-confluence_publish:     disabled   # publish a doc proposal to Confluence
-notion_publish:         disabled   # publish a doc proposal to Notion
-github_comment:         disabled
-gitlab_comment:         disabled
-github_request_changes: disabled
-```
+**The opt-in seam is structurally intact but currently reachable by no registered tool.** `ActPolicy` still carries per-action toggles and `IsT3Allowed` still switches on them, so the mechanism by which an operator grants a single mutating action is present and unchanged in shape. What is absent is any tool that can be granted: `IsT3Allowed` recognizes exactly `k8s_write`, `pagerduty_ack`, `alertmanager_silence`, and `git_push`, while the three registered Mutate tools declare the keys `github_comment`, `gitlab_comment`, and `github_request_changes`. The two sets are disjoint. Every lookup therefore falls to `default: return false`, the allow branch of `CheckAccess` is unreachable, and **every registered Mutate is denied unconditionally, regardless of how the policy is configured**.
+
+This is a consequence of **D-0113**: `publish_doc_update_git`, gated under `git_push`, was the last registered tool whose `PolicyKey` resolved to a live `ActPolicy` field, and it was deleted with the knowledge store. The seam becomes exercisable again only when full mode ships a tool carrying a live policy key — tracked in [`docs/backlog/act-policy-vestigial.md`](../backlog/act-policy-vestigial.md). Until then, the four surviving `act` fields gate nothing that exists.
 
 Although no file is loaded, Joe still cannot reach `~/.joe/`: the server ships no
 LLM-invokable file tool (Part 2), so no code path can open that directory. The
@@ -176,7 +163,7 @@ compile-time path exclusion that formerly backstopped this
 (`internal/safety/invariants.go`) was removed with the file tools it guarded
 (D-0074); the guarantee now rests entirely on the absence of any file tool.
 
-> **Legacy inert struct field.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`), retained as a backward-compat shim: the model-maintenance tools it once gated are now classified Read, so the executor's `CheckAccess` consults only the live `act` keys. The former `act.write_file` / `act.run_command` fields — and the long-standing tension of `DefaultPolicy()` shipping `act.run_command.enabled: true` while the policy is otherwise default-deny — were removed with the tools they gated (D-0074). The default-deny guarantee is unchanged: every *registered* mutating tool still defaults to disabled (D-0018/D-0019/D-0020).
+> **Legacy inert struct fields.** The `SafetyPolicy` struct still *carries* a `record:` section (`graph_mutations`, `source_registration`, `onboarding_facts`, `autonomous_refresh`), retained as a backward-compat shim: the model-maintenance tools it once gated are now classified Read, so the executor's `CheckAccess` consults only the `act` keys. The former `act.write_file` / `act.run_command` fields — and the long-standing tension of `DefaultPolicy()` shipping `act.run_command.enabled: true` while the policy is otherwise default-deny — were removed with the tools they gated (D-0074). The four surviving `act` fields are now themselves inert in the same sense: no registered tool's `PolicyKey` reaches them (above). The default-deny guarantee is not merely unchanged but strictly stronger than before — every registered mutating tool is denied with no configuration able to change it (D-0018/D-0019/D-0020, D-0113).
 
 ### 3.3 Hardcoded enforcement points
 
@@ -192,7 +179,8 @@ These checks are compiled into the binary and cannot be bypassed by configuratio
    caller's authorized zones → deny.
 4. Namespace scope: if a K8s call targets a namespace outside scope → deny.
 5. Safety policy CheckAccess: a Mutate tool requires its act.<key>.enabled == true,
-   else deny. (Reads always pass.)
+   else deny. (Reads always pass.) No registered tool's key resolves to a live
+   act field today, so in practice every Mutate reaching this step is denied.
 6. Mutate only: blocking pre-execution notification (human can cancel).
 7. Execute.
 8. Mutate only: post-execution notification (summary of result).
@@ -240,7 +228,7 @@ Key properties:
 **Critical invariant:** LLM tools cannot modify Joe's security configuration. This is enforced **architecturally**, not by a table-name guard inside the tool path:
 
 - The security tables — `security_zones`, `component_zone_assignments`, `rbac_policies`, `read_posture`, `auto_promote_reads`, the admin-principal set — are mutated **only** through the admin REST surface (`/api/v1/admin/*`), which is admin-gated and writes an append-only audit row.
-- The LLM's tools have **no raw-SQL write path** to those tables. Joe's model-maintenance tools (`graph_add_*`, `register_component`, `save_*`) write only to operational tables (graph, components, facts, knowledge) via their typed repositories.
+- The LLM's tools have **no raw-SQL write path** to those tables. Joe's model-maintenance tools (`register_component`, and the parked `graph_add_*`) write only to operational tables (graph, components) via their typed repositories.
 - The safety policy and the `~/.joe/` directory are self-protected from the file tools (§3.3).
 
 So an LLM — even under prompt injection — has no tool that reaches the security configuration; changing it requires an authenticated admin call on a surface no LLM tool can invoke.
@@ -253,7 +241,7 @@ The executor today enforces the floor, zone/namespace scope, the safety policy, 
 - **Mutation circuit breaker** — a rolling-window rate limiter on mutating actions that trips after a threshold and suspends further mutations until a human resets it.
 - **Credential isolation enforcement** — validation that Joe never uses caller-provided infrastructure credentials, only its own pre-scoped service account.
 
-These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Until they land, the live guarantees are: managed-system mutation is denied by default, gated per action, floor-blocked in observation/safe mode, scope-checked against zones, and announced before and after.
+These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Until they land, the live guarantees are: managed-system mutation is denied — unconditionally, since no registered mutating tool has a grantable policy key (§3.2) — floor-blocked in observation/safe mode, scope-checked against zones, and announced before and after.
 
 ---
 
@@ -284,7 +272,7 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 | Gap | Severity | Status | Detail |
 | --- | -------- | ------ | ------ |
 | ~~No path sandboxing on local file tools~~ | ~~CRITICAL~~ | **REMOVED** | The local `read_file` / `write_file` tools were removed entirely (Part 2); the server process ships no local file read or write tool. The sandbox question is moot — there is no local-file surface to sandbox |
-| Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system without a human-enabled `act` key, and no tool that reaches security config — but the input channel itself is unsanitized |
+| Prompt injection | CRITICAL | Open | User/infra text flows unsanitized into LLM context. **Mitigated** by the architecture: even a fully-injected LLM has no tool that mutates the managed system — every registered Mutate is denied unconditionally today (§3.2) — and no tool that reaches security config; but the input channel itself is unsanitized |
 
 **Key files:** `internal/tools/default.go` (registration; omits the local set), `internal/tools/core/` (the live tool surface)
 
@@ -330,9 +318,11 @@ These become relevant as Joe gains infrastructure-mutating adapters (Part 6). Un
 
 ## Part 6: Infrastructure Healing — From Observer to Operator (design direction)
 
-The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control. Today Joe ships as a read-first copilot; the healing actions below are the forward direction, each gated by a per-action `act` policy key, the write floor, zone scope, and (in incident regime) the captain gate.
+The Action Safety Framework is not just a wall against mutations — it's a **gate** that humans open incrementally as trust builds. Joe is designed to evolve from a read-only observer into an active infrastructure healer, under explicit human control. Today Joe ships as a read-first copilot; the healing actions below are the forward direction, each to be gated by a per-action `act` policy key, the write floor, zone scope, and (in incident regime) the captain gate.
 
-This is how the Core Safety Principles compose: invariants 1–3 hold at every stage of the progression, while policy structure 4–6 is what humans use to move Joe along it.
+**This progression describes a design direction, not a mechanism an operator can exercise today.** The opt-in seam exists in the policy shape, but as of D-0113 no registered tool carries a key it can grant (§3.2), so there is currently no stage-3 action a human could enable even if they wanted to. Stages 3 and 4 below become reachable when full mode ships tools carrying live policy keys.
+
+This is how the Core Safety Principles compose: invariants 1–3 hold at every stage of the progression, while policy structure 4–6 is the shape humans will use to move Joe along it.
 
 ### 6.1 Trust progression
 
@@ -345,6 +335,7 @@ changes nothing.                 tool is read-only by construction (it exposes
 → Joe explains the cause.        directly, still mutating nothing.
 
 Stage 3: Supervised healing      Stage 4: Autonomous healing
+  (not yet reachable)              (not yet reachable)
 ───────────────────────────      ────────────────────────────
 Human enables specific           Human enables broader mutating actions.
 mutating actions (e.g.           Joe heals known patterns without prompting,
@@ -353,15 +344,17 @@ before acting; the human         log captures everything; the circuit breaker
 can cancel.                      (§3.7) bounds runaway sequences.
 ```
 
+Joe ships at stage 2. Stages 3 and 4 require tools carrying live `act` policy keys, of which there are currently none (§3.2).
+
 At every stage Joe decides *which specific action* to take within the classes humans have authorized. The class boundary is always human-authored; the situational judgment within it is Joe's (principle 4).
 
 ### 6.2 Healing actions by adapter (planned)
 
-When humans choose to enable healing, each action is individually toggled — there is no "enable all mutations" switch. Examples of planned mutating actions, each with its own `act` policy key: K8s scale/restart/cordon/apply; Alertmanager silence; PagerDuty ack/resolve; Git commit/push; Helm upgrade. The doc-publish and code-review mutations (Part 2) are the first such actions already implemented.
+When humans choose to enable healing, each action is individually toggled — there is no "enable all mutations" switch. Examples of planned mutating actions, each with its own `act` policy key: K8s scale/restart/cordon/apply; Alertmanager silence; PagerDuty ack/resolve; Git commit/push; Helm upgrade. The code-review mutations (Part 2) are the only mutating tools implemented so far, and they are **not** enabled — they declare policy keys no `act` field resolves, so they are denied unconditionally (§3.2). No mutating action is enableable today.
 
 ### 6.3 Graph-driven healing
 
-Joe's healing is informed by the knowledge graph, not blind command execution. Before acting, Joe traverses relationships to understand blast radius — e.g. recognizing that scaling a service won't help when the real cause is a saturated database it depends on. This is the difference between Joe and a runbook executor: Joe reasons about *why* something is broken and whether a proposed fix will actually help.
+Joe's healing is informed by the infrastructure graph, not blind command execution. Before acting, Joe traverses relationships to understand blast radius — e.g. recognizing that scaling a service won't help when the real cause is a saturated database it depends on. This is the difference between Joe and a runbook executor: Joe reasons about *why* something is broken and whether a proposed fix will actually help.
 
 ### 6.4 Healing safety guarantees
 
@@ -471,7 +464,7 @@ Under the launch-default `team_flat` posture, *read* decisions short-circuit to 
 | Table | LLM tool can read | LLM tool can write | Mutated via |
 |-------|-------------------|--------------------|-------------|
 | `components` | ✅ (queries) | ✅ (register_component) | Component tools + admin |
-| `graph_*`, `knowledge_*`, facts | ✅ | ✅ | Model-maintenance tools (Read class) |
+| `graph_*` | ✅ | ✅ | Model-maintenance tools (Read class) |
 | `security_zones` | — | ❌ **never** | Admin API only (audited) |
 | `component_zone_assignments` | — | ❌ **never** | Admin API only (audited) |
 | `rbac_policies` | — | ❌ **never** | Admin API only (audited) |

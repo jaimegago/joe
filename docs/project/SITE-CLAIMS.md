@@ -71,6 +71,26 @@ test(s)** · **binding note** (where applicable).
   `TestActionClass_IsBinary`, `TestCheckAccess_ReadAlwaysAllowed`,
   `TestCheckAccess_MutateDefaultDeny`, `TestCheckAccess_UnknownToolDenied`.
 
+### Every registered Mutate is denied unconditionally — the act opt-in reaches no tool
+
+- **Claim.** The per-action operator opt-in is a structurally intact seam that is currently
+  reachable by **no registered tool**, so every registered mutating tool is denied regardless
+  of how the safety policy is configured — not merely "denied until an operator opts in."
+- **Mechanism.** Disjointness between two hardcoded sets: `IsT3Allowed`
+  (`internal/safety/policy.go`) switches on exactly `k8s_write`, `pagerduty_ack`,
+  `alertmanager_silence`, `git_push` and otherwise returns its `default: false`; the three
+  `ActionMutate` rows in `internal/safety/tier.go` declare `github_comment`, `gitlab_comment`,
+  `github_request_changes`. No key is in both sets, so `CheckAccess`'s policy-allows branch is
+  unreachable by any real tool name. `publish_doc_update_git` under `git_push` was the last
+  tool reaching it and was deleted with the knowledge store (D-0113).
+- **Pinning tests.** **None — this property is currently unpinned.** The fixture that
+  exercised the allow branch (`TestCheckAccess_MutateEnabled`) was deleted with its only real
+  tool rather than migrated to a synthetic name; see the retained explanatory comment in
+  `internal/safety/tier_test.go`. `TestCheckAccess_MutateDefaultDeny` pins denial under the
+  default policy but **not** the stronger "no configuration can grant it" claim. Closing this
+  gap is tracked in `docs/backlog/reference-docs-prune-reconcile.md`; the seam's future is
+  tracked in `docs/backlog/act-policy-vestigial.md`.
+
 ### The layered pipeline checks the floor at every layer; mutating tools live only in the governed loops' registry
 
 - **Claim.** A mutation passes through a fixed-order pipeline in which the write floor is

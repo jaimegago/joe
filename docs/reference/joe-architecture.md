@@ -15,7 +15,7 @@ This matters because AI agents with production access will make catastrophic mis
 - **Humans own all mutations.** No infrastructure, file, or configuration change without explicit human authorization, expressed in the safety policy.
 - **Deterministic enforcement.** Safety rules are compiled code, not LLM instructions. Prompt injection cannot bypass them.
 - **A boot-resolved write floor.** Observation mode and safe mode raise a read-only floor that nothing in the running binary can lower (D-0018).
-- **Default deny.** Every managed-system mutation starts disabled. Humans opt in per action.
+- **Default deny.** Every managed-system mutation starts disabled. The policy shape provides a per-action human opt-in, but no registered tool currently carries a grantable policy key, so every registered mutation is denied unconditionally (D-0113).
 - **Binary action axis.** Every tool is classified Read or Mutate — Reads always run, Mutates are gated. There is no third tier (D-0020).
 
 Full safety specification: [`docs/reference/security-in-layers.md`](security-in-layers.md).
@@ -29,7 +29,7 @@ Full safety specification: [`docs/reference/security-in-layers.md`](security-in-
 3. **Two agent roles, one process** — the Core Agent maintains the graph in the background; the task/chat loop assists users. Both run inside the same process and share one tool-executor governance path; there is no inter-process HTTP boundary between them.
 4. **The HTTP API is the integration contract** — external clients (Web UI, MCP server, Slack, CLI subcommands) reach Joe over `/api/v1/`.
 5. **AI-agnostic** — the LLM adapter abstracts the provider; native Anthropic (`claude`) and Google (`gemini`) adapters sit alongside a generic OpenAI-compatible adapter (`openai-compat`) selectable by provider plus a config `base_url`. The validated set is config-driven (`internal/llmfactory/factory.go`, `internal/config/validation.go`).
-6. **The Core Agent has autonomy levels** — deterministic changes auto-apply, ambiguous ones queue as clarifications for a human.
+6. **The Core Agent ships the deterministic tier only** — deterministic changes auto-apply. The designed LLM+Auto and Needs-Human escalation levels are not built; the onboarding-and-clarifications subsystem that once backed the escalation path was deleted in D-0118.
 7. **Humans own all mutations** — Joe never changes infrastructure, files, or configuration without explicit human authorization.
 
 ---
@@ -45,12 +45,12 @@ Joe is one binary. Running bare `joe` starts the server, which hosts every subsy
 │  ┌──────────────────────────┐      ┌──────────────────────────────────┐   │
 │  │  HTTP API (:7777)        │      │  Core Agent (background)         │   │
 │  │                          │      │                                  │   │
-│  │  /api/v1/graph/...       │      │  • Refresh loop (poll sources,   │   │
+│  │  /api/v1/graph/...       │      │  • Refresh loop (poll components,│   │
 │  │  /api/v1/components/...  │      │    diff, update graph)           │   │
-│  │  /api/v1/observe/...     │      │  • Discovery / onboarding        │   │
-│  │  /api/v1/tasks (chat)    │      │  • Clarification queueing        │   │
-│  │  /api/v1/admin/...       │      │  • Tools: graph_add_*, register_ │   │
-│  │  /api/v1/panic, /unlock  │      │    component, save_* (Read class)│   │
+│  │  /api/v1/observe/...     │      │  • Deterministic delta reconcile │   │
+│  │  /api/v1/tasks (chat)    │      │    via the graph-delta seam      │   │
+│  │  /api/v1/admin/...       │      │  • Tool: register_component      │   │
+│  │  /api/v1/panic           │      │    (Read class)                  │   │
 │  └───────────┬──────────────┘      └────────────────┬─────────────────┘   │
 │              │                                      │                     │
 │              ▼                                      ▼                     │
@@ -60,12 +60,12 @@ Joe is one binary. Running bare `joe` starts the server, which hosts every subsy
 │  │   safety policy → notify)                                        │     │
 │  └────────────────────────────────┬─────────────────────────────────┘     │
 │                                   │                                       │
-│  ┌──────────┐ ┌──────────┐ ┌──────┴───────┐ ┌──────────┐ ┌──────────┐     │
-│  │  Graph   │ │   SQL    │ │  Adapters    │ │   LLM    │ │ Knowledge│     │
-│  │  Store   │ │  Store   │ │ K8s,Git,AWS, │ │ Adapter  │ │  Store   │     │
-│  │ (SQLite) │ │ (SQLite) │ │ Prom, …      │ │claude/   │ │          │     │
-│  │          │ │          │ │              │ │gemini    │ │          │     │
-│  └──────────┘ └──────────┘ └──────────────┘ └──────────┘ └──────────┘     │
+│      ┌──────────┐ ┌──────────┐ ┌──┴───────────┐ ┌──────────┐              │
+│      │  Graph   │ │   SQL    │ │  Adapters    │ │   LLM    │              │
+│      │  Store   │ │  Store   │ │ K8s,Git,AWS, │ │ Adapter  │              │
+│      │ (SQLite) │ │ (SQLite) │ │ Prom, …      │ │claude/   │              │
+│      │          │ │          │ │              │ │gemini    │              │
+│      └──────────┘ └──────────┘ └──────────────┘ └──────────┘              │
 │                                                                           │
 └───────────────────────────────────────────────────────────────────────────┘
 
@@ -113,29 +113,15 @@ GET  /api/v1/alertmanager/{id}/alerts     /pagerduty/{id}/incidents  /grafana/{i
 GET  /api/v1/postgresql/{id}/stat  /redis/{id}/info  /kafka/{id}/topics  …
 GET  /api/v1/registry/{oci,artifactory,ecr}/{id}/...
 
-# Clarifications (human-in-the-loop)
-GET  /api/v1/clarifications
-POST /api/v1/clarifications/{id}/answer
-POST /api/v1/clarifications/{id}/dismiss
-
-# Control
-POST /api/v1/onboarding                   Start onboarding
-POST /api/v1/refresh                       Trigger full or per-component refresh
-
 # Chat / agentic turns / sessions
 POST /api/v1/tasks                         Execute an agentic turn (non-streaming)
 POST /api/v1/tasks/stream                  Execute an agentic turn (SSE streaming)
 GET/POST /api/v1/sessions[/{id}...]        Owner-scoped chat sessions, messages, findings, runs
 
-# Knowledge
-GET/POST /api/v1/knowledge/entries[/{id}]  CRUD
-POST     /api/v1/knowledge/search          Semantic search
-…        /api/v1/knowledge/{sources,drift,proposals}
-
 # Emergency shutdown
 POST /api/v1/panic                         Trigger emergency shutdown
 GET  /api/v1/panic/status                  Panic / floor state
-POST /api/v1/unlock                        Clear panic state (requires reason)
+# Clearing panic state is CLI-only (joe unlock --reason "...") — there is no HTTP route
 
 # Admin / RBAC (admin-gated, audited)
 GET/POST/PATCH/DELETE /api/v1/admin/zones
@@ -184,11 +170,12 @@ Joe has two agent *roles*, both hosted in the single binary.
 │  Purpose: keep the infrastructure graph accurate and up-to-date      │
 │                                                                      │
 │  • Background refresh: poll connected components, diff against the   │
-│    graph, apply deterministic deltas, queue ambiguous findings       │
-│  • Discovery / onboarding: interpret user-provided input             │
-│  • Tools (all Read class — they maintain Joe's own model, not infra):│
-│      graph_add_node, graph_add_edge, graph_update_node,              │
-│      register_component, save_onboarding_fact, save_knowledge_entry  │
+│    graph, apply deterministic deltas through the reconcile seam      │
+│    (LoadGraphStateForComponent → BuildGraphDelta → ApplyGraphDelta)  │
+│  • Registered tool (Read class — maintains Joe's model, not infra):  │
+│      register_component                                              │
+│    graph_add_node/_edge, graph_update_node are PARKED out of this    │
+│    registry (D-0081 pattern) — they bypass the delta seam            │
 │                                                                      │
 │  Location: internal/coreagent/                                       │
 └──────────────────────────────────────────────────────────────────────┘
@@ -214,9 +201,9 @@ The Core Agent refresh path stamps the `svc:agent:core` principal on its context
 │       the shared governed executor; loop until the LLM stops calling │
 │    4. Stream the response; enforce per-turn token/cost ceilings      │
 │                                                                      │
-│  Tools available: the Read-class query/observability tools, plus     │
-│  the gated Mutate tools (doc-publish, code-review) when their act    │
-│  policy keys are enabled.                                            │
+│  Tools available: the Read-class query/observability tools. The      │
+│  code-review Mutate tools are registered but denied unconditionally  │
+│  — no act policy field resolves their keys (D-0113).                 │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,16 +211,16 @@ Both loops compose the **same** tool-executor governance (`internal/captaingate/
 
 ### Review Agent (infrastructure-aware code review — Phase 10)
 
-Triggered by webhook or API call (there is no `joe review` CLI subcommand — review is webhook/API-only), the Review Agent fetches a PR/MR diff, identifies affected resources, queries the graph (what depends on this?), knowledge (relevant runbooks/incidents), and live state, then produces an infrastructure-aware review. Its read tools are Read class; posting a comment (`github_comment`/`gitlab_comment`) or requesting changes (`github_request_changes`) are Mutate-class actions gated by their `act` policy keys.
+Triggered by webhook or API call (there is no `joe review` CLI subcommand — review is webhook/API-only), the Review Agent fetches a PR/MR diff, identifies affected resources, queries the graph (what depends on this?), and live state, then produces an infrastructure-aware review. Its read tools are Read class; posting a comment (`github_comment`/`gitlab_comment`) or requesting changes (`github_request_changes`) are Mutate-class actions that declare `act` policy keys — but no `ActPolicy` field resolves those keys, so all three are denied unconditionally today (D-0113).
 
 ---
 
 ## Core Agent Decision Flow
 
-The Core Agent operates with varying autonomy depending on confidence:
+The Core Agent's autonomy design has three levels — Autonomous (deterministic), LLM+Auto (high-confidence), and Needs Human. **Only the deterministic tier ships.** The refresh loop applies deterministic deltas and has no escalation or queue path; the onboarding-and-clarifications subsystem that once backed the Needs-Human branch was deleted wholesale in D-0118 (migration `033_drop_onboarding_clarifications`), superseding D-0081's park.
 
 ```
-AUTONOMOUS (no human needed)
+AUTONOMOUS (no human needed) — the shipped tier
   Deterministic changes from API data:
     • New pod in existing deployment      → update node metadata
     • Replica count / ConfigMap changed   → update node
@@ -242,20 +229,15 @@ AUTONOMOUS (no human needed)
     • Service selector → Pod              → add edge (explicit)
     • ArgoCD app → Git repo               → add edge (explicit)
 
-LLM REASONING (confidence determines action)
-  HIGH  → apply automatically (standard naming, explicit annotation)
-  LOW   → queue a clarification for a human
+LLM REASONING / NEEDS HUMAN — designed, not built
+  No escalation path exists in the binary. Per D-0110 the graph is
+  deterministic-only: nodes and edges come solely from Joe-authored
+  adapter and refresher code through the delta-reconcile seam, never
+  from LLM inference.
 
 ALWAYS REQUIRES A HUMAN
-  • Adding a component (credentials)
-  • Semantic / business context ("this service handles payments")
+  • Adding a component (credentials) — the governed promotion transition
 ```
-
-### Clarification flow
-
-When the Core Agent finds something ambiguous, it stores a clarification (status `pending`) carrying the graph operations to apply once answered. A human answers via `POST /api/v1/clarifications/{id}/answer`; the clarification service applies the stored ops with confirmed provenance (answered_by, answered_at) and marks the row answered. Answer races are resolved by an optimistic `WHERE status = 'pending'` update (a second answer gets a 409).
-
-Key files: `internal/core/clarification_service.go`, `internal/store/clarifications.go`, `internal/api/clarifications.go`.
 
 ---
 
@@ -273,7 +255,10 @@ Key files: `internal/core/clarification_service.go`, `internal/store/clarificati
 │  Category-based tools (no component_id required):                    │
 │    joe_graph_query      joe_graph_related   joe_k8s                  │
 │    joe_metrics          joe_logs            joe_traces               │
-│    joe_alerts           joe_knowledge_search                         │
+│    joe_alerts                                                        │
+│  The roster is pinned by TestNewServer_RegistersAllTools and         │
+│  TestNewServer_ToolCount (internal/mcp/server_test.go) — consult     │
+│  those for the authoritative set and size.                           │
 │                                                                      │
 │  Architecture: assistant → MCP server → Joe HTTP API                 │
 │  Env: JOE_SERVER (default http://localhost:7777), JOE_API_KEY        │
@@ -297,9 +282,10 @@ The agentic loop (`internal/agentloop/`) drives a chat turn: build prompt → ca
 ```
 type LLMAdapter interface {
     Chat(ctx, req ChatRequest) (*ChatResponse, error)
-    Embed(ctx, text string) ([]float32, error)
 }
 ```
+
+There is deliberately **no `Embed` method** and no embeddings package: the knowledge store was the sole consumer and both were deleted together (D-0113). A future embedding consumer re-adds the method deliberately rather than inheriting a stub two of three adapters never implemented.
 
 Location: `internal/llm/`; provider selection in `internal/llmfactory/factory.go`. Joe ships native, vendor-SDK adapters for `claude` (Anthropic) and `gemini` (Google) plus a generic `openai-compat` adapter — a small, dependency-free HTTP client (`internal/llm/openaicompat/`) that speaks the OpenAI Chat Completions protocol against any compatible server (OpenAI, vLLM, llama.cpp, Ollama, LocalAI, …) at a configurable `base_url`. The validated provider set is config-driven; `internal/llmfactory/factory.go` (the factory switch) and `internal/config/validation.go` (the allow-list) are authoritative. Boot validates the active model: native providers require an API key (`ANTHROPIC_API_KEY` for claude; `GEMINI_API_KEY` or `GOOGLE_API_KEY` for gemini) and fail fast if it is missing; `openai-compat` instead requires `base_url` and treats `OPENAI_API_KEY` as optional (empty is valid for keyless local endpoints).
 
@@ -316,15 +302,11 @@ Location: internal/tools/
 
 The executor classifies each tool (Read/Mutate) and runs the ordered gate: write floor → zone/component scope → namespace scope → safety policy → pre-execution notification (Mutate only) → execute → post-execution notification (Mutate only). See [`docs/reference/security-in-layers.md`](security-in-layers.md) §3.3.
 
-Core tools are organized by subsystem (graph, k8s, git, aws, the observability/datastore/GitOps/networking/registry families, code review, knowledge, doc publishing). They call the local HTTP API through `internal/client/`, which keeps the tool surface uniform whether invoked by the Core Agent or the task loop.
-
-### Discovery / Onboarding
-
-Onboarding collects user-provided input via `POST /api/v1/onboarding`, validates connections, and lets the Core Agent interpret the input into graph operations and facts. The general onboarding/Facts store is unrelated to the removed `.joe/` ingestion path (D-0042).
+Core tools are organized by subsystem (graph, k8s, git, aws, the observability/datastore/GitOps/networking/registry families, and code review). They call the local HTTP API through `internal/client/`, which keeps the tool surface uniform whether invoked by the Core Agent or the task loop.
 
 ### Background Refresh
 
-A periodic job (default 5 minutes, configurable) keeps the graph current: load connected components, query current state via each adapter, diff against existing nodes, apply deterministic changes directly, and queue ambiguous findings for the LLM/clarifications under a budget. Location: `internal/coreagent/refresh.go`.
+A periodic job (default 5 minutes, configurable) keeps the graph current: load connected components, query current state via each adapter, diff against existing nodes, and apply deterministic changes through the delta-reconcile seam. There is no ambiguity queue — the graph is deterministic-only (D-0110). Location: `internal/coreagent/refresh.go`.
 
 ### Adapters
 
@@ -332,13 +314,13 @@ A periodic job (default 5 minutes, configurable) keeps the graph current: load c
 Location: internal/adapters/
 ```
 
-All adapters are **read-only** except the doc-publish Git path and the code-review GitHub/GitLab path.
+All adapters are **read-only** except the code-review GitHub/GitLab path.
 
 | Family | Adapters |
 |--------|----------|
 | Cloud | AWS (EC2, EKS, RDS, VPC), Azure (VMs, AKS, SQL, VNets) |
 | Orchestration | Kubernetes (dynamic client, multi-context) |
-| Source / repos | Git (read: file/log/diff; doc-publish: commit + push) |
+| Source / repos | Git (read: file/log/diff) |
 | GitOps / CD / IaC | ArgoCD, Flux, Terraform (state), Helm (releases) |
 | Observability | Prometheus/Mimir, Loki, Tempo, Jaeger, Datadog, Splunk, Dynatrace, New Relic |
 | Alerting / dashboards | Alertmanager, PagerDuty, Grafana |
@@ -404,31 +386,12 @@ Relational data lives in the SQL store (`internal/store/`, default `~/.joe/joe.d
 components            Registered-system registry (id, type, url, name, environment,
                       categories, connection config, status, …)
 sessions / agent_*    Chat sessions, messages, findings, runs, captain state
-clarifications        Human-confirmation queue (status, question, graph_operations, …)
-onboarding_facts      User-stated facts + graph ops to replay
 graph_nodes/edges     The graph store tables (above)
-knowledge_*           Knowledge entries, sources, proposals, drift
 security_zones / component_zone_assignments / rbac_policies   Zone-scoped RBAC
 read_posture / auto_promote_reads   Read governance singletons
 cluster_panic_state   Single-row panic state (id=1) — there is no panic.state file
 audit_log             Append-only audit trail
 ```
-
-### Knowledge Store
-
-The Knowledge Store captures runbooks, synced docs, and learned insights across trust tiers (`internal/knowledge/`):
-
-| Tier | Constant | Trust | LLM can | LLM cannot |
-|------|----------|-------|---------|------------|
-| **Curated** | `curated` | Highest (human-owned) | Read | Modify / delete (immutable — enforced at the service layer) |
-| **Synced** | `synced` | High (external source of truth, e.g. Confluence/Notion) | Re-fetch, re-parse, update cache, link nodes | Change the source of truth |
-| **Derived** | `derived` | Lower (LLM-extracted, confidence-scored) | Create, invalidate, adjust confidence | Touch curated entries |
-
-The curated-immutability rule is enforced in code: `Update`/`Delete` on a `curated` entry returns an error (`internal/knowledge/service.go`). This matches the architectural invariant — the LLM can create/update Tier-3 (derived) knowledge but cannot touch Tier-1 (curated).
-
-> **Not wired (as of 2026-06-20).** The derived "patterns extracted from sessions" capability describes the *intended* design. The extractor that would produce these (`internal/knowledge/learning/`) is dormant and orphaned — never called, reading the legacy `session_messages` table, writing ungoverned. No session-derived Tier-3 entries are produced today. See [docs/reference/learn-from-sessions-current-state.md](learn-from-sessions-current-state.md).
-
-**Knowledge → docs flow.** Joe can extract an insight (stored Tier-3), notice a runbook missing it, and generate a **draft** proposal (`generate_doc_draft`, Read class — it writes only to Joe's proposal store). Publishing the proposal to an external system (`publish_doc_update_*`) is a Mutate action requiring human approval and the relevant `act` policy key; a published doc later re-syncs as Tier-2.
 
 ---
 
@@ -449,14 +412,12 @@ Joe serves concurrent multi-user access. Understanding the model matters for fea
 ### Areas requiring coordination
 
 - **Graph mutations during background refresh** — refresh may delete/recreate a node a user is annotating. Reconcile with last-seen/version awareness.
-- **Clarification answer races** — resolved by optimistic `UPDATE … WHERE status = 'pending'` (a second answer gets a 409 Conflict).
 - **Per-run tool durability** — non-idempotent model-maintenance inserts (e.g. `register_component`) carry a `NeedsDurability` key so the durable executor dedups an in-run retry or crash-resume (D-0020).
 
 ### Idempotency
 
 | Operation | Key | On duplicate |
 |-----------|-----|--------------|
-| Clarification answer | `(id, status=pending)` | 409 Conflict |
 | Durable tool call | `(runID, tool, args-hash)` | Replay short-circuits |
 | Code-review comment / request-changes | `NeedsDurability` per-run key | Dedup on retry |
 
@@ -474,7 +435,7 @@ joe/
 ├── internal/
 │   ├── api/                      # HTTP API (server, routes, middleware, admin)
 │   ├── client/                   # HTTP client used by core tools
-│   ├── coreagent/                # Core Agent (refresh, discovery, onboarding)
+│   ├── coreagent/                # Core Agent (background refresh, graph reconcile)
 │   ├── agentloop/                # Per-turn chat/task loop
 │   ├── captaingate/              # §C captain-session incident gate (shared)
 │   ├── sessiongate/ sessionmodel/ session*  # Chat-session subsystem
@@ -484,12 +445,11 @@ joe/
 │   │   ├── executor.go
 │   │   ├── core/                 # Core tools (call the API via internal/client)
 │   │   └── shared/               # Go-native diagnostic tools
-│   ├── safety/                   # Action axis, write floor, policy, invariants, panic
+│   ├── safety/                   # Action axis, write floor, policy, panic
 │   ├── rbac/                     # Zone-scoped RBAC + read posture resolver
 │   ├── readposture/              # Install-wide read posture singleton
 │   ├── graph/                    # Graph store (SQLite)
 │   ├── store/                    # SQL store + migrations
-│   ├── knowledge/                # Knowledge store (curated/synced/derived)
 │   ├── adapters/                 # Infrastructure adapters
 │   ├── buildinfo/                # Build identity (ldflags + ui_digest)
 │   ├── mcp/                      # MCP server (joe mcp)
@@ -542,10 +502,6 @@ refresh:
   interval_minutes: 5
   llm_budget: { max_calls_per_hour: 10, batch_threshold: 5, batch_timeout_sec: 900 }
 
-knowledge:
-  embedding_model: ...
-  semantic_top_k: ...
-
 logging:
   level: info                      # debug | info | warn | error
 ```
@@ -567,7 +523,7 @@ Every tool is classified at registration into one of two classes — the LLM can
 | Class | Description | Default |
 |-------|-------------|---------|
 | **Read** | Does not mutate the managed system (includes Joe's own graph/model maintenance) | Always allowed |
-| **Mutate** | Mutates the managed system (files, infra, external PR/MR threads, published docs) | Denied; per-action opt-in via the `act` policy |
+| **Mutate** | Mutates the managed system (files, infra, external PR/MR threads) | Denied. The `act` policy provides a per-action opt-in seam, but no registered tool's key resolves to a live `act` field, so the denial is unconditional |
 
 This replaces the former three-tier Observe/Record/Act (T1/T2/T3) scheme — collapsed to a binary axis by **D-0020**. Unknown tools default to Mutate (deny by default).
 
@@ -580,7 +536,9 @@ This replaces the former three-tier Observe/Record/Act (T1/T2/T3) scheme — col
 
 ### Safety policy
 
-The policy is the compiled `DefaultPolicy()` (`internal/safety/policy.go`) — there is no on-disk safety-policy file (the loader was never wired in production and was removed). Its `act` section gates each Mutate tool (default deny); the per-task `safety_tier` can only narrow it. The legacy `record` section is a retained, inert compatibility field (model-maintenance tools are now Reads).
+The policy is the compiled `DefaultPolicy()` (`internal/safety/policy.go`) — there is no on-disk safety-policy file (the loader was never wired in production and was removed). Its `act` section is the per-action opt-in seam; the per-task `safety_tier` can only narrow it. The legacy `record` section is a retained, inert compatibility field (model-maintenance tools are now Reads).
+
+**The opt-in seam is structurally intact but reachable by no registered tool.** `IsT3Allowed` switches on exactly `k8s_write`, `pagerduty_ack`, `alertmanager_silence`, and `git_push`; the three registered Mutate tools declare `github_comment`, `gitlab_comment`, and `github_request_changes`. The sets are disjoint, so every lookup falls to the deny default and **every registered Mutate is denied unconditionally, regardless of configuration**. `publish_doc_update_git` under `git_push` was the last tool reaching the allow branch and died with the knowledge store (D-0113). The seam becomes exercisable again only when full mode ships a tool carrying a live policy key — see [`docs/reference/security-in-layers.md`](security-in-layers.md) §3.2 and [`docs/backlog/act-policy-vestigial.md`](../backlog/act-policy-vestigial.md).
 
 ### Self-protection invariants
 
@@ -605,9 +563,9 @@ Historical milestone log. (The "two binaries" framing of early phases is retired
 | 5 — Core Agent | Background refresh loop; graph-maintenance tools; lifecycle; discovery |
 | 5.5 — Action Safety Framework | Action classification, safety policy, executor gate, self-protection, notification contract, edge auth, request limits |
 | 6 — Infra adapters (broad) | Cloud, observability, alerting, data stores, GitOps/CD/IaC, networking, K8s CRDs, security/runtime, proprietary observability, registries |
-| 7 — Knowledge store | Curated / synced / derived tiers (derived extractor dormant — see note above) |
-| 8 — Documentation co-pilot | Draft generation → human approval → publish (Confluence/Notion/Git); drift detection |
 | 9 — Security + clients | Emergency shutdown / panic; MCP server; zone-scoped RBAC; Web UI; Slack bot |
-| 10 — Code review | GitHub + GitLab adapters; webhook receiver; Review Agent; `joe review` |
+| 10 — Code review | GitHub + GitLab adapters; webhook receiver; Review Agent (webhook/API-only — no `joe review` subcommand) |
+
+> Phases 7 (knowledge store) and 8 (documentation co-pilot) shipped historically and were **deleted** in D-0113 — the knowledge store, doc-proposal pipeline, draft generation, external publishing, and drift detection are no longer in the binary. Phase 5's discovery/onboarding and clarification queue were likewise deleted in D-0118. They are omitted from the table rather than listed as shipped, per D-0074.
 
 Subsequent work (single-binary consolidation, the write floor and binary axis, read posture, incident regime, session-model decomposition) is recorded in [`docs/project/DECISIONS.md`](../project/DECISIONS.md).
