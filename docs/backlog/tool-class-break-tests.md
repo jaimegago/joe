@@ -1,5 +1,6 @@
 Break-tests pinning tool action-class for the two currently-unpinned cases
 Status: open
+Priority: next
 
 Two tools in the hardcoded classification (`internal/safety/tier.go`) carry an
 action class that **no test asserts**. The project principle is that

@@ -1,6 +1,7 @@
 # Backlog — Governed connectivity-check surface for components
 
 Status: open; CC-actionable when picked up. Not launch-blocking unless a launch
+Priority: later
 decision says otherwise — that is an **open question**, not asserted here.
 
 ## Problem

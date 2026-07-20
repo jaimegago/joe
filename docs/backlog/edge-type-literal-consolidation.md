@@ -1,5 +1,6 @@
 Edge-type literal consolidation and constraining graph_edges.relation
 Status: open
+Priority: later
 
 Rehomes the edge-type smell established by the edge-type-count arbitration
 (evidence: [docs/backlog/investigations/edge-type-count-arbitration.md](investigations/edge-type-count-arbitration.md)).

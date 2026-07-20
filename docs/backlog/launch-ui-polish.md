@@ -1,6 +1,7 @@
 # Purpose-built dashboard to replace the retired fabricated-data landing page
 
 Status: open
+Priority: next
 Session: launch-ui-polish
 Decision: D-0038 (chat is the default landing surface; fabricated dashboard retired)
 

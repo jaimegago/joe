@@ -1,5 +1,6 @@
 # Component registration guide — UI-driven public how-to
 Status: in-progress
+Priority: now
 
 The first UI-driven registration how-to shipped this session (D-0059):
 `docs/public/guides/register-kubernetes.md` covers **Kubernetes only**, with

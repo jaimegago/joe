@@ -1,6 +1,7 @@
 # Build & version instrumentation — deferred fast-follows
 
 Status: open
+Priority: later
 
 The core of the build-version-instrumentation thread has landed (D-0036):
 `internal/buildinfo` as the single source of build truth, ldflags `-X` relocated

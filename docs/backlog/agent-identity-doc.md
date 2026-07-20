@@ -1,5 +1,6 @@
 # Agent identity and authentication — explanation doc and the implementation it trickles into
 Status: open
+Priority: next
 
 A held draft of Joe's agent-identity and authentication stance was authored this
 session (D-0060) and is held, deliberately non-published, at

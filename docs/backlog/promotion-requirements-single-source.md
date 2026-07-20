@@ -1,6 +1,7 @@
 # Backlog — Drive component promotion validation from a single per-Kind requirements source
 
 Status: open; CC-actionable when picked up. Not launch-blocking — the
+Priority: later
 guard-tested describe-only table is safe to ship (stated assessment, not an
 asserted launch decision).
 

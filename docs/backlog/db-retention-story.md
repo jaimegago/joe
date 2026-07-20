@@ -1,6 +1,7 @@
 # Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability)
 
 Status: open
+Priority: later
 
 This item collects the deferred, whole-database retention work that the
 `db-retention-story` session documented but did not build. The operator-facing posture —

@@ -1,6 +1,6 @@
 # Backlog priority triage — assign Priority lines across all existing items
 
-Status: open
+Status: done — triage pass executed (D-0127)
 Priority: now
 
 The backlog file convention gained two optional lines after the status line —

@@ -1,6 +1,7 @@
 # Denial-feedback pop-up: a reactive notification when a user action is refused
 
 Status: deferred — design-approved in spirit, unimplemented
+Priority: later
 Entry created: 2026-06-08. This is an implementation backlog item (a UI
 enhancement), not a new decision — it does not add a DECISIONS.md entry.
 Relates to: D-0022 (denial precedence floor > incident > RBAC), D-0019 (trust

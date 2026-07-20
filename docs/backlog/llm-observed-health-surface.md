@@ -1,6 +1,7 @@
 # LLM observed-health surface — last-successful-call display and failure recording
 
 Status: open
+Priority: later
 
 ## User story
 

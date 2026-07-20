@@ -1,5 +1,6 @@
 Guard test pinning the no-MCP-client invariant
 Status: open
+Priority: next
 
 D-0067 categorically rejects Joe acting as an MCP client, and the live tree
 honors it — the only MCP dependency is imported server-side, with no client

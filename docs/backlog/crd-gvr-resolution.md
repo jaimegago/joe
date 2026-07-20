@@ -1,5 +1,6 @@
 CRD GVR resolution in the on-demand core tools (deferred from crd-gvr-resolution / D-0094)
 Status: open
+Priority: later
 
 D-0094 fixed the CRD refresher's `crdRefreshSpecs`: the strings were in the
 never-resolving `resource.group` form (e.g. `scaledobjects.keda.sh`) while

@@ -1,6 +1,7 @@
 # Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee
 
 Status: open
+Priority: next
 
 ## Context
 

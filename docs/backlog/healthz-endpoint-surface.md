@@ -1,6 +1,7 @@
 # Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz)
 
 Status: open
+Priority: next
 
 A **decision-ready build specification** for an unauthenticated health-probe
 surface on Joe, anchored to established Kubernetes / HTTP-service convention
@@ -15,9 +16,12 @@ maintainer are (a) the Joe-specific placement of the route and (b) whether a
 separate readiness endpoint is worth shipping at all, given that readiness
 collapses toward liveness here. No `DECISIONS.md` entry is filed by this pass.
 
-Relationship to the two existing items is stated in §5; the survivor
-recommendation is at the end of that section. This pass modifies neither of
-those files.
+Relationship to the two prior items is stated in §5. As of the
+`backlog-priority-triage` session (D-0127), both prior items have been merged
+into this file per that recommendation: `health-readiness-surface` closed
+(its sole unique contribution, the sleep-replacement consumer framing, was
+already captured in §4) and `unauth-health-surface`'s information-exposure
+analysis is folded in as §6. Both moved to `docs/backlog/done/`.
 
 ---
 
@@ -199,38 +203,90 @@ So the readiness decision is binary:
 
 ---
 
-## 5. Relationship to the two existing items, and survivor recommendation
+## 5. Relationship to the two prior items (merged, D-0127)
 
-Three items now circle this surface:
+Three items used to circle this surface:
 
-1. [`health-readiness-surface`](health-readiness-surface.md) — the **prior build
-   stub**. Names `/livez` and `/readyz` at the root level, unauthenticated, as
-   not-yet-built; fixes the definition to boot-completion (not dependency
-   health); names the sleep-replacement consumer. This item **refines** that
-   stub: it adds the grounded standard contract, the re-derived Joe constraints
-   with `file:line`, and the named placement options the stub left implicit.
-2. [`unauth-health-surface`](unauth-health-surface.md) — the **analysis** this
-   item operationalizes. It is the auth-posture and information-exposure study
-   (what an unauthenticated probe may reveal; the metrics-port fingerprinting
-   caveat; the Option-C minimal-`/healthz` recommendation for ratification).
-   This item turns that analysis into a buildable, placement-decided spec.
-3. **This item** (`healthz-endpoint-surface`) — the **standards-anchored,
-   decision-ready build specification** drawing on both.
+1. `health-readiness-surface` — the **prior build stub**. Named `/livez` and
+   `/readyz` at the root level, unauthenticated, as not-yet-built; fixed the
+   definition to boot-completion (not dependency health); named the
+   sleep-replacement consumer. This item **refined** that stub: it added the
+   grounded standard contract, the re-derived Joe constraints with `file:line`,
+   and the named placement options the stub left implicit. Its one unique
+   contribution — the sleep-replacement consumer framing — was already captured
+   in §4, so nothing further needed folding in. Closed and moved to
+   `docs/backlog/done/`.
+2. `unauth-health-surface` — the **analysis** this item operationalized. It was
+   the auth-posture and information-exposure study (what an unauthenticated
+   probe may reveal; the metrics-port fingerprinting caveat; the Option-C
+   minimal-`/healthz` recommendation). Its non-duplicated content — the
+   exposure summary table, the per-candidate exposure analysis, and the
+   Options A–D table with recommendation — is folded in below as §6. Closed
+   and moved to `docs/backlog/done/`.
+3. **This item** (`healthz-endpoint-surface`) — the sole surviving,
+   standards-anchored, decision-ready build specification, now carrying both
+   prior items' substance.
 
-**Survivor recommendation.** When this surface is actioned, collapse to **a
-single tracked build item: this one (`healthz-endpoint-surface`)**. Concretely:
+---
 
-- **Close `health-readiness-surface` in favor of this item** (or merge its one
-  unique contribution — the sleep-replacement consumer framing, already captured
-  in §4 — and then close it). This item supersedes it as the build spec; keeping
-  both is duplication.
-- **Keep `unauth-health-surface` until its recommendation is ratified**, then
-  archive it as the design record. It is the analysis this spec rests on, not a
-  competing build item; once its Option-C recommendation is either ratified into
-  this spec's placement choice or set aside, it has served its purpose and can
-  move to `done/`.
-- Net end-state: **one** open build item (this file) carrying the decided
-  contract, with the analysis archived as provenance.
+## 6. Information-exposure analysis (merged from `unauth-health-surface`)
 
-This pass modifies neither `health-readiness-surface.md` nor
-`unauth-health-surface.md`.
+**What an unauthenticated caller can reach today:**
+
+| Surface | Port | Unauthenticated? | What it returns |
+|---|---|---|---|
+| `/api/v1/auth/*` (login, callback, logout, config) | API (:7777) | Yes (public prefix) | OIDC flow + `oidc_enabled` config |
+| `/api/v1/status`, `/api/v1/version` | API (:7777) | **No — 401** | (see below for shape when authenticated) |
+| any other `/api/v1/*` | API (:7777) | No — 401 | — |
+| any non-`/api/v1` path (`/`, `/graph`, `/healthz`, …) | API (:7777) | Yes (static, off-chain) | SPA `index.html` shell `200` |
+| `/metrics` | metrics (:9090, default on) | **Yes (no auth at all)** | Prometheus exposition incl. `joe_build_info{version,commit,build_time,ui_digest}` |
+| any other path on metrics port | metrics (:9090) | Yes | `404` |
+
+**Per-candidate information exposure if made unauthenticated:**
+
+- **Bare liveness** ("process is up"): reveals only that the HTTP listener
+  answers. No version, no dependency state. This is the *minimum* — and
+  reveals nothing an attacker cannot already learn from a `401` on any
+  `/api/v1` path or a `200` HTML shell from `/`.
+- **`status` as-is, unauthenticated**: leaks the `version` string and a server
+  clock (`time`). Version alone is a coarse fingerprint.
+- **`version` as-is, unauthenticated**: leaks `version` + `commit` +
+  `build_time` + `ui_digest`. The `commit` pins the exact source tree; combined
+  with a public repo (Joe is Apache-2.0) this is a precise map from a running
+  instance to its exact code. Published releases sharpen this rather than
+  blunting it: a leaked `version` matching a release tag also identifies a
+  widely distributed, byte-identical binary, so `ui_digest`/`commit` are
+  known-in-advance constants for every operator running that release. This is
+  the strongest reconnaissance signal of the options.
+- **Readiness reflecting dependency health**: by construction reveals *which*
+  dependencies are healthy/unhealthy. Operationally useful, and also the most
+  information-bearing candidate.
+
+**Fingerprinting caveat.** Build identity (`version`/`commit`/`build_time`/
+`ui_digest`) is **already exposed unauthenticated** on the default-on metrics
+port via `joe_build_info` (`internal/observability/metrics.go:555-561` +
+`cmd/joe/server.go:980-991`). So an unauthenticated `/version` or
+version-bearing `/status` on the API port reveals nothing the metrics port
+does not already reveal by default. The not-equivalent part: operators
+routinely firewall the metrics port to scrape-only while the API port is
+internet-facing, so the *reachability* of the two differs even though the
+*content* does not — the marginal cost of an unauthenticated version surface
+is small given the current metrics default, but not zero, since it moves
+build identity onto the port most likely to be exposed.
+
+**Options and recommendation (from `unauth-health-surface`, for ratification
+alongside the placement choice in §3):**
+
+| # | Option | Cost to governed-safety posture | Operational payoff |
+|---|---|---|---|
+| A | Leave `status`/`version` authenticated; rely on the metrics port for a process-up signal | None — no new unauthenticated API-port hole | Weak: `/metrics` proves the metrics server is up, on a different port, and is a heavy Prometheus payload — a poor probe target |
+| B | Make `/api/v1/status` itself unauthenticated | Moderate: punches a version-bearing hole; leaks `version` + clock to anyone | Cheap to ship; gives a real API-port up-signal, but reveals more than a probe needs |
+| C | Add a dedicated unauthenticated minimal `/healthz` (liveness): up-or-not, no version, no dependency detail | Small and bounded: reveals strictly less than a `401` or the existing `200` HTML shell already do | Clean probe contract; cannot be used for fingerprinting; decoupled from build identity |
+| D | Add a separate `/readyz` with a DB-ping-only check, revealing only ready/not-ready | Small if status-code-only; larger if it ever distinguishes failure modes | Lets harnesses poll readiness instead of sleeping; marginal over C given listener-binds-last wiring |
+
+Recommendation carried forward from `unauth-health-surface`: **adopt Option C**
+as the liveness shape (consistent with §3's constraint that the handler
+return a bare `200` with no build identity); **reject Option B** (reveals more
+than a probe needs, and moves build identity onto the internet-facing port for
+no benefit C doesn't already give); **treat `/readyz` (Option D) as optional**,
+per §4's readiness discussion.

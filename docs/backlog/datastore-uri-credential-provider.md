@@ -1,6 +1,7 @@
 # Backlog — Datastore URI credential provider (deferred from A003)
 
 Status: deferred from A003 (promotion-boundary work) to its own future design
+Priority: later
 session.
 
 ## Problem

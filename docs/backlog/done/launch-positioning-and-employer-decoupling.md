@@ -1,5 +1,5 @@
 Launch positioning, the open-source launch-blocker checklist, and decoupling from a former employer
-Status: open
+Status: done — discharged by launch (backlog-priority-triage, D-0127)
 
 This file rehomes the open-source launch context that lived only in the retired
 `JOE_PROJECT_KNOWLEDGE.md` §8 (and in the now-absent `LAUNCH_READINESS.md` /

@@ -1,6 +1,7 @@
 # Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue
 
 Status: open
+Priority: later
 
 Two trims narrowed the registrable-type set (`store.AllowedComponentTypes` /
 `store.IsValidComponentType`, `internal/store/constants.go`) so that a type absent

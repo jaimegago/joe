@@ -1,6 +1,6 @@
 # Health and readiness probe surface (/livez, /readyz)
 
-Status: open
+Status: done — merged into healthz-endpoint-surface (backlog-priority-triage, D-0127)
 
 Deferred out of the build-version-instrumentation thread to keep that thread
 scoped to the build, version, and metrics surface. Flagged here so it is not

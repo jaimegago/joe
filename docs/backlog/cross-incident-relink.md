@@ -1,6 +1,7 @@
 # Backlog — Attach a former (resolved) incident master as a participant of a new incident
 
 Status: **deferred — post-launch structural feature.** Not a chrome fix and not
+Priority: later
 launch-blocking. Lands on the same post-launch shelf as the incident-regime /
 captain redesign (`docs/reference/security-architecture-direction.md` §8, "the
 incident/captain gate is post-launch as a feature").

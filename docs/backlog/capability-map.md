@@ -1,5 +1,6 @@
 Capability-map Concepts page — deferred follow-ups
 Status: open
+Priority: later
 
 The public Concepts capability page shipped in session `capability-map` (D-0066): a
 single explanation page mapping Joe's full capability surface, with observation mode

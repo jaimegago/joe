@@ -1,6 +1,7 @@
 # Backlog — Azure adapter Connect is a skeleton (no SDK client built)
 
 Status: deferred (recorded by D-0026; tied to the deferred ambient-workload-identity provider — do not build it as part of D-0026).
+Priority: later
 
 ## Context
 

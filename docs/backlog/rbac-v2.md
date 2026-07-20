@@ -1,6 +1,7 @@
 # Full RBAC v2 — role indirection, group subjects, and granular permissions
 
 Status: open
+Priority: later
 
 ## Frame
 

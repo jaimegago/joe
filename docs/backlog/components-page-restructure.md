@@ -1,5 +1,6 @@
 # Components page restructure — deferred remainder
 Status: open
+Priority: later
 
 ## Deferred question
 

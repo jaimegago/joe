@@ -1,6 +1,7 @@
 Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables)
 
 Status: open
+Priority: later
 
 Deferred residue from session `component-delete-graph-orphans` / D-0117, which added the
 transactional component-delete → graph_nodes cascade (edges follow by FK `ON DELETE

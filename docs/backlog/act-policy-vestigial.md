@@ -1,6 +1,7 @@
 # ActPolicy opt-in seam: vestigial after knowledge prune
 
 Status: open
+Priority: later
 Blocked-by: full-mode-rbac-track
 
 **No registered tool reaches the `IsT3Allowed` allow branch.** After session

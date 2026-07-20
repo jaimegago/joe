@@ -1,6 +1,7 @@
 # Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity
 
 Status: open
+Priority: next
 
 > **Progress (skills-governance-hardening session, D-0075).** Items **1**
 > (admin-gate the mutating skills HTTP endpoints) and **4** (fix the stale

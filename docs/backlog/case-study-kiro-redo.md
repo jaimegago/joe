@@ -1,6 +1,7 @@
 # Redo the Kiro case study against current Joe architecture
 
 Status: open
+Priority: next
 
 ## Redo brief
 

@@ -1,9 +1,8 @@
 # Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal
 
 Status: deferred — design-approved, unimplemented
+Priority: later
 Design of record: docs/project/DECISIONS.md D-0019 (the trust model). This entry is the implementation backlog item, not a new decision; it does not duplicate D-0019.
-Depends on: the write floor (D-0018) — DONE. This is the natural next implementation track after the floor.
-Blocks: autonomous-path seam routing (D-0022 Task 2, deferred). See "Dependency chain" below.
 
 ## Context
 

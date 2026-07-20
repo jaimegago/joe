@@ -1,6 +1,7 @@
 # Backlog — Fate of the learn-from-sessions (knowledge extraction) feature
 
 Status: open — **the prior "decided" disposition is void**, see below. Re-decide.
+Priority: next
 
 ## Why this reopened (session knowledge-store-prune, D-0113)
 

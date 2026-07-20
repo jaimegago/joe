@@ -1,5 +1,6 @@
 Backlog — OpenAI-compatible adapter fast-follows
 Status: in-progress
+Priority: now
 
 The generic `openai-compat` adapter (`internal/llm/openaicompat/`, D-0048) ships
 non-streaming Chat + Embed against any OpenAI Chat Completions endpoint at a

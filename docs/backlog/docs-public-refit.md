@@ -1,5 +1,6 @@
 Public docs refit — deferred follow-ups
 Status: open
+Priority: later
 
 The `docs-public-refit` session (D-0069, D-0070) reworked the capability Concepts page
 into `concepts/action-model.md` (binary Read/Mutate spine, shipped mutation surface

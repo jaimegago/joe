@@ -1,6 +1,7 @@
 # Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093)
 
 Status: open
+Priority: later
 
 D-0093 landed per-resource-type **forbidden** degradation in the **kubernetes**
 refresher only: a forbidden list error records a skip and continues, the tick

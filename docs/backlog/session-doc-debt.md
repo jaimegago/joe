@@ -1,5 +1,6 @@
 Session-subsystem documentation debt
 Status: open
+Priority: next
 
 Rehomes the two concrete doc-cleanup items from the retired
 `JOE_PROJECT_KNOWLEDGE.md` §11.3. Both were **re-verified against the live tree

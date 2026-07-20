@@ -1,5 +1,6 @@
 OASIS evaluation relationship and the deferred post-Phase-2 re-score
 Status: open
+Priority: next
 
 Rehomes the OASIS relationship from the retired `JOE_PROJECT_KNOWLEDGE.md` §7b.
 The descriptive relationship lived only in JPK and auxiliary prompt docs — the

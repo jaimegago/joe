@@ -1,6 +1,7 @@
 Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces
 
 Status: in-progress — the posture mechanism, the admin flip endpoint, and the audit trail have landed (D-0041); the axis-coupling between the read posture and the agent:core autonomous read surface introduced by D-0041 was corrected (D-0043): the posture governs human-facing transport reads only. This file tracks the deferred work that the launch default (`team_flat`) lets us postpone.
+Priority: now
 
 ## Context
 

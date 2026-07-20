@@ -1,6 +1,7 @@
 # Config-less registration default — deferred fast-follows
 
 Status: open
+Priority: later
 
 The `register-component-config-default` fix (D-0057) makes a config-less
 registration succeed and land inert: both registration paths now normalize an

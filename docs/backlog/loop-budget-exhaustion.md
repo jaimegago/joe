@@ -1,6 +1,7 @@
 # Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100)
 
 Status: open
+Priority: later
 
 The loop-budget-exhaustion session (D-0100..D-0096) made the agentic loop's
 iteration-cap hit a soft stop: on exhaustion `Agent.Run` makes one tool-less

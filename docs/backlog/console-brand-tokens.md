@@ -1,6 +1,7 @@
 # Console brand token layer
 
 Status: open
+Priority: later
 
 ## Context
 

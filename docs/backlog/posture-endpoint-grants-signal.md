@@ -1,6 +1,7 @@
 # Posture endpoint: a coarse "any write grants exist" signal (full-mode only)
 
 Status: deferred — design-approved in spirit, unimplemented
+Priority: later
 Entry created: 2026-06-08. This is an implementation backlog item (a posture-read
 enhancement), not a new decision — it does not add a DECISIONS.md entry.
 Design of record: docs/project/DECISIONS.md D-0019 (the trust model). This entry records

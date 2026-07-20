@@ -1,6 +1,6 @@
 # Unauthenticated health surface — auth-posture and information-exposure analysis
 
-Status: open
+Status: done — merged into healthz-endpoint-surface (backlog-priority-triage, D-0127)
 
 An investigation (session `unauth-health-surface`) into whether Joe should expose
 an unauthenticated, deployment-grade health surface — an unauthenticated

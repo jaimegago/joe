@@ -1,6 +1,7 @@
 # review_jobs: orphaned table disposition
 
 Status: open
+Priority: next
 
 The `review_jobs` table has **zero Go references in the tree**. A repo-wide search for
 `review_jobs` / `reviewjobs` / `ReviewJob` across every `.go` file returns nothing: no

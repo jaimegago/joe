@@ -1,6 +1,7 @@
 # Backlog — Tear down the vestigial credential-stderr surface
 
 Status: open (created by D-0065, agent-identity-doc-04)
+Priority: later
 
 ## Context
 

@@ -1,6 +1,7 @@
 # Backlog — conversational session content-search
 
 Status: **deferred — post-launch shelf.** Distinct from the P2 title filter on
+Priority: later
 the sessions list (`docs/reference/DESIGN-SESSIONS-VIEW.md` §2.1). Not launch-blocking.
 
 ## What this is

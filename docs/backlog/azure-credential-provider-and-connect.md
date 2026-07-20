@@ -1,6 +1,7 @@
 # Backlog — Azure credential provider + Connect implementation (deferred from A003)
 
 Status: deferred from A003 (promotion-boundary work) to its own dedicated design
+Priority: later
 session.
 
 ## Problem

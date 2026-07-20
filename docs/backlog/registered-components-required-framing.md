@@ -1,5 +1,6 @@
 # Joe is near-useless without registered components — make that framing explicit
 Status: open
+Priority: later
 
 ## The framing gap
 

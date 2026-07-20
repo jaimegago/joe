@@ -1,6 +1,7 @@
 # Remote host diagnostics — OS-level stats of managed hosts as a future component type
 
 Status: deferred
+Priority: later
 
 The `system_info` shared tool was removed (see `sysinfo-tool-removal` in
 `docs/project/DECISIONS.md`). It was the one shared diagnostic that inspected the

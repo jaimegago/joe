@@ -1,6 +1,7 @@
 # Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam
 
 Status: deferred (recorded by D-0025; do not act on it as part of D-0025).
+Priority: later
 
 ## Context
 

@@ -1,6 +1,7 @@
 # Backlog — "Filter to mine" in the incident view
 
 Status: **deferred — ships only if explicitly chosen.** Not a numbered phase of
+Priority: later
 the sessions-view split (`docs/reference/DESIGN-SESSIONS-VIEW.md` §3). Not launch-blocking.
 
 ## Context

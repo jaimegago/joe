@@ -1,5 +1,6 @@
 Backlog — Web-search tool fast-follows
 Status: open
+Priority: later
 
 The `web_search` shared tool shipped in session `web-search-tool` (D-0064): a Go-native,
 `ActionRead`-classified tool behind the `internal/search` `SearchProvider` abstraction, with

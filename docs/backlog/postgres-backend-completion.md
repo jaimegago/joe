@@ -1,5 +1,6 @@
 Backlog — Make the PostgreSQL (pgx) backend functional
 Status: open
+Priority: later
 
 PostgreSQL support in Joe is **latent, not shipped**. The configuration surface accepts
 `database.driver: "pgx"`, `pgx` is a direct dependency, `store.New` opens the configured

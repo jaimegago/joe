@@ -10,6 +10,67 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0128 — the D-0095 backlog triage pass runs: priorities assigned across every untriaged item, the three health-surface items merge to one, two launch-era items discharge to done, and informal dependency lines are removed rather than converted
+
+- Date: 2026-07-20
+- Session: backlog-priority-triage
+- Decision: the deferred triage pass named by D-0095 and recorded as
+  `docs/backlog/backlog-priority-triage.md` is executed, maintainer-dictated,
+  against every file directly under `docs/backlog/`.
+  - **Priority assignment.** Every backlog file lacking a `Priority:` line
+    received one (`now`, `next`, or `later`), inserted immediately after its
+    `Status:` line per the D-0095 format; every file that already carried a
+    `Priority:` line was left byte-identical. After this pass, no active
+    `docs/backlog/INDEX.md` row renders a blank Priority cell.
+  - **Health-surface merge.** `health-readiness-surface.md` and
+    `unauth-health-surface.md` merged into `healthz-endpoint-surface.md` (the
+    maintainer-designated survivor, now `Priority: next`) per the survivor
+    file's own §5 recommendation: the former contributed nothing beyond what
+    §4 already captured; the latter's information-exposure analysis (exposure
+    summary table, per-candidate exposure costs, the Options A–D table and
+    ratification recommendation) is folded in as a new §6. Both absorbed files
+    moved to `docs/backlog/done/` with their `Status:` line noting the merge.
+  - **Launch-era discharge.** `launch-positioning-and-employer-decoupling.md`
+    and `public-docs-feature-inventory.md` moved to `docs/backlog/done/` as
+    discharged by the launch, per maintainer ruling. The one item of
+    substance still open in the former (the OASIS evaluation story) already
+    has its own tracked home in `oasis-relationship.md`, so nothing needed
+    extraction. The latter's findings-consumption concern (whether its
+    Do-Not-Document list has been applied to `docs/public/`) is left to
+    `docs-public-refit.md`, which remains open, per maintainer ruling — no
+    cross-check or extraction performed.
+  - **Dependency-line normalization — deleted, not converted.** The two
+    pre-existing informal dependency lines found
+    (`adapter-dispatch-consolidation.md`'s `Depends on:` and
+    `full-mode-rbac-track.md`'s `Depends on:`) both named dependencies that
+    were already landed/done (D-0021 and D-0018 respectively), not live
+    blocks. Per maintainer ruling, a `Blocked-by:` line asserts a *currently
+    live* block, so a resolved dependency is not a `Blocked-by:` candidate —
+    both header lines were deleted outright rather than converted, with the
+    landed-dependency context folded into a body sentence citing the
+    D-number where the body did not already carry it.
+    `full-mode-rbac-track.md`'s pre-existing `Blocks:` line (D-0022 Task 2) was
+    also deleted in the same edit: this triage pass is the normalization
+    moment D-0095 names, `Blocks:` has no canonical form under that
+    convention, and the file's body (`## Dependency chain`) already carried
+    the same pointer in prose. No formal `Blocked-by:`-eligible dependency
+    line remained in any active backlog file after this pass, so none was
+    written in the canonical form this session — the two candidates found
+    both resolved to deletion.
+  - This file itself (`backlog-priority-triage.md`) moved to
+    `docs/backlog/done/` on completion, per its own stated scope.
+- Basis: this session's per-file survey of every `docs/backlog/*.md` file
+  (Priority-line presence, dependency-line sweep via grep for `Depends on:`,
+  `Blocked by` variants, and `Blocks:`), full reads of the two launch-era
+  files and the three health-surface files, and re-derivation of the highest
+  `DECISIONS.md` ID at commit time (D-0127 landed concurrently during this
+  session via `security-authority-claims`, so this entry is D-0128 rather
+  than the D-0127 anticipated when the triage item was scoped).
+- Supersedes: nothing; executes the triage pass D-0095 deferred.
+- Status: accepted.
+
+---
+
 ## D-0127 — the security authority asserts only claims that are true, and the unconditional-denial property it rests on is guarded by a test rather than by prose
 
 - Date: 2026-07-20

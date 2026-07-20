@@ -1,6 +1,6 @@
 # Public Docs Feature Inventory
 
-Status: open
+Status: done — point-in-time inventory discharged by launch (backlog-priority-triage, D-0127); docs-public-refit is the successor for any unapplied findings
 
 The authoritative, verified spec of what a built-from-source `joe` binary actually
 ships **right now** — written so the public documentation on joeagent.dev describes
