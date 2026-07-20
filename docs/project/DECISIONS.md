@@ -10,6 +10,207 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0129 — a third writer to `admin_principals`: an offline, service-account-only, one-shot first-admin CLI, and the writer set closed by a structural guard rather than by prose
+
+- Date: 2026-07-20
+- Session: admin-bootstrap-cli
+- Decision: `joe admin bootstrap <principal>` (`cmd/joe/admin.go`) is added as a
+  third writer to `admin_principals`, and the writer set is made structural
+  (`internal/rbac/admin_writers_guard_test.go`).
+
+  **The gap.** In a deployment configured with service accounts and no identity
+  provider, no admin can ever exist. The two production writers both route
+  through `auth.Provisioner.GrantAdmin`: the OIDC callback's `auth.admin_email`
+  bootstrap and the `requireAdmin`-gated `POST /api/v1/admin/admins`. With no
+  IdP the login and callback routes are **not registered at all**, so the first
+  writer is not merely unconfigured but structurally absent; `RBACEnabled` is
+  true, so `requireAdmin` genuinely enforces on the second; and the last-admin
+  409 guard (`internal/api/admin.go`) prevents reaching zero from one. Zero
+  admins is therefore an **absorbing state**, and nothing in the binary leaves
+  it. This command is the only exit, and it is reachable exactly once per
+  database.
+
+  **Supersedes D-0016(d), on the merits.** That decision deleted
+  `cmd/joe/admin.go` and `cmd/joe/zone.go` (commit `205448a`) on the grounds
+  that they "wrote SQLite directly and so bypassed the HTTP gate + audit",
+  making REST the sole RBAC writer. Both halves of that rationale are answered
+  here rather than worked around.
+
+  *The audit half is answered directly.* The old CLI's defect was writing SQL
+  with no audit row. This one constructs its repository with
+  `rbac.NewRepositoryWithAudit`, so the grant and its `admin.grant` row commit
+  in **one transaction** — the identical guarantee the daemon has, through the
+  identical code path (`mutate` → `InsertTx`). `rbac.NewRepository`, the
+  un-audited constructor, keeps its documented test-only status and gains no
+  production caller. This is not a weaker audit than REST's; it is the same one.
+
+  *The gate half is answered structurally, not by adding a gate.* No gate is
+  possible offline — there is no authenticated caller to gate. The claim is
+  instead that a gate here would protect nothing that is not already lost:
+  filesystem access to `joe.db` already confers total authority over Joe's
+  state, and `joe db restore` (D-0115) **already ships** a subcommand that
+  replaces the entire database — including the whole admin roster — with no gate
+  and no audit row. The new writer is strictly more constrained than one that
+  already exists: it writes one row, of one shape, for one class of principal,
+  once per database, and audits it. Refusing it while shipping `db restore`
+  would be a posture that costs real capability and buys nothing.
+
+  **Service-account principals only.** The command resolves its argument
+  (`svc:<name>` or the bare name) against `server.service_accounts` and mints
+  the principal through `rbac.ServicePrincipal` — the same single point
+  `auth.NewServiceAccountResolver` uses — so the string written to
+  `admin_principals` is provably the one a presented key resolves to. Human
+  identities (`user:`, `group:`) are refused outright, before the database is
+  opened, for two independent reasons the refusal message states: in a
+  no-IdP deployment a human principal can never authenticate, so the grant
+  writes an **inert row that arms later** for whoever first presents that
+  identifier once an IdP is configured; and a deployment that *has* an IdP
+  already has `auth.admin_email` and does not need this path. The command's
+  output steers the operator toward a **dedicated** administration account
+  rather than promoting the shared general-purpose key, so admin does not ride
+  on the bearer secret every caller already holds.
+
+  *Requiring pre-existence in the `principals` registry was considered and
+  rejected as inert in the target deployment.* That table's sole writer is the
+  OIDC callback (unchanged by this session — no principals-registry writer is
+  added). In a no-IdP deployment it is permanently empty, so the requirement
+  would refuse every possible argument and reduce the command to a no-op. The
+  service-account map is the only identity source that exists on this path, so
+  it is the one the check uses.
+
+  **One-shot containment, atomic in the statement.** The command refuses if any
+  admin exists. There is no `--force` and no override; that is the whole
+  justification for the command's existence rather than an omission. Atomicity
+  lives in `rbac.SQLRepository.AddFirstAdmin`, a **new repository method**
+  rather than a caller-side `IsAdmin` check in front of `AddAdmin`: the
+  emptiness test rides inside the INSERT's own `NOT EXISTS` predicate, under the
+  write lock that statement takes, and the result is read from rows-affected.
+  The existing check-then-write shape in `GrantAdmin` reads outside the write's
+  transaction — benign for its `wasNew` discriminator, genuinely racy for a
+  containment guard, since two concurrent invocations could each observe an
+  empty roster and both write. The single-statement form was chosen over an
+  immediate-mode transaction because it needs no DSN change and no
+  transaction-scoped reasoning: the predicate cannot be separated from the write
+  by construction. **VERIFIED** by
+  `TestAddFirstAdmin_ConcurrentInvocationsGrantExactlyOne`, which races two
+  goroutines naming *different* principals (so the primary key is not what
+  stops the second) against a file-backed store, and which was mutation-tested
+  — swapped for a check-then-write implementation, it fails 5/5 runs.
+
+  **Provenance and audit actor.** The grant routes through the shared helper,
+  parameterized rather than bypassed: `adminGrantProvenance` carries
+  `granted_by`, `reason`, and the audit actor, and `GrantAdmin` /
+  `GrantFirstAdmin` differ in those three values and nothing else about how the
+  row is formed. Bypassing was rejected because it would re-implement the
+  redundant-policy cleanup both `provision.go` and `internal/api/admin.go` warn
+  against. `granted_by` is `cli` — the value migration 016 **reserved for
+  exactly this path**, for the reason that migration gives: an operator reading
+  the table distinguishes the writers without parsing `reason`. `reason` is a
+  fixed string; the command takes no `--reason` flag, because it can run in only
+  one circumstance and there is nothing an operator could add that the row does
+  not already imply.
+
+  The **audit actor is `cli:admin-bootstrap`** (`auth.ActorCLIBootstrap`),
+  decided explicitly rather than left to fall through. It is deliberately **not**
+  the granted principal: `GrantAdmin` passes the granted principal because the
+  OIDC bootstrap genuinely *is* self-escalation by the logging-in user, whereas
+  the service account named on the command line performed no action — recording
+  it would assert a self-escalation that did not happen and would be
+  indistinguishable, later, from one that did. The value names the mechanism
+  instead. Its `cli:` prefix is not among rbac's reserved prefixes (`user:`,
+  `group:`, `svc:`) and is unreachable from every minting path, so it can never
+  collide with a real identity. A **refused** bootstrap writes no audit row
+  (nothing changed); the counter-argument is recorded in
+  `docs/backlog/admin-bootstrap-cli.md`.
+
+  **The writer set is now guarded structurally rather than by prose.**
+  `admin_principals` is the highest-privilege table in the system and was the
+  one privileged write path with no repo-walking guard, while several lesser
+  seams (the composition-root engine rule, the accessor gate, the kubeconfig
+  confinement) had one — and this session adds a writer to it. The invariant
+  existed only as a comment in migration 016 and a doc comment on
+  `Provisioner`. `internal/rbac/admin_writers_guard_test.go` now enumerates it
+  in two layers, because closing one leaves the other open: nothing calls
+  `AddAdmin`/`AddFirstAdmin` except `internal/auth/provision.go`, and nothing
+  calls `GrantAdmin`/`GrantFirstAdmin` except the three sanctioned writers —
+  **named structurally, never as a count** (D-0032): the OIDC `admin_email`
+  bootstrap (`internal/auth/handlers.go`), the `requireAdmin`-gated REST surface
+  (`internal/api/admin.go`), and the offline first-admin CLI
+  (`cmd/joe/admin.go`). A third assertion forbids raw `INSERT`/`UPDATE`/`DELETE`
+  SQL against the table outside `internal/rbac/repository.go`, closing the hole
+  a call-site guard cannot see. It mirrors
+  `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot` in structure
+  (module-anchored root, qualified-and-unqualified callee matching, `_test.go`
+  excluded) and adds a nested-module skip so a git worktree or vendored copy
+  inside the tree is not walked as if it were the tree under test. All three
+  assertions **fail loudly on zero call sites** rather than passing vacuously,
+  matching the anti-vacuity pattern in `internal/api` and `internal/safety`.
+
+  **Operational shape**, determined from the live tree rather than invented. It
+  **runs migrations** on open, following `defaultOpenPanicStore` (`joe unlock`)
+  and not `defaultOpenBackupStore` (`joe db backup`): backup declines to migrate
+  because its promise is a copy and upgrading the source would break that
+  promise, most damagingly for an operator backing up a database they suspect is
+  damaged; this command's promise is a *write*, and the tables it writes must
+  exist for it to keep it. It carries **no occupancy refusal** and contacts no
+  daemon: `joe db restore` refuses a live daemon because it replaces the file
+  wholesale, whereas one small transactional write is exactly the shape WAL plus
+  `busy_timeout` supports beside a running Joe — the argument `joe unlock` and
+  `joe db backup` already make. A running daemon picks the grant up with **no
+  restart**, since the policy engine reads admin status at decision time rather
+  than caching a boot snapshot.
+
+  **Stale in-tree claims reconciled.** Migration 016's header claimed "the `joe
+  admin` CLI" writes the table and its column rationale described a `joe admin
+  grant` command taking a `--reason` flag — both written for the CLI D-0016(d)
+  deleted, both false for four sessions and now describing the command that
+  actually ships. `audit.ActionAdminRevoke`'s comment described the revoke path
+  as "CLI-only today", which was false regardless of this change (revocation is
+  `DELETE /api/v1/admin/admins/{principal}` and nothing else).
+  `audit.ActionAdminGrant`'s comment called REST "the single audited writer now
+  that the operator CLI is gone" — true when written, false after this session,
+  and rewritten to point at the guard rather than restate a count. Editing an
+  applied migration's comments is safe here and was verified rather than
+  assumed: golang-migrate's `schema_migrations` table is
+  `(version uint64, dirty bool)` with no content checksum, so comment-only edits
+  cannot invalidate a migrated database.
+
+- Basis: `cmd/joe/admin.go` (new) and its dispatch in `cmd/joe/main.go`;
+  `rbac.SQLRepository.AddFirstAdmin` + the widened `rbac.Repository` interface
+  (`internal/rbac/repository.go`); `Provisioner.GrantFirstAdmin`,
+  `adminGrantProvenance`, `adminRow`, `dropRedundantPolicies`, and the
+  `GrantedByCLI` / `CLIBootstrapReason` / `ActorCLIBootstrap` constants
+  (`internal/auth/provision.go`); the guard and atomicity tests
+  (`internal/rbac/admin_writers_guard_test.go`); the CLI and containment tests
+  (`cmd/joe/admin_test.go`). Pre-state re-derived against the live tree this
+  session: the two existing writers at `internal/auth/handlers.go:248` and
+  `internal/api/admin.go:603`, both through `Provisioner.GrantAdmin`
+  (`internal/auth/provision.go`); the last-admin guard and its test
+  (`internal/api/admin_stage3_test.go::TestAdminRemoveAdmin_LastAdminConflict`,
+  of which the new containment test is the deliberate dual); the reserved `cli`
+  provenance value and its rationale
+  (`internal/store/migrations/016_admin_principals.up.sql`); the offline-command
+  precedents (`cmd/joe/main.go::defaultOpenPanicStore`,
+  `cmd/joe/db.go::defaultOpenBackupStore`, `runDBRestore`'s occupancy refusal);
+  `store.New`'s one-connection pin for unshared in-memory DSNs
+  (`internal/store/store.go::isUnsharedMemoryDSN`), which is why the atomicity
+  test is file-backed. Both structural guards were mutation-tested against a
+  deliberately introduced violation and failed as intended.
+- Supersedes: **D-0016(d)** in part — REST is no longer the *sole* writer to
+  `admin_principals`, and the "direct-DB CLI bypasses the gate and audit"
+  rationale is answered above rather than reversed. The rest of D-0016 stands
+  unchanged, including the deletion of `joe zone` (RBAC zone provisioning
+  remains REST-only, with no CLI surface) and the removal of the old
+  `joe admin {grant,revoke,list}` surface, which is **not** restored: this
+  command grants, never revokes or lists, and only on an empty roster. Also
+  supersedes the stale claims in migration 016's comments and in
+  `audit.ActionAdminGrant` / `audit.ActionAdminRevoke`. The OIDC bootstrap
+  behaviour is unchanged in every respect (fail-closed grant, disabled-principal
+  precedence, first-escalation-only audit); its tests pass unmodified.
+- Status: accepted.
+
+---
+
 ## D-0128 — the D-0095 backlog triage pass runs: priorities assigned across every untriaged item, the three health-surface items merge to one, two launch-era items discharge to done, and informal dependency lines are removed rather than converted
 
 - Date: 2026-07-20

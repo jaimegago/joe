@@ -77,7 +77,10 @@ func (emptyRBACRepo) DeletePoliciesForPrincipal(context.Context, string) (int64,
 func (emptyRBACRepo) ListUnassignedComponentIDs(context.Context) ([]string, error) { return nil, nil }
 func (emptyRBACRepo) ListAdmins(context.Context) ([]rbac.Admin, error)             { return nil, nil }
 func (emptyRBACRepo) AddAdmin(context.Context, rbac.Admin, string) error           { return nil }
-func (emptyRBACRepo) RemoveAdmin(context.Context, string, string) (int64, error)   { return 0, nil }
+func (emptyRBACRepo) AddFirstAdmin(context.Context, rbac.Admin, string) (bool, error) {
+	return false, nil
+}
+func (emptyRBACRepo) RemoveAdmin(context.Context, string, string) (int64, error) { return 0, nil }
 
 // fakePromote is a controllable rbac.PromoteReadsResolver: it maps componentID
 // to type and type to its auto_promote_reads flag. The map is mutated live to

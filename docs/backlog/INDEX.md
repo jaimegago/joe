@@ -17,6 +17,7 @@ file for the full status, priority, blocked-by, and body.
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
 | [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open | later |
+| [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 | later |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred | later |

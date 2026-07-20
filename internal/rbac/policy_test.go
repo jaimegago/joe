@@ -86,6 +86,9 @@ func (r *errRepository) ListAdmins(_ context.Context) ([]rbac.Admin, error) {
 func (r *errRepository) AddAdmin(_ context.Context, _ rbac.Admin, _ string) error {
 	return nil
 }
+func (r *errRepository) AddFirstAdmin(_ context.Context, _ rbac.Admin, _ string) (bool, error) {
+	return false, nil
+}
 func (r *errRepository) RemoveAdmin(_ context.Context, _ string, _ string) (int64, error) {
 	return 0, nil
 }

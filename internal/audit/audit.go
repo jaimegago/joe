@@ -253,16 +253,22 @@ const (
 	// assignments OR the unassigned-source roster (GET
 	// /api/v1/admin/component-zones, GET /api/v1/admin/unassigned). Read-class.
 	ActionAdminComponentZoneRead = "component_zone.read"
-	// ActionAdminGrant records an admin promoting another principal to
-	// admin via the admin REST surface (POST /api/v1/admin/admins →
-	// Provisioner.GrantAdmin → internal/rbac AddAdmin), the single audited
-	// writer now that the operator CLI is gone (identity Stage 4).
-	// Decision "allow"; mutating (fail-closed). NOTE: distinct from
-	// ActionAdminGranted ("admin_granted"), which is the OIDC bootstrap
-	// self-escalation under KindAuthLogin.
+	// ActionAdminGrant records a principal being promoted to admin. Every
+	// writer routes through Provisioner (internal/auth/provision.go) into
+	// internal/rbac, which writes this row in the same transaction as the
+	// admin_principals row; the writer set is closed and machine-checked by
+	// internal/rbac/admin_writers_guard_test.go. Two of the three name the
+	// acting admin (the requireAdmin-gated POST /api/v1/admin/admins) or the
+	// self-escalating user (the OIDC admin_email bootstrap); the offline
+	// first-admin CLI has no authenticated caller and names the mechanism
+	// instead (auth.ActorCLIBootstrap). Decision "allow"; mutating
+	// (fail-closed). NOTE: distinct from ActionAdminGranted
+	// ("admin_granted"), which is the OIDC bootstrap self-escalation under
+	// KindAuthLogin.
 	ActionAdminGrant = "admin.grant"
-	// ActionAdminRevoke records an admin demoting another principal.
-	// CLI-only today; same forward-compat rationale as ActionAdminGrant.
+	// ActionAdminRevoke records an admin demoting another principal, via
+	// DELETE /api/v1/admin/admins/{principal} — the only surface that
+	// revokes. Same in-transaction guarantee as ActionAdminGrant.
 	ActionAdminRevoke = "admin.revoke"
 	// ActionAdminAccessDenied records a requireAdmin gate denial: a
 	// non-admin (or a principal whose admin status could not be read)

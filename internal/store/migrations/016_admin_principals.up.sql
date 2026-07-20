@@ -16,8 +16,10 @@
 -- designation is covered automatically.
 --
 -- This table is the single source of truth for admin status. The
--- authorization decision in rbac.PolicyEngine reads it; the bootstrap
--- (configured admin_email path) and the `joe admin` CLI write it. The
+-- authorization decision in rbac.PolicyEngine reads it. Its writer set is
+-- closed and machine-checked: see
+-- internal/rbac/admin_writers_guard_test.go, which enumerates the sanctioned
+-- writers and fails on any call site outside them. The
 -- previous bootstrap behaviour (writing a grant per zone in rbac_policies)
 -- is removed in the same change; the AddAdmin code path also deletes any
 -- leftover rbac_policies rows for the principal so admin authority has
@@ -33,13 +35,17 @@
 --   granted_at RFC3339 UTC string, matching every other timestamp column in
 --              the schema (rbac_policies.created_at, auth_sessions, audit_log).
 --   granted_by who/what designated this admin. For the configured
---              admin_email bootstrap path: 'bootstrap_admin_email'.
---              For the CLI (`joe admin grant`): 'cli'. Operators reading
---              the table can distinguish the two paths without parsing
---              the reason field.
+--              admin_email bootstrap path (and the admin REST surface,
+--              which shares its grant helper): 'bootstrap_admin_email'.
+--              For the offline first-admin CLI (`joe admin bootstrap`):
+--              'cli'. Operators reading the table can distinguish the
+--              paths without parsing the reason field.
 --   reason     free-text justification. The bootstrap path stores
---              'auth.admin_email match'; the CLI passes through the
---              operator's --reason flag (empty by default). Kept TEXT and
+--              'auth.admin_email match'; the CLI stores a fixed string
+--              naming itself — it takes no --reason flag, because it can
+--              run in exactly one circumstance (an empty admin roster)
+--              and there is nothing an operator could add that the row
+--              does not already imply. Kept TEXT and
 --              defaulted to '' to match the audit_log.reason convention
 --              from migration 015.
 

@@ -119,6 +119,13 @@ func (f *fakeRepo) AddAdmin(_ context.Context, a rbac.Admin, _ string) error {
 	f.admins[a.Principal] = true
 	return nil
 }
+
+// AddFirstAdmin satisfies the widened rbac.Repository. This fake exists to
+// drive the guarded accessor's read/write decisions, which never grant admin,
+// so it is a stub rather than a first-admin model.
+func (f *fakeRepo) AddFirstAdmin(_ context.Context, _ rbac.Admin, _ string) (bool, error) {
+	return false, nil
+}
 func (f *fakeRepo) RemoveAdmin(_ context.Context, principal string, _ string) (int64, error) {
 	if !f.admins[principal] {
 		return 0, nil

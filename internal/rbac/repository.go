@@ -86,6 +86,14 @@ type Repository interface {
 	IsAdmin(ctx context.Context, principal string) (bool, error)
 	ListAdmins(ctx context.Context) ([]Admin, error)
 	AddAdmin(ctx context.Context, a Admin, actor string) error
+	// AddFirstAdmin writes a as admin ONLY IF the roster is empty, reporting
+	// whether it did. It is the one-shot seam the offline bootstrap CLI
+	// (`joe admin bootstrap`) needs and exists SEPARATELY from AddAdmin
+	// because the emptiness test and the write must be one atomic act: a
+	// check-then-AddAdmin pair reads outside the write's transaction, and two
+	// concurrent invocations could each observe an empty roster and both
+	// write. See the implementation for where the atomicity actually lives.
+	AddFirstAdmin(ctx context.Context, a Admin, actor string) (bool, error)
 	RemoveAdmin(ctx context.Context, principal string, actor string) (int64, error)
 }
 
@@ -683,6 +691,66 @@ func (r *SQLRepository) AddAdmin(ctx context.Context, a Admin, actor string) err
 		return adminEvent(actor, audit.ActionAdminGrant,
 			audit.Details{Target: "admin:" + a.Principal, After: a})
 	})
+}
+
+// AddFirstAdmin inserts a as admin ONLY IF admin_principals is empty, and
+// reports whether the row was written. A false return with a nil error is the
+// refusal — the roster was already non-empty — not a failure.
+//
+// This is the containment clause behind `joe admin bootstrap`: the offline CLI
+// can open the zero-admin absorbing state exactly once per database, and every
+// later grant is forced through the governed admin REST surface. It is a
+// separate method rather than a caller-side IsAdmin check in front of AddAdmin
+// because that shape reads outside the write's transaction — two transactions
+// with a window between them — which is benign for GrantAdmin's wasNew
+// discriminator but genuinely racy for a containment guard.
+//
+// The atomicity lives in the STATEMENT, not in the transaction's isolation
+// level: the NOT EXISTS predicate is evaluated as part of the INSERT, under the
+// write lock that statement takes, so the emptiness test and the write cannot
+// be separated by another writer. mutate opens a deferred transaction, but this
+// method never reads before it writes, so there is no read-then-upgrade window
+// for a second writer to slip through either. A concurrent second invocation
+// either blocks on the write lock and then observes the row (0 rows affected,
+// refused) or is serialized behind the first commit with the same outcome.
+//
+// A refusal writes NO audit row: nothing changed, so there is nothing to
+// record, and mutate skips the insert for a zero Event. The grant path writes
+// its admin.grant row inside the same transaction as the INSERT, exactly as
+// AddAdmin does.
+func (r *SQLRepository) AddFirstAdmin(ctx context.Context, a Admin, actor string) (bool, error) {
+	if a.Principal == "" {
+		return false, fmt.Errorf("add first admin: principal is required")
+	}
+	if a.GrantedAt.IsZero() {
+		a.GrantedAt = time.Now().UTC()
+	}
+	var granted bool
+	err := r.mutate(ctx, func(exec execQuerier) (audit.Event, error) {
+		res, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
+			INSERT INTO admin_principals (principal, granted_at, granted_by, reason)
+			SELECT ?, ?, ?, ?
+			WHERE NOT EXISTS (SELECT 1 FROM admin_principals)`),
+			a.Principal, a.GrantedAt.Format(time.RFC3339), a.GrantedBy, a.Reason)
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("add first admin: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return audit.Event{}, fmt.Errorf("rows affected: %w", err)
+		}
+		if n == 0 {
+			// Refused: the roster was not empty. Zero Event, no audit row.
+			return audit.Event{}, nil
+		}
+		granted = true
+		return adminEvent(actor, audit.ActionAdminGrant,
+			audit.Details{Target: "admin:" + a.Principal, After: a})
+	})
+	if err != nil {
+		return false, err
+	}
+	return granted, nil
 }
 
 func (r *SQLRepository) RemoveAdmin(ctx context.Context, principal string, actor string) (int64, error) {

@@ -91,6 +91,7 @@ joe mcp        Run Joe as an MCP stdio server
 joe slack      Run Joe as a Slack bot (Socket Mode)
 joe skills     Manage Agent Skills
 joe incident   Declare, resolve, or inspect the incident regime
+joe admin      Bootstrap the first admin on a database that has none
 joe panic      Trigger an emergency shutdown
 joe unlock     Clear the panic state (takes effect on restart)
 ```

@@ -72,6 +72,13 @@ type runDeps struct {
 	// shutdown, which look identical on disk. Injectable so tests can force
 	// either answer without spawning a daemon.
 	probeTargetOccupied func(path string) (bool, error)
+	// openAdminStore opens the first-admin grant seam for `joe admin bootstrap`.
+	// Like the other offline opens it goes to the database file directly rather
+	// than contacting the daemon. Injectable so the command's routing and
+	// refusal tests need no real database — which matters here because
+	// paths.JoeDirPath does NOT honour $HOME, so a test cannot isolate itself
+	// by pointing the home directory elsewhere.
+	openAdminStore func() (adminGrantStore, func() error, error)
 }
 
 func defaultRunDeps() runDeps {
@@ -94,6 +101,7 @@ func defaultRunDeps() runDeps {
 		openSourceDB:          defaultOpenSourceDB,
 		encryptionKeyPath:     resolveEncryptionKeyPath,
 		probeTargetOccupied:   defaultProbeTargetOccupied,
+		openAdminStore:        defaultOpenAdminStore,
 	}
 }
 
@@ -632,6 +640,8 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return runIncidentCommand(ctx, args[1:], stdout, stderr, deps)
 		case "db":
 			return runDBCommand(ctx, args[1:], stdout, stderr, deps)
+		case "admin":
+			return runAdminCommand(ctx, args[1:], stdout, stderr, deps)
 		default:
 			fmt.Fprintf(stderr, "Unknown command: %q\n\n", args[0])
 			printUsage(stderr)
@@ -641,9 +651,11 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 
 	// No subcommand (bare `joe`) or server flags only (e.g. `joe --config ...`):
 	// run the HTTP API daemon, which is Joe's default behavior. Its subcommands
-	// (mcp, slack, panic, unlock, skills, incident, db) ride alongside. RBAC
-	// zone/admin provisioning is no longer a CLI surface — it runs over the admin
-	// REST API (internal/api/admin.go), the single audited writer.
+	// (mcp, slack, panic, unlock, skills, incident, db, admin) ride alongside.
+	// RBAC zone provisioning is not a CLI surface — it runs over the admin REST
+	// API (internal/api/admin.go). Admin grants run there too, with the single
+	// exception of `joe admin bootstrap`, which grants the FIRST admin on an
+	// empty roster and is refused thereafter; see cmd/joe/admin.go.
 	return deps.runServer(ctx)
 }
 
@@ -659,6 +671,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skills   Manage Agent Skills components")
 	fmt.Fprintln(w, "  incident Declare, resolve, or inspect the incident regime")
 	fmt.Fprintln(w, "  db       Operate on Joe's database file (backup, restore)")
+	fmt.Fprintln(w, "  admin    Bootstrap the first admin on a database that has none")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
 }
