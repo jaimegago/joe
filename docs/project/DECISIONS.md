@@ -10,6 +10,96 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0135 — Quickstart walks the shipped no-identity-provider path end to end: two service accounts, an offline first-admin grant, web-UI sign-in with the admin key, and the closing ask in chat rather than over the API
+
+- Date: 2026-07-21
+- Session: quickstart-webui-ask
+- Decision: Quickstart's Step 4 instructed a step no reader could perform. It
+  said registering and promoting a component "needs a human admin login rather
+  than the service-account key from Step 2" and handed off to the
+  component-registration guide — but Quickstart configures no identity
+  provider, so the OIDC login and callback routes are never registered and no
+  human admin login exists to reach. Step 5 then sidestepped the web UI
+  entirely by curling `POST /api/v1/tasks` with the bearer key, which worked
+  but left the tutorial's own Step 4 unperformable. The page is rewritten so
+  the sequence is coherent on the shipped surfaces: a config file written
+  **before** first start defining two service accounts (`server`,
+  general-purpose, and `joe-admin`, dedicated to administration); the daemon
+  started; `joe admin bootstrap svc:joe-admin` granting the first admin
+  offline; sign-in to the web UI with the `joe-admin` key on the login page's
+  service-account-key field; register/promote/test through the guide; and the
+  closing question asked in the UI's chat. Four consequent decisions. **(a) A
+  second, admin-only service account, not a promotion of the shared key.** The
+  shipped command's own refusal and error copy steer operators to a dedicated
+  administration account rather than the shared general-purpose key; a tutorial
+  modelling the shortcut the binary warns against is a shipped-truth defect, so
+  Quickstart defines the account it will grant. This also forces the config
+  file: `JOE_API_KEY` folds into the reserved `server` account only
+  (`setServerServiceAccountKey`, `internal/config/config.go`) and cannot name a
+  second, so the env-var-only Step 2 could not express this shape. The
+  file-before-boot ordering is load-bearing — the service-account resolver is
+  built once at boot from config (`cmd/joe/server.go`), so an account added to
+  a running daemon does not authenticate; the page states this. **(b) The curl
+  leaves the page entirely** — not demoted to a callout, not kept as an
+  alternative, not mentioned. A tutorial that registers a component through the
+  UI and then answers its own closing question through a different surface
+  teaches two paths and finishes on neither; the reader is already signed in
+  where chat lives. The tasks endpoint remains documented in the API reference,
+  which stands on its own; nothing was added there to compensate. **(c) The
+  default config path, no `--config`.** D-0131/D-0132 make the daemon and the
+  bootstrap command pointable at one explicit file, and the page could have
+  used it — but a tutorial's cost is moving parts, and the flag would appear
+  twice, in two commands, to name a path the reader would otherwise never
+  think about. `~/.joe/config.yaml` is the default for both, so the flag adds
+  a token and removes nothing. Operations and Install-and-Build already
+  document `--config` for operators who start the daemon with one. **(d) The
+  page stays demonstrative about access control.** It shows that an admin
+  service-account session reaches register, promote, and chat; it does not
+  explain *why*, and specifically does not state that admin status clears the
+  zero-zone chat gate. That would be a new load-bearing claim, obliging a
+  claims-register entry and binding the project to the behaviour; showing a
+  working path binds nothing.
+- Basis: re-derived against the live tree. `ServiceAccount`'s `name`/`key` YAML
+  shape and `ServerConfig.ServiceAccounts` (`internal/config/config.go`);
+  `config.Load` merging a partial file onto defaults, so the five-line file is
+  complete; `JOE_API_KEY` reaching only the reserved `server` account;
+  `auth.NewServiceAccountResolver` called once at boot from `cfg`, which is why
+  the file precedes the start; `runAdminBootstrap` and
+  `resolveBootstrapPrincipal` (`cmd/joe/admin.go`) accepting `svc:<name>` or
+  the bare name against `server.service_accounts`, refusing human identities,
+  refusing once an admin exists with no override, and emitting the
+  dedicated-account guidance this decision follows; `defaultOpenAdminStore`
+  contacting no daemon, and `rbac.SQLRepository.IsAdmin` reading
+  `admin_principals` at decision time, which is what makes the no-restart
+  pickup true. `IsAdmin` is a bare roster lookup on the principal string with
+  no claim-type or provenance test, so an admin service-account principal
+  passes `requireAdmin` exactly as a human admin does. `LoginPage.tsx` renders
+  the service-account-key field directly, with no OIDC button, when the
+  capability flag reports OIDC unconfigured — which is what the reader meets.
+  The preserved closing framing was re-checked: the four things the reader
+  proves (identity, the LLM, the agent loop, a live component read) all still
+  hold on the chat path, and the read is still read-only because `JOE_MODE=observation`
+  raises the boot-resolved write floor. The dedicated-account rationale is
+  published in Operations and is linked rather than restated. No internal
+  `file:line` citations appear on any published page (D-0052) and no volatile
+  count is hardcoded (D-0032). `go build ./...`, `go vet ./...`, `gofmt -s -l .`,
+  and `go test ./...` all clean — a docs-only change.
+- Supersedes: the **D-0059** position that Quickstart ends on an agentic ask
+  over the API. D-0059's surviving policy — that Quickstart demonstrates a
+  **real registered component** rather than ending on an empty graph — is
+  preserved and strengthened, since registration now happens on a path the
+  reader can actually complete. Companion edit: the component-registration
+  guide's prerequisite no longer requires a *human* session, since an admin
+  service-account session qualifies and admin is held by a principal however
+  it signed in. `docs/public/guides/web-ui.md`'s opening framing — that
+  Quickstart authenticated with a service-account key and never logged a human
+  in — was checked and remains true; it is unchanged. `docs/project/SITE-CLAIMS.md`'s
+  admin-mint entry gains `/quickstart/` as a publication source, per the
+  register's bidirectional duty; the corrected copy asserts no mechanism that
+  entry did not already carry, so no new entry was needed. `CLAUDE.md` is
+  unchanged: no invariant, command, or convention moved.
+- Status: accepted.
+
 ## D-0134 — the persistence-and-backup page states `joe db backup`/`joe db restore`'s `--config` flag, discharging the copy revision D-0132 deferred
 
 - Date: 2026-07-21

@@ -38,11 +38,13 @@ and credentials held as references rather than stored secrets — see
 
 ## Before you start
 
-- A running Joe with the web UI open, and a human session logged in. If you have not done
-  that yet, follow [The web UI and human login](../web-ui/) first.
+- A running Joe with the web UI open and a signed-in session. Either sign-in path works:
+  a human OIDC login, covered in [The web UI and human login](../web-ui/), or a
+  service-account key, which is what the [Quickstart](../../quickstart/) uses.
 - An **admin principal**. Registering, assigning a zone, and promoting are all
-  admin-gated — the affordances below do not appear for a non-admin. Running the
-  connectivity test does not require admin.
+  admin-gated — the affordances below do not appear for a non-admin. Admin is held by a
+  principal, whichever way that principal signed in. Running the connectivity test does
+  not require admin.
 - A way for Joe to reach the cluster **from where the daemon runs**: the cluster's
   API-server URL and CA bundle, plus the credential for your chosen method —
   - for **static bearer**, a service-account bearer token, either in an environment

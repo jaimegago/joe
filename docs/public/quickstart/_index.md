@@ -83,16 +83,40 @@ from here.
 > [Install and Build](../install-and-build/) has the procedure; rejoin this tutorial at
 > Step 2 with a `./joe` in hand.
 
-## Step 2 — Set the three environment variables
+## Step 2 — Write the config file
 
-Joe refuses to boot without an identity configured, and its default model needs a
-provider key. In observation mode it stays read-only. These three variables cover all
-three:
+Joe refuses to boot without an identity configured. Identity means **service accounts**:
+named machine identities, each with a bearer key, each authenticating as the principal
+`svc:<name>`. You will define two, because you need two different things from them.
+
+Create `~/.joe/config.yaml` (Joe's default config path — it reads this file on startup
+without being told to):
+
+```yaml
+server:
+  service_accounts:
+    - name: server
+      key: "pick-a-long-random-string"
+    - name: joe-admin
+      key: "pick-a-different-long-random-string"
+```
+
+`server` is the general-purpose account. `joe-admin` is a **dedicated administration
+account**: in Step 4 you grant admin to that one and nothing else, so admin does not ride
+on the key every ordinary caller holds. Joe's own tooling steers you to a dedicated
+account for exactly this reason — see
+[Operations](../operations/) for the rationale in full.
+
+Everything else in this tutorial runs on Joe's built-in defaults, so those few lines are
+the whole file.
+
+> **Write this before you start the daemon.** Joe reads its service accounts once, at
+> boot. Adding an account to a running Joe does nothing until you restart it.
+
+Then set two environment variables — Joe's default model needs a provider key, and the
+write floor keeps the install read-only:
 
 ```sh
-# Identity: a bearer key for a service account. Pick any long random string.
-export JOE_API_KEY="pick-a-long-random-string"
-
 # LLM provider: Joe's default model is Claude, so it needs an Anthropic key.
 export ANTHROPIC_API_KEY="your-anthropic-api-key"
 
@@ -100,26 +124,46 @@ export ANTHROPIC_API_KEY="your-anthropic-api-key"
 export JOE_MODE=observation
 ```
 
-`JOE_API_KEY` is the smallest possible identity configuration — it creates a single
-service account (principal `svc:server`) and is what satisfies Joe's refuse-to-boot
-identity check. Skip it and the daemon will exit on startup rather than run
-ungoverned.
-
 ## Step 3 — Start Joe
 
 ```sh
 ./joe
 ```
 
-Joe starts on `localhost:7777`. You do not need a Joe *server* config file — Joe boots on
-built-in defaults. That is separate from the **bearer-token variable** from *Before you
-start*: Joe does not read it at boot, and you do not put it in a Joe config file. You name
-that variable when you promote the cluster in Step 4, and Joe resolves it from its own
+Joe starts on `localhost:7777` and loads the config file you just wrote. That file is
+separate from the **bearer-token variable** for your cluster from *Before you start*: Joe
+does not read that at boot, and you do not put it in a Joe config file. You name that
+variable when you promote the cluster in Step 6, and Joe resolves it from its own
 environment at connect time. In the startup logs you will see that the **write floor is up
 (observation)**: Joe is read-only. Leave it running and open a second terminal for the
 next step.
 
-## Step 4 — Register one Kubernetes cluster
+## Step 4 — Grant the first admin
+
+Registering and promoting a component are admin actions, and this install has **no
+admin**. It also has no identity provider, so there is no login through which Joe could
+bootstrap one. The way in is an offline command that grants admin to a configured service
+account, on a database that has no admin yet:
+
+```sh
+./joe admin bootstrap svc:joe-admin
+```
+
+It contacts no daemon — it writes to Joe's database directly — and the Joe you left
+running picks the grant up without a restart. It is a **first-admin** command only: with
+an admin now present it refuses to run again, and every later grant goes through Joe's
+admin API. See [Operations](../operations/) for that surface.
+
+## Step 5 — Log in to the web UI
+
+Open <http://localhost:7777> in a browser. With no identity provider configured, the login
+page asks for a **service-account key**. Paste the `joe-admin` key from Step 2 and sign
+in.
+
+You land on **Chat**, and because this principal now holds admin you also see the **Admin**
+group in the sidebar.
+
+## Step 6 — Register one Kubernetes cluster
 
 Joe is near-useless until it has a registered component to reason about, so connect one
 before you ask anything. Do it through the web UI. Bringing a system under management is
@@ -131,32 +175,23 @@ bundle** plus the **bearer-token environment variable** you readied in *Before y
 the variable must be set where the daemon runs, since Joe resolves it there — and the test
 brings the cluster live with no restart.
 
-Registering and promoting are admin actions in the web UI, so this step needs a human
-admin login rather than the service-account key from Step 2. The full click-by-click
-procedure — logging in, registering, assigning a zone, promoting with a static-bearer
-reference, and testing — lives in the guide:
+The full click-by-click procedure — registering, assigning a zone, promoting with a
+static-bearer reference, and testing — lives in the guide:
 
 > **[Register a Kubernetes component](../guides/register-kubernetes/)** — do the steps
-> there, then come back.
+> there in the session you just signed into, then come back.
 
 When the component's connectivity test reports success, the cluster is live and Joe can
 read it.
 
-## Step 5 — Ask Joe about the cluster
+## Step 7 — Ask Joe about the cluster
 
-Now that Joe has something real to read, send a message to its agentic task endpoint,
-authenticating with the same `JOE_API_KEY` you set above:
+Now that Joe has something real to read, open **Chat** in the web UI and ask:
 
-```sh
-curl -s http://localhost:7777/api/v1/tasks \
-  -H "Authorization: Bearer $JOE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What Kubernetes workloads do you know about, and is anything unhealthy?"}'
-```
+> What Kubernetes workloads do you know about, and is anything unhealthy?
 
-Joe runs a full agentic turn and returns a JSON response; the answer is in the
-`final_answer` field. It answers from the live cluster — still read-only, because the
-write floor is up. You have gone from an empty install to a governed agent reading real
+Joe runs a full agentic turn and answers from the live cluster — still read-only, because
+the write floor is up. You have gone from an empty install to a governed agent reading real
 infrastructure, exercising the whole path end to end: identity, the LLM, the agent loop,
 and a live component read.
 
@@ -164,19 +199,22 @@ and a live component read.
 
 - Obtained `joe` as a published release binary and verified it against the release
   checksums before running it.
-- Gave Joe the minimal identity it requires (one service account via `JOE_API_KEY`),
-  so it agreed to boot.
+- Gave Joe the identity it requires — two service accounts in its config file, one of them
+  a dedicated administration account — so it agreed to boot.
 - Ran it in observation mode, with the write floor up, so nothing it did could change a
   managed system.
+- Granted the install its first admin offline, the only way in for a deployment with no
+  identity provider.
 - Registered and promoted one Kubernetes cluster through the UI and took it live, so Joe
   had real infrastructure to read.
-- Drove its real interaction surface — the agentic task endpoint — and got an answer back
-  about that live cluster.
+- Drove its real interaction surface — the web UI's chat — and got an answer back about
+  that live cluster.
 
 ## Where to go next
 
-- The full build, run, and authentication procedure (including OIDC login for humans
-  and the admin bootstrap) → [Install and Build](../install-and-build/)
+- The full build, run, and authentication procedure (including OIDC login for humans)
+  → [Install and Build](../install-and-build/)
+- Granting further admins, and the admin surfaces generally → [Operations](../operations/)
 - Every configuration key and environment variable → [Configuration](../configuration/)
 - Register the other system types Joe supports → [Components](../components/)
 - The full Kubernetes register-and-promote walkthrough → [Register a Kubernetes component](../guides/register-kubernetes/)

@@ -694,7 +694,7 @@ and becomes load-bearing.
   `persistence-docs-config-flag` (D-0134) published it; the Claim above now reflects the
   published copy.
 
-### The set of admin-mint paths is closed: cold start by OIDC admin-email or the offline CLI, the admin API thereafter — `/operations/`, `/install-and-build/`, `/guides/web-ui/`, `/configuration/`
+### The set of admin-mint paths is closed: cold start by OIDC admin-email or the offline CLI, the admin API thereafter — `/operations/`, `/install-and-build/`, `/guides/web-ui/`, `/configuration/`, `/quickstart/`
 
 - **Claim.** Admin is minted only on a named set of paths. **Cold start** — creating the
   *first* admin, with no admin to authorize it — is either the OIDC admin-email bootstrap
@@ -710,7 +710,14 @@ and becomes load-bearing.
   the daemon's flag and that the one named file supplies **both** the service accounts the
   principal is checked against and the database the grant lands in, that omitting it uses
   the default `~/.joe/config.yaml`, and that naming a file that does not exist fails rather
-  than falling back.
+  than falling back. `/quickstart/` is a further publication source for the same claim: it
+  walks the no-identity-provider install through `joe admin bootstrap svc:joe-admin`, states
+  that the command contacts no daemon and that a running Joe picks the grant up without a
+  restart, states that it grants the *first* admin only and refuses once one exists with
+  every later grant going through the admin API, and steers the reader to a dedicated
+  administration account by defining one alongside the general-purpose account rather than
+  granting admin to the shared key. It asserts no mechanism this entry does not already
+  carry (D-0135).
 - **Mechanism.** `auth.Provisioner` (`internal/auth/provision.go`) is the sole caller of the
   repository's `AddAdmin` / `AddFirstAdmin`, reached from exactly the sanctioned writers,
   named structurally: the OIDC callback's `admin_email` bootstrap, the `requireAdmin`-gated
