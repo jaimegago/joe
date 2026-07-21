@@ -1,6 +1,6 @@
 # CLI positional-argument rejection is inconsistent tree-wide
 
-Status: open
+Status: done (D-0136, session `cli-positional-arg-rejection`, 2026-07-21)
 Priority: later
 
 Opened from session `transport-cmd-flag-rejection` (D-0133), which fixed `joe
@@ -44,3 +44,18 @@ A decision settling the exit code for a bad positional count tree-wide, then
 one pass adding the missing `NArg()` checks (panic, unlock, the three incident
 leaf commands) and the missing flag set (skills list), reconciling the older
 skills-subcommand exit code to match.
+
+## Disposition
+
+Closed in full by session `cli-positional-arg-rejection` (D-0136). All three
+named gaps are fixed — `joe panic`/`joe unlock` arity, the three server-contacting
+`joe incident` leaf commands' arity, and `joe skills list`, which now has a flag
+set — and the exit-code question is settled: usage errors exit 2, operational
+failures exit 1, with the skills family's arity exit deliberately moved from 1 to
+2. Nothing in this item survives.
+
+Two constructs the survey found beyond this item's enumeration are named in
+D-0136 as deliberate exemptions rather than open residue: `joe incident list`
+(a stub that exits 2 and does no work regardless of what follows it) and the
+daemon path (`resolveConfigPath`, `cmd/joe/server.go`), whose discarded parse
+error is a documented boot-robustness posture, not drift of this class.

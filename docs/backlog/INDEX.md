@@ -27,7 +27,6 @@ file for the full status, priority, blocked-by, and body.
 | [`capability-map`](capability-map.md) | Capability-map Concepts page — deferred follow-ups | open | later |
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred | later |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open | next |
-| [`cli-positional-arg-rejection`](cli-positional-arg-rejection.md) | CLI positional-argument rejection is inconsistent tree-wide | open | later |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |

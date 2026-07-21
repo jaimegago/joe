@@ -10,6 +10,86 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0136 — CLI argument rejection is uniform: every subcommand refuses unknown flags and surplus positionals, usage errors exit 2 and operational failures exit 1
+
+- Date: 2026-07-21
+- Session: cli-positional-arg-rejection
+- Decision: D-0133 fixed `joe mcp` and `joe slack`, which parsed nothing and so
+  silently accepted and ignored both unknown flags and surplus positionals, but
+  was scoped to those two and recorded the rest of the class as backlog. This
+  session closes it. **The exit-code rule, settled tree-wide: a usage error
+  exits 2, an operational failure exits 1.** A usage error is a flag-parse
+  failure, an unknown flag, a wrong number of positional arguments, or an
+  unknown sub-subcommand — everything decidable from the invocation alone. An
+  operational failure is anything after the invocation was understood: a
+  missing file at an explicitly named path, a store failure, a refused grant, a
+  network error. The split existed already but was not uniform, and the
+  reconciliation runs **toward 2**: the skills sub-subcommands returned 1 for a
+  bad positional count while `db backup`/`db restore`/`admin bootstrap`/`mcp`/
+  `slack` returned 2. **The skills family exit code therefore deliberately
+  changes from 1 to 2 on the arity path** — a behaviour change, not a
+  regression. Collapsing toward 1 instead would have destroyed the distinction
+  between "you invoked this wrong" and "it ran and failed", which is the only
+  thing the second code buys; both values are non-zero, so any caller testing
+  success versus failure is unaffected, and the code is the sole observable
+  that moved. The commands corrected, named structurally rather than counted
+  (D-0032): the two top-level commands that parsed flags but never checked
+  arity (`panic`, `unlock`); the incident sub-subcommands that contact the
+  server (`status`, `declare`, `resolve`), which had the same gap; and the one
+  sub-subcommand that parsed nothing at all, `skills list` — structurally
+  identical to the defect D-0133 fixed, so `joe skills list --quarantined`
+  printed an unfiltered listing and reported success. Every skills
+  sub-subcommand's arity exit was normalized to 2 in the same pass. **A correct
+  invocation is unchanged everywhere**; this is a rejection-path change only,
+  no flag was added, no config resolution touched, and no operational failure's
+  exit code moved. `declare`'s refusal names `--session`, since a bare
+  positional there is most likely a session id the operator meant to pass to
+  the flag and which previously declared nothing.
+- Basis: re-derived against the live tree rather than trusting the backlog
+  item's enumeration, which was confirmed complete for the commands it named.
+  `runPanicCommand` / `runUnlockCommand` and the `skills` dispatch
+  (`cmd/joe/main.go`); `runIncidentStatus` / `runIncidentDeclare` /
+  `runIncidentResolve` (`cmd/joe/incident.go`); the already-correct
+  `runDBBackup` / `runDBRestore` (`cmd/joe/db.go`) and `runAdminBootstrap`
+  (`cmd/joe/admin.go`), which set the precedent followed here. Two constructs
+  found and deliberately left alone. **`joe incident list`** parses nothing,
+  but it is a stub that prints the v1 limitation and exits 2 unconditionally
+  and performs no work, so rejecting a surplus argument would change no
+  observable outcome; it is named here so its exemption is a decision rather
+  than an oversight. **The daemon path** (`resolveConfigPath`,
+  `cmd/joe/server.go`) discards its parse error deliberately and documents why
+  — a bad flag must not stop Joe booting — and takes no `args` parameter at
+  all; reversing that is a daemon-boot posture decision, not this class, and is
+  out of scope. Rejection is asserted per command as two independent
+  assertions, since a flag-parse check and an arity check fire on different
+  inputs; `cmd/joe/cli_arg_rejection_test.go` holds them, alongside
+  `TestSkillsFamilyArityExitCodeIsTwo` pinning the deliberate 1→2 change and
+  `TestSkillsFamilyUnknownFlagIsUsageError` as its discriminating mirror (every
+  case there carries a correct positional count and fails only on the flag).
+  Non-vacuity established by fault injection, one fault at a time with the tree
+  restored between each: removing `skills list`'s arity check alone failed the
+  positional assertion while the unknown-flag assertion still passed; removing
+  its whole flag set failed both; reverting `skills approve`'s arity exit to 1
+  failed only the arity test; removing `incident declare`'s check failed only
+  the declare subtest; removing `panic`'s check tripped the stub asserting no
+  config is loaded past a usage error. `go build ./...`, `go vet ./...`,
+  `gofmt -s -l .`, and `go test ./...` all clean, plus end-to-end verification
+  against the built binary on one command from each family touched.
+- Supersedes: nothing. It completes D-0133, which fixed two commands and
+  explicitly declined to record a rejection convention because the tree did not
+  yet have one; it now does, and `CLAUDE.md` records it under the CLI
+  conventions beside the `--config` rule (D-0132), expressed structurally.
+  `docs/backlog/cli-positional-arg-rejection.md` is discharged in full — all
+  three named gaps and the exit-code question — and moves to
+  `docs/backlog/done/`; `docs/backlog/INDEX.md` is regenerated. No
+  `docs/project/SITE-CLAIMS.md` entry describes an affected command's
+  invocation or exit behaviour: the register's CLI entries concern `--config`'s
+  missing-file posture, which is an operational failure and keeps exit 1
+  unchanged. No published page states an exit code for the skills family or
+  documents any affected command's argument handling; `docs/public/guides/incidents.md`
+  says `incident list` "exits non-zero", which remains true.
+- Status: accepted.
+
 ## D-0135 — Quickstart walks the shipped no-identity-provider path end to end: two service accounts, an offline first-admin grant, web-UI sign-in with the admin key, and the closing ask in chat rather than over the API
 
 - Date: 2026-07-21

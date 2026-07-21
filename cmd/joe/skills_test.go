@@ -132,8 +132,8 @@ func TestRunSkillsCommand_Install_MissingURL(t *testing.T) {
 	deps := skillsDeps(t, t.TempDir(), mgr)
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"skills", "install"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("exit = %d", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
 	}
 	if !strings.Contains(stderr.String(), "repo-url") {
 		t.Errorf("stderr = %q", stderr.String())
@@ -237,8 +237,8 @@ func TestRunSkillsCommand_Remove_MissingName(t *testing.T) {
 	deps := skillsDeps(t, t.TempDir(), mgr)
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"skills", "remove"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("exit = %d", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
 	}
 }
 
@@ -288,8 +288,8 @@ func TestRunSkillsCommand_Update_TooManyArgs(t *testing.T) {
 	deps := skillsDeps(t, t.TempDir(), mgr)
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"skills", "update", "a", "b"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("exit = %d", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
 	}
 }
 
@@ -347,8 +347,8 @@ func TestRunSkillsCommand_Approve_MissingName(t *testing.T) {
 	deps := skillsDeps(t, t.TempDir(), mgr)
 	var stdout, stderr bytes.Buffer
 	code := runWithDeps(context.Background(), []string{"skills", "approve"}, &stdout, &stderr, deps)
-	if code != 1 {
-		t.Fatalf("exit = %d", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
 	}
 }
 
@@ -539,8 +539,8 @@ func TestRunSkillsCommand_Reload_RejectsPositionalArgs(t *testing.T) {
 	code := runWithDeps(context.Background(),
 		[]string{"skills", "reload", "extra"}, &stdout, &stderr, deps,
 	)
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1; stderr=%q", code, stderr.String())
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error); stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "no positional") {
 		t.Errorf("stderr should explain the misuse: %q", stderr.String())

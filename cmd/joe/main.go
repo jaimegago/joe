@@ -205,6 +205,10 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: panic takes no positional arguments")
+		return 2
+	}
 
 	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
 	if !ok {
@@ -260,6 +264,10 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	// in a database the daemon never reads, and is told the panic was cleared.
 	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: unlock takes no positional arguments")
 		return 2
 	}
 
@@ -507,7 +515,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: install requires exactly one <repo-url> positional argument")
-			return 1
+			return 2
 		}
 		repo := fs.Arg(0)
 		install, err := mgr.Install(ctx, repo, *ref, *subdir)
@@ -532,6 +540,20 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 0
 
 	case "list":
+		// list takes neither flags nor positionals. The flag set exists solely to
+		// reject them: without it the sub-subcommand read args[0] to dispatch and
+		// never looked at args[1:], so `joe skills list --quarantined` listed
+		// everything and reported success, having ignored the flag.
+		fs := flag.NewFlagSet("joe skills list", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if fs.NArg() != 0 {
+			fmt.Fprintln(stderr, "Error: list takes no positional arguments")
+			return 2
+		}
+
 		installs, err := mgr.List()
 		if err != nil {
 			fmt.Fprintf(stderr, "Error: %v\n", err)
@@ -566,7 +588,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: remove requires exactly one <skill-name>")
-			return 1
+			return 2
 		}
 		removed, err := mgr.Remove(ctx, fs.Arg(0), *force)
 		if err != nil {
@@ -592,7 +614,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			target = fs.Arg(0)
 		} else if fs.NArg() > 1 {
 			fmt.Fprintln(stderr, "Error: update takes at most one <skill-name>")
-			return 1
+			return 2
 		}
 		updated, err := mgr.Update(ctx, target)
 		if err != nil {
@@ -621,7 +643,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: approve requires exactly one <skill-name>")
-			return 1
+			return 2
 		}
 		install, err := mgr.Approve(ctx, fs.Arg(0))
 		if err != nil {
@@ -643,7 +665,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: reject requires exactly one <skill-name>")
-			return 1
+			return 2
 		}
 		removed, err := mgr.Reject(ctx, fs.Arg(0))
 		if err != nil {
@@ -665,7 +687,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if fs.NArg() != 0 {
 			fmt.Fprintln(stderr, "Error: reload takes no positional arguments")
-			return 1
+			return 2
 		}
 
 		scheme := "http"

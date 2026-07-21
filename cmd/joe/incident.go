@@ -112,6 +112,10 @@ func runIncidentStatus(ctx context.Context, args []string, stdout, stderr io.Wri
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: status takes no positional arguments")
+		return 2
+	}
 
 	reg, err := c.GetRegime(ctx)
 	if err != nil {
@@ -136,6 +140,13 @@ func runIncidentDeclare(ctx context.Context, args []string, stdout, stderr io.Wr
 	kind := fs.String("kind", "human", "regime declared_kind (\"human\"; \"joe\" is an inert Phase 1 seam)")
 	reason := fs.String("reason", "", "optional free-text justification for the declaration")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	// The session to promote is named by --session, not positionally, so any
+	// positional here is a mistake — most likely a bare session id the operator
+	// meant to pass to --session, which silently declared nothing.
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: declare takes no positional arguments (name the session with --session)")
 		return 2
 	}
 	// Declaration is promote-in-place (§12.3): it promotes an existing
@@ -170,6 +181,10 @@ func runIncidentResolve(ctx context.Context, args []string, stdout, stderr io.Wr
 	fs.SetOutput(stderr)
 	reason := fs.String("reason", "", "optional free-text justification for the resolution")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: resolve takes no positional arguments")
 		return 2
 	}
 
