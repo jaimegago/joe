@@ -10,6 +10,45 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0134 — the persistence-and-backup page states `joe db backup`/`joe db restore`'s `--config` flag, discharging the copy revision D-0132 deferred
+
+- Date: 2026-07-21
+- Session: persistence-docs-config-flag
+- Decision: D-0132 gave `joe db backup` and `joe db restore` the `--config` flag
+  and revised their `docs/project/SITE-CLAIMS.md` mechanisms to describe it,
+  but flagged the corresponding `docs/public/operations/persistence-and-backup.md`
+  revision as required and deferred it — the page documented both commands
+  without saying a config file decides which database they act on, so an
+  operator following it could silently back up or restore the wrong database.
+  This session makes that revision, adding to both commands' sections: that a
+  config file decides which database is acted on (`~/.joe/config.yaml` unless
+  `--config` names another), that omitting the flag uses the default path
+  regardless of whether anything lives there, and that an explicitly named
+  path which does not resolve fails rather than falling back. Restore's
+  section additionally states that the same config file governs the
+  `database.encryption_key_path` restore checks SRC's encrypted component
+  configuration against, so the flag cannot redirect the database while the
+  key check stays against a different install. The two `SITE-CLAIMS.md`
+  entries this discharges are amended in place to record that the published
+  copy now states the mechanism, per the register's own bidirectional
+  maintenance duty.
+- Basis: re-derived against the live tree rather than restated from D-0132 —
+  `runDBBackup`/`runDBRestore` (`cmd/joe/db.go`) confirmed to resolve the
+  database and (for restore) the encryption key from one `--config`-loaded
+  `*config.Config`, and `resolveConfigFlag` (`cmd/joe/main.go`) confirmed to
+  keep `config.Load`'s missing-file-at-default-path behaviour while failing an
+  explicitly named unresolvable path. `docs/public/operations/_index.md` and
+  `docs/public/install-and-build/_index.md`'s existing `joe admin bootstrap
+  --config` copy was checked and confirmed already correct and untouched, per
+  D-0132's own claim that it was. No other published page documents these two
+  commands' invocation. `go build ./...`, `go vet ./...`, `gofmt -s -l .`, and
+  `go test ./...` all clean — a docs-only change.
+- Supersedes: nothing. It discharges a documentation obligation D-0132 raised
+  and deferred; the mechanism itself is unchanged. `CLAUDE.md` was checked and
+  needs no change — it already documents both commands' `--config` flag from
+  D-0132.
+- Status: accepted.
+
 ## D-0133 — `joe mcp` and `joe slack` reject unknown flags and surplus positional arguments instead of silently ignoring them
 
 - Date: 2026-07-21

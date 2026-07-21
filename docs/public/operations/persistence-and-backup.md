@@ -87,6 +87,19 @@ The command refuses an existing destination rather than overwriting it; pass `--
 replace one deliberately. It will not create the destination's parent directory — a
 mistyped path fails instead of quietly depositing a backup somewhere nobody meant.
 
+**Which database it copies is decided by a config file.** `joe db backup` loads
+`~/.joe/config.yaml` — the same default the daemon itself uses — unless `--config` names a
+different one:
+
+```bash
+joe db backup /backups/joe-2026-07-17.db --config /etc/joe/config.yaml
+```
+
+Point it at the config file a differently-configured Joe was started with, and this backs up
+*that* Joe's database, not the one under the default path. Omit `--config` and the default
+path is used even if nothing lives there yet. Name a path explicitly and it does not resolve,
+and the command fails rather than silently falling back to the default.
+
 **Why the command exists, rather than "just copy the file".** Joe runs SQLite in WAL
 (write-ahead logging) mode. Under WAL, committed data is not necessarily *in* `joe.db`:
 it is written first to a `joe.db-wal` sidecar and only folded into the main file when a
@@ -159,6 +172,21 @@ Before it writes anything, it checks the things that otherwise fail silently lat
 An existing database is replaced only with `--force`. Back it up first — `joe db restore`
 overwrites, and the database it overwrites is not recoverable from anything but a backup.
 Restore never writes to the backup file; it reads it through a read-only handle throughout.
+
+**Which database it replaces, and which key it checks SRC against, are both decided by the
+same config file.** Like `joe db backup`, restore loads `~/.joe/config.yaml` unless
+`--config` names another:
+
+```bash
+joe db restore /backups/joe-2026-07-17.db --config /etc/joe/config.yaml --force
+```
+
+`--config` redirects both the configured database path restore writes to and the
+`database.encryption_key_path` it checks SRC's encrypted component configuration against —
+one config file governs both, so the flag cannot point the restore at one install's database
+while checking it against another install's key. Omit `--config` and the default path is
+used even if nothing lives there yet. Name a path explicitly and it does not resolve, and the
+command fails rather than silently falling back to the default.
 
 Afterwards, put the **matching** `encryption.key` back where Joe expects it — the path in
 `database.encryption_key_path`, or the `.joe` directory if that is unset — if it is not

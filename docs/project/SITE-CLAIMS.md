@@ -499,7 +499,10 @@ and becomes load-bearing.
 
 - **Claim.** `joe db backup DEST` takes a consistent copy of committed data while Joe is
   running, leaves the source untouched (including its schema version), and produces a
-  standalone file.
+  standalone file. The published copy further states that which database gets copied is
+  decided by a config file — `~/.joe/config.yaml` unless `--config` names another — that
+  omitting the flag uses the default path regardless of whether anything lives there, and
+  that an explicitly named path which does not resolve fails rather than falling back.
 - **Mechanism.** `runDBBackup` (`cmd/joe/db.go`) executes SQLite's `VACUUM INTO` with the
   destination **bound as a parameter**, over a second independent open of the database file;
   concurrent access is safe by the same WAL-plus-`busy_timeout` property D-0018 established for
@@ -524,6 +527,11 @@ and becomes load-bearing.
 - **Binding note. Mechanism-bound.** The SQLite-only framing revises if the `pgx` driver ever
   becomes operational — `VACUUM INTO` has no cross-engine equivalent, and the command refuses a
   non-SQLite driver rather than emit something that is not a backup.
+- **Prior amendment, retained as trail (D-0132, session `cli-config-flag-uniformity`).** D-0132
+  gave the command its `--config` flag and revised this entry's mechanism to describe it, but
+  the published copy did not yet state it — a required revision flagged and deferred. Session
+  `persistence-docs-config-flag` (D-0134) published it; the Claim above now reflects the
+  published copy.
 
 ### Copying the database file from a running Joe can yield a backup missing recent or all data — `/operations/persistence-and-backup/`
 
@@ -604,7 +612,13 @@ and becomes load-bearing.
   recognizably a Joe database; a key is present if its component config is encrypted
   (overridable by `--allow-missing-key`); and no process holds the target open. An existing
   database is replaced only under `--force`. Restoring over a database left by an unclean stop
-  is safe — the stale `-wal`/`-shm` are cleared. SRC is never written to.
+  is safe — the stale `-wal`/`-shm` are cleared. SRC is never written to. The published copy
+  further states that which database is replaced, and which encryption key path SRC's
+  component configuration is checked against, are both decided by one config file —
+  `~/.joe/config.yaml` unless `--config` names another — so the flag cannot redirect the
+  database while the key check stays against a different install; that omitting the flag uses
+  the default path regardless of whether anything lives there; and that an explicitly named
+  path which does not resolve fails rather than falling back.
 - **Mechanism.** `runDBRestore` (`cmd/joe/db.go`). SRC is opened through `defaultOpenSourceDB`
   with the `file:` URI and `mode=ro` — enforced at open, not a flippable pragma — and
   deliberately **not** `immutable=1`, which reads only the main file and silently ignores a
@@ -674,6 +688,11 @@ and becomes load-bearing.
   operational. The sidecar-deletion paragraph revises if the copy mechanism ever changes from
   `VACUUM INTO` to a byte copy — at which point the deletion stops being defensive and becomes
   the only thing preventing substitution.
+- **Prior amendment, retained as trail (D-0132, session `cli-config-flag-uniformity`).** D-0132
+  gave the command its `--config` flag and revised this entry's mechanism to describe it, but
+  the published copy did not yet state it — a required revision flagged and deferred. Session
+  `persistence-docs-config-flag` (D-0134) published it; the Claim above now reflects the
+  published copy.
 
 ### The set of admin-mint paths is closed: cold start by OIDC admin-email or the offline CLI, the admin API thereafter — `/operations/`, `/install-and-build/`, `/guides/web-ui/`, `/configuration/`
 
