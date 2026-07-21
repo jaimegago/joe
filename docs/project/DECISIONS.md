@@ -67,7 +67,35 @@ Format per entry: ID, date, decision, basis, supersedes, status.
   `docs/project/SITE-CLAIMS.md` entry is affected: the distribution-posture
   entry is mechanism-bound to `.goreleaser.yaml`'s signing and platform-matrix
   shape, neither of which moved, and no published page pins a version.
-- Status: accepted.
+- Status: accepted. **Amended post-release, same session.** `v0.2.0` published
+  from run 29861956252 (success, 9m37s) and the second-run correction pass ran
+  against it, on the standing D-0092/D-0123 duty. Both decisions above held as
+  made; what the run added is observation, folded into `docs/RELEASING.md`:
+  run-2 timing beside run-1's; **changelog bounding confirmed working with no
+  configuration** (20 entries, exactly `v0.1.0..v0.2.0`), settling what run 1
+  could only predict and closing the "is the CI snapshot guard still a faithful
+  proxy on a second release" question in the affirmative; a **container route
+  for the integrity check** that sidesteps the open home-resolution question
+  rather than depending on its answer; the artifact-versus-tree documentation
+  check, generalized from the Quickstart break this release repaired; and two
+  traps hit directly — `gh release edit --notes-file` **replaces** the body
+  rather than appending (it wiped the generated changelog mid-session;
+  recovered byte-for-byte from `git log --format='* %H %s'`), and declaring a
+  `server.service_accounts` key equal to `JOE_API_KEY` fails boot on a
+  key-collision error. **The rollback section's UNVERIFIED tags were
+  deliberately not upgraded**: two clean runs are zero observations of failure
+  handling, and the closing section now says so explicitly so a growing
+  success count cannot erode them by attrition. Released-artifact
+  verification: `version` 0.2.0, `commit` 0dbcbb9, `ui_digest`
+  ffc3ec0c8328b1ed735e837d81e03accb6a9e955e434770790bcf9d8bed46e3e — equal to
+  `v0.1.0`'s, correctly, the UI bytes being unchanged across the range;
+  four archives, checksums clean; `joe admin bootstrap` and `--config` present
+  and behaving on the released binary, `--config` correctly refused by `mcp`
+  and `slack`, skills arity exiting 2. `docs/backlog/hardcoded-version-literals.md`
+  opened (Priority: later) for the two `0.1.0` literals outside `buildinfo`,
+  whose accidental correctness expired with this cut; `docs/backlog/INDEX.md`
+  regenerated. No `docs/backlog/release-v0.2.0.md` — the release left no open
+  work of its own.
 
 ## D-0136 — CLI argument rejection is uniform: every subcommand refuses unknown flags and surplus positionals, usage errors exit 2 and operational failures exit 1
 
