@@ -72,6 +72,15 @@ type runDeps struct {
 	// shutdown, which look identical on disk. Injectable so tests can force
 	// either answer without spawning a daemon.
 	probeTargetOccupied func(path string) (bool, error)
+	// getenv reads process environment. `joe mcp` and `joe slack` take their
+	// entire configuration this way rather than through flags or the config
+	// file, so this is the seam that makes their refusal paths testable without
+	// mutating the real environment.
+	getenv func(name string) string
+	// serveMCP runs the MCP stdio server, blocking until it errors or stdin
+	// closes. Injectable because every path through `joe mcp` reaches it — with
+	// no early return, a test could not otherwise observe the command at all.
+	serveMCP func(s *mcpserver.MCPServer) error
 	// openAdminStore opens the first-admin grant seam for `joe admin bootstrap`.
 	// Like the other offline opens it goes to the database file directly rather
 	// than contacting the daemon. Injectable so the command's routing and
@@ -101,7 +110,11 @@ func defaultRunDeps() runDeps {
 		openSourceDB:          defaultOpenSourceDB,
 		encryptionKeyPath:     resolveEncryptionKeyPath,
 		probeTargetOccupied:   defaultProbeTargetOccupied,
-		openAdminStore:        defaultOpenAdminStore,
+		getenv:                os.Getenv,
+		serveMCP: func(s *mcpserver.MCPServer) error {
+			return mcpserver.ServeStdio(s)
+		},
+		openAdminStore: defaultOpenAdminStore,
 	}
 }
 
@@ -251,11 +264,11 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 //	JOE_SERVER  — joe server base URL (default: http://localhost:7777)
 //	JOE_API_KEY — Bearer token for joe API auth (optional)
 func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps) int {
-	serverURL := os.Getenv("JOE_SERVER")
+	serverURL := deps.getenv("JOE_SERVER")
 	if serverURL == "" {
 		serverURL = "http://localhost:7777"
 	}
-	apiKey := os.Getenv("JOE_API_KEY")
+	apiKey := deps.getenv("JOE_API_KEY")
 
 	var opts []client.ClientOption
 	if apiKey != "" {
@@ -267,7 +280,7 @@ func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps
 
 	fmt.Fprintf(stderr, "joe mcp: connecting to joe at %s\n", serverURL)
 
-	if err := mcpserver.ServeStdio(s); err != nil {
+	if err := deps.serveMCP(s); err != nil {
 		fmt.Fprintf(stderr, "joe mcp: server error: %v\n", err)
 		return 1
 	}
@@ -282,22 +295,22 @@ func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps
 //	JOE_SERVER       — joe server base URL (default: http://localhost:7777)
 //	JOE_API_KEY      — Bearer token for joe API auth (optional)
 func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps runDeps) int {
-	botToken := os.Getenv("SLACK_BOT_TOKEN")
+	botToken := deps.getenv("SLACK_BOT_TOKEN")
 	if botToken == "" {
 		fmt.Fprintln(stderr, "joe slack: SLACK_BOT_TOKEN is required")
 		return 1
 	}
-	appToken := os.Getenv("SLACK_APP_TOKEN")
+	appToken := deps.getenv("SLACK_APP_TOKEN")
 	if appToken == "" {
 		fmt.Fprintln(stderr, "joe slack: SLACK_APP_TOKEN is required (xapp-...)")
 		return 1
 	}
 
-	serverURL := os.Getenv("JOE_SERVER")
+	serverURL := deps.getenv("JOE_SERVER")
 	if serverURL == "" {
 		serverURL = "http://localhost:7777"
 	}
-	apiKey := os.Getenv("JOE_API_KEY")
+	apiKey := deps.getenv("JOE_API_KEY")
 
 	var clientOpts []client.ClientOption
 	if apiKey != "" {
