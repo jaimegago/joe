@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
+	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -37,7 +40,7 @@ func (f *fakeAdminGrantStore) GrantFirstAdmin(_ context.Context, p rbac.Principa
 // developer's real ~/.joe.
 func depsWithAdminStore(fake *fakeAdminGrantStore, serviceAccounts ...string) runDeps {
 	deps := defaultRunDeps()
-	deps.openAdminStore = func() (adminGrantStore, func() error, error) {
+	deps.openAdminStore = func(*config.Config) (adminGrantStore, func() error, error) {
 		return fake, func() error { return nil }, nil
 	}
 	deps.loadConfig = func(string) (*config.Config, error) {
@@ -213,7 +216,7 @@ func TestAdminBootstrap_RefusalWhenAdminExists(t *testing.T) {
 
 func TestAdminBootstrap_StoreOpenFailure(t *testing.T) {
 	deps := depsWithAdminStore(&fakeAdminGrantStore{}, "ci")
-	deps.openAdminStore = func() (adminGrantStore, func() error, error) {
+	deps.openAdminStore = func(*config.Config) (adminGrantStore, func() error, error) {
 		return nil, nil, errors.New("boom")
 	}
 	var stdout, stderr bytes.Buffer
@@ -338,5 +341,127 @@ func TestAdminBootstrap_ContainmentAgainstRealDatabase(t *testing.T) {
 	}
 	if got := countGrantAudit(); got != 1 {
 		t.Errorf("admin.grant audit rows after refused bootstrap = %d, want 1 (a refusal changes nothing)", got)
+	}
+}
+
+// TestAdminBootstrap_ExplicitConfigPathRedirectsBothUses is the coherence test
+// for --config. It uses the REAL config.Load against a file on disk, and pins
+// that the named file governs BOTH things this command reads out of a config:
+// the service-account set the principal is validated against, and the database
+// the grant is written to. A flag that redirected only the first would validate
+// against one install and write to another — worse than having no flag.
+//
+// Non-vacuity comes from the service-account name and the DSN both being values
+// no default config could supply: if the flag were ignored, the principal would
+// not resolve and the exit code would be 1.
+func TestAdminBootstrap_ExplicitConfigPathRedirectsBothUses(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "joe.yaml")
+	wantDSN := filepath.Join(dir, "elsewhere.db")
+	body := "server:\n  service_accounts:\n    - name: bootstrap-only-account\n      key: k\ndatabase:\n  dsn: " + wantDSN + "\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fake := &fakeAdminGrantStore{granted: true}
+	var gotDB store.DatabaseConfig
+	deps := defaultRunDeps() // loadConfig stays REAL — the file is the subject.
+	deps.openAdminStore = func(cfg *config.Config) (adminGrantStore, func() error, error) {
+		dbCfg, err := databaseConfigFor(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		gotDB = dbCfg
+		return fake, func() error { return nil }, nil
+	}
+
+	// Flag AFTER the positional: the order an operator writes naturally, and the
+	// one the stdlib flag package does not accept without reorderFlagsFirst.
+	var stdout, stderr bytes.Buffer
+	code := runAdminBootstrap(context.Background(),
+		[]string{"svc:bootstrap-only-account", "--config", cfgPath}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	want, err := rbac.ServicePrincipal("bootstrap-only-account")
+	if err != nil {
+		t.Fatalf("ServicePrincipal: %v", err)
+	}
+	if fake.principal != want {
+		t.Errorf("granted principal = %q, want %q — the named config's service accounts were not used",
+			fake.principal, want)
+	}
+	if gotDB.DSN != wantDSN {
+		t.Errorf("database DSN = %q, want %q — the principal and the database were resolved from different configs",
+			gotDB.DSN, wantDSN)
+	}
+}
+
+// TestAdminBootstrap_ExplicitConfigPathBeforePositional pins the other argument
+// order, so reorderFlagsFirst is not the only thing that can make the flag work.
+func TestAdminBootstrap_ExplicitConfigPathBeforePositional(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "joe.yaml")
+	if err := os.WriteFile(cfgPath,
+		[]byte("server:\n  service_accounts:\n    - name: bootstrap-only-account\n      key: k\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	fake := &fakeAdminGrantStore{granted: true}
+	deps := defaultRunDeps()
+	deps.openAdminStore = func(*config.Config) (adminGrantStore, func() error, error) {
+		return fake, func() error { return nil }, nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := runAdminBootstrap(context.Background(),
+		[]string{"--config", cfgPath, "svc:bootstrap-only-account"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !fake.grantRan {
+		t.Error("the grant did not run")
+	}
+}
+
+// TestAdminBootstrap_NonexistentExplicitConfigPathIsOperationalFailure pins the
+// asymmetry: config.Load treats a missing file as "use defaults", which is right
+// for the default path and wrong for a path the operator named. Exit 1, the
+// tree's operational-failure code, not 2 — the invocation was well-formed.
+func TestAdminBootstrap_NonexistentExplicitConfigPathIsOperationalFailure(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-config.yaml")
+	fake := &fakeAdminGrantStore{granted: true}
+	deps := depsWithAdminStore(fake, "ci")
+	var stdout, stderr bytes.Buffer
+	code := runAdminBootstrap(context.Background(),
+		[]string{"svc:ci", "--config", missing}, &stdout, &stderr, deps)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1 (operational failure)", code)
+	}
+	if fake.grantRan {
+		t.Error("the grant ran against a config file that does not exist")
+	}
+	if !strings.Contains(stderr.String(), "--config") {
+		t.Errorf("refusal should name the flag, got: %s", stderr.String())
+	}
+}
+
+// TestAdminBootstrap_AbsentFlagUsesDefaultConfigPath pins that omitting the flag
+// changes nothing: the default path, exactly as before the flag existed. The
+// injected loadConfig records what it was asked for.
+func TestAdminBootstrap_AbsentFlagUsesDefaultConfigPath(t *testing.T) {
+	fake := &fakeAdminGrantStore{granted: true}
+	deps := depsWithAdminStore(fake, "ci")
+	var askedFor string
+	inner := deps.loadConfig
+	deps.loadConfig = func(path string) (*config.Config, error) {
+		askedFor = path
+		return inner(path)
+	}
+	var stdout, stderr bytes.Buffer
+	code := runAdminBootstrap(context.Background(), []string{"svc:ci"}, &stdout, &stderr, deps)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if askedFor != paths.DefaultConfigPath() {
+		t.Errorf("loaded config from %q, want the default %q", askedFor, paths.DefaultConfigPath())
 	}
 }

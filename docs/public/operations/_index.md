@@ -361,10 +361,18 @@ admin to a configured service account on a database that has no admin yet:
 
 ```bash
 joe admin bootstrap svc:joe-admin     # the bare name also works: joe admin bootstrap joe-admin
+
+# Started the daemon with an explicit config? Pass the same file:
+joe admin bootstrap svc:joe-admin --config /etc/joe/config.yaml
 ```
 
 It runs offline against Joe's own database and config file, contacts no daemon, and a
-running Joe picks the grant up without a restart. It is deliberately narrow:
+running Joe picks the grant up without a restart. `--config` names that config file and
+mirrors the daemon's flag, so you can reuse your `joe --config ...` value verbatim — the
+same file supplies both the service accounts the principal is checked against and the
+database the grant lands in. Omit it and the default `~/.joe/config.yaml` is used; name a
+file that does not exist and the command fails rather than falling back. It is
+deliberately narrow:
 
 - It grants to **service accounts only** — the principal must name an entry in
   `server.service_accounts`. A `user:` or `group:` argument is refused: with no identity

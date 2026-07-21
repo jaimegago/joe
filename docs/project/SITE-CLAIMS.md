@@ -666,7 +666,11 @@ and becomes load-bearing.
   no identity provider therefore **has** a cold-start path and still has **no
   self-escalation path** — no running principal grants itself admin. The copy steers the
   operator to a **dedicated** administration account rather than the shared
-  general-purpose key.
+  general-purpose key. The published copy further states that the CLI's `--config` mirrors
+  the daemon's flag and that the one named file supplies **both** the service accounts the
+  principal is checked against and the database the grant lands in, that omitting it uses
+  the default `~/.joe/config.yaml`, and that naming a file that does not exist fails rather
+  than falling back.
 - **Mechanism.** `auth.Provisioner` (`internal/auth/provision.go`) is the sole caller of the
   repository's `AddAdmin` / `AddFirstAdmin`, reached from exactly the sanctioned writers,
   named structurally: the OIDC callback's `admin_email` bootstrap, the `requireAdmin`-gated
@@ -675,7 +679,11 @@ and becomes load-bearing.
   `rbac.SQLRepository.AddFirstAdmin` rather than a check-then-write. Service-account-only
   acceptance resolves the argument against `server.service_accounts` and mints it through
   `rbac.ServicePrincipal`, the same single point the authenticating request path uses
-  (D-0129).
+  (D-0129). The config the command reads is the default path unless `--config` names
+  another (`runAdminBootstrap`, `cmd/joe/admin.go`); the **single** loaded config is
+  threaded into the store seam (`deps.openAdminStore(cfg)` → `databaseConfigFor`), which is
+  what makes the redirect coherent rather than partial, and an explicitly-named path that
+  does not resolve exits 1 instead of falling back to defaults (D-0131).
 - **Pinning tests.** `TestGuard_AdminPrincipalsWriterSetIsClosed` and
   `TestGuard_AdminPrincipalsHasNoRawSQLWriter` (the closed writer set, in two call-site
   layers plus a raw-SQL check — these fail if a further writer appears);
@@ -684,7 +692,11 @@ and becomes load-bearing.
   `TestAdminBootstrap_ContainmentAgainstRealDatabase` (the refusal, against a real
   database); `TestAdminBootstrap_RefusesHumanIdentity`,
   `TestAdminBootstrap_RefusesUnconfiguredServiceAccount`,
-  `TestAdminBootstrap_GrantsConfiguredServiceAccount`.
+  `TestAdminBootstrap_GrantsConfiguredServiceAccount`;
+  `TestAdminBootstrap_ExplicitConfigPathRedirectsBothUses` (the coherence claim — one named
+  config governs both the service-account set and the database DSN),
+  `TestAdminBootstrap_NonexistentExplicitConfigPathIsOperationalFailure`,
+  `TestAdminBootstrap_AbsentFlagUsesDefaultConfigPath`.
 - **Binding note. Mechanism-bound.** The copy names the mint paths as a set rather than
   counting them, so a further path landing falsifies no numeral — but it does obligate a
   revision of every page listed above, and the writer-set guard is the trip-wire: it fails

@@ -10,6 +10,120 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0131 — `joe admin bootstrap` takes the daemon's `--config` flag, and the one loaded config governs both the principal check and the grant's destination
+
+- Date: 2026-07-21
+- Session: admin-bootstrap-cli-04
+- Decision: `joe admin bootstrap` gains a `--config PATH` flag mirroring the
+  daemon's, and the config it loads is threaded as a value into the store seam so
+  a redirect cannot be partial.
+
+  **The gap.** `runAdminBootstrap` resolved `paths.DefaultConfigPath()`
+  unconditionally, and its flag set defined no config-path flag. The daemon
+  accepts one (`resolveConfigPath`, `cmd/joe/server.go`). An operator who starts
+  Joe with `joe --config /etc/joe/config.yaml` therefore could not point the
+  bootstrap command at the same file, and the command would silently resolve a
+  *different* configuration — a different `server.service_accounts` set to
+  validate the principal against, and a different `database.dsn` to write the
+  admin row into. The failure was silent in the worst direction: with no config
+  at the default path, `config.Load` returns defaults rather than an error, so
+  the command would refuse with "no service accounts are configured" while a
+  perfectly good install sat at the path the operator actually uses. Nothing
+  published stated the constraint.
+
+  **The flag mirrors the daemon's rather than inventing one.** Same name
+  (`--config`), same meaning, same treatment of a relative value — taken verbatim
+  against the working directory, `~` expanded exactly as `config.Load` expands
+  it. The requirement it satisfies is that an operator can reuse their daemon
+  invocation's flag token unchanged; any divergence in spelling or semantics
+  defeats that. `JOE_CONFIG` is deliberately **not** honoured: absent the flag,
+  behaviour is the default path exactly as before, and whether the env var is a
+  process-wide input or a daemon-only one is a separate question
+  (`docs/backlog/admin-bootstrap-cli-04.md`).
+
+  **Coherence is structural, not asserted.** The command reads two things out of
+  a config — the service-account set the principal resolves against, and the
+  driver/DSN naming the database the grant lands in — and a flag that redirected
+  one and not the other would be worse than no flag. The `openAdminStore` dep now
+  takes the already-loaded `*config.Config` instead of resolving its own:
+  `defaultOpenAdminStore(cfg)` calls a new pure half `databaseConfigFor(cfg)`
+  (`cmd/joe/db.go`), extracted from `resolveDatabaseConfig` in exactly the shape
+  `encryptionKeyPathFor` already had beside it. One load, one config object, both
+  uses. Verified against the real binary, not only the seam: a bootstrap run with
+  `--config ./joe.yaml` naming a non-default DSN wrote `admin_principals` and its
+  `admin.grant` audit row into that database and left `~/.joe/joe.db` untouched.
+  Nothing else in the config governs this command — the store is opened with a
+  nil encryption key (the admin roster and audit log are not encrypted at rest),
+  and the audit repository takes no configuration.
+
+  **The exit-code asymmetry is deliberate.** A missing file at the **default**
+  path keeps its existing behaviour: `config.Load` treats `os.IsNotExist` as "use
+  defaults", the command proceeds, and the operator gets the accurate "no service
+  accounts are configured" refusal. A missing file at an **explicitly named**
+  path is an operational failure and exits 1 — the tree's operational-failure
+  code, not the usage code 2, because the invocation was well-formed. An operator
+  who names a path has asserted it exists; falling back to defaults there would
+  validate against an empty account set and target the wrong database, which is
+  precisely the failure this change exists to remove. The check is an explicit
+  `os.Stat` on the expanded path, because `config.Load` will not report it.
+
+  **Flag-after-positional works.** `--config` consumes a following token and an
+  operator will naturally write the principal first, so parsing goes through
+  `reorderFlagsFirst` (`cmd/joe/main.go`) with `config` registered as a
+  value-taking flag — the tree's existing answer to the stdlib flag package's
+  flags-before-positionals rule. Both orders are pinned.
+
+  **Scope is this one subcommand.** The tree duplicates config resolution across
+  call sites in two distinct shapes — which file a command reads (four different
+  answers across the daemon, `joe panic`, this command, and the five subcommands
+  with no flag at all) and the `cfg.Database` override block (written out three
+  times). Neither is consolidated here and no other subcommand gains the flag;
+  that is a refactor needing its own decision, scoped in
+  `docs/backlog/admin-bootstrap-cli-04.md`. One consequence is worth stating
+  plainly rather than leaving implicit: an operator can now point
+  `joe admin bootstrap` at a non-default config and still cannot point
+  `joe db backup` at one, so that command will back up a different database.
+
+  **Unchanged, and verified unchanged:** the refusal-when-an-admin-exists clause,
+  the service-account-only restriction, the human-principal refusal, the audit
+  row and its `cli:admin-bootstrap` actor, and the in-statement atomicity of the
+  existence check. `internal/rbac/admin_writers_guard_test.go` and
+  `TestAddFirstAdmin_ConcurrentInvocationsGrantExactlyOne` pass unmodified; no
+  writer was added or moved.
+
+- Basis: the gap re-derived this session against the live tree rather than from
+  the lead — `runAdminBootstrap` loading `paths.DefaultConfigPath()`
+  (`cmd/joe/admin.go`), `defaultOpenAdminStore` independently calling
+  `resolveDatabaseConfig`, `resolveConfigPath` as the daemon's flag
+  (`cmd/joe/server.go`), and `config.Load`'s `os.IsNotExist` fallback
+  (`internal/config/config.go`) establishing the default-path posture that had to
+  be preserved. Four new tests in `cmd/joe/admin_test.go`
+  (`TestAdminBootstrap_ExplicitConfigPathRedirectsBothUses`,
+  `..._ExplicitConfigPathBeforePositional`,
+  `..._NonexistentExplicitConfigPathIsOperationalFailure`,
+  `..._AbsentFlagUsesDefaultConfigPath`), the first using the real `config.Load`
+  against a file on disk and asserting both the granted principal and the
+  resolved DSN come from it. Non-vacuity established by **fault injection**, not
+  inspection: five faults were introduced one at a time and each was caught —
+  ignoring the flag value (2 failures), dropping `reorderFlagsFirst` (2), removing
+  the `os.Stat` check (1), passing an independently-loaded config to the store
+  seam (1, the coherence assertion), and changing the no-flag default away from
+  `paths.DefaultConfigPath()` (1). End-to-end run of the built binary confirmed
+  the grant, the containment refusal on a second run, and the exit-1 refusal of a
+  nonexistent explicit path. `go build ./...`, `go vet ./...`, `gofmt -l`, and
+  `go test ./...` all clean.
+- Supersedes: nothing. It extends D-0129's command surface without amending any
+  of its decisions. `CLAUDE.md` **is** updated — the determination was made
+  explicitly: that file documents this command by its invocation form, so a new
+  flag on it is a command-surface change worth recording, and the coherence
+  property is an invariant a future edit could silently break. The
+  `docs/project/SITE-CLAIMS.md` admin-mint entry is revised for the same reason:
+  its binding note is mechanism-bound, the published description of a listed
+  mechanism changed, and the new pinning tests are added there.
+- Status: accepted.
+
+---
+
 ## D-0130 — the published surface is corrected to the shipped admin-mint set, and the register gap that let a shipped mechanism falsify unregistered copy is recorded rather than closed
 
 - Date: 2026-07-21

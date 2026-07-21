@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/jaimegago/joe/internal/audit"
@@ -27,9 +28,15 @@ type adminGrantStore interface {
 	GrantFirstAdmin(ctx context.Context, principal rbac.Principal) (bool, error)
 }
 
-// defaultOpenAdminStore opens the database `joe admin bootstrap` writes to,
-// honoring the same config the daemon uses, and returns the grant seam with a
-// closer.
+// defaultOpenAdminStore opens the database `joe admin bootstrap` writes to and
+// returns the grant seam with a closer.
+//
+// It takes the config the command already loaded rather than loading its own.
+// The command resolves the operator's principal against server.service_accounts
+// from that config; resolving the database from a second, independently-loaded
+// config would let `--config` redirect one and not the other, and a command that
+// validates a principal against one configuration while writing to another
+// database is worse than having no flag at all.
 //
 // It DOES run migrations, following defaultOpenPanicStore rather than
 // defaultOpenBackupStore. The two offline precedents diverge for a reason that
@@ -55,8 +62,8 @@ type adminGrantStore interface {
 // the live database. A running daemon picks the grant up with no restart, since
 // the policy engine reads admin status at decision time
 // (internal/rbac/policy.go) rather than caching a boot snapshot.
-func defaultOpenAdminStore() (adminGrantStore, func() error, error) {
-	dbCfg, err := resolveDatabaseConfig()
+func defaultOpenAdminStore(cfg *config.Config) (adminGrantStore, func() error, error) {
+	dbCfg, err := databaseConfigFor(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,9 +86,12 @@ func defaultOpenAdminStore() (adminGrantStore, func() error, error) {
 func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
 		fmt.Fprintln(stderr, "Usage: joe admin <bootstrap> [flags]")
-		fmt.Fprintln(stderr, "  bootstrap <principal>       Grant admin to a configured service account, once, on a")
+		fmt.Fprintln(stderr, "  bootstrap <principal> [--config <path>]")
+		fmt.Fprintln(stderr, "                              Grant admin to a configured service account, once, on a")
 		fmt.Fprintln(stderr, "                              database that has no admin yet. Refused if any admin")
 		fmt.Fprintln(stderr, "                              exists; every later grant goes through the admin API.")
+		fmt.Fprintln(stderr, "                              --config names the same config file the daemon is")
+		fmt.Fprintln(stderr, "                              started with; without it, ~/.joe/config.yaml is used.")
 	}
 	if len(args) == 0 {
 		usage()
@@ -101,6 +111,12 @@ func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Write
 // runAdminBootstrap implements `joe admin bootstrap <principal>`: the offline
 // first-admin grant.
 //
+// The config it reads is the default ~/.joe/config.yaml unless --config names
+// another, mirroring the daemon's flag so an operator can reuse their `joe
+// --config ...` invocation verbatim. One config load serves both uses: the
+// service-account set the principal is validated against, and the database the
+// grant is written to. See defaultOpenAdminStore.
+//
 // It exists because a deployment configured with service accounts and no
 // identity provider cannot mint an admin at all. The OIDC login and callback
 // routes are not registered, so the admin_email bootstrap writer is not merely
@@ -117,19 +133,59 @@ func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Write
 func runAdminBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe admin bootstrap", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
+	// Mirrors the daemon's --config exactly: same name, same meaning, a
+	// relative value taken verbatim against the working directory. An operator
+	// who starts Joe with `joe --config ./deploy/joe.yaml` must be able to reuse
+	// that token here, because this command reads the SAME two things out of it
+	// the daemon does — server.service_accounts, which decides whether the named
+	// principal exists, and database.driver/dsn, which decides where the grant
+	// lands. Resolving the default path while the daemon runs on another file
+	// silently validates against one install and writes to another.
+	//
+	// Empty default rather than paths.DefaultConfigPath() so "not passed" stays
+	// distinguishable from "passed": the two take different missing-file
+	// postures below.
+	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
+	// --config takes a following token, and an operator will naturally write the
+	// principal first. reorderFlagsFirst is the tree's existing answer to the
+	// stdlib flag package's flags-before-positionals rule.
+	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: bootstrap requires exactly one <principal> argument.")
-		fmt.Fprintln(stderr, "Usage: joe admin bootstrap <principal>")
+		fmt.Fprintln(stderr, "Usage: joe admin bootstrap <principal> [--config <path>]")
 		fmt.Fprintln(stderr, "The principal names a service account from server.service_accounts, as")
 		fmt.Fprintln(stderr, "either svc:<name> or the bare <name>.")
 		return 2
 	}
 	arg := strings.TrimSpace(fs.Arg(0))
 
-	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	// The asymmetry is deliberate. A missing file at the DEFAULT path is not an
+	// error — config.Load falls back to defaults, and the command then refuses
+	// with "no service accounts are configured", which is the accurate diagnosis
+	// for an install that has none. A missing file at an EXPLICITLY NAMED path
+	// is an operational failure: the operator asserted that file exists, and
+	// silently falling back to defaults would resolve the principal against an
+	// empty account set and, worse, target the default database instead of the
+	// one that config names.
+	cfgPath := paths.DefaultConfigPath()
+	if *configPath != "" {
+		resolved, err := paths.ExpandPath(*configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: cannot resolve --config %s: %v\n", *configPath, err)
+			return 1
+		}
+		if _, err := os.Stat(resolved); err != nil {
+			fmt.Fprintf(stderr, "Error: cannot read the config file named by --config: %v\n", err)
+			fmt.Fprintln(stderr, "Name the same config file the daemon is started with, or omit --config to use")
+			fmt.Fprintln(stderr, "the default ~/.joe/config.yaml.")
+			return 1
+		}
+		cfgPath = *configPath
+	}
+
+	cfg, err := deps.loadConfig(cfgPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
 		return 1
@@ -140,7 +196,7 @@ func runAdminBootstrap(ctx context.Context, args []string, stdout, stderr io.Wri
 		return code
 	}
 
-	gs, closeStore, err := deps.openAdminStore()
+	gs, closeStore, err := deps.openAdminStore(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to open database: %v\n", err)
 		fmt.Fprintln(stderr, "Check that the account running this command can read Joe's database and config.")

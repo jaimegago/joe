@@ -198,13 +198,18 @@ Joe's database and config:
 
 ```bash
 joe admin bootstrap svc:joe-admin
+
+# If you start the daemon with an explicit config file, pass the same one here —
+# it names both the service accounts and the database the grant is written to.
+joe admin bootstrap svc:joe-admin --config /etc/joe/config.yaml
 ```
 
 That command grants admin to a service account named in `server.service_accounts`, on a
 database that has no admin yet. It refuses human identities — without an identity
 provider they could never authenticate — and it is refused the moment any admin exists,
 with no override. Name a **dedicated** administration account for it rather than the
-shared general-purpose key. Once one admin exists, further admins are granted through the
+shared general-purpose key. `--config` works exactly as it does on the daemon; without
+it, the default `~/.joe/config.yaml` is used. Once one admin exists, further admins are granted through the
 admin API by an existing admin; see [Operations](../operations/) for the break-glass
 context.
 

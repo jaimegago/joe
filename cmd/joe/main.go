@@ -87,7 +87,12 @@ type runDeps struct {
 	// refusal tests need no real database — which matters here because
 	// paths.JoeDirPath does NOT honour $HOME, so a test cannot isolate itself
 	// by pointing the home directory elsewhere.
-	openAdminStore func() (adminGrantStore, func() error, error)
+	//
+	// It takes the ALREADY-LOADED config rather than resolving its own. That is
+	// what makes `--config` coherent: the config that validated the principal is
+	// the same object that names the database the grant lands in, so the two
+	// cannot be redirected independently.
+	openAdminStore func(cfg *config.Config) (adminGrantStore, func() error, error)
 }
 
 func defaultRunDeps() runDeps {

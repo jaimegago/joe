@@ -80,11 +80,23 @@ func resolveDatabaseConfig() (store.DatabaseConfig, error) {
 	if err != nil {
 		return store.DatabaseConfig{}, fmt.Errorf("load config: %w", err)
 	}
+	return databaseConfigFor(cfg)
+}
+
+// databaseConfigFor is resolveDatabaseConfig's pure half, for callers that
+// already hold a config and must not re-read it — `joe admin bootstrap`, whose
+// principal validation and database target have to come from the SAME config so
+// a caller-selected config path redirects both or neither. It mirrors the
+// encryptionKeyPathFor split directly above.
+func databaseConfigFor(cfg *config.Config) (store.DatabaseConfig, error) {
 	dbPath, err := paths.DatabasePath()
 	if err != nil {
 		return store.DatabaseConfig{}, fmt.Errorf("resolve database path: %w", err)
 	}
 	dbCfg := store.DatabaseConfig{Driver: store.DriverSQLite, DSN: dbPath}
+	if cfg == nil {
+		return dbCfg, nil
+	}
 	if cfg.Database.Driver != "" {
 		dbCfg.Driver = cfg.Database.Driver
 	}
