@@ -66,7 +66,7 @@ server:
   session_archive_dir: ""             # "" → ~/.joe/session-archive
 
 auth:                                 # human login (OIDC); optional
-  admin_email: ""                     # bootstrap admin identity ("" = bootstrap disabled)
+  admin_email: ""                     # bootstrap admin identity ("" = OIDC admin bootstrap disabled)
   session_ttl: 12h
   post_login_redirect: "/"
   oidc:                               # OIDC active only when issuer + client_id + redirect_url are all set
@@ -131,7 +131,7 @@ web_search:                           # optional; web search is inert until a pr
 
 | Key | Default | Effect |
 | --- | --- | --- |
-| `auth.admin_email` | `""` | Verified email bootstrapped to admin on first OIDC login. `""` disables bootstrap. Bootstrap is OIDC-only. |
+| `auth.admin_email` | `""` | Verified email bootstrapped to admin on first OIDC login. `""` disables this bootstrap. It is the OIDC path only — an install with no identity provider bootstraps its first admin offline with `joe admin bootstrap`, which grants to a service account. |
 | `auth.session_ttl` | `12h` | Human session lifetime. |
 | `auth.post_login_redirect` | `/` | Path to redirect to after a successful login. |
 | `auth.oidc.issuer` / `client_id` / `client_secret` / `redirect_url` | `""` | OIDC login is active only when `issuer`, `client_id`, and `redirect_url` are all set; the login/callback/logout endpoints are registered only then. |

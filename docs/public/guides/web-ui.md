@@ -42,13 +42,19 @@ revokes the server-side session immediately.
 
 ## Bootstrap the first admin
 
-There is no separate "create admin" command. Set `auth.admin_email` to the email of the
+There is no in-app "create admin" action, and no command that promotes a person: a human
+admin is bootstrapped through the login itself. Set `auth.admin_email` to the email of the
 person who should hold admin rights. The first time a human logs in whose verified OIDC
 email matches that value, Joe grants them admin automatically. The grant is idempotent —
 logging in again changes nothing — and it is audited the first time it escalates a
 principal.
 
 Everyone else logs in as an ordinary operator until an existing admin grants them more.
+
+An offline command, `joe admin bootstrap`, covers the different case of an install with
+**no** identity provider: it grants admin to a configured *service account*, never to a
+person, on a database that has no admin yet. It is not part of the human-login path — see
+[Operations](../../operations/).
 
 ## What the app looks like
 

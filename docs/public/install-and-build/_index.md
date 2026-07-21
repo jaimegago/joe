@@ -182,7 +182,7 @@ boot failure — only new logins fail until it recovers.
 
 ### Admin bootstrap
 
-The very first administrator is bootstrapped through OIDC. Set `auth.admin_email` to a
+A **human** administrator is bootstrapped through OIDC. Set `auth.admin_email` to a
 verified email address; when that person completes an OIDC login, Joe grants them admin
 once (idempotent and audited):
 
@@ -191,10 +191,22 @@ auth:
   admin_email: you@example.com
 ```
 
-This bootstrap is **OIDC-only**: a service-account-only install has no self-escalation
-path, so if you need the admin REST surface (zones, read posture, promotion), configure
-OIDC and `admin_email`. Once one admin exists, further admins are granted through the
-admin API by an existing admin.
+A service-account-only install has no OIDC callback, so that bootstrap cannot run there —
+and it has no **self-escalation** path either: no running principal can grant itself
+admin. Its first admin is created **offline** instead, by an operator with access to
+Joe's database and config:
+
+```bash
+joe admin bootstrap svc:joe-admin
+```
+
+That command grants admin to a service account named in `server.service_accounts`, on a
+database that has no admin yet. It refuses human identities — without an identity
+provider they could never authenticate — and it is refused the moment any admin exists,
+with no override. Name a **dedicated** administration account for it rather than the
+shared general-purpose key. Once one admin exists, further admins are granted through the
+admin API by an existing admin; see [Operations](../operations/) for the break-glass
+context.
 
 ## Observation mode and the write floor
 

@@ -10,6 +10,104 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0130 — the published surface is corrected to the shipped admin-mint set, and the register gap that let a shipped mechanism falsify unregistered copy is recorded rather than closed
+
+- Date: 2026-07-21
+- Session: admin-bootstrap-cli-03
+- Decision: the joeagent.dev pages that describe how a first admin is obtained are
+  corrected in place to the set of mint paths D-0129 actually shipped, and the
+  claim family is entered in `docs/project/SITE-CLAIMS.md` so a further
+  mint path obligates a revision.
+
+  **What was false, and why.** D-0129 shipped `joe admin bootstrap`, a second
+  cold-start path to the first admin. Three published statements were true
+  before it and false after:
+
+  - `docs/public/operations/_index.md` ("Granting admin") said admin is minted
+    *two ways* and named the OIDC admin-email bootstrap as *the only*
+    non-circular cold-start path. Both the count and the uniqueness claim were
+    falsified: there are now two cold-start paths, and the count is of a set
+    that can grow, so the corrected copy **names the paths and does not lead
+    with a numeral** (D-0032).
+  - `docs/public/install-and-build/_index.md` ("Admin bootstrap") said the very
+    first administrator is bootstrapped through OIDC and that, because a
+    service-account-only install has *no self-escalation path*, an operator
+    needing the admin REST surface **must** configure OIDC and `admin_email`.
+    The imperative was the false part. The no-self-escalation premise is
+    **true and retained**: an offline operator act performed with filesystem
+    access to the database is not a running principal escalating itself, and
+    nothing in D-0129 gave a running principal a route to admin it lacked. The
+    corrected copy keeps the premise and replaces the conclusion.
+  - `docs/public/guides/web-ui.md` ("Bootstrap the first admin") said flatly
+    that there is no separate "create admin" command. Qualified: there is no
+    in-app action and no command that promotes a *person*; the offline command
+    grants to a service account and is not part of the human-login path.
+
+  A fourth page, the `auth.admin_email` row in
+  `docs/public/configuration/_index.md`, said "Bootstrap is OIDC-only" inside a
+  passage scoped to that setting, which remains literally true of that setting.
+  It was corrected anyway: the sentence's bare subject is *bootstrap*, not *this
+  bootstrap*, the config page carries no other admin-mint copy to read it
+  against, and a reader scanning the table for how to obtain an admin meets it
+  as a global claim. The annotated-YAML comment on the same key was narrowed to
+  match. A sweep of the rest of `docs/public/` for the claim family — how a
+  first admin is obtained, whether an identity provider is required for
+  administration, what a deployment without one can do — found nothing further;
+  the API reference documents the admin-roster endpoints without claiming they
+  are the only writer.
+
+  **The corrected copy states only what ships** (D-0052): service-account
+  principals only, human identities refused, refused once any admin exists with
+  no override, offline against the local database and config with no daemon
+  contact, audited in the same transaction as the roster row. It is not
+  described as an admin-management command and carries no implication that it
+  can add admins after the first. The command's own guidance — configure a
+  **dedicated** administration account rather than promoting the shared
+  general-purpose key — is carried onto the operations and install pages, where
+  an operator reading about bootstrap meets it.
+
+  **Register.** Publishing copy that names the CLI as an admin path fired the
+  register's publish-side trigger, so the entry is added in this session, in the
+  Operations section and **mechanism-bound**: it names the writer set
+  structurally rather than counting it, and cites the closed-writer-set guard as
+  the trip-wire, so a further mint path landing fails the guard and that failure
+  is the cue to revise all four pages. The landing page's *Governed by
+  construction* entry gains a binding note cross-referencing it, stating that
+  the guarantee is scoped to the running daemon's request paths and has never
+  covered an operator with filesystem access — who can already replace the whole
+  store via `joe db restore` (D-0115) — so the offline writer does not widen it.
+
+  **Observation, not resolved here: the register has no ship-side trigger.**
+  D-0129 incurred no register obligation at ship time. Admin provisioning was
+  not a listed mechanism, so the mechanism-side trigger had nothing to fire on,
+  and that commit touched no file under `docs/public/`, so the publish-side
+  trigger did not fire either — yet it falsified three published pages. The
+  register's two triggers are both keyed to something it already knows about,
+  and a newly shipped mechanism falsifying *unregistered* published copy is
+  outside both. This entry records the gap and changes no convention:
+  `docs/backlog/site-claims-ship-trigger.md` scopes it as a convention question
+  needing its own decision, with a ship-side trigger and pre-registered claim
+  families recorded as candidate directions.
+
+- Basis: the shipped behaviour re-derived this session from `cmd/joe/admin.go`
+  (`runAdminBootstrap`, `resolveBootstrapPrincipal`, `defaultOpenAdminStore`)
+  and `internal/auth/provision.go` (`GrantFirstAdmin`, `GrantedByCLI`,
+  `ActorCLIBootstrap`), not from D-0129's summary; the live text of each page
+  re-read before editing. Pinning tests cited in the new register entry verified
+  present by name: `TestGuard_AdminPrincipalsWriterSetIsClosed`,
+  `TestGuard_AdminPrincipalsHasNoRawSQLWriter`,
+  `TestAddFirstAdmin_ConcurrentInvocationsGrantExactlyOne`
+  (`internal/rbac/admin_writers_guard_test.go`), and the
+  `TestAdminBootstrap_*` family (`cmd/joe/admin_test.go`). Docs-only change; the
+  Go tree is untouched and `go build ./...`, `go vet ./...`, `gofmt -l`, and
+  `go test ./...` were run to prove it.
+- Supersedes: nothing. It corrects published copy that D-0129 falsified without
+  amending D-0129, whose decisions all stand. No architectural invariant,
+  command, or convention moved, so `CLAUDE.md` is deliberately untouched.
+- Status: accepted.
+
+---
+
 ## D-0129 — a third writer to `admin_principals`: an offline, service-account-only, one-shot first-admin CLI, and the writer set closed by a structural guard rather than by prose
 
 - Date: 2026-07-20

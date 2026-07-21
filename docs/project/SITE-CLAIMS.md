@@ -232,6 +232,12 @@ test(s)** · **binding note** (where applicable).
 - **Pinning tests.** `TestEveryDispatchMethodDeclaresAnAction` (structural: every
   principal-gated dispatch declares its action), `TestPhaseF_FailClosedOnMutate`,
   `TestPhaseF_FailOpenOnRead`.
+- **Binding note.** The claim is scoped to the **running daemon's request paths**: every
+  authenticated caller is gated. It has never covered an operator with filesystem access to
+  the database, who can already replace the whole store (`joe db restore`). The offline
+  first-admin CLI in *The set of admin-mint paths is closed* below is a writer of that same
+  class — narrower and audited — and does not widen this claim; it is cross-referenced here
+  so a future reader does not mistake it for a gap in the request-path guarantee.
 
 ### One governance seam — the guarded accessor is the only way to reach an adapter or the graph
 
@@ -647,6 +653,46 @@ and becomes load-bearing.
   operational. The sidecar-deletion paragraph revises if the copy mechanism ever changes from
   `VACUUM INTO` to a byte copy — at which point the deletion stops being defensive and becomes
   the only thing preventing substitution.
+
+### The set of admin-mint paths is closed: cold start by OIDC admin-email or the offline CLI, the admin API thereafter — `/operations/`, `/install-and-build/`, `/guides/web-ui/`, `/configuration/`
+
+- **Claim.** Admin is minted only on a named set of paths. **Cold start** — creating the
+  *first* admin, with no admin to authorize it — is either the OIDC admin-email bootstrap
+  (`auth.admin_email`) or `joe admin bootstrap`, an offline command that grants admin to a
+  **configured service account** on a database that has no admin yet. That command refuses
+  human identities, is refused the moment any admin exists with no override flag, contacts
+  no daemon, and audits the grant in the same transaction as the roster row. Every grant
+  after the first goes through the admin REST surface. An install with service accounts and
+  no identity provider therefore **has** a cold-start path and still has **no
+  self-escalation path** — no running principal grants itself admin. The copy steers the
+  operator to a **dedicated** administration account rather than the shared
+  general-purpose key.
+- **Mechanism.** `auth.Provisioner` (`internal/auth/provision.go`) is the sole caller of the
+  repository's `AddAdmin` / `AddFirstAdmin`, reached from exactly the sanctioned writers,
+  named structurally: the OIDC callback's `admin_email` bootstrap, the `requireAdmin`-gated
+  `POST /api/v1/admin/admins`, and `joe admin bootstrap` (`cmd/joe/admin.go`). The one-shot
+  containment rides inside the INSERT's own `NOT EXISTS` predicate in
+  `rbac.SQLRepository.AddFirstAdmin` rather than a check-then-write. Service-account-only
+  acceptance resolves the argument against `server.service_accounts` and mints it through
+  `rbac.ServicePrincipal`, the same single point the authenticating request path uses
+  (D-0129).
+- **Pinning tests.** `TestGuard_AdminPrincipalsWriterSetIsClosed` and
+  `TestGuard_AdminPrincipalsHasNoRawSQLWriter` (the closed writer set, in two call-site
+  layers plus a raw-SQL check — these fail if a further writer appears);
+  `TestAddFirstAdmin_ConcurrentInvocationsGrantExactlyOne` (one-shot under a race);
+  `TestAdminBootstrap_RefusalWhenAdminExists`,
+  `TestAdminBootstrap_ContainmentAgainstRealDatabase` (the refusal, against a real
+  database); `TestAdminBootstrap_RefusesHumanIdentity`,
+  `TestAdminBootstrap_RefusesUnconfiguredServiceAccount`,
+  `TestAdminBootstrap_GrantsConfiguredServiceAccount`.
+- **Binding note. Mechanism-bound.** The copy names the mint paths as a set rather than
+  counting them, so a further path landing falsifies no numeral — but it does obligate a
+  revision of every page listed above, and the writer-set guard is the trip-wire: it fails
+  on any new writer, and that failure is the cue to revise the site, not only the guard.
+  The **no-self-escalation** clause is bound to the absence of a running-principal
+  escalation route, not to the absence of a CLI; it survived the correction that added the
+  CLI and revises only if such a route appears. See also *Governed by construction* on the
+  landing page, whose request-path scope this entry is cross-referenced from.
 
 ---
 

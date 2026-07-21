@@ -348,11 +348,39 @@ covered in [Configuration](../configuration/) and
 ### Granting admin
 
 A service account becomes admin exactly like a human principal — the principal is an
-opaque string and admin grants do no prefix-specific logic. Admin is minted two ways:
-the **OIDC admin-email bootstrap** (`auth.admin_email`), which is the only non-circular
-cold-start path because it can create the *first* admin, and the **admin REST surface**,
-which is the single audited writer thereafter. Every REST grant writes an append-only
-audit row in the same transaction as the change.
+opaque string and admin grants do no prefix-specific logic. Admin is minted on a small,
+named set of paths. The **cold-start paths** — the ones that can create the *first*
+admin, with no existing admin to authorize them — are the **OIDC admin-email bootstrap**
+(`auth.admin_email`) and the offline **`joe admin bootstrap`** command. The **admin REST
+surface** is the single writer thereafter.
+
+**The first admin on an install with no identity provider.** With service accounts and no
+OIDC issuer configured, the login and callback routes are never registered, so the
+admin-email bootstrap cannot run at all. `joe admin bootstrap` is the way in — it grants
+admin to a configured service account on a database that has no admin yet:
+
+```bash
+joe admin bootstrap svc:joe-admin     # the bare name also works: joe admin bootstrap joe-admin
+```
+
+It runs offline against Joe's own database and config file, contacts no daemon, and a
+running Joe picks the grant up without a restart. It is deliberately narrow:
+
+- It grants to **service accounts only** — the principal must name an entry in
+  `server.service_accounts`. A `user:` or `group:` argument is refused: with no identity
+  provider that principal can never authenticate, so the grant would sit inert and then
+  arm for whoever first presents that identifier once a provider is configured. Where
+  there *is* an identity provider, `auth.admin_email` is the path for human admins.
+- It is **refused the moment any admin exists**, and there is no override flag. It opens
+  a database that has no admin at all; every later grant goes through the admin API.
+- The grant is audited exactly as a REST grant is — the roster row and its audit row
+  commit in the same transaction.
+
+Name a **dedicated** administration account here rather than the shared general-purpose
+key, so admin does not ride on the bearer secret every caller already holds.
+
+**Every grant after the first** goes through the admin REST surface, which writes an
+append-only audit row in the same transaction as the change.
 
 ```bash
 # Grant admin to a break-glass account (needs an existing admin's credential)
