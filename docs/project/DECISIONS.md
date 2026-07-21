@@ -10,6 +10,65 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0137 — `v0.2.0` is cut as a minor bump, and the skills family's deliberate 1→2 exit-code change is carried as an explicit release note beyond the changelog
+
+- Date: 2026-07-21
+- Session: release-v0.2.0
+- Decision: two decisions, both independent of the release itself going
+  cleanly — a clean run that matches the runbook is not a decision and would
+  warrant no entry. **First, the version is `v0.2.0`, not a patch bump.** Two
+  things in the `v0.1.0..HEAD` range rule out a patch: a new operator-facing
+  subcommand shipped (`joe admin bootstrap`, D-0129), and an exit code
+  deliberately changed (the skills family's arity path, 1→2, D-0136). Either
+  alone would do it; a patch bump would assert that nothing an operator can
+  invoke or script against moved, and both halves of that are false.
+  **Second, the exit-code change is carried as an explicit release note, over
+  and above the generated changelog.** goreleaser's stock commit-log changelog
+  will carry `cli-positional-arg-rejection`'s subject, which states the new
+  rule ("usage errors exiting 2") but names neither which commands changed nor
+  what they returned before. The blast radius is genuinely small — both values
+  are non-zero, so a consumer testing success versus failure is unaffected, and
+  only a consumer branching on the specific code sees anything — but small and
+  silent is the case that earns the sentence, not the case that excuses it. No
+  published page documents `joe`'s exit codes at all
+  (`docs/public/guides/incidents.md` says `incident list` "exits non-zero" and
+  nothing else states a value), so the release body is the only surface on
+  which a consumer could learn this.
+- Basis: **mechanism chosen — append a notable-behaviour-change paragraph to
+  the release body after publication (`gh release edit`).** It costs one
+  command, touches no configuration, and scopes the note to the one release
+  that needs it. **A `release.header` block in `.goreleaser.yaml` was
+  considered and rejected**: it is a permanent configuration change applying to
+  every future release, added to carry a single release's one-off note, and it
+  would itself need a commit and a full CI cycle before the tag could be cut —
+  paying a standing cost and a pre-tag cost for something that stops being true
+  the moment `v0.2.0` is superseded. Configuring changelog trimming was
+  likewise not taken up; it remains the open consideration
+  `docs/RELEASING.md` already records, and this note is not a reason to decide
+  it. The version basis is the range itself: `git log v0.1.0..HEAD` is 19
+  commits, of which the operator-facing surface changes are D-0129's
+  subcommand, D-0131/D-0132's `--config` uniformity, and D-0133/D-0136's
+  argument rejection; the remainder are documentation and backlog. That
+  `joe admin bootstrap` is absent from the released `v0.1.0` binary is
+  checkable, not asserted — `git grep "admin bootstrap" v0.1.0 -- cmd/` returns
+  nothing, as does `git grep resolveConfigFlag v0.1.0 -- cmd/`.
+- Supersedes: nothing. It is the tag-cut entry `docs/RELEASING.md`'s pre-tag
+  checklist requires for this version, standing to `v0.2.0` as D-0122 does to
+  `v0.1.0`. Two corrections to `docs/RELEASING.md` ride in the same commit,
+  since the pre-tag same-commit rule means the SHA was moving regardless: the
+  two dead links to `backlog/release-pipeline.md`, which closed and moved to
+  `backlog/done/`, and a note in the UI-digest check recording that
+  `ui_digest` is content-addressed over the embedded UI bytes and therefore
+  **legitimately repeats across releases whose UI is unchanged** — a repeat is
+  not evidence of a stale embed. `v0.2.0` is the first observed instance:
+  `git diff --stat v0.1.0..HEAD -- ui/ internal/webui/` is empty, so its digest
+  is expected to equal `v0.1.0`'s
+  `ffc3ec0c8328b1ed735e837d81e03accb6a9e955e434770790bcf9d8bed46e3e`. No
+  `docs/project/SITE-CLAIMS.md` entry is affected: the distribution-posture
+  entry is mechanism-bound to `.goreleaser.yaml`'s signing and platform-matrix
+  shape, neither of which moved, and no published page pins a version.
+- Status: accepted.
+
 ## D-0136 — CLI argument rejection is uniform: every subcommand refuses unknown flags and surplus positionals, usage errors exit 2 and operational failures exit 1
 
 - Date: 2026-07-21

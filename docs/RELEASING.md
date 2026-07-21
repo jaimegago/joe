@@ -49,7 +49,7 @@ you intend to release:
       has.
 - [ ] **Distribution-posture docs are swept to the release-exists state.**
       This is the `release-pipeline-02` doc sweep tracked at
-      [docs/backlog/release-pipeline.md](backlog/release-pipeline.md) — see
+      [docs/backlog/done/release-pipeline.md](backlog/done/release-pipeline.md) — see
       its "Update-at-tag-time sites" list for the exact files. Do not
       duplicate that list here; confirm the sweep commit has landed before
       tagging.
@@ -65,7 +65,7 @@ you intend to release:
 Once every box above is checked, tag the exact commit SHA (not just whatever
 `HEAD` happens to be — name it explicitly) and push the tag. This generalizes
 the same-SHA procedure `release-pipeline-02` already records
-([docs/backlog/release-pipeline.md:15-24](backlog/release-pipeline.md#L15-L24)):
+([docs/backlog/done/release-pipeline.md:15-24](backlog/done/release-pipeline.md#L15-L24)):
 the doc-sweep commit and the tag must be the same commit, so the repo is
 never in a state where its own docs claim a release exists before one
 actually does.
@@ -146,6 +146,16 @@ the release as done:
     the release was built from — use `go run ./scripts/verify-ui-digest <dist-dir>`
     ([scripts/verify-ui-digest/main.go:1-24](../scripts/verify-ui-digest/main.go#L1-L24)),
     the same helper CI's `goreleaser-build` guard uses.
+  - **A digest identical to a previous release's is not a defect.** `ui_digest`
+    is content-addressed over the embedded UI bytes, so two releases whose UI
+    source did not change **must** produce the same digest — a repeat is
+    evidence the embed is correct, not evidence it is stale. Check
+    `git diff --stat <prev-tag>..HEAD -- ui/ internal/webui/` before reading
+    anything into a repeat: empty means expect equality. First observed on
+    `v0.2.0`, whose range carried no UI change and which therefore reproduced
+    `v0.1.0`'s digest exactly. The check that actually catches a stale or
+    placeholder embed is the pair below (match the independently computed
+    staged digest; differ from the placeholder), not novelty against history.
   - It does **not** match the placeholder digest (the digest computed over a
     directory containing only `internal/webui/dist/.gitkeep`). On run 1 the
     placeholder-mismatch half was discharged transitively rather than
