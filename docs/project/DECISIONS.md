@@ -10,6 +10,91 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0133 — `joe mcp` and `joe slack` reject unknown flags and surplus positional arguments instead of silently ignoring them
+
+- Date: 2026-07-21
+- Session: transport-cmd-flag-rejection
+- Decision: `runMCPCommand` and `runSlackCommand` (`cmd/joe/main.go`) took an
+  `args []string` parameter and never read it — both functions had it
+  underscored (`_ []string`) and parsed nothing. `joe mcp --config /some/path`
+  or `joe slack bogus` exited 0 having silently ignored the flag or the
+  positional entirely. D-0132 withheld `--config` from these two commands on
+  the rule that a flag must not advertise an effect it does not have; this was
+  the same failure without the flag being declared at all — an operator could
+  pass any flag or extra argument and Joe would report success while ignoring
+  it, rather than the command asserting anything about what it accepts.
+
+  Both commands now construct a `flag.NewFlagSet` with no flags defined (they
+  take none — all configuration is read from the environment, per D-0132) and
+  parse `args`. `flag.ContinueOnError` plus `fs.SetOutput(stderr)` matches
+  every other leaf subcommand in the tree; a parse failure (an unrecognized
+  flag) returns 2. A non-zero `fs.NArg()` after parsing — a surplus positional
+  — is rejected with `Error: mcp takes no positional arguments` /
+  `Error: slack takes no positional arguments` and also returns 2. Neither
+  command gains `--config` or any other flag; this is a correction to
+  argument-shape rejection, not a configuration or behavior change. Absent any
+  flags or positionals, both commands behave exactly as before.
+
+  **The exit code chosen is 2 for both failure shapes**, following the more
+  recently established precedent (`joe db backup`/`restore`, `joe admin
+  bootstrap`, all of which return 2 for both a flag-parse failure and a bad
+  positional count — `TestAdminBootstrap_ArityIsUsageError` names 2 "usage
+  error" explicitly) rather than the older `joe skills install/remove/
+  update/approve/reject/reload` precedent, which returns 1 for a bad
+  positional count. The tree does not have one settled convention here; see
+  the backlog item below.
+
+  **Other subcommands share pieces of the same silent-acceptance shape and
+  were deliberately left alone**, being out of this session's scope: `joe
+  panic` and `joe unlock` parse flags (and so already reject unknown ones) but
+  never check `fs.NArg()`, so a surplus positional is silently accepted; `joe
+  incident status`/`declare`/`resolve` have the same gap; `joe skills list`
+  does no flag parsing at all, so both unknown flags and surplus positionals
+  are silently accepted there too, structurally identical to the `joe mcp`/
+  `joe slack` defect this session fixes. None of these are touched here — see
+  `docs/backlog/cli-positional-arg-rejection.md`, opened by this session to
+  hold that wider reconciliation (including the 1-vs-2 exit code question)
+  as its own decision.
+- Basis: re-derived against the live tree — `runMCPCommand`/`runSlackCommand`
+  in `cmd/joe/main.go` before this change took `_ []string` and read only
+  `deps.getenv`; `runWithDeps` already passed `args[1:]` through to both, so no
+  dispatcher change was needed. `cmd/joe/transport_cmd_test.go` adds, per
+  command: an unknown flag is a usage error (exit 2), a surplus positional is
+  a usage error (exit 2, stderr names the refusal), and the pre-existing
+  bare-invocation tests (`TestRunMCPCommand_DefaultsServerURL`,
+  `TestRunSlackCommand_MissingBotToken`/`MissingAppToken`, all called with nil
+  args) continue to pass unchanged, pinning that a legitimate bare invocation
+  is unaffected. Non-vacuity by **fault injection**, one fault at a time,
+  restored between each: neutralizing `runMCPCommand`'s rejection block (both
+  new mcp tests failed), neutralizing `runSlackCommand`'s rejection block
+  (both new slack tests failed), and removing only the `NArg()` check while
+  keeping `fs.Parse` (the surplus-positional test failed; the unknown-flag
+  test still passed, confirming the two tests are independently
+  discriminating rather than redundant). `go build ./...`, `go vet ./...`,
+  `gofmt -l .` clean, `go test ./...` and `make precommit` (which also runs
+  the integration-tagged tree) both green. End-to-end against the built
+  binary: `joe mcp --bogus` and `joe slack --bogus` both exit 2 with a usage
+  error on stderr; `joe mcp`/`joe slack` with no arguments still start exactly
+  as before (mcp connects and blocks on stdio; slack fails past the usage gate
+  on the expected missing-token check with real tokens absent).
+- Supersedes: nothing. It corrects `joe mcp`/`joe slack` argument handling
+  without changing what either command's flags or environment variables mean;
+  D-0132's withholding of `--config` from both stands unchanged. `CLAUDE.md`
+  is not updated — no invariant, command, or convention moved; the fix fills a
+  correctness gap in two commands' existing (previously undocumented)
+  no-flags/no-positional-args contract, and the tree does not yet have a
+  uniform positional-argument-rejection convention worth recording (see the
+  backlog item this session opens). `docs/project/SITE-CLAIMS.md` has no entry
+  describing `joe mcp`/`joe slack` invocation syntax (its one relevant entry
+  is about MCP server-vs-client architecture, unaffected). The published docs
+  (`docs/public/guides/mcp.md`, `docs/public/guides/slack.md`,
+  `docs/public/configuration/_index.md`, `docs/public/components/_index.md`)
+  document only the environment-variable contract and correct invocation
+  form, neither of which changed; no correction needed.
+- Status: accepted.
+
+---
+
 ## D-0132 — `--config` is uniform across the CLI: every subcommand a config file governs takes it, with one meaning, and the commands configuration does not govern are withheld from it rather than given an inert flag
 
 - Date: 2026-07-21

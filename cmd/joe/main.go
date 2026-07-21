@@ -312,7 +312,23 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 //
 //	JOE_SERVER  — joe server base URL (default: http://localhost:7777)
 //	JOE_API_KEY — Bearer token for joe API auth (optional)
-func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps) int {
+//
+// It takes no flags and no positional arguments — configuration comes solely
+// from the environment (D-0132 withholds --config here deliberately, since
+// this command reads no config file) — so the flag set below exists only to
+// catch and reject anything the operator passes, rather than silently
+// ignoring it.
+func runMCPCommand(_ context.Context, args []string, stderr io.Writer, deps runDeps) int {
+	fs := flag.NewFlagSet("joe mcp", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: mcp takes no positional arguments")
+		return 2
+	}
+
 	serverURL := deps.getenv("JOE_SERVER")
 	if serverURL == "" {
 		serverURL = "http://localhost:7777"
@@ -343,7 +359,23 @@ func runMCPCommand(_ context.Context, _ []string, stderr io.Writer, deps runDeps
 //	SLACK_APP_TOKEN  — App-Level token with connections:write scope (xapp-...)
 //	JOE_SERVER       — joe server base URL (default: http://localhost:7777)
 //	JOE_API_KEY      — Bearer token for joe API auth (optional)
-func runSlackCommand(ctx context.Context, _ []string, stderr io.Writer, deps runDeps) int {
+//
+// It takes no flags and no positional arguments — configuration comes solely
+// from the environment (D-0132 withholds --config here deliberately, since
+// this command reads no config file) — so the flag set below exists only to
+// catch and reject anything the operator passes, rather than silently
+// ignoring it.
+func runSlackCommand(ctx context.Context, args []string, stderr io.Writer, deps runDeps) int {
+	fs := flag.NewFlagSet("joe slack", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: slack takes no positional arguments")
+		return 2
+	}
+
 	botToken := deps.getenv("SLACK_BOT_TOKEN")
 	if botToken == "" {
 		fmt.Fprintln(stderr, "joe slack: SLACK_BOT_TOKEN is required")

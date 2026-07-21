@@ -60,6 +60,85 @@ func TestRunSlackCommand_MissingAppToken(t *testing.T) {
 	}
 }
 
+// TestRunSlackCommand_UnknownFlagIsUsageError pins the correction: an
+// unrecognized flag must be rejected as a usage error rather than silently
+// ignored. Before this fix the command took an unused args parameter and
+// parsed nothing, so `joe slack --config x` exited 0 having ignored --config
+// entirely — the same failure D-0132 withheld the flag to prevent, without
+// even declaring it.
+func TestRunSlackCommand_UnknownFlagIsUsageError(t *testing.T) {
+	deps := testDeps(t.TempDir())
+	deps.getenv = envMap(map[string]string{"SLACK_BOT_TOKEN": "xoxb-test", "SLACK_APP_TOKEN": "xapp-test"})
+	deps.newClient = func(string, ...client.ClientOption) *client.Client {
+		t.Fatal("client must not be constructed on a usage error")
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	code := runSlackCommand(context.Background(), []string{"--config", "/some/path"}, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+}
+
+// TestRunSlackCommand_SurplusPositionalIsUsageError pins that slack takes no
+// positional arguments; today it silently ignored any positionals along with
+// unknown flags, since its args parameter was never read.
+func TestRunSlackCommand_SurplusPositionalIsUsageError(t *testing.T) {
+	deps := testDeps(t.TempDir())
+	deps.getenv = envMap(map[string]string{"SLACK_BOT_TOKEN": "xoxb-test", "SLACK_APP_TOKEN": "xapp-test"})
+	deps.newClient = func(string, ...client.ClientOption) *client.Client {
+		t.Fatal("client must not be constructed on a usage error")
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	code := runSlackCommand(context.Background(), []string{"bogus"}, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+	if !strings.Contains(stderr.String(), "takes no positional arguments") {
+		t.Errorf("stderr must explain the refusal, got %q", stderr.String())
+	}
+}
+
+// TestRunMCPCommand_UnknownFlagIsUsageError mirrors the slack fix on the mcp
+// side: an unrecognized flag must be rejected rather than silently ignored.
+func TestRunMCPCommand_UnknownFlagIsUsageError(t *testing.T) {
+	deps := testDeps(t.TempDir())
+	deps.getenv = envMap(nil)
+	deps.serveMCP = func(*mcpserver.MCPServer) error {
+		t.Fatal("serveMCP must not run on a usage error")
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	code := runMCPCommand(context.Background(), []string{"--config", "/some/path"}, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+}
+
+// TestRunMCPCommand_SurplusPositionalIsUsageError pins that mcp takes no
+// positional arguments.
+func TestRunMCPCommand_SurplusPositionalIsUsageError(t *testing.T) {
+	deps := testDeps(t.TempDir())
+	deps.getenv = envMap(nil)
+	deps.serveMCP = func(*mcpserver.MCPServer) error {
+		t.Fatal("serveMCP must not run on a usage error")
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	code := runMCPCommand(context.Background(), []string{"bogus"}, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+	if !strings.Contains(stderr.String(), "takes no positional arguments") {
+		t.Errorf("stderr must explain the refusal, got %q", stderr.String())
+	}
+}
+
 // TestRunMCPCommand_DefaultsServerURL pins the documented default: with
 // JOE_SERVER unset the command targets localhost:7777 rather than an empty
 // base URL, which would fail later and less legibly.
