@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+
+	"github.com/jaimegago/joe/internal/config"
 	"strings"
 	"testing"
 )
@@ -79,7 +81,7 @@ func TestRunPanicCommand_BadConfig(t *testing.T) {
 func TestRunUnlockCommand_PanicPresent(t *testing.T) {
 	fake := &fakePanicRowStore{panicked: true}
 	deps := testDeps(t.TempDir())
-	deps.openPanicStore = func() (panicRowStore, func() error, error) {
+	deps.openPanicStore = func(*config.Config) (panicRowStore, func() error, error) {
 		return fake, func() error { return nil }, nil
 	}
 
@@ -105,7 +107,7 @@ func TestRunUnlockCommand_PanicPresent(t *testing.T) {
 func TestRunUnlockCommand_NoPanic(t *testing.T) {
 	fake := &fakePanicRowStore{panicked: false}
 	deps := testDeps(t.TempDir())
-	deps.openPanicStore = func() (panicRowStore, func() error, error) {
+	deps.openPanicStore = func(*config.Config) (panicRowStore, func() error, error) {
 		return fake, func() error { return nil }, nil
 	}
 

@@ -47,7 +47,7 @@ func (f *fakeBackupStore) ExecContext(_ context.Context, query string, args ...a
 // depsWithBackupStore wires deps.openBackupStore to fake and returns both.
 func depsWithBackupStore(fake *fakeBackupStore) runDeps {
 	deps := defaultRunDeps()
-	deps.openBackupStore = func() (backupStore, func() error, error) {
+	deps.openBackupStore = func(*config.Config) (backupStore, func() error, error) {
 		return fake, func() error { return nil }, nil
 	}
 	return deps
@@ -158,7 +158,7 @@ func TestRunDBBackup_ForceOverwritesExisting(t *testing.T) {
 	// real VACUUM INTO would, to exercise the success path's stat-back.
 	fake := &fakeBackupStore{}
 	deps := defaultRunDeps()
-	deps.openBackupStore = func() (backupStore, func() error, error) {
+	deps.openBackupStore = func(*config.Config) (backupStore, func() error, error) {
 		return fake, func() error { return nil }, nil
 	}
 
@@ -241,7 +241,7 @@ func TestRunDBBackup_OpenStoreFailure(t *testing.T) {
 	dest := filepath.Join(dir, "backup.db")
 
 	deps := defaultRunDeps()
-	deps.openBackupStore = func() (backupStore, func() error, error) {
+	deps.openBackupStore = func(*config.Config) (backupStore, func() error, error) {
 		return nil, nil, errors.New("permission denied")
 	}
 	var stdout, stderr bytes.Buffer
@@ -329,7 +329,7 @@ func TestRunDBBackup_LiveDatabaseWithConcurrentWriter(t *testing.T) {
 	defer backupSrc.Close()
 
 	deps := defaultRunDeps()
-	deps.openBackupStore = func() (backupStore, func() error, error) {
+	deps.openBackupStore = func(*config.Config) (backupStore, func() error, error) {
 		return storeBackupHandle{backupSrc}, func() error { return nil }, nil
 	}
 
@@ -443,7 +443,7 @@ func makeBackup(t *testing.T, src, dest string) {
 func restoreDeps(t *testing.T, target string) runDeps {
 	t.Helper()
 	deps := defaultRunDeps()
-	deps.resolveDatabaseConfig = func() (store.DatabaseConfig, error) {
+	deps.resolveDatabaseConfig = func(*config.Config) (store.DatabaseConfig, error) {
 		return store.DatabaseConfig{Driver: store.DriverSQLite, DSN: target}, nil
 	}
 	// A key that exists, so the missing-key gate is not what a test trips over
@@ -452,7 +452,7 @@ func restoreDeps(t *testing.T, target string) runDeps {
 	if err := os.WriteFile(keyPath, make([]byte, 32), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deps.encryptionKeyPath = func() (string, error) { return keyPath, nil }
+	deps.encryptionKeyPath = func(*config.Config) (string, error) { return keyPath, nil }
 	return deps
 }
 
@@ -709,7 +709,7 @@ func TestRunDBRestore_MissingKeyGate(t *testing.T) {
 		makeBackup(t, src, backup)
 		target := filepath.Join(dir, "joe.db")
 		deps := restoreDeps(t, target)
-		deps.encryptionKeyPath = func() (string, error) {
+		deps.encryptionKeyPath = func(*config.Config) (string, error) {
 			return filepath.Join(dir, "absent", "encryption.key"), nil
 		}
 		return deps, backup, target

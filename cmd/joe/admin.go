@@ -5,13 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
 	"github.com/jaimegago/joe/internal/config"
-	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -161,28 +159,18 @@ func runAdminBootstrap(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	arg := strings.TrimSpace(fs.Arg(0))
 
-	// The asymmetry is deliberate. A missing file at the DEFAULT path is not an
-	// error — config.Load falls back to defaults, and the command then refuses
-	// with "no service accounts are configured", which is the accurate diagnosis
-	// for an install that has none. A missing file at an EXPLICITLY NAMED path
-	// is an operational failure: the operator asserted that file exists, and
-	// silently falling back to defaults would resolve the principal against an
-	// empty account set and, worse, target the default database instead of the
-	// one that config names.
-	cfgPath := paths.DefaultConfigPath()
-	if *configPath != "" {
-		resolved, err := paths.ExpandPath(*configPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "Error: cannot resolve --config %s: %v\n", *configPath, err)
-			return 1
-		}
-		if _, err := os.Stat(resolved); err != nil {
-			fmt.Fprintf(stderr, "Error: cannot read the config file named by --config: %v\n", err)
-			fmt.Fprintln(stderr, "Name the same config file the daemon is started with, or omit --config to use")
-			fmt.Fprintln(stderr, "the default ~/.joe/config.yaml.")
-			return 1
-		}
-		cfgPath = *configPath
+	// The asymmetry this command established is now shared by every --config in
+	// the CLI, so it lives in resolveConfigFlag rather than here. Its reasoning
+	// applies unchanged: a missing file at the DEFAULT path is not an error —
+	// config.Load falls back to defaults, and the command then refuses with "no
+	// service accounts are configured", which is the accurate diagnosis for an
+	// install that has none. A missing file at an EXPLICITLY NAMED path is an
+	// operational failure: silently falling back to defaults would resolve the
+	// principal against an empty account set and, worse, target the default
+	// database instead of the one that config names.
+	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
+	if !ok {
+		return 1
 	}
 
 	cfg, err := deps.loadConfig(cfgPath)

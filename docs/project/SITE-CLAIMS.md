@@ -156,6 +156,14 @@ test(s)** · **binding note** (where applicable).
   an unlock route.
 - **Pinning tests.** `TestRegisterPanicRoutes` (asserts `POST /api/v1/unlock` returns 404 — no
   unlock endpoint exists), `TestPanicState_SingleHomeNoFileConcept`.
+- **Amendment (D-0132).** `joe unlock` now takes `--config`, naming the database whose panic row
+  it clears; `joe panic` already had the flag and gained the CLI-wide missing-file posture. The
+  claim is untouched — recovery is still local-only, still has no HTTP endpoint, and absent the
+  flag both commands behave exactly as before. Pinned by `TestConfigFlag_UnlockHonorsExplicitPath`,
+  `TestConfigFlag_UnlockNonexistentPathIsOperationalFailure`,
+  `TestConfigFlag_UnlockAbsentFlagUsesDefaultPath`,
+  `TestConfigFlag_PanicNonexistentPathIsOperationalFailure`,
+  `TestConfigFlag_PanicAbsentFlagUsesDefaultPath`.
 
 ### Credential invariants: kubeconfig confined, no impersonation, exec provider deleted, two shipped auth methods, env-var uniqueness at promotion
 
@@ -499,7 +507,9 @@ and becomes load-bearing.
   deliberately does **not** run migrations, so the source's schema version is not altered by a
   command that promises a copy. An up-front `os.Stat` refuses an occupied destination ahead of
   any SQL — the engine's own guard accepts a 0- or 1-byte destination as a fresh database and
-  silently overwrites it.
+  silently overwrites it. Which database is copied comes from the config the command loads:
+  `~/.joe/config.yaml` unless `--config` names another (D-0132), the flag threaded as a value
+  into the store seam so the file that is read is the file that is copied.
 - **Pinning tests.** `TestRunDBBackup_LiveDatabaseWithConcurrentWriter` (the live-safety test:
   a real file-backed store on joe's own pragma path, populated, held open by a first handle with
   an in-flight write transaction, backed up through the real command path via a second
@@ -508,6 +518,9 @@ and becomes load-bearing.
   `TestRunDBBackup_OccupiedDestRefused`, `TestRunDBBackup_ZeroByteDestRefused`,
   `TestRunDBBackup_ForceOverwritesExisting` (which also pins the bound-not-interpolated
   destination), `TestRunDBBackup_MissingParentDirectory`, `TestRunDBBackup_NonSQLiteDriverRefused`.
+  Config selection: `TestConfigFlag_DBBackupHonorsExplicitPath` (end-to-end through the real
+  store open), `TestConfigFlag_DBBackupNonexistentPathIsOperationalFailure`,
+  `TestConfigFlag_DBBackupAbsentFlagUsesDefaultPath`.
 - **Binding note. Mechanism-bound.** The SQLite-only framing revises if the `pgx` driver ever
   becomes operational — `VACUUM INTO` has no cross-engine equivalent, and the command refuses a
   non-SQLite driver rather than emit something that is not a backup.
@@ -603,7 +616,11 @@ and becomes load-bearing.
   an unmarshal failure means plaintext, not an error. SQL `LIKE` detection is not used and would
   not work — the value is JSON-quoted *and* lands with BLOB storage class despite the TEXT
   declaration. Restore never opens the target through `store.New`, which would create the very
-  sidecars it removes, and runs no migrations (the D-0114 rationale).
+  sidecars it removes, and runs no migrations (the D-0114 rationale). The target database and
+  the encryption key it pre-flights for are resolved from **one** loaded config threaded to both
+  seams — `~/.joe/config.yaml` unless `--config` names another (D-0132) — so the flag cannot move
+  the database while the key is checked against a different install, which would pass the
+  missing-key gate on the strength of the wrong key and restore a database nothing can decrypt.
 - **Sidecar deletion — state its role precisely.** The stale-WAL substitution hazard is real and
   measured: a `-wal` left beside the target replays over a newly placed file, resurrects the
   prior database wholesale, passes `integrity_check` (the result is a coherent old database, not
@@ -648,7 +665,11 @@ and becomes load-bearing.
   `TestRunDBRestore_MissingKeyGate`, `TestRunDBRestore_RunningDaemonRefused`,
   `TestProbeTargetOccupied_RealLock`, `TestRunDBRestore_NotAJoeDatabase`,
   `TestRunDBRestore_OccupiedTargetWithoutForce`, `TestRunDBRestore_ForceOverCleanTarget`,
-  `TestRunDBRestore_SameFileRefused`.
+  `TestRunDBRestore_SameFileRefused`. Config selection and its coherence:
+  `TestConfigFlag_DBRestoreRedirectsDatabaseAndKeyCoherently` (asserts both uses receive the
+  same config object, and checks both effects),
+  `TestConfigFlag_DBRestoreNonexistentPathIsOperationalFailure`,
+  `TestConfigFlag_DBRestoreAbsentFlagUsesDefaultPath`.
 - **Binding note. Mechanism-bound.** The SQLite-only framing revises if the `pgx` value becomes
   operational. The sidecar-deletion paragraph revises if the copy mechanism ever changes from
   `VACUUM INTO` to a byte copy — at which point the deletion stops being defensive and becomes
@@ -683,7 +704,10 @@ and becomes load-bearing.
   another (`runAdminBootstrap`, `cmd/joe/admin.go`); the **single** loaded config is
   threaded into the store seam (`deps.openAdminStore(cfg)` → `databaseConfigFor`), which is
   what makes the redirect coherent rather than partial, and an explicitly-named path that
-  does not resolve exits 1 instead of falling back to defaults (D-0131).
+  does not resolve exits 1 instead of falling back to defaults (D-0131). That asymmetry is now
+  the CLI-wide rule, held in one shared `resolveConfigFlag` (`cmd/joe/main.go`) that every
+  `--config`-carrying command resolves through (D-0132); this command's behaviour is unchanged
+  by that extraction.
 - **Pinning tests.** `TestGuard_AdminPrincipalsWriterSetIsClosed` and
   `TestGuard_AdminPrincipalsHasNoRawSQLWriter` (the closed writer set, in two call-site
   layers plus a raw-SQL check — these fail if a further writer appears);

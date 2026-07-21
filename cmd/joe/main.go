@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -47,26 +48,37 @@ type runDeps struct {
 	// store, a closer, and any error. It opens the database directly (never
 	// contacting a running process) so recovery works while Joe is down after a
 	// panic exit. Injectable so unlock tests can supply a fake row.
-	openPanicStore func() (panicRowStore, func() error, error)
+	//
+	// Like openAdminStore below it takes the ALREADY-LOADED config rather than
+	// resolving its own, so `--config` cannot redirect the command's config
+	// reading and its database targeting independently.
+	openPanicStore func(cfg *config.Config) (panicRowStore, func() error, error)
 	// openBackupStore opens the database `joe db backup` copies from, returning
 	// it, a closer, and any error. Like openPanicStore it opens the file directly
-	// rather than contacting the daemon. Injectable so the backup command's
-	// routing and error-path tests need no real database.
-	openBackupStore func() (backupStore, func() error, error)
+	// rather than contacting the daemon, and takes the already-loaded config.
+	// Injectable so the backup command's routing and error-path tests need no
+	// real database.
+	openBackupStore func(cfg *config.Config) (backupStore, func() error, error)
 	// resolveDatabaseConfig reports the driver and DSN the daemon would use, so
 	// `joe db restore` knows which file it is replacing WITHOUT opening it —
 	// opening the target through store.New would create the sidecars restore
 	// exists to remove. Injectable so tests can target a temp directory.
-	resolveDatabaseConfig func() (store.DatabaseConfig, error)
+	//
+	// It takes the config restore already loaded, which is what makes restore's
+	// two config-governed uses coherent: the database it replaces and the
+	// encryption key it checks for come from the SAME config object, so a
+	// caller-selected config path redirects both or neither.
+	resolveDatabaseConfig func(cfg *config.Config) (store.DatabaseConfig, error)
 	// openSourceDB opens a database file READ-ONLY, for restore's pre-flight
 	// checks and for the copy itself. Injectable so refusal tests need no real
 	// database.
 	openSourceDB func(path string) (sourceDB, func() error, error)
 	// encryptionKeyPath reports where the component-config encryption key lives,
 	// honouring database.encryption_key_path so restore checks the same file the
-	// daemon would load. Injectable so tests can control whether a key appears
+	// daemon would load. It takes the same config object resolveDatabaseConfig
+	// does — see there. Injectable so tests can control whether a key appears
 	// present.
-	encryptionKeyPath func() (string, error)
+	encryptionKeyPath func(cfg *config.Config) (string, error)
 	// probeTargetOccupied reports whether another process holds the database at
 	// path open — the discriminator between a running daemon and an unclean
 	// shutdown, which look identical on disk. Injectable so tests can force
@@ -111,9 +123,9 @@ func defaultRunDeps() runDeps {
 		runServer:             runServer,
 		openPanicStore:        defaultOpenPanicStore,
 		openBackupStore:       defaultOpenBackupStore,
-		resolveDatabaseConfig: resolveDatabaseConfig,
+		resolveDatabaseConfig: databaseConfigFor,
 		openSourceDB:          defaultOpenSourceDB,
-		encryptionKeyPath:     resolveEncryptionKeyPath,
+		encryptionKeyPath:     encryptionKeyPathFor,
 		probeTargetOccupied:   defaultProbeTargetOccupied,
 		getenv:                os.Getenv,
 		serveMCP: func(s *mcpserver.MCPServer) error {
@@ -130,16 +142,22 @@ func defaultRunDeps() runDeps {
 // the daemon has already exited (os.Exit), and in the not-panicked case the
 // command only reads the row, so a brief shared SQLite open (WAL + busy_timeout)
 // does not disrupt a healthy running daemon.
-func defaultOpenPanicStore() (panicRowStore, func() error, error) {
-	cfg, err := config.Load(paths.DefaultConfigPath())
-	if err != nil {
-		return nil, nil, fmt.Errorf("load config: %w", err)
-	}
+//
+// The config is passed in rather than loaded here, so that `joe unlock --config`
+// names the database the command acts on. The cfg.Database override block below
+// is deliberately NOT folded into databaseConfigFor: that fold is one half of
+// the refactor docs/backlog/admin-bootstrap-cli-04.md holds for its own
+// decision, and doing half of it opportunistically is what that item exists to
+// prevent.
+func defaultOpenPanicStore(cfg *config.Config) (panicRowStore, func() error, error) {
 	dbPath, err := paths.DatabasePath()
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve database path: %w", err)
 	}
 	dbCfg := store.DatabaseConfig{Driver: store.DriverSQLite, DSN: dbPath}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	if cfg.Database.Driver != "" {
 		dbCfg.Driver = cfg.Database.Driver
 	}
@@ -176,13 +194,24 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe panic", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", paths.DefaultConfigPath(), "path to config file")
+	// Empty default rather than paths.DefaultConfigPath(): the flag already
+	// existed here, but with the default path as its default value it could not
+	// tell "not passed" from "passed", so an explicitly-named path that does not
+	// resolve fell back to defaults and triggered a shutdown against whichever
+	// server the default config names. Distinguishing the two is what lets this
+	// command take the same missing-file posture as every other --config.
+	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
 	reason := fs.String("reason", "operator triggered via CLI", "reason for the emergency shutdown")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	cfg, err := deps.loadConfig(*configPath)
+	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+
+	cfg, err := deps.loadConfig(cfgPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
 		return 1
@@ -225,11 +254,26 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	reason := fs.String("reason", "", "optional acknowledgment reason recorded to the log")
+	// --config names the database this command clears the panic row in, via
+	// database.driver/dsn — the single thing configuration governs here. Without
+	// it, an operator running Joe from another config file clears the panic row
+	// in a database the daemon never reads, and is told the panic was cleared.
+	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	ps, closeStore, err := deps.openPanicStore()
+	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+	cfg, err := deps.loadConfig(cfgPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+
+	ps, closeStore, err := deps.openPanicStore(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to open panic store: %v\n", err)
 		return 1
@@ -361,6 +405,23 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "  approve <skill-name>        Move a quarantined skill into the active registry.")
 		fmt.Fprintln(stderr, "  reject  <skill-name>        Delete a quarantined skill from disk.")
 		fmt.Fprintln(stderr, "  reload                      Trigger the joe server to rescan ~/.joe/skills/ without a restart.")
+		fmt.Fprintln(stderr, "")
+		fmt.Fprintln(stderr, "Any of the above also accepts --config <path>, naming the same config file the")
+		fmt.Fprintln(stderr, "daemon is started with. It governs skills.trusted_sources (which repos install")
+		fmt.Fprintln(stderr, "accepts) and the server address reload contacts. The skills directory itself is")
+		fmt.Fprintln(stderr, "not configurable and is unaffected.")
+	}
+	if len(args) == 0 {
+		usage()
+		return 2
+	}
+
+	// --config is lifted out before dispatch because the config is loaded here,
+	// ahead of the sub-subcommand's own flag set. See splitConfigFlag.
+	configFlag, args, err := splitConfigFlag(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 2
 	}
 	if len(args) == 0 {
 		usage()
@@ -374,10 +435,18 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 
 	// Load config so install can enforce trusted_sources and reload can
-	// find the joe server's address. A missing config file falls back to
-	// defaults — both fields are simply empty in that case, which is
-	// the correct behaviour for a fresh install.
-	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	// find the joe server's address. A missing config file at the DEFAULT path
+	// falls back to defaults — both fields are simply empty in that case, which
+	// is the correct behaviour for a fresh install. A missing file at a path the
+	// operator named is a failure; see resolveConfigFlag.
+	//
+	// One load serves both uses, so --config cannot redirect the trusted-source
+	// allowlist and the reload target independently.
+	cfgPath, ok := resolveConfigFlag(configFlag, stderr)
+	if !ok {
+		return 1
+	}
+	cfg, err := deps.loadConfig(cfgPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
 		return 1
@@ -612,6 +681,81 @@ func shortCommit(sha string) string {
 	return sha[:12]
 }
 
+// resolveConfigFlag turns a subcommand's --config value into the config path to
+// load, or explains an operational failure and reports ok=false.
+//
+// Every subcommand carrying --config resolves through this one function, so the
+// flag means the same thing everywhere: an operator who learns it on one command
+// can reuse the same invocation token verbatim on the next. Extracted from
+// `joe admin bootstrap`, which established the rule (D-0131); it is NOT the
+// broader config-resolution consolidation docs/backlog/admin-bootstrap-cli-04.md
+// describes, which stays undone.
+//
+// The asymmetry is the point. A missing file at the DEFAULT path is not an
+// error — config.Load falls back to defaults, which is correct for a fresh
+// install with no config file at all, and each command then fails (or succeeds)
+// on its own terms. A missing file at an EXPLICITLY NAMED path is an operational
+// failure: the operator asserted that file exists, and silently falling back to
+// defaults would point the command at a different install than the one they
+// named, which for `joe db backup` means backing up the wrong database and being
+// told it succeeded.
+//
+// The returned path is the operator's value verbatim rather than the expanded
+// one — config.Load performs its own "~" expansion, and handing it an
+// already-expanded path would make the path it logs differ from the path the
+// operator typed.
+func resolveConfigFlag(flagValue string, stderr io.Writer) (string, bool) {
+	if flagValue == "" {
+		return paths.DefaultConfigPath(), true
+	}
+	resolved, err := paths.ExpandPath(flagValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: cannot resolve --config %s: %v\n", flagValue, err)
+		return "", false
+	}
+	if _, err := os.Stat(resolved); err != nil {
+		fmt.Fprintf(stderr, "Error: cannot read the config file named by --config: %v\n", err)
+		fmt.Fprintln(stderr, "Name the same config file the daemon is started with, or omit --config to use")
+		fmt.Fprintln(stderr, "the default ~/.joe/config.yaml.")
+		return "", false
+	}
+	return flagValue, true
+}
+
+// splitConfigFlag lifts a --config token (and its value) out of args, returning
+// the value and the remaining arguments.
+//
+// It exists for the two commands whose first positional selects a
+// sub-subcommand — `joe incident` and `joe skills`. Both load their config
+// BEFORE dispatching, so --config belongs to neither the outer word nor any one
+// sub-flagset, and the stdlib flag package has no notion of a flag that spans
+// both. Lifting the token first lets the flag appear anywhere in the invocation,
+// which is what keeps one operator invocation reusable verbatim across commands
+// that structure their arguments differently.
+//
+// A trailing --config with no value is a malformed invocation and is reported as
+// one, matching what the flag package would have said.
+func splitConfigFlag(args []string) (string, []string, error) {
+	value := ""
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-config" || a == "--config":
+			if i+1 >= len(args) {
+				return "", nil, errors.New("flag needs an argument: -config")
+			}
+			value = args[i+1]
+			i++
+		case strings.HasPrefix(a, "-config=") || strings.HasPrefix(a, "--config="):
+			value = a[strings.Index(a, "=")+1:]
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return value, rest, nil
+}
+
 // reorderFlagsFirst moves --flag tokens (and their values for the named
 // `valueFlags`) to the front of args so callers can write either
 // `cmd <pos> --flag v` or `cmd --flag v <pos>`. The stdlib flag package only
@@ -692,6 +836,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  admin    Bootstrap the first admin on a database that has none")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Every command whose behavior a config file governs accepts --config <path>, with")
+	fmt.Fprintln(w, "the same meaning it has on the daemon: name the config file joe was started with,")
+	fmt.Fprintln(w, "so the command acts on that install's database and server rather than the default")
+	fmt.Fprintln(w, "~/.joe/config.yaml. mcp and slack take their configuration from the environment")
+	fmt.Fprintln(w, "(JOE_SERVER, JOE_API_KEY, SLACK_*) and read no config file, so they do not take it.")
 }
 
 func main() {

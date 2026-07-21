@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jaimegago/joe/internal/client"
-	"github.com/jaimegago/joe/internal/paths"
 )
 
 // runIncidentCommand implements `joe incident <status|declare|resolve|list>` —
@@ -38,6 +37,22 @@ func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		fmt.Fprintln(stderr, "                              seam the server refuses).")
 		fmt.Fprintln(stderr, "  resolve [--reason <reason>] Resolve the active incident regime back to normal.")
 		fmt.Fprintln(stderr, "  list                        (Unsupported in v1) Incident history lives in the audit log.")
+		fmt.Fprintln(stderr, "")
+		fmt.Fprintln(stderr, "status, declare, and resolve also accept --config <path>, naming the same config")
+		fmt.Fprintln(stderr, "file the daemon is started with. It decides which server they contact, and which")
+		fmt.Fprintln(stderr, "key they present. Without it, ~/.joe/config.yaml is used.")
+	}
+	if len(args) == 0 {
+		usage()
+		return 2
+	}
+
+	// --config is lifted out before dispatch because the config is loaded here,
+	// ahead of the sub-subcommand's own flag set. See splitConfigFlag.
+	configFlag, args, err := splitConfigFlag(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 2
 	}
 	if len(args) == 0 {
 		usage()
@@ -46,12 +61,22 @@ func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 
 	// `list` needs no server connection — handle it before loading config /
 	// opening a client so the v1 limitation is reported even with no daemon.
+	// It is therefore the one incident subcommand configuration governs nothing
+	// about; --config is accepted and inert rather than rejected, because the
+	// operator reusing one invocation across the family should not have to know
+	// which member happens to read a config file.
 	if args[0] == "list" {
 		fmt.Fprintln(stdout, "Incident history is queried via the audit log; see docs (no /regime/history endpoint in v1).")
 		return 2
 	}
 
-	cfg, err := deps.loadConfig(paths.DefaultConfigPath())
+	cfgPath, ok := resolveConfigFlag(configFlag, stderr)
+	if !ok {
+		return 1
+	}
+	// One load serves both uses — the server address/scheme and the key
+	// presented to it — so --config cannot redirect them independently.
+	cfg, err := deps.loadConfig(cfgPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
 		return 1

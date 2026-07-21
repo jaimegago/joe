@@ -41,8 +41,9 @@ func (h storeBackupHandle) ExecContext(ctx context.Context, query string, args .
 }
 
 // defaultOpenBackupStore opens the database `joe db backup` copies from, honoring
-// the same config the daemon uses (cfg.Database overrides, else the .joe
-// directory's joe.db), and returns it with a closer.
+// the config the command loaded (cfg.Database overrides, else the .joe
+// directory's joe.db), and returns it with a closer. Taking the already-loaded
+// config is what lets `--config` name which database gets copied.
 //
 // It deliberately does NOT run migrations, diverging from defaultOpenPanicStore.
 // Backup is read-only with respect to the source: VACUUM INTO copies whatever
@@ -55,8 +56,8 @@ func (h storeBackupHandle) ExecContext(ctx context.Context, query string, args .
 // Opening alongside a running daemon is safe for the reason D-0018 established
 // for `joe unlock`: WAL plus busy_timeout let a second connection read while the
 // daemon writes. Backup generalizes that argument from one row to the whole file.
-func defaultOpenBackupStore() (backupStore, func() error, error) {
-	dbCfg, err := resolveDatabaseConfig()
+func defaultOpenBackupStore(cfg *config.Config) (backupStore, func() error, error) {
+	dbCfg, err := databaseConfigFor(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -67,27 +68,19 @@ func defaultOpenBackupStore() (backupStore, func() error, error) {
 	return storeBackupHandle{s}, s.Close, nil
 }
 
-// resolveDatabaseConfig loads the driver and DSN the daemon itself would use: the
-// .joe directory's joe.db by default, overridden by cfg.Database where set. Both
-// `joe db` subcommands resolve through it so backup and restore provably act on
-// the same database.
+// databaseConfigFor reports the driver and DSN the daemon itself would use for
+// the given config: the .joe directory's joe.db by default, overridden by
+// cfg.Database where set. Every offline command that touches the database
+// resolves through it so they provably act on the same file.
+//
+// It takes a config rather than loading one because its callers must not re-read
+// it: a command that validates or reports against one config and writes to the
+// database named by another is exactly the failure `--config` exists to prevent,
+// and a resolver that loads its own config makes that failure representable.
 //
 // The same override shape also lives in cmd/joe/server.go and in
-// defaultOpenPanicStore; folding all three together is a separate change and is
-// deliberately not attempted here.
-func resolveDatabaseConfig() (store.DatabaseConfig, error) {
-	cfg, err := config.Load(paths.DefaultConfigPath())
-	if err != nil {
-		return store.DatabaseConfig{}, fmt.Errorf("load config: %w", err)
-	}
-	return databaseConfigFor(cfg)
-}
-
-// databaseConfigFor is resolveDatabaseConfig's pure half, for callers that
-// already hold a config and must not re-read it — `joe admin bootstrap`, whose
-// principal validation and database target have to come from the SAME config so
-// a caller-selected config path redirects both or neither. It mirrors the
-// encryptionKeyPathFor split directly above.
+// defaultOpenPanicStore; folding all three together is a separate change,
+// deliberately not attempted here (docs/backlog/admin-bootstrap-cli-04.md).
 func databaseConfigFor(cfg *config.Config) (store.DatabaseConfig, error) {
 	dbPath, err := paths.DatabasePath()
 	if err != nil {
@@ -106,26 +99,21 @@ func databaseConfigFor(cfg *config.Config) (store.DatabaseConfig, error) {
 	return dbCfg, nil
 }
 
-// resolveEncryptionKeyPath reports where the component-config encryption key
-// lives: database.encryption_key_path when set, else ~/.joe/encryption.key.
+// encryptionKeyPathFor reports where the component-config encryption key lives
+// for the given config: database.encryption_key_path when set, else
+// ~/.joe/encryption.key.
 //
 // It is the single resolver every consumer goes through — the daemon's boot key
 // load and `joe db restore`'s missing-key pre-flight — so the command that warns
 // about a missing key and the process that would mint one always name the same
 // file. A second resolution site is how the two would drift apart.
 //
+// It takes a config for the reason databaseConfigFor does: restore must check
+// the key belonging to the same config that named the database it is about to
+// replace, and a resolver that loaded its own config could not promise that.
+//
 // The configured value is used verbatim: no "~" expansion, matching
 // database.dsn. See config.DatabaseConfig.EncryptionKeyPath.
-func resolveEncryptionKeyPath() (string, error) {
-	cfg, err := config.Load(paths.DefaultConfigPath())
-	if err != nil {
-		return "", fmt.Errorf("load config: %w", err)
-	}
-	return encryptionKeyPathFor(cfg)
-}
-
-// encryptionKeyPathFor is resolveEncryptionKeyPath's pure half, for callers that
-// already hold a config (the daemon boot path, which must not re-read it).
 func encryptionKeyPathFor(cfg *config.Config) (string, error) {
 	if cfg != nil && cfg.Database.EncryptionKeyPath != "" {
 		return cfg.Database.EncryptionKeyPath, nil
@@ -275,13 +263,17 @@ func defaultProbeTargetOccupied(path string) (bool, error) {
 func runDBCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	usage := func() {
 		fmt.Fprintln(stderr, "Usage: joe db <backup|restore> [flags]")
-		fmt.Fprintln(stderr, "  backup <dest> [--force]     Write a consistent copy of Joe's database to <dest>.")
+		fmt.Fprintln(stderr, "  backup <dest> [--force] [--config <path>]")
+		fmt.Fprintln(stderr, "                              Write a consistent copy of Joe's database to <dest>.")
 		fmt.Fprintln(stderr, "                              Safe to run against a live Joe. Refuses an existing")
 		fmt.Fprintln(stderr, "                              <dest> unless --force is given.")
-		fmt.Fprintln(stderr, "  restore <src> [--force] [--allow-missing-key]")
+		fmt.Fprintln(stderr, "  restore <src> [--force] [--allow-missing-key] [--config <path>]")
 		fmt.Fprintln(stderr, "                              Restore <src> over Joe's configured database. Stop Joe")
 		fmt.Fprintln(stderr, "                              first. Checks <src> and refuses an existing database")
 		fmt.Fprintln(stderr, "                              unless --force.")
+		fmt.Fprintln(stderr, "")
+		fmt.Fprintln(stderr, "  --config names the same config file the daemon is started with; it decides")
+		fmt.Fprintln(stderr, "  WHICH database these act on. Without it, ~/.joe/config.yaml is used.")
 	}
 	if len(args) == 0 {
 		usage()
@@ -309,15 +301,32 @@ func runDBBackup(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	fs := flag.NewFlagSet("joe db backup", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	force := fs.Bool("force", false, "replace an existing file at <dest>")
-	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{})); err != nil {
+	// --config decides WHICH database is copied. Without it this command was the
+	// sharpest case in the CLI: an operator running Joe from another config file
+	// got a successful-looking backup of the default database, which is not the
+	// one they were backing up.
+	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
+	// --config takes a following token and the operator writes <dest> first, so
+	// the flag has to survive appearing after the positional.
+	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: backup requires exactly one <dest> path.")
-		fmt.Fprintln(stderr, "Usage: joe db backup <dest> [--force]")
+		fmt.Fprintln(stderr, "Usage: joe db backup <dest> [--force] [--config <path>]")
 		return 2
 	}
 	dest := fs.Arg(0)
+
+	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+	cfg, err := deps.loadConfig(cfgPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
 
 	// A missing parent directory surfaces from the engine as "unable to open
 	// database file", which reads like a fault in the source database. Name the
@@ -363,7 +372,7 @@ func runDBBackup(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		return 1
 	}
 
-	bs, closeStore, err := deps.openBackupStore()
+	bs, closeStore, err := deps.openBackupStore(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: failed to open database: %v\n", err)
 		fmt.Fprintln(stderr, "Check that the account running this command can read Joe's database and config.")
@@ -420,15 +429,36 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 	force := fs.Bool("force", false, "replace the existing database at the configured path")
 	allowMissingKey := fs.Bool("allow-missing-key", false,
 		"restore encrypted component configs even though no encryption key is present")
-	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{})); err != nil {
+	// --config governs TWO things here — the database this command replaces and
+	// the encryption key it checks for beside it — and it must govern them
+	// together. See the single load below.
+	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
+	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: restore requires exactly one <src> path.")
-		fmt.Fprintln(stderr, "Usage: joe db restore <src> [--force] [--allow-missing-key]")
+		fmt.Fprintln(stderr, "Usage: joe db restore <src> [--force] [--allow-missing-key] [--config <path>]")
 		return 2
 	}
 	src := fs.Arg(0)
+
+	// ONE load, threaded to both config-governed uses. The key and the database
+	// are one unit of durable state (see config.DatabaseConfig.EncryptionKeyPath):
+	// a flag that redirected the database but resolved the key from the default
+	// config would check for a key belonging to a different install, pass the
+	// missing-key gate on the strength of it, and hand back a database nothing
+	// can decrypt. Passing one config object to both makes that unrepresentable
+	// rather than merely avoided.
+	cfgPath, ok := resolveConfigFlag(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+	cfg, err := deps.loadConfig(cfgPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
 
 	// (a) SRC exists and is a regular file.
 	srcInfo, err := os.Stat(src)
@@ -449,7 +479,7 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 		return 1
 	}
 
-	dbCfg, err := deps.resolveDatabaseConfig()
+	dbCfg, err := deps.resolveDatabaseConfig(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: cannot resolve the database to restore to: %v\n", err)
 		fmt.Fprintln(stderr, "Check that the account running this command can read Joe's config.")
@@ -512,7 +542,9 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 	// kept, and kept first, because refusing here means nothing was overwritten:
 	// catching it at boot means the restore already happened.
 	if insp.encrypted > 0 {
-		keyPath, keyErr := deps.encryptionKeyPath()
+		// The SAME cfg that named the target above — see the load in this
+		// function's preamble.
+		keyPath, keyErr := deps.encryptionKeyPath(cfg)
 		if keyErr != nil {
 			fmt.Fprintf(stderr, "Error: cannot resolve the encryption key path: %v\n", keyErr)
 			return 1

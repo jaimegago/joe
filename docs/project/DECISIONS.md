@@ -10,6 +10,139 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0132 — `--config` is uniform across the CLI: every subcommand a config file governs takes it, with one meaning, and the commands configuration does not govern are withheld from it rather than given an inert flag
+
+- Date: 2026-07-21
+- Session: cli-config-flag-uniformity
+- Decision: the `--config PATH` flag D-0131 added to `joe admin bootstrap` is
+  extended to every subcommand whose behaviour a config file actually governs,
+  with the daemon's name, meaning, and missing-file posture on all of them.
+
+  **The scope rule.** A command takes the flag when, and only when, the config
+  file governs something it does. A flag on a command configuration governs
+  nothing about would advertise an effect it does not have, and an operator who
+  reasonably concluded from its presence that the command was redirected would be
+  wrong in exactly the direction the flag exists to prevent — so it is withheld,
+  and the top-level usage text says why rather than leaving its absence to be
+  read as an oversight.
+
+  **The classification, established from the tree rather than assumed.** Named
+  structurally, per D-0032, not as counts. *Already carrying it:* the daemon
+  (`resolveConfigPath`, `cmd/joe/server.go`), `joe panic`, and
+  `joe admin bootstrap`. *Config-governed and gaining it:* `joe unlock` (the
+  `database.driver`/`dsn` naming the database whose panic row it clears, reached
+  through `defaultOpenPanicStore`); `joe db backup` and `joe db restore` (the same
+  database fields, plus `database.encryption_key_path` for restore);
+  `joe incident status|declare|resolve` (`server.address`, `server.tls_enabled`,
+  and the key from `server.service_accounts` via `LoopbackKey`); and `joe skills`
+  (`skills.trusted_sources` for install, the server address and key for reload).
+  *Withheld:* `joe mcp` and `joe slack`, which call `config.Load` on no path and
+  take their entire configuration from the environment — `JOE_SERVER`,
+  `JOE_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`. Giving them the flag would
+  not redirect anything; it would have to *newly* make them read `server.address`,
+  which is a behaviour change rather than the strict addition this session is, and
+  a separate decision. `joe incident list` returns before any config is loaded; it
+  accepts the flag inertly rather than rejecting it, because an operator reusing
+  one invocation across a command family should not have to know which member
+  happens to read a file.
+
+  **One meaning everywhere.** Same flag name, same relative-path handling, same
+  `~` expansion (`config.Load`'s own), and the same exit-code asymmetry D-0131
+  established: a missing file at the **default** path keeps whatever behaviour
+  that command already had — `config.Load` returns defaults, which is correct for
+  a fresh install — while a missing file at an **explicitly named** path exits 1,
+  the tree's operational-failure code, with a message naming the flag. That rule
+  now lives in one function, `resolveConfigFlag` (`cmd/joe/main.go`), which every
+  command resolves through, so the asymmetry cannot drift per command. Absent the
+  flag, every command's behaviour is unchanged, and that is pinned per command.
+
+  **`joe panic` is brought onto the same posture.** It already had the flag, but
+  with `paths.DefaultConfigPath()` as the flag's *default value*, so it could not
+  distinguish "not passed" from "passed" and an explicitly-named path that did not
+  resolve fell silently back to defaults — addressing an emergency shutdown at
+  whichever server the default config names. Only that case changes; not passing
+  the flag, and passing a path that resolves, behave exactly as before.
+
+  **`JOE_CONFIG` is still not honoured by any subcommand.** The daemon's
+  precedence is `--config` > `JOE_CONFIG` > default; the subcommands implement the
+  first and third only. Adding the env var would change behaviour when the flag is
+  absent, which this session's strict-addition constraint forbids, and whether it
+  is a process-wide input or a daemon-only one remains the open question
+  `docs/backlog/admin-bootstrap-cli-04.md` holds.
+
+  **Coherence where a command reads more than one thing.** D-0131's shape is
+  applied uniformly: one load, one `*config.Config`, threaded as a value to every
+  use, so a partial redirect is unrepresentable rather than merely avoided.
+  `joe db restore` is the case that matters — it reads both the database it
+  replaces and the encryption key it checks for beside it, and it previously
+  resolved them through two independent `config.Load` calls. A flag that moved the
+  database while the key came from the default config would check for a key
+  belonging to a different install, pass the missing-key gate on the strength of
+  it, and hand back a database nothing can decrypt. Its two seams
+  (`deps.resolveDatabaseConfig`, `deps.encryptionKeyPath`) now take the config as
+  a parameter and are pinned to receive the **same object**. `joe incident` and
+  `joe skills` each read two things from one load and are pinned accordingly;
+  `joe unlock` and `joe db backup` read one thing each, so coherence is trivial
+  for them.
+
+  **Flags follow positionals wherever the tree permits it.** `joe db backup`,
+  `joe db restore`, and `joe admin bootstrap` register `config` as a value-taking
+  flag with `reorderFlagsFirst`. `joe incident` and `joe skills` load their config
+  *before* dispatching to a sub-subcommand's flag set, so the flag belongs to
+  neither level; `splitConfigFlag` (`cmd/joe/main.go`) lifts the token out of the
+  argument list first, which additionally lets it appear on either side of the
+  sub-subcommand word.
+
+  **What was deliberately not done.** The `cfg.Database` override block is still
+  written out three times (`databaseConfigFor`, `defaultOpenPanicStore`, the
+  daemon boot path). That is the other half of
+  `docs/backlog/admin-bootstrap-cli-04.md` and folding it — even partially, which
+  is what threading a config into `defaultOpenPanicStore` invited — is exactly the
+  opportunistic refactor that item exists to prevent. The two now-dead loading
+  wrappers `resolveDatabaseConfig` and `resolveEncryptionKeyPath` are deleted
+  because nothing calls them, not as a consolidation; their pure halves,
+  `databaseConfigFor` and `encryptionKeyPathFor`, are what the seams now use.
+  `resolveConfigFlag` **is** a shared helper, extracted from
+  `joe admin bootstrap`'s existing block because writing that asymmetry out five
+  more times would guarantee the drift the uniformity is for — a helper adopted to
+  add a flag coherently, not a cross-cutting cleanup.
+
+  **Unchanged, and verified unchanged:** `joe admin bootstrap`'s behaviour in
+  every respect (it now calls the extracted helper, which is its own former code);
+  the admin-principals writer-set guards; and the first-admin concurrency test.
+- Basis: the classification re-derived against the live tree — `deps.loadConfig`
+  called with `paths.DefaultConfigPath()` in `runSkillsCommand` and
+  `runIncidentCommand` (`cmd/joe/main.go`, `cmd/joe/incident.go`),
+  `config.Load(paths.DefaultConfigPath())` inside `defaultOpenPanicStore`,
+  `resolveDatabaseConfig`, and `resolveEncryptionKeyPath`, and `runMCPCommand` /
+  `runSlackCommand` reaching only `deps.getenv`. `cmd/joe/config_flag_test.go`
+  adds the three properties per command plus the coherence assertions and helper
+  tables. Non-vacuity established by **fault injection**, one fault at a time with
+  the tree restored between each, not by inspection: ignoring the flag value (12
+  failures across every command), removing the `os.Stat` asymmetry check (7,
+  including D-0131's own), resolving restore's key from an independently loaded
+  config (1 — the coherence assertion, and only it), re-reading the default config
+  in the skills reload branch (1), dropping the key while keeping the address in
+  `joe incident` (2), leaving the `--config` token in the argument list rather than
+  stripping it (9), and removing `config` from `joe db backup`'s
+  `reorderFlagsFirst` value set (1). End-to-end run of the built binary confirmed
+  `joe db backup` copying the database named by `--config` and not the default one,
+  and the exit-1 refusal of a nonexistent explicit path. `go build ./...`,
+  `go vet ./...`, `gofmt -l`, and `go test ./...` all clean.
+- Supersedes: nothing. It generalizes D-0131 without amending it, and amends
+  `joe panic`'s flag posture only in the explicitly-named-missing-path case.
+  `CLAUDE.md` is updated: it documents these commands by invocation form, and the
+  set carrying the flag is expressed structurally rather than as a count.
+  `docs/project/SITE-CLAIMS.md` entries for `joe db backup`, `joe db restore`,
+  `joe unlock`, and the admin-mint set are revised, since their mechanisms gained
+  a flag the published copy does not mention; the joeagent.dev revision that
+  implies is flagged in the session report.
+  `docs/backlog/admin-bootstrap-cli-04.md` is narrowed to the surviving
+  `cfg.Database` override half and retitled.
+- Status: accepted.
+
+---
+
 ## D-0131 — `joe admin bootstrap` takes the daemon's `--config` flag, and the one loaded config governs both the principal check and the grant's destination
 
 - Date: 2026-07-21
