@@ -10,6 +10,46 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0138 — Quickstart states LLM provider selection by key presence, not a default model
+
+- Date: 2026-07-22
+- Session: quickstart-llm-provider-claim
+- Decision: `docs/public/quickstart/_index.md` stops claiming Joe has a
+  default model. The prerequisite bullet and the Step 2 environment block
+  previously said "Joe's default model is Claude" and required an Anthropic
+  key; both are false. Joe has no default provider — with no explicit
+  preference, `Config.AutoSelectProvider` chooses from whichever supported key
+  is present, and with none present the daemon refuses to boot. The page now
+  asks for a key from **one** supported provider, Anthropic (Claude) or Google
+  (Gemini), states that Joe selects the provider from the key present at boot,
+  and shows the two `export` lines as pick-one alternatives within the same
+  step. Claude's tie-break when both keys are set is carried as a one-line
+  parenthetical, not a branch in the tutorial. **No model strings are named**
+  on the page: the per-provider defaults are internal constants that move
+  without notice, and naming one would re-create the same class of stale claim
+  in a new place. The `openai-compat` path and explicit selection
+  (`JOE_LLM_PROVIDER`, `llm.current`, `base_url`) are not inlined — the page's
+  existing forward link to [Configuration](../configuration/) already carries
+  them, consistent with D-0125's tutorial-carries-one-path stance.
+- Basis: `internal/config/validation.go` — `AutoSelectProvider` branches on
+  `os.Getenv(env.AnthropicAPIKey)` and `os.Getenv(env.GeminiAPIKey) ||
+  os.Getenv(env.GoogleAPIKey)`: neither present returns the actionable
+  `noProviderKeyMessage` error, which `cmd/joe/server.go` turns into a boot
+  failure (`slog.Error("no usable LLM provider"); return 1`); only Anthropic
+  selects claude, only a Google key selects gemini, both keeps Claude and logs
+  the tie-break. Env-var names are the constants in `internal/env/keys.go`.
+  The tutorial is otherwise provider-agnostic — substituting the Gemini key
+  runs every remaining step verbatim — so this is an either-or inside one
+  beat, not a second path. `docs/project/SITE-CLAIMS.md` carries no entry
+  binding the quickstart's Anthropic-key prerequisite or any default-model
+  claim, and the corrected page publishes no load-bearing claim beyond what
+  `AutoSelectProvider` already pins, so no register entry was added.
+- Supersedes: nothing. Documentation-only; no code, configuration, invariant,
+  or safety-posture change.
+- Status: accepted.
+
+---
+
 ## D-0137 — `v0.2.0` is cut as a minor bump, and the skills family's deliberate 1→2 exit-code change is carried as an explicit release note beyond the changelog
 
 - Date: 2026-07-21

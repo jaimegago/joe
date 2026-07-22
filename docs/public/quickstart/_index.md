@@ -25,8 +25,9 @@ through its real interaction surface.
 You need a shell, a SHA-256 utility (your system already has one), and two credentials
 ready:
 
-- An **Anthropic API key**, because Joe's default model is Claude. Have it ready as a
-  string.
+- An **API key for one supported LLM provider** — Anthropic (Claude) or Google (Gemini).
+  Either one works for this tutorial: Joe selects the provider from whichever key is
+  present in its environment at boot. Have the key ready as a string.
 - Reach details for **one Kubernetes cluster**: its **API-server URL** and **CA bundle**
   (PEM), plus a **service-account bearer token**. This quickstart assumes Joe runs
   **outside** the cluster, so you put the token in an **environment variable in the
@@ -113,12 +114,14 @@ the whole file.
 > **Write this before you start the daemon.** Joe reads its service accounts once, at
 > boot. Adding an account to a running Joe does nothing until you restart it.
 
-Then set two environment variables — Joe's default model needs a provider key, and the
-write floor keeps the install read-only:
+Then set two environment variables — Joe needs one LLM provider key, and the write floor
+keeps the install read-only:
 
 ```sh
-# LLM provider: Joe's default model is Claude, so it needs an Anthropic key.
-export ANTHROPIC_API_KEY="your-anthropic-api-key"
+# LLM provider: set exactly one of these; Joe picks the provider from the key it finds.
+# (With both set, Joe uses Claude.)
+export ANTHROPIC_API_KEY="your-anthropic-api-key"   # Claude
+export GEMINI_API_KEY="your-gemini-api-key"         # Gemini
 
 # Boot read-only: raise the write floor so Joe cannot mutate anything.
 export JOE_MODE=observation
