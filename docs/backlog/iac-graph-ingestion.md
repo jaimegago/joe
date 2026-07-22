@@ -94,3 +94,17 @@ semantics. That is skill content, not graph content.
 knowledge-store entry a human owns, not an edge.
 
 Neither enters the graph.
+
+## Designated consumer: change-impact analysis
+
+Change-impact analysis (D-0140, `change-impact-analysis`) is a designated consumer of this
+work. It needs two edge families from here:
+
+- **identifier-derived `repo`-to-`repo` and `repo`-to-infra edges**, so cross-repo
+  co-requisite detection stops depending on per-repo `git log` co-change history, which
+  cannot cross a repository boundary;
+- a **version-provenance mapping from deployed workloads to commits**, so an assessment can
+  ground against what is actually running rather than against HEAD.
+
+Both must remain **deterministic derivations** per D-0110 — this consumer does not license
+an inference path into the graph.

@@ -10,6 +10,113 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0141 — repo evidence access is LLM-driven dumb tools over local clones; the substrate moves to a bare mirror
+
+- Date: 2026-07-22
+- Session: change-impact-analysis
+- Decision: the purity model for every repository-evidence tool Joe grows, and
+  the direction its substrate evolves in. **A tool is dumb iff its output is a
+  deterministic, mechanically explainable function of its arguments plus
+  substrate state** — no model, no learned ranking inside the tool boundary.
+  Regex and `git grep` qualify; embeddings and semantic retrieval do not. The
+  statement is **layered, not flat**: discovery tools are dumb but
+  **LLM-driven from the loop** — the loop composes the queries, triages the
+  hits, and decides what to verify; **evidence** is strictly dumb reads at
+  pinned commits; **interpretation** lives only in the loop; **persistence**
+  admits deterministic derivations only, so a future inverted text index would
+  be legal and an embedding index would not. **Leads are not evidence**: a
+  search hit is never cited. Every cited claim traces to a `git_read` at a
+  known commit, with path, lines, and hash. **Substrate: search lands as grep
+  over the local clones Joe already keeps**, at a pinned commit, uniform
+  across every git component. **Provider search APIs (GitHub, GitLab) are
+  rejected as substrate** — index lag, no commit pinning, rate limits,
+  coverage of only two providers, and no code-search call exists in the tree
+  today. **Direction for the substrate's evolution** (executed under
+  `git-clone-freshness`, not here): the current non-bare clone plus `Pull`
+  fast-forward is a human-workflow shape; the machine shape is a **bare mirror
+  with `fetch --prune --force`**, with reads and grep answered from the object
+  database at a pinned commit and **no worktree on the read path**. The truth
+  discipline is SHA-cited fetch-time provenance — *assessed at commit X,
+  fetched at time T* — never trust in the copy as such.
+- Basis: recon at HEAD. Every git component already has a full local clone at
+  a deterministic path — `repoDir` hashes the repo URL under the joe home's
+  `repos` directory (`internal/adapters/git/git.go:157`), and `Connect`
+  clones on first use or `Pull`s an existing worktree
+  (`internal/adapters/git/git.go:98-121`); the fetch happens **only at
+  Connect**, with no scheduled re-fetch anywhere, which is what makes the
+  freshness item a co-requisite rather than a nicety. The clone is non-bare
+  (`PlainCloneContext(..., false, ...)`), which is the shape the bare-mirror
+  direction replaces. No code-search API call exists on either provider
+  adapter, so rejecting provider search removes nothing.
+- Supersedes: nothing. No code, configuration, invariant, or safety-posture
+  change — this records the stance the `repo-search-tool` and
+  `git-clone-freshness` items build against.
+- Status: accepted.
+
+---
+
+## D-0140 — change-impact analysis is a capability of the existing agent loop, not a subsystem
+
+- Date: 2026-07-22
+- Session: change-impact-analysis
+- Decision: Joe answers, for a given code change (a diff or a prose
+  description) plus a caller-named primary git component, **what else is
+  affected** — analysed from Joe's own perspective across the registered fleet
+  and the live infrastructure. **It is a capability, not a subsystem**: no
+  dedicated service, no typed input contract, and no structured output schema
+  in v1. The ask is a session ask and the output is session/report prose; a
+  typed contract waits for the first parsing consumer.
+  **Scope split.** The caller's coding agent owns code correctness and the
+  exploration of repositories the caller can already see. Joe owns
+  **environmental truth**: the fleet registry, live component state,
+  cross-repo awareness, and — the core rationale — **repositories the caller
+  cannot see**, whether by permission or by area of work. For those, Joe must
+  **extract citable evidence itself**, not merely point at them; the
+  asymmetric-visibility case is what the capability exists for.
+  **Documentation is not a source of truth** — code and live infrastructure
+  are. Docs enter only as files inside registered repositories.
+  **Knowledge inventory.** Held knowledge is **deterministic graph edges
+  only**: connectivity (repo-to-infra and repo-to-repo) and version provenance
+  mapping deployed workloads to commits. Both are future, both are
+  `iac-graph-ingestion`-shaped, and both are D-0110-compliant. Query-time
+  capability is content and history access, **never persisted** — the
+  repository is the database of record.
+  **Method, five steps**: anchor on the diff and read the touched files at a
+  pinned HEAD; trace outward within the repo; mine `git log` co-change history
+  as an empirical co-requisite signal (per-repo only — it cannot cross a repo
+  boundary); ground in deployment reality via graph anchors and live component
+  state (mandatory, and the differentiator); synthesize with a **mandatory
+  limits section**.
+  **Honest limits.** An assessment states the assessed commit and the fetch
+  time; states that deployed-version verification is not yet possible; and
+  phrases a negative finding as *no references found for the queried
+  identifiers*, never as *nothing else is affected*.
+  **Treaty border.** Joe's analysis loop is **search–read–cite**. Edit, build,
+  and test-execution tools are categorically out of scope for analysis — that
+  loop belongs to the caller's coding agent. **Remediation proposals**
+  (suggested patches emitted as labeled, unverified session output) are legal
+  today as session material; **remediation execution** is deferred
+  (`remediation-execution`).
+  **The methodology ships as a first-party skill** — per-task token-match
+  selection, at most three skills, operator-installed from a trusted source we
+  publish. The capability claim grounds in **tools plus loop alone**, so a
+  fresh install works without the skill; the skill sharpens quality but never
+  gates the capability.
+- Basis: the capability composes surfaces that already ship — the user-task
+  agent loop, the git trio over local clones
+  (`internal/adapters/git/git.go`), the graph, and live component state — plus
+  one new dumb search tool (`repo-search-tool`, D-0141). Nothing here asks the
+  graph to hold an LLM-derived inference, so D-0110 is untouched; the two
+  edge families named above are deterministic derivations filed against
+  `iac-graph-ingestion`. The treaty border keeps Joe's registered tool set
+  free of edit/build/test tools, which is the current state of the tree.
+- Supersedes: nothing. No code, configuration, invariant, or safety-posture
+  change in this commit — this records the capability's shape ahead of its
+  build.
+- Status: accepted.
+
+---
+
 ## D-0139 — the Quickstart's LLM prerequisite is account-first, and names openai-compat as an explicitly-configured alternative
 
 - Date: 2026-07-22

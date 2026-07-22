@@ -27,6 +27,7 @@ file for the full status, priority, blocked-by, and body.
 | [`capability-map`](capability-map.md) | Capability-map Concepts page — deferred follow-ups | open | later |
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred | later |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open | next |
+| [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
@@ -43,6 +44,7 @@ file for the full status, priority, blocked-by, and body.
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open | later |
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
+| [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | now |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
 | [`hardcoded-version-literals`](hardcoded-version-literals.md) | Two hardcoded `0.1.0` version literals sit outside `buildinfo` | open | later |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open | next |
@@ -53,6 +55,7 @@ file for the full status, priority, blocked-by, and body.
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open | later |
+| [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open | next |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open | next |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open | next |
@@ -61,6 +64,7 @@ file for the full status, priority, blocked-by, and body.
 | [`postgres-backend-completion`](postgres-backend-completion.md) | Backlog — Make the PostgreSQL (pgx) backend functional | open | later |
 | [`posture-endpoint-grants-signal`](posture-endpoint-grants-signal.md) | Posture endpoint: a coarse "any write grants exist" signal (full-mode only) | deferred | later |
 | [`posture-prompt-conflation`](posture-prompt-conflation.md) | Observation-posture conflation — deferred follow-ups | open | later |
+| [`pr-surface-joe-mention`](pr-surface-joe-mention.md) | PR surface: an @joe mention triggers a change-impact assessment | open | later |
 | [`promotion-requirements-single-source`](promotion-requirements-single-source.md) | Backlog — Drive component promotion validation from a single per-Kind requirements source | open | later |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open | later |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress | now |
@@ -70,7 +74,9 @@ file for the full status, priority, blocked-by, and body.
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open | later |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open | later |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
+| [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
+| [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open | next |
