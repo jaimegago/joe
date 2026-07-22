@@ -10,6 +10,52 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0139 — the Quickstart's LLM prerequisite is account-first, and names openai-compat as an explicitly-configured alternative
+
+- Date: 2026-07-22
+- Session: quickstart-llm-provider-claim-02
+- Decision: two corrections to the one prerequisite bullet at
+  `docs/public/quickstart/_index.md`, amending the scope of D-0138.
+  **First, the prerequisite is account-first, not key-first.** D-0138 asked
+  for "an API key for one supported LLM provider", which reads as satisfiable
+  by a reader who has no provider relationship at all; the real prerequisite
+  is a **developer account** with Anthropic or Google, from which the key is
+  then issued. The bullet now says so, and tells a reader holding neither
+  account that creating one is part of the step, while keeping D-0138's
+  either-works and key-presence auto-selection statements and the
+  have-the-key-ready-as-a-string practicality. Providers' console and platform
+  products are referred to generically as "that provider's developer
+  platform" — those are external product names that drift, and naming one
+  would re-create the stale-claim class D-0138 removed. **Second, the bullet
+  now names the OpenAI-compatible path**, which D-0138 omitted entirely,
+  leaving a reader with a local or gateway endpoint believing Joe supports two
+  providers. One sentence states it, scoped so it cannot be read as a third
+  key the tutorial detects: a provider you configure explicitly rather than
+  one Joe auto-selects from a key, with a two-item parenthetical (a local
+  model runtime, a hosted gateway) and no product list or model strings,
+  forwarding to the existing Configuration page. The tutorial path stays
+  two-key; the Step 2 export block is unchanged.
+- Basis: auto-selection covers exactly the two native providers —
+  `AutoSelectProvider` (`internal/config/validation.go`) branches only on the
+  Anthropic and Google/Gemini keys and can select only claude or gemini; no
+  branch reaches `providerOpenAICompat`, and it short-circuits entirely when
+  `explicitProvider` is set. openai-compat is therefore reachable only by
+  explicit configuration, and is gated on `base_url`, not on a key:
+  `validateModel`/`ValidateAPIKeys` (`internal/config/validation.go`) reject
+  the provider when `BaseURL` is empty and never require `OPENAI_API_KEY`,
+  and the factory (`internal/llmfactory/factory.go`) constructs the client
+  from model plus `BaseURL` with the key optional for keyless local
+  endpoints. `docs/public/configuration/_index.md` already documents the
+  provider, `base_url`, and the optional key, so the sentence forwards there
+  and no page was created.
+- Supersedes: amends D-0138's scope on this bullet only; D-0138's core
+  correction (no default model, selection by key presence) stands unchanged.
+  Documentation-only; no code, configuration, invariant, or safety-posture
+  change.
+- Status: accepted.
+
+---
+
 ## D-0138 — Quickstart states LLM provider selection by key presence, not a default model
 
 - Date: 2026-07-22

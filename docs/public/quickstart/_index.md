@@ -25,9 +25,14 @@ through its real interaction surface.
 You need a shell, a SHA-256 utility (your system already has one), and two credentials
 ready:
 
-- An **API key for one supported LLM provider** — Anthropic (Claude) or Google (Gemini).
-  Either one works for this tutorial: Joe selects the provider from whichever key is
-  present in its environment at boot. Have the key ready as a string.
+- A **developer account with one supported LLM provider** — Anthropic (Claude) or Google
+  (Gemini) — and an API key issued from it. If you hold neither account, creating one on
+  that provider's developer platform is part of this step. Either provider works for this
+  tutorial: Joe selects the provider from whichever key is present in its environment at
+  boot. Have the issued key ready as a string. Joe also runs against any
+  OpenAI-compatible endpoint (a local model runtime, or a hosted gateway), but that is a
+  provider you configure explicitly rather than one Joe auto-selects from a key — see
+  [Configuration](../configuration/).
 - Reach details for **one Kubernetes cluster**: its **API-server URL** and **CA bundle**
   (PEM), plus a **service-account bearer token**. This quickstart assumes Joe runs
   **outside** the cluster, so you put the token in an **environment variable in the
