@@ -37,6 +37,7 @@ file for the full status, priority, blocked-by, and body.
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred | later |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 | later |
 | [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability) | open | later |
+| [`default-model-constants`](default-model-constants.md) | Per-provider default model constants will go stale like the version literals did | open | later |
 | [`demo-runbooks-e2e`](demo-runbooks-e2e.md) | Demo runbooks as E2E tests | open | later |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred | later |
 | [`dev-skill-test-pinning`](dev-skill-test-pinning.md) | Strengthen dev standard skill on regression tests and pinning | open | next |
@@ -55,6 +56,7 @@ file for the full status, priority, blocked-by, and body.
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open | later |
+| [`macos-signing-notarization`](macos-signing-notarization.md) | Sign and notarize released macOS binaries | open | later |
 | [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open | next |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open | next |
@@ -72,12 +74,15 @@ file for the full status, priority, blocked-by, and body.
 | [`reference-docs-prune-reconcile`](reference-docs-prune-reconcile.md) | Backlog — Residue from the reference-docs prune reconcile | open | next |
 | [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open | later |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open | later |
+| [`register-component-dialog`](register-component-dialog.md) | Register Component dialog — stale state on reopen, and a Type-unlinked example | open | now |
+| [`register-kubernetes-screenshots`](register-kubernetes-screenshots.md) | Capture the register-kubernetes guide's screenshots | open | next |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open | later |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
 | [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
+| [`service-account-collision-error-wording`](service-account-collision-error-wording.md) | Service-account key-collision error doesn't name the colliding value's origin | open | later |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open | next |
 | [`sessions-admin-delete-affordance`](sessions-admin-delete-affordance.md) | Admin delete affordance gap on non-owned sessions in the Sessions list | open | later |

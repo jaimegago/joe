@@ -10,6 +10,112 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0142 — Quickstart walkthrough corrections: a macOS quarantine note, `--config` on both config-reading invocations (amending D-0135c), a model-selection pointer, and the register-kubernetes guide neutralized of its screenshot placeholders
+
+- Date: 2026-07-23
+- Session: quickstart-corrections
+- Decision: six defects were found walking the published `v0.2.0` Quickstart against
+  the released macOS binary; five are corrected here, one is filed to backlog only.
+  **(1)** `docs/public/quickstart/_index.md` Step 1 gains a macOS-scoped note: a
+  downloaded archive carries Gatekeeper's quarantine attribute, which blocks the
+  extracted binary from running until cleared with `xattr -d com.apple.quarantine
+  ./joe`. **(2)/(5)** Both of Quickstart's config-reading invocations — the daemon
+  boot (`./joe`) and `joe admin bootstrap` — now show `--config ~/.joe/config.yaml`
+  explicitly, **reversing D-0135's clause (c)** for these two commands (below).
+  **(3)** A short pointer follows Step 2's LLM env-var block: to choose a specific
+  provider or model instead of relying on key-presence auto-selection, set
+  `JOE_LLM_PROVIDER` (optionally `JOE_LLM_MODEL`) or `llm.current` in the config
+  file, forwarding to Configuration. No model strings are named, and D-0138/D-0139's
+  core corrections (no default-model claim, key-presence framing) are not reopened —
+  this only adds the pointer D-0138 judged the existing Configuration link already
+  covered; verification against the live tree (below) confirms both env vars and
+  `llm.current` exist and behave as stated. **(4)** The originally-reported defect —
+  that the example config's `joe-admin` key collides with `server`'s — does **not**
+  reproduce on the live page: the two example keys (`"pick-a-long-random-string"` /
+  `"pick-a-different-long-random-string"`) were already made distinct by D-0135
+  itself. No example change was made; a one-line rule was added instead, stating
+  every service-account key (including any set via `JOE_API_KEY`) must be distinct.
+  **(6)** `docs/public/guides/register-kubernetes.md` is neutralized: the five inline
+  "📷 Screenshot:" placeholder blockquotes and the trailing "Screenshots to capture"
+  section are removed. No `![]()` image tag or `images/` directory ever existed on
+  this page, so neutralization was text-only; every remaining sentence already stood
+  without depending on a figure. `docs/backlog/quickstart-download-first.md` was
+  found already resolved and archived to `done/` before this session — no action
+  taken, that item was out of scope by the time of writing. Five backlog items were
+  filed: `register-component-dialog` (now — a stale-state-on-reopen bug and a
+  Type-unlinked placeholder example in `ComponentRegisterForm.tsx`, UI-only, not
+  fixed here), `register-kubernetes-screenshots` (next — what each of the five
+  removed placeholders needs to show, capture is an operator task),
+  `macos-signing-notarization` (later — the real fix behind the xattr workaround),
+  `default-model-constants` (later — the hardcoded per-provider default model
+  strings observed during verification), and
+  `service-account-collision-error-wording` (later — the collision error names only
+  the holding principal, not whether the colliding value came from the config file
+  or a `JOE_API_KEY` override). `docs/backlog/INDEX.md` regenerated for the five
+  additions.
+- **D-0135(c) amendment.** D-0135 recorded a deliberate choice not to show `--config`
+  on Quickstart's daemon-boot and bootstrap commands, reasoning that both default to
+  `~/.joe/config.yaml` — the same path Step 2 has the reader write to — so the flag
+  "adds a token and removes nothing." That holds only while the reader's file is
+  actually at the default path. Verified failure shape for the case it is not: 
+  `config.Load` treats a missing file as non-fatal and silently falls back to
+  defaults, logging only at Info level ("no config file detected, using defaults",
+  `internal/config/config.go:375`) — no error, no boot failure at that point. Boot
+  then reaches `cfg.AutoSelectProvider()` (`cmd/joe/server.go:232`) **before** the
+  identity gate, and Quickstart's `ANTHROPIC_API_KEY`/`GEMINI_API_KEY` exports
+  (Step 2) are independent of the config file, so provider auto-selection succeeds
+  regardless — ruling out an LLM-provider error as the symptom. The actual failure
+  surfaces one step later at `requireIdentityConfigured`
+  (`cmd/joe/server.go:883-884`), which refuses to start with `no usable identity
+  configuration — Joe would run ungoverned` (`noIdentityConfigMessage`,
+  `cmd/joe/server.go:142-153`) — a message that never names a config path, so a
+  reader has no way to connect it back to "the file I wrote isn't the one Joe
+  loaded." That silent-then-oblique failure chain is the costliest shape for a
+  tutorial reader to debug alone, which is what the amendment is for: **clause (c)
+  is reversed for these two commands only** — Quickstart now shows `--config`
+  explicitly on both. Clauses (a), (b), and (d) of D-0135 are untouched, as is every
+  other page `--config` was already deliberately shown or withheld on per D-0131/
+  D-0132. The flag's own semantics (`resolveConfigFlag`, `cmd/joe/main.go`) are
+  unchanged.
+- Basis: `docs/public/quickstart/_index.md` read in full pre- and post-edit;
+  `docs/public/guides/register-kubernetes.md` read in full, confirmed no
+  `images/guides/register-kubernetes/` directory exists anywhere under `docs/public`
+  (a repo-wide `find` for it returned nothing) and no `![]()` markdown image syntax
+  was ever used on the page — the five placeholders were prose blockquotes only.
+  `internal/config/config.go:508-509` (env var reads), `:519-525` (applied to the
+  current model), `:396-401` (`JOE_LLM_PROVIDER` alone sets `explicitProvider`),
+  `:244` (`llm.current` yaml field), `:470-491` (file-set detection distinguishing
+  absent from empty via a pointer probe), `:378` (`explicit = currentSet`);
+  `internal/config/validation.go:38-70` (`AutoSelectProvider` — explicit preference
+  short-circuits at `:39-41`, key-presence fallback with a Claude tie-break at
+  `:54-68`). `internal/auth/serviceaccount.go:50-51` (the collision error names the
+  holding `rbac.Principal`, e.g. `svc:server`, never the env-var origin);
+  `internal/config/config.go:551-553` (`JOE_API_KEY` silently rewrites the reserved
+  `server` account's key — the mechanism the added one-line rule warns about).
+  `ui/src/components/admin/ComponentRegisterForm.tsx:42-44,87,112` and
+  `ui/src/pages/ComponentsPage.tsx:429-434` (the deferred dialog bug: state
+  initialized once on mount, no `open`-keyed reset, no `key` prop forcing a
+  remount; static `prod-prometheus`/`Production Prometheus` placeholders
+  independent of the selected `type`). `internal/config/constants.go:8-9,14-15`
+  (the observed `gemini-2.5-flash` default, cited for the deferred item, not
+  published anywhere). `docs/backlog/done/quickstart-download-first.md` confirmed
+  already `Status: resolved` and already archived. `go build ./...`, `go vet
+  ./...`, `gofmt -s -l .` clean — a docs-only change; no `ui/` source file was
+  touched.
+- Supersedes: amends **D-0135** clause (c) only, on the two commands named above;
+  D-0135's clauses (a), (b), (d) and its overall page structure stand. Cites and
+  does not reopen **D-0125** (tutorial-carries-one-path), **D-0131**/**D-0132**
+  (`--config` uniformity and its per-command asymmetry rule, unchanged in meaning),
+  and **D-0138**/**D-0139** (no model strings, key-presence framing, account-first
+  LLM prerequisite) — all stand. No `docs/project/SITE-CLAIMS.md` entry is affected:
+  the distribution-posture entry's signing/archive/checksum mechanism is untouched
+  by the quarantine note, and the admin-mint-paths entry already documents
+  `--config`'s existence generally, so restating it on the two invocations asserts
+  nothing new.
+- Status: accepted.
+
+---
+
 ## D-0141 — repo evidence access is LLM-driven dumb tools over local clones; the substrate moves to a bare mirror
 
 - Date: 2026-07-22

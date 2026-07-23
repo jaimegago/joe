@@ -77,6 +77,16 @@ Then extract:
 
 ```sh
 tar -xzf <the archive you downloaded>
+```
+
+**macOS only:** downloaded archives carry Gatekeeper's quarantine attribute, which blocks
+the extracted binary from running until you clear it:
+
+```sh
+xattr -d com.apple.quarantine ./joe
+```
+
+```sh
 ./joe --help
 ```
 
@@ -107,6 +117,9 @@ server:
       key: "pick-a-different-long-random-string"
 ```
 
+Give every key here a distinct value — including from `JOE_API_KEY` if you set that
+elsewhere — or Joe refuses to boot with a key-collision error.
+
 `server` is the general-purpose account. `joe-admin` is a **dedicated administration
 account**: in Step 4 you grant admin to that one and nothing else, so admin does not ride
 on the key every ordinary caller holds. Joe's own tooling steers you to a dedicated
@@ -132,13 +145,20 @@ export GEMINI_API_KEY="your-gemini-api-key"         # Gemini
 export JOE_MODE=observation
 ```
 
+To choose a specific provider or model instead of relying on auto-selection, set
+`JOE_LLM_PROVIDER` (optionally `JOE_LLM_MODEL`) or `llm.current` in the config file —
+either takes precedence over the key-presence selection above. See
+[Configuration](../configuration/) for the full set of keys.
+
 ## Step 3 — Start Joe
 
 ```sh
-./joe
+./joe --config ~/.joe/config.yaml
 ```
 
-Joe starts on `localhost:7777` and loads the config file you just wrote. That file is
+Joe starts on `localhost:7777` and loads the config file you just wrote — naming
+`--config` explicitly so a config file elsewhere on your system can't be picked up
+silently instead. That file is
 separate from the **bearer-token variable** for your cluster from *Before you start*: Joe
 does not read that at boot, and you do not put it in a Joe config file. You name that
 variable when you promote the cluster in Step 6, and Joe resolves it from its own
@@ -154,7 +174,7 @@ bootstrap one. The way in is an offline command that grants admin to a configure
 account, on a database that has no admin yet:
 
 ```sh
-./joe admin bootstrap svc:joe-admin
+./joe admin bootstrap svc:joe-admin --config ~/.joe/config.yaml
 ```
 
 It contacts no daemon — it writes to Joe's database directly — and the Joe you left
