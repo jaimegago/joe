@@ -10,6 +10,102 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0143 — `joe version` prints build identity offline; requested help exits 0 and never boots
+
+- Date: 2026-07-24
+- Session: cli-version-and-help
+- Decision: two CLI defects observed on the released `v0.2.0` binary and reproduced
+  from source are fixed, and the rule the second one exposed is stated.
+  **(1) `joe version`** is a new subcommand printing exactly four lines to stdout,
+  `key: value`, in the order `version`, `commit`, `build_time`, `ui_digest` — the
+  same four fields `GET /api/v1/version` serializes, which until now was the only
+  build-identity surface and needs a booted, authenticated server to reach. The
+  command boots nothing, loads no config, and opens no database. The first three
+  fields are the ldflags-injected `internal/buildinfo` variables and read
+  `dev`/`none`/`unknown` on a build that injected none. `ui_digest` is computed
+  **offline** over the embedded UI filesystem by the same `buildinfo.Init(webui.
+  DistFS())` pair the daemon runs at boot (`cmd/joe/server.go:310-314`), so a binary
+  carrying only the committed placeholder embed truthfully reports the placeholder's
+  digest rather than a value that could disagree with its own bytes. A failure to
+  read the embedded subtree exits **1** rather than printing an empty field beside
+  three good ones. It takes no flags and no positionals; either is a usage error
+  exiting **2** with a message naming the command, per D-0136.
+  **(2) Requested help exits 0 and never boots.** `joe --help`, `joe -h`, and the new
+  `joe help` print the full multi-command usage text to **stdout** and exit **0**,
+  intercepted at the top of `runWithDeps` (`cmd/joe/main.go`) ahead of any config
+  resolution, logging, or daemon boot. Every subcommand and sub-subcommand does the
+  same for an explicit `-h`/`--help` via one shared helper, `parseCLIFlags`
+  (`cmd/joe/main.go`), which silences the FlagSet during `Parse` and then branches on
+  `errors.Is(err, flag.ErrHelp)`: help to stdout and 0, every other parse failure to
+  stderr with its message and 2. The four group dispatchers (`skills`, `incident`,
+  `db`, `admin`) gained their own intercept ahead of dispatch, so `joe db -h` prints
+  the group usage instead of `Unknown db subcommand: -h`. The unknown-command path is
+  unchanged and still exits 2. The usage text gains `version` and `help` rows and its
+  synopsis now shows `[--config <path>]` explicitly, consistent with D-0142's stance
+  that canonical invocations surface the flag rather than leaving it implied; the
+  trailing paragraph naming `mcp` and `slack` as the two commands that do **not**
+  take `--config` (D-0132) is unchanged and remains authoritative.
+- **The rule.** Requested help is **not** a usage error and takes exit **0**. D-0136's
+  exit-2 rule covers invocation *mistakes* — a bad flag, a wrong positional count, an
+  unknown sub-subcommand — i.e. things decidable from the invocation alone that the
+  operator got *wrong*. An explicit `-h` is decidable from the invocation alone and
+  the operator got it *right*: they asked for the usage text and received it. Exiting
+  2 there puts help on a shell's error path and made `joe <cmd> --help` unusable in a
+  pipeline. Operational failures keep exit 1 unchanged.
+- **Scoping, deliberate.** The top-level intercept keys on the **first argument only**.
+  `joe --config x --help` keeps the daemon routing it has always had, because past the
+  first token the argument belongs to the server's own flag set, whose parse
+  deliberately discards its own error (`resolveConfigPath`, `cmd/joe/server.go:189-191`,
+  the D-0136 daemon exemption) so a bad flag cannot stop Joe booting. Re-reading a
+  later token here would change what a leading server flag means, which
+  `TestRun_ServerFlags` (`cmd/joe/main_test.go:61-73`) pins. This is a boundary, not
+  an oversight, and is asserted by `TestTopLevelHelp_AfterOtherFlagsStillRoutesToDaemon`.
+  Trailing arguments *after* a leading help token are ignored rather than refused:
+  help is a request to display text, not an invocation to validate.
+- Basis: the defects reproduce on a locally built binary — `joe version` printed
+  `Unknown command: "version"` and exited 2; `joe --help` printed the one-flag usage,
+  then logged config detection, database ready, write floor, skills load, and exited
+  **1** on the missing LLM provider, having opened and migrated the real database.
+  Every subcommand and sub-subcommand was probed for `-h` before the change: all
+  exited 2 with help on stderr. Post-change, the same probes exit 0 with help on
+  stdout, and `joe bogus` still exits 2 with help on stderr. The placeholder-only
+  `ui_digest` was verified as
+  `2eeaca4cbbd1fe5f6d692e0e0a3d1196650b481ac1e5b5f7757544222ccaf023` by running
+  `buildinfo.Compute` over a directory holding only the committed
+  `internal/webui/dist/.gitkeep` — not asserted as a literal in any test, since a tree
+  carrying a staged UI build legitimately yields a different value. New pins:
+  `cmd/joe/version_test.go` (four-line shape and key order; `ui_digest` equal to
+  `buildinfo.Compute(webui.DistFS())` and matching `^[0-9a-f]{64}$`),
+  `cmd/joe/help_test.go` (the three top-level entry points, the twelve commands whose
+  help needs no work, the first-argument boundary, and unknown-command staying 2 — all
+  under a `runDeps` whose `runServer`, `loadConfig`, `joeDirPath`, and `newClient` fail
+  the test if reached), and two `joe version` rejection cases added to
+  `cmd/joe/cli_arg_rejection_test.go` beside the existing per-command cases.
+  `go build ./...`, `go test ./...`, `go vet ./...`, `gofmt -s -l .` clean.
+- **Deferred, filed:** `docs/backlog/cli-version-and-help.md` (next). The `skills` and
+  `incident` **leaf** help still runs behind their config load: with a valid config it
+  exits 0 and prints to stdout as required but emits a `loaded config from file` log
+  line first, and with a broken or missing named config it exits 1 without printing
+  help at all. The group level was fixed; the leaves were not, because both commands
+  dispatch on `args[0]` *after* the load with their flag sets declared inside the
+  switch arms, so parsing first means restructuring the dispatch rather than
+  reordering two statements. `TestRequestedHelp_SkillsAndIncidentLeaves` pins the
+  current behaviour as-is so the residue is visible rather than assumed.
+  `docs/backlog/INDEX.md` regenerated for the addition.
+- Supersedes: nothing. Extends **D-0136** with the requested-help carve-out above; its
+  exit-2 rule for invocation mistakes and both of its exemptions (`joe incident list`,
+  the daemon flag-parse discard) are untouched — the latter is in fact what forces the
+  first-argument scoping. Cites **D-0132** (`--config` uniformity, unchanged: `mcp` and
+  `slack` still do not take it) and **D-0142** (surfacing `--config` on canonical
+  invocations, the stance the synopsis line follows). No `docs/project/SITE-CLAIMS.md`
+  entry is affected: no published joeagent.dev claim rests on CLI exit codes or on the
+  absence of a version subcommand, and `ui_digest`'s externally-recomputable
+  serialization (`buildinfo.Compute`) is unchanged — this only adds a second reader of
+  it.
+- Status: accepted.
+
+---
+
 ## D-0142 — Quickstart walkthrough corrections: a macOS quarantine note, `--config` on both config-reading invocations (amending D-0135c), a model-selection pointer, and the register-kubernetes guide neutralized of its screenshot placeholders
 
 - Date: 2026-07-23

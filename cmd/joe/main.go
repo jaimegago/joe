@@ -17,6 +17,7 @@ import (
 	gslack "github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 
+	"github.com/jaimegago/joe/internal/buildinfo"
 	"github.com/jaimegago/joe/internal/client"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/mcp"
@@ -24,6 +25,7 @@ import (
 	"github.com/jaimegago/joe/internal/skills"
 	jslack "github.com/jaimegago/joe/internal/slack"
 	"github.com/jaimegago/joe/internal/store"
+	"github.com/jaimegago/joe/internal/webui"
 )
 
 // panicRowStore is the narrow surface the `joe unlock` CLI needs to operate on
@@ -193,7 +195,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // runPanicCommand sends an emergency shutdown request to the joe server.
 func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe panic", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	// Empty default rather than paths.DefaultConfigPath(): the flag already
 	// existed here, but with the default path as its default value it could not
 	// tell "not passed" from "passed", so an explicitly-named path that does not
@@ -202,8 +203,8 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	// command take the same missing-file posture as every other --config.
 	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
 	reason := fs.String("reason", "operator triggered via CLI", "reason for the emergency shutdown")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: panic takes no positional arguments")
@@ -256,15 +257,14 @@ func runPanicCommand(ctx context.Context, args []string, stdout, stderr io.Write
 // non-zero, so the report never lies about what happened.
 func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe unlock", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	reason := fs.String("reason", "", "optional acknowledgment reason recorded to the log")
 	// --config names the database this command clears the panic row in, via
 	// database.driver/dsn — the single thing configuration governs here. Without
 	// it, an operator running Joe from another config file clears the panic row
 	// in a database the daemon never reads, and is told the panic was cleared.
 	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: unlock takes no positional arguments")
@@ -326,11 +326,10 @@ func runUnlockCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 // this command reads no config file) — so the flag set below exists only to
 // catch and reject anything the operator passes, rather than silently
 // ignoring it.
-func runMCPCommand(_ context.Context, args []string, stderr io.Writer, deps runDeps) int {
+func runMCPCommand(_ context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe mcp", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: mcp takes no positional arguments")
@@ -373,11 +372,10 @@ func runMCPCommand(_ context.Context, args []string, stderr io.Writer, deps runD
 // this command reads no config file) — so the flag set below exists only to
 // catch and reject anything the operator passes, rather than silently
 // ignoring it.
-func runSlackCommand(ctx context.Context, args []string, stderr io.Writer, deps runDeps) int {
+func runSlackCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe slack", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: slack takes no positional arguments")
@@ -431,28 +429,28 @@ func runSlackCommand(ctx context.Context, args []string, stderr io.Writer, deps 
 // only; reload calls into the joe server to refresh its in-memory registry without
 // a restart.
 func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe skills <install|list|remove|update|approve|reject|reload> [flags]")
-		fmt.Fprintln(stderr, "  install <repo-url> [--ref <branch|tag>] [--subdir <path>]")
-		fmt.Fprintln(stderr, "                              Clone a skills repo into ~/.joe/skills/. Lands in")
-		fmt.Fprintln(stderr, "                              quarantine unless skills-policy.yaml auto-approves it.")
-		fmt.Fprintln(stderr, "  list                        Show installed skills with status (active or quarantined).")
-		fmt.Fprintln(stderr, "  remove <skill-name> [--force]")
-		fmt.Fprintln(stderr, "                              Uninstall the skill. --force is required if its install")
-		fmt.Fprintln(stderr, "                              contains other skills.")
-		fmt.Fprintln(stderr, "  update [<skill-name>]       Fetch and reset every install, or just the one")
-		fmt.Fprintln(stderr, "                              containing the named skill.")
-		fmt.Fprintln(stderr, "  approve <skill-name>        Move a quarantined skill into the active registry.")
-		fmt.Fprintln(stderr, "  reject  <skill-name>        Delete a quarantined skill from disk.")
-		fmt.Fprintln(stderr, "  reload                      Trigger the joe server to rescan ~/.joe/skills/ without a restart.")
-		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "Any of the above also accepts --config <path>, naming the same config file the")
-		fmt.Fprintln(stderr, "daemon is started with. It governs skills.trusted_sources (which repos install")
-		fmt.Fprintln(stderr, "accepts) and the server address reload contacts. The skills directory itself is")
-		fmt.Fprintln(stderr, "not configurable and is unaffected.")
+	usage := func(w io.Writer) {
+		fmt.Fprintln(w, "Usage: joe skills <install|list|remove|update|approve|reject|reload> [flags]")
+		fmt.Fprintln(w, "  install <repo-url> [--ref <branch|tag>] [--subdir <path>]")
+		fmt.Fprintln(w, "                              Clone a skills repo into ~/.joe/skills/. Lands in")
+		fmt.Fprintln(w, "                              quarantine unless skills-policy.yaml auto-approves it.")
+		fmt.Fprintln(w, "  list                        Show installed skills with status (active or quarantined).")
+		fmt.Fprintln(w, "  remove <skill-name> [--force]")
+		fmt.Fprintln(w, "                              Uninstall the skill. --force is required if its install")
+		fmt.Fprintln(w, "                              contains other skills.")
+		fmt.Fprintln(w, "  update [<skill-name>]       Fetch and reset every install, or just the one")
+		fmt.Fprintln(w, "                              containing the named skill.")
+		fmt.Fprintln(w, "  approve <skill-name>        Move a quarantined skill into the active registry.")
+		fmt.Fprintln(w, "  reject  <skill-name>        Delete a quarantined skill from disk.")
+		fmt.Fprintln(w, "  reload                      Trigger the joe server to rescan ~/.joe/skills/ without a restart.")
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "Any of the above also accepts --config <path>, naming the same config file the")
+		fmt.Fprintln(w, "daemon is started with. It governs skills.trusted_sources (which repos install")
+		fmt.Fprintln(w, "accepts) and the server address reload contacts. The skills directory itself is")
+		fmt.Fprintln(w, "not configurable and is unaffected.")
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
 	}
 
@@ -464,8 +462,16 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 2
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
+	}
+
+	// Group-level requested help is answered here, ahead of the config load and
+	// the skills-policy load below, so `joe skills --help` prints and exits 0
+	// without either one running or failing.
+	if isHelpToken(args[0]) {
+		usage(stdout)
+		return 0
 	}
 
 	joeDir, err := deps.joeDirPath()
@@ -507,11 +513,10 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	switch args[0] {
 	case "install":
 		fs := flag.NewFlagSet("joe skills install", flag.ContinueOnError)
-		fs.SetOutput(stderr)
 		ref := fs.String("ref", "", "branch, tag, or commit to pin (default: repo's default branch)")
 		subdir := fs.String("subdir", "", "install a single skill subdirectory via sparse checkout")
-		if err := fs.Parse(reorderFlagsFirst(args[1:], map[string]bool{"ref": true, "subdir": true})); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, reorderFlagsFirst(args[1:], map[string]bool{"ref": true, "subdir": true}), stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: install requires exactly one <repo-url> positional argument")
@@ -545,9 +550,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		// never looked at args[1:], so `joe skills list --quarantined` listed
 		// everything and reported success, having ignored the flag.
 		fs := flag.NewFlagSet("joe skills list", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, args[1:], stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 0 {
 			fmt.Fprintln(stderr, "Error: list takes no positional arguments")
@@ -581,10 +585,9 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	case "remove":
 		fs := flag.NewFlagSet("joe skills remove", flag.ContinueOnError)
-		fs.SetOutput(stderr)
 		force := fs.Bool("force", false, "remove the install even if it provides other skills")
-		if err := fs.Parse(reorderFlagsFirst(args[1:], map[string]bool{})); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, reorderFlagsFirst(args[1:], map[string]bool{}), stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: remove requires exactly one <skill-name>")
@@ -605,9 +608,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	case "update":
 		fs := flag.NewFlagSet("joe skills update", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, args[1:], stdout, stderr); !ok {
+			return code
 		}
 		target := ""
 		if fs.NArg() == 1 {
@@ -637,9 +639,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	case "approve":
 		fs := flag.NewFlagSet("joe skills approve", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, args[1:], stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: approve requires exactly one <skill-name>")
@@ -659,9 +660,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	case "reject":
 		fs := flag.NewFlagSet("joe skills reject", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, args[1:], stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 1 {
 			fmt.Fprintln(stderr, "Error: reject requires exactly one <skill-name>")
@@ -681,9 +681,8 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	case "reload":
 		fs := flag.NewFlagSet("joe skills reload", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
+		if code, ok := parseCLIFlags(fs, args[1:], stdout, stderr); !ok {
+			return code
 		}
 		if fs.NArg() != 0 {
 			fmt.Fprintln(stderr, "Error: reload takes no positional arguments")
@@ -723,7 +722,7 @@ func runSkillsCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	default:
 		fmt.Fprintf(stderr, "Unknown skills subcommand: %s\n\n", args[0])
-		usage()
+		usage(stderr)
 		return 2
 	}
 }
@@ -837,19 +836,130 @@ func reorderFlagsFirst(args []string, valueFlags map[string]bool) []string {
 	return append(flags, positional...)
 }
 
+// isHelpToken reports whether arg is a request for the help text of whatever
+// command it heads. It covers the forms the stdlib flag package answers with
+// flag.ErrHelp, plus the bare `help` word an operator reaches for first.
+func isHelpToken(arg string) bool {
+	switch arg {
+	case "help", "-h", "--h", "-help", "--help":
+		return true
+	}
+	return false
+}
+
+// parseCLIFlags parses args with fs, separating a REQUESTED help from a usage
+// error — a distinction the stdlib flag package does not make for its caller,
+// since both come back as a non-nil error from Parse.
+//
+// Requested help is not an invocation mistake: the operator asked for the usage
+// text and got exactly that, so it goes to STDOUT and the command exits 0.
+// D-0136's exit-2 rule covers invocation mistakes only. Every other parse
+// failure keeps that posture unchanged — the message and the usage text go to
+// stderr and the command exits 2.
+//
+// The routing has to happen here rather than at the call sites because the flag
+// package prints during Parse, before the caller sees which case it is in: the
+// FlagSet is silenced first, and this function then writes the text to whichever
+// stream the outcome calls for. Call sites therefore do NOT set the FlagSet's
+// output themselves.
+//
+// It returns the exit code to use and whether parsing succeeded; when ok is true
+// the code carries no meaning and the caller continues.
+func parseCLIFlags(fs *flag.FlagSet, args []string, stdout, stderr io.Writer) (int, bool) {
+	fs.SetOutput(io.Discard)
+	err := fs.Parse(args)
+	if err == nil {
+		return 0, true
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		fs.SetOutput(stdout)
+		fs.Usage()
+		return 0, false
+	}
+	fs.SetOutput(stderr)
+	fmt.Fprintf(stderr, "Error: %v\n", err)
+	fs.Usage()
+	return 2, false
+}
+
+// runVersionCommand prints this binary's build identity: the same four fields
+// GET /api/v1/version serializes, one per line as `key: value`.
+//
+// It boots nothing, loads no config, and opens no database, so it answers "which
+// build is this?" for an operator holding only a downloaded archive — which the
+// HTTP surface cannot do, since that needs a running, authenticated server.
+//
+// version/commit/build_time are the ldflags-injected buildinfo variables and read
+// dev/none/unknown on a build that injected none of them. ui_digest is NOT
+// injected: it is computed here over the embedded UI filesystem by the same
+// buildinfo.Init the daemon calls at boot, from the same webui.DistFS the binary
+// serves. A binary carrying only the committed placeholder embed therefore
+// reports the placeholder's digest truthfully, rather than a value that could
+// disagree with its own bytes.
+func runVersionCommand(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("joe version", flag.ContinueOnError)
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "Error: version takes no positional arguments")
+		return 2
+	}
+
+	// A failure here is not "no digest available" — it means the embedded UI
+	// subtree this binary serves could not be read at all, so reporting an empty
+	// ui_digest beside three good fields would present a broken build as a
+	// complete answer.
+	uiFS, err := webui.DistFS()
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: cannot open the embedded UI to compute ui_digest: %v\n", err)
+		return 1
+	}
+	if err := buildinfo.Init(uiFS); err != nil {
+		fmt.Fprintf(stderr, "Error: cannot compute ui_digest: %v\n", err)
+		return 1
+	}
+
+	info := buildinfo.Get()
+	fmt.Fprintf(stdout, "version: %s\n", info.Version)
+	fmt.Fprintf(stdout, "commit: %s\n", info.Commit)
+	fmt.Fprintf(stdout, "build_time: %s\n", info.BuildTime)
+	fmt.Fprintf(stdout, "ui_digest: %s\n", info.UIDigest)
+	return 0
+}
+
 func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
+	// Requested help is answered before anything else happens: no config
+	// resolution, no logging, no daemon boot. `joe --help` previously fell through
+	// to the server path, where the config flag set discards its own parse error
+	// on purpose (see resolveConfigPath), so the help request was swallowed and
+	// Joe booted anyway.
+	//
+	// The intercept keys on the FIRST argument only. `joe --config x --help` keeps
+	// the daemon routing it has always had: past the first token the argument
+	// belongs to the server's own flag set, and re-reading it here would change
+	// what a leading server flag means. Trailing arguments after a leading help
+	// token are ignored rather than refused — help is a request to display text,
+	// not an invocation to validate.
+	if len(args) > 0 && isHelpToken(args[0]) {
+		printUsage(stdout)
+		return 0
+	}
+
 	// A non-flag first argument selects a subcommand. A leading flag (e.g.
 	// `--config`) or no argument at all belongs to the default server path.
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		switch args[0] {
+		case "version":
+			return runVersionCommand(args[1:], stdout, stderr)
 		case "panic":
 			return runPanicCommand(ctx, args[1:], stdout, stderr, deps)
 		case "unlock":
 			return runUnlockCommand(ctx, args[1:], stdout, stderr, deps)
 		case "mcp":
-			return runMCPCommand(ctx, args[1:], stderr, deps)
+			return runMCPCommand(ctx, args[1:], stdout, stderr, deps)
 		case "slack":
-			return runSlackCommand(ctx, args[1:], stderr, deps)
+			return runSlackCommand(ctx, args[1:], stdout, stderr, deps)
 		case "skills":
 			return runSkillsCommand(ctx, args[1:], stdout, stderr, deps)
 		case "incident":
@@ -877,7 +987,7 @@ func runWithDeps(ctx context.Context, args []string, stdout, stderr io.Writer, d
 
 // printUsage writes the top-level command summary to w.
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: joe [command] [flags]")
+	fmt.Fprintln(w, "Usage: joe [command] [--config <path>] [flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Run with no command (or only --config) to start the joe server daemon.")
 	fmt.Fprintln(w, "")
@@ -890,6 +1000,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  admin    Bootstrap the first admin on a database that has none")
 	fmt.Fprintln(w, "  panic    Trigger an emergency shutdown of the joe server")
 	fmt.Fprintln(w, "  unlock   Clear the panic state in the database (idempotent; takes effect on restart)")
+	fmt.Fprintln(w, "  version  Print this binary's build identity (version, commit, build time, UI digest)")
+	fmt.Fprintln(w, "  help     Print this text (also -h / --help)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Every command whose behavior a config file governs accepts --config <path>, with")
 	fmt.Fprintln(w, "the same meaning it has on the daemon: name the config file joe was started with,")

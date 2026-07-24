@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -30,7 +31,7 @@ func TestRunSlackCommand_MissingBotToken(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runSlackCommand(context.Background(), nil, &stderr, deps)
+	code := runSlackCommand(context.Background(), nil, io.Discard, &stderr, deps)
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
@@ -51,7 +52,7 @@ func TestRunSlackCommand_MissingAppToken(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runSlackCommand(context.Background(), nil, &stderr, deps)
+	code := runSlackCommand(context.Background(), nil, io.Discard, &stderr, deps)
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
@@ -75,7 +76,7 @@ func TestRunSlackCommand_UnknownFlagIsUsageError(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runSlackCommand(context.Background(), []string{"--config", "/some/path"}, &stderr, deps)
+	code := runSlackCommand(context.Background(), []string{"--config", "/some/path"}, io.Discard, &stderr, deps)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 (usage error)", code)
 	}
@@ -93,7 +94,7 @@ func TestRunSlackCommand_SurplusPositionalIsUsageError(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runSlackCommand(context.Background(), []string{"bogus"}, &stderr, deps)
+	code := runSlackCommand(context.Background(), []string{"bogus"}, io.Discard, &stderr, deps)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 (usage error)", code)
 	}
@@ -113,7 +114,7 @@ func TestRunMCPCommand_UnknownFlagIsUsageError(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runMCPCommand(context.Background(), []string{"--config", "/some/path"}, &stderr, deps)
+	code := runMCPCommand(context.Background(), []string{"--config", "/some/path"}, io.Discard, &stderr, deps)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 (usage error)", code)
 	}
@@ -130,7 +131,7 @@ func TestRunMCPCommand_SurplusPositionalIsUsageError(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runMCPCommand(context.Background(), []string{"bogus"}, &stderr, deps)
+	code := runMCPCommand(context.Background(), []string{"bogus"}, io.Discard, &stderr, deps)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 (usage error)", code)
 	}
@@ -153,7 +154,7 @@ func TestRunMCPCommand_DefaultsServerURL(t *testing.T) {
 	deps.serveMCP = func(*mcpserver.MCPServer) error { return nil }
 
 	var stderr bytes.Buffer
-	code := runMCPCommand(context.Background(), nil, &stderr, deps)
+	code := runMCPCommand(context.Background(), nil, io.Discard, &stderr, deps)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
 	}
@@ -175,7 +176,7 @@ func TestRunMCPCommand_HonorsServerEnv(t *testing.T) {
 	deps.serveMCP = func(*mcpserver.MCPServer) error { return nil }
 
 	var stderr bytes.Buffer
-	if code := runMCPCommand(context.Background(), nil, &stderr, deps); code != 0 {
+	if code := runMCPCommand(context.Background(), nil, io.Discard, &stderr, deps); code != 0 {
 		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
 	}
 	if gotURL != "https://joe.internal:8443" {
@@ -194,7 +195,7 @@ func TestRunMCPCommand_ServeErrorExitsNonZero(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	code := runMCPCommand(context.Background(), nil, &stderr, deps)
+	code := runMCPCommand(context.Background(), nil, io.Discard, &stderr, deps)
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}

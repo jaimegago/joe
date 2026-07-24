@@ -40,6 +40,38 @@ func rejectionDeps(t *testing.T) runDeps {
 	return deps
 }
 
+// `joe version` takes neither flags nor positionals, so both checks below fire
+// on the whole of what it can be given wrong. It is in this file rather than
+// beside its output test because the convention it follows is this file's
+// subject: an explicit -h is a request answered with 0 (help_test.go), anything
+// else on the invocation is a usage error answered with 2.
+func TestRunVersionCommand_UnknownFlagIsUsageError(t *testing.T) {
+	deps := rejectionDeps(t)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"version", "--nope"}, &stdout, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("no build identity may be printed on a usage error, got %q", stdout.String())
+	}
+}
+
+func TestRunVersionCommand_SurplusPositionalIsUsageError(t *testing.T) {
+	deps := rejectionDeps(t)
+	var stdout, stderr bytes.Buffer
+	code := runWithDeps(context.Background(), []string{"version", "extra"}, &stdout, &stderr, deps)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (usage error)", code)
+	}
+	if !strings.Contains(stderr.String(), "version takes no positional arguments") {
+		t.Errorf("stderr must explain the refusal, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("no build identity may be printed on a usage error, got %q", stdout.String())
+	}
+}
+
 func TestRunPanicCommand_UnknownFlagIsUsageError(t *testing.T) {
 	deps := rejectionDeps(t)
 	var stdout, stderr bytes.Buffer

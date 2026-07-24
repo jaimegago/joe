@@ -82,18 +82,22 @@ func defaultOpenAdminStore(cfg *config.Config) (adminGrantStore, func() error, e
 // act on Joe's admin roster in the local database rather than through the
 // running daemon. The namespace is deliberately open-ended, like `joe db`.
 func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe admin <bootstrap> [flags]")
-		fmt.Fprintln(stderr, "  bootstrap <principal> [--config <path>]")
-		fmt.Fprintln(stderr, "                              Grant admin to a configured service account, once, on a")
-		fmt.Fprintln(stderr, "                              database that has no admin yet. Refused if any admin")
-		fmt.Fprintln(stderr, "                              exists; every later grant goes through the admin API.")
-		fmt.Fprintln(stderr, "                              --config names the same config file the daemon is")
-		fmt.Fprintln(stderr, "                              started with; without it, ~/.joe/config.yaml is used.")
+	usage := func(w io.Writer) {
+		fmt.Fprintln(w, "Usage: joe admin <bootstrap> [flags]")
+		fmt.Fprintln(w, "  bootstrap <principal> [--config <path>]")
+		fmt.Fprintln(w, "                              Grant admin to a configured service account, once, on a")
+		fmt.Fprintln(w, "                              database that has no admin yet. Refused if any admin")
+		fmt.Fprintln(w, "                              exists; every later grant goes through the admin API.")
+		fmt.Fprintln(w, "                              --config names the same config file the daemon is")
+		fmt.Fprintln(w, "                              started with; without it, ~/.joe/config.yaml is used.")
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
+	}
+	if isHelpToken(args[0]) {
+		usage(stdout)
+		return 0
 	}
 
 	switch args[0] {
@@ -101,7 +105,7 @@ func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Write
 		return runAdminBootstrap(ctx, args[1:], stdout, stderr, deps)
 	default:
 		fmt.Fprintf(stderr, "Unknown admin subcommand: %s\n\n", args[0])
-		usage()
+		usage(stderr)
 		return 2
 	}
 }
@@ -130,7 +134,6 @@ func runAdminCommand(ctx context.Context, args []string, stdout, stderr io.Write
 // forced through the governed, audited REST surface.
 func runAdminBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe admin bootstrap", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	// Mirrors the daemon's --config exactly: same name, same meaning, a
 	// relative value taken verbatim against the working directory. An operator
 	// who starts Joe with `joe --config ./deploy/joe.yaml` must be able to reuse
@@ -147,8 +150,8 @@ func runAdminBootstrap(ctx context.Context, args []string, stdout, stderr io.Wri
 	// --config takes a following token, and an operator will naturally write the
 	// principal first. reorderFlagsFirst is the tree's existing answer to the
 	// stdlib flag package's flags-before-positionals rule.
-	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, reorderFlagsFirst(args, map[string]bool{"config": true}), stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: bootstrap requires exactly one <principal> argument.")

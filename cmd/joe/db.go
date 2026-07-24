@@ -261,23 +261,27 @@ func defaultProbeTargetOccupied(path string) (bool, error) {
 // on Joe's database file directly rather than through the running daemon. The
 // namespace is deliberately open-ended.
 func runDBCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe db <backup|restore> [flags]")
-		fmt.Fprintln(stderr, "  backup <dest> [--force] [--config <path>]")
-		fmt.Fprintln(stderr, "                              Write a consistent copy of Joe's database to <dest>.")
-		fmt.Fprintln(stderr, "                              Safe to run against a live Joe. Refuses an existing")
-		fmt.Fprintln(stderr, "                              <dest> unless --force is given.")
-		fmt.Fprintln(stderr, "  restore <src> [--force] [--allow-missing-key] [--config <path>]")
-		fmt.Fprintln(stderr, "                              Restore <src> over Joe's configured database. Stop Joe")
-		fmt.Fprintln(stderr, "                              first. Checks <src> and refuses an existing database")
-		fmt.Fprintln(stderr, "                              unless --force.")
-		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "  --config names the same config file the daemon is started with; it decides")
-		fmt.Fprintln(stderr, "  WHICH database these act on. Without it, ~/.joe/config.yaml is used.")
+	usage := func(w io.Writer) {
+		fmt.Fprintln(w, "Usage: joe db <backup|restore> [flags]")
+		fmt.Fprintln(w, "  backup <dest> [--force] [--config <path>]")
+		fmt.Fprintln(w, "                              Write a consistent copy of Joe's database to <dest>.")
+		fmt.Fprintln(w, "                              Safe to run against a live Joe. Refuses an existing")
+		fmt.Fprintln(w, "                              <dest> unless --force is given.")
+		fmt.Fprintln(w, "  restore <src> [--force] [--allow-missing-key] [--config <path>]")
+		fmt.Fprintln(w, "                              Restore <src> over Joe's configured database. Stop Joe")
+		fmt.Fprintln(w, "                              first. Checks <src> and refuses an existing database")
+		fmt.Fprintln(w, "                              unless --force.")
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "  --config names the same config file the daemon is started with; it decides")
+		fmt.Fprintln(w, "  WHICH database these act on. Without it, ~/.joe/config.yaml is used.")
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
+	}
+	if isHelpToken(args[0]) {
+		usage(stdout)
+		return 0
 	}
 
 	switch args[0] {
@@ -287,7 +291,7 @@ func runDBCommand(ctx context.Context, args []string, stdout, stderr io.Writer, 
 		return runDBRestore(ctx, args[1:], stdout, stderr, deps)
 	default:
 		fmt.Fprintf(stderr, "Unknown db subcommand: %s\n\n", args[0])
-		usage()
+		usage(stderr)
 		return 2
 	}
 }
@@ -299,7 +303,6 @@ func runDBCommand(ctx context.Context, args []string, stdout, stderr io.Writer, 
 // missing recent or all data. This command is that trap's answer.
 func runDBBackup(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe db backup", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	force := fs.Bool("force", false, "replace an existing file at <dest>")
 	// --config decides WHICH database is copied. Without it this command was the
 	// sharpest case in the CLI: an operator running Joe from another config file
@@ -308,8 +311,8 @@ func runDBBackup(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
 	// --config takes a following token and the operator writes <dest> first, so
 	// the flag has to survive appearing after the positional.
-	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, reorderFlagsFirst(args, map[string]bool{"config": true}), stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: backup requires exactly one <dest> path.")
@@ -425,7 +428,6 @@ func runDBBackup(ctx context.Context, args []string, stdout, stderr io.Writer, d
 // components. Both are caught here instead of at boot, or never.
 func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	fs := flag.NewFlagSet("joe db restore", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	force := fs.Bool("force", false, "replace the existing database at the configured path")
 	allowMissingKey := fs.Bool("allow-missing-key", false,
 		"restore encrypted component configs even though no encryption key is present")
@@ -433,8 +435,8 @@ func runDBRestore(ctx context.Context, args []string, stdout, stderr io.Writer, 
 	// the encryption key it checks for beside it — and it must govern them
 	// together. See the single load below.
 	configPath := fs.String("config", "", "path to the config file (default ~/.joe/config.yaml)")
-	if err := fs.Parse(reorderFlagsFirst(args, map[string]bool{"config": true})); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, reorderFlagsFirst(args, map[string]bool{"config": true}), stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "Error: restore requires exactly one <src> path.")

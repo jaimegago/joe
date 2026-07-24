@@ -28,22 +28,22 @@ import (
 // reachable only via the audit layer), so the subcommand reports that
 // limitation honestly and exits non-zero rather than implying success.
 func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
-	usage := func() {
-		fmt.Fprintln(stderr, "Usage: joe incident <status|declare|resolve|list> [flags]")
-		fmt.Fprintln(stderr, "  status                      Show whether an incident regime is active (and who declared it).")
-		fmt.Fprintln(stderr, "  declare --session <id> [--kind <kind>] [--reason <reason>]")
-		fmt.Fprintln(stderr, "                              Declare an incident regime by promoting the named session")
-		fmt.Fprintln(stderr, "                              in place. --kind defaults to \"human\" (\"joe\" is an inert")
-		fmt.Fprintln(stderr, "                              seam the server refuses).")
-		fmt.Fprintln(stderr, "  resolve [--reason <reason>] Resolve the active incident regime back to normal.")
-		fmt.Fprintln(stderr, "  list                        (Unsupported in v1) Incident history lives in the audit log.")
-		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "status, declare, and resolve also accept --config <path>, naming the same config")
-		fmt.Fprintln(stderr, "file the daemon is started with. It decides which server they contact, and which")
-		fmt.Fprintln(stderr, "key they present. Without it, ~/.joe/config.yaml is used.")
+	usage := func(w io.Writer) {
+		fmt.Fprintln(w, "Usage: joe incident <status|declare|resolve|list> [flags]")
+		fmt.Fprintln(w, "  status                      Show whether an incident regime is active (and who declared it).")
+		fmt.Fprintln(w, "  declare --session <id> [--kind <kind>] [--reason <reason>]")
+		fmt.Fprintln(w, "                              Declare an incident regime by promoting the named session")
+		fmt.Fprintln(w, "                              in place. --kind defaults to \"human\" (\"joe\" is an inert")
+		fmt.Fprintln(w, "                              seam the server refuses).")
+		fmt.Fprintln(w, "  resolve [--reason <reason>] Resolve the active incident regime back to normal.")
+		fmt.Fprintln(w, "  list                        (Unsupported in v1) Incident history lives in the audit log.")
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "status, declare, and resolve also accept --config <path>, naming the same config")
+		fmt.Fprintln(w, "file the daemon is started with. It decides which server they contact, and which")
+		fmt.Fprintln(w, "key they present. Without it, ~/.joe/config.yaml is used.")
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
 	}
 
@@ -55,8 +55,16 @@ func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		return 2
 	}
 	if len(args) == 0 {
-		usage()
+		usage(stderr)
 		return 2
+	}
+
+	// Group-level requested help is answered ahead of the config load and client
+	// construction below, so `joe incident --help` prints and exits 0 without
+	// either one running or failing.
+	if isHelpToken(args[0]) {
+		usage(stdout)
+		return 0
 	}
 
 	// `list` needs no server connection — handle it before loading config /
@@ -101,16 +109,15 @@ func runIncidentCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		return runIncidentResolve(ctx, args[1:], stdout, stderr, c)
 	default:
 		fmt.Fprintf(stderr, "Unknown incident subcommand: %s\n\n", args[0])
-		usage()
+		usage(stderr)
 		return 2
 	}
 }
 
 func runIncidentStatus(ctx context.Context, args []string, stdout, stderr io.Writer, c *client.Client) int {
 	fs := flag.NewFlagSet("joe incident status", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: status takes no positional arguments")
@@ -135,12 +142,11 @@ func runIncidentStatus(ctx context.Context, args []string, stdout, stderr io.Wri
 
 func runIncidentDeclare(ctx context.Context, args []string, stdout, stderr io.Writer, c *client.Client) int {
 	fs := flag.NewFlagSet("joe incident declare", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	session := fs.String("session", "", "id of the existing session to promote in place to the incident master (required)")
 	kind := fs.String("kind", "human", "regime declared_kind (\"human\"; \"joe\" is an inert Phase 1 seam)")
 	reason := fs.String("reason", "", "optional free-text justification for the declaration")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	// The session to promote is named by --session, not positionally, so any
 	// positional here is a mistake — most likely a bare session id the operator
@@ -178,10 +184,9 @@ func runIncidentDeclare(ctx context.Context, args []string, stdout, stderr io.Wr
 
 func runIncidentResolve(ctx context.Context, args []string, stdout, stderr io.Writer, c *client.Client) int {
 	fs := flag.NewFlagSet("joe incident resolve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	reason := fs.String("reason", "", "optional free-text justification for the resolution")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, ok := parseCLIFlags(fs, args, stdout, stderr); !ok {
+		return code
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "Error: resolve takes no positional arguments")
