@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import { useReadPosture } from '@/hooks/useReadPosture';
 import { READ_POSTURE } from '@/api/security';
 import { LoadingPage } from '@/components/common/LoadingSpinner';

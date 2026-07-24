@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -22,7 +22,7 @@ import { ApiRequestError } from '@/api/client';
 import { incidentAffordance } from '@/lib/incidentAffordance';
 import { useClaimDeclareAffordance } from '@/components/incident/declareAffordance';
 import { QUERY_KEYS } from '@/lib/queryKeys';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import {
   Plus,
   Link as LinkIcon,

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router';
 import { RequireZonedPosture } from './RequireZonedPosture';
 import { useReadPosture } from '@/hooks/useReadPosture';
 import { READ_POSTURE } from '@/api/security';

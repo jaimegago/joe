@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { Header } from '@/components/layout/Header';

@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useRegime } from '@/hooks/useRegime';
 
 // IncidentBanner is the app-shell-wide active-incident indicator
