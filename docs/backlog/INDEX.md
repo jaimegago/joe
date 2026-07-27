@@ -49,6 +49,7 @@ file for the full status, priority, blocked-by, and body.
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
 | [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | now |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
+| [`guide-screenshots-e2e-capture`](guide-screenshots-e2e-capture.md) | Deterministic guide screenshots from the E2E harness | open | later |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open | next |
 | [`home-dir-override-seam`](home-dir-override-seam.md) | `joe`'s home/data-directory resolution has no override seam for tests or isolated runs | open | |
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
@@ -75,7 +76,6 @@ file for the full status, priority, blocked-by, and body.
 | [`reference-docs-prune-reconcile`](reference-docs-prune-reconcile.md) | Backlog — Residue from the reference-docs prune reconcile | open | next |
 | [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open | later |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open | later |
-| [`register-kubernetes-screenshots`](register-kubernetes-screenshots.md) | Capture the register-kubernetes guide's screenshots | open | next |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open | later |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |

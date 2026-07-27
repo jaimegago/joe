@@ -47,11 +47,12 @@ this picker/compose affordance.
 
 ### Screenshots
 
-`register-kubernetes.md` carries five clearly-marked image placeholders under
-`images/guides/register-kubernetes/` (components page, register dialog, zone
-assign, promote kubeconfig form, successful test). These must be captured against
-a running binary and committed, and the placeholders replaced with real image
-references. Each later per-type page will need its own capture set.
+`register-kubernetes.md` ships with no screenshots, by decision (D-0148): manual
+capture was rejected, and the placeholder blockquotes that once marked where they'd
+go are removed. The only sanctioned future path is deterministic capture from the
+joe-oasis-e2e Playwright harness, regenerated per release as a build artifact — see
+`guide-screenshots-e2e-capture.md`. Each later per-type page should follow the same
+decision and not carry placeholders.
 
 ### Cross-surface "you need registered components" framing
 

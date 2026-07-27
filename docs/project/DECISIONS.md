@@ -10,6 +10,43 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0148 — Guide screenshots are removed rather than captured; deterministic E2E-harness capture is the only sanctioned future path
+
+- Date: 2026-07-27
+- Session: guide-screenshot-placeholders
+- Decision: `docs/public/guides/register-kubernetes.md` ships with no screenshots.
+  Manual capture against an ad hoc running instance is rejected outright: the
+  guides are fully self-sufficient click-by-click prose, and screenshots of a
+  fast-moving v0.x UI go stale and become walk-backable claims — shipped
+  placeholders read as unfinished work rather than a deliberate choice. The
+  five inline placeholder blockquotes and the trailing "Screenshots to capture"
+  section on this page were already removed by the `quickstart-corrections`
+  session; this decision is what makes that removal permanent rather than a
+  pending TODO, and states the rule for every sibling how-to page still to be
+  written (`docs/backlog/component-registration-guide.md`). If screenshots are
+  ever wanted, the only sanctioned path is deterministic capture from the
+  `joe-oasis-e2e` Playwright harness, regenerated per release as a build
+  artifact — recorded as an open, later-priority backlog item in
+  `docs/backlog/guide-screenshots-e2e-capture.md`. Placeholder scaffolding
+  (camera-emoji blockquotes, "Screenshots to capture" sections, or an
+  `images/guides/` convention) must not be reintroduced into guide sources.
+- Basis: `docs/public/guides/register-kubernetes.md` read in full, confirmed no
+  placeholder markers, no `images/guides/` reference, and no `![]()` image syntax
+  present. Repo-wide grep for the camera emoji, "Screenshot:", `images/guides/`,
+  and "Screenshots to capture" across `docs/` confirmed no other guide carries
+  the pattern. No `images/guides/` directory or image file exists anywhere in
+  this repo or in the `joeagent.dev` repo.
+- Supersedes: `docs/backlog/register-kubernetes-screenshots.md`, which proposed
+  capturing the five screenshots manually against a running binary — deleted
+  outright as superseded (not moved to `done/`, since the work it described was
+  never finished, only obviated; git history preserves it). The stale
+  "Screenshots" subsection of `docs/backlog/component-registration-guide.md`,
+  which described placeholders no longer present in the guide, is rewritten to
+  point at this decision and at `guide-screenshots-e2e-capture.md`.
+- Status: adopted.
+
+---
+
 ## D-0147 — Component IDs are format-validated at the registration seam; the UI derives them from Name
 
 - Date: 2026-07-27
