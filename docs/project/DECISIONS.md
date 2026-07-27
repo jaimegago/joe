@@ -10,6 +10,39 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0144 — chat-model Grounding fetches backlog/detail files live from the public GitHub repo instead of asking the operator to paste them
+
+- Date: 2026-07-27
+- Session: register-component-dialog
+- Decision: `docs/project/claude_joe_project_instructions.md`'s Grounding paragraph is
+  rewritten. It previously told the chat model, for any file detail the manually-synced
+  CLAUDE.md/DECISIONS.md/INDEX.md snapshot does not carry — including a backlog item's
+  `docs/backlog/<slug>.md` body and its Blocked-by line — to ask the operator to paste
+  it. The joe repo is public at `https://github.com/jaimegago/joe`, so the chat model
+  now fetches that detail itself from the file's raw GitHub URL on `main`; asking the
+  operator is the fallback only when the fetch fails. Live fetch doubles as the
+  currency check — pushed state on GitHub is always at least as fresh as the manual
+  snapshot, so recency questions are verified against the live file rather than the
+  sync — while the paragraph still has the chat model remind the operator to Sync when
+  the snapshot has visibly drifted, since project-knowledge search runs against the
+  snapshot, not the live repo. Project-knowledge search remains the discovery layer;
+  the live repo is the detail and verification layer. INDEX.md's carried fields
+  (backlog titles, status, priority only) are unchanged.
+- Also decided: this session's two `ComponentRegisterForm.tsx`/`ComponentsPage.tsx`
+  fixes (a key-prop remount from the parent so the dialog's fields reset on reopen; a
+  type-keyed ID/Name placeholder map with a generic fallback for any type not in the
+  map) are judged **not** separately decision-grade — they execute the direction
+  `docs/backlog/register-component-dialog.md` had already proposed, state no new
+  architectural stance, and supersede no prose elsewhere.
+- Basis: `docs/project/claude_joe_project_instructions.md` (Grounding paragraph, this
+  session); CLAUDE.md's Project Identity section already records the repo's
+  Apache-2.0/public-portfolio posture.
+- Supersedes: the prior Grounding paragraph's instruction to ask the operator to paste
+  a backlog body, or any other snapshot-detail gap, by hand.
+- Status: adopted.
+
+---
+
 ## D-0143 — `joe version` prints build identity offline; requested help exits 0 and never boots
 
 - Date: 2026-07-24

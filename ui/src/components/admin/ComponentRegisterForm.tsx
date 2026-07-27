@@ -26,6 +26,19 @@ interface ComponentRegisterFormData {
   name: string;
 }
 
+// TYPE_PLACEHOLDER_EXAMPLES gives the ID/Name inputs a domain-relevant example
+// for the types most likely to be walked from the public guides. Any type not
+// listed here (including a future backend-added type) falls to
+// GENERIC_PLACEHOLDER_EXAMPLE rather than showing an unrelated example.
+const TYPE_PLACEHOLDER_EXAMPLES: Record<string, { id: string; name: string }> = {
+  kubernetes: { id: 'prod-cluster', name: 'Production Cluster' },
+  prometheus: { id: 'prod-prometheus', name: 'Production Prometheus' },
+  grafana: { id: 'prod-grafana', name: 'Production Grafana' },
+  github: { id: 'prod-github', name: 'Production GitHub' },
+  postgresql: { id: 'prod-postgres', name: 'Production Postgres' },
+};
+const GENERIC_PLACEHOLDER_EXAMPLE = { id: 'component-id', name: 'Component name' };
+
 interface ComponentRegisterFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,6 +69,7 @@ export function ComponentRegisterForm({
   // endpoint (id is operator-supplied, not generated), so submit stays disabled
   // until each is present.
   const canSubmit = id.trim() !== '' && type !== '' && name.trim() !== '';
+  const placeholderExample = TYPE_PLACEHOLDER_EXAMPLES[type] ?? GENERIC_PLACEHOLDER_EXAMPLE;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -84,7 +98,7 @@ export function ComponentRegisterForm({
               id="component-id"
               value={id}
               onChange={(e) => setId(e.target.value)}
-              placeholder="prod-prometheus"
+              placeholder={placeholderExample.id}
               required
             />
           </div>
@@ -109,7 +123,7 @@ export function ComponentRegisterForm({
               id="component-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Production Prometheus"
+              placeholder={placeholderExample.name}
               required
             />
           </div>

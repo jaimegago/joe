@@ -75,7 +75,6 @@ file for the full status, priority, blocked-by, and body.
 | [`reference-docs-prune-reconcile`](reference-docs-prune-reconcile.md) | Backlog — Residue from the reference-docs prune reconcile | open | next |
 | [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open | later |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open | later |
-| [`register-component-dialog`](register-component-dialog.md) | Register Component dialog — stale state on reopen, and a Type-unlinked example | open | now |
 | [`register-kubernetes-screenshots`](register-kubernetes-screenshots.md) | Capture the register-kubernetes guide's screenshots | open | next |
 | [`registered-components-required-framing`](registered-components-required-framing.md) | Joe is near-useless without registered components — make that framing explicit | open | later |
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |

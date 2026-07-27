@@ -427,6 +427,7 @@ export function ComponentsPage() {
         )}
 
         <ComponentRegisterForm
+          key={showRegisterComponent ? 'open' : 'closed'}
           open={showRegisterComponent}
           onOpenChange={setShowRegisterComponent}
           onSubmit={(data) => registerComponentMut.mutate(data)}

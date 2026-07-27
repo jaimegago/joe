@@ -1,6 +1,10 @@
 # Register Component dialog — stale state on reopen, and a Type-unlinked example
 
-Status: open
+Status: done — both defects fixed (session `register-component-dialog`): a key-prop
+remount from `ComponentsPage` resets the dialog's fields on reopen, and a type-keyed
+`id`/`name` placeholder map (with a generic fallback for unmapped types) replaces the
+static Prometheus example. Verified in the browser (open/fill/cancel/reopen; kubernetes
+and github placeholders; an unmapped type falling to the generic fallback).
 Priority: now
 
 Two defects observed walking the v0.2.0 Quickstart against the running web UI, both
