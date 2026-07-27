@@ -126,6 +126,48 @@ func TestHandleCreateComponent_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestHandleCreateComponent_MalformedID pins the registration-time ID format
+// gate: a malformed ID gets the standard bad-request error shape with a
+// message naming the rule, and no component row is written.
+func TestHandleCreateComponent_MalformedID(t *testing.T) {
+	server := setupFullTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	for name, id := range map[string]string{
+		"slash":     "prod/cluster",
+		"space":     "prod cluster",
+		"uppercase": "Prod-Cluster",
+		"trailing":  "prod-",
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{
+				"id": id, "type": "prometheus", "name": "Test",
+			})
+			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(string(body)))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			var resp struct {
+				Error   string `json:"error"`
+				Message string `json:"message"`
+			}
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if resp.Error != "invalid_request" {
+				t.Errorf("error code = %q, want invalid_request", resp.Error)
+			}
+			if !strings.Contains(resp.Message, "lowercase") {
+				t.Errorf("message %q does not state the format rule", resp.Message)
+			}
+		})
+	}
+}
+
 func TestHandleCreateComponent_InvalidType(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()

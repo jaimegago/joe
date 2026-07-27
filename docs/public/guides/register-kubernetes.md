@@ -68,10 +68,14 @@ its type, zone, connection status, and arming state (**inert** or **armed**).
 
 1. Click **+ Register Component** in the top-right of the page.
 2. In the dialog:
-   - **Component ID** — a stable identifier you choose, e.g. `prod-cluster`.
+   - **Name** — a human label, e.g. `Production cluster`.
+   - **Component ID** — prefilled automatically from the Name (e.g. `production-cluster`)
+     and read-only by default; click **Edit** beside it to set your own. It is a permanent
+     identifier used in URLs, zone assignments, and audit records, and must be 1–63
+     characters of lowercase letters, digits, and hyphens, starting and ending with a
+     letter or digit.
    - **Type** — open the selector and choose **`kubernetes`**. The type list is populated
      from Joe's authoritative type enum, so pick the value as the UI presents it.
-   - **Name** — a human label, e.g. `Production cluster`.
 3. Click **Register**.
 
 No credential field is shown, and none is collected here: registration records the

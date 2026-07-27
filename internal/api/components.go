@@ -266,6 +266,17 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Component IDs are load-bearing (URL path segments, RBAC keys, graph node
+	// stamps, audit targets), so the format is enforced at the shared
+	// registration seam before uniqueness is ever consulted. Existing rows are
+	// grandfathered — this fires at registration only.
+	if err := componentgov.ValidateComponentID(req.ID); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, err.Error(), map[string]any{
+			"component_id": req.ID,
+		})
+		return
+	}
+
 	if !store.IsValidComponentType(req.Type) {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidComponent, "unsupported component type", map[string]any{
 			"type":    req.Type,

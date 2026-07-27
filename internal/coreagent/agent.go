@@ -495,8 +495,16 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 	if _, err := crypto_rand.Read(randBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate component ID: %w", err)
 	}
+	componentID := fmt.Sprintf("%s-%x", sourceType, randBytes)
+	// Post-generation assertion at the shared seam: every currently allowed
+	// type yields a conforming ID, so this fires only if a future type name
+	// breaks the format — failing loudly here beats silently minting an
+	// invalid load-bearing identifier.
+	if err := componentgov.ValidateComponentID(componentID); err != nil {
+		return nil, fmt.Errorf("generated component ID failed validation: %w", err)
+	}
 	source := &store.Component{
-		ID:     fmt.Sprintf("%s-%x", sourceType, randBytes),
+		ID:     componentID,
 		Name:   name,
 		Type:   sourceType,
 		Config: configBytes,

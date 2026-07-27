@@ -10,6 +10,51 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0147 — Component IDs are format-validated at the registration seam; the UI derives them from Name
+
+- Date: 2026-07-27
+- Session: component-id-validation
+- Decision: Component IDs are validated at registration against one rule — lowercase
+  letters, digits, and hyphens, starting and ending with a letter or digit, 1–63
+  characters — enforced by `componentgov.ValidateComponentID`
+  (`internal/componentgov/id.go`), a sibling of the two existing shared registration
+  seams (`RejectCredentialFields`, `NormalizeRegistrationConfig`). Both registration
+  surfaces pass through it: `handleCreateComponent` validates the operator-supplied ID
+  before the uniqueness check and returns the standard bad-request shape naming the
+  rule, and the `register_component` agent tool asserts its generated
+  type-hyphen-16-hex ID post-generation, so a future type name that breaks the format
+  fails loudly instead of silently minting an invalid ID (every currently registrable
+  type conforms; among unregistrable constants only `oci_registry`'s underscore would
+  trip it, and the assertion is exactly the guard for that). The rationale: IDs are
+  load-bearing — URL path segments via `r.PathValue("id")` on every component endpoint,
+  RBAC zone-assignment keys, zone-scope enforcement keys in the tool executor, graph
+  node stamps, audit targets, log fields — and the seam previously admitted any
+  non-empty string, so a slash broke routing and spaces/percents degraded URLs and
+  logs. Validation applies at registration only: existing rows are grandfathered, no
+  migration. The registration dialog (`ComponentRegisterForm.tsx`) now derives the ID
+  from Name by auto-slugification (lowercase, invalid runs to one hyphen, collapsed,
+  edge-trimmed, truncated to 63); the field is read-only behind an Edit unlock, a
+  manual edit stops the auto-sync for the rest of the dialog session, help text states
+  the permanence and the rule, and client-side validation mirrors the backend rule and
+  gates submit — the backend rule stays authoritative. Placeholders stay universally
+  generic per D-0145.
+- Basis: `internal/componentgov/id.go`; `internal/api/components.go`
+  (`handleCreateComponent`); `internal/coreagent/agent.go`
+  (`RegisterComponentTool.Execute`); pinned by `TestValidateComponentID`
+  (`internal/componentgov/id_test.go`), `TestHandleCreateComponent_MalformedID`
+  (`internal/api/components_test.go`),
+  `TestRegisterComponentTool_GeneratedIDsPassValidation`
+  (`internal/coreagent/register_component_id_format_test.go`), and
+  `ComponentRegisterForm.test.tsx` (slugify, edit-unlock, stop-sync-after-manual-edit,
+  submit gating). `go test ./...` and `npm run test` green.
+- Supersedes: nothing. Extends the D-0145 dialog with the derived-ID flow. A deferred
+  sibling thread (component Name has no mutation path; a governed rename endpoint
+  would need its own audit event) is recorded in
+  `docs/backlog/component-name-rename.md`.
+- Status: adopted.
+
+---
+
 ## D-0146 — MCP handshake version and OTel service.version read build truth; a structural guard closes the class
 
 - Date: 2026-07-27
