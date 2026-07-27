@@ -50,9 +50,9 @@ file for the full status, priority, blocked-by, and body.
 | [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | now |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open | next |
+| [`home-dir-override-seam`](home-dir-override-seam.md) | `joe`'s home/data-directory resolution has no override seam for tests or isolated runs | open | |
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred | later |
-| [`joe-home-resolution`](joe-home-resolution.md) | How does `joe` actually resolve its home directory? | open | next |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open | next |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |
