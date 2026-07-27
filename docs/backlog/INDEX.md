@@ -30,6 +30,7 @@ file for the full status, priority, blocked-by, and body.
 | [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
 | [`cli-version-and-help`](cli-version-and-help.md) | Backlog — Skills/incident leaf help still runs behind a config load (deferred from cli-version-and-help / D-0143) | open | next |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
+| [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open | later |
@@ -81,7 +82,6 @@ file for the full status, priority, blocked-by, and body.
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
 | [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
-| [`service-account-collision-error-wording`](service-account-collision-error-wording.md) | Service-account key-collision error doesn't name the colliding value's origin | open | later |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open | next |
 | [`sessions-admin-delete-affordance`](sessions-admin-delete-affordance.md) | Admin delete affordance gap on non-owned sessions in the Sessions list | open | later |

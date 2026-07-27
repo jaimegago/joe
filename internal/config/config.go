@@ -148,6 +148,12 @@ type ServiceAccount struct {
 	Name string `yaml:"name"`
 	// Key is the plaintext bearer token the account presents.
 	Key string `yaml:"key"`
+	// KeyFromEnv marks that Key was written (or overwritten) by the
+	// JOE_API_KEY env override in setServerServiceAccountKey, rather than
+	// coming from the YAML key field. Not a config input — always false for
+	// an account as parsed from disk. Threaded through so a key-collision
+	// error can name which of the two origins to edit (D-0137 trap).
+	KeyFromEnv bool `yaml:"-"`
 }
 
 // ServerConfig holds joecored server settings
@@ -596,10 +602,11 @@ func setServerServiceAccountKey(s *ServerConfig, key string) {
 	for i := range s.ServiceAccounts {
 		if s.ServiceAccounts[i].Name == serverServiceAccountName {
 			s.ServiceAccounts[i].Key = key
+			s.ServiceAccounts[i].KeyFromEnv = true
 			return
 		}
 	}
-	s.ServiceAccounts = append(s.ServiceAccounts, ServiceAccount{Name: serverServiceAccountName, Key: key})
+	s.ServiceAccounts = append(s.ServiceAccounts, ServiceAccount{Name: serverServiceAccountName, Key: key, KeyFromEnv: true})
 }
 
 // Save saves the config to a YAML file

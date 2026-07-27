@@ -1,6 +1,6 @@
 # Service-account key-collision error doesn't name the colliding value's origin
 
-Status: open
+Status: done — collision error now names both colliding keys' origins (config file vs JOE_API_KEY env var), session `service-account-collision-error-wording`
 Priority: later
 
 `internal/auth/serviceaccount.go:51`:

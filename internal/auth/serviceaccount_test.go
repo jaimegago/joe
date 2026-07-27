@@ -93,3 +93,52 @@ func TestServiceAccountResolver_RejectsInvalidConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestServiceAccountResolver_KeyCollisionNamesOrigins proves the D-0137
+// collision error names where each colliding key value came from — the YAML
+// config file or the JOE_API_KEY env override — not just which principal
+// already holds the key. An operator staring at "key already used by
+// svc:server" with two visibly-distinct YAML keys has no way to know
+// JOE_API_KEY is the second source without this.
+func TestServiceAccountResolver_KeyCollisionNamesOrigins(t *testing.T) {
+	t.Run("two config-file keys collide", func(t *testing.T) {
+		_, err := NewServiceAccountResolver([]config.ServiceAccount{
+			{Name: "ci", Key: "shared"},
+			{Name: "mcp", Key: "shared"},
+		})
+		if err == nil {
+			t.Fatal("want error, got nil")
+		}
+		for _, want := range []string{
+			`already used by "svc:ci"`,
+			`this account's key came from the config file`,
+			`"svc:ci"'s key came from the config file`,
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain %q", err.Error(), want)
+			}
+		}
+		if strings.Contains(err.Error(), "JOE_API_KEY") {
+			t.Errorf("error %q wrongly names JOE_API_KEY for an all-config-file collision", err.Error())
+		}
+	})
+
+	t.Run("config-file key collides with JOE_API_KEY-overridden server key", func(t *testing.T) {
+		_, err := NewServiceAccountResolver([]config.ServiceAccount{
+			{Name: "server", Key: "shared", KeyFromEnv: true},
+			{Name: "joe-admin", Key: "shared"},
+		})
+		if err == nil {
+			t.Fatal("want error, got nil")
+		}
+		for _, want := range []string{
+			`already used by "svc:server"`,
+			`this account's key came from the config file`,
+			`"svc:server"'s key came from the JOE_API_KEY env var`,
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain %q", err.Error(), want)
+			}
+		}
+	})
+}

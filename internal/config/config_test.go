@@ -499,6 +499,9 @@ func TestLoad_EnvOverrides_APIKey(t *testing.T) {
 			if sa.Key != "super-secret" {
 				t.Errorf("server service account key = %q, want super-secret", sa.Key)
 			}
+			if !sa.KeyFromEnv {
+				t.Error("server service account KeyFromEnv = false, want true (key came from JOE_API_KEY)")
+			}
 		}
 	}
 	if !found {
