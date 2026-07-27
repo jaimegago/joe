@@ -10,6 +10,34 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0145 — Register Component dialog placeholders are universally generic, no per-type map
+
+- Date: 2026-07-27
+- Session: register-component-dialog-02
+- Decision: D-0144's "Also decided" note judged the per-type placeholder map
+  (`ComponentRegisterForm.tsx`, session `register-component-dialog`) not separately
+  decision-grade because it only executed `docs/backlog/register-component-dialog.md`'s
+  already-proposed direction; on review the map itself was the wrong call. Examples
+  like `kubernetes` → `prod-cluster` / `Production Cluster` and `prometheus` →
+  `prod-prometheus` / `Production Prometheus` are invented strings with no source of
+  truth behind them and read as arbitrary rather than illustrative. `TYPE_PLACEHOLDER_
+  EXAMPLES` and the `placeholderExample` derivation are removed from
+  `ComponentRegisterForm.tsx` entirely; the Component ID and Name inputs now carry the
+  plain literals `component-id` and `Component name` unconditionally, for every type,
+  with no per-type branching. The key-prop remount reset fix (`ComponentsPage.tsx`) is
+  unchanged by this session.
+- Basis: `ui/src/components/admin/ComponentRegisterForm.tsx` (placeholders, this
+  session); verified in a real browser against the fixed component (kubernetes,
+  prometheus, and splunk — unmapped in the removed map — all show the generic
+  placeholders; cancel/reopen still resets the fields).
+- Supersedes: the placeholder-map portion of D-0144's "Also decided" note and of the
+  prior session's change, and the "Proposed direction" section of the archived
+  `docs/backlog/done/register-component-dialog.md` (the per-type-map half only; the
+  key-remount-reset half stands).
+- Status: adopted.
+
+---
+
 ## D-0144 — chat-model Grounding fetches backlog/detail files live from the public GitHub repo instead of asking the operator to paste them
 
 - Date: 2026-07-27
