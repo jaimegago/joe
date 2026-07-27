@@ -1,5 +1,8 @@
 Two hardcoded `0.1.0` version literals sit outside `buildinfo`
-Status: open
+Status: done — both literals deleted and routed through `buildinfo.Get().Version`
+(session `hardcoded-version-literals`, D-0146), and the guard test suggested below
+was added: `TestGuard_BuildIdentityDeclaredOnlyInBuildinfo`
+(`internal/buildinfo/build_identity_guard_test.go`).
 Priority: later
 
 Opened from the `v0.2.0` go/no-go sweep (session `release-v0.2.0`, D-0137),

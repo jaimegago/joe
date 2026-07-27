@@ -20,12 +20,11 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jaimegago/joe/internal/buildinfo"
 )
 
-const (
-	serviceName    = "joe"
-	serviceVersion = "0.1.0"
-)
+const serviceName = "joe"
 
 var metricsHandler http.Handler
 
@@ -64,10 +63,13 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 		return func(context.Context) error { return nil }, nil
 	}
 
+	// service.version is this binary's build identity, read from
+	// internal/buildinfo (the single source of build truth), so a trace backend
+	// grouping by it cannot be told a version the artifact never was.
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(serviceName),
-			semconv.ServiceVersionKey.String(serviceVersion),
+			semconv.ServiceVersionKey.String(buildinfo.Get().Version),
 		),
 	)
 	if err != nil {

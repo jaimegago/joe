@@ -10,6 +10,50 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0146 — MCP handshake version and OTel service.version read build truth; a structural guard closes the class
+
+- Date: 2026-07-27
+- Session: hardcoded-version-literals
+- Decision: The two packages that declared their own version literal now read
+  `internal/buildinfo`. `internal/mcp/server.go`'s `serverVersion = "0.1.0"` const is
+  deleted; `NewServer` passes `buildinfo.Get().Version` to `mcpserver.NewMCPServer`.
+  `internal/observability/otel.go`'s `serviceVersion = "0.1.0"` const is deleted; the
+  resource sets `semconv.ServiceVersionKey` from `buildinfo.Get().Version`. Nothing
+  else about either surface changes: the MCP **protocol** version is a distinct concept
+  and is untouched (still stated by mcp-go, `2024-11-05` on the wire), and the OTel
+  resource carries the same two attributes it did. What changes is provenance only —
+  both values now move with the ldflags `-X` injection, so neither can report a version
+  the artifact never was. This makes CLAUDE.md's standing claim (buildinfo is the
+  single source of build truth; no other package declares build-identity vars) true
+  rather than aspirational: these two were its only counterexamples.
+  The guard test **was added**, not skipped: `TestGuard_BuildIdentityDeclaredOnlyInBuildinfo`
+  (`internal/buildinfo/build_identity_guard_test.go`) walks the tree in the shape of the
+  existing structural guards (module-anchored root, nested modules and non-source trees
+  skipped, `_test.go` excluded, explicit anti-vacuity check) and fails on any production
+  `const`/`var` outside `internal/buildinfo` that declares a build-identity value as a
+  literal. Precision comes from requiring **both** halves of an intersection: an
+  identifier drawn from a **closed set** of names denoting this binary's own build
+  identity, AND a value shape (a version-class name must also carry a `^v?\d+\.\d+`
+  literal; commit/build-time-class names, which mean nothing outside build identity,
+  need no shape). It is deliberately not a "contains Version" substring rule — that
+  would false-positive on `protocolVersion`, on Helm's chart `appVersion`, and on
+  `apiVersion = "v1"`. Widening `buildIdentityNames` is stated in the failure message as
+  never being the way to make a violation pass.
+- Basis: `internal/mcp/server.go:13` and `internal/mcp/server.go:25`;
+  `internal/observability/otel.go:27` and `internal/observability/otel.go:72`;
+  `internal/buildinfo/build_identity_guard_test.go`. Verified by direct observation
+  against a binary built with `-X ...buildinfo.Version=9.9.9-probe`: the `initialize`
+  response over stdio reports `"serverInfo":{"name":"joe","version":"9.9.9-probe"}` with
+  `"protocolVersion":"2024-11-05"` unchanged, and the stdout trace exporter emits
+  `Resource` attribute `service.version = "9.9.9-probe"`. The guard was probed against a
+  reintroduced `serverVersion = "0.1.0"` in `internal/mcp` and failed as intended. `make
+  precommit` and `go test ./...` green.
+- Supersedes: nothing. Discharges `docs/backlog/hardcoded-version-literals.md` (opened
+  by the `v0.2.0` go/no-go sweep, D-0137), now moved to `docs/backlog/done/`.
+- Status: adopted.
+
+---
+
 ## D-0145 — Register Component dialog placeholders are universally generic, no per-type map
 
 - Date: 2026-07-27

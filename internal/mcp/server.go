@@ -6,20 +6,23 @@ package mcp
 import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/jaimegago/joe/internal/buildinfo"
 	"github.com/jaimegago/joe/internal/client"
 )
 
-const (
-	serverName    = "joe"
-	serverVersion = "0.1.0"
-)
+const serverName = "joe"
 
 // NewServer creates an MCP server with all Joe tools registered.
 // The returned server is ready to be started with ServeStdio.
+//
+// The version reported in the MCP handshake is this binary's build identity,
+// read from internal/buildinfo (the single source of build truth), so it cannot
+// drift from the built artifact. It is unrelated to the MCP protocol version,
+// which the mcp-go library states on its own.
 func NewServer(c *client.Client) *mcpserver.MCPServer {
 	s := mcpserver.NewMCPServer(
 		serverName,
-		serverVersion,
+		buildinfo.Get().Version,
 		mcpserver.WithToolCapabilities(false),
 	)
 
