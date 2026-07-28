@@ -69,12 +69,6 @@ logging:
   level: info                       # debug | info | warn | error
   file: ""                          # log file path (empty = stderr only)
 
-knowledge:
-  embedding_model: ""               # model key for embeddings (defaults to llm.current)
-  semantic_top_k: 5
-  derived_min_confidence: 0.0       # threshold for surfacing derived knowledge
-  sync_enabled: false               # enable Confluence/Notion background sync
-
 database:
   driver: ""                        # defaults to sqlite
   dsn: ""                           # database path/DSN

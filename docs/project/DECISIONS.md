@@ -10,6 +10,101 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0149 — The root README is swept current: the knowledge-store section is deleted, Quick start leads download-first with build-from-source as a visible peer, and the residual `knowledge:` config sample is removed
+
+- Date: 2026-07-28
+- Status: accepted (implemented)
+- Session: readme-currency
+- Decision: `README.md` — the repo front door — is reconciled against the live tree after
+  drifting through two decision cycles. Three changes, all current-state prose with **no
+  removal narration and no past-tense reference to what used to exist**, per the D-0126
+  convention applied here to the README as well as to `docs/reference/`.
+
+  **The Knowledge store section is deleted outright**, not rewritten. It described the
+  curated/synced/derived entry taxonomy and pointed readers at `docs/configuration.md` for
+  the config block backing it; D-0113 deleted the subsystem, the taxonomy vocabulary, and the
+  tables wholesale. Nothing replaces the section, because nothing in the binary occupies that
+  role.
+
+  **The "What Joe does" second bullet loses its dangling clause.** "Joe reasons over live
+  state and its knowledge store before acting" becomes "live state and the relationships in
+  its graph" — the governance half of the sentence is unchanged and was already accurate. The
+  first bullet's graph claims were verified accurate and are untouched.
+
+  **Quick start is restructured download-first.** It previously led with `git clone` +
+  `make build` behind Go/Node prerequisites and offered no download path at all, which left
+  the file internally inconsistent: the License section had already been swept by D-0122 to
+  state that Joe is distributed as published release binaries *and* as source. The section now
+  opens on fetching the platform archive plus `checksums.txt` from the Releases page and
+  verifying with `sha256sum --ignore-missing --check` (Linux) / `shasum --algorithm 256
+  --ignore-missing --check` (macOS), stating why verification is required (nothing is signed,
+  so the checksum is the only proof the bytes are the built bytes). Build-from-source follows
+  as a **compact peer subsection** carrying its own Go/Node prerequisites and the unchanged
+  `make build` explanation, and naming its three legitimate reasons. This deliberately differs
+  from D-0125's treatment of the public Quickstart, which demoted source to a callout: a
+  tutorial carries one path, but the README is the front door and D-0122's peer posture is
+  what it must show. Per D-0032 the section states **no archive filename and no platform
+  list**, pointing at the Releases page's own asset list; `checksums.txt` is named because
+  `checksum.name_template` explicitly configures it. The Configure-the-LLM and Run
+  subsections were verified accurate and are unchanged, and now serve both paths.
+
+  **Scope addition:** `docs/configuration.md`'s residual `knowledge:` sample block
+  (`embedding_model`, `semantic_top_k`, `derived_min_confidence`, `sync_enabled`) is deleted.
+  It survived D-0113 and was still being pointed at by the README section removed above, so a
+  reader following the pointer found a config block for a subsystem that does not exist. No
+  other edit was made to that file; no surrounding prose referenced the block.
+- Basis: read-only Phase-1 verification of every load-bearing README claim against the live
+  tree before any edit; the file's remaining sections were tagged VERIFIED and left alone.
+  `internal/knowledge` absent from the tree and `internal/config` carrying no knowledge field
+  (grep, no match) confirm the deletion. `.goreleaser.yaml:53-59` — `archives:` carries `id`
+  and `formats: [tar.gz]` with **no `name_template`**, so naming an archive file would be an
+  unpinned claim, while `checksum.name_template: checksums.txt` is explicitly set; this is the
+  same basis D-0125 relied on, and the two verify commands are the ones already published at
+  `docs/public/install-and-build/_index.md`, so the README cannot drift from the procedure
+  page by inventing its own. Verified-and-unchanged, with citations: the subcommand list
+  against `cmd/joe/main.go:955-969` (and `db` backup/restore at `cmd/joe/db.go:288,290`,
+  `incident` status/declare/resolve/list at `cmd/joe/incident.go:32-34`); the observation
+  default and `JOE_MODE` refusal at `internal/env/keys.go:60-66`; the boot-resolved,
+  no-lowering-path write floor at `internal/safety/floor.go:27-53`; fail-closed unknown-tool
+  classification at `internal/safety/tier.go:229-238`; denial precedence floor → incident →
+  RBAC at `internal/tools/executor.go:201-216`; no-shell-out (no `os/exec` under
+  `internal/tools/shared/`; the sole `internal/` hit is `internal/skills/install.go`, a
+  different subsystem, so the claim as worded holds); MCP server-only (`internal/mcp` imports
+  the mcp-go server package only); SIGUSR1 panic at `cmd/joe/server.go:1135-1146`; the
+  `team_flat` default and `zoned` opt-in at `internal/readposture/readposture.go:60-61`; the
+  admin gate and audit guard tests both present in `internal/api/`; the quarantine-then-approve
+  lifecycle at `internal/skills/policy.go:26` and `install.go:40`, with all seven `joe skills`
+  subcommands present in `cmd/joe/main.go`; the registration example's `id`/`type`/`name`
+  fields at `internal/api/components.go:58-60` with credential-less enforcement at `:288-294`,
+  admin-gated promotion at `:709`, and inline-secret refusal at `:970`, `:985`, `:1016`; the
+  Kubernetes `api_server`/`ca_data`/`auth_method` model at
+  `internal/adapters/k8s/config.go:31-34`; the default-to-Claude precedence at
+  `internal/config/validation.go:56` with `JOE_LLM_PROVIDER`/`JOE_LLM_MODEL` at
+  `internal/config/config.go:514-515`; and the existence of every link target in the
+  Documentation table and inline (all present on disk). No test reads either edited file.
+- Consequence — one item deferred, not silently dropped: `docs/integrations.md` carries two
+  knowledge-store claims outside this session's scope, recorded in
+  `docs/backlog/readme-currency.md`. Its MCP table at `:46` still lists `joe_knowledge_search`,
+  which D-0113 deleted — the live roster is the seven tools in `internal/mcp/tools.go:10-72`,
+  pinned by `TestNewServer_ToolCount` (`internal/mcp/server_test.go:33-40`) — and its Slack
+  table at `:67` describes `/joe ask` as querying the knowledge store, which
+  `internal/slack/` no longer does. That file is linked from the README, so the drift is
+  two clicks from the front door. The parallel residue in
+  `docs/reference/joe-architecture.md` (`:288`, `:541`, the `:569` blockquote) is **already**
+  tracked by `docs/backlog/reference-docs-prune-reconcile.md` §3 and no second item was
+  opened for it; `docs/project/SITE-CLAIMS.md:85` cites the knowledge store as recorded basis
+  for the act-policy seam's unreachability, which is the register working as intended and is
+  not drift.
+- Supersedes: nothing. No architectural invariant, command, or convention changed — this is a
+  documentation-currency sweep, and `CLAUDE.md` needed no edit. D-0122's peer distribution
+  posture is applied here, not altered; D-0125 is not disturbed, since it governs the public
+  Quickstart tutorial and this decision governs the README front door, which show the same two
+  paths at different weights for stated reasons. `docs/public` was checked and carries no
+  knowledge-store residue, so this session published no joeagent.dev revision flag and touched
+  no mechanism listed in `docs/project/SITE-CLAIMS.md`.
+
+---
+
 ## D-0148 — Guide screenshots are removed rather than captured; deterministic E2E-harness capture is the only sanctioned future path
 
 - Date: 2026-07-27

@@ -18,7 +18,7 @@
 ## What Joe does
 
 - **Understand live infrastructure.** Ask Joe about your systems in natural language. Joe queries your clusters, cloud accounts, observability backends, and datastores through registered components, and builds a graph of how they relate.
-- **Make changes with full context and governance.** Joe reasons over live state and its knowledge store before acting, and every action it takes is classified and gated. Nothing runs outside the governed executor.
+- **Make changes with full context and governance.** Joe reasons over live state and the relationships in its graph before acting, and every action it takes is classified and gated. Nothing runs outside the governed executor.
 - **Ground your coding agent.** Run `joe mcp` and Joe exposes its governed read tools over the Model Context Protocol, so Claude Code, Cursor, or any MCP client can pull real infrastructure context into a coding session.
 
 ---
@@ -42,13 +42,22 @@ See [docs/reference/security-in-layers.md](docs/reference/security-in-layers.md)
 
 ## Quick start
 
-### Prerequisites
+You need one LLM API key — Anthropic **or** Google — and a `joe` binary. Download a released binary or build from source; both are supported paths.
 
-- Go 1.25 or later
-- Node.js 20+ and npm (to build the web UI)
-- One LLM API key — Anthropic **or** Google
+### Download a release
 
-### Build
+Grab the archive for your platform and `checksums.txt` from the [Releases page](https://github.com/jaimegago/joe/releases) — the asset list there names the platforms each release covers. Nothing is signed, so the checksum is the only proof the bytes are the built bytes:
+
+```bash
+sha256sum --ignore-missing --check checksums.txt                  # Linux
+shasum --algorithm 256 --ignore-missing --check checksums.txt     # macOS
+```
+
+Then extract the archive to get a runnable `./joe`.
+
+### Build from source
+
+Building is a first-class path — the right one for contributing, for running an untagged commit, or for a platform outside the release matrix. It needs Go 1.25 or later plus Node.js 20+ and npm for the web UI:
 
 ```bash
 git clone https://github.com/jaimegago/joe.git
@@ -156,18 +165,6 @@ Registration lands the component inert: it has no credential and cannot authenti
 **Promote** it — the single governed transition that arms a component with a credential reference — via the admin-gated `POST /api/v1/components/{id}/promote`. Promotion writes a credential *reference*, never an inline secret. For a Kubernetes component the credential model is the API server URL (`api_server`), an inline CA bundle (`ca_data`), and an auth method (`auth_method`) — there is no kubeconfig path anywhere.
 
 For the set of supported adapters, see [`internal/adapters/`](internal/adapters/). For setup walkthroughs, see [docs/integrations.md](docs/integrations.md).
-
----
-
-## Knowledge store
-
-Joe's knowledge store holds three kinds of entry:
-
-- **Curated** — human-owned knowledge. Immutable through the API.
-- **Synced** — entries pulled from an external source.
-- **Derived** — knowledge Joe extracts from its own operation. Mutable.
-
-The curated/synced/derived distinction is a property of the knowledge store, separate from the infrastructure graph. See [docs/configuration.md](docs/configuration.md).
 
 ---
 
