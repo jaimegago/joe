@@ -30,8 +30,11 @@ file for the full status, priority, blocked-by, and body.
 | [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
 | [`cli-version-and-help`](cli-version-and-help.md) | Backlog — Skills/incident leaf help still runs behind a config load (deferred from cli-version-and-help / D-0143) | open | next |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
+| [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
 | [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
+| [`component-resolution-tool`](component-resolution-tool.md) | Component resolution tool — expose graph-edge component binding to the agent loop | open | now |
+| [`component-type-contract`](component-type-contract.md) | Per-type component contract — one deterministic package per component type | open | later |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open | later |
 | [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open | later |
@@ -47,7 +50,7 @@ file for the full status, priority, blocked-by, and body.
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open | later |
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
-| [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | now |
+| [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | next |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
 | [`guide-screenshots-e2e-capture`](guide-screenshots-e2e-capture.md) | Deterministic guide screenshots from the E2E harness | open | later |
 | [`healthz-endpoint-surface`](healthz-endpoint-surface.md) | Unauthenticated health-probe surface — standards-anchored build spec (/healthz, /livez, /readyz) | open | next |
@@ -81,6 +84,7 @@ file for the full status, priority, blocked-by, and body.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
+| [`repo-registration-path`](repo-registration-path.md) | Repo registration path — no operator path to a git_read-able repository exists | open | now |
 | [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
