@@ -372,8 +372,10 @@ func TestHandleCreateComponent_UnregistrableTypesRejected(t *testing.T) {
 		// No construction path (trim-deadonarrival-component-types).
 		"oci_registry", "dockerhub", "artifactory", "ecr",
 		"cloudwatch", "azuremonitor",
-		// Not credential-wired (trim-unsupported-component-types).
-		"azure", "helm", "nginx-ingress", "git", "aws", "datadog",
+		// Not credential-wired (trim-unsupported-component-types). git is NOT in
+		// this list: it was credential-wired and restored to the registrable set
+		// by repo-registration-path / D-0150.
+		"azure", "helm", "nginx-ingress", "aws", "datadog",
 		"postgresql", "mysql", "redis", "mongodb", "kafka", "elasticsearch",
 	}
 

@@ -33,6 +33,9 @@ func TestWiredTypes_ExactSetAfterW2(t *testing.T) {
 		store.ComponentTypeGrafana,
 		store.ComponentTypeFalco,
 		store.ComponentTypeArgoCd,
+		// repo-registration-path / D-0150: git rejoins the wired set so an
+		// operator has a path to a git_read-able repository.
+		store.ComponentTypeGit,
 	}
 	sort.Strings(want)
 
@@ -70,12 +73,16 @@ func TestWiredProvider_AnswersForWiredAndUnwiredTypes(t *testing.T) {
 		{"grafana wired to static", store.ComponentTypeGrafana, KindStatic, true},
 		{"falco wired to static", store.ComponentTypeFalco, KindStatic, true},
 		{"argocd wired to static", store.ComponentTypeArgoCd, KindStatic, true},
+		// git is wired, with KindStatic as its TYPE-LEVEL default: an HTTPS-token
+		// reference. Its second selectable Kind (none, the explicit no-credential arm)
+		// is chosen per component at promotion and is not the type-level default, so
+		// WiredProvider reports static — see TestSelectableKinds.
+		{"git wired to static (type-level default)", store.ComponentTypeGit, KindStatic, true},
 		// Out-of-batch / no-credential types stay UNWIRED: datadog (api_key+app_key
-		// pair), git (auth_type-discriminated), oci_registry and artifactory
+		// pair), oci_registry and artifactory
 		// (registry-auth shape — token-or-basic-auth, not an unambiguous single static
 		// token), helm (kubeconfig), terraform (no credential), envoy (no credential).
 		{"datadog unwired (credential pair)", store.ComponentTypeDatadog, "", false},
-		{"git unwired (discriminated auth)", store.ComponentTypeGit, "", false},
 		{"oci_registry unwired (basic-auth pair)", store.ComponentTypeOCIRegistry, "", false},
 		{"artifactory unwired (registry-auth shape, bimodal token/basic-auth)", store.ComponentTypeArtifactory, "", false},
 		{"helm unwired (kubeconfig)", store.ComponentTypeHelm, "", false},

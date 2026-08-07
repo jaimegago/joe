@@ -1,7 +1,6 @@
 Dumb content-search tool over the local git clones
 Status: open
 Priority: now
-Blocked-by: repo-registration-path
 
 A content-search tool over the clones Joe already keeps on disk for every registered
 git component. Substring and regex matching, no ranking, no model inside the tool

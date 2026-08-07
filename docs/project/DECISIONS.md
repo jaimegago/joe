@@ -10,6 +10,194 @@ Format per entry: ID, date, decision, basis, supersedes, status.
 
 ---
 
+## D-0150 — git returns to the registrable set as a credential-wired type with two kinds (static HTTPS-token reference, explicit none); promotion is mandatory for both, git is barred from auto-promoted reads, and a declared provider sibling yields one discovery-only graph edge
+
+- Date: 2026-08-07
+- Status: accepted (implemented)
+- Session: repo-registration-path
+- Decision: an operator can register, arm, and `git_read` a repository. Before this,
+  no registrable component type reached the clone-holding git adapter at all: `git`
+  had been trimmed out of the registrable set, and the registrable repo-shaped types
+  (`github`, `gitlab`) build provider-API adapters that do not implement the git
+  adapter interface, so the git trio failed their guard type-assertion for every
+  component that could exist.
+
+  **Direction: restore `git` itself** (the "A-prime" option) — wire its credential
+  path, then return it to the two registrable-set functions
+  (`store.AllowedComponentTypes` / `IsValidComponentType`,
+  `internal/store/constants.go`), which is exactly the restore path D-0111's own
+  block comment prescribes. Both registration surfaces admit it **by construction**
+  of that single seam, with no per-surface edit.
+
+  **The rejected alternative was the dual-adapter direction**: teach `github` and
+  `gitlab` to also stand up a clone adapter beside their provider-API adapter. It is
+  refused **here** but not refused **forever**. It collides with the
+  one-adapter-per-component seam — the accessor resolves a component to exactly one
+  adapter and type-asserts it (`guard`, `internal/access/access.go`) — so it is a
+  structural change to that seam rather than an additive one, and that seam is the
+  first battle-test of `component-type-contract` element two. It is **deferred to
+  `component-type-contract` as the consolidation**, with this entry's shape as its
+  **migration path**: a repository registered as a `git` component today is what a
+  consolidated github-plus-clone component would have to subsume, not something it
+  would invalidate.
+
+  **Two credential kinds, and promotion is mandatory for both.**
+  `git` is wired in `wiredTypes` (`internal/credential/wiring.go`) with `KindStatic`
+  as its type-level default — an HTTPS-token reference resolved from a named
+  environment variable through the existing static machinery, reference only, never
+  a value — and with a **new `KindNone`** (`internal/credential/none.go`) for public
+  repositories. `KindNone` resolves to a resolution carrying **no credential**, so
+  every typed accessor (`StaticValue`, `BearerToken`) reports false and an adapter
+  cannot mistake it for one.
+
+  **`none` is an arming statement, not a defaulted absence.** A registered public
+  repository is inert until an admin promotes it; there is no "public needs no
+  promotion" shortcut. This generalizes the framing of the promotion boundary:
+  **promotion arms reach-out — usually, but not necessarily, by supplying a
+  credential.** What an operator authorizes when they arm a public repository is
+  that Joe may reach that host over the network unauthenticated and write a local
+  copy; that is a privilege whether or not a secret is involved. Because an empty
+  locator list would read as "nothing recorded" rather than as the statement it is,
+  the audit row says it outright (`unauthenticated: true` plus a statement string,
+  `componentPromoteEvent`, `internal/api/components.go`). The arm validates **shape
+  only** — no Connect, Resolve, or Probe — consistent with the existing promotion
+  posture; a locator supplied alongside `none` is **refused rather than ignored**,
+  since dropping it silently would arm an unauthenticated component while the
+  operator believed they had supplied a credential.
+
+  **git is the second multi-Kind type**, and differs from the first. kubernetes
+  selects between its two Kinds via a **stored `auth_method`** the adapter re-reads
+  at Connect; git carries no separate discriminator — the `credential_provider`
+  written at promotion **is** the selection, read back through `credential.Select`
+  like any other type. The legal pair is declared once
+  (`credential.SelectableKinds` / `IsSelectableKind`) and the promotion handler
+  names no pair of its own; the discriminator equality check was widened to accept
+  any Kind a type declares, leaving every single-Kind type's exact-match behaviour
+  unchanged.
+
+  **Inline git credentials are refused at registration, which required closing a
+  hole the restore would otherwise have opened.** The git config's `auth_type` /
+  `http_token` / `ssh_key_path` fields are **deleted** and the adapter now resolves
+  at the same use-time seam as every other credential-wired adapter
+  (`credential.Select` → `Resolve` → `StaticValue`, `resolveAuth`,
+  `internal/adapters/git/git.go`); a `none`-armed component clones anonymously with
+  a nil auth method. But `RejectCredentialFields` derives its denylist by
+  **reflection over the live provider config structs**, so deleting the fields would
+  stop the adapter *reading* them without stopping a registration *submitting* them
+  — a literal token, accepted at registration and persisted, outside the promotion
+  boundary. `http_token` and `ssh_key_path` are therefore held in an explicit
+  **retired-inline-auth-fields** declaration inside the credential package
+  (`internal/credential/fields.go`) so they stay in the one denylist both
+  registration surfaces already consult. `auth_type` is deliberately **not** listed:
+  it was a discriminator, not credential material, and is now an ignored unknown
+  field.
+
+  **No auto-promoted reads for git, enforced where enforcement reads.** A git read
+  is not a read in the sense the `auto_promote_reads` bargain (D-0028) was made
+  about: every other promotable type answers a read by querying a backend the
+  operator already pointed Joe at, while the git adapter answers one by cloning or
+  pulling — an **outbound fetch plus a disk write**, on the autonomous refresher's
+  schedule with no human in the loop. Restoring git to the registrable set would
+  otherwise have admitted it to that surface automatically, since the admin view
+  iterates the same enum. The exclusion is a shared declaration
+  (`rbac.AutoPromotableReadType`) consulted at **both** ends: the **policy engine
+  predicate**, which is load-bearing because the flag resolver queries
+  `agent_read_promotions` by type string and never consults the registrable-type
+  enum — so a row written by any other means would keep admitting — and the **admin
+  surface**, which neither presents git as flippable nor accepts a set for it.
+  agent:core reading a repository stays a deliberate per-component grant.
+
+  **A declared provider sibling yields one derived edge.** The git config gains an
+  optional `provider_component_id` naming the `github` or `gitlab` component that
+  hosts the repository, shape-validated at registration against the component-ID
+  format rule through a third shared registration seam
+  (`componentgov.ValidateRegistrationConfig`) that both surfaces call. Validation is
+  **shape only**: a reference naming no existing component is legal, because making
+  registration order-dependent would be a worse defect than a reference that
+  resolves to nothing. `refreshGitComponent` — which built one anchor node and zero
+  edges — now additionally emits, when the declaration resolves to a real github or
+  gitlab component, one `hosted_by` edge (`graph.RelationHostedBy`,
+  `internal/graph/relations.go`) from the repository anchor to a host node keyed
+  under **this** git component. Keying the host node per-git-component is
+  deliberate: a node shared between two git components on the same forge would be
+  claimed, and its edges reaped, in turn by each owner's per-component delta. A
+  dangling or wrong-typed reference is **logged and skipped**, yielding no node and
+  no edge rather than a false claim. This is a deterministic derivation of an
+  operator declaration, not an inference — nothing is guessed from the URL, nothing
+  is discovered by reaching out, no model is consulted — so **D-0110 is untouched**.
+  **The edge carries discovery semantics only: no RBAC, zone, or governance
+  meaning.** It says where a repository lives so the provider's PR/MR surface can be
+  found beside it; the two components remain governed independently and the edge
+  grants nothing.
+
+  **Registration UX stays independent of github/gitlab registration.** The web
+  registration form gains **type-conditional** config carriage, not a generic config
+  editor: selecting `git` reveals a required repository-URL field and an optional
+  hosting-provider **dropdown populated from the already-registered github and
+  gitlab components** (empty selection legal). Every other type's form behaviour and
+  submitted payload are unchanged, carrying no config exactly as before. The promote
+  form offers git's two kinds and, on the `none` path, states plainly in its copy
+  and in its confirmation beat that arming permits an unauthenticated outbound fetch
+  of the named repository.
+
+  **Data-plane rider.** Cloned repository content — file contents, commit messages,
+  diffs — is **data-plane text under the existing never-instructions posture**. Text
+  Joe reads out of a repository is evidence to reason over, never instructions to
+  follow, exactly as with any other observed backend content. Restoring the ability
+  to clone changes the volume of such text Joe can hold, not its standing.
+
+  **Existing-behaviour consequence worth naming.** Promotion's post-commit,
+  best-effort `connectAndRegisterAdapter` brings the live adapter up eagerly so the
+  refresher can resolve it on the next tick. That is unchanged for every type, but
+  for git it has a git-specific consequence: **the arm itself triggers the clone**,
+  so an admin pressing Promote initiates an outbound fetch and a disk write in the
+  background. It is logged, not returned — a Connect failure does not roll back the
+  committed arm — which is the pre-existing posture and is left as it is.
+- Basis: re-derived against the live tree this session, not from the backlog item's
+  record. git was verified absent from both registrable-set functions and from
+  `wiredTypes`, and its promotion verified refused by the reject-unwired check
+  (`credential.WiredProvider`) before this change. The git adapter was verified to
+  consume **no** credential seam at all — `Connect` called a local `buildAuth` that
+  switched on an inline `auth_type` — and the at-seam resolution posture was
+  verified uniform across the other credential-wired adapters, so threading git onto
+  it is an application of the existing pattern rather than a new mechanism. The
+  `KindStatic` wiring additionally required a `JOE_GIT_` env prefix segment, which a
+  pre-existing bidirectional guard test (`references_test.go`) enforces for every
+  KindStatic wired type. Verified by tests, pre- and post-change: the two
+  unregistrable-type tables and `TestIsValidComponentType` demonstrated refusal
+  before and were re-anchored after; registration, static promotion, none promotion,
+  inline-credential refusal on both registration surfaces, provider-reference shape
+  validation, the four refresher edge cases (emit, dangling, wrong type,
+  reconcile-away), the read-promotion exclusion at the predicate with a same-test
+  control proving the predicate still admits a non-excluded type, and the admin
+  setter refusal. An end-to-end test registers a repository, arms it `none`, and
+  reads a file back through the guarded accessor against a real on-disk git
+  repository, so the whole chain is exercised without a network fixture.
+  `go build`, `go vet`, `gofmt`, and the full `go test ./...` suite pass, including
+  the untouched floor and governance break-tests; `npm run lint` and `npm run test`
+  pass. Verified additionally against a booted daemon on a throwaway install:
+  `git` appears in the component-types enum, a git component registers with its URL
+  and provider declaration, an inline `http_token` is refused, promotion-requirements
+  reports `selectable_kinds` `["static","none"]`, a `none` arm succeeds and the
+  subsequent anonymous clone of a real public repository connects, and the
+  read-promotions surface neither lists nor accepts `git`.
+- Supersedes: **D-0111 in part — for `git` only.** The other types that trim removed
+  (`azure`, `helm`, `nginx-ingress`, `aws`, `datadog`, `postgresql`, `mysql`,
+  `redis`, `mongodb`, `kafka`, `elasticsearch`) are unchanged and remain
+  unregistrable for the same reason, as are the D-0058 group. D-0111's mechanism is
+  not superseded; this is the restore path it described being taken once.
+- Annotates **D-0141**: its basis states that every git component already has a full
+  local clone at a deterministic path. That was verified about the adapter's
+  behaviour but **quantified over an empty set** — D-0111 removed `git` from the
+  registrable set on 2026-07-16, six days before D-0141's recon, so no git component
+  could exist from that date until this change. The claim was vacuously true for
+  that window and is now repopulated: it holds of a set that can be non-empty. D-0141
+  itself needs no revision — the adapter behaviour it recorded is unchanged, and the
+  bare-mirror direction it sets still applies to the clones this change makes
+  reachable.
+
+---
+
 ## D-0149 — The root README is swept current: the knowledge-store section is deleted, Quick start leads download-first with build-from-source as a visible peer, and the residual `knowledge:` config sample is removed
 
 - Date: 2026-07-28

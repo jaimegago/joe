@@ -62,8 +62,10 @@ func TestRegisterComponentTool_UnregistrableTypesRejected(t *testing.T) {
 		// No construction path (trim-deadonarrival-component-types).
 		"oci_registry", "dockerhub", "artifactory", "ecr",
 		"cloudwatch", "azuremonitor",
-		// Not credential-wired (trim-unsupported-component-types).
-		"azure", "helm", "nginx-ingress", "git", "aws", "datadog",
+		// Not credential-wired (trim-unsupported-component-types). git is NOT in
+		// this list: it was credential-wired and restored to the registrable set
+		// by repo-registration-path / D-0150.
+		"azure", "helm", "nginx-ingress", "aws", "datadog",
 		"postgresql", "mysql", "redis", "mongodb", "kafka", "elasticsearch",
 		"totally-unknown-type", // unknown-type baseline: identical outcome
 	}
@@ -170,5 +172,77 @@ func TestRegisterComponentTool_AbsentConfigPersistsInert(t *testing.T) {
 func TestRegisterComponentTool_ClassificationUnchanged(t *testing.T) {
 	if got := safety.ClassifyTool("register_component").Class; got != safety.ActionRead {
 		t.Errorf("register_component class = %v; want ActionRead — must not be reclassified to Mutate", got)
+	}
+}
+
+// TestRegisterComponentTool_GitRegisters proves the agent registration surface
+// admits git through the SAME single seam the HTTP path uses (D-0150): both call
+// store.IsValidComponentType, so restoring the type admitted it at both surfaces
+// by construction, with no per-surface edit.
+func TestRegisterComponentTool_GitRegisters(t *testing.T) {
+	svc := makeTestServices(t)
+	tool := NewRegisterComponentTool(svc, slog.Default())
+	if _, err := tool.Execute(context.Background(), map[string]any{
+		"name": "discovered repo", "type": "git",
+		"config": map[string]any{"url": "https://example.com/org/repo.git"},
+	}); err != nil {
+		t.Fatalf("register git: %v", err)
+	}
+	comps, err := svc.Store.Components.List(context.Background())
+	if err != nil {
+		t.Fatalf("list components: %v", err)
+	}
+	if len(comps) != 1 || comps[0].Type != "git" {
+		t.Fatalf("components = %+v; want one git component", comps)
+	}
+}
+
+// TestRegisterComponentTool_GitRejectsInlineCredentials proves the agent surface
+// refuses the git adapter's retired inline auth fields exactly as the HTTP path
+// does, because both consult the single credential-field denylist. A model cannot
+// smuggle a token in through a config the operator surface would refuse.
+func TestRegisterComponentTool_GitRejectsInlineCredentials(t *testing.T) {
+	for _, field := range []string{"http_token", "ssh_key_path"} {
+		t.Run(field, func(t *testing.T) {
+			svc := makeTestServices(t)
+			tool := NewRegisterComponentTool(svc, slog.Default())
+			_, err := tool.Execute(context.Background(), map[string]any{
+				"name": "repo", "type": "git",
+				"config": map[string]any{"url": "https://example.com/r.git", field: "secret-ish"},
+			})
+			if err == nil {
+				t.Fatalf("tool accepted inline credential field %q", field)
+			}
+			comps, lerr := svc.Store.Components.List(context.Background())
+			if lerr != nil {
+				t.Fatalf("list components: %v", lerr)
+			}
+			if len(comps) != 0 {
+				t.Errorf("component persisted despite rejection of %q", field)
+			}
+		})
+	}
+}
+
+// TestRegisterComponentTool_GitValidatesProviderReferenceShape proves the
+// per-type shape rule fires on the agent path too: a malformed provider
+// declaration is refused, while a well-formed one naming no existing component is
+// accepted (the reference is a discovery hint, validated for shape only).
+func TestRegisterComponentTool_GitValidatesProviderReferenceShape(t *testing.T) {
+	svc := makeTestServices(t)
+	tool := NewRegisterComponentTool(svc, slog.Default())
+
+	if _, err := tool.Execute(context.Background(), map[string]any{
+		"name": "repo", "type": "git",
+		"config": map[string]any{"url": "https://example.com/r.git", "provider_component_id": "Not Valid"},
+	}); err == nil {
+		t.Fatal("tool accepted a malformed provider_component_id")
+	}
+
+	if _, err := tool.Execute(context.Background(), map[string]any{
+		"name": "repo", "type": "git",
+		"config": map[string]any{"url": "https://example.com/r.git", "provider_component_id": "gh-not-yet"},
+	}); err != nil {
+		t.Fatalf("tool refused a well-formed but dangling provider reference: %v", err)
 	}
 }

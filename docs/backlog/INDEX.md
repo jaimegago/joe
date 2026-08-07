@@ -84,7 +84,6 @@ file for the full status, priority, blocked-by, and body.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
-| [`repo-registration-path`](repo-registration-path.md) | Repo registration path — no operator path to a git_read-able repository exists | open | now |
 | [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |

@@ -1,7 +1,6 @@
 Git clone freshness: fetch-before-analysis, and the move to a bare mirror
 Status: open
 Priority: next
-Blocked-by: repo-registration-path
 
 Today a git component's clone is fetched **only at Connect** — first use clones,
 a subsequent Connect pulls — and there is no scheduled re-fetch anywhere

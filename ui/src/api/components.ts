@@ -33,15 +33,18 @@ export function fetchComponentTypes(): Promise<string[]> {
 }
 
 // createComponent registers a new, inert component via the admin-gated governed
-// create endpoint (POST /api/v1/components). The request carries ONLY id/type/
-// name — never a config/credential by construction (credentials enter at a
-// separate promotion step). The component lands credential-less in the
-// unassigned zone under the read-only floor and can do nothing until it is
-// separately promoted and zone-assigned.
+// create endpoint (POST /api/v1/components). It carries id/type/name plus, for
+// the types that need one, a NON-CREDENTIAL routing config — never a credential
+// by construction (credentials enter at a separate promotion step, and the
+// backend refuses a credential-bearing field here). Today only the git branch
+// populates config: a repository is unusable without its URL. The component
+// lands credential-less in the unassigned zone under the read-only floor and can
+// do nothing until it is separately promoted and zone-assigned.
 export function createComponent(input: {
   id: string;
   type: string;
   name: string;
+  config?: Record<string, string>;
 }): Promise<CreatedComponent> {
   return apiClient
     .post<unknown>('/api/v1/components', input)
@@ -89,8 +92,14 @@ export function fetchPromotionCandidates(id: string): Promise<PromotionCandidate
 // client_secret_env_var reference (the secret is resolved by name, never stored,
 // and uses a DISTINCT field so shared Azure app registrations are allowed). There
 // is no kubeconfig ingestion.
+// A git component additionally takes the explicit `none` kind, which carries NO
+// locator at all: the discriminator IS the reference. It is a deliberate,
+// audited statement that this component may reach its repository with no
+// credential, not a defaulted absence — a public repository still requires
+// promotion before it can be read.
 export type PromoteRequest =
   | { credential_provider: 'static'; env_var: string }
+  | { credential_provider: 'none' }
   | {
       credential_provider: 'static-bearer';
       auth_method: 'static-bearer';

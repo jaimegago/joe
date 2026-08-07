@@ -439,6 +439,12 @@ func TestIsValidComponentType(t *testing.T) {
 		{"prometheus", true},
 		{"github", true},
 		{"gitlab", true},
+		// git took the restore path the trim's block comment describes: it is
+		// credential-wired (a static HTTPS-token reference, or an explicit
+		// no-credential arm for a public repository) and registrable again, so an
+		// operator has a path to a git_read-able repository (D-0150). The other
+		// types that trim removed are unchanged.
+		{"git", true},
 		// Boot-only group stays registrable (constructed at boot only).
 		{"splunk", true},
 		// Removed from the registrable set by trim-deadonarrival-component-types:
@@ -455,7 +461,6 @@ func TestIsValidComponentType(t *testing.T) {
 		{"azure", false},
 		{"helm", false},
 		{"nginx-ingress", false},
-		{"git", false},
 		{"aws", false},
 		{"datadog", false},
 		{"postgresql", false},

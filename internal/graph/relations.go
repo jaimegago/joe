@@ -33,4 +33,12 @@ const (
 	// Phase 6.13 — Artifact registry relations.
 	RelationImageStoredIn = "image_stored_in" // k8s deployment → image_repository
 	RelationPublishesTo   = "publishes_to"    // git_repo → image_repository
+
+	// Repository hosting. Derived deterministically from the git component's
+	// declared provider_component_id, which names the github or gitlab component
+	// that hosts the repository. DISCOVERY semantics only: it tells a reader (and
+	// the agent loop) where a repository lives so the provider's PR/MR surface can
+	// be found beside it. It carries no RBAC, zone, or governance meaning — the
+	// two components are governed independently, and the edge grants nothing.
+	RelationHostedBy = "hosted_by" // git_repo → github/gitlab component
 )

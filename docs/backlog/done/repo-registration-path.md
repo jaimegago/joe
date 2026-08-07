@@ -1,5 +1,14 @@
 Repo registration path — no operator path to a git_read-able repository exists
-Status: open
+Status: closed (done) — resolved by D-0150 (repo-registration-path). The first of the
+two fix directions below was taken: `git` is credential-wired with two kinds (a static
+HTTPS-token reference and an explicit `none` for public repositories, promotion
+mandatory for both) and restored to the registrable set, so an operator can register,
+arm, and `git_read` a repository. The second direction — teaching github/gitlab to also
+stand up a clone adapter — is deferred to `component-type-contract` as the
+consolidation, with this shape as its migration path. git is barred from
+`auto_promote_reads` (a clone is an outbound fetch plus a disk write), the optional
+`provider_component_id` declaration yields one discovery-only `hosted_by` edge, and
+D-0141's basis is annotated as required.
 Priority: now
 
 A read-only trace at main 275e810 established that no component type an operator

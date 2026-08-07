@@ -3,13 +3,15 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createWrapper } from '@/test/utils';
 import { ComponentRegisterForm } from './ComponentRegisterForm';
-import { fetchComponentTypes } from '@/api/components';
+import { fetchComponentTypes, fetchComponents } from '@/api/components';
 
 vi.mock('@/api/components', () => ({
   fetchComponentTypes: vi.fn(),
+  fetchComponents: vi.fn(),
 }));
 
 const mockTypes = vi.mocked(fetchComponentTypes);
+const mockComponents = vi.mocked(fetchComponents);
 
 function renderForm(onSubmit = vi.fn()) {
   const { Wrapper } = createWrapper();
@@ -24,7 +26,9 @@ function renderForm(onSubmit = vi.fn()) {
 describe('ComponentRegisterForm', () => {
   beforeEach(() => {
     mockTypes.mockReset();
-    mockTypes.mockResolvedValue(['kubernetes', 'prometheus']);
+    mockTypes.mockResolvedValue(['kubernetes', 'prometheus', 'git']);
+    mockComponents.mockReset();
+    mockComponents.mockResolvedValue([]);
   });
 
   it('auto-slugifies the ID from Name: lowercase, invalid runs to one hyphen, trimmed edges', async () => {
@@ -93,5 +97,84 @@ describe('ComponentRegisterForm', () => {
 
     expect(idInput).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('button', { name: /register/i })).toBeDisabled();
+  });
+
+  // --- git: type-conditional routing config (D-0150) ---
+  //
+  // Config carriage is deliberately per-type, not a generic config editor. The
+  // git branch collects the repository URL and an optional hosting declaration;
+  // every other type submits exactly the payload it always did.
+
+  async function selectType(user: ReturnType<typeof userEvent.setup>, label: string) {
+    await user.click(screen.getByRole('combobox', { name: /^type$/i }));
+    await user.click(await screen.findByRole('option', { name: label }));
+  }
+
+  it('submits no config for a non-git type', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Prod Cluster');
+    await selectType(user, 'kubernetes');
+    expect(screen.queryByLabelText(/repository url/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'prod-cluster',
+      type: 'kubernetes',
+      name: 'Prod Cluster',
+    });
+  });
+
+  it('requires a repository URL for git and submits it as config', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Platform Repo');
+    await selectType(user, 'git');
+
+    // A repository is unusable without its URL, so submit stays disabled.
+    expect(screen.getByRole('button', { name: /register/i })).toBeDisabled();
+
+    await user.type(
+      screen.getByLabelText(/repository url/i),
+      'https://github.com/org/platform.git'
+    );
+    await user.click(screen.getByRole('button', { name: /register/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'platform-repo',
+      type: 'git',
+      name: 'Platform Repo',
+      config: { url: 'https://github.com/org/platform.git' },
+    });
+  });
+
+  it('offers the registered github and gitlab components as the hosting provider', async () => {
+    const stamps = { created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+    mockComponents.mockResolvedValue([
+      { id: 'gh-main', type: 'github', name: 'Corp GitHub', armed: true, status: 'ok', ...stamps },
+      { id: 'gl-main', type: 'gitlab', name: 'Corp GitLab', armed: true, status: 'ok', ...stamps },
+      { id: 'k8s-prod', type: 'kubernetes', name: 'Prod', armed: true, status: 'ok', ...stamps },
+    ]);
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Platform Repo');
+    await selectType(user, 'git');
+    await user.type(screen.getByLabelText(/repository url/i), 'https://example.com/r.git');
+
+    await user.click(screen.getByRole('combobox', { name: /hosting provider/i }));
+    // Only repository hosts are offered — never every registered component.
+    expect(screen.queryByRole('option', { name: /Prod \(kubernetes\)/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('option', { name: /Corp GitHub \(github\)/ }));
+
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'platform-repo',
+      type: 'git',
+      name: 'Platform Repo',
+      config: { url: 'https://example.com/r.git', provider_component_id: 'gh-main' },
+    });
   });
 });

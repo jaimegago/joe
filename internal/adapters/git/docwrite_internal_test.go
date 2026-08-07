@@ -1,9 +1,42 @@
 package git
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
+	"path/filepath"
 	"testing"
 )
+
+// writeTempECKey generates an EC private key and writes it as PEM. It lives here
+// because buildDocAuth is the only remaining ssh-key consumer in the package —
+// the git transport resolves its credential through the provider seam and reads
+// no key path (D-0150).
+func writeTempECKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	block := &pem.Block{Type: "EC PRIVATE KEY", Bytes: der}
+	path := filepath.Join(t.TempDir(), "id_ecdsa")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		t.Fatalf("create key file: %v", err)
+	}
+	defer f.Close()
+	if err := pem.Encode(f, block); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	return path
+}
 
 // TestBuildDocAuth_NoneVariants exercises buildDocAuth for "none" and other fallback cases.
 func TestBuildDocAuth_NoneVariants(t *testing.T) {

@@ -97,6 +97,11 @@ export const PromotionRequirementsSchema = z.discriminatedUnion('wired', [
     type: z.string(),
     wired: z.literal(true),
     kind: z.string(),
+    // selectable_kinds is every kind this component's type may be armed with,
+    // with `kind` (the type-level default) first. It is a one-element list for
+    // every type but git, which offers a static reference or the explicit
+    // no-credential arm. Optional so a server predating the field still parses.
+    selectable_kinds: z.array(z.string()).optional(),
     locator_fields: z.array(PromotionLocatorFieldSchema),
     constraints: z.array(PromotionConstraintSchema),
   }),

@@ -975,6 +975,13 @@ func (h *adminHandler) listReadPromotions(w http.ResponseWriter, r *http.Request
 	types := store.AllowedComponentTypes()
 	views := make([]readPromotionView, 0, len(types))
 	for _, t := range types {
+		// A type excluded from auto-promoted reads is not presented as flippable:
+		// showing a toggle the predicate would ignore would be a lie about what
+		// flipping it does. git is excluded because a git read is an outbound
+		// fetch plus a disk write, not a query (rbac.AutoPromotableReadType).
+		if !rbac.AutoPromotableReadType(t) {
+			continue
+		}
 		views = append(views, readPromotionView{ComponentType: t, Enabled: stored[t]})
 	}
 	// Read-class audit: the promotion topology is authz-adjacent, so the access
@@ -1014,6 +1021,17 @@ func (h *adminHandler) setReadPromotion(w http.ResponseWriter, r *http.Request) 
 	if !store.IsValidComponentType(req.ComponentType) {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
 			fmt.Sprintf("unknown component type %q", req.ComponentType))
+		return
+	}
+	// Excluded types are refused with the rationale, not silently accepted into a
+	// row the predicate would ignore. git reads are an outbound fetch plus a disk
+	// write, so agent:core reaching a repository stays a deliberate per-component
+	// grant (rbac.AutoPromotableReadType).
+	if !rbac.AutoPromotableReadType(req.ComponentType) {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
+			fmt.Sprintf("component type %q cannot be auto-promoted for reads: a %s read performs an outbound fetch and a disk write, not a query, so it requires a deliberate per-component grant",
+				req.ComponentType, req.ComponentType),
+			map[string]any{"component_type": req.ComponentType})
 		return
 	}
 	if h.server.services == nil || h.server.services.PromoteReads == nil {

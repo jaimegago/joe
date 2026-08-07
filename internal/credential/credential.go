@@ -51,6 +51,17 @@ const (
 	// transport-agnostic (no kubernetes or Azure-SDK binding) so the deferred Azure
 	// credential track can reuse it (agent-identity-doc-03, D-0063).
 	KindEntraExchange Kind = "entra-exchange"
+	// KindNone is the explicit no-credential provider: the component reaches its
+	// backend UNAUTHENTICATED. It exists so "this backend needs no credential" is
+	// a DELIBERATE, admin-attributed, audited statement made at promotion rather
+	// than a defaulted absence — arming a component with it is the operator saying
+	// "reach out to this target with no credential", which is a privilege grant in
+	// its own right even though no secret is referenced. Its reference carries no
+	// locator at all: the discriminator IS the whole reference. Resolve succeeds
+	// trivially and yields NO credential, so every typed accessor (StaticValue,
+	// BearerToken) reports false and an adapter that requires a credential fails
+	// closed rather than silently proceeding.
+	KindNone Kind = "none"
 )
 
 // bearerKinds is the set of provider Kinds whose resolved credential is a bearer

@@ -12,9 +12,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/paths"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -85,9 +85,17 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	}
 	a.config = cfg
 
-	auth, err := buildAuth(cfg)
+	// Resolve the credential at USE TIME through the provider seam, the same way
+	// every other credential-wired adapter does (D-0026 / D-0150). The armed
+	// config's credential_provider discriminator selects the provider: `static`
+	// yields an HTTPS token resolved from the referenced environment variable,
+	// `none` yields no credential at all and the clone proceeds anonymously. An
+	// unpromoted component has no discriminator, so Select defaults to the static
+	// provider, which resolves an empty value — anonymous, and the clone fails at
+	// the remote if the repository is in fact private.
+	auth, err := resolveAuth(ctx, source)
 	if err != nil {
-		return fmt.Errorf("build auth: %w", err)
+		return fmt.Errorf("resolve credential: %w", err)
 	}
 
 	repoPath, err := repoDir(cfg.URL)
@@ -157,29 +165,35 @@ func repoDir(repoURL string) (string, error) {
 	return filepath.Join(joeDir, "repos", hash[:16]), nil
 }
 
-// buildAuth creates a transport.AuthMethod from config.
-func buildAuth(cfg Config) (transport.AuthMethod, error) {
-	switch cfg.AuthType {
-	case "ssh":
-		if cfg.SSHKeyPath == "" {
-			return nil, fmt.Errorf("ssh_key_path required for ssh auth")
-		}
-		keys, err := gitssh.NewPublicKeysFromFile("git", cfg.SSHKeyPath, "")
-		if err != nil {
-			return nil, fmt.Errorf("load ssh key: %w", err)
-		}
-		return keys, nil
-	case "https":
-		if cfg.HTTPToken == "" {
-			return nil, fmt.Errorf("http_token required for https auth")
-		}
-		return &githttp.BasicAuth{
-			Username: "joe",
-			Password: cfg.HTTPToken,
-		}, nil
-	case "none", "":
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("unknown auth_type: %q", cfg.AuthType)
+// resolveAuth resolves the component's credential through the provider seam and
+// converts it into a go-git transport.AuthMethod.
+//
+// A nil AuthMethod means an ANONYMOUS clone, which is the correct and intended
+// outcome for a component armed with the no-credential kind. A resolved static
+// value becomes HTTPS basic auth carrying the token as the password — the
+// convention every major forge accepts for a personal access token.
+//
+// The credential value never leaves this function: it flows from the typed
+// accessor straight into the auth method, and a resolution failure surfaces only
+// the provider's non-sensitive diagnostic reason.
+func resolveAuth(ctx context.Context, source store.Component) (transport.AuthMethod, error) {
+	provider, err := credential.Select(source.Config)
+	if err != nil {
+		return nil, fmt.Errorf("select credential provider: %w", err)
 	}
+	res, err := provider.Resolve(ctx, source.ID, source.Config)
+	if err != nil {
+		return nil, err
+	}
+	if !res.Diagnostic.OK {
+		// Non-sensitive reason only; the credential value never enters this error.
+		return nil, fmt.Errorf("%s", res.Diagnostic.Reason)
+	}
+	token, ok := res.StaticValue()
+	if !ok || token == "" {
+		// No credential resolved: the no-credential arm, or an unpromoted
+		// component. Clone anonymously.
+		return nil, nil
+	}
+	return &githttp.BasicAuth{Username: "joe", Password: token}, nil
 }

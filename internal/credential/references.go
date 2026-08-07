@@ -40,6 +40,7 @@ const envVarPrefix = "JOE_"
 // KindStatic subset of wiredTypes and that every segment is a valid POSIX env var
 // name fragment, so a new static wired type cannot be added without a segment.
 var envPrefixSegments = map[string]string{
+	store.ComponentTypeGit:          "GIT",
 	store.ComponentTypeGitHub:       "GITHUB",
 	store.ComponentTypeGitLab:       "GITLAB",
 	store.ComponentTypePrometheus:   "PROMETHEUS",

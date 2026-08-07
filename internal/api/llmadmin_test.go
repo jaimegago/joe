@@ -13,6 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
@@ -83,6 +84,19 @@ func newLLMAdminFixture(t *testing.T, rbacEnabled bool) *llmadminFixture {
 // test can exercise the 409. adminEmail must be set BEFORE RegisterRoutes — the
 // admin handler captures it at registration time.
 func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *llmadminFixture {
+	return newLLMAdminFixtureFull(t, rbacEnabled, adminEmail, nil)
+}
+
+// newLLMAdminFixtureWithAdapters is the fixture with a real (empty) adapter
+// registry, so paths that stand up a LIVE adapter — promotion's eager connect,
+// and the guarded accessor's resolve behind it — behave as they do in the daemon.
+// The default fixture passes nil deliberately: a nil registry is the case
+// TestPromote_NilRegistryTolerated pins.
+func newLLMAdminFixtureWithAdapters(t *testing.T) *llmadminFixture {
+	return newLLMAdminFixtureFull(t, true, "", adapters.NewRegistry())
+}
+
+func newLLMAdminFixtureFull(t *testing.T, rbacEnabled bool, adminEmail string, reg *adapters.Registry) *llmadminFixture {
 	t.Helper()
 	s := newLLMAdminStore(t)
 	// The audit sink is wrapped in a swappable indirection shared by BOTH the
@@ -115,7 +129,7 @@ func newLLMAdminFixtureCfg(t *testing.T, rbacEnabled bool, adminEmail string) *l
 	}
 	cfg.Auth.AdminEmail = adminEmail
 	metrics := observability.NewMetrics()
-	services := core.New(cfg, s, s.DB(), s.Driver(), nil, metrics)
+	services := core.New(cfg, s, s.DB(), s.Driver(), reg, metrics)
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
 	services.LLMUsage = usageRepo
