@@ -16,7 +16,8 @@ file for the full status, priority, blocked-by, and body.
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
-| [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open | later |
+| [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open | now |
+| [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`admin-bootstrap-cli-04`](admin-bootstrap-cli-04.md) | The `cfg.Database` override block is written out three times | open | later |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
@@ -47,8 +48,10 @@ file for the full status, priority, blocked-by, and body.
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred | later |
 | [`dev-skill-test-pinning`](dev-skill-test-pinning.md) | Strengthen dev standard skill on regression tests and pinning | open | next |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open | later |
+| [`docwrite-dead-code`](docwrite-dead-code.md) | Git adapter docwrite.go — unreachable residue of the knowledge-store deletion | open | later |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open | later |
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
+| [`falco-refresher`](falco-refresher.md) | Falco refresher — graph visibility for a fully wired type | open | later |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
 | [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | next |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |

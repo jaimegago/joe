@@ -1,7 +1,7 @@
 # Adapter construction is fragmented across divergent type-keyed paths
 
 Status: open
-Priority: later
+Priority: now
 Severity: latent correctness bug — type→adapter coverage gaps, not a safety issue
 
 This item previously depended on the source→component rename; that rename landed
@@ -13,7 +13,7 @@ The type→adapter decision is duplicated across multiple sites with divergent t
 
 ## Leads to verify (re-derive exact file:line from live code; do not trust these)
 
-- A construction switch claiming to be "the single source of truth for the type→adapter mapping" — last seen near internal/api/sources.go:newAdapterForType. Reportedly covers ~21 types and returns nil for the rest (registry/vendor/code-review types such as datadog/splunk/oci_registry/github fall through).
+- A construction switch claiming to be "the single source of truth for the type→adapter mapping" — `newAdapterForType`, internal/api/components.go:132-183 (the citation formerly read internal/api/sources.go, a pre-D-0021 path). Returns nil for every type it does not name (registry/vendor/code-review types such as datadog/splunk/oci_registry/github fall through).
 - A separate hand-rolled boot path — last seen near cmd/joe/server.go:connectSourcesDefault — that does NOT call the above, instead doing per-type ListByType(...) + direct New() with a DIFFERENT type set (k8s, git, aws, azure, falco, datadog, splunk, dynatrace, newrelic, github, gitlab).
 - A third type switch for refresh-handler routing — last seen near internal/coreagent/refresh.go.
 - Query-time operation routing — last seen near internal/access/observe.go — keys on the Go adapter INTERFACE type, not the type string. This one is arguably fine; note it but the goal is not to force it onto the string switch.
@@ -40,3 +40,36 @@ Two construction paths (sources.go vs server.go) with non-identical type coverag
 ## Scoping note
 
 This is the infra store.Source/Component model only. The knowledge.Source model (knowledge_sources table; human/confluence/notion/session) has its own type-dispatch and is unrelated — leave it alone.
+
+## Re-prioritized to now (component-audit-filing)
+
+The fragmentation is no longer latent. A verified two-map split creates live dead windows for
+registrable types, so the coverage gap this item describes is reachable by an operator following
+the documented registration path, not merely a shape defect in the code.
+
+`newAdapterForType` ([internal/api/components.go:132-183](../../internal/api/components.go#L132-L183))
+is invoked at promotion through `connectAndRegisterAdapter`
+([internal/api/components.go:199-216](../../internal/api/components.go#L199-L216)), which returns
+nil when the constructor returns nil. It omits github, gitlab, datadog, and the four registry
+types, so a promoted github or gitlab component gets a nil no-op and has no live adapter until
+the next restart.
+
+`connectSourcesDefault` ([cmd/joe/server.go:1157-1313](../../cmd/joe/server.go#L1157-L1313))
+runs at boot and constructs only kubernetes, git, aws, azure, falco, datadog, splunk, dynatrace,
+newrelic, github, and gitlab. It omits prometheus, mimir, loki, tempo, jaeger, alertmanager,
+pagerduty, grafana, argocd, terraform, envoy, and all datastores, so components of those types
+lose their adapter on every server restart and nothing reconstructs it until an admin manually
+runs Test Connection per component.
+
+Counted against the registrable set
+([store.AllowedComponentTypes](../../internal/store/constants.go#L109-L131)), that is thirteen
+registrable types carrying a dead window, in two shapes: **eleven restart-shaped** — prometheus,
+mimir, loki, tempo, jaeger, alertmanager, pagerduty, grafana, argocd, terraform, envoy (present
+in the runtime map, absent from the boot pass) — plus **two promotion-shaped** — github, gitlab
+(present in the boot pass, absent from the runtime map). Splunk, dynatrace, and newrelic are
+absent from `newAdapterForType` as well and present in the boot pass, so they share the
+promotion-shaped window with github and gitlab; counted that way the promotion-shaped set is
+five and the total sixteen. The composition is stated as thirteen-plus-three rather than as a
+bare number precisely so this passage cannot drift stale against either map: whichever count a
+reader prefers, the membership is spelled out and checkable against the two function bodies
+cited above.
