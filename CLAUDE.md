@@ -98,6 +98,7 @@ A **present-tense statement whose subject is the binary stays, including a negat
 
 - `CONTRIBUTING.md` — external-contribution convention (D-0086): fork-and-PR against `main`, no CLA/DCO, conduct handled inline, the safety invariants a PR must not violate. The maintainer-side PM spine (`docs/project/pm-convention.md`) is not imposed on contributors
 - `docs/backlog/INDEX.md` — open-work entry point: the index of active backlog items (finished items move to `docs/backlog/done/`)
+- [`docs/verification.md`](docs/verification.md) — the verification map: what a change owes by class of work, which commands verify each class, and whether a machine re-runs them
 - `docs/project/pm-convention.md` — the project-management and session-tracking convention (the slug that joins chat, Claude Code, commits, and decisions)
 - `docs/project/SITE-CLAIMS.md` — the standing register mapping each load-bearing joeagent.dev claim to its mechanism and pinning test; the register-maintenance duty is **bidirectional**: **any session that changes a mechanism listed there must state the joeagent.dev revision impact in its session report**, and **any session that publishes a new load-bearing claim to a joeagent.dev publication source must add the corresponding register entry in the same session**
 - `docs/project/claude_joe_project_instructions.md` — the version-controlled master of the claude.ai project instructions (pure paste-source for the project's instructions field)
