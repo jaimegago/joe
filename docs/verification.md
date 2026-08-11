@@ -17,6 +17,8 @@ Since `gated-main`, a machine re-running a command is not the whole answer. Wher
 
 The gate is path-filtered on pull requests, keyed to the class scopes below by the `classify` job in `.github/workflows/tests.yml`. Every other trigger — pushes to `main`, the nightly schedule, manual dispatch — runs the full unfiltered matrix. Filtering buys merge latency and nothing else, and only a pull request is waiting on it.
 
+The gate carries a **budget of 6 minutes**, and 11 minutes on the exception path where the diff pulls GoReleaser Snapshot Build back in. Measured on pull request #23, a `go`-only diff: **3m28s** end to end, with Unit Tests at 191s the critical path and everything else hidden behind it. Anything new entering the gate fits inside that budget or displaces something already there.
+
 Filtering errs broad by rule: each pattern is wider than the class it stands for. The nightly unfiltered run is the complement, so that a misclassified diff which skipped the job that would have caught it surfaces within a day rather than at the next release.
 
 Two surfaces are held out of hands-off merging entirely by the `Held Paths` check in `.github/workflows/held-paths.yml`, and are released only by an approving review from the maintainer on the pull request's head commit:
