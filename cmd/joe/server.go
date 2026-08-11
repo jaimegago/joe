@@ -17,17 +17,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
-	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
-	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
-	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
-	githubadapter "github.com/jaimegago/joe/internal/adapters/github"
-	gitlabadapter "github.com/jaimegago/joe/internal/adapters/gitlab"
-	"github.com/jaimegago/joe/internal/adapters/k8s"
-	datadogadapter "github.com/jaimegago/joe/internal/adapters/observability/datadog"
-	dynatraceadapter "github.com/jaimegago/joe/internal/adapters/observability/dynatrace"
-	newrelicadapter "github.com/jaimegago/joe/internal/adapters/observability/newrelic"
-	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
-	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
+	"github.com/jaimegago/joe/internal/adapters/factory"
 	"github.com/jaimegago/joe/internal/agentloop"
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/audit"
@@ -1154,161 +1144,44 @@ func defaultWaitForShutdown(ctx context.Context) <-chan struct{} {
 	return done
 }
 
+// connectSourcesDefault brings a live adapter up for every stored component at
+// boot and registers it, so the refresher and the tool paths can resolve one
+// without waiting for an operator to click Test Connection.
+//
+// It used to be a hand-rolled per-type pass over a type list that had drifted
+// from the runtime map in internal/api: a component whose type this pass did not
+// name lost its adapter on every restart and nothing reconstructed it. Both
+// paths now go through factory.New, and this one iterates the stored components
+// rather than a type list, so a type wired into the factory cannot be missed
+// here without also being missed everywhere.
+//
+// Every failure is per-component and non-fatal: boot continues, the refresher
+// retries each tick, and Test Connection remains the explicit self-heal.
 func connectSourcesDefault(ctx context.Context, sqlStore *store.Store, registry *adapters.Registry) {
-	k8sSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeKubernetes)
+	components, err := sqlStore.Components.List(ctx)
 	if err != nil {
-		slog.Warn("failed to load kubernetes components", "error", err)
-	}
-	for _, src := range k8sSources {
-		adapter := k8s.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect k8s component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected k8s component", "id", src.ID, "name", src.Name)
+		slog.Warn("failed to load components for boot connect", "error", err)
+		return
 	}
 
-	gitComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeGit)
-	if err != nil {
-		slog.Warn("failed to load git components", "error", err)
-	}
-	for _, src := range gitComponents {
-		adapter := gitadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect git component", "id", src.ID, "error", err)
+	for _, comp := range components {
+		adapter, err := factory.New(comp.Type)
+		if err != nil {
+			// Reachable only for a stored component whose type has no construction
+			// path — the artifact-registry group, which registration can no longer
+			// create. Logged rather than skipped silently: the row is inert and the
+			// operator has no other signal that it is.
+			slog.Warn("no adapter for component type; skipping at boot connect",
+				"component_id", comp.ID, "type", comp.Type, "error", err)
 			continue
 		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected git component", "id", src.ID, "name", src.Name)
-	}
-
-	awsSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeAWS)
-	if err != nil {
-		slog.Warn("failed to load aws components", "error", err)
-	}
-	for _, src := range awsSources {
-		adapter := awsadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect aws component", "id", src.ID, "error", err)
+		if err := adapter.Connect(ctx, *comp); err != nil {
+			slog.Warn("failed to connect component",
+				"component_id", comp.ID, "type", comp.Type, "error", err)
 			continue
 		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected aws component", "id", src.ID, "name", src.Name)
-	}
-
-	azureSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeAzure)
-	if err != nil {
-		slog.Warn("failed to load azure components", "error", err)
-	}
-	for _, src := range azureSources {
-		adapter := azureadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect azure component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected azure component", "id", src.ID, "name", src.Name)
-	}
-
-	falcoSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeFalco)
-	if err != nil {
-		slog.Warn("failed to load falco components", "error", err)
-	}
-	for _, src := range falcoSources {
-		adapter := falcoadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect falco component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected falco component", "id", src.ID, "name", src.Name)
-	}
-
-	// Phase 6, Step 12 — proprietary observability vendors.
-	datadogSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeDatadog)
-	if err != nil {
-		slog.Warn("failed to load datadog components", "error", err)
-	}
-	for _, src := range datadogSources {
-		adapter := datadogadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect datadog component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected datadog component", "id", src.ID, "name", src.Name)
-	}
-
-	splunkComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeSplunk)
-	if err != nil {
-		slog.Warn("failed to load splunk components", "error", err)
-	}
-	for _, src := range splunkComponents {
-		adapter := splunkadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect splunk component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected splunk component", "id", src.ID, "name", src.Name)
-	}
-
-	dynatraceSources, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeDynatrace)
-	if err != nil {
-		slog.Warn("failed to load dynatrace components", "error", err)
-	}
-	for _, src := range dynatraceSources {
-		adapter := dynatraceadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect dynatrace component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected dynatrace component", "id", src.ID, "name", src.Name)
-	}
-
-	newrelicComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeNewRelic)
-	if err != nil {
-		slog.Warn("failed to load newrelic components", "error", err)
-	}
-	for _, src := range newrelicComponents {
-		adapter := newrelicadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect newrelic component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected newrelic component", "id", src.ID, "name", src.Name)
-	}
-
-	// Phase 10 — GitHub and GitLab components for code review.
-	githubComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeGitHub)
-	if err != nil {
-		slog.Warn("failed to load github components", "error", err)
-	}
-	for _, src := range githubComponents {
-		adapter := githubadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect github component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected github component", "id", src.ID, "name", src.Name)
-	}
-
-	gitlabComponents, err := sqlStore.Components.ListByType(ctx, store.ComponentTypeGitLab)
-	if err != nil {
-		slog.Warn("failed to load gitlab components", "error", err)
-	}
-	for _, src := range gitlabComponents {
-		adapter := gitlabadapter.New()
-		if err := adapter.Connect(ctx, *src); err != nil {
-			slog.Warn("failed to connect gitlab component", "id", src.ID, "error", err)
-			continue
-		}
-		registry.Register(src.ID, adapter)
-		slog.Info("connected gitlab component", "id", src.ID, "name", src.Name)
+		registry.Register(comp.ID, adapter)
+		slog.Info("connected component", "component_id", comp.ID, "type", comp.Type, "name", comp.Name)
 	}
 }
 

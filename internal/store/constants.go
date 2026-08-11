@@ -15,13 +15,12 @@ package store
 // No surface is special-cased.
 //
 // An unregistrable constant stays DEFINED when code outside the two registrable
-// lists still names it — the boot connect pass (connectSourcesDefault,
-// cmd/joe/server.go), the coreagent refresh type-switch
-// (internal/coreagent/refresh.go), or the runtime adapter map (newAdapterForType,
-// internal/api/components.go). Those paths act on STORED rows, which registration
-// can no longer create, so they are dead but harmless and are left in place
-// deliberately. A constant that nothing outside the registrable lists references
-// is deleted outright instead.
+// lists still names it — the canonical adapter constructor
+// (factory.New, internal/adapters/factory) or the coreagent refresh type-switch
+// (internal/coreagent/refresh.go). Those paths act on STORED rows, which
+// registration can no longer create, so they are dead but harmless and are left
+// in place deliberately. A constant that nothing outside the registrable lists
+// references is deleted outright instead.
 //
 // Read paths are type-agnostic — GET, list, and Test read and serialize the
 // stored type without validating it — so a row stored before a type became
@@ -85,12 +84,14 @@ const (
 	//
 	// UNREGISTRABLE as a group (D-0058), for a reason distinct from the
 	// credential-wiring gate above: these four have no construction path at all.
-	// Their adapter packages and refresh/query paths exist but are wired into
-	// neither construction map (neither connectSourcesDefault nor
-	// newAdapterForType builds them), so their refresh cases can never be
+	// Their adapter packages and refresh/query paths exist, but the canonical
+	// constructor (factory.New, internal/adapters/factory) does not build them —
+	// it returns factory.ErrNoAdapter — so their refresh cases can never be
 	// reached. The constants remain defined because the refresh type-switch
-	// still names them. Wiring them into a construction map is deferred; see
-	// docs/backlog/trim-deadonarrival-component-types.md.
+	// still names them. Wiring them into the constructor is deferred; see
+	// docs/backlog/trim-deadonarrival-component-types.md. That deferral is the
+	// one place the adapter-dispatch consolidation deliberately stopped short of
+	// the union it otherwise established.
 	ComponentTypeOCIRegistry = "oci_registry" // DockerHub, GHCR, Harbor, Quay
 	ComponentTypeDockerHub   = "dockerhub"    // DockerHub alias (uses OCI adapter)
 	ComponentTypeArtifactory = "artifactory"  // JFrog Artifactory

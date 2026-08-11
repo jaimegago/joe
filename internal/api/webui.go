@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaimegago/joe/internal/adapters/factory"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -883,12 +884,22 @@ func (h *webUIHandler) handleTestComponent(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	adapter := newAdapterForType(src.Type)
-	if adapter == nil {
-		// Config-only component type: nothing to connect to.
+	adapter, err := factory.New(src.Type)
+	if err != nil {
+		// Not a connect outcome — a type the canonical constructor cannot build,
+		// which after the union consolidation means a stored component Joe can
+		// never reach. It used to report ok:true ("has no connection to test"),
+		// which read as a healthy config-only component and was the message
+		// docs/backlog/component-registration-guide.md complains about. It is a
+		// failure and now says so. The status is left at 200 because the handler's
+		// contract reserves 4xx/5xx for request-level failures and carries the
+		// outcome in `ok`; and the stored sync status is deliberately NOT written,
+		// because this is a defect in Joe's wiring, not a fact about the backend.
+		slog.Error("no adapter for component type; nothing to test",
+			"component_id", src.ID, "type", src.Type, "error", err)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":      true,
-			"message": fmt.Sprintf("component %q is configured (type %q has no connection to test)", src.ID, src.Type),
+			"ok":      false,
+			"message": fmt.Sprintf("component %q cannot be tested: no adapter is wired for type %q", src.ID, src.Type),
 		})
 		return
 	}
