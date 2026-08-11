@@ -43,7 +43,6 @@ backend from the graph automatically.
 | `joe_logs`             | Search logs — Joe resolves Loki/Splunk/etc. from the graph          |
 | `joe_traces`           | Find traces — Joe resolves Tempo/Jaeger from the graph              |
 | `joe_alerts`           | List active alerts from Alertmanager/PagerDuty                      |
-| `joe_knowledge_search` | Semantic search over runbooks and docs                              |
 
 ## Slack bot
 
@@ -64,7 +63,7 @@ joe slack
 
 | Command             | Description                                                     |
 | ------------------- | --------------------------------------------------------------- |
-| `/joe ask <query>`  | Query the infrastructure graph and knowledge store              |
+| `/joe ask <query>`  | Query the infrastructure graph                                  |
 | `/joe status`       | Show graph summary                                              |
 | `/joe help`         | Show available commands                                         |
 
