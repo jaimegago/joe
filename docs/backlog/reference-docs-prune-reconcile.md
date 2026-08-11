@@ -35,7 +35,7 @@ longer resolve:
 - [`tool-class-break-tests`](tool-class-break-tests.md) — its Gap 1 and Gap 2 are entirely
   about `detect_doc_drift` and the `publish_doc_update` family. Both gaps are now moot as
   written; the file needs re-deriving against the surviving tool set rather than editing.
-- [`public-docs-feature-inventory`](public-docs-feature-inventory.md) — its MCP roster and
+- [`public-docs-feature-inventory`](done/public-docs-feature-inventory.md) — its MCP roster and
   doc-publishing entries describe the pre-prune tree.
 
 Neither was in this session's scope. Note that `learn-from-sessions-current-state.md` is in the

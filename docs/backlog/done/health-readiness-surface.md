@@ -23,7 +23,7 @@ orchestrators) — today they race against an arbitrary sleep.
 
 Readiness must **not** gate on per-component health — adapter connectivity, LLM
 reachability, graph warmth. That coarse "is each dependency reachable" signal
-belongs to [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md),
+belongs to [`governed-connectivity-check-surface`](../governed-connectivity-check-surface.md),
 not here. `/readyz` reflects **boot-completion only**, never downstream
 dependency health, so a probe never flaps because (say) a single adapter's
 backend is briefly down.

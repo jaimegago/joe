@@ -184,7 +184,7 @@ readiness signal.
   remains is a **cheap DB ping** (catch a DB handle that died *after* boot —
   SQLite file gone, disk full). Adapter/LLM/graph reachability is explicitly a
   **non-goal** for readiness per the existing item and belongs to
-  [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md);
+  [`governed-connectivity-check-surface`](../governed-connectivity-check-surface.md);
   folding it in would make readiness flap on a single backend blip.
 
 **Recommendation on shape:** liveness and readiness are *nearly* degenerate in
@@ -258,6 +258,6 @@ right relationship:
    sleep-replacement consumer in `health-readiness-surface` is judged worth it, and
    if so make it DB-ping-only and reveal a bare status code, never a per-dependency
    breakdown. Adapter/LLM reachability stays out — that is
-   [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md).
+   [`governed-connectivity-check-surface`](../governed-connectivity-check-surface.md).
 5. **No `DECISIONS.md` entry until you ratify.** This is an investigation; the
    above is a proposal, not a posture change.

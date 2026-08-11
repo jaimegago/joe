@@ -38,4 +38,4 @@ and never describe the harness or its contract.
 - **Re-run OASIS post-Phase-2** and record a fresh score.
 - **Add an OASIS section to the README** — this is launch blocker **B4** (still
   open, gated on the refreshed score). See
-  [launch-positioning-and-employer-decoupling.md](launch-positioning-and-employer-decoupling.md).
+  [launch-positioning-and-employer-decoupling.md](done/launch-positioning-and-employer-decoupling.md).

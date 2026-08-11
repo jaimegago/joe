@@ -5,19 +5,19 @@ Originally surfaced by the `post-joefile-cleanup` sweep and narrowed by the
 `post-joefile-cleanup-02` documentation-truth sweep. That sweep corrected every
 **verifiable, cleanly-mapped fact** of the deferred drift in both target docs:
 
-- **RESOLVED — tier/mutability misclassification** ([docs/security-in-layers.md](../security-in-layers.md)).
+- **RESOLVED — tier/mutability misclassification** ([docs/security-in-layers.md](../../reference/security-in-layers.md)).
   The "Core Agent Tools" table now lists `register_component` with `Can Mutate? = No`
   and the Action-Safety tier table places it under **T1 (read-class, records to Joe's
   own store, no managed-system mutation)** — matching the live `ActionRead` classification
   ([internal/safety/tier.go:201](../../internal/safety/tier.go:201)) and the no-reclassify
   break-test ([internal/coreagent/register_component_governance_test.go:95](../../internal/coreagent/register_component_governance_test.go:95)).
-- **RESOLVED — parameter signature** ([docs/joe-architecture.md](../joe-architecture.md)).
+- **RESOLVED — parameter signature** ([docs/joe-architecture.md](../../reference/joe-architecture.md)).
   The "Source Tools" block now shows `register_component(name, type, config)`, matching the
   live required parameters ([internal/coreagent/agent.go:422](../../internal/coreagent/agent.go:422)).
-- **RESOLVED — `list_sources` rename** ([docs/joe-architecture.md](../joe-architecture.md)).
+- **RESOLVED — `list_sources` rename** ([docs/joe-architecture.md](../../reference/joe-architecture.md)).
   Renamed to `list_components` in the "Source Tools" block, matching the live tool
   ([internal/tools/core/listcomponents.go:26](../../internal/tools/core/listcomponents.go:26)).
-- **RESOLVED — `.joe/` residue in the security doc** ([docs/security-in-layers.md](../security-in-layers.md)).
+- **RESOLVED — `.joe/` residue in the security doc** ([docs/security-in-layers.md](../../reference/security-in-layers.md)).
   Dropped the ".joe/ file processing" onboarding phrase, the ".joe/ file processing" graph-mutation
   table row, and the `joefile_service.go` key-file pointer (the `.joe/` ingestion path was deleted
   in the `joefile-removal` session, commit `0c9e741`).
