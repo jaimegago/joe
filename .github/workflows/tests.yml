@@ -442,7 +442,9 @@ jobs:
 
           status=0
           while IFS='=' read -r job result; do
-            [ -z "$job" ] && continue
+            if [ -z "$job" ]; then
+              continue
+            fi
             case "$result" in
               success) echo "pass    $job" ;;
               skipped) echo "skipped $job (not required for this diff)" ;;
