@@ -262,6 +262,14 @@ jobs:
           fi
           echo "UI-staging guarantee holds: booted ui_digest matches the staged real UI and differs from the placeholder"
 
+  # The single aggregate this workflow exposes. It is the check the branch
+  # ruleset requires, so its pass/fail semantics decide what can reach main.
+  #
+  # `skipped` is acceptable, `failure` and `cancelled` are not. A job that did
+  # not need to run for this diff has proved nothing and disproved nothing, and
+  # treating that as failure would deadlock every path-filtered merge once the
+  # ruleset requires this check. Only a job that ran and did not pass fails the
+  # gate.
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
@@ -269,13 +277,29 @@ jobs:
     if: always()
     steps:
       - name: Check test results
+        env:
+          RESULTS: |
+            Unit Tests=${{ needs.unit-tests.result }}
+            Integration Tests=${{ needs.integration-tests.result }}
+            End-to-End Tests=${{ needs.e2e-tests.result }}
+            Lint=${{ needs.lint.result }}
+            GoReleaser Snapshot Build=${{ needs.goreleaser-build.result }}
         run: |
-          if [ "${{ needs.unit-tests.result }}" != "success" ] || \
-             [ "${{ needs.integration-tests.result }}" != "success" ] || \
-             [ "${{ needs.e2e-tests.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.goreleaser-build.result }}" != "success" ]; then
+          set -euo pipefail
+          status=0
+          while IFS='=' read -r job result; do
+            [ -z "$job" ] && continue
+            case "$result" in
+              success) echo "pass    $job" ;;
+              skipped) echo "skipped $job (not required for this diff)" ;;
+              *)
+                echo "::error::$job concluded '$result'"
+                status=1
+                ;;
+            esac
+          done <<< "$RESULTS"
+          if [ "$status" -ne 0 ]; then
             echo "::error::One or more test jobs failed"
             exit 1
           fi
-          echo "All tests passed successfully!"
+          echo "Gate green: every job that ran passed."
