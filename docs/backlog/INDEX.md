@@ -95,6 +95,7 @@ file for the full status, priority, blocked-by, and body.
 | [`sessions-view-paging`](sessions-view-paging.md) | Backlog — P3: paging for the sessions two-view split | deferred | later |
 | [`site-claims-ship-trigger`](site-claims-ship-trigger.md) | Site-claims register: no trigger fires when a newly shipped mechanism falsifies unregistered published copy | open | next |
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open | next |
+| [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
 | [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open | later |
