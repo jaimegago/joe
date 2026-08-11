@@ -16,7 +16,6 @@ file for the full status, priority, blocked-by, and body.
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
-| [`adapter-dispatch-consolidation`](adapter-dispatch-consolidation.md) | Adapter construction is fragmented across divergent type-keyed paths | open | now |
 | [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`admin-bootstrap-cli-04`](admin-bootstrap-cli-04.md) | The `cfg.Database` override block is written out three times | open | later |

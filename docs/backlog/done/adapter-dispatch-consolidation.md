@@ -1,6 +1,6 @@
 # Adapter construction is fragmented across divergent type-keyed paths
 
-Status: open
+Status: done — one canonical constructor, `internal/adapters/factory.New`, with both former construction paths routed through it and coverage the union of their two type sets; merged as `d84ee19` (jaimegago/joe#27), thread `adapter-dispatch-consolidation`
 Priority: now
 Severity: latent correctness bug — type→adapter coverage gaps, not a safety issue
 
@@ -73,3 +73,52 @@ five and the total sixteen. The composition is stated as thirteen-plus-three rat
 bare number precisely so this passage cannot drift stale against either map: whichever count a
 reader prefers, the membership is spelled out and checkable against the two function bodies
 cited above.
+
+## Closed
+
+Landed as `d84ee19` on `main` via `jaimegago/joe#27`. The body above is kept as
+the historical statement of the problem; this section records what the fix
+actually covered, because the acceptance criteria and the leads are not the same
+list.
+
+**Delivered.** `internal/adapters/factory.New(componentType) (adapters.Adapter, error)`
+is the canonical constructor. `newAdapterForType` is deleted, and all three live
+call sites route through the new one: `connectAndRegisterAdapter` (promotion
+activation), `handleTestComponent` (Test Connection), and `connectSourcesDefault`
+(the boot pass). The boot pass iterates the stored components instead of a
+hand-maintained type list, so both shapes of dead window this item measured —
+the promotion-shaped one for splunk/dynatrace/newrelic/github/gitlab and the
+restart-shaped one for prometheus through envoy — are closed. A type with no
+adapter is now `factory.ErrNoAdapter` rather than a silent nil: the promotion
+path returns it, and Test Connection stopped answering `ok:true` with "has no
+connection to test". Coverage is pinned by a guard that reads
+`store.AllowedComponentTypes()` itself, so a new registrable type added without a
+factory case fails at the seam.
+
+**Deliberately not covered, and still open elsewhere:**
+
+- The **artifact-registry types** (`oci_registry`, `dockerhub`, `artifactory`,
+  `ecr`) stay out of the union. They are unregistrable under D-0058 precisely
+  because they have no construction path, and wiring them needs a credential path
+  first — still `docs/backlog/trim-deadonarrival-component-types.md`.
+- The **query-time interface switch** (`internal/access/observe.go`) and the
+  `knowledge.Source` syncer map were out of scope by this item's own criteria and
+  were not touched.
+- The **refresh type switch** (`internal/coreagent/refresh.go`), listed above as a
+  lead, was left alone on inspection: it type-asserts an already-registered
+  adapter and builds nothing, so it is routing rather than construction and folding
+  it onto the constructor would not have been meaningful.
+
+**Two findings this work surfaced rather than fixed**, both carried in
+`threads/adapter-dispatch-consolidation.md`:
+
+- The consolidation necessarily retired the identifier `newAdapterForType` that
+  `TestPromote_NoResolution` and `TestCreateComponent_NoConnectProbe` both forbid
+  by literal name. Both tests stay green and neither was edited, but that clause
+  in each now matches nothing that could exist. It belongs to
+  `docs/backlog/structural-guard-vacuity.md` as a third instance, and a different
+  shape from the two already filed there.
+- `make test-unit` iterates `go list ./internal/...` and never reaches `cmd/`, so
+  no `cmd/joe` test runs in CI — including this work's boot-path break-test and
+  the pre-existing files under that directory. `make vet` still compiles them.
+  Unfiled as of this closure.
