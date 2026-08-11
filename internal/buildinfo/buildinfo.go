@@ -17,6 +17,10 @@
 //	  -X github.com/jaimegago/joe/internal/buildinfo.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 //	  ./cmd/joe
 //
+// The Makefile's LDFLAGS variable is the canonical assembly of exactly that,
+// and .goreleaser.yaml carries its own copy for release builds; a third
+// hand-written copy of this incantation is a bug waiting to drift.
+//
 // A plain build with no ldflags still compiles and reports the unset defaults
 // ("dev"/"none"/"unknown"), so "dev" only ever appears on a deliberately
 // unset build.

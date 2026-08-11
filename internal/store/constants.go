@@ -29,16 +29,21 @@ package store
 //
 // Two trims populated this set. D-0058 removed the artifact-registry group for
 // having no construction path. trim-unsupported-component-types removed the
-// twelve types that fail the D-0055 documentable gate: none is credential-wired
+// types that fail the D-0055 documentable gate: none was credential-wired
 // (internal/credential/wiring.go), so promotion already rejected them and they
 // could never be completed into a working integration. Restoring any of them
 // means wiring its credential path first and only then adding it back to the two
-// lists below; that work is deferred, see
+// lists below; that work is deferred for the types still marked below, see
 // docs/backlog/trim-deadonarrival-component-types.md.
+//
+// git is the ONE type that has taken that restore path (D-0150): it is
+// credential-wired to two kinds — a static HTTPS-token reference and an explicit
+// "none" kind for public repositories — and is registrable again. The other types
+// this trim removed are unchanged.
 const (
 	ComponentTypeAWS        = "aws"   // UNREGISTRABLE — not credential-wired
 	ComponentTypeAzure      = "azure" // UNREGISTRABLE — not credential-wired
-	ComponentTypeGit        = "git"   // UNREGISTRABLE — not credential-wired
+	ComponentTypeGit        = "git"
 	ComponentTypeKubernetes = "kubernetes"
 
 	ComponentTypePrometheus = "prometheus"
@@ -104,6 +109,7 @@ const (
 func AllowedComponentTypes() []string {
 	return []string{
 		ComponentTypeKubernetes,
+		ComponentTypeGit,
 		ComponentTypePrometheus,
 		ComponentTypeMimir,
 		ComponentTypeLoki,
@@ -130,6 +136,7 @@ func IsValidComponentType(sourceType string) bool {
 	switch sourceType {
 	case
 		ComponentTypeKubernetes,
+		ComponentTypeGit,
 		ComponentTypePrometheus,
 		ComponentTypeMimir,
 		ComponentTypeLoki,

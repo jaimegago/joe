@@ -56,7 +56,17 @@ export function PromoteComponentForm({
   });
   const reqs = reqQ.data;
   const wired = reqs?.wired === true;
-  const kind = reqs?.wired ? reqs.kind : undefined;
+  const defaultKind = reqs?.wired ? reqs.kind : undefined;
+  // Kinds this component's type may be armed with. One element for every type
+  // but git, which offers a static reference or the explicit no-credential arm.
+  const selectableKinds = (reqs?.wired ? reqs.selectable_kinds : undefined) ?? [];
+  const multiKind = selectableKinds.length > 1;
+
+  // The operator's choice among them. Null until chosen, then it wins; the
+  // type-level default applies otherwise, so a single-kind type behaves exactly
+  // as it did before a choice existed.
+  const [chosenKind, setChosenKind] = useState<string | null>(null);
+  const kind = multiKind ? (chosenKind ?? defaultKind) : defaultKind;
 
   // Live candidate references are only an enumerable set for the static
   // provider; kubeconfig-exec answers not-applicable, so don't fetch them.
@@ -138,9 +148,21 @@ export function PromoteComponentForm({
 
   const staticReady = inCompose ? label.trim() !== '' && prefix !== '' : pickedEnvVar !== '';
 
-  const canSubmit = kind === 'static' ? staticReady : kind === 'static-bearer' ? k8sReady : false;
+  // The no-credential arm collects nothing, so it is always ready: the whole
+  // reference is the operator's decision to make it.
+  const canSubmit =
+    kind === 'static'
+      ? staticReady
+      : kind === 'static-bearer'
+        ? k8sReady
+        : kind === 'none'
+          ? true
+          : false;
 
   function buildBody(): PromoteRequest | null {
+    if (kind === 'none') {
+      return { credential_provider: 'none' };
+    }
     if (kind === 'static') {
       return { credential_provider: 'static', env_var: composedEnvVar };
     }
@@ -237,6 +259,40 @@ export function PromoteComponentForm({
 
           {reqs && reqs.wired && (
             <form onSubmit={handleContinue} className="space-y-4">
+              {multiKind && (
+                <div className="space-y-1">
+                  <Label htmlFor="promote-kind">Credential</Label>
+                  <Select value={kind ?? ''} onValueChange={setChosenKind}>
+                    <SelectTrigger id="promote-kind">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectableKinds.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {k === 'none' ? 'No credential (public repository)' : 'Credential reference'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {kind === 'none' && (
+                <div className="space-y-2 rounded border border-yellow-600/40 bg-yellow-500/10 px-3 py-2">
+                  <p className="text-sm">
+                    Arming with <strong>no credential</strong> permits Joe to reach out to{' '}
+                    <span className="font-mono">{component.name}</span> over the network{' '}
+                    <strong>unauthenticated</strong>, fetch its contents, and write a local copy
+                    under its own data directory.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Choose this only for a repository that is genuinely public. It is a deliberate,
+                    audited grant recorded against you — not the absence of one. A private
+                    repository needs a credential reference instead.
+                  </p>
+                </div>
+              )}
+
               {kind === 'static' && (
                 <div className="space-y-3">
                   {candidates.length > 0 && !inCompose && (
@@ -497,11 +553,17 @@ export function PromoteComponentForm({
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`${verb} ${component.id}?`}
-        description={`${
-          component.armed ? 'Re-arming' : 'Arming'
-        } grants ${component.name} a credentialed connection under its assigned zone using the ${
-          kind ?? ''
-        } provider. This is a privileged, audited change.`}
+        description={
+          kind === 'none'
+            ? `${
+                component.armed ? 'Re-arming' : 'Arming'
+              } permits Joe to reach ${component.name} unauthenticated — fetching its contents over the network with no credential — under its assigned zone. This is a privileged, audited change.`
+            : `${
+                component.armed ? 'Re-arming' : 'Arming'
+              } grants ${component.name} a credentialed connection under its assigned zone using the ${
+                kind ?? ''
+              } provider. This is a privileged, audited change.`
+        }
         confirmLabel={verb}
         onConfirm={handleConfirm}
       />

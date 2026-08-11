@@ -1,6 +1,10 @@
 package credential
 
-import "github.com/jaimegago/joe/internal/store"
+import (
+	"slices"
+
+	"github.com/jaimegago/joe/internal/store"
+)
 
 // wiring.go is the SINGLE declared source of truth for which component types
 // consume the credential-provider seam at Connect (D-0026 / A003-W1). Before this
@@ -34,8 +38,17 @@ import "github.com/jaimegago/joe/internal/store"
 // newrelic). mimir shares the prometheus adapter, so both type strings map here
 // even though one adapter Connect serves them.
 //
-// Deliberately ABSENT (re-verified at W2, not wired): git (auth_type-discriminated
-// ssh-key-path / http-token, not a single static token), datadog (api_key + app_key
+// git is wired to KindStatic as its TYPE-LEVEL DEFAULT, but it is the second
+// multi-Kind type after kubernetes (D-0150): a git component is armed either with
+// a static HTTPS-token reference (this default) or with KindNone, the explicit
+// no-credential arm for a public repository. Unlike kubernetes — whose effective
+// Kind is selected by a stored auth_method the adapter re-reads at Connect — git
+// carries no separate discriminator: the credential_provider written at promotion
+// IS the selection, and the adapter reads it back through credential.Select like
+// any other type. GitSelectableKinds below is the declaration of that two-Kind
+// set; the promotion boundary consults it rather than hardcoding the pair.
+//
+// Deliberately ABSENT (re-verified at W2, not wired): datadog (api_key + app_key
 // pair), oci_registry, dockerhub, and artifactory (registry-auth shape — a token-or-
 // basic-auth pair, not an unambiguous single static token: oci_registry/dockerhub
 // carry username/password and artifactory is bimodal between an X-JFrog-Art-Api
@@ -46,6 +59,7 @@ import "github.com/jaimegago/joe/internal/store"
 // promotion endpoint's reject-unwired authority, so it lists only types whose
 // adapter Connect actually resolves through the seam.
 var wiredTypes = map[string]Kind{
+	store.ComponentTypeGit:          KindStatic,
 	store.ComponentTypeGitHub:       KindStatic,
 	store.ComponentTypeGitLab:       KindStatic,
 	store.ComponentTypeKubernetes:   KindStaticBearer,
@@ -72,6 +86,43 @@ var wiredTypes = map[string]Kind{
 func WiredProvider(componentType string) (Kind, bool) {
 	k, ok := wiredTypes[componentType]
 	return k, ok
+}
+
+// gitSelectableKinds is the ordered set of provider Kinds a git component may be
+// armed with. It is declared here, beside the wiring it qualifies, so the
+// promotion boundary and the operator-facing requirements endpoint read one
+// declaration instead of each hardcoding the pair. The type-level default in
+// wiredTypes is the first element.
+var gitSelectableKinds = []Kind{KindStatic, KindNone}
+
+// SelectableKinds returns the Kinds a component type may be armed with, in
+// declaration order, and whether the type is wired at all. For every type except
+// git this is the single wired Kind; git returns its two (static reference, or an
+// explicit no-credential arm for a public repository). kubernetes is NOT
+// multi-Kind here: its second Kind is selected by the stored auth_method the
+// adapter re-reads at Connect, which is a different mechanism resolved at the
+// promotion boundary, not by the credential_provider the operator supplies.
+func SelectableKinds(componentType string) ([]Kind, bool) {
+	def, ok := wiredTypes[componentType]
+	if !ok {
+		return nil, false
+	}
+	if componentType == store.ComponentTypeGit {
+		return append([]Kind(nil), gitSelectableKinds...), true
+	}
+	return []Kind{def}, true
+}
+
+// IsSelectableKind reports whether a component type may be armed with the given
+// provider Kind. It is the predicate the promotion boundary's discriminator check
+// uses so a multi-Kind type accepts any of its legal Kinds and every other type
+// keeps its exact-match behaviour.
+func IsSelectableKind(componentType string, kind Kind) bool {
+	kinds, ok := SelectableKinds(componentType)
+	if !ok {
+		return false
+	}
+	return slices.Contains(kinds, kind)
 }
 
 // IsWired reports whether a component type resolves its credential through the

@@ -486,6 +486,13 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("config must be credential-less: %w", err)
 	}
 
+	// Per-type non-credential shape rules at the SAME shared seam the HTTP create
+	// path uses, so an autonomous registration cannot write a config shape the
+	// operator surface would refuse.
+	if err := componentgov.ValidateRegistrationConfig(sourceType, configBytes); err != nil {
+		return nil, fmt.Errorf("invalid config for type %q: %w", sourceType, err)
+	}
+
 	// Default an absent or empty config to an empty JSON object at the SAME
 	// shared seam the HTTP create path uses, before encryption, so the two
 	// registration surfaces cannot drift and a config-less registration persists.

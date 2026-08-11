@@ -18,12 +18,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { fetchComponentTypes } from '@/api/components';
+import { fetchComponentTypes, fetchComponents } from '@/api/components';
 
 interface ComponentRegisterFormData {
   id: string;
   type: string;
   name: string;
+  // Non-credential routing config, populated only for the types that need one.
+  // Today that is git alone; every other type submits no config, exactly as
+  // before this field existed.
+  config?: Record<string, string>;
 }
 
 interface ComponentRegisterFormProps {
@@ -72,6 +76,10 @@ export function ComponentRegisterForm({
   // stop touching the ID.
   const [idUnlocked, setIdUnlocked] = useState(false);
   const [idManuallyEdited, setIdManuallyEdited] = useState(false);
+  // git routing config. A repository is unusable without its URL, so it is
+  // required; the hosting provider is an optional discovery declaration.
+  const [repoUrl, setRepoUrl] = useState('');
+  const [providerComponentId, setProviderComponentId] = useState('');
 
   // Type selector is populated from the authoritative backend enum — never a
   // hardcoded TS list. Only fetched once the dialog is opened.
@@ -82,11 +90,27 @@ export function ComponentRegisterForm({
   });
   const types = typesQ.data ?? [];
 
+  const isGit = type === 'git';
+
+  // The hosting-provider dropdown offers the already-registered github and
+  // gitlab components, so the operator picks an existing component rather than
+  // typing an ID. Only fetched when the git branch is actually showing.
+  const componentsQ = useQuery({
+    queryKey: ['components'],
+    queryFn: fetchComponents,
+    enabled: open && isGit,
+  });
+  const providerComponents = (componentsQ.data ?? []).filter(
+    (c) => c.type === 'github' || c.type === 'gitlab',
+  );
+
   const idValid = isValidComponentId(id);
 
-  // Live validity: all three fields are required by the governed create
-  // endpoint, and the ID must satisfy the format rule the backend enforces.
-  const canSubmit = idValid && type !== '' && name.trim() !== '';
+  // Live validity: all three base fields are required by the governed create
+  // endpoint, the ID must satisfy the format rule the backend enforces, and a
+  // git component additionally needs its repository URL.
+  const canSubmit =
+    idValid && type !== '' && name.trim() !== '' && (!isGit || repoUrl.trim() !== '');
 
   function handleNameChange(value: string) {
     setName(value);
@@ -103,7 +127,17 @@ export function ComponentRegisterForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    onSubmit({ id, type, name: name.trim() });
+    if (!isGit) {
+      // Every non-git type submits exactly the payload it always did: no config.
+      onSubmit({ id, type, name: name.trim() });
+      return;
+    }
+    const config: Record<string, string> = { url: repoUrl.trim() };
+    // An empty selection is legal — the repository simply declares no host.
+    if (providerComponentId !== '') {
+      config.provider_component_id = providerComponentId;
+    }
+    onSubmit({ id, type, name: name.trim(), config });
   }
 
   return (
@@ -179,6 +213,53 @@ export function ComponentRegisterForm({
               </SelectContent>
             </Select>
           </div>
+          {isGit && (
+            <>
+              <div className="space-y-1">
+                <Label htmlFor="git-url">Repository URL</Label>
+                <Input
+                  id="git-url"
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  placeholder="https://github.com/org/repo.git"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Joe clones this repository to a local copy under its own data directory when the
+                  component is armed. No credentials here — a private repository is armed with a
+                  credential reference at promotion.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="git-provider">Hosting provider (optional)</Label>
+                <Select value={providerComponentId} onValueChange={setProviderComponentId}>
+                  <SelectTrigger id="git-provider">
+                    <SelectValue
+                      placeholder={
+                        componentsQ.isLoading
+                          ? 'Loading components…'
+                          : providerComponents.length === 0
+                            ? 'No GitHub or GitLab components registered'
+                            : 'None'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerComponents.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} ({c.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Records which registered GitHub or GitLab component hosts this repository, so its
+                  pull-request surface can be found alongside it. Discovery only — it grants no
+                  access and changes no permissions.
+                </p>
+              </div>
+            </>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

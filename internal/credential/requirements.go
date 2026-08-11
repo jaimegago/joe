@@ -68,6 +68,15 @@ type Requirements struct {
 // semantics are pinned to buildArmedConfig by a guard test in internal/api — do
 // not change one without the other.
 var promotionRequirements = map[Kind]Requirements{
+	KindNone: {
+		Kind: KindNone,
+		// No fields and no constraints: the discriminator IS the whole reference.
+		// An empty declaration is not an oversight — ValidateReference reads it as
+		// "nothing is required, and any supplied locator is forbidden", which is
+		// exactly the shape of an explicit no-credential arm.
+		Fields:      []FieldRequirement{},
+		Constraints: []Constraint{},
+	},
 	KindStatic: {
 		Kind: KindStatic,
 		Fields: []FieldRequirement{
@@ -145,6 +154,8 @@ func kindConfigStruct(kind Kind) (reflect.Type, bool) {
 		return reflect.TypeFor[staticBearerConfig](), true
 	case KindEntraExchange:
 		return reflect.TypeFor[entraExchangeConfig](), true
+	case KindNone:
+		return reflect.TypeFor[noneConfig](), true
 	default:
 		return nil, false
 	}

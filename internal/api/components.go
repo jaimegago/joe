@@ -296,6 +296,16 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-type non-credential shape rules at the same shared seam — today, the
+	// format of any config field that names another component. Shape only: a
+	// reference that names no existing component is legal (see
+	// ValidateRegistrationConfig).
+	if err := componentgov.ValidateRegistrationConfig(req.Type, req.Config); err != nil {
+		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, err.Error(),
+			map[string]any{"type": req.Type})
+		return
+	}
+
 	// Check if source already exists
 	existing, err := s.services.Store.Components.Get(r.Context(), req.ID)
 	if err != nil {
@@ -483,13 +493,28 @@ func (s *Server) handleComponentPromotionRequirements(w http.ResponseWriter, r *
 		return
 	}
 
+	// selectable_kinds reports every Kind this type may be armed with, in
+	// declaration order, with kind (the type-level default) as the first element.
+	// For every type but git that is a one-element list, so the form's existing
+	// single-kind rendering is unchanged; git reports its two so the form can
+	// offer the choice without hardcoding the pair. Per-Kind shapes for the
+	// non-default Kinds are not inlined here — the form re-reads this endpoint's
+	// shape for the default and knows the no-credential arm collects nothing,
+	// which is the only non-default shape that exists.
+	selectable, _ := credential.SelectableKinds(comp.Type)
+	kindNames := make([]string, 0, len(selectable))
+	for _, k := range selectable {
+		kindNames = append(kindNames, string(k))
+	}
+
 	// SHAPE only — never the Config blob, a locator value, or credential material.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"type":           comp.Type,
-		"wired":          true,
-		"kind":           string(kind),
-		"locator_fields": reqs.Fields,
-		"constraints":    reqs.Constraints,
+		"type":             comp.Type,
+		"wired":            true,
+		"kind":             string(kind),
+		"selectable_kinds": kindNames,
+		"locator_fields":   reqs.Fields,
+		"constraints":      reqs.Constraints,
 	})
 }
 
@@ -770,11 +795,27 @@ func (s *Server) handlePromoteComponent(w http.ResponseWriter, r *http.Request) 
 		kind = methodKind
 	}
 
-	// The supplied discriminator, if any, must match the effective Kind: a
-	// component cannot be armed with a provider its adapter does not select. For
-	// kubernetes the effective Kind is the auth_method-selected one above, so this
-	// accepts whichever of its two valid Kinds the method chose.
-	if req.CredentialProvider != "" && credential.Kind(req.CredentialProvider) != kind {
+	// MULTI-KIND TYPES (D-0150). git is armed either with a static HTTPS-token
+	// reference or with the explicit no-credential kind, and — unlike kubernetes —
+	// it carries no separate stored discriminator: the supplied
+	// credential_provider IS the selection, and the adapter reads it back through
+	// credential.Select at Connect. So for a type declaring more than one
+	// selectable Kind the request's discriminator chooses, defaulting to the
+	// type-level wired Kind when omitted. credential.SelectableKinds is the single
+	// declaration of which Kinds a type may take; this handler names no pair.
+	if req.CredentialProvider != "" && credential.IsSelectableKind(comp.Type, credential.Kind(req.CredentialProvider)) {
+		kind = credential.Kind(req.CredentialProvider)
+	}
+
+	// The supplied discriminator, if any, must be one the component's type can
+	// actually be armed with: a component cannot be armed with a provider its
+	// adapter does not select. For kubernetes the effective Kind is the
+	// auth_method-selected one above, so this accepts whichever of its two valid
+	// Kinds the method chose; for a multi-Kind type it accepts any declared Kind,
+	// which the selection above has already adopted.
+	if req.CredentialProvider != "" &&
+		credential.Kind(req.CredentialProvider) != kind &&
+		!credential.IsSelectableKind(comp.Type, credential.Kind(req.CredentialProvider)) {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest,
 			"credential_provider does not match the wired provider for this component type",
 			map[string]any{"supplied": req.CredentialProvider, "wired": string(kind), "type": comp.Type})
@@ -965,6 +1006,19 @@ func buildArmedConfig(existing json.RawMessage, kind credential.Kind, req promot
 
 	var locatorKeys []string
 	switch kind {
+	case credential.KindNone:
+		// The EXPLICIT no-credential arm (D-0150). The discriminator is the whole
+		// reference, so there is no locator to write and locatorKeys stays empty.
+		// Every locator field is refused rather than ignored: supplying one means
+		// the operator believed they were arming with a credential, and silently
+		// dropping it would arm an unauthenticated component while they thought
+		// otherwise.
+		if req.Value != "" {
+			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; the no-credential arm supplies no credential at all")
+		}
+		if req.EnvVar != "" || req.InCluster || req.TenantID != "" || req.ClientID != "" || req.ClientSecretEnvVar != "" {
+			return nil, nil, fmt.Errorf("the no-credential arm takes no locator; remove the credential reference, or arm with a static reference instead")
+		}
 	case credential.KindStatic:
 		if req.Value != "" {
 			return nil, nil, fmt.Errorf("inline credential value is not accepted at promotion; supply an env_var indirection instead (the armed record carries a reference, not a secret)")
@@ -1074,6 +1128,16 @@ func componentPromoteEvent(principal rbac.Principal, id, compType string, kind c
 		"type":      compType,
 		"provider":  string(kind),
 		"reference": locatorKeys, // locator KEY names only — the reference shape, never values
+	}
+	// The no-credential arm writes an EMPTY reference, which on its own reads as
+	// "nothing recorded" rather than as the statement it is. State it explicitly
+	// so the durable record says what the admin actually authorized: this
+	// component will reach its backend with no credential. Promotion arms
+	// reach-out; supplying a credential is the usual way to do that, not the
+	// defining one.
+	if kind == credential.KindNone {
+		after["unauthenticated"] = true
+		after["statement"] = "armed to reach its backend with no credential"
 	}
 	blob, _ := json.Marshal(audit.Details{
 		Target: "component:" + id,

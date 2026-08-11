@@ -2,103 +2,89 @@ package git
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
-// --- buildAuth internal tests ---
+// --- resolveAuth internal tests ---
+//
+// resolveAuth is the git adapter's use-time credential seam (D-0150). It replaces
+// the former buildAuth, which read an inline http_token / ssh_key_path straight
+// out of the component config; those fields no longer exist and are refused at
+// registration. What these pin is the mapping from a resolved credential to a
+// go-git AuthMethod, including the two ways a nil (anonymous) method is correct.
 
-func TestBuildAuth_None(t *testing.T) {
-	cfg := Config{AuthType: "none"}
-	auth, err := buildAuth(cfg)
+func resolveAuthFor(t *testing.T, config string) (transport.AuthMethod, error) {
+	t.Helper()
+	return resolveAuth(context.Background(), store.Component{
+		ID: "c-git", Type: store.ComponentTypeGit, Config: json.RawMessage(config),
+	})
+}
+
+// A component armed with the explicit no-credential kind clones ANONYMOUSLY: the
+// none provider resolves successfully and yields no credential, so the auth
+// method is nil and go-git makes an unauthenticated fetch. This is the whole
+// point of the none arm, so it is pinned rather than assumed.
+func TestResolveAuth_NoneKindIsAnonymous(t *testing.T) {
+	auth, err := resolveAuthFor(t, `{"url":"https://example.com/r.git","credential_provider":"none"}`)
 	if err != nil {
-		t.Fatalf("buildAuth(none) error = %v", err)
+		t.Fatalf("resolveAuth(none) error = %v", err)
 	}
 	if auth != nil {
-		t.Error("buildAuth(none) should return nil auth")
+		t.Errorf("resolveAuth(none) = %v, want nil (anonymous clone)", auth)
 	}
 }
 
-func TestBuildAuth_EmptyAuthType(t *testing.T) {
-	cfg := Config{AuthType: ""}
-	auth, err := buildAuth(cfg)
+// An UNPROMOTED component has no discriminator, so Select defaults to the static
+// provider, which resolves an empty value. That must also be anonymous rather
+// than an error: the component is inert, and whether the remote accepts an
+// anonymous fetch is the remote's answer to give.
+func TestResolveAuth_UnpromotedIsAnonymous(t *testing.T) {
+	auth, err := resolveAuthFor(t, `{"url":"https://example.com/r.git"}`)
 	if err != nil {
-		t.Fatalf("buildAuth(\"\") error = %v", err)
+		t.Fatalf("resolveAuth(unpromoted) error = %v", err)
 	}
 	if auth != nil {
-		t.Error("buildAuth(\"\") should return nil auth")
+		t.Errorf("resolveAuth(unpromoted) = %v, want nil (anonymous clone)", auth)
 	}
 }
 
-func TestBuildAuth_SSHMissingKey(t *testing.T) {
-	cfg := Config{AuthType: "ssh", SSHKeyPath: ""}
-	_, err := buildAuth(cfg)
-	if err == nil {
-		t.Error("buildAuth ssh with empty key path should return error")
-	}
-}
-
-func TestBuildAuth_SSHWithValidKey(t *testing.T) {
-	keyPath := writeTempECKey(t)
-	cfg := Config{AuthType: "ssh", SSHKeyPath: keyPath}
-	auth, err := buildAuth(cfg)
+// A static reference resolves the token from the named environment variable at
+// USE TIME and applies it as HTTPS basic auth with the token as the password —
+// the convention every major forge accepts for a personal access token.
+func TestResolveAuth_StaticReferenceBecomesHTTPSBasicAuth(t *testing.T) {
+	t.Setenv("JOE_GIT_PROD", "ghp_example")
+	auth, err := resolveAuthFor(t,
+		`{"url":"https://example.com/r.git","credential_provider":"static","env_var":"JOE_GIT_PROD"}`)
 	if err != nil {
-		t.Fatalf("buildAuth ssh with valid key error = %v", err)
+		t.Fatalf("resolveAuth(static) error = %v", err)
 	}
-	if auth == nil {
-		t.Error("buildAuth ssh should return non-nil auth")
+	basic, ok := auth.(*githttp.BasicAuth)
+	if !ok {
+		t.Fatalf("resolveAuth(static) = %T, want *githttp.BasicAuth", auth)
+	}
+	if basic.Password != "ghp_example" {
+		t.Errorf("resolved token did not reach the auth method")
 	}
 }
 
-func TestBuildAuth_SSHWithBadKey(t *testing.T) {
-	dir := t.TempDir()
-	bad := filepath.Join(dir, "badkey")
-	if err := os.WriteFile(bad, []byte("not a pem key"), 0600); err != nil {
-		t.Fatalf("write bad key: %v", err)
-	}
-	cfg := Config{AuthType: "ssh", SSHKeyPath: bad}
-	_, err := buildAuth(cfg)
+// A static reference naming an UNSET variable is an operational failure, and the
+// error carries the provider's non-sensitive reason only.
+func TestResolveAuth_StaticReferenceUnsetVariableFails(t *testing.T) {
+	_, err := resolveAuthFor(t,
+		`{"url":"https://example.com/r.git","credential_provider":"static","env_var":"JOE_GIT_DEFINITELY_UNSET"}`)
 	if err == nil {
-		t.Error("buildAuth ssh with bad key content should return error")
+		t.Fatal("resolveAuth with an unset referenced variable should fail")
 	}
-}
-
-func TestBuildAuth_HTTPSMissingToken(t *testing.T) {
-	cfg := Config{AuthType: "https", HTTPToken: ""}
-	_, err := buildAuth(cfg)
-	if err == nil {
-		t.Error("buildAuth https with empty token should return error")
-	}
-}
-
-func TestBuildAuth_HTTPSWithToken(t *testing.T) {
-	cfg := Config{AuthType: "https", HTTPToken: "mytoken"}
-	auth, err := buildAuth(cfg)
-	if err != nil {
-		t.Fatalf("buildAuth https error = %v", err)
-	}
-	if auth == nil {
-		t.Error("buildAuth https should return non-nil auth")
-	}
-}
-
-func TestBuildAuth_Unknown(t *testing.T) {
-	cfg := Config{AuthType: "kerberos"}
-	_, err := buildAuth(cfg)
-	if err == nil {
-		t.Error("buildAuth with unknown auth type should return error")
-	}
-	if !strings.Contains(err.Error(), "unknown auth_type") {
-		t.Errorf("error should mention unknown auth_type, got: %v", err)
+	if !strings.Contains(err.Error(), "not set") {
+		t.Errorf("error should carry the provider's reason, got: %v", err)
 	}
 }
 
@@ -169,28 +155,4 @@ func TestListFiles_EmptyRepo(t *testing.T) {
 	if err == nil {
 		t.Error("ListFiles() on empty repo should return error")
 	}
-}
-
-// writeTempECKey generates an EC private key and writes it as PEM.
-func writeTempECKey(t *testing.T) string {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	der, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		t.Fatalf("marshal key: %v", err)
-	}
-	block := &pem.Block{Type: "EC PRIVATE KEY", Bytes: der}
-	path := filepath.Join(t.TempDir(), "id_ecdsa")
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		t.Fatalf("create key file: %v", err)
-	}
-	defer f.Close()
-	if err := pem.Encode(f, block); err != nil {
-		t.Fatalf("write key: %v", err)
-	}
-	return path
 }

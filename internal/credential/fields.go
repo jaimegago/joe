@@ -29,6 +29,34 @@ var nonCredentialConfigFields = map[string]struct{}{
 	"audience": {},
 }
 
+// retiredInlineAuthFields are json keys that are NOT parsed by any live provider
+// config struct but ARE authentication material, so they must stay in the
+// registration denylist regardless.
+//
+// They are the git adapter's former inline auth fields. Before D-0150 the git
+// component config carried `http_token` (a literal HTTPS token) and
+// `ssh_key_path` (a path to a private key) and the adapter consumed them
+// directly, outside the credential-provider seam. That seam is now the only path
+// — git resolves a static reference or arms explicitly no-credential — so the
+// fields are gone from the struct the adapter parses. Deleting them from the
+// struct stops the adapter READING them; it does not stop a registration
+// SUBMITTING them, and the reflection derivation below can only see fields that
+// still exist. Without this declaration
+// `{"url":"...","http_token":"ghp_..."}` would be accepted at registration and
+// persisted as an inert field holding a live secret — an inline credential
+// arriving outside the promotion boundary, which is precisely what
+// RejectCredentialFields exists to prevent.
+//
+// `auth_type` is deliberately NOT listed: it was a discriminator, not credential
+// material, and after the struct deletion it is simply an ignored unknown field.
+//
+// TestCredentialBearingFields_IncludeRetiredInlineAuthFields pins this, so
+// removing the declaration fails a test rather than silently reopening the hole.
+var retiredInlineAuthFields = []string{
+	"http_token",
+	"ssh_key_path",
+}
+
 // credentialConfigStructs is the set of provider config structs whose json tags
 // define Joe's authentication surface: the provider discriminator
 // (discriminator, provider.go), the static/env-var provider's secret + locator
@@ -45,6 +73,7 @@ func credentialConfigStructs() []reflect.Type {
 		reflect.TypeFor[staticConfig](),
 		reflect.TypeFor[staticBearerConfig](),
 		reflect.TypeFor[entraExchangeConfig](),
+		reflect.TypeFor[noneConfig](),
 	}
 }
 
@@ -73,6 +102,15 @@ func CredentialBearingFields() []string {
 			seen[name] = struct{}{}
 			out = append(out, name)
 		}
+	}
+	// Authentication fields no live provider struct parses any more, but which a
+	// registration could still submit. See retiredInlineAuthFields.
+	for _, name := range retiredInlineAuthFields {
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
 	}
 	sort.Strings(out)
 	return out

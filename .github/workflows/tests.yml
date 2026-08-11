@@ -1,14 +1,111 @@
 name: Tests
+
+# The merge gate. This workflow answers exactly one question — is `main`
+# broken — and its `Test Summary` job is the check the `main` ruleset requires.
+# Releasability is a heavier question and lives in post-merge.yml.
+#
+# Path filtering applies to pull requests only. Every other trigger runs the
+# full unfiltered matrix, because filtering buys merge latency and nothing
+# else, and only a pull request is waiting on it. The nightly schedule is the
+# complement to erring broad: a misclassified diff skips the job that would
+# have caught it, and the unfiltered run catches that within a day rather than
+# at the next release.
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  schedule:
+    # Nightly full unfiltered matrix.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
+  # Decides which gate jobs this diff owes, keyed to the class scopes in
+  # docs/verification.md. Ambiguous classification errs broad: every pattern
+  # here is wider than the class it stands for, and the cost of a needless run
+  # is minutes while the cost of a missed one is a red `main`.
+  classify:
+    name: Classify Diff
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.classify.outputs.go }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      e2e: ${{ steps.classify.outputs.e2e }}
+      goreleaser: ${{ steps.classify.outputs.goreleaser }}
+    steps:
+      - name: Classify changed paths
+        id: classify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          emit() {
+            {
+              echo "go=$1"
+              echo "frontend=$2"
+              echo "e2e=$3"
+              echo "goreleaser=$4"
+            } >> "$GITHUB_OUTPUT"
+            echo "classification: go=$1 frontend=$2 e2e=$3 goreleaser=$4"
+          }
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Event is '$EVENT_NAME', not a pull request — full unfiltered matrix."
+            emit true true true true
+            exit 0
+          fi
+
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          echo "changed files:"
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          touches() { printf '%s\n' "$files" | grep -Eq "$1"; }
+
+          # go-backend, go-tagged-tests and rbac, plus the infrastructure that
+          # decides how any of them run. Any .go file anywhere counts.
+          go=false
+          if touches '\.go$|^go\.(mod|sum)$|^Makefile$|^\.golangci\.yml$|^\.github/workflows/'; then
+            go=true
+          fi
+
+          # frontend. ui/ build and test configuration belongs to
+          # verification-infrastructure but lives under ui/, so the whole
+          # subtree counts.
+          frontend=false
+          if touches '^ui/|^Makefile$|^\.github/workflows/'; then
+            frontend=true
+          fi
+
+          # End-to-End boots cmd/joe and builds ui/, so it owes both.
+          e2e=false
+          if [ "$go" = true ] || [ "$frontend" = true ]; then
+            e2e=true
+          fi
+
+          # release-packaging, plus frontend, plus what either builds from.
+          # GoReleaser is out of the default gate and is pulled back in only
+          # here.
+          goreleaser=false
+          if touches '^\.goreleaser\.yaml$|^internal/webui/|^scripts/|^ui/|^cmd/|^go\.(mod|sum)$|^Makefile$|^\.github/workflows/'; then
+            goreleaser=true
+          fi
+
+          emit "$go" "$frontend" "$e2e" "$goreleaser"
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.go == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,22 +123,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      # Coverage generation re-ran the whole suite a second time for an upload
+      # that gates nothing. It moved to post-merge.yml along with the upload.
       - name: Run unit tests
         run: make test-unit
-
-      - name: Generate coverage report
-        run: make test-coverage-unit
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          flags: unittests
-          name: codecov-unit
 
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.go == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -62,19 +153,11 @@ jobs:
       - name: Run integration tests
         run: make test-integration
 
-      - name: Generate coverage report
-        run: make test-coverage-integration
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage-integration.out
-          flags: integration
-          name: codecov-integration
-
   e2e-tests:
     name: End-to-End Tests
     runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.e2e == 'true'
     env:
       # Use test/mock API keys for e2e tests
       # For real E2E with actual LLMs, use secrets
@@ -128,20 +211,38 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.go == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # setup-go v5 caches the module cache and the build cache by default and
+      # was already covering this job before it said so; run 31430252511's Lint
+      # job reports `Cache restored successfully`. Declared explicitly here
+      # because caching is production infrastructure and should not be an
+      # inherited default nobody can see. A second actions/cache step is
+      # deliberately not added: it would shadow a cache that already covers
+      # strictly more, GOCACHE as well as GOMODCACHE.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Download dependencies
         run: go mod download
 
       - name: Run go vet
         run: make vet
+
+      # The build-tagged trees are invisible to `go vet ./...`, so a deleted
+      # symbol can leave test/integration and test/e2e uncompilable while the
+      # whole default toolchain stays green. D-0118 was exactly that. This is
+      # the first machine to run it.
+      - name: Run go vet over the build-tagged trees
+        run: make vet-tagged
 
       - name: Run gofmt
         run: |
@@ -157,6 +258,36 @@ jobs:
           version: v2.12.2
           args: --timeout=5m
 
+  # The frontend had no lint and no unit coverage in CI at all: the single UI
+  # command anywhere was `npm run build`, via the e2e job's `make build`. Both
+  # commands fit inside the gate's headroom, so both gate.
+  frontend-checks:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.frontend == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui && npm ci
+
+      - name: Run eslint
+        run: cd ui && npm run lint
+
+      # --run is explicit rather than relying on vitest inferring CI and not
+      # entering watch mode.
+      - name: Run vitest
+        run: cd ui && npm test -- --run
+
   # Exercises the same .goreleaser.yaml the tag-triggered release workflow
   # uses, in snapshot mode: a full local build (including the before.hooks UI
   # staging step, hence the Node setup below) that proves the ldflags -X
@@ -166,9 +297,17 @@ jobs:
   # artifact upload happens here regardless of .goreleaser.yaml's release
   # settings. Distribution stays build-from-source until a tag push runs the
   # separate release workflow.
+  #
+  # It is out of the default gate: at ~540s it set the entire wall clock, twice
+  # the next job, to answer a releasability question the gate does not ask. It
+  # is pulled back in when the diff touches release-packaging or frontend
+  # paths, where it is the check that actually matters, and otherwise runs
+  # post-merge on the push to main.
   goreleaser-build:
     name: GoReleaser Snapshot Build
     runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.goreleaser == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -177,10 +316,14 @@ jobs:
           # full history and tags, not a shallow checkout.
           fetch-depth: 0
 
+      # Same as the Lint job: setup-go v5's default caching already covered
+      # this, and the declaration makes it visible.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -262,20 +405,58 @@ jobs:
           fi
           echo "UI-staging guarantee holds: booted ui_digest matches the staged real UI and differs from the placeholder"
 
+  # The single aggregate this workflow exposes. It is the check the branch
+  # ruleset requires, so its pass/fail semantics decide what can reach main.
+  #
+  # `skipped` is acceptable, `failure` and `cancelled` are not. A job that did
+  # not need to run for this diff has proved nothing and disproved nothing, and
+  # treating that as failure would deadlock every path-filtered merge. Only a
+  # job that ran and did not pass fails the gate.
+  #
+  # `classify` is the exception: it is the job that decides what the others
+  # owe, so a skip or failure there is not an absence of obligation, it is an
+  # unknown one. It must succeed.
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, e2e-tests, lint, goreleaser-build]
+    needs: [classify, unit-tests, integration-tests, e2e-tests, lint, frontend-checks, goreleaser-build]
     if: always()
     steps:
       - name: Check test results
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          RESULTS: |
+            Unit Tests=${{ needs.unit-tests.result }}
+            Integration Tests=${{ needs.integration-tests.result }}
+            End-to-End Tests=${{ needs.e2e-tests.result }}
+            Lint=${{ needs.lint.result }}
+            Frontend Checks=${{ needs.frontend-checks.result }}
+            GoReleaser Snapshot Build=${{ needs.goreleaser-build.result }}
         run: |
-          if [ "${{ needs.unit-tests.result }}" != "success" ] || \
-             [ "${{ needs.integration-tests.result }}" != "success" ] || \
-             [ "${{ needs.e2e-tests.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.goreleaser-build.result }}" != "success" ]; then
+          set -euo pipefail
+
+          if [ "$CLASSIFY_RESULT" != "success" ]; then
+            echo "::error::Classify Diff concluded '$CLASSIFY_RESULT'; what this diff owes is unknown"
+            exit 1
+          fi
+
+          status=0
+          while IFS='=' read -r job result; do
+            if [ -z "$job" ]; then
+              continue
+            fi
+            case "$result" in
+              success) echo "pass    $job" ;;
+              skipped) echo "skipped $job (not required for this diff)" ;;
+              *)
+                echo "::error::$job concluded '$result'"
+                status=1
+                ;;
+            esac
+          done <<< "$RESULTS"
+
+          if [ "$status" -ne 0 ]; then
             echo "::error::One or more test jobs failed"
             exit 1
           fi
-          echo "All tests passed successfully!"
+          echo "Gate green: every job that ran passed."

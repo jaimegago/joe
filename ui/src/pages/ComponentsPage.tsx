@@ -134,7 +134,12 @@ export function ComponentsPage() {
   // client-side on isAdmin to match the server-side governed create endpoint,
   // which remains the real enforcement.
   const registerComponentMut = useMutation({
-    mutationFn: (data: { id: string; type: string; name: string }) => createComponent(data),
+    mutationFn: (data: {
+      id: string;
+      type: string;
+      name: string;
+      config?: Record<string, string>;
+    }) => createComponent(data),
     onSuccess: (comp) => {
       // The component is registered INERT — credential-less, in the unassigned
       // zone, under the read-only floor. Point the operator at the next

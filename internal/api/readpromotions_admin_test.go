@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -120,11 +122,23 @@ func TestReadPromotions_List_FullEnumWithOverlay(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode list body: %v", err)
 	}
-	if body.Count != len(store.AllowedComponentTypes()) {
-		t.Errorf("count=%d; want %d (full enum)", body.Count, len(store.AllowedComponentTypes()))
+	// The view is the registrable enum MINUS the types excluded from
+	// auto-promoted reads: presenting a toggle the predicate would ignore would
+	// be a lie about what flipping it does (D-0150).
+	wantCount := 0
+	for _, ct := range store.AllowedComponentTypes() {
+		if rbac.AutoPromotableReadType(ct) {
+			wantCount++
+		}
+	}
+	if body.Count != wantCount {
+		t.Errorf("count=%d; want %d (registrable enum minus excluded types)", body.Count, wantCount)
 	}
 	var sawK8sOn, sawOtherOff bool
 	for _, v := range body.ReadPromotions {
+		if !rbac.AutoPromotableReadType(v.ComponentType) {
+			t.Errorf("list presents %q as flippable, but it is excluded from auto-promoted reads", v.ComponentType)
+		}
 		if v.ComponentType == "kubernetes" && v.Enabled {
 			sawK8sOn = true
 		}
@@ -137,5 +151,32 @@ func TestReadPromotions_List_FullEnumWithOverlay(t *testing.T) {
 	}
 	if !sawOtherOff {
 		t.Error("at least one un-promoted type should be reported OFF (default)")
+	}
+}
+
+// TestReadPromotions_Set_RefusesExcludedType proves the admin setter refuses a
+// type excluded from auto-promoted reads with an operator-facing error naming the
+// rationale, and writes no row. This is the second, operator-facing layer of the
+// D-0150 exclusion; the load-bearing one is at the policy predicate, because the
+// flag resolver keys on the type string and would honour a row written by any
+// other means (internal/rbac/policy_promotereads_git_exclusion_test.go).
+func TestReadPromotions_Set_RefusesExcludedType(t *testing.T) {
+	f := newLLMAdminFixture(t, true)
+	f.markAdmin("user:alice")
+
+	w := f.do(http.MethodPost, "/api/v1/admin/read-promotions",
+		`{"component_type":"git","enabled":true}`, "user:alice")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("set read promotion for git: status=%d body=%s; want 400", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "outbound fetch") {
+		t.Errorf("refusal does not name the rationale: %s", w.Body.String())
+	}
+	on, err := f.services.PromoteReads.Repo().IsPromoted(context.Background(), "git")
+	if err != nil {
+		t.Fatalf("IsPromoted: %v", err)
+	}
+	if on {
+		t.Error("refused set wrote an enabled row")
 	}
 }

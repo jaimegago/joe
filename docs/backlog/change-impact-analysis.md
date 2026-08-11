@@ -9,7 +9,10 @@ model for the evidence tools it runs on).
 
 `git-clone-freshness` is a **co-requisite**: fetch-before-analysis is part of the
 method's truth discipline, not an optimisation. The `Blocked-by` line above
-carries the search edge; this sentence carries the freshness edge.
+carries the search edge; this sentence carries the freshness edge. Those two are
+now the only edges: the operator path to a `git_read`-able repository exists as of
+D-0150, so `repo-registration-path` is no longer the transitive root blocker and
+the substrate this item builds on can be populated.
 
 Deliverables.
 

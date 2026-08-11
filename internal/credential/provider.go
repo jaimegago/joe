@@ -100,6 +100,8 @@ func ProviderForKind(kind Kind) (Provider, error) {
 		return NewStaticBearerProvider(), nil
 	case KindEntraExchange:
 		return NewEntraExchangeProvider(), nil
+	case KindNone:
+		return NewNoneProvider(), nil
 	default:
 		return nil, fmt.Errorf("credential: unknown provider kind %q", kind)
 	}

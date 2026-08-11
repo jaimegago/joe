@@ -3,6 +3,8 @@ package rbac
 import (
 	"context"
 	"log/slog"
+
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // PolicyEngine answers "can this principal perform this action on this component?"
@@ -49,6 +51,36 @@ type PromoteReadsResolver interface {
 	// IsPromoted reports whether the component type has auto_promote_reads ON
 	// (absent flag => false, the OFF default).
 	IsPromoted(ctx context.Context, componentType string) (bool, error)
+}
+
+// autoPromoteReadExcludedTypes are component types that may NEVER be admitted by
+// the auto_promote_reads predicate, whatever agent_read_promotions holds.
+//
+// git is excluded because a git read is not a read (D-0150). Every other
+// promotable type answers a read by querying a backend the operator already
+// pointed Joe at; the git adapter answers one by cloning or pulling the
+// repository — an OUTBOUND FETCH plus a DISK WRITE under Joe's home directory,
+// performed on the autonomous refresher's schedule with no human in the loop.
+// auto_promote_reads exists to let agent:core read a type's components without a
+// materialized grant, and that bargain was made about reads that neither reach
+// out nor write. Granting git reads to agent:core stays a deliberate, per-
+// component grant.
+//
+// This is the enforcement-side declaration. The admin surface refuses to present
+// or flip an excluded type as a second, operator-facing layer; neither layer is
+// sufficient alone, because the flag resolver keys on the type string and the
+// admin surface keys on the registrable-type enum.
+var autoPromoteReadExcludedTypes = map[string]struct{}{
+	store.ComponentTypeGit: {},
+}
+
+// AutoPromotableReadType reports whether a component type may be admitted by the
+// auto_promote_reads predicate at all. It is the single declaration both the
+// policy engine and the admin surface consult, so the two cannot disagree about
+// which types are excluded.
+func AutoPromotableReadType(componentType string) bool {
+	_, excluded := autoPromoteReadExcludedTypes[componentType]
+	return !excluded
 }
 
 // Read-posture values (read-posture-latch). These are the SAME literals
@@ -312,6 +344,15 @@ func (e *PolicyEngine) Decide(ctx context.Context, principals PrincipalSet, comp
 				}
 				if componentType == "" {
 					// Unknown/missing component — fail closed.
+					break
+				}
+				if !AutoPromotableReadType(componentType) {
+					// Type excluded from auto-promoted reads regardless of any
+					// stored flag. Enforced HERE, where enforcement actually reads,
+					// because the resolver queries agent_read_promotions by type
+					// string and never consults the registrable-type enum — an
+					// exclusion placed only in the admin setter would leave any
+					// pre-existing or otherwise-written ON row admitting.
 					break
 				}
 				promoted, derr := e.promote.IsPromoted(ctx, componentType)
