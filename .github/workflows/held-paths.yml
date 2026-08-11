@@ -1,0 +1,123 @@
+name: Held Paths
+
+# Path-conditional human review.
+#
+# Branch rulesets gate refs, not paths, and a blanket approval requirement
+# would defeat hands-off auto-merge on the routine work that is most of the
+# traffic. This job is the mechanism for holding the two surfaces where a green
+# build is not the question being asked.
+#
+# It publishes a `Held Paths` check run on the pull request's head commit. That
+# check is required by the `main` ruleset alongside `Test Summary`, and it is
+# released by an approving review from the repository owner — who, because
+# executor sessions open pull requests as the joe-executor App rather than as
+# the maintainer, is not the author and therefore can approve.
+#
+# The approval must be on the current head commit. Approving one commit and
+# then pushing another does not release the guard.
+#
+# Why this is a second required check rather than a job inside tests.yml: a
+# workflow triggered by `pull_request_review` runs against the base branch, so
+# any check run it produces as a job attaches to the base SHA and never counts
+# for the pull request. Reporting through the Checks API on the head SHA is the
+# only way an approval can release a check without re-running the whole gate.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+jobs:
+  guard:
+    name: Held Paths Guard
+    runs-on: ubuntu-latest
+    steps:
+      # Fails closed by construction. The check run is published last, so any
+      # error before that point leaves no `Held Paths` result on the head
+      # commit at all, and a required check with no result blocks the merge.
+      - name: Evaluate held paths
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MAINTAINER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+
+          # Instruction surfaces. joe-pm's trust boundary founds its second
+          # work source on joe's main being maintainer-merged: reviewing a pull
+          # request that touches docs/backlog/ IS reviewing future agent
+          # instructions. Hands-off auto-merge over these paths would let an
+          # executor session write its own future work orders, and a green
+          # build says nothing about whether a backlog edit is a legitimate
+          # order.
+          instruction="$(printf '%s\n' "$files" \
+            | grep -E '^docs/backlog/|^CLAUDE\.md$|^docs/verification\.md$' || true)"
+
+          # Governance-class paths. A broad path approximation of the `rbac`
+          # class in docs/verification.md, whose real scope — any change to
+          # authorization or permission logic under internal/ — is a judgment
+          # call and not path-decidable. Per the errs-broad rule this list is
+          # wider than it needs to be and still does not cover the class.
+          governance="$(printf '%s\n' "$files" \
+            | grep -E '^internal/rbac/|^internal/access/|^test/integration/rbac_test\.go$' || true)"
+
+          held="$(printf '%s\n%s\n' "$instruction" "$governance" | grep -v '^$' | sort -u || true)"
+
+          if [ -z "$held" ]; then
+            conclusion=success
+            title="No held paths touched"
+            summary=$'This diff touches neither instruction surfaces nor governance-class paths, so it merges on the gate alone.'
+          else
+            # The repository owner's latest decision on *this* commit. An
+            # approval of an earlier head does not carry forward.
+            state="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq "
+              [ .[]
+                | select(.user.login == \"$MAINTAINER\")
+                | select(.commit_id == \"$HEAD_SHA\")
+                | select(.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\" or .state == \"DISMISSED\")
+                | .state
+              ] | last // \"NONE\"")"
+
+            held_list="$(printf '%s\n' "$held" | sed 's/^/- `/;s/$/`/')"
+
+            if [ "$state" = "APPROVED" ]; then
+              conclusion=success
+              title="Held paths released by $MAINTAINER"
+              summary="$(printf 'Held paths in this diff:\n\n%s\n\nReleased by an approving review from `%s` on `%s`.\n\nThe approval attests that the separately dispatched review thread cleared. It is not itself the governance review.\n' "$held_list" "$MAINTAINER" "$HEAD_SHA")"
+            else
+              conclusion=failure
+              title="Held for review by $MAINTAINER"
+              summary="$(printf 'Held paths in this diff:\n\n%s\n\nThis pull request touches a protected surface, so a green gate is not sufficient. It needs an approving review from `%s` on commit `%s` (latest decision on this commit: `%s`).\n\nApproving re-runs this check automatically. Pushing a new commit clears the approval.\n' "$held_list" "$MAINTAINER" "$HEAD_SHA" "$state")"
+            fi
+          fi
+
+          echo "held paths:"
+          printf '%s\n' "${held:-  (none)}" | sed 's/^/  /'
+          echo "conclusion: $conclusion"
+
+          # Built with jq and piped in, rather than assembled from -f flags, so
+          # that a summary containing backticks, newlines or brackets cannot
+          # change the shape of the request.
+          jq -n \
+            --arg sha "$HEAD_SHA" \
+            --arg conclusion "$conclusion" \
+            --arg title "$title" \
+            --arg summary "$summary" \
+            '{
+               name: "Held Paths",
+               head_sha: $sha,
+               status: "completed",
+               conclusion: $conclusion,
+               output: { title: $title, summary: $summary }
+             }' \
+          | gh api -X POST "repos/$REPO/check-runs" --input - \
+              --jq '"published check-run \(.id) -> \(.conclusion)"'

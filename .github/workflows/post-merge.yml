@@ -1,0 +1,63 @@
+name: Post-Merge
+
+# The tier that runs after a change has landed, for questions the merge gate
+# deliberately does not ask. Nothing here blocks a merge.
+#
+# The gate answers "is main broken". Coverage reporting is not that question,
+# and it was previously answered inside two gating jobs — which meant a
+# third-party upload wobble on a public repo with no token could fail a job
+# that gates merges. Generating the coverage profiles also re-ran both suites a
+# second time inside the gate's critical path.
+#
+# GoReleaser Snapshot Build is the other half of this tier and is not
+# duplicated here: tests.yml runs the full unfiltered matrix on every push to
+# main, so the snapshot build already runs post-merge there whenever the diff
+# did not pull it into the gate.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Coverage Upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Generate unit coverage report
+        run: make test-coverage-unit
+
+      - name: Generate integration coverage report
+        run: make test-coverage-integration
+
+      # Explicitly non-blocking on top of being post-merge. Codecov uploads
+      # from a public repo carry no token, and a red post-merge tier flips a
+      # thread from done back to blocked — a vendor's bad minute should not do
+      # that.
+      - name: Upload unit coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-unit
+
+      - name: Upload integration coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-integration.out
+          flags: integration
+          name: codecov-integration
