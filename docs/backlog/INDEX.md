@@ -78,7 +78,6 @@ file for the full status, priority, blocked-by, and body.
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open | later |
 | [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress | now |
 | [`read-posture-visibility`](read-posture-visibility.md) | Read posture is invisible in every UI and CLI surface | open | next |
-| [`readme-currency`](readme-currency.md) | Knowledge-store residue in `docs/integrations.md` | open | next |
 | [`reference-docs-prune-reconcile`](reference-docs-prune-reconcile.md) | Backlog — Residue from the reference-docs prune reconcile | open | next |
 | [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open | later |
 | [`register-component-config-default`](register-component-config-default.md) | Config-less registration default — deferred fast-follows | open | later |
