@@ -16,30 +16,8 @@ import (
 	"github.com/jaimegago/joe/internal/credential"
 	"github.com/jaimegago/joe/internal/rbac"
 
-	"github.com/jaimegago/joe/internal/adapters"
-	alertmanageradapter "github.com/jaimegago/joe/internal/adapters/alerting/alertmanager"
-	grafanaadapter "github.com/jaimegago/joe/internal/adapters/alerting/grafana"
-	pagerdutyadapter "github.com/jaimegago/joe/internal/adapters/alerting/pagerduty"
-	awsadapter "github.com/jaimegago/joe/internal/adapters/aws"
-	azureadapter "github.com/jaimegago/joe/internal/adapters/azure"
-	elasticsearchadapter "github.com/jaimegago/joe/internal/adapters/datastore/elasticsearch"
-	kafkaadapter "github.com/jaimegago/joe/internal/adapters/datastore/kafka"
-	mongodbadapter "github.com/jaimegago/joe/internal/adapters/datastore/mongodb"
-	mysqladapter "github.com/jaimegago/joe/internal/adapters/datastore/mysql"
-	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
-	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
-	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
-	argocdadapter "github.com/jaimegago/joe/internal/adapters/gitops/argocd"
-	terraformadapter "github.com/jaimegago/joe/internal/adapters/iac/terraform"
+	"github.com/jaimegago/joe/internal/adapters/factory"
 	"github.com/jaimegago/joe/internal/adapters/k8s"
-	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
-	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
-	jaegeradapter "github.com/jaimegago/joe/internal/adapters/observability/jaeger"
-	lokiadapter "github.com/jaimegago/joe/internal/adapters/observability/loki"
-	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
-	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
-	helmadapter "github.com/jaimegago/joe/internal/adapters/packaging/helm"
-	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -124,64 +102,6 @@ func (s *Server) handleListComponentTypes(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// newAdapterForType returns a fresh, unconnected adapter for the given component
-// type, or nil when the type has no live connection to establish (config-only or
-// metadata component types that are persisted as-is). It is the single source of
-// truth for the type→adapter mapping shared by component creation and connection
-// testing, so the two paths can never disagree on which components have adapters.
-func newAdapterForType(sourceType string) adapters.Adapter {
-	switch sourceType {
-	case store.ComponentTypeAWS:
-		return awsadapter.New()
-	case store.ComponentTypeAzure:
-		return azureadapter.New()
-	case store.ComponentTypeKubernetes:
-		return k8s.New()
-	case store.ComponentTypeGit:
-		return gitadapter.New()
-	case store.ComponentTypePrometheus, store.ComponentTypeMimir:
-		return prometheusadapter.New()
-	case store.ComponentTypeLoki:
-		return lokiadapter.New()
-	case store.ComponentTypeTempo:
-		return tempoadapter.New()
-	case store.ComponentTypeJaeger:
-		return jaegeradapter.New()
-	case store.ComponentTypeAlertmanager:
-		return alertmanageradapter.New()
-	case store.ComponentTypePagerDuty:
-		return pagerdutyadapter.New()
-	case store.ComponentTypeGrafana:
-		return grafanaadapter.New()
-	case store.ComponentTypePostgreSQL:
-		return postgresadapter.New()
-	case store.ComponentTypeMySQL:
-		return mysqladapter.New()
-	case store.ComponentTypeRedis:
-		return redisadapter.New()
-	case store.ComponentTypeMongoDB:
-		return mongodbadapter.New()
-	case store.ComponentTypeKafka:
-		return kafkaadapter.New()
-	case store.ComponentTypeElasticsearch:
-		return elasticsearchadapter.New()
-	case store.ComponentTypeArgoCd:
-		return argocdadapter.New()
-	case store.ComponentTypeTerraform:
-		return terraformadapter.New()
-	case store.ComponentTypeHelm:
-		return helmadapter.New()
-	case store.ComponentTypeNginx:
-		return nginxadapter.New()
-	case store.ComponentTypeEnvoy:
-		return envoyadapter.New()
-	case store.ComponentTypeFalco:
-		return falcoadapter.New()
-	default:
-		return nil
-	}
-}
-
 // connectAndRegisterAdapter builds a fresh adapter for the (armed) component,
 // connects it, and registers the live instance so the autonomous refresher and
 // the tool paths can resolve it immediately — without waiting for a restart or a
@@ -191,15 +111,20 @@ func newAdapterForType(sourceType string) adapters.Adapter {
 // live resources (redis/postgres/mysql pools, mongodb monitor goroutines), so the
 // displaced adapter is Disconnected best-effort to avoid a per-registration leak.
 //
-// It returns the Connect error (nil on success). A config-only type with no
-// adapter to connect is a no-op that returns nil. The comp passed MUST carry the
+// It returns the Connect error (nil on success). A type the canonical
+// constructor cannot build is NOT a silent no-op: it is logged here and the
+// error returned, because after the union consolidation there is no such thing
+// as a registrable type with no adapter, so reaching that branch means a
+// component exists that Joe can never connect. The comp passed MUST carry the
 // armed, decrypted config (re-read from the store after promotion), because the
 // credential reference an adapter resolves at Connect lives only in the armed
 // config, not in the pre-promotion record.
 func (s *Server) connectAndRegisterAdapter(ctx context.Context, comp *store.Component) error {
-	adapter := newAdapterForType(comp.Type)
-	if adapter == nil {
-		return nil
+	adapter, err := factory.New(comp.Type)
+	if err != nil {
+		slog.Error("no adapter for component type; component cannot be connected",
+			"component_id", comp.ID, "type", comp.Type, "error", err)
+		return err
 	}
 	if err := adapter.Connect(ctx, *comp); err != nil {
 		return err
