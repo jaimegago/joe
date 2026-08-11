@@ -44,7 +44,7 @@ The consolidated checklist below existed only in JPK / `LAUNCH_READINESS.md`
   rewritten 2026-06-05 to single-binary).
 - **B4 — OASIS evaluation story missing from the README** → **STILL OPEN**, gated
   on a refreshed post-Phase-2 score. Tracked separately in
-  [oasis-relationship.md](oasis-relationship.md).
+  [oasis-relationship.md](../oasis-relationship.md).
 - **History scrub** (former-employer email rewrite + compiled-binary blob purge) →
   **RESOLVED** by the `history-scrub` session (see `docs/project/DECISIONS.md`
   D-0089). See cross-reference below.
