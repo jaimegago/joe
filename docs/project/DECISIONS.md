@@ -14,6 +14,124 @@ unit of work that produced it.
 
 ---
 
+## D-0152 — `repo_search` ships as a dumb per-component grep at a pinned commit; two of the backlog item's own arguments do not survive contact with the build
+
+- Date: 2026-08-14
+- Status: accepted (implemented)
+- Session: repo-search-tool
+- Decision: Joe registers **`repo_search`** on the user-task tool registry beside
+  the existing git trio, Read-classed by an **explicit** classifier row rather
+  than by a default. It is dumb in the D-0141 sense — output is a deterministic
+  function of the arguments plus the substrate, no model and no ranking inside
+  the tool boundary — and it is the search leg D-0140/D-0141 named as the one new
+  tool the change-impact capability needed.
+  **THE CONTRACT, stated here because a caller's knowledge of what was searched
+  is the whole value of the tool.**
+  a. **ONE COMPONENT PER CALL.** Fleet-wide search is loop iteration over
+     components, never one global query.
+  b. **THE COMMIT IS PART OF THE ANSWER.** The commit argument is optional:
+     absent, the tool resolves the clone's current head and reports it; present,
+     it answers at exactly that revision or fails, never silently at a different
+     one. **Every result reports the commit searched, including an empty one.**
+  c. **THE SUBSTRATE IS THE TREE AT THAT COMMIT, NOT THE STATE ON DISK.**
+     Searching the worktree would make the reported commit a fiction and would
+     let a hit fail to reproduce under a `git_read` at the same commit.
+  d. **TWO BOUNDS, TWO MARKERS THAT MUST NEVER COLLAPSE INTO ONE SIGNAL.** An
+     **output** bound on matches returned, whose marker (`matches_truncated`)
+     says the answer is real and the query too broad; and a **work** bound on
+     files considered, whose marker (`scan_incomplete`) says part of the
+     repository was never looked at and therefore **invalidates a negative
+     claim** — an absence of hits proves nothing. The headline use of this tool
+     is "where in our repos does X appear", which invites exactly the negative
+     claim a single marker would let an incomplete scan masquerade as. The caller
+     may lower either bound and can raise neither past a fixed ceiling.
+  e. **TRAVERSAL ORDER IS PART OF THE CONTRACT** — full path in byte order, then
+     line ascending — because a bound and a determinism claim compose only if the
+     bound takes a prefix of a defined total order and truncation always cuts its
+     tail.
+  f. **A LINEAR-TIME (RE2) ENGINE**, so the work bound is a function of substrate
+     size rather than of pattern pathology; backreferences and lookaround are
+     lost and are not needed. **An invalid pattern fails explicitly**, never as
+     zero hits.
+  g. **THE SUBSTRATE'S EXCLUSIONS ARE DECLARED AND COUNTED** — a NUL byte in the
+     first 8 KB, and a size over the same 1 MiB threshold `git_read` already
+     refuses. No vendored- or generated-file heuristics: they vary by repo and
+     would shrink the substrate invisibly. Both skip counts are always reported.
+  h. **READ RESOLUTION AND DENIAL SHAPE ARE THE ACCESSOR'S, UNCHANGED.** The
+     search resolves the caller's read through the same governed accessor call
+     shape as a plain component read, so it adds **no disclosure surface**: a
+     denial this tool invented that differed from a component read's would, under
+     a zoned posture, distinguish "denied" from "no such component" and confirm a
+     component's existence to a principal not entitled to it.
+  i. **THE TOOL'S OWN DESCRIPTION CARRIES THE CAVEATS** — both markers with their
+     meanings, and the rule that **hits are leads, never citable**; a claim is
+     cited only after a `git_read` re-read at the reported commit. The loop knows
+     only what the tool advertises, so a contract the loop cannot see does not
+     constrain it.
+  **TWO ARGUMENTS FROM THE BACKLOG ITEM ARE RETIRED HERE.** The item is archived
+  at `docs/backlog/done/repo-search-tool.md` **unedited**; this entry supersedes
+  it in place, because an archive rewritten to agree with the present destroys the
+  trail it exists to keep.
+  1. **THE ATTRIBUTION ARGUMENT FOR ONE-COMPONENT-PER-CALL DOES NOT FOLLOW, AND
+     IS REPLACED.** The item argued that per-component calls are what keep "every
+     hit attributable to a component whose read the caller is actually entitled
+     to". A call accepting a *set* of components could resolve entitlement per
+     component through the same accessor and tag every hit with its component;
+     attribution and entitlement survive a multi-component call intact. The call
+     shape is a **real choice**, not a consequence of the governance property.
+     The three reasons that do hold: **denial stays legible** — with one component
+     per call an entitlement failure *is* the call's answer, where in a set call
+     it degrades to a per-item footnote and "found nothing" stops being
+     distinguishable from "was not allowed to look"; **bounds allocate cleanly** —
+     the bound is per component because the call is, and shared across a set one
+     noisy repo starves the rest while the truncation marker can no longer say
+     which component was cut off; and **the pinned commit is inherently per
+     component**, since each clone has its own head.
+  2. **THE ONE-SNAPSHOT-PER-RUN CLAIM IS WEAKENED TO LOOP DISCIPLINE.** The item
+     stated that the search "executes at a pinned commit, so search, read, and log
+     all answer from one snapshot per run". Read strictly that is a **run-level
+     invariant across three tools**, and this tool cannot deliver it alone. What
+     ships is per call (b above). That `git_read` and `git_log` answer from the
+     same commit later in the run is the loop threading it through — instruction,
+     not enforcement. The structural version — a run pins a commit per component
+     on first touch and all three git tools answer from it — is filed as
+     `docs/backlog/run-scoped-commit-pin.md`, unpriced and deliberately untriaged:
+     it reaches into three existing tool contracts and was not costed in design.
+     `docs/backlog/git-clone-freshness.md` sharpens the gap rather than creating
+     it: once fetch-before-analysis lands, the clone can move underneath a run.
+  **ACCEPTED RESIDUE: LOOP BUDGET.** One component per call means N components, N
+  calls, against a substrate that already has `docs/backlog/loop-budget-exhaustion.md`
+  open. This was weighed and accepted, not overlooked, and is recorded so a later
+  session weighing the same trade-off knows it was weighed. The default output
+  bound is set below its ceiling for the same reason.
+- Basis: the tool and its contract are visible in this diff.
+  `internal/adapters/git/search.go` holds the bounds and the substrate rules as
+  named constants with the contract in their comments (`:24-34`), the size
+  exclusion reusing `internal/adapters/git/read.go:10`'s `maxFileSize` at
+  `:185`, the declared binary rule at `:344`, and the enumerate-then-sort that
+  makes the total order explicit at `:299`. `internal/access/git.go:38` routes
+  the search through the same `guard[gitadapter.GitAdapter](..., rbac.ActionRead,
+  "git")` call as `GitReadFile` at `:11`, which is what makes the denial shape
+  identical by construction rather than by resemblance. `internal/safety/tier.go:94`
+  carries the explicit Read row — without it `ClassifyTool` would return the
+  unknown-tool default (Mutate, deny-by-default) and the tool would be
+  floor-blocked and policy-gated — pinned by `TestClassifyRepoSearchIsRead`.
+  `internal/tools/default.go:70` registers it on the user-task registry only; the
+  `agent:core` registry is untouched. The two markers, the leads-are-not-citations
+  rule and the per-call scope are pinned as advertised text by
+  `TestRepoSearchTool_DescriptionCarriesTheCaveats`, and the marker separation by
+  `TestSearch_OutputBoundIsNotTheWorkBound`; the tree-not-worktree property by
+  `TestSearch_SubstrateIsTheTreeNotTheWorktree`.
+- Supersedes: nothing. It **corrects** `docs/backlog/repo-search-tool.md` on the
+  two points above, which is a different act — that file is archived unedited and
+  this entry is what a reader of it is directed to. D-0141's purity model and
+  substrate direction are applied, not amended: `repo_search` is a dumb discovery
+  tool, LLM-driven from the loop, over the local clones at a pinned commit, and it
+  persists nothing. D-0140's treaty border is untouched — this is a search tool,
+  not an edit, build, or test-execution tool.
+
+---
+
 ## D-0151 — The chat-era PM surfaces are retired from this repository; the artifact-format rules they carried move to the artifacts themselves
 
 - Date: 2026-08-13
