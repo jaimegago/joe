@@ -6,7 +6,66 @@ what it supersedes. This file is normative: where a decision here conflicts
 with prose elsewhere, this file states the project's position and the
 conflicting prose is stale.
 
-Format per entry: ID, date, decision, basis, supersedes, status.
+Format per entry: ID, date, decision, basis, supersedes, status, session.
+
+The `Session:` field names the thread slug under which the decision was made — the
+same slug that prefixes the implementing commits — so a decision points back at the
+unit of work that produced it.
+
+---
+
+## D-0151 — The chat-era PM surfaces are retired from this repository; the artifact-format rules they carried move to the artifacts themselves
+
+- Date: 2026-08-13
+- Status: accepted (implemented)
+- Session: pm-convention-retirement
+- Decision: `docs/project/pm-convention.md` and
+  `docs/project/claude_joe_project_instructions.md` are **deleted**. Both were built
+  around a claude.ai chat layer that no longer participates in how work on Joe is
+  ordered: the slug they specify joins a chat session to a Claude Code session, and
+  there is no chat session. The orchestration they describe — how sessions are run,
+  ordered, reported, and prioritized — lives in the maintainer's separate
+  project-management ledger, outside this repository, and is not restated here.
+  Three rules they carried are **not** orchestration but **artifact format**, and
+  they survive by moving to the artifact each one governs:
+  a. THE BACKLOG ITEM FORMAT AND THE ARCHIVE STEP move to `docs/backlog/INDEX.md`.
+     This covers the title line, the `Status:` line, the optional `Priority:` line
+     (exactly one of `now`, `next`, `later`; absence means untriaged) and the
+     optional `Blocked-by:` line (a one-directional edge, no reverse-edge
+     maintenance), plus the archive step for moving an item to `done/` — including
+     the link-repointing check in both directions introduced by
+     `backlog-link-integrity`, carried across in its own wording. `docs/backlog/` is
+     the single backlog for contributor and maintainer alike, so the format rule
+     belongs where both arrive, and `INDEX.md` already carried the derivation rules
+     for its own columns.
+  b. THE VOLATILE-COUNT RULE moves to `CLAUDE.md`, under Repo-Specific Conventions.
+     The rule is unchanged and D-0032 stays in force; only the location of its full
+     statement moves, to the file whose prose it governs.
+  c. THE `Session:` FIELD DEFINITION moves to this log's own header, which declared
+     the per-entry format as "ID, date, decision, basis, supersedes, status" and
+     omitted `Session` although every entry carries one. The retired file was the
+     only place the field was specified.
+  One statement in the retired file was not merely stale but **impossible**: that
+  pushing the commit to `origin/main` is part of `done`. The `gated-main` ruleset on
+  `refs/heads/main` has no bypass actors, so no one can perform it.
+- Basis: `docs/project/pm-convention.md` and
+  `docs/project/claude_joe_project_instructions.md` as they stood at `64791a1`, both
+  deleted in this diff; the three relocations visible in the same diff at
+  `docs/backlog/INDEX.md`, `CLAUDE.md` (Repo-Specific Conventions) and this file's
+  header; `CLAUDE.md` and `CONTRIBUTING.md` pointer updates in the same diff.
+- Supersedes: **D-0035 in full** — its entire content is that the convention and the
+  paste-source are fully specified in those two files, and neither file exists after
+  this entry. **D-0031 in part, and only in part**: clause (a)'s chat leg is retired,
+  because the slug no longer joins a claude.ai session. Clause (a)'s remaining joins
+  and clauses (b), (c) and (d) **survive unchanged** — decision entries still carry a
+  `Session:` field, implementing commits still begin with the slug, and
+  `docs/backlog/` is still the open-work home with `INDEX.md` as its entry point and
+  `done/` as its archive. This entry does **not** retire the commit-slug convention
+  or the backlog's status as open-work home. D-0032 (volatile counts) and D-0095
+  (the `Blocked-by:` edge) are untouched in substance; only where they are written
+  down changes. D-0086 is not reopened: the maintainer's method is still not imposed
+  on contributors, and only the pointer to it changed, since the method is no longer
+  in a repository a contributor can read.
 
 ---
 
