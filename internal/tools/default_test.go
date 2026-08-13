@@ -74,6 +74,7 @@ func TestNewCoreRegistry(t *testing.T) {
 		"git_read":            true,
 		"git_log":             true,
 		"git_diff":            true,
+		"repo_search":         true,
 		"aws_ec2":             true,
 		"aws_eks":             true,
 		"aws_rds":             true,

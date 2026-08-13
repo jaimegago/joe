@@ -22,6 +22,7 @@ type CoreToolsClient interface {
 	GitReadClient
 	GitLogClient
 	GitDiffClient
+	RepoSearchClient
 	AWSEC2Client
 	AWSEKSClient
 	AWSRDSClient
