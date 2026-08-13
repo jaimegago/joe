@@ -109,8 +109,8 @@ after the move rather than by inspection.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
-| [`repo-search-tool`](repo-search-tool.md) | Dumb content-search tool over the local git clones | open | now |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
+| [`run-scoped-commit-pin`](run-scoped-commit-pin.md) | Run-scoped commit pin — one snapshot per run across the three git tools | open | |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
 | [`session-doc-debt`](session-doc-debt.md) | Session-subsystem documentation debt | open | next |
 | [`sessions-admin-delete-affordance`](sessions-admin-delete-affordance.md) | Admin delete affordance gap on non-owned sessions in the Sessions list | open | later |

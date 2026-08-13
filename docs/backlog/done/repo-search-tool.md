@@ -1,5 +1,11 @@
 Dumb content-search tool over the local git clones
-Status: open
+Status: done — shipped as the `repo_search` tool under D-0152 (thread
+`repo-search-tool`). The body below is preserved **exactly as it stood**, including
+the attribution argument for one-component-per-call and the one-snapshot-per-run
+claim, both of which D-0152 corrects. The decision entry supersedes this file in
+place rather than this file being edited to agree with it: an archive rewritten to
+match the present destroys the trail it exists to keep. The run-level half of the
+snapshot claim is filed as [`../run-scoped-commit-pin.md`](../run-scoped-commit-pin.md).
 Priority: now
 
 A content-search tool over the clones Joe already keeps on disk for every registered
