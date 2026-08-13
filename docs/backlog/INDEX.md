@@ -13,6 +13,30 @@ as a **blank cell, never a default value**. The `Blocked-by:` line is deliberate
 carried here; it is detail-pass information read from the item file. Follow a slug to its
 file for the full status, priority, blocked-by, and body.
 
+## Item file format
+
+An item file's first line is its title, with or without a leading heading marker. A
+`Status:` line follows, carrying `open` or `in-progress`. Two optional lines may follow
+the status line, before the body:
+
+- **`Priority:`** — exactly one of `now`, `next`, `later`. `now` means the item is on the
+  current working horizon and should be picked from first; `next` means queued immediately
+  behind that horizon; `later` means no horizon. An absent `Priority:` line means
+  untriaged, and renders as a blank cell in the table below — never a default value.
+- **`Blocked-by:`** — either a backlog slug or the form `external (short note)`. It is a
+  one-directional edge: there is no `Blocks` or `Related` field and no reverse-edge
+  maintenance. `Blocked-by:` is the canonical dependency line going forward; pre-existing
+  informal variants such as `Depends on:` in older files are left as-is and get normalized
+  during a triage pass, not opportunistically.
+
+## Archiving a completed item
+
+On completion, move the item's file to `done/`, regenerate this index, and repoint every
+relative link the move breaks, in both directions — links inside the moved file that
+resolved against `docs/backlog/` and now resolve against `done/`, and links in any other
+file that pointed at its old path — verifying by resolving each link against the tree
+after the move rather than by inspection.
+
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |

@@ -51,7 +51,7 @@ If you're not sure whether a change touches one of these, ask in the issue befor
 
 ## PR guidelines
 
-Fork the repo and open a pull request against `main`. Keep changes small and focused — a PR that does one thing is much easier to review than one that mixes a feature with incidental refactoring. Write commit messages that state what changed and why, not just what. You don't need to follow the maintainer's internal session-tag or backlog conventions (visible in `docs/project/` and referenced from `CLAUDE.md`) — those are for the maintainer's own workflow, not a contribution requirement.
+Fork the repo and open a pull request against `main`. Keep changes small and focused — a PR that does one thing is much easier to review than one that mixes a feature with incidental refactoring. Write commit messages that state what changed and why, not just what. You don't need to follow the maintainer's internal session-ordering conventions — those live outside this repository and are for the maintainer's own workflow, not a contribution requirement. The one convention that does apply to a contribution touching `docs/backlog/` is the item file format, stated in `docs/backlog/INDEX.md`.
 
 ## License
 
