@@ -178,6 +178,10 @@ func (f fakeGit) Diff(context.Context, string, string) (string, error) {
 	*f.called = true
 	return "", nil
 }
+func (f fakeGit) Search(context.Context, gitadapter.SearchOptions) (*gitadapter.SearchResult, error) {
+	*f.called = true
+	return &gitadapter.SearchResult{}, nil
+}
 
 type fakeProm struct {
 	base
@@ -320,6 +324,22 @@ func acceptanceKinds() []kindCase {
 			register: func(reg *adapters.Registry, c *bool) { reg.Register("s-git", fakeGit{called: c}) },
 			invoke: func(a *access.Accessor, p rbac.Principal) error {
 				_, err := a.GitReadFile(context.Background(), p, "s-git", "README.md")
+				return err
+			},
+		},
+		{
+			// repo_search resolves the caller's read through this same accessor
+			// method, so an entitlement failure surfaces as the identical denial
+			// a plain component read produces. Matching the existing shape is
+			// what keeps the tool from adding a disclosure surface: under a
+			// zoned posture, a "denied" distinguishable from "no such component"
+			// would confirm a component's existence to a principal not entitled
+			// to it.
+			name:     "git-search",
+			sourceID: "s-git-search",
+			register: func(reg *adapters.Registry, c *bool) { reg.Register("s-git-search", fakeGit{called: c}) },
+			invoke: func(a *access.Accessor, p rbac.Principal) error {
+				_, err := a.GitSearch(context.Background(), p, "s-git-search", gitadapter.SearchOptions{Pattern: "x"})
 				return err
 			},
 		},

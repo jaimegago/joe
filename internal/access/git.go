@@ -34,6 +34,15 @@ func (a *Accessor) GitLog(ctx context.Context, principal rbac.Principal, sourceI
 	return ad.Log(ctx, limit)
 }
 
+// GitSearch searches file contents at a pinned commit in the repository.
+func (a *Accessor) GitSearch(ctx context.Context, principal rbac.Principal, sourceID string, opts gitadapter.SearchOptions) (*gitadapter.SearchResult, error) {
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	if err != nil {
+		return nil, err
+	}
+	return ad.Search(ctx, opts)
+}
+
 // GitDiff returns the diff between two refs.
 func (a *Accessor) GitDiff(ctx context.Context, principal rbac.Principal, sourceID, fromRef, toRef string) (string, error) {
 	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
