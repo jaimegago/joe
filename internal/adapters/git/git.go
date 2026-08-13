@@ -41,6 +41,7 @@ type GitAdapter interface {
 	ListFiles(ctx context.Context, dir string) ([]FileInfo, error)
 	Log(ctx context.Context, limit int) ([]CommitInfo, error)
 	Diff(ctx context.Context, fromRef, toRef string) (string, error)
+	Search(ctx context.Context, opts SearchOptions) (*SearchResult, error)
 }
 
 // Adapter is the concrete git adapter using go-git.
