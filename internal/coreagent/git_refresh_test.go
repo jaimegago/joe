@@ -46,6 +46,10 @@ func (f *fakeGitAdapter) Diff(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
 
+func (f *fakeGitAdapter) Search(_ context.Context, _ git.SearchOptions) (*git.SearchResult, error) {
+	return &git.SearchResult{}, nil
+}
+
 // TestRefreshGitComponentBasic verifies the git_repo node is built from HEAD
 // commit identity (hash, date, author) on every refresh.
 func TestRefreshGitComponentBasic(t *testing.T) {

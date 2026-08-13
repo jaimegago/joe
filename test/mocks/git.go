@@ -17,12 +17,14 @@ type MockGitAdapter struct {
 	ListFilesResult []gitadapter.FileInfo
 	LogResult       []gitadapter.CommitInfo
 	DiffResult      string
+	SearchResult    *gitadapter.SearchResult
 
 	// Error injection
 	ReadFileErr  error
 	ListFilesErr error
 	LogErr       error
 	DiffErr      error
+	SearchErr    error
 }
 
 func NewMockGitAdapter() *MockGitAdapter {
@@ -64,4 +66,11 @@ func (m *MockGitAdapter) Diff(_ context.Context, _, _ string) (string, error) {
 		return "", m.DiffErr
 	}
 	return m.DiffResult, nil
+}
+
+func (m *MockGitAdapter) Search(_ context.Context, _ gitadapter.SearchOptions) (*gitadapter.SearchResult, error) {
+	if m.SearchErr != nil {
+		return nil, m.SearchErr
+	}
+	return m.SearchResult, nil
 }

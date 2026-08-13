@@ -155,6 +155,11 @@ func (c *inProcessCoreClient) GitLog(ctx context.Context, sourceID string, limit
 	return out, mapAccessError(err, sourceID)
 }
 
+func (c *inProcessCoreClient) GitSearch(ctx context.Context, sourceID string, opts gitadapter.SearchOptions) (*gitadapter.SearchResult, error) {
+	out, err := c.accessor.GitSearch(ctx, rbac.PrincipalFromContext(ctx), sourceID, opts)
+	return out, mapAccessError(err, sourceID)
+}
+
 func (c *inProcessCoreClient) GitDiff(ctx context.Context, sourceID, from, to string) (string, error) {
 	out, err := c.accessor.GitDiff(ctx, rbac.PrincipalFromContext(ctx), sourceID, from, to)
 	return out, mapAccessError(err, sourceID)
