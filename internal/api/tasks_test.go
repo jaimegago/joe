@@ -404,6 +404,88 @@ func TestTaskEndpoint_TokenUsage(t *testing.T) {
 	}
 }
 
+// TestTaskEndpoint_ObservedModel asserts the turn attests WHICH model served it
+// (D-0153): the response carries the configured PROVIDER model identifier and
+// its adapter family, not the catalogue key that names them in joe's own
+// config. An external evaluation harness records this value as the model a
+// verdict was produced against, so a joe-local key would identify nothing.
+//
+// The three cases are the three states the resolver can be in: a key with a
+// catalogue entry (the real one), a key with no entry (fallback), and no LLM
+// config at all (absent). The last two are asserted on the raw JSON, because
+// "absent" and "empty string" are different claims to a consumer and only the
+// raw body distinguishes them.
+func TestTaskEndpoint_ObservedModel(t *testing.T) {
+	t.Run("configured model reports the provider identifier and family", func(t *testing.T) {
+		srv, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+		srv.services.Config.LLM = config.LLMConfig{
+			Current: "sonnet",
+			Available: map[string]config.ModelConfig{
+				"sonnet": {Provider: "claude", Model: "claude-sonnet-4-20250514"},
+			},
+		}
+
+		w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var resp taskResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Model != "claude-sonnet-4-20250514" {
+			t.Errorf("model = %q, want the provider model identifier %q", resp.Model, "claude-sonnet-4-20250514")
+		}
+		if resp.Model == "sonnet" {
+			t.Error("model carries the catalogue key; it must carry the provider model identifier")
+		}
+		if resp.Provider != "claude" {
+			t.Errorf("provider = %q, want %q", resp.Provider, "claude")
+		}
+	})
+
+	t.Run("key with no catalogue entry falls back to the key, provider absent", func(t *testing.T) {
+		srv, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+		srv.services.Config.LLM = config.LLMConfig{Current: "unlisted"}
+
+		w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode raw: %v", err)
+		}
+		if got := string(raw["model"]); got != `"unlisted"` {
+			t.Errorf("model = %s, want the raw key %q", got, "unlisted")
+		}
+		if _, ok := raw["provider"]; ok {
+			t.Errorf("provider present as %s; an unlisted key has no provider to report", raw["provider"])
+		}
+	})
+
+	t.Run("no LLM config omits both fields rather than sending empty strings", func(t *testing.T) {
+		_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+
+		w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode raw: %v", err)
+		}
+		for _, key := range []string{"model", "provider"} {
+			if _, ok := raw[key]; ok {
+				t.Errorf("%s present as %s; want the field absent when nothing resolved", key, raw[key])
+			}
+		}
+	})
+}
+
 // TestTaskEndpoint_SessionPersisted verifies the session is persisted and messages are retrievable.
 func TestTaskEndpoint_SessionPersisted(t *testing.T) {
 	_, mux := setupTaskServer(t, &taskStubLLM{response: "persisted answer"})

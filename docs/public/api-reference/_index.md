@@ -340,6 +340,8 @@ Runs the task to completion and returns the full result synchronously. Response 
   "tools_used": ["string"],
   "total_tokens": { "input_tokens": 100, "output_tokens": 50 },
   "duration_ms": 1234,
+  "model": "string",
+  "provider": "string",
   "error": "string",
   "error_code": "string"
 }
@@ -350,6 +352,26 @@ Each step carries the LLM request (`message_count`, `tools_available`), the LLM 
 surfaces context-management fields (`history_trimmed`, `messages_dropped`,
 `tool_results_truncated`, `user_message_truncated`, `context_window_tokens`) when they
 apply.
+
+`model` is the **provider model identifier** — `claude-sonnet-4-20250514`, not the key
+that names it in Joe's own configuration — and `provider` is the adapter family
+(`claude`, `gemini`, `openai-compat`). Both are read from the configured entry for the
+active model, and both describe the model **resolved at task preparation**. That is what
+makes them usable by an external evaluation harness recording which model a result was
+produced against.
+
+Two limits on that claim:
+
+- It is **not a per-call attestation.** No provider reports the serving model on a
+  response, so an operator switching models while a task is in flight is a documented,
+  unobservable exception: later steps run on the new model while these fields still report
+  the model resolved when the task began.
+- If the active model has **no configured entry**, `model` falls back to the raw
+  configuration key and `provider` is omitted — the value is then a Joe-local name rather
+  than a provider identifier.
+
+Both fields are omitted entirely when no model could be resolved, so an absent field is
+never confused with an empty one.
 
 ### `POST /api/v1/tasks/stream`
 
