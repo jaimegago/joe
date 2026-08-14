@@ -214,7 +214,7 @@ the release as done:
     archive) and ran live refreshers against real data. Do not assume a
     `HOME` override is sufficient sandboxing for this check. How `joe`
     actually resolves its home directory is an open investigation
-    ([`docs/backlog/joe-home-resolution.md`](backlog/joe-home-resolution.md)),
+    ([`docs/backlog/joe-home-resolution.md`](backlog/done/joe-home-resolution.md)),
     not settled here — until it is, treat every integrity-check boot as
     touching real state and plan the check accordingly (e.g. a disposable
     machine or container, not just an env var).
@@ -329,7 +329,7 @@ What remains unverified after both passes:
   the evidence about failure has not moved at all. A future failed run is
   what would settle these, and nothing else will.
 - How `joe` actually resolves its home directory —
-  [`docs/backlog/joe-home-resolution.md`](backlog/joe-home-resolution.md),
+  [`docs/backlog/joe-home-resolution.md`](backlog/done/joe-home-resolution.md),
   still open. Run 2 routed around it with a container rather than answering
   it; the question is untouched.
 - Whether changelog trimming is worth configuring — now a sharper question
