@@ -14,6 +14,64 @@ unit of work that produced it.
 
 ---
 
+## D-0153 — The task response attests the model it ran on, and what it attests is the model resolved at task PREPARATION — a provider identifier, not joe's catalogue key, and not a per-call claim
+
+- Date: 2026-08-14
+- Status: accepted (implemented)
+- Session: oasis-da1-slice-07
+- Decision: `POST /api/v1/tasks` and the `final` event of `POST /api/v1/tasks/stream`
+  carry two additive optional fields, **`model`** and **`provider`**. Three
+  properties fix their meaning, and each exists because the obvious alternative
+  is wrong.
+  a. **`model` IS THE PROVIDER MODEL IDENTIFIER, NOT THE CATALOGUE KEY.**
+     Joe already held the active model at task preparation — but as the key into
+     `llm.available`, a name that identifies nothing outside one operator's
+     config file. The response emits `llm.available.<key>.model`
+     (`claude-sonnet-4-20250514`) and `llm.available.<key>.provider`
+     (`claude` / `gemini` / `openai-compat`), read from the **same catalogue
+     entry the context-window capabilities are read from**, so the model
+     reported and the window history was pruned against can never name two
+     different models.
+  b. **IT IS A PREPARATION-TIME ATTESTATION, NOT A PER-CALL ONE, AND THE
+     DIFFERENCE IS NOT COSMETIC.** No per-call model identifier is observable
+     anywhere in the provider layer: `llm.ChatResponse` carries none and
+     `agentloop.StepRecord` carries none, so nothing can be asserted per step
+     without new plumbing through both. Meanwhile a swap **is** possible
+     mid-turn — the loop holds the `llm.SwappableAdapter` itself and resolves the
+     inner adapter per `Chat` call, so an admin swap landing mid-task serves
+     subsequent steps from the new adapter while this field still reports the
+     model resolved at preparation. That exception is documented in the public
+     reference rather than papered over, because a consumer that read the field
+     as a per-call attestation would be wrong in exactly the case it matters.
+  c. **AN UNRESOLVED MODEL IS ABSENT, NEVER AN EMPTY STRING.** Both fields are
+     `omitempty`. A key with no catalogue entry reports the raw key in `model`
+     and omits `provider` — a Joe-local name is still better evidence than
+     silence, but it is not a provider identifier and the missing `provider`
+     says so. Nothing resolved at all omits both. Downstream this is what lets a
+     consumer record an explicit null rather than an empty string that would read
+     as a real observation.
+- Basis: the resolver already existed and was half-wasted —
+  `internal/api/tasks.go` `buildTaskRun` resolved the active key (live
+  `SwappableAdapter.Current()` winning over `cfg.LLM.Current`) and looked up
+  `cfg.LLM.Available[activeKey]` for capabilities, but retained only the key, on
+  `preparedTask`, for one consumer: the context-overflow audit blob. This
+  decision widens that resolution to the provider pair and threads it through
+  `finalizeTaskResponse` — the one finalizer **both** the synchronous and the
+  streaming handler share, so the two surfaces cannot drift. `preparedTask.model`
+  is renamed `modelKey` beside the new `providerModel`/`provider` so the two
+  namings cannot be confused at a call site; the audit blob's own `model` key and
+  value are unchanged. `TestTaskEndpoint_ObservedModel` pins all three resolver
+  states, asserting the fallback and the absent case **on the raw JSON body**,
+  since "absent" and "empty" are different claims and only the raw body
+  distinguishes them.
+- Supersedes: nothing. It is purely additive to the task response contract — no
+  existing field moves or changes meaning. The consumer motivating it is
+  external: the OASIS evidence artifact's `observed_model`
+  (oasis-spec `05-reporting.md` §1.2) recorded JSON null on every run because no
+  wire surface carried a model, and Joe was the first link of that chain.
+
+---
+
 ## D-0152 — `repo_search` ships as a dumb per-component grep at a pinned commit; two of the backlog item's own arguments do not survive contact with the build
 
 - Date: 2026-08-14

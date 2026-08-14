@@ -105,6 +105,30 @@ type taskResponse struct {
 	// the tool error and the turn still completes). Empty when no write was
 	// denied. See classifyWriteFailure / firstWriteFailureCode.
 	ErrorCode string `json:"error_code,omitempty"`
+	// Model / Provider attest WHICH model served this turn, so an external
+	// evaluation harness can record the model a verdict was produced against
+	// instead of inventing one (D-0153). Model is the PROVIDER model
+	// identifier — "claude-sonnet-4-20250514", not the catalogue key that names
+	// it in joe's own config — because the key identifies nothing outside a
+	// single config file; Provider is the adapter family ("claude", "gemini",
+	// "openai-compat"). Both come from the config entry for the active
+	// catalogue key (llm.available.<key>.model / .provider) as resolved at TASK
+	// PREPARATION (buildTaskRun).
+	//
+	// Two things this field does NOT claim. It is not a per-call attestation:
+	// the provider layer reports no model on a response (llm.ChatResponse
+	// carries none), so an admin model swap landing mid-turn is served by the
+	// new adapter on subsequent steps while this field still reports the model
+	// resolved at preparation — a documented, unobservable exception. And when
+	// the active key has no entry in llm.available (an unconfigured or
+	// mid-edit catalogue), Model falls back to the raw key and Provider is
+	// absent — the value is then a joe-local name, not a provider identifier.
+	//
+	// Additive and optional (omitempty): absent rather than empty when no model
+	// could be resolved at all, so a consumer distinguishes "not reported" from
+	// a real value without an empty string standing in for one.
+	Model    string `json:"model,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 type taskStep struct {
@@ -218,7 +242,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	// Persist the raw (un-redacted) conversation, then build the redacted
 	// response — matching prior behavior where the store keeps the raw answer.
 	h.persistTaskMessages(r.Context(), prepared.sessionID, req.Message, answer, prepared.session.StopReason(), runErr, start)
-	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, prepared.caps.ContextWindowTokens, duration)
+	resp := finalizeTaskResponse(taskID, prepared.sessionID, status, errMsg, answer, observer.Steps, prepared.session, prepared.caps.ContextWindowTokens, prepared.providerModel, prepared.provider, duration)
 
 	slog.Info("task completed",
 		"task_id", taskID,
@@ -243,12 +267,22 @@ type preparedTask struct {
 	agent     *agentloop.Agent
 	session   *agentloop.Session
 	sessionID string
-	// caps + model describe the active model the run was built for. They are
+	// caps + modelKey describe the active model the run was built for. They are
 	// retained so a terminal context-overflow can be audited with the model and
 	// its effective context window (writeContextOverflowAudit) without
-	// re-resolving the catalogue after the loop has returned.
-	caps  llmusage.ModelCapabilities
-	model string
+	// re-resolving the catalogue after the loop has returned. modelKey is the
+	// CATALOGUE KEY (into config LLM.Available), which is what the audit blob
+	// has always recorded.
+	caps     llmusage.ModelCapabilities
+	modelKey string
+	// providerModel + provider are the same active model named the way the
+	// outside world names it: the provider model identifier and its adapter
+	// family, read from the config entry for modelKey. They are what the task
+	// response attests (D-0153) — see taskResponse.Model for the fallback and
+	// the mid-run-swap caveat. providerModel falls back to modelKey when the
+	// key has no catalogue entry, in which case provider stays empty.
+	providerModel string
+	provider      string
 }
 
 // errMaxIterationsTooLow is returned by resolveMaxIterations when a request
@@ -416,6 +450,8 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// the token budget the session prunes history to.
 	caps := llmusage.LookupCapabilities("", "")
 	activeModel := ""
+	providerModel := ""
+	provider := ""
 	if cfg := h.server.services.Config; cfg != nil {
 		activeKey := cfg.LLM.Current
 		if sw, ok := h.server.services.LLM.(*llm.SwappableAdapter); ok {
@@ -424,8 +460,17 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 			}
 		}
 		activeModel = activeKey
+		// The provider model identifier + adapter family the task response
+		// attests (D-0153) come from the same catalogue entry the capabilities
+		// do, so the reported model and the window it is pruned against can
+		// never name two different models. A key with no entry has no provider
+		// identifier to report: fall back to the raw key and leave the provider
+		// empty rather than inventing either.
+		providerModel = activeKey
 		if mc, ok := cfg.LLM.Available[activeKey]; ok {
 			caps = llmusage.LookupCapabilities(mc.Provider, mc.Model)
+			providerModel = mc.Model
+			provider = mc.Provider
 		}
 	}
 
@@ -473,7 +518,15 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// budget (cheap guard against pathological many-tiny-messages cases).
 	session.MaxMessages = agentloop.DefaultMaxMessages
 
-	return &preparedTask{agent: agent, session: session, sessionID: sessionID, caps: caps, model: activeModel}
+	return &preparedTask{
+		agent:         agent,
+		session:       session,
+		sessionID:     sessionID,
+		caps:          caps,
+		modelKey:      activeModel,
+		providerModel: providerModel,
+		provider:      provider,
+	}
 }
 
 // taskStatus maps an agent run error to the wire status + error message.
@@ -554,7 +607,7 @@ func (h *taskHandler) writeContextOverflowAudit(ctx context.Context, p *prepared
 	blob, _ := json.Marshal(map[string]any{
 		"session_id":             agentctx.SessionID(ctx),
 		"task_id":                agentctx.TaskID(ctx),
-		"model":                  p.model,
+		"model":                  p.modelKey,
 		"estimated_input_tokens": agentloop.EstimateMessagesTokens(p.session.Messages),
 		"context_window_tokens":  p.caps.ContextWindowTokens,
 	})
@@ -696,7 +749,12 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 // finalizeTaskResponse builds the wire response from the collected steps,
 // deriving tools-used and applying defense-in-depth secret redaction to the
 // final answer (the redaction operates on the response copy only).
-func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, contextWindowTokens int, duration time.Duration) taskResponse {
+//
+// model / provider are the active model's provider identifier and adapter
+// family as resolved at task preparation (preparedTask.providerModel /
+// .provider); both are passed through verbatim, so an unresolved model reaches
+// the wire as an absent field rather than an empty string.
+func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, contextWindowTokens int, model, provider string, duration time.Duration) taskResponse {
 	outSteps := make([]taskStep, len(steps))
 	toolsUsedSet := map[string]struct{}{}
 	for i, s := range steps {
@@ -740,6 +798,8 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		UserMessageTruncated: session.UserMessageTruncated(),
 		StopReason:           session.StopReason(),
 		ErrorCode:            firstWriteFailureCode(outSteps),
+		Model:                model,
+		Provider:             provider,
 	}
 }
 
