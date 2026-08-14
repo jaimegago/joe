@@ -90,6 +90,7 @@ after the move rather than by inspection.
 | [`macos-signing-notarization`](macos-signing-notarization.md) | Sign and notarize released macOS binaries | open | later |
 | [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |
 | [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open | next |
+| [`oasis-da1-slice`](oasis-da1-slice.md) | OASIS DA-1 slice — cross-repository ledger | open | now |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open | next |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open | next |
 | [`observe-k8s-resolver`](observe-k8s-resolver.md) | Node-type vocabulary re-encoded by consumers — the gitops provides-matcher's phantom arms and the test fixtures that green them | open | next |
