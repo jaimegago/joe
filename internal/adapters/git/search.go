@@ -75,9 +75,13 @@ type SearchMatch struct {
 }
 
 // SearchResult carries the matches plus everything the caller needs in order to
-// know what was actually searched. The two exhaustion markers are deliberately
-// separate fields: they mean opposite things and must never collapse into one
-// signal.
+// know what was actually searched.
+//
+// The two exhaustion markers are deliberately separate fields: they answer
+// different questions and must never collapse into one signal. Separate is NOT
+// exclusive — when the output bound stops the scan with files still unvisited,
+// both are true and both are correct. One says why the scan stopped; the other
+// says whether the substrate was exhausted.
 type SearchResult struct {
 	// Commit is the commit the search answered at, always reported, including
 	// for an empty result.
@@ -97,12 +101,14 @@ type SearchResult struct {
 	SkippedBinary   int `json:"skipped_binary"`
 	SkippedLarge    int `json:"skipped_large"`
 
-	// MatchesTruncated says the OUTPUT bound bit: more matches exist and the
-	// result is a prefix in (path, line) order. The answer is real; the query
-	// is broad.
+	// MatchesTruncated says the OUTPUT bound was reached and the scan stopped
+	// there, so the result is a prefix in (path, line) order and MORE MATCHES
+	// MAY EXIST. It does not claim a further match was seen: proving none
+	// exists means scanning the whole substrate in exactly the case the bound
+	// existed to stop early.
 	MatchesTruncated bool `json:"matches_truncated"`
-	// ScanIncomplete says the WORK bound bit: part of the substrate was never
-	// looked at. The answer is unreliable and an ABSENCE OF HITS PROVES NOTHING.
+	// ScanIncomplete says part of the substrate was never looked at. The answer
+	// is unreliable and an ABSENCE OF HITS PROVES NOTHING.
 	ScanIncomplete bool `json:"scan_incomplete"`
 
 	// MaxMatches and MaxFilesScanned are the bounds actually in force.
@@ -141,7 +147,7 @@ func (a *Adapter) Search(ctx context.Context, opts SearchOptions) (*SearchResult
 	maxMatches := clampBound(opts.MaxMatches, searchDefaultMaxMatches, searchMaxMatchesCeiling)
 	maxFiles := clampBound(opts.MaxFilesScanned, searchMaxFilesScanned, searchMaxFilesScanned)
 
-	commit, err := a.resolveSearchCommit(opts.Commit)
+	commit, err := a.resolvePinnedCommit(opts.Commit)
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +179,7 @@ func (a *Adapter) Search(ctx context.Context, opts SearchOptions) (*SearchResult
 			}
 		}
 		if res.FilesConsidered >= maxFiles {
-			res.ScanIncomplete = true
-			return res, nil
+			break
 		}
 		res.FilesConsidered++
 
@@ -201,16 +206,32 @@ func (a *Adapter) Search(ctx context.Context, opts SearchOptions) (*SearchResult
 		res.FilesSearched++
 
 		if scanFile(re, c.path, content, res, maxMatches) {
-			res.MatchesTruncated = true
-			return res, nil
+			break
 		}
 	}
 
+	res.deriveExhaustionMarkers()
 	return res, nil
 }
 
+// deriveExhaustionMarkers computes both markers from counters the result
+// already carries, rather than setting each at the site that stopped the scan.
+//
+// That shape is the fix for a real defect, not a refactor. Two flags set in two
+// branches diverged from what the counters said: whichever bound bit set its
+// own flag and left the other at its zero value, so a scan stopped by the
+// OUTPUT bound reported scan_incomplete false with files unvisited — advertised
+// as "part of the repository was never looked at", and false exactly when the
+// caller most needs it. Derived here, both are total functions of the result
+// and no branch can forget one.
+func (r *SearchResult) deriveExhaustionMarkers() {
+	r.ScanIncomplete = r.FilesConsidered < r.FilesInScope
+	r.MatchesTruncated = len(r.Matches) >= r.MaxMatches
+}
+
 // scanFile appends every matching line of one file, in ascending line order.
-// It reports true when the output bound bit.
+// It reports true when the output bound bit, which stops the scan. It sets no
+// marker: the markers are derived from the counters once, after the loop.
 func scanFile(re *regexp.Regexp, path string, content []byte, res *SearchResult, maxMatches int) bool {
 	lineNo := 0
 	for start := 0; start < len(content); {
@@ -265,31 +286,6 @@ func compileSearchPattern(opts SearchOptions) (*regexp.Regexp, error) {
 		return nil, fmt.Errorf("invalid search pattern %q: %w", opts.Pattern, err)
 	}
 	return re, nil
-}
-
-// resolveSearchCommit pins the substrate. An empty revision means the clone's
-// current head; a named one answers at exactly that revision or fails.
-func (a *Adapter) resolveSearchCommit(rev string) (*object.Commit, error) {
-	var hash plumbing.Hash
-	if rev == "" {
-		head, err := a.repo.Head()
-		if err != nil {
-			return nil, fmt.Errorf("get HEAD: %w", err)
-		}
-		hash = head.Hash()
-	} else {
-		resolved, err := a.repo.ResolveRevision(plumbing.Revision(rev))
-		if err != nil {
-			return nil, fmt.Errorf("resolve commit %q: %w", rev, err)
-		}
-		hash = *resolved
-	}
-
-	commit, err := a.repo.CommitObject(hash)
-	if err != nil {
-		return nil, fmt.Errorf("get commit %s: %w", hash.String(), err)
-	}
-	return commit, nil
 }
 
 // collectSearchCandidates enumerates every tracked file at the commit under the

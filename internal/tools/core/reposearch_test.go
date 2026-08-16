@@ -138,6 +138,12 @@ func TestRepoSearchTool_DescriptionCarriesTheCaveats(t *testing.T) {
 		"NEVER CITABLE",
 		"git_read",
 		"ONE component per call",
+		// The markers are independent, not exclusive, and the description has
+		// to say so in as many words. Told only that they "mean opposite
+		// things", a reader infers exclusivity — which is how the implementing
+		// session read the original order, and is how the defect got in.
+		"INDEPENDENT, NOT EXCLUSIVE",
+		"BOTH are true",
 	} {
 		if !strings.Contains(desc, phrase) {
 			t.Errorf("Description() is missing %q", phrase)

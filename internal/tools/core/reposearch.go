@@ -47,13 +47,17 @@ func (t *RepoSearchTool) Description() string {
 		"no ranking. Results are ordered by path, then line number. " +
 		"Search ONE component per call — to cover a fleet, call once per component. " +
 		"Every result reports the commit searched and the path scope applied, including an empty result. " +
-		"Two independent exhaustion markers come back with every result and mean OPPOSITE things: " +
-		"`matches_truncated` means more matches exist and you were given a prefix — the answer is real, the query is too broad; " +
-		"`scan_incomplete` means part of the repository was never looked at — the answer is unreliable and " +
-		"AN ABSENCE OF HITS PROVES NOTHING, so never conclude that something does not appear in the repository from an incomplete scan. " +
+		"Two independent exhaustion markers come back with every result and answer DIFFERENT questions: " +
+		"`matches_truncated` answers WHY THE SCAN STOPPED — the output bound was reached and you were given a prefix, so more matches may exist; " +
+		"`scan_incomplete` answers WHETHER THE REPOSITORY WAS EXHAUSTED — part of it was never looked at, so the answer is unreliable and " +
+		"AN ABSENCE OF HITS PROVES NOTHING, and you must never conclude that something does not appear in the repository from an incomplete scan. " +
+		"THE TWO ARE INDEPENDENT, NOT EXCLUSIVE: when the output bound stops the scan with files still unvisited, BOTH are true and both are correct — " +
+		"do not read one being true as evidence about the other. " +
+		"`files_in_scope` versus `files_considered` is the same fact as a count. " +
 		"`skipped_binary` and `skipped_large` report files excluded from the substrate. " +
 		"An invalid pattern is an explicit error, never zero hits. " +
-		"HITS ARE LEADS, NEVER CITABLE: a search result is input to triage. Cite a claim only after re-reading the file with git_read at the reported commit."
+		"HITS ARE LEADS, NEVER CITABLE: a search result is input to triage. Cite a claim only after re-reading the file with git_read at the reported commit, " +
+		"which takes that commit as an argument and reports back the commit it answered at."
 }
 
 func (t *RepoSearchTool) Parameters() llm.ParameterSchema {
