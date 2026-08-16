@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,30 +99,44 @@ func TestGraphRelatedTool(t *testing.T) {
 // ---- GitReadTool ----
 
 type fakeGitReadClient struct {
-	readFileFunc  func(ctx context.Context, sourceID, path string) (string, error)
-	listFilesFunc func(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error)
+	readFileFunc  func(ctx context.Context, sourceID, path, commit string) (*gitadapter.ReadResult, error)
+	listFilesFunc func(ctx context.Context, sourceID, dir, commit string) (*gitadapter.ListResult, error)
 }
 
-func (f *fakeGitReadClient) GitReadFile(ctx context.Context, sourceID, path string) (string, error) {
-	return f.readFileFunc(ctx, sourceID, path)
+func (f *fakeGitReadClient) GitReadFile(ctx context.Context, sourceID, path, commit string) (*gitadapter.ReadResult, error) {
+	return f.readFileFunc(ctx, sourceID, path, commit)
 }
-func (f *fakeGitReadClient) GitListFiles(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error) {
-	return f.listFilesFunc(ctx, sourceID, dir)
+func (f *fakeGitReadClient) GitListFiles(ctx context.Context, sourceID, dir, commit string) (*gitadapter.ListResult, error) {
+	return f.listFilesFunc(ctx, sourceID, dir, commit)
 }
+
+// resolvedHead stands in for the commit the adapter would resolve when the
+// caller names none, so the tool's "always reports a commit" contract is
+// testable on both the absent and the named path.
+const resolvedHead = "1111111111111111111111111111111111111111"
 
 func TestGitReadTool(t *testing.T) {
 	fake := &fakeGitReadClient{
-		readFileFunc: func(_ context.Context, sourceID, path string) (string, error) {
+		readFileFunc: func(_ context.Context, sourceID, path, commit string) (*gitadapter.ReadResult, error) {
 			if sourceID == "src" && path == "README.md" {
-				return "# readme", nil
+				if commit == "" {
+					commit = resolvedHead
+				}
+				return &gitadapter.ReadResult{Commit: commit, Content: "# readme"}, nil
 			}
-			return "", errors.New("not found")
+			return nil, errors.New("not found")
 		},
-		listFilesFunc: func(_ context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error) {
+		listFilesFunc: func(_ context.Context, sourceID, dir, commit string) (*gitadapter.ListResult, error) {
 			if sourceID == "src" && dir == "/" {
-				return []gitadapter.FileInfo{
-					{Path: "README.md", Size: 8, IsDir: false},
-					{Path: "src", IsDir: true},
+				if commit == "" {
+					commit = resolvedHead
+				}
+				return &gitadapter.ListResult{
+					Commit: commit,
+					Files: []gitadapter.FileInfo{
+						{Path: "README.md", Size: 8, IsDir: false},
+						{Path: "src", IsDir: true},
+					},
 				}, nil
 			}
 			return nil, errors.New("not found")
@@ -167,6 +182,9 @@ func TestGitReadTool(t *testing.T) {
 		if m["component_id"] != "src" {
 			t.Errorf("component_id = %v, want src", m["component_id"])
 		}
+		if m["commit"] != resolvedHead {
+			t.Errorf("commit = %v, want the resolved head %q reported back even though none was asked for", m["commit"], resolvedHead)
+		}
 	})
 
 	t.Run("list files success", func(t *testing.T) {
@@ -185,6 +203,55 @@ func TestGitReadTool(t *testing.T) {
 		}
 		if m["count"].(int) != 2 {
 			t.Errorf("count = %v, want 2", m["count"])
+		}
+		if m["commit"] != resolvedHead {
+			t.Errorf("commit = %v, want the resolved head %q; list mode reports the commit too", m["commit"], resolvedHead)
+		}
+	})
+
+	// The citation rule repo_search advertises — re-read at the reported commit
+	// before citing — is only performable if a named commit actually reaches the
+	// client and comes back in the answer. Both modes, because a tool that
+	// accepts a commit and honours it in only one of its two modes is the
+	// fiction the pin exists to prevent.
+	t.Run("a named commit reaches the client and is reported back, in both modes", func(t *testing.T) {
+		const pinned = "2222222222222222222222222222222222222222"
+
+		read, err := tool.Execute(context.Background(), map[string]any{
+			"component_id": "src",
+			"path":         "README.md",
+			"commit":       pinned,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := read.(map[string]any)["commit"]; got != pinned {
+			t.Errorf("read commit = %v, want %q", got, pinned)
+		}
+
+		list, err := tool.Execute(context.Background(), map[string]any{
+			"component_id": "src",
+			"path":         "/",
+			"list":         true,
+			"commit":       pinned,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := list.(map[string]any)["commit"]; got != pinned {
+			t.Errorf("list commit = %v, want %q; list mode must not silently answer elsewhere", got, pinned)
+		}
+	})
+
+	// The loop knows only what the tool advertises, so the commit argument
+	// appearing in the schema is part of the fix rather than an implementation
+	// detail: without it the citation rule repo_search states is unperformable.
+	t.Run("the commit parameter is advertised", func(t *testing.T) {
+		if _, ok := tool.Parameters().Properties["commit"]; !ok {
+			t.Error("Parameters() advertises no commit; repo_search tells the loop to re-read here at the reported commit")
+		}
+		if !strings.Contains(tool.Description(), "commit") {
+			t.Error("Description() does not mention the commit contract")
 		}
 	})
 

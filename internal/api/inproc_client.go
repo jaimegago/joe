@@ -140,13 +140,13 @@ func (c *inProcessCoreClient) K8sGetLogs(ctx context.Context, sourceID, namespac
 
 // --- git (gated by accessor) ---
 
-func (c *inProcessCoreClient) GitReadFile(ctx context.Context, sourceID, path string) (string, error) {
-	out, err := c.accessor.GitReadFile(ctx, rbac.PrincipalFromContext(ctx), sourceID, path)
+func (c *inProcessCoreClient) GitReadFile(ctx context.Context, sourceID, path, commit string) (*gitadapter.ReadResult, error) {
+	out, err := c.accessor.GitReadFile(ctx, rbac.PrincipalFromContext(ctx), sourceID, path, commit)
 	return out, mapAccessError(err, sourceID)
 }
 
-func (c *inProcessCoreClient) GitListFiles(ctx context.Context, sourceID, dir string) ([]gitadapter.FileInfo, error) {
-	out, err := c.accessor.GitListFiles(ctx, rbac.PrincipalFromContext(ctx), sourceID, dir)
+func (c *inProcessCoreClient) GitListFiles(ctx context.Context, sourceID, dir, commit string) (*gitadapter.ListResult, error) {
+	out, err := c.accessor.GitListFiles(ctx, rbac.PrincipalFromContext(ctx), sourceID, dir, commit)
 	return out, mapAccessError(err, sourceID)
 }
 

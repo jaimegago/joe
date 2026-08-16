@@ -7,22 +7,25 @@ import (
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
-// GitReadFile reads a file from the repository.
-func (a *Accessor) GitReadFile(ctx context.Context, principal rbac.Principal, sourceID, path string) (string, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
-	if err != nil {
-		return "", err
-	}
-	return ad.ReadFile(ctx, path)
-}
-
-// GitListFiles lists files under a directory in the repository.
-func (a *Accessor) GitListFiles(ctx context.Context, principal rbac.Principal, sourceID, dir string) ([]gitadapter.FileInfo, error) {
+// GitReadFile reads a file from the repository at a commit. An empty commit
+// resolves the clone's current head; either way the result reports the commit
+// the read answered at.
+func (a *Accessor) GitReadFile(ctx context.Context, principal rbac.Principal, sourceID, path, commit string) (*gitadapter.ReadResult, error) {
 	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
 	if err != nil {
 		return nil, err
 	}
-	return ad.ListFiles(ctx, dir)
+	return ad.ReadFile(ctx, path, commit)
+}
+
+// GitListFiles lists files under a directory in the repository, on the same
+// commit terms as GitReadFile.
+func (a *Accessor) GitListFiles(ctx context.Context, principal rbac.Principal, sourceID, dir, commit string) (*gitadapter.ListResult, error) {
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	if err != nil {
+		return nil, err
+	}
+	return ad.ListFiles(ctx, dir, commit)
 }
 
 // GitLog returns up to limit recent commits.

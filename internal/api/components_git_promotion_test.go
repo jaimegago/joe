@@ -260,13 +260,20 @@ func TestGitEndToEnd_NoneArmedRepositoryIsReadable(t *testing.T) {
 
 	// Promotion registers the live adapter eagerly, which is what performed the
 	// clone. Read back through the guarded accessor as the git_read tool does.
-	content, err := f.server.accessor.GitReadFile(
-		context.Background(), rbac.Principal("user:alice"), "repo-pub", "README.md")
+	res, err := f.server.accessor.GitReadFile(
+		context.Background(), rbac.Principal("user:alice"), "repo-pub", "README.md", "")
 	if err != nil {
 		t.Fatalf("git read through the accessor: %v", err)
 	}
-	if content != "joe reads this\n" {
-		t.Errorf("git read returned %q, want the seeded file contents", content)
+	if res.Content != "joe reads this\n" {
+		t.Errorf("git read returned %q, want the seeded file contents", res.Content)
+	}
+	// An absent commit resolves the clone's head and still reports it. The
+	// reported commit is what makes a repo_search hit checkable here, so a read
+	// that answered at nothing in particular would be the fiction the pin exists
+	// to prevent.
+	if res.Commit == "" {
+		t.Error("git read reported no commit; every read answers at one and says which")
 	}
 }
 

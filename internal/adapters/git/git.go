@@ -35,10 +35,15 @@ type CommitInfo struct {
 }
 
 // GitAdapter extends the base Adapter with git-specific operations.
+//
+// ReadFile, ListFiles and Search each take a commit and report back the one
+// they answered at. Log does not: its natural argument is a count of recent
+// commits rather than a point in history, and the run-scoped version of that
+// question is open as docs/backlog/run-scoped-commit-pin.md.
 type GitAdapter interface {
 	adapters.Adapter
-	ReadFile(ctx context.Context, path string) (string, error)
-	ListFiles(ctx context.Context, dir string) ([]FileInfo, error)
+	ReadFile(ctx context.Context, path, commit string) (*ReadResult, error)
+	ListFiles(ctx context.Context, dir, commit string) (*ListResult, error)
 	Log(ctx context.Context, limit int) ([]CommitInfo, error)
 	Diff(ctx context.Context, fromRef, toRef string) (string, error)
 	Search(ctx context.Context, opts SearchOptions) (*SearchResult, error)

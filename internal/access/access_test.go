@@ -165,10 +165,13 @@ type fakeGit struct {
 	called *bool
 }
 
-func (f fakeGit) ReadFile(context.Context, string) (string, error) { *f.called = true; return "", nil }
-func (f fakeGit) ListFiles(context.Context, string) ([]gitadapter.FileInfo, error) {
+func (f fakeGit) ReadFile(context.Context, string, string) (*gitadapter.ReadResult, error) {
 	*f.called = true
-	return nil, nil
+	return &gitadapter.ReadResult{}, nil
+}
+func (f fakeGit) ListFiles(context.Context, string, string) (*gitadapter.ListResult, error) {
+	*f.called = true
+	return &gitadapter.ListResult{}, nil
 }
 func (f fakeGit) Log(context.Context, int) ([]gitadapter.CommitInfo, error) {
 	*f.called = true
@@ -323,7 +326,7 @@ func acceptanceKinds() []kindCase {
 			sourceID: "s-git",
 			register: func(reg *adapters.Registry, c *bool) { reg.Register("s-git", fakeGit{called: c}) },
 			invoke: func(a *access.Accessor, p rbac.Principal) error {
-				_, err := a.GitReadFile(context.Background(), p, "s-git", "README.md")
+				_, err := a.GitReadFile(context.Background(), p, "s-git", "README.md", "")
 				return err
 			},
 		},
