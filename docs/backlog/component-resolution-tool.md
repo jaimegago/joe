@@ -16,21 +16,31 @@ no agent-loop tool wraps it. The system prompt (`internal/prompts/prompts.go`
 `TaskSystem`) carries no discovery guidance; only `prometheus_query`'s description
 points at `list_components`.
 
-Planned shape: extract the resolution logic into a shared seam both the HTTP
-handler and a new loop tool consume, so the two surfaces cannot drift, following
-the `componentgov` shared-seam pattern; expose it as a resolve-component tool; add
-discovery guidance to the tool descriptions and system prompt.
+Planned shape: expose a resolve-component tool, and add discovery guidance to the
+tool descriptions and system prompt.
 
-Five design questions must be settled in chat before any build prompt: tool
+**The shared-seam extraction is no longer part of this item.** It was carried
+here as enabling work, justified by drift between the HTTP handler and a new loop
+tool consuming one seam. The tool has since been settled as a *naming* hop —
+task phrase to ranked component candidates — which does not consume the observe
+resolver at all, so there is no second surface and no drift to prevent. The seam
+is filed separately as `observe-resolver-seam`, at `later`, and nothing here is
+blocked on it.
+
+Four design questions must be settled in chat before any build prompt: tool
 contract (single answer vs ranked candidates with evidence edges; ambiguity and
 no-match behavior — the HTTP 404 shape is wrong for a loop that should fall back
 rather than dead-end); one generic resolver vs per-signal-kind routing (the observe
 API keys each category to fixed relation constants with an alerts fallback chain
-and a k8s type-walk special case); seam extraction shape preserving
-RBAC-through-accessor on both callers; `TaskSystem` guidance scope (minimal
+and a k8s type-walk special case); `TaskSystem` guidance scope (minimal
 resolve-first rule vs full discovery strategy; posture-prompt history
 D-0101/D-0104 applies); and the git non-story (git components have no edges — see
 `repo-registration-path`).
+
+A fifth question — seam extraction shape preserving RBAC-through-accessor on both
+callers — left with the seam. The RBAC half of it did not: whatever this tool
+reads, it reads through the governed accessor, and that constrains the build
+whether or not a seam is ever extracted.
 
 Resolution for git-type components is out of scope until `repo-registration-path`
 lands.
