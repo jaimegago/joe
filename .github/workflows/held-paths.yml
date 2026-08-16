@@ -4,8 +4,18 @@ name: Held Paths
 #
 # Branch rulesets gate refs, not paths, and a blanket approval requirement
 # would defeat hands-off auto-merge on the routine work that is most of the
-# traffic. This job is the mechanism for holding the two surfaces where a green
+# traffic. This job is the mechanism for holding the one surface where a green
 # build is not the question being asked.
+#
+# It holds instruction surfaces only. The governance-class path family it used
+# to hold as well — internal/rbac/**, internal/access/**,
+# test/integration/rbac_test.go — was removed deliberately: that list was a path
+# approximation the verification map itself calls knowingly wrong in both
+# directions, so an approval on it attested to nothing. Governance-class diffs
+# are held instead by machine verification and by a separately dispatched
+# governance-floor review, whose merge is performed by an agent session that
+# reads both repositories and can check the review completed. Do not restore the
+# family here without reversing that ruling.
 #
 # It publishes a `Held Paths` check run on the pull request's head commit. That
 # check is required by the `main` ruleset alongside `Test Summary`, and it is
@@ -62,20 +72,12 @@ jobs:
           instruction="$(printf '%s\n' "$files" \
             | grep -E '^docs/backlog/|^CLAUDE\.md$|^docs/verification\.md$' || true)"
 
-          # Governance-class paths. A broad path approximation of the `rbac`
-          # class in docs/verification.md, whose real scope — any change to
-          # authorization or permission logic under internal/ — is a judgment
-          # call and not path-decidable. Per the errs-broad rule this list is
-          # wider than it needs to be and still does not cover the class.
-          governance="$(printf '%s\n' "$files" \
-            | grep -E '^internal/rbac/|^internal/access/|^test/integration/rbac_test\.go$' || true)"
-
-          held="$(printf '%s\n%s\n' "$instruction" "$governance" | grep -v '^$' | sort -u || true)"
+          held="$(printf '%s\n' "$instruction" | grep -v '^$' | sort -u || true)"
 
           if [ -z "$held" ]; then
             conclusion=success
             title="No held paths touched"
-            summary=$'This diff touches neither instruction surfaces nor governance-class paths, so it merges on the gate alone.'
+            summary=$'This diff touches no instruction surface, so it merges on the gate alone.'
           else
             # The repository owner's latest decision on *this* commit. An
             # approval of an earlier head does not carry forward.
