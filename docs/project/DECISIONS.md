@@ -14,6 +14,141 @@ unit of work that produced it.
 
 ---
 
+## D-0154 — `git_read` answers at a named commit and reports which one, so `repo_search`'s citation rule becomes performable; and both exhaustion markers are derived from the result's own counters, with `matches_truncated` redefined to mean the bound was reached
+
+- Date: 2026-08-16
+- Status: accepted (implemented)
+- Session: pinned-read-and-markers
+- Decision: three changes, plus two amendments to D-0152 that are the point of
+  the entry rather than bookkeeping on it.
+  a. **`git_read` TAKES AN OPTIONAL `commit` AND EVERY RESULT REPORTS THE ONE IT
+     ANSWERED AT.** The contract is the one `repo_search` already states, in
+     substance verbatim: absent means resolve the clone's current head, present
+     means answer at exactly that revision **or fail**, never silently at a
+     different one. The reported value is the **resolved full hash**, on both
+     tools, because a citation rule the loop can actually check requires the two
+     answers to be comparable and `deadbeef…` against `HEAD` is not a comparison.
+     **The reporting half is half the fix, not an extra.** A parameter with no
+     reported commit lets the loop pass a commit and never learn whether it was
+     honoured, which is the same blindness relocated. **List mode honours the
+     commit on the same terms**; the alternative was not "leave list mode alone"
+     but a tool that accepts `commit` and, in one of its two modes, silently
+     answers at a different one, which is precisely the fiction the pinned-commit
+     design exists to prevent.
+     **Resolution is one code path, shared with the search rather than
+     reimplemented.** `resolvePinnedCommit` is the single resolver for every
+     commit-pinned verb, for the reason D-0152 (h) gives for the denial shape:
+     identical by construction beats identical by resemblance, and two revision
+     resolvers drift. **The denial shape is untouched** — the
+     `guard[gitadapter.GitAdapter](..., rbac.ActionRead, "git")` call and its
+     position ahead of the registry lookup do not move, so a signature change
+     does not become a reordering.
+     **THE REASON THIS WAS URGENT, and it is not tidiness.** `repo_search`'s
+     description ends "Cite a claim only after re-reading the file with git_read
+     at the reported commit", and `git_read` accepted no commit and reported
+     none. So the property the search tool works hardest to establish — the
+     reported commit is not a fiction, because a hit reproduces under a
+     `git_read` at that commit — was **undeliverable one call later, silently,
+     in the pinned case that is the tool's headline feature.** The loop was
+     instructed to do something the tool surface could not do, and could not
+     detect that it had failed to.
+     **`git_log` IS DELIBERATELY OUT OF SCOPE.** Its natural argument is a count
+     of recent commits rather than a point in history, which
+     `docs/backlog/run-scoped-commit-pin.md` already carries as an open
+     question. The citation rule names `git_read` alone, so `git_read` alone is
+     what this makes honest.
+  b. **BOTH EXHAUSTION MARKERS ARE DERIVED FROM THE RESULT'S OWN COUNTERS**, not
+     set at the site that stopped the scan: `scan_incomplete` is
+     `FilesConsidered < FilesInScope` and `matches_truncated` is
+     `len(Matches) >= MaxMatches`. That shape **is** the fix. Two flags set in
+     two branches diverged from what the counters already said — whichever bound
+     bit set its own and left the other at its zero value — so a scan stopped by
+     the OUTPUT bound reported `scan_incomplete` false with files unvisited,
+     observed at 49 of 50. Derived, both are total functions of values the result
+     already carries and no branch can forget one.
+  c. **THE TWO MARKERS ARE INDEPENDENT, NOT EXCLUSIVE, AND THE DESCRIPTION SAYS
+     SO.** D-0152 (d) said they "must never collapse into one signal", and the
+     implementing session read that as mutual exclusivity. It is not:
+     non-collapse means one signal must not carry both meanings. When the output
+     bound stops the scan with files unvisited **both are true and both are
+     correct** — one answers *why did it stop*, the other answers *was the
+     substrate exhausted*. The advertised text now states that they can appear
+     together and what each is answering, because a loop told only that they
+     "mean opposite things" infers exclusivity exactly as that session did.
+  **AMENDMENT TO D-0152 (i) AND (2).** D-0152 called the run-scoped residue
+  "loop discipline — an instruction to the model, not a mechanism". **That was
+  wrong at the time it was written**, and saying so plainly is preferred to
+  quietly making the sentence accurate. Loop discipline presupposes a lever;
+  `git_read` took no commit, so there was nothing to thread. The residue was not
+  an unguaranteed behaviour the loop might neglect, it was an **unavailable**
+  one, and whoever picked up `run-scoped-commit-pin` would have read the
+  structural version as an upgrade over a weaker existing mechanism that did not
+  exist. It becomes true only with (a), and only for `git_read`; it stays false
+  for `git_log`. `docs/backlog/run-scoped-commit-pin.md` carried the same wrong
+  framing and is corrected the same way rather than silently reworded.
+  **AMENDMENT TO D-0152 (d).** `matches_truncated` is **redefined** from "more
+  matches exist and you were given a prefix" to **"the output bound was reached
+  and the scan stopped there; more matches may exist"**. The old wording was
+  false whenever the substrate held exactly `max_matches` matches: the answer was
+  complete and was advertised as a prefix. **The stronger claim was put and
+  declined.** Earning it means scanning one match past the bound, which means
+  scanning the whole substrate in exactly the case the bound existed to stop
+  early, and needs a further rule for the work bound biting mid-proof. The cost
+  of the weaker claim is a caller occasionally over-warned into re-querying a
+  substrate with nothing more to give — the direction is safe, and with
+  `scan_incomplete` now correct the caller can tell the two cases apart.
+  `scan_incomplete` keeps its wording, which was already the right sentence, and
+  becomes true.
+  **WHAT IS STILL NOT DELIVERED: THE RUN-LEVEL INVARIANT.** `git_log` remains
+  unpinned, nothing pins a run implicitly, and the loop still has to thread the
+  commit by hand. What (a) changes is that threading it **is** now loop
+  discipline — instruction rather than enforcement, but with a lever that
+  exists. `docs/backlog/run-scoped-commit-pin.md` is **narrowed, not closed**:
+  the read leg is delivered by explicit argument, the run-scoped version is what
+  the item is now for, and its open-questions list keeps the `git_log` question
+  and loses nothing.
+- Basis: the change is visible in this diff.
+  `internal/adapters/git/commit.go` holds `resolvePinnedCommit`, the single
+  resolver, called by `ReadFile`, `ListFiles` and `Search`;
+  `internal/adapters/git/read.go` carries the `ReadResult`/`ListResult` types
+  whose `Commit` field is always populated; `internal/access/git.go` threads the
+  argument through the guarded seam with the guard call and its position
+  unchanged; `internal/tools/core/gitread.go` advertises the parameter and
+  returns the commit in both modes. `deriveExhaustionMarkers` in
+  `internal/adapters/git/search.go` is the single site both markers are computed
+  at, reached by every non-error return.
+  Four tests pin what would otherwise be prose.
+  `TestSearch_OutputBoundIsNotTheWorkBound` **previously pinned the defect** —
+  it asserted `ScanIncomplete` false when only the output bound bit — and is
+  inverted, with its comment rewritten to say what non-collapse means;
+  `TestSearch_MatchesTruncatedMeansTheBoundWasReached` adds the
+  exactly-`max_matches` substrate the old wording was false on; `TestReadFile`
+  and `TestListFiles` pin that a named commit answers there (the fixture's
+  `main.go` differs between the two commits, so a quiet fallback to head returns
+  wrong bytes rather than merely a wrong label) and that an unresolvable
+  revision fails rather than falling back; `TestGitReadTool` pins that the
+  commit reaches the client and is reported back in **both** modes, and that the
+  parameter is advertised at all — the loop knows only what the tool advertises,
+  so the schema entry is part of the fix rather than an implementation detail.
+  **A SECOND RESOLVER EXISTS AND IS KNOWINGLY LEFT ALONE.** `diff.go`'s
+  `resolveCommit` is a different contract for a different verb — a ref lookup
+  over HEAD, branch, tag and full hash, with no empty-means-head case and no
+  gitrevisions syntax. `git_diff` takes two refs by design and predates this
+  work, so folding it in would be a change to its contract rather than a
+  refactor, and it is out of scope here. The naming says which resolver is
+  which, and `commit.go` records the boundary for whoever unifies them.
+  `docs/reference/security-in-layers.md`'s git adapter row gains `Search`, which
+  the `repo_search` diff added to the interface without updating: the row's
+  conclusion — Git cannot mutate external systems — was and stays true, but the
+  **enumeration** had gone stale, and it is the only exhaustive list of that
+  interface anywhere under `docs/`.
+- Supersedes: nothing wholesale. It **amends D-0152 (d), (i) and (2)** as stated
+  above, and D-0152 otherwise stands. `docs/backlog/done/repo-search-tool.md`
+  is **not** rewritten, for the reason D-0152 already gives: an archive edited to
+  agree with the present destroys the trail it exists to keep.
+
+---
+
 ## D-0153 — The task response attests the model it ran on, and what it attests is the model resolved at task PREPARATION — a provider identifier, not joe's catalogue key, and not a per-call claim
 
 - Date: 2026-08-14

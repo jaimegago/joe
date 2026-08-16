@@ -123,7 +123,7 @@ Credential entry is owned by a **single governed transition** — the read-only-
 | Adapter family | Can mutate external systems? | Detail |
 |----------------|------------------------------|--------|
 | K8s, AWS, Azure, datastore, observability, GitOps, networking, security/runtime, registries | **No** | Read/list/describe/query only |
-| Git | **No** | `ReadFile`, `ListFiles`, `Log`, `Diff` (can `Pull`, never commit/push) |
+| Git | **No** | `ReadFile`, `ListFiles`, `Log`, `Diff`, `Search` (can `Pull`, never commit/push) |
 | GitHub / GitLab | **Yes** | Comment + request-changes — the only mutating adapter verbs; their tools are denied unconditionally today (§3.2) |
 
 ---
