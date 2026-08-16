@@ -181,6 +181,21 @@ func TestSearch_PathScopeStopsAtSegmentBoundary(t *testing.T) {
 	}
 }
 
+// TestSearch_OutputBoundIsNotTheWorkBound pins what NON-COLLAPSE means, which
+// is the thing this test previously got wrong.
+//
+// The two markers must not collapse into one signal because they answer
+// different questions: matches_truncated answers WHY THE SCAN STOPPED, and
+// scan_incomplete answers WHETHER THE SUBSTRATE WAS EXHAUSTED. That is not
+// mutual exclusivity. When the output bound stops the scan with files still
+// unvisited both answers are yes, and a result that suppressed the second one
+// would license exactly the negative claim ("X does not appear in this repo")
+// that scan_incomplete exists to invalidate.
+//
+// The earlier version of this test asserted the opposite — ScanIncomplete false
+// when only the output bound bit — and so pinned the defect rather than the
+// contract. Both markers are now derived from the result's own counters, so
+// neither can be forgotten in a branch.
 func TestSearch_OutputBoundIsNotTheWorkBound(t *testing.T) {
 	a, _, _, _ := newSearchRepo(t)
 
@@ -191,8 +206,12 @@ func TestSearch_OutputBoundIsNotTheWorkBound(t *testing.T) {
 	if !out.MatchesTruncated {
 		t.Error("MatchesTruncated = false after the output bound bit")
 	}
-	if out.ScanIncomplete {
-		t.Error("ScanIncomplete = true when only the OUTPUT bound bit — the two markers mean opposite things and must not collapse")
+	if out.FilesConsidered >= out.FilesInScope {
+		t.Fatalf("considered/in scope = %d/%d; this case only means anything if files were left unvisited",
+			out.FilesConsidered, out.FilesInScope)
+	}
+	if !out.ScanIncomplete {
+		t.Error("ScanIncomplete = false when the OUTPUT bound stopped the scan with files unvisited — both markers are true here and both are correct")
 	}
 
 	work := mustSearch(t, a, gitadapter.SearchOptions{Pattern: "needle", Literal: true, MaxFilesScanned: 2})
@@ -207,6 +226,47 @@ func TestSearch_OutputBoundIsNotTheWorkBound(t *testing.T) {
 	}
 	if got := matchPaths(work); len(got) != 1 || got[0] != "README.md:2" {
 		t.Errorf("matches = %v, want only the files the bound allowed", got)
+	}
+}
+
+// TestSearch_MatchesTruncatedMeansTheBoundWasReached pins the redefinition.
+//
+// matches_truncated says the OUTPUT BOUND WAS REACHED AND THE SCAN STOPPED
+// THERE — more matches MAY exist. It does not claim one was seen. The stronger
+// claim was declined deliberately: proving no further match exists means
+// scanning the whole substrate in exactly the case the bound existed to stop
+// early, and needs a further rule for the work bound biting mid-proof.
+//
+// The case below is the one that made the old wording false. Under the "cmd"
+// prefix the substrate holds exactly one match and the bound is one, so the
+// answer is complete — the scan visited every file in scope — and it is still
+// reported as truncated, which is now what the marker means. The over-warning
+// is the accepted price of not scanning past the bound; note that
+// scan_incomplete is false here, so a caller with both markers can tell this
+// case apart from a genuinely cut-off one.
+func TestSearch_MatchesTruncatedMeansTheBoundWasReached(t *testing.T) {
+	a, _, _, _ := newSearchRepo(t)
+
+	res := mustSearch(t, a, gitadapter.SearchOptions{
+		Pattern:    "needle",
+		Literal:    true,
+		PathPrefix: "cmd",
+		MaxMatches: 1,
+	})
+
+	if len(res.Matches) != 1 || res.FilesInScope != 1 {
+		t.Fatalf("matches/in scope = %d/%d, want 1/1 — the substrate must hold exactly max_matches for this case",
+			len(res.Matches), res.FilesInScope)
+	}
+	if res.FilesConsidered != res.FilesInScope {
+		t.Errorf("considered = %d, want all %d in scope; the scan reached the end of the substrate here",
+			res.FilesConsidered, res.FilesInScope)
+	}
+	if res.ScanIncomplete {
+		t.Error("ScanIncomplete = true on a substrate that was fully considered")
+	}
+	if !res.MatchesTruncated {
+		t.Error("MatchesTruncated = false when the output bound was reached; the marker reports the bound, not a sighting of a further match")
 	}
 }
 
