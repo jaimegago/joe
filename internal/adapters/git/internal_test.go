@@ -137,7 +137,7 @@ func TestReadFile_EmptyRepo(t *testing.T) {
 		t.Fatalf("init empty repo: %v", err)
 	}
 	a := &Adapter{repo: repo, connected: true}
-	_, err = a.ReadFile(context.Background(), "README.md")
+	_, err = a.ReadFile(context.Background(), "README.md", "")
 	if err == nil {
 		t.Error("ReadFile() on empty repo should return error")
 	}
@@ -151,7 +151,7 @@ func TestListFiles_EmptyRepo(t *testing.T) {
 		t.Fatalf("init empty repo: %v", err)
 	}
 	a := &Adapter{repo: repo, connected: true}
-	_, err = a.ListFiles(context.Background(), "")
+	_, err = a.ListFiles(context.Background(), "", "")
 	if err == nil {
 		t.Error("ListFiles() on empty repo should return error")
 	}

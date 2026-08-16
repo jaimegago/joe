@@ -196,14 +196,14 @@ func TestDisconnect(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := a.ReadFile(ctx, "README.md")
+	_, err := a.ReadFile(ctx, "README.md", "")
 	if err == nil {
 		t.Error("ReadFile should fail after disconnect")
 	}
 }
 
 func TestReadFile(t *testing.T) {
-	a, _, _ := newTestAdapter(t)
+	a, hash1, hash2 := newTestAdapter(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -236,33 +236,69 @@ func TestReadFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := a.ReadFile(ctx, tt.path)
+			got, err := a.ReadFile(ctx, tt.path, "")
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ReadFile(%q) error = %v, wantErr %v", tt.path, err, tt.wantErr)
 			}
-			if got != tt.want {
-				t.Errorf("ReadFile(%q) = %q, want %q", tt.path, got, tt.want)
+			if tt.wantErr {
+				return
+			}
+			if got.Content != tt.want {
+				t.Errorf("ReadFile(%q) = %q, want %q", tt.path, got.Content, tt.want)
+			}
+			// An absent commit still answers at one, and says which. Without
+			// this the caller can pass a commit and never learn whether it was
+			// honoured — the same blindness the argument was added to remove.
+			if got.Commit != hash2 {
+				t.Errorf("ReadFile(%q) reported commit %q, want the resolved head %q", tt.path, got.Commit, hash2)
 			}
 		})
 	}
+
+	// The property that makes repo_search's citation rule performable: a read at
+	// a named commit answers THERE, not at whatever the clone's head happens to
+	// be. main.go differs between the two commits, so a read that quietly
+	// resolved head would return the wrong bytes rather than merely the wrong
+	// label.
+	t.Run("a named commit answers at that commit", func(t *testing.T) {
+		got, err := a.ReadFile(ctx, "main.go", hash1)
+		if err != nil {
+			t.Fatalf("ReadFile at %s error = %v", hash1, err)
+		}
+		if want := "package main\nfunc main() {}\n"; got.Content != want {
+			t.Errorf("ReadFile(main.go, %s) = %q, want the content at that commit %q", hash1, got.Content, want)
+		}
+		if got.Commit != hash1 {
+			t.Errorf("reported commit = %q, want %q", got.Commit, hash1)
+		}
+	})
+
+	// "Answer at exactly that revision or fail, never silently at a different
+	// one." Falling back to head here is the failure mode the whole pin exists
+	// to prevent, and it would be invisible in the answer.
+	t.Run("an unresolvable commit fails rather than falling back to head", func(t *testing.T) {
+		if _, err := a.ReadFile(ctx, "README.md", "no-such-revision"); err == nil {
+			t.Error("ReadFile at an unresolvable revision returned no error; it must fail, never answer elsewhere")
+		}
+	})
 }
 
 func TestListFiles(t *testing.T) {
-	a, _, _ := newTestAdapter(t)
+	a, hash1, hash2 := newTestAdapter(t)
 	ctx := context.Background()
 
 	t.Run("root directory", func(t *testing.T) {
-		files, err := a.ListFiles(ctx, "")
+		res, err := a.ListFiles(ctx, "", "")
 		if err != nil {
 			t.Fatalf("ListFiles(\"\") error = %v", err)
 		}
 		// Expect: README.md, main.go, cmd/
-		if len(files) != 3 {
-			t.Fatalf("got %d files, want 3", len(files))
+		if len(res.Files) != 3 {
+			t.Fatalf("got %d files, want 3", len(res.Files))
 		}
 
 		names := map[string]bool{}
-		for _, f := range files {
+		for _, f := range res.Files {
 			names[f.Path] = true
 		}
 		for _, want := range []string{"README.md", "main.go", "cmd"} {
@@ -270,25 +306,48 @@ func TestListFiles(t *testing.T) {
 				t.Errorf("missing file %q in listing", want)
 			}
 		}
+		if res.Commit != hash2 {
+			t.Errorf("reported commit = %q, want the resolved head %q", res.Commit, hash2)
+		}
 	})
 
 	t.Run("subdirectory", func(t *testing.T) {
-		files, err := a.ListFiles(ctx, "cmd")
+		res, err := a.ListFiles(ctx, "cmd", "")
 		if err != nil {
 			t.Fatalf("ListFiles(\"cmd\") error = %v", err)
 		}
-		if len(files) != 1 {
-			t.Fatalf("got %d files, want 1", len(files))
+		if len(res.Files) != 1 {
+			t.Fatalf("got %d files, want 1", len(res.Files))
 		}
-		if files[0].Path != "app.go" {
-			t.Errorf("file path = %q, want \"app.go\"", files[0].Path)
+		if res.Files[0].Path != "app.go" {
+			t.Errorf("file path = %q, want \"app.go\"", res.Files[0].Path)
 		}
 	})
 
 	t.Run("nonexistent directory", func(t *testing.T) {
-		_, err := a.ListFiles(ctx, "nope")
+		_, err := a.ListFiles(ctx, "nope", "")
 		if err == nil {
 			t.Error("ListFiles(\"nope\") should fail")
+		}
+	})
+
+	// List mode takes the commit on the same terms as read mode. Honouring it
+	// in one mode and not the other would leave git_read accepting a commit and
+	// silently answering at a different one — exactly the fiction the pin exists
+	// to prevent, moved rather than removed.
+	t.Run("a named commit is honoured and reported in list mode too", func(t *testing.T) {
+		res, err := a.ListFiles(ctx, "", hash1)
+		if err != nil {
+			t.Fatalf("ListFiles at %s error = %v", hash1, err)
+		}
+		if res.Commit != hash1 {
+			t.Errorf("reported commit = %q, want %q", res.Commit, hash1)
+		}
+	})
+
+	t.Run("an unresolvable commit fails rather than falling back to head", func(t *testing.T) {
+		if _, err := a.ListFiles(ctx, "", "no-such-revision"); err == nil {
+			t.Error("ListFiles at an unresolvable revision returned no error; it must fail, never answer elsewhere")
 		}
 	})
 }
@@ -598,7 +657,7 @@ func TestConnect_HTTPSAuth(t *testing.T) {
 
 func TestReadFile_Disconnected(t *testing.T) {
 	a := gitadapter.New()
-	_, err := a.ReadFile(context.Background(), "README.md")
+	_, err := a.ReadFile(context.Background(), "README.md", "")
 	if err == nil {
 		t.Error("ReadFile() on disconnected adapter should return error")
 	}
@@ -606,7 +665,7 @@ func TestReadFile_Disconnected(t *testing.T) {
 
 func TestListFiles_Disconnected(t *testing.T) {
 	a := gitadapter.New()
-	_, err := a.ListFiles(context.Background(), "")
+	_, err := a.ListFiles(context.Background(), "", "")
 	if err == nil {
 		t.Error("ListFiles() on disconnected adapter should return error")
 	}
@@ -733,7 +792,7 @@ func TestReadFile_LargeFile(t *testing.T) {
 	}
 
 	a := gitadapter.NewWithRepo(repo, dir)
-	_, err = a.ReadFile(context.Background(), "large.bin")
+	_, err = a.ReadFile(context.Background(), "large.bin", "")
 	if err == nil {
 		t.Error("ReadFile() expected error for file larger than maxFileSize")
 	}
@@ -742,11 +801,11 @@ func TestReadFile_LargeFile(t *testing.T) {
 func TestListFiles_RootWithSlash(t *testing.T) {
 	// Exercise the "/" dir path branch in ListFiles.
 	a, _, _ := newTestAdapter(t)
-	files, err := a.ListFiles(context.Background(), "/")
+	res, err := a.ListFiles(context.Background(), "/", "")
 	if err != nil {
 		t.Fatalf("ListFiles(\"/\") error = %v", err)
 	}
-	if len(files) == 0 {
+	if len(res.Files) == 0 {
 		t.Error("ListFiles(\"/\") should return files")
 	}
 }
@@ -754,11 +813,11 @@ func TestListFiles_RootWithSlash(t *testing.T) {
 func TestListFiles_DotDir(t *testing.T) {
 	// Exercise the "." dir path branch in ListFiles.
 	a, _, _ := newTestAdapter(t)
-	files, err := a.ListFiles(context.Background(), ".")
+	res, err := a.ListFiles(context.Background(), ".", "")
 	if err != nil {
 		t.Fatalf("ListFiles(\".\") error = %v", err)
 	}
-	if len(files) == 0 {
+	if len(res.Files) == 0 {
 		t.Error("ListFiles(\".\") should return files")
 	}
 }

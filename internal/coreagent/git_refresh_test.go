@@ -27,12 +27,12 @@ func (f *fakeGitAdapter) Status() adapters.Status {
 	return adapters.Status{Connected: true, Message: "connected"}
 }
 
-func (f *fakeGitAdapter) ReadFile(_ context.Context, path string) (string, error) {
-	return "", nil
+func (f *fakeGitAdapter) ReadFile(_ context.Context, path, commit string) (*git.ReadResult, error) {
+	return &git.ReadResult{Commit: commit}, nil
 }
 
-func (f *fakeGitAdapter) ListFiles(_ context.Context, dir string) ([]git.FileInfo, error) {
-	return f.files, nil
+func (f *fakeGitAdapter) ListFiles(_ context.Context, dir, commit string) (*git.ListResult, error) {
+	return &git.ListResult{Commit: commit, Files: f.files}, nil
 }
 
 func (f *fakeGitAdapter) Log(_ context.Context, limit int) ([]git.CommitInfo, error) {
