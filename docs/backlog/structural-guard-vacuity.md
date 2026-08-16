@@ -94,9 +94,14 @@ Triage them on one axis, because the failure directions are not symmetric:
   moves into a helper. A false alarm is noisy and annoying, but it does not hide
   anything, and a guard that cries wolf is not the same defect.
 
-Note that `internal/access/**` and `internal/rbac/**` are governance-class paths
-under `docs/verification.md` and are held for maintainer approval by the
-`Held Paths` check. Any change to guards living there is governance-floor work.
+Note that a change to guards living under `internal/access/**` or
+`internal/rbac/**` is governance-floor work, because it lands in the `rbac` class
+as `docs/verification.md` scopes it. That conclusion is unchanged; what reaches it
+is not. Those paths are **no longer held by the `Held Paths` check** — the family
+was removed, because a path list cannot decide a class whose real scope is any
+change to authorization or permission logic under `internal/`. The floor is
+engaged by the class, and the review that follows is dispatched in joe-pm rather
+than signalled by an approval on this gate.
 
 ## Design questions to settle before a build order
 

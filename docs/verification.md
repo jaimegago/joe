@@ -21,10 +21,13 @@ The gate carries a **budget of 6 minutes**, and 11 minutes on the exception path
 
 Filtering errs broad by rule: each pattern is wider than the class it stands for. The nightly unfiltered run is the complement, so that a misclassified diff which skipped the job that would have caught it surfaces within a day rather than at the next release.
 
-Two surfaces are held out of hands-off merging entirely by the `Held Paths` check in `.github/workflows/held-paths.yml`, and are released only by an approving review from the maintainer on the pull request's head commit:
+**One surface** is held out of hands-off merging by the `Held Paths` check in `.github/workflows/held-paths.yml`, and is released only by an approving review from the maintainer on the pull request's head commit:
 
-- **Instruction surfaces** — `docs/backlog/**`, `CLAUDE.md`, `docs/verification.md`. joe-pm's trust boundary founds its second work source on joe's `main` being maintainer-merged; a green build says nothing about whether a backlog edit is a legitimate order.
-- **Governance-class paths** — `internal/rbac/**`, `internal/access/**`, `test/integration/rbac_test.go`. A broad path approximation of the `rbac` class, whose real scope is not path-decidable.
+- **Instruction surfaces** — `docs/backlog/**`, `CLAUDE.md`, `docs/verification.md`. joe-pm's trust boundary founds its second work source on joe's `main` being maintainer-merged; a green build says nothing about whether a backlog edit is a legitimate order. For these diffs the `docs` class's Verify field is "Nothing" and the gate passes on skips alone, so the human read is not a layer on top of the verification — it **is** the verification.
+
+**What that approval is, and what it is not.** It is the **operating form of joe-pm's trust boundary** — the mechanism by which the claim that joe's `main` is maintainer-merged stays true, and therefore the mechanism on which joe's `docs/backlog/` rests as a source of agent work orders. **It is not code review.** The distinction is recorded because a later session reading the hold as a quality gate would widen or narrow it on quality grounds, which is not what it is for.
+
+**A second family used to be held here and no longer is.** `internal/rbac/**`, `internal/access/**` and `test/integration/rbac_test.go` were a broad path approximation of the `rbac` class, and that approximation is knowingly wrong in both directions — the class's real scope is any change to authorization or permission logic under `internal/`, which no path list decides. An approval on that family therefore attested to nothing. Those diffs are held instead by the machine verification they already owe and by a governance-floor review dispatched separately in joe-pm, whose merge is performed by an agent session that reads both repositories and can check the review completed. Removing a control that attested to nothing costs nothing, provided the thing it stood in for is preserved — and it is, off this gate rather than on it.
 
 ## Rules
 
@@ -96,7 +99,9 @@ Class names are stable identifiers; other tooling references them by name.
 
 **Evidence.** The result lines for `rbac_test.go` specifically, quoted from the suite output. An aggregate integration pass is not acceptable evidence for this class.
 
-**Gaps.** No isolated runner exists. Evidence is therefore a filtered result rather than a dedicated command. A dedicated target would fix this. Separately, the `Held Paths` check approximates this class by path — `internal/rbac/**`, `internal/access/**`, `test/integration/rbac_test.go` — in order to hold such a change for maintainer approval. That approximation is knowingly wrong in both directions: this class's real scope is any change to authorization or permission logic under `internal/`, which no path list decides. It errs broad by rule, and a governance change living outside those three paths is held by nothing.
+**Gaps.** No isolated runner exists. Evidence is therefore a filtered result rather than a dedicated command. A dedicated target would fix this.
+
+Separately, the `Held Paths` check **used to** approximate this class by path — `internal/rbac/**`, `internal/access/**`, `test/integration/rbac_test.go` — in order to hold such a change for maintainer approval. That family was removed from the check, because the approximation was knowingly wrong in both directions: this class's real scope is any change to authorization or permission logic under `internal/`, which no path list decides, so the approval attested to nothing. What holds this class now is not a path list on the gate at all — it is the machine verification above plus a governance-floor review dispatched in joe-pm, whose merge is performed by a session that can check the review completed. **The class remains path-undecidable**, and that is why the gate no longer pretends to decide it.
 
 ### `verification-infrastructure`
 
