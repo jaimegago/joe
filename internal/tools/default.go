@@ -60,6 +60,7 @@ func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.Safety
 // registerCoreTools registers all core tools that communicate with joecored.
 func registerCoreTools(registry *Registry, coreClient coretools.CoreToolsClient) {
 	registry.Register(coretools.NewListComponentsTool(coreClient))
+	registry.Register(coretools.NewResolveComponentTool(coreClient))
 	registry.Register(coretools.NewGraphQueryTool(coreClient))
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
 	registry.Register(coretools.NewK8sGetTool(coreClient))

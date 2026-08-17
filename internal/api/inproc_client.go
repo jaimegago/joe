@@ -35,6 +35,7 @@ import (
 	ecradapter "github.com/jaimegago/joe/internal/adapters/registry/ecr"
 	ociadapter "github.com/jaimegago/joe/internal/adapters/registry/oci"
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
+	"github.com/jaimegago/joe/internal/componentresolve"
 	"github.com/jaimegago/joe/internal/core"
 	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -95,6 +96,69 @@ func (c *inProcessCoreClient) ListComponents(ctx context.Context) ([]*store.Comp
 		return nil, fmt.Errorf("component repository not configured")
 	}
 	return c.components.List(ctx)
+}
+
+// --- resolve_component (registry read for matching, accessor for evidence) ---
+
+// ResolveComponents is the naming hop. It reads the component registry to match
+// the phrase, then takes EVERY match to the guarded accessor, which decides per
+// component whether the caller may see it and returns the graph evidence for
+// the ones they may. A component the accessor withholds never reaches the
+// result, so the caller cannot tell a withheld component from an absent one.
+//
+// The registry read itself is the same ungoverned c.components.List that backs
+// list_components — the component repository predates the accessor and is not
+// principal-gated (see the type comment above). That is unchanged here, and the
+// consequence is worth being exact about: this tool discloses strictly LESS
+// than list_components already does, because its answer is filtered where
+// list_components' is not. It does not make the registry governed, and nothing
+// in this file should be read as claiming it does.
+func (c *inProcessCoreClient) ResolveComponents(ctx context.Context, phrase, componentType string) (*componentresolve.Resolution, error) {
+	if c.components == nil {
+		return nil, fmt.Errorf("component repository not configured")
+	}
+	components, err := c.components.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list components: %w", err)
+	}
+
+	matched, matchesTruncated := componentresolve.Match(components, phrase, componentType)
+	matchedIDs := make([]string, 0, len(matched))
+	for _, m := range matched {
+		matchedIDs = append(matchedIDs, m.Component.ID)
+	}
+
+	// Called unconditionally, including with an empty match list: the accessor
+	// writes the per-call outcome row that records which of the two empty
+	// answers this was, and a call that returned early on "nothing matched"
+	// would leave exactly that case unrecorded.
+	sets, err := c.accessor.ComponentBindings(ctx, rbac.PrincipalFromContext(ctx), matchedIDs, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	bindings := make(map[string]access.ComponentBindingSet, len(sets))
+	for _, s := range sets {
+		bindings[s.ComponentID] = s
+	}
+
+	resolution := &componentresolve.Resolution{MatchesTruncated: matchesTruncated}
+	for _, m := range matched {
+		set, permitted := bindings[m.Component.ID]
+		if !permitted {
+			continue
+		}
+		resolution.Candidates = append(resolution.Candidates, componentresolve.Candidate{
+			ComponentID:       m.Component.ID,
+			Name:              m.Component.Name,
+			Type:              m.Component.Type,
+			MatchKind:         m.MatchKind,
+			MatchText:         m.MatchText,
+			Bindings:          set.Bindings,
+			BindingsTruncated: set.Truncated,
+		})
+	}
+	return resolution, nil
 }
 
 // --- graph (gated by accessor under reserved GraphComponentID) ---

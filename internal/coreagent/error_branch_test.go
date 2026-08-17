@@ -110,6 +110,12 @@ func (e *errorGraphStore) ListEdgesForNodes(ctx context.Context, nodeIDs []strin
 	}
 	return nil, nil
 }
+func (e *errorGraphStore) ListComponentBindings(ctx context.Context, componentID string, limit int) ([]graph.ComponentBinding, error) {
+	if e.underlying != nil {
+		return e.underlying.ListComponentBindings(ctx, componentID, limit)
+	}
+	return nil, nil
+}
 func (e *errorGraphStore) ListAll(ctx context.Context) (*graph.Subgraph, error) {
 	if e.underlying != nil {
 		return e.underlying.ListAll(ctx)

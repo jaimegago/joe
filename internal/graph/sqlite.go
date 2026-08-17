@@ -446,6 +446,83 @@ func (s *sqlGraphStore) ListNodesByComponent(ctx context.Context, sourceID strin
 	return scanNodes(rows)
 }
 
+// ListComponentBindings returns the edges binding componentID to other
+// components. See the interface doc in store.go for the contract; the SQL below
+// is the whole of it.
+//
+// The two arms of the UNION are the two directions. They are separate arms
+// rather than one OR-ed query because each arm joins near/far to the opposite
+// endpoint column, so the index on from_node and the index on to_node are each
+// usable; an OR across both would not be.
+func (s *sqlGraphStore) ListComponentBindings(ctx context.Context, componentID string, limit int) (bindings []ComponentBinding, err error) {
+	start := time.Now()
+	defer func() {
+		s.metrics.RecordGraphOperation(ctx, "list_component_bindings", time.Since(start), err)
+	}()
+
+	if componentID == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = DefaultComponentBindingLimit
+	}
+
+	query := store.Rebind(s.driver, `
+		SELECT relation, confidence, direction, node_id, node_type,
+		       peer_node_id, peer_node_type, peer_component_id
+		FROM (
+			SELECT e.relation AS relation, e.confidence AS confidence, 'out' AS direction,
+			       near.id AS node_id, near.type AS node_type,
+			       far.id AS peer_node_id, far.type AS peer_node_type,
+			       far.component_id AS peer_component_id
+			FROM graph_edges e
+			JOIN graph_nodes near ON near.id = e.from_node
+			JOIN graph_nodes far ON far.id = e.to_node
+			WHERE near.component_id = ?
+			  AND far.component_id IS NOT NULL
+			  AND far.component_id <> ''
+			  AND far.component_id <> ?
+			UNION ALL
+			SELECT e.relation AS relation, e.confidence AS confidence, 'in' AS direction,
+			       near.id AS node_id, near.type AS node_type,
+			       far.id AS peer_node_id, far.type AS peer_node_type,
+			       far.component_id AS peer_component_id
+			FROM graph_edges e
+			JOIN graph_nodes near ON near.id = e.to_node
+			JOIN graph_nodes far ON far.id = e.from_node
+			WHERE near.component_id = ?
+			  AND far.component_id IS NOT NULL
+			  AND far.component_id <> ''
+			  AND far.component_id <> ?
+		) AS b
+		ORDER BY relation, peer_component_id, peer_node_id, node_id, direction
+		LIMIT ?
+	`)
+
+	rows, err := s.db.QueryContext(ctx, query,
+		componentID, componentID, componentID, componentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query component bindings for %s: %w", componentID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			b          ComponentBinding
+			confidence sql.NullInt64
+		)
+		if err := rows.Scan(
+			&b.Relation, &confidence, &b.Direction, &b.NodeID, &b.NodeType,
+			&b.PeerNodeID, &b.PeerNodeType, &b.PeerComponentID,
+		); err != nil {
+			return nil, fmt.Errorf("scan component binding: %w", err)
+		}
+		b.Confidence = ConfidenceLevel(confidence.Int64)
+		bindings = append(bindings, b)
+	}
+	return bindings, rows.Err()
+}
+
 // ListEdgesForNodes returns edges where both endpoints are in nodeIDs.
 func (s *sqlGraphStore) ListEdgesForNodes(ctx context.Context, nodeIDs []string) (edges []Edge, err error) {
 	start := time.Now()

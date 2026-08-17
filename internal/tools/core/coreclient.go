@@ -15,6 +15,7 @@ package core
 // registerCoreTools. Any value passed to NewCoreRegistry must satisfy it.
 type CoreToolsClient interface {
 	ListComponentsClient
+	ResolveComponentClient
 	GraphQueryClient
 	GraphRelatedClient
 	K8sGetClient

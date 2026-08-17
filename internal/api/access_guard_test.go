@@ -126,7 +126,8 @@ func TestInvariant_NoUngovernedAdapterOrGraphAccess(t *testing.T) {
 		"AddNode": true, "AddEdge": true, "GetNode": true, "Query": true,
 		"Related": true, "Path": true, "DeleteNode": true, "DeleteEdge": true,
 		"Summary": true, "ListNodesByComponent": true, "ListEdgesForNodes": true,
-		"ListAll": true, "DeleteNodesByComponentTx": true,
+		"ListComponentBindings": true,
+		"ListAll":               true, "DeleteNodesByComponentTx": true,
 	}
 
 	// graphWriteExemptByMethod carves out graph-store WRITE call sites whose

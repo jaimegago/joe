@@ -93,6 +93,17 @@ var toolRegistry = map[string]ToolClassification{
 	// policy-gated. Pinned by TestClassifyRepoSearchIsRead.
 	"repo_search": {Class: ActionRead, Description: "Search file contents in a git repo at a pinned commit"},
 
+	// resolve_component turns a task phrase into ranked component candidates. It
+	// reads the component registry and, through the governed read accessor, the
+	// graph relations binding each permitted candidate to other components. It
+	// mutates no managed system, so it is a Read and passes the write floor
+	// unconditionally. Without this explicit row ClassifyTool would default it to
+	// ActionMutate (deny-by-default): the naming hop would be floor-blocked in
+	// observation mode, and every downstream tool call that needed a component_id
+	// would be resolving one by guesswork instead. Pinned by
+	// TestClassifyResolveComponentIsRead.
+	"resolve_component": {Class: ActionRead, Description: "Resolve a task phrase to component candidates"},
+
 	// Observability tools (Phase 6.3) — read-only queries
 	"prometheus_query": {Class: ActionRead, Description: "Query Prometheus/Mimir metrics via PromQL"},
 	"loki_query":       {Class: ActionRead, Description: "Query Loki logs via LogQL"},

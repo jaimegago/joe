@@ -279,6 +279,10 @@ func (f fakeGraph) ListEdgesForNodes(context.Context, []string) ([]graph.Edge, e
 	*f.called = true
 	return nil, nil
 }
+func (f fakeGraph) ListComponentBindings(context.Context, string, int) ([]graph.ComponentBinding, error) {
+	*f.called = true
+	return nil, nil
+}
 func (f fakeGraph) ListAll(context.Context) (*graph.Subgraph, error) {
 	*f.called = true
 	return &graph.Subgraph{}, nil

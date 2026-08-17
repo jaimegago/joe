@@ -67,6 +67,7 @@ func TestNewCoreRegistry(t *testing.T) {
 		"web_search":   true,
 		// Core tools (call joecored API)
 		"list_components":     true,
+		"resolve_component":   true,
 		"graph_query":         true,
 		"graph_related":       true,
 		"k8s_get":             true,

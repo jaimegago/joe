@@ -48,6 +48,22 @@ type GraphStore interface {
 	// ListEdgesForNodes returns edges where both endpoints are in nodeIDs
 	ListEdgesForNodes(ctx context.Context, nodeIDs []string) ([]Edge, error)
 
+	// ListComponentBindings returns the edges that BIND componentID to some
+	// other component: every edge with one endpoint carrying componentID and
+	// the other endpoint carrying a different, non-empty component_id. Edges
+	// wholly inside the component are excluded — they bind it to itself and
+	// say nothing about what it is attached to — and so are edges whose far
+	// endpoint carries no component attribution, because a node belonging to
+	// no component cannot be authorized per component and must not be
+	// disclosed on the strength of a grant that does not cover it.
+	//
+	// The result is ordered deterministically (relation, peer component, peer
+	// node, near node, direction) and capped at limit rows. A non-positive
+	// limit means DefaultComponentBindingLimit. Truncation is not signalled
+	// here: the caller detects it by asking for limit+1 and seeing limit+1
+	// rows come back, which keeps the store's contract a plain ordered read.
+	ListComponentBindings(ctx context.Context, componentID string, limit int) ([]ComponentBinding, error)
+
 	// ListAll returns all nodes and edges in the graph (capped at 5000 nodes).
 	ListAll(ctx context.Context) (*Subgraph, error)
 
@@ -119,6 +135,80 @@ const (
 	// UserConfirmed means the user explicitly confirmed this edge
 	UserConfirmed ConfidenceLevel = 3
 )
+
+// String renders a confidence level for a reader — a payload handed to the
+// agent loop, a log line — rather than for storage, which uses the raw int.
+//
+// A stored 3 renders as "user_confirmed". Per the note above that is not always
+// what the writer meant: Explicit and UserConfirmed both shipped as 3 for a
+// while, so an ambiguous legacy row outside a refresh loop displays as
+// user-confirmed. No migration can recover which it meant, and this method does
+// not pretend otherwise — it renders what is stored.
+func (c ConfidenceLevel) String() string {
+	switch c {
+	case Inferred:
+		return "inferred"
+	case Explicit:
+		return "explicit"
+	case UserConfirmed:
+		return "user_confirmed"
+	default:
+		return "unknown"
+	}
+}
+
+// Binding direction, as seen from the component asked about: BindingOut means
+// the component's own node is the edge's from-node, BindingIn means it is the
+// to-node. Relations in this graph are directional and their meaning depends on
+// which end you are standing on — metrics_in from a service names the backend
+// that scrapes it, metrics_in into a Prometheus component names a service it
+// scrapes — so a binding that dropped the direction would be ambiguous.
+const (
+	BindingOut = "out"
+	BindingIn  = "in"
+)
+
+// DefaultComponentBindingLimit bounds ListComponentBindings when the caller
+// names no limit. It is a bound on evidence returned for ONE component, not a
+// bound on the graph: a Kubernetes cluster can carry thousands of nodes, and a
+// caller reading a candidate list wants enough relations to tell two candidates
+// apart, not an inventory.
+const DefaultComponentBindingLimit = 50
+
+// ComponentBinding is one graph edge seen from a component's point of view: the
+// endpoint that belongs to that component, the relation, and the far endpoint
+// together with the component it belongs to.
+//
+// It is deliberately NOT an Edge. An Edge names two node IDs and leaves the
+// reader to look up what component each belongs to; the question this type
+// answers — what is this component bound to, and via which relation — is the
+// component-level one, and answering it from Edge would take a second read per
+// endpoint.
+type ComponentBinding struct {
+	// NodeID and NodeType are the endpoint belonging to the component asked
+	// about.
+	NodeID   string
+	NodeType string
+
+	// Relation is the graph relation constant (see relations.go).
+	Relation string
+
+	// Direction is BindingOut or BindingIn, from the asked-about component's
+	// point of view.
+	Direction string
+
+	// Confidence is the edge's confidence level, carried so a reader can tell
+	// a name-matched heuristic edge from one resting on a confirmed
+	// identifier.
+	Confidence ConfidenceLevel
+
+	// PeerNodeID, PeerNodeType and PeerComponentID are the far endpoint.
+	// PeerComponentID is never empty: an unattributed far endpoint is not
+	// returned at all.
+	PeerNodeID      string
+	PeerNodeType    string
+	PeerComponentID string
+}
 
 // Subgraph represents a subset of the graph
 type Subgraph struct {
