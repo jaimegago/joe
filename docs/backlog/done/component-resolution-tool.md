@@ -1,5 +1,5 @@
 Component resolution tool — expose graph-edge component binding to the agent loop
-Status: open
+Status: done — shipped as `resolve_component` (D-0155)
 Priority: now
 
 The agent-loop LLM today has no reliable way to map a task phrase like "app XYZ in

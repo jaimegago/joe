@@ -57,7 +57,6 @@ after the move rather than by inspection.
 | [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
 | [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |
 | [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
-| [`component-resolution-tool`](component-resolution-tool.md) | Component resolution tool — expose graph-edge component binding to the agent loop | open | now |
 | [`component-type-contract`](component-type-contract.md) | Per-type component contract — one deterministic package per component type | open | later |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open | later |

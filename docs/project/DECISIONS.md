@@ -14,6 +14,180 @@ unit of work that produced it.
 
 ---
 
+## D-0155 — `resolve_component` ships as the NAMING hop: narrow deterministic matching on component name and type, rich per-candidate graph evidence, one indistinguishable empty answer, and a per-component RBAC gate that is the first governed graph read keyed on a real component
+
+- Date: 2026-08-17
+- Status: accepted (implemented)
+- Session: component-resolution-tool
+- Decision: nine parts. (a)–(d) are the tool; (e)–(g) are what had to be built or
+  read to make it honest; (h)–(i) correct the item and the order that produced it.
+  a. **THE TOOL IS THE NAMING HOP, AND IT DOES NOT WRAP THE OBSERVE RESOLVER.**
+     `resolve_component` takes a task phrase and returns the registered
+     components that phrase might name, ranked, each carrying the graph
+     relations that justify it. The backlog item stated the problem as phrase →
+     `component_id` and offered `resolveComponentForService`
+     (`internal/api/observe.go:33`) as the asset. **Those are different hops.**
+     That resolver answers *which backend serves this subject* for components
+     already known to each other; it cannot disambiguate English against a
+     registry. Wrapping it would have shipped the second hop and left the stated
+     problem open behind a tool that presupposed it closed. The seam extraction
+     the item once carried is therefore not part of this work and stays filed as
+     `docs/backlog/observe-resolver-seam.md` at `later`.
+  b. **MATCH NARROW, RETURN RICH — and the separation is the decision, not a
+     style.** Matching (`internal/componentresolve`) is deterministic on
+     component **name** and **type**, by token, with no model and no fuzzy
+     distance; qualifiers in the phrase ("in prod") are **never** parsed
+     server-side. Every candidate then carries its graph context as evidence, so
+     the caller disambiguates by reading it. The fuzzy step happens in the fuzzy
+     reasoner, which already has the whole sentence. **Resolving qualifiers
+     inside the resolver was rejected because it fails unrecoverably**: it
+     collapses to one authoritative-looking `component_id` with the ambiguity
+     already discarded, and a caller cannot recover from that the way it can
+     recover from a bad ranking. **Several candidates is the normal case, not a
+     degraded one**, and nothing in the contract treats it as failure.
+     Four match kinds travel out to the caller — `exact_name`, `name_in_phrase`,
+     `name_token`, `type` — because *why* a component matched is half of a
+     candidate's evidence: a name that appeared verbatim is a different sort of
+     answer from a shared token, and only the caller can weigh that.
+  c. **THE UNHAPPY PATH: ONE EMPTY ANSWER, ONE REASON, NO ERROR SHAPE.** Zero
+     matches and matched-but-not-permitted return the **same** empty result with
+     the **same** reason string, and neither is an error. The item's objection to
+     the HTTP 404 shape is adopted **and extended**: not merely "not a 404" but
+     no failure path at all for an absent or withheld match. The reason is
+     disclosure, not tidiness — a successful call reveals not just that a
+     component exists but what it is bound to, and this consumer paraphrases what
+     it learns into transcripts, summaries and incident notes. The HTTP surface
+     never had to weigh this because its consumer was a UI.
+     **The cost is accepted knowingly: a missing grant presents to the caller as
+     a component that does not exist.** That is why the audit half is not
+     optional — it is the only place the distinction survives.
+  d. **AUDIT CARRIES THE DISTINCTION, AND NO MIGRATION WAS NEEDED.** The order
+     recorded as `UNVERIFIED` that joe's audit surface could carry a per-call
+     resolution outcome, and said the unhappy-path decision depended on it.
+     **Established: it can.** One `KindInfraAccess` row per resolve call, written
+     by the accessor, carries `reason` ∈ {`component_resolve_no_match`,
+     `component_resolve_no_permitted_match`, `component_resolve_match`} and a
+     counts-only context blob — using the `context` column exactly as migration
+     015 describes it (a JSON blob with a sub-discriminator where one kind covers
+     more than one event). The `kind` CHECK constraint is untouched. Beside it,
+     the permit chokepoint's own deny rows **name each withheld component**,
+     which is what an operator debugging a missing grant actually acts on.
+     **The phrase is deliberately not recorded**: the audit log is the governance
+     trail, not a query log, and the component identities an operator needs are
+     already on the rows beside it.
+  e. **THE EVIDENCE READ IS GATED ON THE COMPONENT, NOT ON THE RESERVED `graph`
+     KEY — the first governed graph read in the tree that is.** Every other
+     accessor graph method gates on `access.GraphComponentID`, correctly: a graph
+     query is keyed by no real source, so a stable reserved key standing in for
+     "the graph" is the honest choice. Component resolution is the case that key
+     was never needed for. `Accessor.ComponentBindings` evaluates
+     `rbac.ActionRead` **on each component itself**, which is strictly narrower,
+     and it is what makes the filter meaningful. Two filters, and they close two
+     different holes: **a matched component the principal may not read is not a
+     candidate** (absent, not marked), and **a PEER component the principal may
+     not read is dropped from a permitted candidate's evidence**, so a candidate
+     cannot become a side channel naming a component no grant covers. Every
+     distinct component is permitted **once per call** (memoised), so a shared
+     backend does not produce an audit row per edge.
+     `docs/backlog/investigations/agentic-path-rbac-read-enforcement.md` §0(1)
+     names the "multi-component blind spot" — graph tools authorized once at the
+     coarse sentinel while returning nodes that carry real `.ComponentID` values
+     never consulted. This is the first read to take that opportunity. **It does
+     not close the finding**: `graph_query` and `graph_related` are unchanged.
+  f. **ONE NEW GRAPH-STORE METHOD, `ListComponentBindings`,** returning edges
+     with one endpoint in the component and the other in a **different,
+     non-empty** component, with both endpoints' type and the peer's component
+     id, deterministically ordered and bounded. Same-component edges are excluded
+     (they bind the component to itself and say nothing about what it is attached
+     to, and inside a Kubernetes cluster they are the overwhelming majority);
+     edges to a node carrying **no** component attribution are excluded because
+     such a node cannot be authorized per component and must not be disclosed on
+     the strength of a grant that does not cover it. Truncation is detected by
+     the accessor over-fetching one row, so the store stays a plain ordered read.
+     **The `Related`-per-node alternative was rejected on cost**: one recursive
+     CTE per node, over a cluster's node count, per candidate, per call.
+  g. **THE PROMPT SPLIT IS STRUCTURAL. `TaskSystem` gains ONE rule and no more:**
+     resolve a component named in prose before using it as a `component_id`.
+     Everything else — how to read bindings, what to do with several candidates,
+     when to fall back — lives in the tool's own description. A tool description
+     is read only once the model is already considering that tool, so it cannot
+     establish **ordering**; the rest is only relevant after the tool is in play,
+     so it belongs beside the tool rather than competing for a contended global
+     surface. **D-0101 and D-0104 were read before touching the prompt, as the
+     order required.** D-0101's failure mode is wording a weak model can hear as
+     permission to stop, and "resolve before acting" is exposed to exactly that
+     misreading — so the rule states that resolution is a read and always
+     available, and that an empty result is not a stopping point.
+     `TestTaskSystem_ResolveRuleDoesNotConflateWithPosture` pins both, and the
+     absence of any defer-to-the-operator clause. D-0104 needs no new assertion:
+     it declined to reword per-tool capability strings because a capability
+     statement cannot express a system-wide posture, and this is an ordering
+     instruction carrying no capability or posture claim.
+     **The break-test question the order left open is answered by applying one.**
+     `TestClassifyResolveComponentIsRead` (`internal/safety/`) follows the
+     `repo_search` pattern: without an explicit `toolRegistry` row `ClassifyTool`
+     defaults unknown tools to `ActionMutate`, and the naming hop would be
+     floor-blocked in observation mode — a regression that is worse than for most
+     reads, because the loop would not stop, it would carry on choosing
+     `component_id` values by guesswork with nothing else going red.
+  h. **THE GIT EXCLUSION IS DROPPED, BECAUSE ITS OWN CONDITION HAS FIRED.** The
+     order excluded git-type components "until `repo-registration-path` lands",
+     on the basis that git components have no edges. Both halves are false in the
+     tree the build met: `repo-registration-path` landed (D-0150, archived), and
+     the git refresher emits a `hosted_by` edge (D-0150; corrected to emit one
+     rather than zero by `iac-graph-edge-currency`). Rather than write a filter
+     enforcing an exclusion whose stated condition had expired, git components
+     are treated exactly as every other type — matched on name and type, carrying
+     whatever edges the graph actually holds, which may be none. **No git-specific
+     code exists in this work in either direction.**
+  i. **TWO OF THE ORDER'S `UNVERIFIED` CLAIMS ARE CORRECTED RATHER THAN
+     CONFIRMED, AND THE CONCLUSION SURVIVES ON BETTER GROUND.** The order held
+     that `resolveComponentForService` "takes an exact key rather than matching
+     against component identity", and flagged that the two-hop premise **weakens**
+     if it already matches names. It does match: it calls
+     `accessor.GraphQuery(ctx, principal, service)`, which is a
+     `LIKE %service%` over node id, type and metadata (`internal/graph/sqlite.go`
+     `Query`). **The premise survives anyway, and more cleanly than the order
+     argued it.** That match is against **graph node** identity, not component
+     identity; it takes the first node preferring type `service`, follows one
+     fixed relation, and returns the first edge target — no ranking, no evidence,
+     no ambiguity surfaced, and a hard error where this tool returns an answer.
+     It is a different hop with a different failure mode, not the same hop
+     already built. Separately, the order's claim that component names are
+     immutable is **confirmed from the tree, not inherited from the index row**:
+     `sqlComponentRepository.Update` exists with zero production callers, and no
+     HTTP, tool or CLI path edits a registered component's name.
+- Basis: `internal/componentresolve/` (matcher and result types, with
+  `resolve_test.go` pinning kinds, ranking determinism against registry order,
+  the type filter, the reported bound, and the qualifier-not-parsed property);
+  `internal/access/componentresolve.go` (`ComponentBindings`, the per-component
+  and per-peer permits, the outcome row) with `componentresolve_test.go`;
+  `internal/graph/store.go` + `sqlite.go` (`ComponentBinding`,
+  `ListComponentBindings`, `ConfidenceLevel.String`) with `bindings_test.go`;
+  `internal/api/inproc_client.go` (`ResolveComponents`);
+  `internal/tools/core/resolvecomponent.go` with `resolvecomponent_test.go`;
+  `internal/safety/tier.go` + `tier_resolvecomponent_test.go`;
+  `internal/prompts/prompts.go` + `tasksystem_resolve_test.go`;
+  `TestIntegration_RBAC_ComponentResolutionFiltersPerPrincipal`
+  (`test/integration/rbac_test.go`) asserting both omissions end to end over a
+  real SQLite RBAC repository and a real graph store.
+- Supersedes: nothing. Closes `docs/backlog/component-resolution-tool.md`, which
+  is archived to `done/` unedited apart from its Status line — an archive
+  rewritten to agree with the present destroys the trail it exists to keep, so
+  this entry supersedes it in place. **It does not close**
+  `docs/backlog/investigations/agentic-path-rbac-read-enforcement.md`: the
+  component registry read behind matching is still the ungoverned
+  `Store.Components.List` that backs `list_components`, so this tool discloses
+  strictly **less** than `list_components` already does and makes nothing about
+  that path governed. **It also does not settle** the evidence-relation-scope
+  question the order left to the build as a possible design question: the answer
+  the traversal actually yields is that every relation kind crossing the
+  component boundary is carried, unfiltered, because filtering by relation kind
+  would bake the observe API's category constants into the naming hop — which is
+  the hop conflation (a) rejects.
+
+---
+
 ## D-0154 — `git_read` answers at a named commit and reports which one, so `repo_search`'s citation rule becomes performable; and both exhaustion markers are derived from the result's own counters, with `matches_truncated` redefined to mean the bound was reached
 
 - Date: 2026-08-16
