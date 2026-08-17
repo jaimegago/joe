@@ -23,10 +23,17 @@ falsified that premise: bridges already ship, just not anchored to any repositor
   (`Source: terraform_name_match`). Its adapter parses a **local `terraform.tfstate` JSON
   file**, not a repository, and redacts sensitive attributes
   (`internal/adapters/iac/terraform/terraform.go`).
-- **No edge is incident on any `git_repo` node.** The git refresher builds exactly one node
-  from HEAD commit identity (hash, date, author) and emits **zero edges**
-  (`internal/coreagent/git_refresh.go`) — the state D-0042 left it in when it deleted the
-  `.joe/` ingestion path. The declared side is therefore unanchored to its repo.
+- **One edge is incident on the `git_repo` node, and it points at the forge rather than at
+  declared infrastructure.** The git refresher builds one node from HEAD commit identity
+  (hash, date, author), and since D-0150 also emits a `hosted_by` edge from it to a
+  `code_host` node — but only where the component declares a `provider_component_id` naming
+  an existing `github` or `gitlab` component; an absent, dangling, or wrong-type declaration
+  is logged and skipped, yielding no node and no edge (`buildGitHostingEdge`,
+  `internal/coreagent/git_refresh.go`). The edge is discovery-only
+  (`Confidence: Explicit`, `Source: git_provider_declaration`): it says where a repository
+  lives, not what that repository defines. **The declared side is therefore still unanchored
+  to its repo** — the node-only state D-0042 left when it deleted the `.joe/` ingestion path
+  is narrowed by one edge, not closed.
 - **`argocd_app` carries `repo_url` as metadata only** — a string on the node, not an edge.
 - **No flux refresher exists.** Flux is tools-only (`internal/tools/core/flux_tools.go`),
   reading through the core client; it writes nothing to the graph.
