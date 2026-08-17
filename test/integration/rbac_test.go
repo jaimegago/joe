@@ -9,6 +9,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/adapters"
+	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/test/mocks"
@@ -117,5 +118,118 @@ func TestIntegration_RBAC_Auth_DeniesReadWithoutPolicy(t *testing.T) {
 	acc := access.New(registryWithK8s("local-k8s"), nil, rbac.NewPolicyEngine(repo), nil)
 	if _, err := acc.K8sListResources(ctx, "svc:nobody", "local-k8s", "pods", ""); !errors.Is(err, access.ErrPermissionDenied) {
 		t.Errorf("principal with no policy must be denied with ErrPermissionDenied, got: %v", err)
+	}
+}
+
+// TestIntegration_RBAC_ComponentResolutionFiltersPerPrincipal is the
+// component-resolution half of this suite. Resolution is the only accessor path
+// whose ANSWER is filtered per principal rather than merely permitted or denied
+// as a whole, so the assertion it needs is different in kind: not "was this call
+// denied" but "did the result silently omit everything this principal may not
+// see".
+//
+// Two omissions are asserted, and they are separate holes:
+//
+//   - a matched component the principal may not read is not a candidate; and
+//   - a peer component the principal may not read is dropped from a PERMITTED
+//     candidate's evidence, so the candidate cannot become a side channel
+//     naming a component the grant does not cover.
+//
+// It runs against a real SQLite-backed RBAC repository and a real graph store,
+// so the decision path, the zone resolution and the graph read are the
+// production ones.
+func TestIntegration_RBAC_ComponentResolutionFiltersPerPrincipal(t *testing.T) {
+	testStore, repo := newRBACStore(t)
+	ctx := context.Background()
+	const principal rbac.Principal = "svc:ops"
+
+	// Three components. The principal is granted prod-readonly, which holds the
+	// app and its metrics backend; the log backend sits in dev-full, which the
+	// principal holds no policy for. Both zones are migration-seeded, so the
+	// decision runs against real zone rows rather than test-only ones.
+	for _, c := range []struct{ id, typ, name, zone string }{
+		{"c-checkout", store.ComponentTypeKubernetes, "checkout", "prod-readonly"},
+		{"c-prom", store.ComponentTypePrometheus, "prom-prod", "prod-readonly"},
+		{"c-loki", store.ComponentTypeLoki, "loki-prod", "dev-full"},
+	} {
+		if err := testStore.Components.Create(ctx, &store.Component{
+			ID: c.id, Type: c.typ, Name: c.name, Config: []byte(`{}`),
+		}); err != nil {
+			t.Fatalf("create component %s: %v", c.id, err)
+		}
+		if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+			ComponentID: c.id, ZoneID: c.zone, AssignedBy: "test",
+		}, "test"); err != nil {
+			t.Fatalf("assign %s: %v", c.id, err)
+		}
+	}
+	// A fourth component matches the same phrase and is granted to nobody.
+	if err := testStore.Components.Create(ctx, &store.Component{
+		ID: "c-checkout-secret", Type: store.ComponentTypeKubernetes, Name: "checkout-secret", Config: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("create component c-checkout-secret: %v", err)
+	}
+	if err := repo.UpsertAssignment(ctx, rbac.ComponentZoneAssignment{
+		ComponentID: "c-checkout-secret", ZoneID: "dev-full", AssignedBy: "test",
+	}, "test"); err != nil {
+		t.Fatalf("assign c-checkout-secret: %v", err)
+	}
+	if _, err := repo.CreatePolicy(ctx, rbac.Policy{
+		Principal: string(principal), ZoneID: "prod-readonly",
+	}, "test"); err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+
+	// The graph: checkout is bound to both backends. Only the Prometheus
+	// binding may survive.
+	graphStore := graph.NewSQLStore(testStore.DB(), testStore.Driver(), nil)
+	for _, n := range []graph.Node{
+		{ID: "svc:checkout", Type: "service", ComponentID: "c-checkout"},
+		{ID: "prom:root", Type: "metrics_backend", ComponentID: "c-prom"},
+		{ID: "loki:root", Type: "log_backend", ComponentID: "c-loki"},
+	} {
+		if err := graphStore.AddNode(ctx, n); err != nil {
+			t.Fatalf("AddNode(%s): %v", n.ID, err)
+		}
+	}
+	for _, e := range []graph.Edge{
+		{From: "svc:checkout", To: "prom:root", Relation: graph.RelationMetricsIn, Confidence: graph.Explicit, Source: "test"},
+		{From: "svc:checkout", To: "loki:root", Relation: graph.RelationLogsIn, Confidence: graph.Explicit, Source: "test"},
+	} {
+		if err := graphStore.AddEdge(ctx, e); err != nil {
+			t.Fatalf("AddEdge(%s->%s): %v", e.From, e.To, err)
+		}
+	}
+
+	acc := access.New(adapters.NewRegistry(), graphStore, rbac.NewPolicyEngine(repo), nil)
+
+	// Both Kubernetes components match a phrase naming "checkout"; the matcher
+	// is exercised in its own package, so the ids are passed directly here to
+	// keep this test about the decision rather than about string matching.
+	sets, err := acc.ComponentBindings(ctx, principal,
+		[]string{"c-checkout", "c-checkout-secret"}, 0)
+	if err != nil {
+		t.Fatalf("ComponentBindings: %v", err)
+	}
+
+	if len(sets) != 1 || sets[0].ComponentID != "c-checkout" {
+		var ids []string
+		for _, s := range sets {
+			ids = append(ids, s.ComponentID)
+		}
+		t.Fatalf("candidates = %v, want only c-checkout — an ungranted component must not be a candidate", ids)
+	}
+
+	if len(sets[0].Bindings) != 1 {
+		t.Fatalf("candidate carries %d bindings (%+v), want only the granted peer",
+			len(sets[0].Bindings), sets[0].Bindings)
+	}
+	if got := sets[0].Bindings[0].PeerComponentID; got != "c-prom" {
+		t.Errorf("surviving binding peer = %q, want c-prom", got)
+	}
+	for _, b := range sets[0].Bindings {
+		if b.PeerComponentID == "c-loki" {
+			t.Error("evidence disclosed a peer component the principal holds no grant on")
+		}
 	}
 }
