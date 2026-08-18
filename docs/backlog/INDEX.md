@@ -40,9 +40,9 @@ after the move rather than by inspection.
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
-| [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`admin-bootstrap-cli-04`](admin-bootstrap-cli-04.md) | The `cfg.Database` override block is written out three times | open | later |
+| [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 | later |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred | later |
@@ -60,9 +60,10 @@ after the move rather than by inspection.
 | [`component-type-contract`](component-type-contract.md) | Per-type component contract — one deterministic package per component type | open | later |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open | later |
-| [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open | later |
 | [`crd-gvr-resolution`](crd-gvr-resolution.md) | CRD GVR resolution in the on-demand core tools (deferred from crd-gvr-resolution / D-0094) | open | later |
+| [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open | later |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred | later |
+| [`d0155-disclosure-record`](d0155-disclosure-record.md) | D-0155 (j) misdescribes which residual bounds reach the caller | open | next |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 | later |
 | [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability) | open | later |
 | [`default-model-constants`](default-model-constants.md) | Per-provider default model constants will go stale like the version literals did | open | later |
@@ -110,6 +111,7 @@ after the move rather than by inspection.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
+| [`resolve-bounds-override-clamp`](resolve-bounds-override-clamp.md) | Component-resolve bound overrides are documented as narrowing-only and are not clamped | open | next |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
 | [`run-scoped-commit-pin`](run-scoped-commit-pin.md) | Run-scoped commit pin — one snapshot per run across the three git tools | open | |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
