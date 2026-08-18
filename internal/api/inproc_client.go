@@ -122,7 +122,7 @@ func (c *inProcessCoreClient) ResolveComponents(ctx context.Context, phrase, com
 		return nil, fmt.Errorf("list components: %w", err)
 	}
 
-	matched, matchesTruncated := componentresolve.Match(components, phrase, componentType)
+	matched, matchesBounded := componentresolve.Match(components, phrase, componentType)
 	matchedIDs := make([]string, 0, len(matched))
 	for _, m := range matched {
 		matchedIDs = append(matchedIDs, m.Component.ID)
@@ -132,17 +132,32 @@ func (c *inProcessCoreClient) ResolveComponents(ctx context.Context, phrase, com
 	// writes the per-call outcome row that records which of the two empty
 	// answers this was, and a call that returned early on "nothing matched"
 	// would leave exactly that case unrecorded.
-	sets, err := c.accessor.ComponentBindings(ctx, rbac.PrincipalFromContext(ctx), matchedIDs, 0)
+	//
+	// EVERY match goes over, ranked, and the bound on how many come back is
+	// spent on the other side of the permit. matchesBounded travels with them
+	// because the accessor cannot see the match step: without it, an empty
+	// answer produced by the match bound is recorded as one produced by the
+	// grant, and the audit row is the only place that difference survives.
+	res, err := c.accessor.ComponentBindings(ctx, rbac.PrincipalFromContext(ctx), access.ComponentResolveRequest{
+		ComponentIDs:   matchedIDs,
+		MatchesBounded: matchesBounded,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	bindings := make(map[string]access.ComponentBindingSet, len(sets))
-	for _, s := range sets {
+	bindings := make(map[string]access.ComponentBindingSet, len(res.Sets))
+	for _, s := range res.Sets {
 		bindings[s.ComponentID] = s
 	}
 
-	resolution := &componentresolve.Resolution{MatchesTruncated: matchesTruncated}
+	resolution := &componentresolve.Resolution{
+		MatchesTruncated:        matchesBounded,
+		CandidatesTruncated:     res.CandidatesTruncated,
+		MaxCandidates:           res.MaxCandidates,
+		MaxBindingsPerCandidate: res.PerComponentLimit,
+		MaxTotalBindings:        res.TotalBindingBudget,
+	}
 	for _, m := range matched {
 		set, permitted := bindings[m.Component.ID]
 		if !permitted {

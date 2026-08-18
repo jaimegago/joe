@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jaimegago/joe/internal/access"
 	"github.com/jaimegago/joe/internal/componentresolve"
 	"github.com/jaimegago/joe/internal/store"
 )
@@ -190,26 +191,43 @@ func TestMatch_TypeFilter(t *testing.T) {
 }
 
 // TestMatch_TruncationIsReported asserts the bound is reported rather than
-// silently applied. A caller told "here are 25 candidates" reads that
-// differently from "here are the first 25 of many".
+// silently applied. A caller told "here are the matches" reads that differently
+// from "here are the first N of many".
 func TestMatch_TruncationIsReported(t *testing.T) {
 	var components []*store.Component
-	for i := 0; i < componentresolve.MaxMatches+5; i++ {
-		components = append(components, comp(fmt.Sprintf("c-%02d", i), fmt.Sprintf("api-%02d", i), "kubernetes"))
+	for i := 0; i < componentresolve.MaxMatchScan+5; i++ {
+		components = append(components, comp(fmt.Sprintf("c-%03d", i), fmt.Sprintf("api-%03d", i), "kubernetes"))
 	}
 
-	matched, truncated := componentresolve.Match(components, "api", "")
-	if len(matched) != componentresolve.MaxMatches {
-		t.Errorf("Match returned %d candidates, want the MaxMatches bound of %d",
-			len(matched), componentresolve.MaxMatches)
+	matched, bounded := componentresolve.Match(components, "api", "")
+	if len(matched) != componentresolve.MaxMatchScan {
+		t.Errorf("Match returned %d candidates, want the MaxMatchScan bound of %d",
+			len(matched), componentresolve.MaxMatchScan)
 	}
-	if !truncated {
-		t.Error("Match must report truncation when more components matched than the bound returns")
+	if !bounded {
+		t.Error("Match must report the bound when more components matched than it examines")
 	}
 
-	few, truncatedFew := componentresolve.Match(components[:3], "api", "")
-	if truncatedFew {
-		t.Errorf("Match reported truncation for %d matches, well inside the bound", len(few))
+	few, boundedFew := componentresolve.Match(components[:3], "api", "")
+	if boundedFew {
+		t.Errorf("Match reported the bound for %d matches, well inside it", len(few))
+	}
+}
+
+// TestMatch_ScanBoundIsWiderThanTheAnswerBound pins the relationship the fix
+// turns on rather than leaving it to two constants in different packages
+// drifting together.
+//
+// This bound is spent on a PERMISSION-BLIND ordering — nothing here has seen a
+// principal — so everything it cuts is cut before anyone asks who is calling. It
+// is therefore a work bound, and it is safe only while it is wide enough that a
+// sparsely-granted principal's own components survive it to be evaluated. The
+// answer bound is the narrow one, and it lives past the permit.
+func TestMatch_ScanBoundIsWiderThanTheAnswerBound(t *testing.T) {
+	if componentresolve.MaxMatchScan <= access.MaxResolveCandidates {
+		t.Fatalf("MaxMatchScan (%d) must exceed the post-permit candidate bound (%d): a work bound "+
+			"no wider than the answer bound cuts the principal's own matches before permission is evaluated",
+			componentresolve.MaxMatchScan, access.MaxResolveCandidates)
 	}
 }
 

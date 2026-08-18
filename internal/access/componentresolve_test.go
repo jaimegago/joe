@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -87,6 +88,24 @@ func resolveFixture(t *testing.T, g graph.GraphStore, granted ...string) (*acces
 	return access.New(adapters.NewRegistry(), g, rbac.NewPolicyEngine(repo), rec), rec
 }
 
+// resolve is the plain call every test that does not exercise a bound makes:
+// these ids, production bounds.
+func resolve(t *testing.T, acc *access.Accessor, ids ...string) access.ComponentResolveResult {
+	t.Helper()
+	return resolveWith(t, acc, access.ComponentResolveRequest{ComponentIDs: ids})
+}
+
+// resolveWith is the same call with the request spelled out, for the tests that
+// lower a bound to reach it with a readable fixture.
+func resolveWith(t *testing.T, acc *access.Accessor, req access.ComponentResolveRequest) access.ComponentResolveResult {
+	t.Helper()
+	res, err := acc.ComponentBindings(context.Background(), allowed, req)
+	if err != nil {
+		t.Fatalf("ComponentBindings: %v", err)
+	}
+	return res
+}
+
 // TestComponentBindings_DeniedCandidateIsNotACandidate is the load-bearing
 // governance assertion: a component the principal may not read contributes
 // nothing. It is not returned with empty evidence, it is not returned with a
@@ -99,11 +118,7 @@ func TestComponentBindings_DeniedCandidateIsNotACandidate(t *testing.T) {
 	}}
 	acc, _ := resolveFixture(t, g, "c-visible", "c-prom")
 
-	sets, err := acc.ComponentBindings(context.Background(), allowed,
-		[]string{"c-visible", "c-hidden"}, 0)
-	if err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	sets := resolve(t, acc, "c-visible", "c-hidden").Sets
 	if len(sets) != 1 || sets[0].ComponentID != "c-visible" {
 		t.Fatalf("got %d sets (%v), want only c-visible", len(sets), setIDs(sets))
 	}
@@ -130,10 +145,7 @@ func TestComponentBindings_DeniedPeerIsDroppedFromEvidence(t *testing.T) {
 	}}
 	acc, _ := resolveFixture(t, g, "c-visible", "c-prom")
 
-	sets, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-visible"}, 0)
-	if err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	sets := resolve(t, acc, "c-visible").Sets
 	if len(sets) != 1 {
 		t.Fatalf("got %d sets, want 1", len(sets))
 	}
@@ -165,9 +177,7 @@ func TestComponentBindings_PermitIsTakenOncePerComponent(t *testing.T) {
 	}}
 	acc, rec := resolveFixture(t, g, "c-one", "c-two", "c-prom")
 
-	if _, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-one", "c-two"}, 0); err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	resolve(t, acc, "c-one", "c-two")
 
 	perComponent := map[string]int{}
 	for _, row := range rec.snapshot() {
@@ -186,8 +196,8 @@ func TestComponentBindings_PermitIsTakenOncePerComponent(t *testing.T) {
 }
 
 // TestComponentBindings_TruncationIsDetectedByOverfetch asserts the limit
-// contract: the accessor asks for limit+1 and reports Truncated, so the store
-// stays a plain ordered read with no truncation flag of its own.
+// contract: the accessor over-fetches and reports Truncated, so the store stays
+// a plain ordered read with no truncation flag of its own.
 func TestComponentBindings_TruncationIsDetectedByOverfetch(t *testing.T) {
 	rows := []graph.ComponentBinding{
 		binding("svc:a", graph.RelationMetricsIn, "c-prom"),
@@ -197,26 +207,193 @@ func TestComponentBindings_TruncationIsDetectedByOverfetch(t *testing.T) {
 	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{"c-one": rows}}
 	acc, _ := resolveFixture(t, g, "c-one", "c-prom")
 
-	sets, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-one"}, 2)
-	if err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	sets := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: []string{"c-one"}, PerComponentLimit: 2,
+	}).Sets
 	if len(sets) != 1 {
 		t.Fatalf("got %d sets, want 1", len(sets))
 	}
 	if !sets[0].Truncated {
-		t.Error("a component with more bindings than the limit must report Truncated")
+		t.Error("a component with more visible bindings than the limit must report Truncated")
 	}
 	if len(sets[0].Bindings) != 2 {
 		t.Errorf("got %d bindings, want the limit of 2", len(sets[0].Bindings))
 	}
 
-	full, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-one"}, 10)
-	if err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	full := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: []string{"c-one"}, PerComponentLimit: 10,
+	}).Sets
 	if full[0].Truncated {
 		t.Error("a component inside the limit must not report Truncated")
+	}
+}
+
+// TestComponentBindings_TruncationIsDerivedAfterThePeerFilter is the disclosure
+// assertion, and it needs a principal who does NOT hold every peer — the
+// condition under which the two counts can disagree at all.
+//
+// Truncated is read by the caller BESIDE a post-filter binding count. Derived
+// from the raw row count, the pair is a cardinality channel on the governed
+// side: "you were shown 1 of a prefix that was full" says at least limit-1 edges
+// from a component you may read reach components you may not, which is the
+// existence disclosure the peer filter exists to prevent. Derived from the
+// visible rows, the pair says only how much of the caller's OWN evidence was
+// shown.
+func TestComponentBindings_TruncationIsDerivedAfterThePeerFilter(t *testing.T) {
+	// Six edges, one visible peer. The old derivation capped the raw rows at
+	// the limit, saw a full prefix, and reported Truncated beside a count of 1.
+	rows := []graph.ComponentBinding{
+		binding("svc:a", graph.RelationMetricsIn, "c-prom"),
+		binding("svc:a", graph.RelationLogsIn, "c-secret-1"),
+		binding("svc:a", graph.RelationLogsIn, "c-secret-2"),
+		binding("svc:a", graph.RelationTracesIn, "c-secret-3"),
+		binding("svc:a", graph.RelationTracesIn, "c-secret-4"),
+		binding("svc:a", graph.RelationAlertsIn, "c-secret-5"),
+	}
+	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{"c-one": rows}}
+	acc, _ := resolveFixture(t, g, "c-one", "c-prom")
+
+	sets := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: []string{"c-one"}, PerComponentLimit: 3,
+	}).Sets
+	if len(sets) != 1 {
+		t.Fatalf("got %d sets, want 1", len(sets))
+	}
+	if n := len(sets[0].Bindings); n != 1 {
+		t.Fatalf("got %d visible bindings, want only the permitted peer", n)
+	}
+	if sets[0].Truncated {
+		t.Error("Truncated is set with 1 of 3 visible bindings returned: the flag is derived " +
+			"before the peer filter, so it discloses how many edges reach components outside the grant")
+	}
+}
+
+// TestComponentBindings_EvidenceIsDrawnPastTheDeniedPrefix is the mirror case,
+// and it is the direction the accessor's own doc comment used to call honest:
+// evidence the principal IS entitled to, withheld because the store's cut landed
+// before the filter did.
+//
+// It needs a principal who does not hold every peer, and it needs the denied
+// peers to sort FIRST — which the store's ordering (relation, peer component,
+// peer node, near node, direction) makes an ordinary arrangement rather than a
+// contrived one.
+func TestComponentBindings_EvidenceIsDrawnPastTheDeniedPrefix(t *testing.T) {
+	rows := []graph.ComponentBinding{
+		binding("svc:a", graph.RelationAlertsIn, "c-secret-1"),
+		binding("svc:a", graph.RelationAlertsIn, "c-secret-2"),
+		binding("svc:a", graph.RelationLogsIn, "c-secret-3"),
+		binding("svc:a", graph.RelationLogsIn, "c-secret-4"),
+		binding("svc:a", graph.RelationMetricsIn, "c-prom"),
+	}
+	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{"c-one": rows}}
+	acc, _ := resolveFixture(t, g, "c-one", "c-prom")
+
+	sets := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: []string{"c-one"}, PerComponentLimit: 2,
+	}).Sets
+	if len(sets) != 1 {
+		t.Fatalf("got %d sets, want 1", len(sets))
+	}
+	if len(sets[0].Bindings) != 1 {
+		t.Fatalf("got %d bindings (%v), want the permitted peer that sorts after the denied ones — "+
+			"a bound spent before the filter withholds evidence the principal is entitled to",
+			len(sets[0].Bindings), sets[0].Bindings)
+	}
+	if got := sets[0].Bindings[0].PeerComponentID; got != "c-prom" {
+		t.Errorf("surviving binding names peer %q, want c-prom", got)
+	}
+}
+
+// TestComponentBindings_CandidateBoundIsSpentOnPermittedComponents is the
+// candidate half. The bound must count components the principal MAY SEE, so
+// denied matches ranked above them cannot consume it — otherwise a principal
+// whose own components sort below the cut receives the empty answer having never
+// been evaluated.
+func TestComponentBindings_CandidateBoundIsSpentOnPermittedComponents(t *testing.T) {
+	byComponent := map[string][]graph.ComponentBinding{}
+	var ids []string
+	// Denied matches rank first, and there are more of them than the bound.
+	for i := 0; i < access.MaxResolveCandidates+5; i++ {
+		id := fmt.Sprintf("c-denied-%02d", i)
+		ids = append(ids, id)
+		byComponent[id] = []graph.ComponentBinding{binding("svc:d", graph.RelationMetricsIn, "c-prom")}
+	}
+	var granted []string
+	for i := 0; i < access.MaxResolveCandidates+1; i++ {
+		id := fmt.Sprintf("c-mine-%02d", i)
+		ids = append(ids, id)
+		granted = append(granted, id)
+		byComponent[id] = []graph.ComponentBinding{binding("svc:m", graph.RelationMetricsIn, "c-prom")}
+	}
+	g := &bindingGraph{byComponent: byComponent}
+	acc, _ := resolveFixture(t, g, append(granted, "c-prom")...)
+
+	res := resolve(t, acc, ids...)
+	if len(res.Sets) != access.MaxResolveCandidates {
+		t.Fatalf("got %d candidates, want the bound of %d — denied matches ranked above them "+
+			"must not consume the candidate budget", len(res.Sets), access.MaxResolveCandidates)
+	}
+	for i, s := range res.Sets {
+		if want := fmt.Sprintf("c-mine-%02d", i); s.ComponentID != want {
+			t.Fatalf("candidate %d = %q, want %q: the answer must be a prefix of the ranking "+
+				"the principal is entitled to", i, s.ComponentID, want)
+		}
+	}
+	if !res.CandidatesTruncated {
+		t.Error("CandidatesTruncated must report that more components the principal may see matched")
+	}
+	if res.MaxCandidates != access.MaxResolveCandidates {
+		t.Errorf("MaxCandidates = %d, want the bound in force (%d)", res.MaxCandidates, access.MaxResolveCandidates)
+	}
+}
+
+// TestComponentBindings_TotalBindingBudgetIsBoundedAndReported closes the
+// composition. A per-candidate bound and a candidate bound multiply, and a
+// product that is neither bounded nor reported is not a contract — it is two
+// numbers that happen to be small.
+func TestComponentBindings_TotalBindingBudgetIsBoundedAndReported(t *testing.T) {
+	byComponent := map[string][]graph.ComponentBinding{}
+	var ids []string
+	for i := 0; i < access.MaxResolveCandidates; i++ {
+		id := fmt.Sprintf("c-%02d", i)
+		ids = append(ids, id)
+		var rows []graph.ComponentBinding
+		for j := 0; j <= graph.DefaultComponentBindingLimit*2; j++ {
+			rows = append(rows, binding(fmt.Sprintf("svc:%02d-%03d", i, j), graph.RelationMetricsIn, "c-prom"))
+		}
+		byComponent[id] = rows
+	}
+	g := &bindingGraph{byComponent: byComponent}
+	acc, _ := resolveFixture(t, g, append(append([]string{}, ids...), "c-prom")...)
+
+	res := resolve(t, acc, ids...)
+	total := 0
+	for _, s := range res.Sets {
+		total += len(s.Bindings)
+		if !s.Truncated {
+			t.Errorf("candidate %s carries %d of many bindings without reporting Truncated",
+				s.ComponentID, len(s.Bindings))
+		}
+	}
+	if total > access.MaxResolveBindings {
+		t.Errorf("one call returned %d bindings, over the total budget of %d",
+			total, access.MaxResolveBindings)
+	}
+	if res.TotalBindingBudget != access.MaxResolveBindings {
+		t.Errorf("TotalBindingBudget = %d, want the budget in force (%d)",
+			res.TotalBindingBudget, access.MaxResolveBindings)
+	}
+	if res.PerComponentLimit != access.MaxResolveBindings/access.MaxResolveCandidates {
+		t.Errorf("PerComponentLimit = %d, want the budget shared across %d candidates",
+			res.PerComponentLimit, len(res.Sets))
+	}
+
+	// The share is a share, not a new ceiling: the ordinary few-candidate call
+	// still carries the full per-component evidence.
+	narrow := resolve(t, acc, ids[0])
+	if narrow.PerComponentLimit != graph.DefaultComponentBindingLimit {
+		t.Errorf("a single-candidate call got a share of %d, want the per-component ceiling of %d",
+			narrow.PerComponentLimit, graph.DefaultComponentBindingLimit)
 	}
 }
 
@@ -231,11 +408,7 @@ func TestComponentBindings_AuditRecordsWhichEmptyCaseOccurred(t *testing.T) {
 
 	t.Run("nothing matched", func(t *testing.T) {
 		acc, rec := resolveFixture(t, g)
-		sets, err := acc.ComponentBindings(context.Background(), allowed, nil, 0)
-		if err != nil {
-			t.Fatalf("ComponentBindings: %v", err)
-		}
-		if len(sets) != 0 {
+		if sets := resolve(t, acc).Sets; len(sets) != 0 {
 			t.Fatalf("got %d sets, want none", len(sets))
 		}
 		row := outcomeRow(t, rec)
@@ -247,11 +420,7 @@ func TestComponentBindings_AuditRecordsWhichEmptyCaseOccurred(t *testing.T) {
 
 	t.Run("matched but not permitted", func(t *testing.T) {
 		acc, rec := resolveFixture(t, g) // c-hidden is granted to nobody
-		sets, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-hidden"}, 0)
-		if err != nil {
-			t.Fatalf("ComponentBindings: %v", err)
-		}
-		if len(sets) != 0 {
+		if sets := resolve(t, acc, "c-hidden").Sets; len(sets) != 0 {
 			t.Fatalf("got %d sets, want none", len(sets))
 		}
 		row := outcomeRow(t, rec)
@@ -275,15 +444,106 @@ func TestComponentBindings_AuditRecordsWhichEmptyCaseOccurred(t *testing.T) {
 
 	t.Run("permitted match", func(t *testing.T) {
 		acc, rec := resolveFixture(t, g, "c-hidden", "c-prom")
-		if _, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-hidden"}, 0); err != nil {
-			t.Fatalf("ComponentBindings: %v", err)
-		}
+		resolve(t, acc, "c-hidden")
 		row := outcomeRow(t, rec)
 		if row.Reason != access.ReasonComponentResolveMatch {
 			t.Errorf("outcome reason = %q, want %q", row.Reason, access.ReasonComponentResolveMatch)
 		}
 		assertOutcomeCounts(t, row, 1, 1)
 	})
+}
+
+// TestComponentBindings_AuditDoesNotBlameTheGrantForABound is the audit half of
+// the candidate bound, and the reason it is load-bearing is that the audit row
+// is the SOLE carrier of the distinction: the caller gets the same empty answer
+// either way, by design.
+//
+// A match step that stopped at its own bound may have cut components this
+// principal can read. Recording that call as "matched, none permitted" states a
+// permission cause for a bound effect, and it states it to the one reader whose
+// job is to work out whether a grant is missing.
+func TestComponentBindings_AuditDoesNotBlameTheGrantForABound(t *testing.T) {
+	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{
+		"c-hidden": {binding("svc:b", graph.RelationMetricsIn, "c-prom")},
+	}}
+
+	t.Run("the match prefix was cut", func(t *testing.T) {
+		acc, rec := resolveFixture(t, g) // nothing is granted
+		resolveWith(t, acc, access.ComponentResolveRequest{
+			ComponentIDs: []string{"c-hidden"}, MatchesBounded: true,
+		})
+
+		row := outcomeRow(t, rec)
+		if row.Reason == access.ReasonComponentResolveNoPermittedMatch {
+			t.Fatal("the outcome row claims a permission cause for a call whose match prefix was cut: " +
+				"components this principal may read could have matched and sorted below the bound, " +
+				"in which case permission on them was never evaluated")
+		}
+		if row.Reason != access.ReasonComponentResolveBoundedNoPermittedMatch {
+			t.Errorf("outcome reason = %q, want %q", row.Reason,
+				access.ReasonComponentResolveBoundedNoPermittedMatch)
+		}
+		if !outcomeBlob(t, row).MatchesBounded {
+			t.Error("the outcome row must record that the match step was bounded")
+		}
+	})
+
+	t.Run("the match prefix was complete", func(t *testing.T) {
+		acc, rec := resolveFixture(t, g)
+		resolve(t, acc, "c-hidden")
+
+		// Every match WAS evaluated here, so the permission claim is sound and
+		// must survive: the fix separates the two cases rather than retiring the
+		// row an operator debugging a missing grant is looking for.
+		row := outcomeRow(t, rec)
+		if row.Reason != access.ReasonComponentResolveNoPermittedMatch {
+			t.Errorf("outcome reason = %q, want %q", row.Reason,
+				access.ReasonComponentResolveNoPermittedMatch)
+		}
+	})
+
+	t.Run("bounded but permitted", func(t *testing.T) {
+		acc, rec := resolveFixture(t, g, "c-hidden", "c-prom")
+		resolveWith(t, acc, access.ComponentResolveRequest{
+			ComponentIDs: []string{"c-hidden"}, MatchesBounded: true,
+		})
+		if row := outcomeRow(t, rec); row.Reason != access.ReasonComponentResolveMatch {
+			t.Errorf("outcome reason = %q, want %q", row.Reason, access.ReasonComponentResolveMatch)
+		}
+	})
+}
+
+// TestComponentBindings_AuditCarriesTheBoundsTheCallerIsNotTold is the other
+// side of the disclosure rule. Two bounds cannot be reported to the caller — the
+// match work bound and the per-candidate evidence work bound both derive from
+// rows counted before the peer filter, so reporting either beside a post-filter
+// count discloses the difference. They are not therefore unrecorded: the
+// operator reads them here, which is where every other resolve distinction the
+// caller may not have already lives.
+func TestComponentBindings_AuditCarriesTheBoundsTheCallerIsNotTold(t *testing.T) {
+	// Two visible bindings sit behind a denied prefix longer than the scan the
+	// lowered limit buys, so the evidence work bound bites without the output
+	// bound biting.
+	var rows []graph.ComponentBinding
+	for i := 0; i < 12; i++ {
+		rows = append(rows, binding("svc:a", graph.RelationAlertsIn, fmt.Sprintf("c-secret-%02d", i)))
+	}
+	rows = append(rows, binding("svc:a", graph.RelationMetricsIn, "c-prom"))
+	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{"c-one": rows}}
+	acc, rec := resolveFixture(t, g, "c-one", "c-prom")
+
+	res := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: []string{"c-one"}, PerComponentLimit: 2,
+	})
+	if res.Sets[0].Truncated {
+		t.Fatal("the output bound bit; this fixture is meant to exercise the WORK bound alone")
+	}
+
+	blob := outcomeBlob(t, outcomeRow(t, rec))
+	if blob.EvidenceBounded != 1 {
+		t.Errorf("evidence_bounded = %d, want 1: the operator has no other record that this "+
+			"candidate's evidence may be short because of the work bound", blob.EvidenceBounded)
+	}
 }
 
 // TestComponentBindings_AuditOutcomeCarriesNoPhrase pins the hygiene decision:
@@ -293,9 +553,7 @@ func TestComponentBindings_AuditOutcomeCarriesNoPhrase(t *testing.T) {
 	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{}}
 	acc, rec := resolveFixture(t, g)
 
-	if _, err := acc.ComponentBindings(context.Background(), allowed, nil, 0); err != nil {
-		t.Fatalf("ComponentBindings: %v", err)
-	}
+	resolve(t, acc)
 
 	row := outcomeRow(t, rec)
 	var blob map[string]any
@@ -304,9 +562,10 @@ func TestComponentBindings_AuditOutcomeCarriesNoPhrase(t *testing.T) {
 	}
 	for key := range blob {
 		switch key {
-		case "subkind", "matched", "permitted":
+		case "subkind", "matched", "permitted",
+			"matches_bounded", "candidates_bounded", "evidence_bounded":
 		default:
-			t.Errorf("outcome context carries unexpected key %q — counts only, no query text", key)
+			t.Errorf("outcome context carries unexpected key %q — counts and bound flags only, no query text", key)
 		}
 	}
 	if row.ComponentID != "" {
@@ -321,10 +580,12 @@ func TestComponentBindings_EmptyIsNeverAnError(t *testing.T) {
 	g := &bindingGraph{byComponent: map[string][]graph.ComponentBinding{}}
 	acc, _ := resolveFixture(t, g, "c-known")
 
-	sets, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-known"}, 0)
+	res, err := acc.ComponentBindings(context.Background(), allowed,
+		access.ComponentResolveRequest{ComponentIDs: []string{"c-known"}})
 	if err != nil {
 		t.Fatalf("a component with no bindings must be a normal answer, got error: %v", err)
 	}
+	sets := res.Sets
 	if len(sets) != 1 {
 		t.Fatalf("got %d sets, want the component itself with empty evidence", len(sets))
 	}
@@ -339,10 +600,22 @@ func TestComponentBindings_EmptyIsNeverAnError(t *testing.T) {
 func TestComponentBindings_GraphUnavailableIsAnError(t *testing.T) {
 	acc, _ := resolveFixture(t, nil, "c-known")
 
-	if _, err := acc.ComponentBindings(context.Background(), allowed, []string{"c-known"}, 0); err == nil {
+	_, err := acc.ComponentBindings(context.Background(), allowed,
+		access.ComponentResolveRequest{ComponentIDs: []string{"c-known"}})
+	if err == nil {
 		t.Fatal("a missing graph store must be an error, not an empty answer")
 	} else if !strings.Contains(err.Error(), "graph store not available") {
 		t.Errorf("unexpected error for a missing graph store: %v", err)
+	}
+
+	// Unchanged by the two-pass split, and worth pinning because the graph check
+	// moved: a principal permitted on nothing still gets the benign empty answer
+	// rather than the error, so the graph-less deployment's failure stays an
+	// availability one for grant-holders and not a disclosure one for anybody.
+	denied, _ := resolveFixture(t, nil)
+	if _, err := denied.ComponentBindings(context.Background(), allowed,
+		access.ComponentResolveRequest{ComponentIDs: []string{"c-known"}}); err != nil {
+		t.Errorf("a call permitting no candidate must not reach the graph store at all, got: %v", err)
 	}
 }
 
@@ -375,16 +648,28 @@ func outcomeRow(t *testing.T, rec *recordingAudit) audit.Event {
 	return found[0]
 }
 
-func assertOutcomeCounts(t *testing.T, row audit.Event, matched, permitted int) {
+// resolveOutcomeBlob mirrors the outcome row's context JSON.
+type resolveOutcomeBlob struct {
+	Subkind           string `json:"subkind"`
+	Matched           int    `json:"matched"`
+	Permitted         int    `json:"permitted"`
+	MatchesBounded    bool   `json:"matches_bounded"`
+	CandidatesBounded bool   `json:"candidates_bounded"`
+	EvidenceBounded   int    `json:"evidence_bounded"`
+}
+
+func outcomeBlob(t *testing.T, row audit.Event) resolveOutcomeBlob {
 	t.Helper()
-	var blob struct {
-		Subkind   string `json:"subkind"`
-		Matched   int    `json:"matched"`
-		Permitted int    `json:"permitted"`
-	}
+	var blob resolveOutcomeBlob
 	if err := json.Unmarshal([]byte(row.Context), &blob); err != nil {
 		t.Fatalf("outcome context is not JSON: %v (%q)", err, row.Context)
 	}
+	return blob
+}
+
+func assertOutcomeCounts(t *testing.T, row audit.Event, matched, permitted int) {
+	t.Helper()
+	blob := outcomeBlob(t, row)
 	if blob.Subkind != "component_resolve" {
 		t.Errorf("outcome subkind = %q, want component_resolve", blob.Subkind)
 	}

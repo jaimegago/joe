@@ -74,8 +74,9 @@ func (t *ResolveComponentTool) Description() string {
 		"and bindings: the graph relations tying it to other components, each naming the relation, the direction, and the peer component. " +
 		"Disambiguate by reading the bindings against the rest of the task — a candidate whose bindings reach the environment, backend or repository the task talks about is the one the task means. " +
 		"Ask for the component_id of the candidate you pick when calling other tools. " +
-		"Empty bindings mean no edge has been derived for that component yet, NOT that the candidate is wrong. " +
-		"`bindings_truncated` means you were shown a prefix of that candidate's relations; `matches_truncated` means more components matched than were returned. " +
+		"Empty bindings mean no edge you may see has been derived for that component, NOT that the candidate is wrong — and the bindings shown are never a complete account of what the component is attached to. " +
+		"`bindings_truncated` means you may see more relations for that candidate than were returned; `candidates_truncated` means more components you may see matched than were returned; `matches_truncated` means more components matched the phrase than were examined. " +
+		"`max_candidates`, `max_bindings_per_candidate` and `max_total_bindings` are the bounds actually in force, so narrow the phrase rather than re-asking when a truncation flag is set. " +
 		"AN EMPTY RESULT IS AN ANSWER, NOT AN ERROR, and it does not tell you whether nothing matched or nothing matched that you may see — so do not report the phrase as naming something that does not exist. " +
 		"On an empty result, fall back: try list_components, try a different phrase from the task, or carry on with the tools you can reach and say what you could not resolve."
 }
@@ -127,11 +128,22 @@ func (t *ResolveComponentTool) Execute(ctx context.Context, args map[string]any)
 		})
 	}
 
+	// Two truncation flags, because they answer different questions and a
+	// caller that conflates them draws the wrong conclusion from an empty
+	// answer. matches_truncated is a fact about the REGISTRY — more components
+	// matched than were examined — and it is disclosable because the registry is
+	// ungoverned and list_components already returns it whole. candidates_truncated
+	// is a fact about THIS CALLER — more components they may see matched than
+	// were returned. The bounds behind each are reported beside them.
 	out := map[string]any{
-		"phrase":            phrase,
-		"candidates":        candidates,
-		"candidate_count":   len(candidates),
-		"matches_truncated": resolution.MatchesTruncated,
+		"phrase":                     phrase,
+		"candidates":                 candidates,
+		"candidate_count":            len(candidates),
+		"matches_truncated":          resolution.MatchesTruncated,
+		"candidates_truncated":       resolution.CandidatesTruncated,
+		"max_candidates":             resolution.MaxCandidates,
+		"max_bindings_per_candidate": resolution.MaxBindingsPerCandidate,
+		"max_total_bindings":         resolution.MaxTotalBindings,
 	}
 	if componentType != "" {
 		out["type_filter"] = componentType
