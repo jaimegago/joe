@@ -134,7 +134,8 @@ func TestProcessEvents_CtxCancel(t *testing.T) {
 // in dispatch — valid type assertion + sm.Ack + go HandleSlashCommand.
 func TestDispatch_SlashCommand_ValidData(t *testing.T) {
 	sm := newTestSocketModeClient()
-	handler := &Handler{api: &mockSlackPoster{}, agent: NewAgent(&mockJoeClient{}), fmt: NewFormatter()}
+	poster := &mockSlackPoster{posted: make(chan string, 1)}
+	handler := &Handler{api: poster, agent: NewAgent(&mockJoeClient{}), fmt: NewFormatter()}
 	srv := &Server{sm: sm, handler: handler}
 
 	req := &socketmode.Request{EnvelopeID: "env-001"}
@@ -145,8 +146,20 @@ func TestDispatch_SlashCommand_ValidData(t *testing.T) {
 		Request: req,
 	}
 	srv.dispatch(context.Background(), evt)
-	// Give the goroutine a moment to run.
-	time.Sleep(20 * time.Millisecond)
+
+	// Wait for the effect, not for the clock. dispatch spawns
+	// `go s.handler.HandleSlashCommand`, and the poster call is the first
+	// observable thing that goroutine does. The channel send also gives the
+	// race detector a happens-before edge for the mock's fields, which a sleep
+	// did not.
+	select {
+	case got := <-poster.posted:
+		if got != "C001" {
+			t.Errorf("PostMessage channel = %q, want C001", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("HandleSlashCommand did not reach the poster within 2s")
+	}
 }
 
 // TestDispatch_EventsAPI covers the EventTypeEventsAPI case in dispatch.
@@ -162,7 +175,12 @@ func TestDispatch_EventsAPI(t *testing.T) {
 		Request: req,
 	}
 	srv.dispatch(context.Background(), evt)
-	time.Sleep(20 * time.Millisecond)
+
+	// No wait. The Data here is deliberately not an EventsAPIEvent, so the
+	// spawned HandleEventsAPI returns at its type assertion without touching
+	// anything observable — there is nothing a wait could wait for. That early
+	// return is covered synchronously by TestHandleEventsAPI_NotOK below, which
+	// is where the assertion belongs. This test covers dispatch's routing only.
 }
 
 // TestHandleEventsAPI_NotOK covers the !ok early return when Data is not an EventsAPIEvent.

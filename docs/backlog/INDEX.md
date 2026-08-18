@@ -76,7 +76,6 @@ after the move rather than by inspection.
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
 | [`falco-refresher`](falco-refresher.md) | Falco refresher — graph visibility for a fully wired type | open | later |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
-| [`gate-build-cache`](gate-build-cache.md) | Gate build cache — Unit Tests spends most of 219s compiling | open | next |
 | [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | next |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
 | [`guide-screenshots-e2e-capture`](guide-screenshots-e2e-capture.md) | Deterministic guide screenshots from the E2E harness | open | later |
@@ -122,7 +121,6 @@ after the move rather than by inspection.
 | [`site-claims-ship-trigger`](site-claims-ship-trigger.md) | Site-claims register: no trigger fires when a newly shipped mechanism falsifies unregistered published copy | open | next |
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open | next |
 | [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
-| [`test-suite-sleeps`](test-suite-sleeps.md) | Test-suite `time.Sleep` calls — 14 across 8 files | open | next |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
 | [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open | later |

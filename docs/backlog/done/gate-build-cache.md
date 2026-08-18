@@ -1,6 +1,6 @@
 # Gate build cache — Unit Tests spends most of 219s compiling
 
-Status: open
+Status: done
 Priority: next
 
 **Unit Tests is the gate's critical path at 219s, and most of that is
@@ -44,3 +44,28 @@ sum to ~60s of actual test time, so parallelism can win at most a minute of the
 
 Filed from the gate tier split, 2026-08-18. joe-pm
 `threads/gate-tier-split.md` carries the measurement.
+
+## Closed — 2026-08-19
+
+Every Go job in `.github/workflows/tests.yml` now caches `~/.cache/go-build`
+alongside `~/go/pkg/mod`, through a single explicit `actions/cache` step keyed by
+`github.job`.
+
+**The key had to be per-job, and that is the part worth carrying.** `setup-go`'s
+own cache key carries platform, arch, Go version and the `go.sum` hash and **no
+job component**, so every Go job in the workflow competes for one entry: the
+first to finish uploads, the rest skip as already-existing, and later runs restore
+whichever job won that race. The jobs compile different trees, so the winner's
+build cache is the wrong one for everybody else.
+
+**This reverses a prior ruling and does so explicitly.** The `lint` job carried a
+comment ruling out a second `actions/cache` step on the ground that `setup-go`
+already covered strictly more — GOCACHE as well as GOMODCACHE. That was correct
+about coverage and is reversed on the key-collision ground above, not on the
+coverage one. The comment now records the reversal in place rather than leaving
+it to be inferred from the diff.
+
+**The measurement that prompted this stands on its own**: `lint` had the build
+cache through `setup-go` and ran in 87s; `unit-tests` had only the module cache
+and ran in 219s, against packages summing to ~60s locally. The before/after the
+item asked for is the gate run on the pull request that lands this.

@@ -77,7 +77,9 @@ func TestE2E_MultipleRequests(t *testing.T) {
 		if status["status"] != "ok" {
 			t.Errorf("request %d: expected status=ok, got %v", i+1, status["status"])
 		}
-		time.Sleep(100 * time.Millisecond)
+		// No pacing sleep. The point is that the server handles several
+		// requests in sequence, and spacing them out tested nothing while
+		// costing half a second of the suite.
 	}
 
 	t.Log("✓ Multiple requests handled successfully")
@@ -101,11 +103,21 @@ func TestE2E_GracefulShutdown(t *testing.T) {
 
 	// Stop gracefully
 	harness.Stop()
-	// Verify stopped (status should fail)
-	time.Sleep(500 * time.Millisecond)
-	_, err = harness.GetStatus()
-	if err == nil {
-		t.Error("expected error after shutdown, but got response")
+
+	// Verify stopped — poll until the status endpoint stops answering rather
+	// than sleeping a fixed 500ms. Shutdown is asynchronous, so a fixed wait is
+	// either too long (usually) or too short (on a loaded runner, where it
+	// fails as a phantom "server did not shut down").
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err = harness.GetStatus(); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Error("expected error after shutdown, but got response for 5s")
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	t.Log("✓ Graceful shutdown successful")
