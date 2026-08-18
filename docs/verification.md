@@ -17,7 +17,9 @@ Since `gated-main`, a machine re-running a command is not the whole answer. Wher
 
 The gate is path-filtered on pull requests, keyed to the class scopes below by the `classify` job in `.github/workflows/tests.yml`. Every other trigger — pushes to `main`, the nightly schedule, manual dispatch — runs the full unfiltered matrix. Filtering buys merge latency and nothing else, and only a pull request is waiting on it.
 
-The gate carries a **budget of 6 minutes**, and 11 minutes on the exception path where the diff pulls GoReleaser Snapshot Build back in. Measured on pull request #23, a `go`-only diff: **3m28s** end to end, with Unit Tests at 191s the critical path and everything else hidden behind it. Anything new entering the gate fits inside that budget or displaces something already there.
+The gate carries a **budget of 6 minutes**, with no exception path. Measured on pull request #23, a `go`-only diff: **3m28s** end to end, with Unit Tests at 191s the critical path and everything else hidden behind it. Anything new entering the gate fits inside that budget or displaces something already there.
+
+**The exception path is gone.** GoReleaser Snapshot Build used to re-enter the gate whenever the diff touched `.goreleaser.yaml`, `cmd/`, `ui/`, `Makefile`, `go.mod`/`go.sum` or `.github/workflows/`, taking the budget to 11 minutes — measured at **538s** on pull request #47, the single largest cost in the gate and pulled in by a diff to the gate's own workflow file. End-to-End Tests, at **139s**, left with it. Both are now pinned post-merge unconditionally: the gate asks whether `main` is broken, using checks that are fast and deterministic, and a packaging build and a suite that spawns real binaries against placeholder keys are neither.
 
 Filtering errs broad by rule: each pattern is wider than the class it stands for. The nightly unfiltered run is the complement, so that a misclassified diff which skipped the job that would have caught it surfaces within a day rather than at the next release.
 
@@ -61,7 +63,7 @@ Class names are stable identifiers; other tooling references them by name.
 
 **Verify.** `make vet-tagged` (`Makefile:131-133`); `make test-integration` (`Makefile:71`); `make test-e2e` (`Makefile:75`, which depends on `make build`).
 
-**CI.** **Gate**, all three. `make test-integration` and `make vet-tagged` run under the `go` filter (`.github/workflows/tests.yml:154`, `:245`); `make test-e2e` runs under the `e2e` filter, which is the union of `go` and `frontend` because the job boots `cmd/joe` and builds `ui/` (`:198`).
+**CI.** **Gate** for two, **post-merge** for the third. `make test-integration` and `make vet-tagged` run under the `go` filter (`.github/workflows/tests.yml:154`, `:245`). `make test-e2e` **left the gate**: the `e2e` output is pinned `false` on pull requests unconditionally, so the job runs only on pushes to `main`, the nightly unfiltered matrix, and manual dispatch. It boots `cmd/joe`, runs `npm ci` and spawns real binaries, which is not what a fast deterministic gate is made of, and at 139s it was buying a check that its own Gaps field records as not exercising the provider paths its name implies.
 
 **Evidence.** The per-suite pass line for each command run.
 
@@ -85,7 +87,7 @@ Class names are stable identifiers; other tooling references them by name.
 
 **Verify.** `goreleaser build --snapshot --clean` (`.github/workflows/tests.yml:339`) and the boot-and-diff digest check via `go run ./scripts/verify-ui-digest` (`.github/workflows/tests.yml:389-406`).
 
-**CI.** **Both**, in the `goreleaser-build` job, depending on the diff. **Post-merge by default** — the job left the gate because at a ~540s median it set the entire gate wall clock, twice the next job, to answer a releasability question the gate does not ask. It is **gate**-tier when the diff touches `release-packaging` or `frontend` paths, where it is the check that actually matters; the `goreleaser` filter also errs broad over `cmd/`, `scripts/`, `internal/webui/`, `go.mod` and `go.sum`. When it is not pulled into the gate it still runs on the push to `main`, as part of that push's full unfiltered matrix.
+**CI.** **Post-merge, always.** The job left the gate because at a ~540s median it set the entire gate wall clock, twice the next job, to answer a releasability question the gate does not ask. **The re-entry path is now closed too**: the `goreleaser` output is pinned `false` on pull requests whatever the diff touches, so no diff pulls it back in. It runs on the push to `main` as part of that push's full unfiltered matrix, in the nightly run, and on manual dispatch. The trade is explicit — a packaging break reaches `main` and is caught minutes later rather than blocking the merge, and red there flips the responsible thread from `done` back to `blocked`.
 
 **Evidence.** The digest comparison result line plus the command.
 
@@ -103,7 +105,7 @@ Class names are stable identifiers; other tooling references them by name.
 
 **Gaps.** No isolated runner exists. Evidence is therefore a filtered result rather than a dedicated command. A dedicated target would fix this.
 
-Separately, the `Held Paths` check **used to** approximate this class by path — `internal/rbac/**`, `internal/access/**`, `test/integration/rbac_test.go` — in order to hold such a change for maintainer approval. That family was removed from the check, because the approximation was knowingly wrong in both directions: this class's real scope is any change to authorization or permission logic under `internal/`, which no path list decides, so the approval attested to nothing. What holds this class now is not a path list on the gate at all — it is the machine verification above plus a governance-floor review dispatched in joe-pm, whose merge is performed by a session that can check the review completed. **The class remains path-undecidable**, and that is why the gate no longer pretends to decide it.
+Separately, the `Held Paths` check **used to** approximate this class by path — `internal/rbac/**`, `internal/access/**`, `test/integration/rbac_test.go` — in order to hold such a change for maintainer approval. That family was removed from the check, because the approximation was knowingly wrong in both directions: this class's real scope is any change to authorization or permission logic under `internal/`, which no path list decides, so the approval attested to nothing. What holds this class now is not a path list on the gate at all — it is **the machine verification above, and nothing else**. The governance-floor review in joe-pm that this paragraph used to name as the other half is retracted; joe-pm `decisions/0014-retract-the-review-cascade.md` carries why. **No human hold on this class exists**, and that is stated plainly rather than left to a reader to infer from a dangling reference: the `Held Paths` approval is not code review and never was, so restoring the path family would not supply one. **The class remains path-undecidable**, and that is why the gate does not pretend to decide it.
 
 ### `verification-infrastructure`
 

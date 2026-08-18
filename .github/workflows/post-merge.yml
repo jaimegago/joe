@@ -9,10 +9,12 @@ name: Post-Merge
 # that gates merges. Generating the coverage profiles also re-ran both suites a
 # second time inside the gate's critical path.
 #
-# GoReleaser Snapshot Build is the other half of this tier and is not
-# duplicated here: tests.yml runs the full unfiltered matrix on every push to
-# main, so the snapshot build already runs post-merge there whenever the diff
-# did not pull it into the gate.
+# GoReleaser Snapshot Build and End-to-End Tests are the other half of this
+# tier and are not duplicated here: tests.yml runs the full unfiltered matrix
+# on every push to main, so both already run post-merge there. Neither can be
+# pulled into the gate any more — the classify job pins them false on pull
+# requests unconditionally, because neither is fast and neither is fully
+# deterministic.
 on:
   push:
     branches: [ main ]

@@ -85,19 +85,30 @@ jobs:
             frontend=true
           fi
 
-          # End-to-End boots cmd/joe and builds ui/, so it owes both.
+          # End-to-End and GoReleaser Snapshot Build are POST-MERGE, always.
+          # Never on a pull request, whatever the diff touches.
+          #
+          # The gate answers one question — is `main` broken — and it answers
+          # it with checks that are fast and deterministic. Neither of these
+          # is:
+          #
+          #   - End-to-End boots cmd/joe, runs `npm ci`, and spawns real
+          #     binaries. It also runs against placeholder keys that fall back
+          #     to the literal `test-key`, so the real-provider paths its name
+          #     implies are not exercised. 139s of gate time for that.
+          #   - GoReleaser Snapshot Build is a packaging build. Releasability
+          #     is a real question and is not this one. At 538s it was the
+          #     single largest cost in the gate, and it was pulled in by any
+          #     diff touching .github/workflows/ — including a diff to this
+          #     file.
+          #
+          # Coverage is unchanged. Both still run on every push to main and in
+          # the nightly unfiltered matrix, via the early return above, so what
+          # moved is when a failure is learned about, not whether it is. Red in
+          # the post-merge tier flips the responsible thread from done back to
+          # blocked, per joe-pm CLAUDE.md.
           e2e=false
-          if [ "$go" = true ] || [ "$frontend" = true ]; then
-            e2e=true
-          fi
-
-          # release-packaging, plus frontend, plus what either builds from.
-          # GoReleaser is out of the default gate and is pulled back in only
-          # here.
           goreleaser=false
-          if touches '^\.goreleaser\.yaml$|^internal/webui/|^scripts/|^ui/|^cmd/|^go\.(mod|sum)$|^Makefile$|^\.github/workflows/'; then
-            goreleaser=true
-          fi
 
           emit "$go" "$frontend" "$e2e" "$goreleaser"
 
