@@ -59,6 +59,8 @@ func TestResolveComponentTool_DescriptionCarriesTheContract(t *testing.T) {
 		"match_kind",
 		"bindings_truncated",
 		"matches_truncated",
+		"candidates_truncated",
+		"max_total_bindings",
 	} {
 		if !strings.Contains(desc, required) {
 			t.Errorf("Description() must carry %q", required)
@@ -67,8 +69,19 @@ func TestResolveComponentTool_DescriptionCarriesTheContract(t *testing.T) {
 
 	// Empty bindings must not read as a wrong candidate: a registered
 	// component no refresher has drawn an edge for is a real answer.
-	if !strings.Contains(desc, "Empty bindings mean no edge has been derived") {
-		t.Error("Description() must say that empty bindings are not a wrong candidate")
+	//
+	// It must ALSO not read as a completeness claim. The evidence is filtered
+	// per principal and bounded, so "no edge has been derived" is false in the
+	// direction most likely to mislead the reasoner this text was written for —
+	// a caller told that empty means nothing exists will report a component as
+	// unattached when what happened is that it is attached to things they may
+	// not see.
+	if !strings.Contains(desc, "Empty bindings mean no edge you may see has been derived") {
+		t.Error("Description() must say that empty bindings are not a wrong candidate, " +
+			"and must qualify the claim to what this caller may see")
+	}
+	if strings.Contains(desc, "Empty bindings mean no edge has been derived") {
+		t.Error("Description() states an unqualified completeness claim about the graph")
 	}
 }
 
@@ -92,7 +105,11 @@ func TestResolveComponentTool_Execute_ShapesCandidates(t *testing.T) {
 			}},
 			BindingsTruncated: true,
 		}},
-		MatchesTruncated: true,
+		MatchesTruncated:        true,
+		CandidatesTruncated:     true,
+		MaxCandidates:           25,
+		MaxBindingsPerCandidate: 10,
+		MaxTotalBindings:        250,
 	}}
 	tool := core.NewResolveComponentTool(c)
 
@@ -120,8 +137,20 @@ func TestResolveComponentTool_Execute_ShapesCandidates(t *testing.T) {
 	if out["candidate_count"] != 1 {
 		t.Errorf("candidate_count = %v, want 1", out["candidate_count"])
 	}
-	if out["matches_truncated"] != true {
-		t.Error("matches_truncated must be reported to the caller")
+	// Two truncation flags and the bounds behind them. They answer different
+	// questions: matches_truncated is about the ungoverned registry, and
+	// candidates_truncated is about what THIS caller may see. Collapsing them
+	// into one flag is what let a bound effect read as a permission one.
+	for key, want := range map[string]any{
+		"matches_truncated":          true,
+		"candidates_truncated":       true,
+		"max_candidates":             25,
+		"max_bindings_per_candidate": 10,
+		"max_total_bindings":         250,
+	} {
+		if out[key] != want {
+			t.Errorf("out[%q] = %v, want %v", key, out[key], want)
+		}
 	}
 	if _, hasReason := out["reason"]; hasReason {
 		t.Error("a non-empty result must not carry the empty-result reason")

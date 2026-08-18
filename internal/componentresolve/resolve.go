@@ -67,13 +67,26 @@ func rankOf(kind string) int {
 	}
 }
 
-// MaxMatches bounds how many ranked matches leave this package. It exists
+// MaxMatchScan bounds how many ranked matches leave this package. It exists
 // because a type-token match is legitimately broad — one phrase containing the
 // word "kubernetes" matches every Kubernetes component — and a caller reading
 // candidates to tell them apart is not helped by an inventory. Overflow is
-// reported, never silently dropped: Match returns a truncated flag, and the
-// tool surfaces it.
-const MaxMatches = 25
+// reported, never silently dropped: Match returns a bounded flag, and the tool
+// surfaces it.
+//
+// It is a WORK bound and not an answer bound, and the distinction is the whole
+// reason it is this large. Nothing at this layer has been checked against a
+// principal, so a bound spent here can only ever cut a permission-blind
+// ordering: the caller would receive a filtered prefix of everyone's ranking
+// rather than a prefix of the ranking they are entitled to. The ANSWER bound
+// lives in internal/access, where it is spent after the per-component permit.
+//
+// What sets the size is the layer below. Every id that leaves here costs one
+// permit, and therefore one audit row, so this is what stops a single resolve
+// call from writing a decision row per component in the registry — and the
+// wider it is, the more of a sparsely-granted principal's own matches survive
+// to be evaluated at all.
+const MaxMatchScan = 200
 
 // Matched is one component the matcher selected, with the deterministic reason
 // it selected it. It is pre-governance: nothing here has been checked against a
@@ -107,8 +120,15 @@ type Candidate struct {
 	// more useful than omitting the candidate.
 	Bindings []graph.ComponentBinding
 
-	// BindingsTruncated reports that the component has more bindings than were
-	// returned. It means the evidence is a prefix, not that it is wrong.
+	// BindingsTruncated reports that the component has more bindings THE
+	// PRINCIPAL MAY SEE than were returned. It means the evidence is a prefix
+	// of their own entitled set, not that it is wrong.
+	//
+	// It is derived from the visible bindings, after the peer filter, and that
+	// is load-bearing rather than incidental: derived from the raw row count it
+	// would pair with a post-filter binding_count to disclose how many edges
+	// reach components outside the grant, which is the side channel the peer
+	// filter exists to close.
 	BindingsTruncated bool
 }
 
@@ -118,16 +138,35 @@ type Resolution struct {
 	// empty Candidates list is an answer rather than a failure.
 	Candidates []Candidate
 
-	// MatchesTruncated reports that more components matched the phrase than
-	// MaxMatches, so the ranked list is a prefix. It is set from the MATCH
-	// step, before governance filtering, so it never leaks whether the
-	// components dropped past the bound would have been visible.
+	// MatchesTruncated reports that more components matched the phrase than the
+	// MATCH step examined, so matching stopped at MaxMatchScan. It answers WHY
+	// THE SCAN STOPPED and says nothing about what the principal may see.
+	//
+	// It is set before governance filtering, and it is safe to disclose for
+	// exactly that reason: it is a fact about the ungoverned component registry,
+	// which list_components already returns whole to any caller. It never leaks
+	// whether the components dropped past the bound would have been visible.
 	MatchesTruncated bool
+
+	// CandidatesTruncated reports that more components THE PRINCIPAL MAY SEE
+	// matched than were returned, so the candidate list is a prefix of their own
+	// entitled ranking. It is set after the per-component permit, which is what
+	// makes it a claim about their answer rather than about everyone's.
+	CandidatesTruncated bool
+
+	// MaxCandidates, MaxBindingsPerCandidate and MaxTotalBindings are the bounds
+	// actually in force for this call. The middle one is a share of the last,
+	// allocated across the candidates that survived the permit, so it varies per
+	// call and a caller reading BindingsTruncated needs it to know what "a
+	// prefix" was a prefix of.
+	MaxCandidates           int
+	MaxBindingsPerCandidate int
+	MaxTotalBindings        int
 }
 
 // Match returns the components whose name or type the phrase could be naming,
-// ranked strongest first, plus a flag reporting that the ranked list was capped
-// at MaxMatches.
+// ranked strongest first, plus a flag reporting that matching stopped at
+// MaxMatchScan.
 //
 // typeFilter, when non-empty, restricts the candidate set to components of that
 // exact type before any matching happens. It is a filter the caller asked for,
@@ -171,8 +210,8 @@ func Match(components []*store.Component, phrase, typeFilter string) ([]Matched,
 		return a.Component.ID < b.Component.ID
 	})
 
-	if len(matched) > MaxMatches {
-		return matched[:MaxMatches], true
+	if len(matched) > MaxMatchScan {
+		return matched[:MaxMatchScan], true
 	}
 	return matched, false
 }

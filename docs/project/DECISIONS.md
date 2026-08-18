@@ -18,9 +18,15 @@ unit of work that produced it.
 
 - Date: 2026-08-17
 - Status: accepted (implemented)
-- Session: component-resolution-tool
-- Decision: nine parts. (a)–(d) are the tool; (e)–(g) are what had to be built or
-  read to make it honest; (h)–(i) correct the item and the order that produced it.
+- Session: component-resolution-tool, amended by resolve-bounds-before-filter
+- Decision: ten parts. (a)–(d) are the tool; (e)–(g) are what had to be built or
+  read to make it honest; (h)–(i) correct the item and the order that produced it;
+  (j) is where the bounds sit relative to the permit, which the governance-floor
+  review of `jaimegago/joe#44` found wrong and which is corrected in place here
+  rather than in a later entry, because this decision has never been on `main`
+  and a log entry amending an unpublished sibling in the same pull request would
+  be a record of a conversation with itself. The trail is the branch's commits
+  and the ledger threads that ordered them.
   a. **THE TOOL IS THE NAMING HOP, AND IT DOES NOT WRAP THE OBSERVE RESOLVER.**
      `resolve_component` takes a task phrase and returns the registered
      components that phrase might name, ranked, each carrying the graph
@@ -66,10 +72,13 @@ unit of work that produced it.
      resolution outcome, and said the unhappy-path decision depended on it.
      **Established: it can.** One `KindInfraAccess` row per resolve call, written
      by the accessor, carries `reason` ∈ {`component_resolve_no_match`,
-     `component_resolve_no_permitted_match`, `component_resolve_match`} and a
-     counts-only context blob — using the `context` column exactly as migration
-     015 describes it (a JSON blob with a sub-discriminator where one kind covers
-     more than one event). The `kind` CHECK constraint is untouched. Beside it,
+     `component_resolve_no_permitted_match`,
+     `component_resolve_bounded_no_permitted_match`, `component_resolve_match`}
+     and a counts-and-bound-flags context blob — using the `context` column
+     exactly as migration 015 describes it (a JSON blob with a sub-discriminator
+     where one kind covers more than one event). The fourth reason is (j)'s, and
+     it is what stops this row asserting a permission cause for a bound effect.
+     The `kind` CHECK constraint is untouched. Beside it,
      the permit chokepoint's own deny rows **name each withheld component**,
      which is what an operator debugging a missing grant actually acts on.
      **The phrase is deliberately not recorded**: the audit log is the governance
@@ -157,6 +166,47 @@ unit of work that produced it.
      immutable is **confirmed from the tree, not inherited from the index row**:
      `sqlComponentRepository.Update` exists with zero production callers, and no
      HTTP, tool or CLI path edits a registered component's name.
+  j. **A BOUND IS SPENT ON AN ORDERING THE PRINCIPAL IS ENTITLED TO, OR ITS
+     EFFECT IS NOT DISCLOSED TO THEM.** As first built, two bounds were spent
+     before the accessor evaluated `ActionRead`: the match bound and the
+     per-component binding limit. What a principal received was a filtered prefix
+     of an unfiltered ranking, never a prefix of the ranking they are entitled
+     to — one defect with three consequences, none of them pinned by a test,
+     because the one truncation test granted every peer and so could not tell the
+     two orderings apart. The governance-floor review of `jaimegago/joe#44` found
+     it; the change had not merged, so the remedy is fix-forward and there is
+     nothing to revert.
+     **The candidate bound moves past the permit.** The matcher's bound is
+     redefined as `MaxMatchScan` — a WORK bound, deliberately wide, sized by the
+     fact that every id leaving it costs one permit and therefore one audit row.
+     The OUTPUT bound is `access.MaxResolveCandidates`, spent on the permitted
+     list, so the answer is a prefix of that principal's own ranking. One
+     permitted id past the bound is evaluated and dropped, which is how
+     `candidates_truncated` is established exactly rather than guessed.
+     **The evidence bound moves past the peer filter.** The accessor over-fetches
+     by `bindingScanFactor` and takes the first N rows that SURVIVE the filter, so
+     `bindings_truncated` is derived from visible rows. Derived from raw rows it
+     paired with the post-filter `binding_count` to disclose how many of a
+     readable component's edges reach components outside the grant — cardinality
+     only, but on the governed side, and precisely the channel the peer filter
+     exists to close. The same move fixes the mirror: evidence the principal IS
+     entitled to is no longer cut by a limit that landed on a denied prefix.
+     **The total output budget is settled here**, absorbing the implementing
+     session's own first self-flag. 25 candidates × 50 bindings composed
+     multiplicatively with the product neither bounded nor reported.
+     `access.MaxResolveBindings` (250) is allocated as an equal share per
+     surviving candidate, capped at the per-component ceiling — an equal share
+     rather than first-come, because a weakly-ranked candidate handed empty
+     evidence is indistinguishable at the tool boundary from one no refresher has
+     drawn an edge for. All three bounds in force are reported to the caller.
+     **The two residual work bounds are NOT reported to the caller, and that is
+     the second limb of the rule rather than an omission.** Both are counted
+     before the peer filter, so either one read beside a post-filter count
+     discloses the difference. They are recorded on the per-call audit row —
+     `matches_bounded`, `evidence_bounded` — which is where the operator side of
+     every other resolve distinction already lives, per (c) and (d). A
+     consequence worth stating: the tool description no longer claims empty
+     bindings mean no edge exists, only that none the caller may see does.
 - Basis: `internal/componentresolve/` (matcher and result types, with
   `resolve_test.go` pinning kinds, ranking determinism against registry order,
   the type filter, the reported bound, and the qualifier-not-parsed property);
@@ -171,6 +221,14 @@ unit of work that produced it.
   `TestIntegration_RBAC_ComponentResolutionFiltersPerPrincipal`
   (`test/integration/rbac_test.go`) asserting both omissions end to end over a
   real SQLite RBAC repository and a real graph store.
+  For (j): three further integration tests in the same file —
+  `…EvidenceBoundFollowsThePermit`, `…CandidateBoundFollowsThePermit`, and
+  `…AuditDoesNotBlameTheGrant` — each with a principal who does **not** hold every
+  peer, which is the condition under which a pre-filter count and a post-filter
+  count can disagree at all and is exactly what the original truncation test
+  lacked. The last reads the row back from the `audit_log` table the real insert
+  wrote to, so the new reason is exercised against migration 015's constraints
+  rather than against a fake.
 - Supersedes: nothing. Closes `docs/backlog/component-resolution-tool.md`, which
   is archived to `done/` unedited apart from its Status line — an archive
   rewritten to agree with the present destroys the trail it exists to keep, so
