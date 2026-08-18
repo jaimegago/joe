@@ -16,11 +16,24 @@ type mockSlackPoster struct {
 	lastChannelID string
 	callCount     int
 	err           error
+
+	// posted, when non-nil, receives each channel ID passed to PostMessage.
+	// It exists so a test that dispatches into a goroutine can wait for the
+	// call to actually happen rather than sleeping and hoping. Buffered by its
+	// creator; the send is non-blocking so a test that stops reading cannot
+	// wedge the handler.
+	posted chan string
 }
 
 func (m *mockSlackPoster) PostMessage(channelID string, _ ...gslack.MsgOption) (string, string, error) {
 	m.lastChannelID = channelID
 	m.callCount++
+	if m.posted != nil {
+		select {
+		case m.posted <- channelID:
+		default:
+		}
+	}
 	return "", "", m.err
 }
 

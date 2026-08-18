@@ -251,9 +251,9 @@ func TestRefresher_Stop_Graceful(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	// Give the goroutine a moment to start.
-	time.Sleep(10 * time.Millisecond)
-
+	// No wait before Stop. Start sets r.cancel synchronously and refreshLoop
+	// closes r.doneCh on the way out (refresh.go:127, :155), so Stop's doneCh
+	// wait is deterministic whether or not the goroutine has been scheduled yet.
 	if err := r.Stop(ctx); err != nil {
 		t.Errorf("Stop() error = %v", err)
 	}
@@ -269,9 +269,9 @@ func TestRefresher_Stop_ContextCancel(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
-
-	// Cancel the context — refreshLoop should exit via ctx.Done().
+	// Cancel the context — refreshLoop should exit via ctx.Done(). No wait
+	// first: the select on doneCh below is the synchronisation, and it holds
+	// whether the loop had started or starts and exits immediately.
 	cancel()
 
 	// Wait for the loop to finish via the doneCh.
@@ -293,7 +293,6 @@ func TestRefresher_RefreshLoop_ExitsOnStop(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
 	r.cancel()
 
 	select {

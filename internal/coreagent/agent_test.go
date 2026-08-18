@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/config"
@@ -120,8 +119,9 @@ func TestCoreAgentStartStop(t *testing.T) {
 		t.Fatalf("failed to start Core Agent: %v", err)
 	}
 
-	// Give it a moment to start
-	time.Sleep(100 * time.Millisecond)
+	// No wait before Stop. Agent.Stop delegates to Refresher.Stop, which
+	// cancels and then waits on doneCh with its own timeout (refresh.go:133-151),
+	// so the handoff is already synchronised.
 
 	// Stop the agent
 	if err := agent.Stop(ctx); err != nil {

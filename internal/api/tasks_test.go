@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -629,10 +630,20 @@ func TestTaskAutoTitle_DoesNotOverwriteExistingTitle(t *testing.T) {
 // sentinelTitleStubLLM returns the "New chat" sentinel for a title request — the
 // reply the prompt mandates for a meaningless opening message. Regular agent-loop
 // calls answer "ok".
-type sentinelTitleStubLLM struct{}
+type sentinelTitleStubLLM struct {
+	// titled, when non-nil, is closed the first time the title prompt is seen.
+	// It is the edge a negative assertion needs: you cannot poll for a write
+	// that must never happen, but you can wait until the code that would have
+	// made it has run.
+	titled chan struct{}
+	once   sync.Once
+}
 
 func (s *sentinelTitleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	if req.SystemPrompt == prompts.ChatTitleSystem {
+		if s.titled != nil {
+			s.once.Do(func() { close(s.titled) })
+		}
 		return &llm.ChatResponse{Content: "New chat"}, nil
 	}
 	return &llm.ChatResponse{
@@ -648,7 +659,8 @@ func (s *sentinelTitleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*ll
 // nil — letting the placeholder show and a later turn re-title the session.
 func TestTaskAutoTitle_SentinelLeavesSessionUntitled(t *testing.T) {
 	const alice = "user:alice@example.com"
-	srv, mux := setupTaskServer(t, &sentinelTitleStubLLM{})
+	stub := &sentinelTitleStubLLM{titled: make(chan struct{})}
+	srv, mux := setupTaskServer(t, stub)
 	ctx := context.Background()
 
 	w := reqAsPrincipal(mux, "POST", "/api/v1/tasks", alice, map[string]any{"message": "hi"})
@@ -658,9 +670,18 @@ func TestTaskAutoTitle_SentinelLeavesSessionUntitled(t *testing.T) {
 	var resp taskResponse
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	// The title write is async; give the background goroutine ample time to run
-	// (and skip), then assert the session is still untitled.
-	time.Sleep(300 * time.Millisecond)
+	// Wait until the title model has actually been consulted, rather than
+	// sleeping 300ms and hoping the goroutine got there. This is the negative
+	// assertion's hard case: absence cannot be polled for, so the closest
+	// deterministic edge is "the code that would have written the title has
+	// run". After Chat returns, generateTitleAsync's remaining work is the
+	// sentinel check and an early return with no I/O.
+	select {
+	case <-stub.titled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the title model was never consulted")
+	}
+
 	sess, err := srv.services.SessionModel.GetSession(ctx, resp.SessionID)
 	if err != nil || sess == nil {
 		t.Fatalf("GetSession: %v", err)
