@@ -24,6 +24,13 @@ This is the grouping over which authorization decisions are made: "may this prin
 perform this action on a component in this zone?" is the question the policy engine
 answers for every governed access.
 
+**Zones are live at launch; grant-based *read* is not.** These are two different things
+and it is worth keeping them apart. The zone gate — which actions a zone permits at all
+— runs ahead of the read decision and applies in every posture, so zones shape what is
+reachable on a default install. What waits for the `zoned` posture is the *read grant*:
+deciding **who** may read a component the zone already permits. Read the grant-based
+read path below as the opt-in full-mode evolution, not as the default mental model.
+
 ## The read posture: how wide reads are at launch
 
 Joe separates a coarse, install-wide choice about *read breadth* from the per-zone
@@ -35,9 +42,12 @@ settings:
   grant machinery still governs *mutations*, but not who can look. This is the simple,
   legible posture for a team that trusts its members to see everything and wants
   governance focused on what changes the world.
-- **`zoned`** — the full, grant-based read path. Reads are governed by zone grants
-  exactly like mutations are: a principal reads a component only where a policy grants
-  it.
+- **`zoned`** — the full, grant-based read path, and the **opt-in full-mode era**.
+  Reads are governed by zone grants exactly like mutations are: a principal reads a
+  component only where a policy grants it. Nothing forces this choice: a fresh install
+  and an upgraded install both stay `team_flat` until an operator deliberately flips
+  the posture, and the admin surfaces that configure read grants stay out of the way
+  until they do.
 
 The posture governs **human-facing reads only**. Flipping it is an admin action that
 is audited; it widens or narrows *who may read a permitted action*, never *which

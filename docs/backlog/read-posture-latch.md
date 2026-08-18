@@ -33,13 +33,29 @@ deferred out of the launch build without losing any capability.
   endpoint was added. Zones and component-zone assignment are explicitly
   **untouched** and stay visible. The v2 zoned-flip admin UI (below) remains
   deferred.
-- **Reframe the public docs for the two eras.** Rework the human-facing docs so
-  zones and grant-based read are presented as the **full-mode (`zoned`) era**
-  concept, not the default mental model. The launch story is team-flat read
-  (team-public, integrity-and-accountability spine); zones/grants are the
-  opt-in full-mode evolution. Audit `docs/reference/security-in-layers.md` and the
-  architecture/README prose for places that assume grant-based read is the
-  baseline.
+- **Reframe the public docs for the two eras — done (read-posture-docs-reframe).**
+  The audit this bullet asked for was run and **found the two-era framing already in
+  place** across the named targets: `docs/reference/security-in-layers.md` §3.5 and
+  §8.1 (which already carries a launch note), `docs/reference/joe-architecture.md`,
+  `README.md`, and `docs/public/api-reference/_index.md` all name `team_flat` as the
+  launch default and `zoned` as the opt-in full-mode read path. No location was found
+  presenting grant-based read as the baseline. That work appears to have landed with
+  D-0041/D-0043 without this bullet being updated. Two real gaps were found and
+  closed instead:
+
+  - `docs/public/guides/web-ui.md` listed **Policies** among the admin surfaces every
+    admin sees. It is posture-gated (`ui/src/auth/RequireZonedPosture.tsx`,
+    `ui/src/components/layout/Sidebar.tsx`) and does not render under `team_flat`. The
+    guide now says so, including that the REST endpoints stay available and that Zones
+    and component-zone assignment are **not** gated.
+  - `docs/public/concepts/rbac-zones-and-read-posture.md` was correct but let a reader
+    infer zones are inert at launch. It now separates the zone gate (live in every
+    posture) from the read grant (the `zoned`-era part).
+
+  Residue, not closed: `docs/web-ui.md` — the internal UI *specification* — still
+  describes a tabbed `/admin` surface with a Policies tab, while the shipped UI has a
+  flat sidebar with an Admin subgroup. That drift is wider than the read posture and
+  was left alone rather than half-fixed.
 - **v2 zoned-flip UI.** The posture flip is REST-only today (`POST
   /api/v1/admin/read-posture`). Build the admin UI affordance that flips an
   install from `team_flat` to `zoned` (and back), surfacing the current posture
