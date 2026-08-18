@@ -69,9 +69,21 @@ The navigation is flat. Every signed-in operator sees the same top-level entries
 
 Admins additionally see a single **Admin** subgroup, revealed only when the signed-in
 principal's `is_admin` flag is true (Joe reports it from `GET /api/v1/me`). It collects
-the governance surfaces — Zones, Policies, Autonomous Reads, Skills, Admins, Users,
-Credentials, and LLM Settings. A non-admin who navigates directly to an admin route is
-redirected away; the subgroup is hidden, not merely disabled.
+the governance surfaces — Zones, Autonomous Reads, Skills, Admins, Users, Credentials,
+and LLM Settings. A non-admin who navigates directly to an admin route is redirected
+away; the subgroup is hidden, not merely disabled.
+
+**Policies appears only under the `zoned` read posture.** The Policies page configures
+grant-based read, which does nothing under the launch-default `team_flat` posture —
+every authenticated principal already reads every component, and the write floor denies
+mutations below RBAC independently of any grant. So the entry and its `/admin/policies`
+route render only when the live posture is `zoned`; on a default install you will not
+see it. The gate is in the UI alone: the `/api/v1/admin/policies` endpoints stay
+registered and admin-gated, so grants remain manageable over REST in either posture.
+Zones and component-zone assignment are **not** posture-gated and stay visible — the
+zone-allows-action gate runs ahead of the `team_flat` read admit, so zones still shape
+which actions are permitted. See [RBAC, zones, and the read
+posture](../../concepts/rbac-zones-and-read-posture/).
 
 ## Where to go next
 
