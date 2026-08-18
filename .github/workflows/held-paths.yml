@@ -62,15 +62,28 @@ jobs:
 
           files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')"
 
-          # Instruction surfaces. joe-pm's trust boundary founds its second
-          # work source on joe's main being maintainer-merged: reviewing a pull
-          # request that touches docs/backlog/ IS reviewing future agent
-          # instructions. Hands-off auto-merge over these paths would let an
-          # executor session write its own future work orders, and a green
-          # build says nothing about whether a backlog edit is a legitimate
-          # order.
+          # Instruction surfaces. A green build says nothing about whether an
+          # edit to a rule an agent session reads is a legitimate one, so these
+          # are held for a human read rather than merged on the gate.
+          #
+          # docs/backlog/** was held here until 2026-08-18 and no longer is.
+          # The reasoning was sound in isolation — a backlog item IS a future
+          # agent work order — but it composed badly with joe-pm's
+          # decisions/0002, which routes ALL product work through
+          # docs/backlog/. Every thread files or archives an item as part of
+          # its own work, so 13 of the 15 pull requests before the change
+          # touched a held path and the hands-off auto-merge this guard exists
+          # to preserve fired twice in fifteen. A hold that catches everything
+          # holds nothing in particular.
+          #
+          # What is given up: an executor session can now write its own future
+          # work orders through a backlog edit that merges on the gate alone.
+          # That is a real loss, accepted because the alternative was a blanket
+          # approval requirement that neither rule intended and that nobody was
+          # reading carefully by the thirteenth time. See joe-pm
+          # decisions/0014-retract-the-review-cascade.md.
           instruction="$(printf '%s\n' "$files" \
-            | grep -E '^docs/backlog/|^CLAUDE\.md$|^docs/verification\.md$' || true)"
+            | grep -E '^CLAUDE\.md$|^docs/verification\.md$' || true)"
 
           held="$(printf '%s\n' "$instruction" | grep -v '^$' | sort -u || true)"
 
