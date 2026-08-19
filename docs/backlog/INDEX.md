@@ -124,5 +124,6 @@ after the move rather than by inspection.
 | [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
+| [`turn-code-first-wins-masking`](turn-code-first-wins-masking.md) | Turn-level error_code is first-wins, so an early scope refusal hides a later write denial | open | later |
 | [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open | later |
 | [`zone-scope-empty-claims-unenforced-block`](zone-scope-empty-claims-unenforced-block.md) | Zone scope with no assigned components tells the model it cannot act, and enforces nothing | open | next |
