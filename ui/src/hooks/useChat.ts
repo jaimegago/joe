@@ -66,10 +66,12 @@ export interface AssistantTurn {
   // shortened at ingestion to fit its share of the context budget. The view
   // renders a single unobtrusive notice when it is set.
   userMessageTruncated?: boolean;
-  // writeFailureCode is the backend's typed reason a write was denied this
-  // turn ('zone_denial' | 'incident_mode' | 'safe_mode' | 'observation' | 'internal_error'). A denied write
-  // does NOT fail the turn (the LLM still answers), so the view renders a
-  // dedicated notice — distinct from a generic failure — explaining why.
+  // writeFailureCode is the backend's typed reason a tool call was refused this
+  // turn ('zone_denial' | 'scope_denial' | 'incident_mode' | 'safe_mode' |
+  // 'observation' | 'internal_error'). A denied write does NOT fail the turn
+  // (the LLM still answers), so the view renders a dedicated notice — distinct
+  // from a generic failure — explaining why. Not every code is a write denial:
+  // zone_denial and scope_denial refuse reads too.
   writeFailureCode?: string;
   // stopReason marks a COMPLETED turn that did not end on a naturally
   // tool-call-free answer (currently only 'max_iterations': the loop hit its
@@ -80,14 +82,24 @@ export interface AssistantTurn {
   stopReason?: string;
 }
 
-// writeFailureMessage maps a backend write-failure code to the user-facing
+// writeFailureMessage maps a backend tool-failure code to the user-facing
 // sentence shown in chat (Item 8). Returns undefined for an unknown/absent
 // code so callers fall back to the generic error text. Kept pure and exported
 // so the dispatch is unit-tested independently of the streaming machinery.
+//
+// EVERY code the backend can put on the turn-level error_code needs a branch
+// here, not just the ones a product decision cares about. The backend summary
+// is first-non-empty across the turn's tool results (firstWriteFailureCode in
+// internal/api/tasks.go), so an unmapped code arriving on an earlier tool call
+// does not merely render nothing for itself — it takes the slot from a mapped
+// code on a later one, and the notice that used to render disappears. A read
+// refused for scope followed by a write refused by the floor is the live shape.
 export function writeFailureMessage(code: string | undefined): string | undefined {
   switch (code) {
     case 'zone_denial':
       return 'Access to this zone has not been granted to you. Ask your administrator.';
+    case 'scope_denial':
+      return 'That target is outside the scope this session was given — a limit of this session, not a missing permission. Ask your administrator to widen its scope.';
     case 'incident_mode':
       return 'System is in incident mode. Writes are temporarily blocked.';
     case 'safe_mode':

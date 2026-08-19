@@ -20,11 +20,19 @@ const (
 	errorCodeForbidden          = "forbidden"
 	errorCodeConflict           = "conflict"
 
-	// Typed write-failure codes (Item 8 / differentiated write-failure
-	// feedback). A denied write surfaces one of these so the chat UI can show
-	// a specific message instead of a generic error. errorCodeInternal
+	// Typed tool-failure codes (Item 8 / differentiated write-failure
+	// feedback). A refused tool call surfaces one of these so the chat UI can
+	// show a specific message instead of a generic error. errorCodeInternal
 	// ("internal_error") above doubles as the fallback bucket.
+	//
+	// "tool-failure", not "write-failure": only incident_mode, safe_mode and
+	// observation are write-only (the captain gate and the write floor both key
+	// on ActionMutate). zone_denial and scope_denial fire on reads too — the
+	// RBAC accessor guards read seams with rbac.ActionRead, and the executor's
+	// scope check runs ahead of the action class entirely. classifyWriteFailure
+	// keeps its name for continuity; the channel it feeds is wider than that.
 	errorCodeZoneDenial   = "zone_denial"   // RBAC: caller lacks access to the target zone
+	errorCodeScopeDenial  = "scope_denial"  // executor scope check: target component/namespace outside the session's authorized scope
 	errorCodeIncidentMode = "incident_mode" // captain gate refused: system in incident mode
 	errorCodeSafeMode     = "safe_mode"     // write floor up, reason safe_mode: panic recovery (T1-only)
 	errorCodeObservation  = "observation"   // write floor up, reason observation: intended read-only posture

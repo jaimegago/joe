@@ -345,8 +345,11 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				if r.Error != nil {
 					rec.Error = r.Error.Error()
 					// Classify the TYPED error before it is lost to the string
-					// above, so the wire can carry a stable write-failure code
-					// (incident_mode / zone_denial) the UI dispatches on.
+					// above, so the wire can carry a stable tool-failure code.
+					// The vocabulary belongs to whoever injected the classifier;
+					// the loop stays unaware of it. Note this runs on EVERY tool
+					// error, read or write — the classifier decides what is a
+					// denial, not the caller and not the action class.
 					if a.toolErrorClassifier != nil {
 						rec.ErrorCode = a.toolErrorClassifier(r.Error)
 					}
