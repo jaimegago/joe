@@ -24,7 +24,7 @@ func newIntentAgent(t *testing.T, m *mockLLM) (*Agent, *Session) {
 	t.Helper()
 	registry := tools.NewRegistry()
 	registry.Register(newEchoTool())
-	agent := NewAgent(m, tools.NewExecutor(registry, nil), registry, "system")
+	agent := NewAgent(m, tools.NewExecutor(registry, nil), registry, llm.StaticSystem("system"))
 	session := NewSession(nil)
 	t.Cleanup(session.Close)
 	return agent, session

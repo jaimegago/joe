@@ -39,7 +39,7 @@ func TestNewAgent(t *testing.T) {
 	mockLLM := &mockLLM{}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	systemPrompt := "You are a helpful assistant"
+	systemPrompt := llm.StaticSystem("You are a helpful assistant")
 
 	agent := NewAgent(mockLLM, executor, registry, systemPrompt)
 
@@ -55,7 +55,7 @@ func TestNewAgent(t *testing.T) {
 	if agent.registry != registry {
 		t.Error("NewAgent() registry not set correctly")
 	}
-	if agent.systemPrompt != systemPrompt {
+	if agent.systemPrompt.String() != systemPrompt.String() {
 		t.Error("NewAgent() systemPrompt not set correctly")
 	}
 	if agent.maxIterations != DefaultMaxIterations {
@@ -76,7 +76,7 @@ func TestAgent_Run_NoToolCalls(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Hello")
@@ -103,8 +103,8 @@ func TestAgent_Run_NoToolCalls(t *testing.T) {
 	}
 
 	// Verify LLM was called with correct parameters
-	if mockLLM.lastReq.SystemPrompt != "You are a helpful assistant" {
-		t.Errorf("LLM called with system prompt %q", mockLLM.lastReq.SystemPrompt)
+	if mockLLM.lastReq.System.String() != "You are a helpful assistant" {
+		t.Errorf("LLM called with system prompt %q", mockLLM.lastReq.System.String())
 	}
 }
 
@@ -134,7 +134,7 @@ func TestAgent_Run_WithToolCall(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Echo 'test message'")
@@ -189,7 +189,7 @@ func TestAgent_Run_MultipleToolCalls(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Test")
@@ -223,7 +223,7 @@ func TestAgent_Run_LLMError(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Hello")
@@ -262,7 +262,7 @@ func TestAgent_Run_ToolNotFound(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	response, err := agent.Run(context.Background(), session, "Test")
@@ -318,7 +318,7 @@ func TestAgent_Run_MaxIterations(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 	// Pin an explicit cap below the queued-response count so this test asserts
 	// the cap behaviour independent of DefaultMaxIterations (raised to 20 by
 	// loop-budget-exhaustion decision E). After the cap the loop makes the
@@ -351,7 +351,7 @@ func TestAgent_Run_ContextCancellation(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -381,7 +381,7 @@ func TestAgent_Run_ToolDefinitionsIncluded(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(mockLLM, executor, registry, "You are a helpful assistant")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("You are a helpful assistant"))
 
 	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "Test")
@@ -406,7 +406,7 @@ func TestWithAdapterFactory(t *testing.T) {
 	}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"), WithAdapterFactory(factory))
 	if agent.adapterFactory == nil {
 		t.Error("WithAdapterFactory() did not set adapterFactory")
 	}
@@ -415,7 +415,7 @@ func TestWithAdapterFactory(t *testing.T) {
 func TestWithCurrentModelName(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithCurrentModelName("my-model"))
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"), WithCurrentModelName("my-model"))
 	if agent.currentModel != "my-model" {
 		t.Errorf("WithCurrentModelName() = %q, want %q", agent.currentModel, "my-model")
 	}
@@ -424,7 +424,7 @@ func TestWithCurrentModelName(t *testing.T) {
 func TestAgent_CurrentModelName(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithCurrentModelName("test-model"))
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"), WithCurrentModelName("test-model"))
 	if got := agent.CurrentModelName(); got != "test-model" {
 		t.Errorf("CurrentModelName() = %q, want %q", got, "test-model")
 	}
@@ -433,7 +433,7 @@ func TestAgent_CurrentModelName(t *testing.T) {
 func TestAgent_SwitchModel_NoFactory(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test")
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"))
 	err := agent.SwitchModel(context.Background(), "claude", "claude-sonnet", "Claude Sonnet")
 	if err == nil {
 		t.Error("SwitchModel() without factory should return error")
@@ -446,7 +446,7 @@ func TestAgent_SwitchModel_FactoryError(t *testing.T) {
 	}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"), WithAdapterFactory(factory))
 	err := agent.SwitchModel(context.Background(), "claude", "claude-sonnet", "Claude Sonnet")
 	if err == nil {
 		t.Error("SwitchModel() with factory error should return error")
@@ -460,7 +460,7 @@ func TestAgent_SwitchModel_Success(t *testing.T) {
 	}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(&mockLLM{}, executor, registry, "test", WithAdapterFactory(factory))
+	agent := NewAgent(&mockLLM{}, executor, registry, llm.StaticSystem("test"), WithAdapterFactory(factory))
 
 	if err := agent.SwitchModel(context.Background(), "gemini", "gemini-flash", "Gemini Flash"); err != nil {
 		t.Fatalf("SwitchModel() returned error: %v", err)
@@ -494,7 +494,7 @@ func TestAgent_Run_MaxOutputTokensStamped(t *testing.T) {
 	withCap := &mockLLM{responses: []*llm.ChatResponse{{Content: "done"}}}
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := NewAgent(withCap, executor, registry, "sys", WithMaxOutputTokens(4096))
+	agent := NewAgent(withCap, executor, registry, llm.StaticSystem("sys"), WithMaxOutputTokens(4096))
 	if _, err := agent.Run(context.Background(), NewSession(nil), "hi"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestAgent_Run_MaxOutputTokensStamped(t *testing.T) {
 	}
 
 	noCap := &mockLLM{responses: []*llm.ChatResponse{{Content: "done"}}}
-	agent2 := NewAgent(noCap, executor, registry, "sys")
+	agent2 := NewAgent(noCap, executor, registry, llm.StaticSystem("sys"))
 	if _, err := agent2.Run(context.Background(), NewSession(nil), "hi"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

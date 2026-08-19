@@ -88,11 +88,14 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// max-output through ChatRequest.MaxTokens; honour it here.
 	applyMaxOutputTokens(model, req.MaxTokens)
 
-	// Set system instruction if provided
-	if req.SystemPrompt != "" {
+	// Set system instruction if provided. Gemini's cached-content resource is
+	// a different contract from Anthropic's inline breakpoints, so this
+	// adapter renders the segments and ignores their stable/volatile marking —
+	// which the seam permits by design.
+	if systemPrompt := req.System.String(); systemPrompt != "" {
 		model.SystemInstruction = &genai.Content{
 			Parts: []genai.Part{
-				genai.Text(req.SystemPrompt),
+				genai.Text(systemPrompt),
 			},
 		}
 	}
@@ -178,7 +181,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	if err != nil {
 		// Add debug info about what we sent
 		debugInfo := fmt.Sprintf("\n\nDebug info:\n- Model: %s\n- System prompt: %v\n- Tools count: %d\n- History messages: %d\n- Last message parts: %d",
-			c.model, req.SystemPrompt != "", len(req.Tools), len(history), len(lastParts))
+			c.model, req.System.String() != "", len(req.Tools), len(history), len(lastParts))
 		return nil, c.enhanceErrorWithDebug(ctx, err, debugInfo)
 	}
 

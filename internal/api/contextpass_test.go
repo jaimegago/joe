@@ -175,7 +175,7 @@ func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
 		}},
 		{Content: "done"},
 	}}
-	agent := agentloop.NewAgent(llmTrunc, exec, reg, "sys")
+	agent := agentloop.NewAgent(llmTrunc, exec, reg, llm.StaticSystem("sys"))
 	session := agentloop.NewSession(nil)
 	session.TokenBudget = 1000 // floor-governed: 2000-token caps
 
@@ -197,7 +197,7 @@ func TestFinalizeTaskResponse_TruncationCounters_OnFinal(t *testing.T) {
 	cleanLLM := &finalScriptLLM{responses: []*llm.ChatResponse{{Content: "ok"}}}
 	cleanReg := tools.NewRegistry()
 	cleanExec := tools.NewExecutor(cleanReg, nil)
-	cleanAgent := agentloop.NewAgent(cleanLLM, cleanExec, cleanReg, "sys")
+	cleanAgent := agentloop.NewAgent(cleanLLM, cleanExec, cleanReg, llm.StaticSystem("sys"))
 	cleanSession := agentloop.NewSession(nil)
 	cleanSession.TokenBudget = 100000
 	if _, err := cleanAgent.Run(context.Background(), cleanSession, "small"); err != nil {

@@ -51,8 +51,8 @@ func TestChat_RequestMapping(t *testing.T) {
 
 	c := newTestClient(t, srv.URL+"/v1")
 	req := llm.ChatRequest{
-		SystemPrompt: "you are joe",
-		MaxTokens:    256,
+		System:    llm.StaticSystem("you are joe"),
+		MaxTokens: 256,
 		Messages: []llm.Message{
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "calling tool", ToolCalls: []llm.ToolCall{

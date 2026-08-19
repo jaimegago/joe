@@ -135,7 +135,7 @@ func newHugeResultAgent(t *testing.T, payload string) (*Agent, *Session) {
 		}},
 		{Content: "done"},
 	}}
-	agent := NewAgent(mock, executor, registry, "sys")
+	agent := NewAgent(mock, executor, registry, llm.StaticSystem("sys"))
 	session := NewSession(nil)
 	// Small budget so the floor governs: 2000-token cap → 8000 char cap.
 	session.TokenBudget = 1000
@@ -181,7 +181,7 @@ func TestIngestion_UserMessageTruncatedAndProtected(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
 	mock := &mockLLM{responses: []*llm.ChatResponse{{Content: "done"}}}
-	agent := NewAgent(mock, executor, registry, "sys")
+	agent := NewAgent(mock, executor, registry, llm.StaticSystem("sys"))
 	session := NewSession(nil)
 	session.TokenBudget = 1000 // 50% floor → 2000-token cap → 8000 char cap
 
@@ -228,7 +228,7 @@ func TestIngestion_NoReTruncationInHistory(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "list_components", Args: map[string]any{}}}},
 		{Content: "done"},
 	}}
-	agent := NewAgent(mock, executor, registry, "sys")
+	agent := NewAgent(mock, executor, registry, llm.StaticSystem("sys"))
 	session := NewSession(nil)
 	session.TokenBudget = 1000
 
@@ -261,7 +261,7 @@ func TestIngestion_CleanTurnReportsZero(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "echo", Args: map[string]any{"message": "hi"}}}},
 		{Content: "done"},
 	}}
-	agent := NewAgent(mock, executor, registry, "sys")
+	agent := NewAgent(mock, executor, registry, llm.StaticSystem("sys"))
 	session := NewSession(nil)
 	session.TokenBudget = 100000
 

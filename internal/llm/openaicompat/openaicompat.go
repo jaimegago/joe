@@ -130,9 +130,12 @@ type chatResponse struct {
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	messages := make([]chatMessage, 0, len(req.Messages)+1)
 
-	// SystemPrompt becomes a leading system-role message.
-	if req.SystemPrompt != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: req.SystemPrompt})
+	// The rendered system prompt becomes a leading system-role message. This
+	// client has no caching contract, so the segments' stable/volatile marking
+	// is ignored here — the seam carries structure, and an adapter that cannot
+	// act on it is free to render and move on.
+	if systemPrompt := req.System.String(); systemPrompt != "" {
+		messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
 	}
 
 	for _, msg := range req.Messages {

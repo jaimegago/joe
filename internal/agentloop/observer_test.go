@@ -37,7 +37,7 @@ func TestObserver_NoToolCalls(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
 	observer := &SliceObserver{}
-	agent := NewAgent(mockLLM, executor, registry, "test", WithObserver(observer))
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("test"), WithObserver(observer))
 
 	session := NewSession(nil)
 	resp, err := agent.Run(context.Background(), session, "hi")
@@ -85,7 +85,7 @@ func TestObserver_WithToolCalls(t *testing.T) {
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil, tools.WithPolicy(permissivePolicy()))
 	observer := &SliceObserver{}
-	agent := NewAgent(mockLLM, executor, registry, "test", WithObserver(observer))
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("test"), WithObserver(observer))
 
 	session := NewSession(nil)
 	resp, err := agent.Run(context.Background(), session, "echo ping")
@@ -146,7 +146,7 @@ func TestObserver_NilDoesNotPanic(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
 	// No observer — should not panic
-	agent := NewAgent(mockLLM, executor, registry, "test")
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("test"))
 
 	session := NewSession(nil)
 	_, err := agent.Run(context.Background(), session, "hi")
@@ -165,7 +165,7 @@ func TestObserver_ToolsAvailable(t *testing.T) {
 	registry.Register(newEchoTool())
 	executor := tools.NewExecutor(registry, nil)
 	observer := &SliceObserver{}
-	agent := NewAgent(mockLLM, executor, registry, "test", WithObserver(observer))
+	agent := NewAgent(mockLLM, executor, registry, llm.StaticSystem("test"), WithObserver(observer))
 
 	session := NewSession(nil)
 	agent.Run(context.Background(), session, "hi")

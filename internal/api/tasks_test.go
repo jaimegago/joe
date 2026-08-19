@@ -554,7 +554,7 @@ type titleStubLLM struct {
 }
 
 func (s *titleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	if req.SystemPrompt == prompts.ChatTitleSystem {
+	if req.System.String() == prompts.ChatTitleSystem {
 		if req.MaxTokens < s.minTitleTokens {
 			return &llm.ChatResponse{Content: ""}, nil // thinking ate the budget
 		}
@@ -640,7 +640,7 @@ type sentinelTitleStubLLM struct {
 }
 
 func (s *sentinelTitleStubLLM) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	if req.SystemPrompt == prompts.ChatTitleSystem {
+	if req.System.String() == prompts.ChatTitleSystem {
 		if s.titled != nil {
 			s.once.Do(func() { close(s.titled) })
 		}

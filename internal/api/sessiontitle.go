@@ -78,9 +78,9 @@ func (h *taskHandler) generateTitleAsync(ctx context.Context, sessionID, firstUs
 		defer cancel()
 
 		resp, err := h.server.services.LLM.Chat(tctx, llm.ChatRequest{
-			SystemPrompt: prompts.ChatTitleSystem,
-			Messages:     []llm.Message{{Role: "user", Content: firstUserMsg}},
-			MaxTokens:    titleMaxTokens,
+			System:    llm.StaticSystem(prompts.ChatTitleSystem),
+			Messages:  []llm.Message{{Role: "user", Content: firstUserMsg}},
+			MaxTokens: titleMaxTokens,
 		})
 		if err != nil || resp == nil {
 			slog.Debug("auto-title: llm call failed", "session_id", sessionID, "error", err)
