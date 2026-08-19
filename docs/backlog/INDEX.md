@@ -76,6 +76,7 @@ after the move rather than by inspection.
 | [`export-import-components`](export-import-components.md) | Component export/import — a portable registration format | open | later |
 | [`falco-refresher`](falco-refresher.md) | Falco refresher — graph visibility for a fully wired type | open | later |
 | [`full-mode-rbac-track`](full-mode-rbac-track.md) | Full-capabilities-mode RBAC: fail-closed at empty RBAC + a dedicated autonomous principal | deferred | later |
+| [`gate-unit-test-parallelism`](gate-unit-test-parallelism.md) | Unit Tests is execution-bound at ~220s — no test in the suite runs in parallel | open | next |
 | [`git-clone-freshness`](git-clone-freshness.md) | Git clone freshness: fetch-before-analysis, and the move to a bare mirror | open | next |
 | [`governed-connectivity-check-surface`](governed-connectivity-check-surface.md) | Backlog — Governed connectivity-check surface for components | open | later |
 | [`guide-screenshots-e2e-capture`](guide-screenshots-e2e-capture.md) | Deterministic guide screenshots from the E2E harness | open | later |
