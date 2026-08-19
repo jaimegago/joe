@@ -778,8 +778,8 @@ func TestChat_WithSystemPromptAndTools(t *testing.T) {
 	client := newMockGeminiClient(t, geminiTextResponse, 200)
 
 	resp, err := client.Chat(context.Background(), llm.ChatRequest{
-		SystemPrompt: "You are helpful.",
-		Messages:     []llm.Message{{Role: "user", Content: "Hello"}},
+		System:   llm.StaticSystem("You are helpful."),
+		Messages: []llm.Message{{Role: "user", Content: "Hello"}},
 		Tools: []llm.ToolDefinition{
 			{Name: "echo", Description: "Echoes input", Parameters: llm.ParameterSchema{
 				Type:       "object",

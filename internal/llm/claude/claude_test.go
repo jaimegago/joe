@@ -103,9 +103,9 @@ func TestChat_WithSystemPromptAndMaxTokens(t *testing.T) {
 	})
 
 	resp, err := client.Chat(context.Background(), llm.ChatRequest{
-		SystemPrompt: "You are helpful.",
-		MaxTokens:    512,
-		Messages:     []llm.Message{{Role: "user", Content: "Hello"}},
+		System:    llm.StaticSystem("You are helpful."),
+		MaxTokens: 512,
+		Messages:  []llm.Message{{Role: "user", Content: "Hello"}},
 	})
 
 	if err != nil {

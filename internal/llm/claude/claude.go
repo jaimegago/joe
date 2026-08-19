@@ -67,29 +67,7 @@ func NewClient(model string) (*Client, error) {
 // Chat sends a chat request and returns a response
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	// Build messages for Anthropic API
-	messages := make([]anthropic.MessageParam, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		if msg.Role == "assistant" {
-			var blocks []anthropic.ContentBlockParamUnion
-			if msg.Content != "" {
-				blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
-			}
-			// Include tool_use blocks so Claude sees its own tool calls in history
-			for _, tc := range msg.ToolCalls {
-				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Args, tc.Name))
-			}
-			if len(blocks) > 0 {
-				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
-			}
-		} else if msg.ToolResultID != "" {
-			// Tool result message - must use tool_result block referencing the tool call ID
-			messages = append(messages, anthropic.NewUserMessage(
-				anthropic.NewToolResultBlock(msg.ToolResultID, msg.Content, msg.IsError),
-			))
-		} else {
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
-		}
-	}
+	messages := convertMessages(req.Messages)
 
 	// Build tool definitions if provided
 	var tools []anthropic.ToolUnionParam
@@ -114,13 +92,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	}
 
 	// Add system prompt if provided
-	if req.SystemPrompt != "" {
-		params.System = []anthropic.TextBlockParam{
-			{
-				Text: req.SystemPrompt,
-			},
-		}
-	}
+	params.System = systemBlocks(req.System)
 
 	// Add tools if provided
 	if len(tools) > 0 {
@@ -135,6 +107,91 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 
 	// Convert response
 	return c.convertResponse(response), nil
+}
+
+// convertMessages renders joe's neutral message history as Anthropic message
+// params.
+//
+// Extracted from Chat so the block count a turn appends can be measured
+// without a network call. That count is what the provider's cache-breakpoint
+// lookback window is expressed in, so it is a property worth being able to
+// observe rather than derive by reading this loop.
+//
+// Note the shape it produces: EVERY tool result becomes its own user message
+// carrying exactly one tool_result block. So one loop iteration making K tool
+// calls appends 1 + 2K content blocks — one assistant text block, K tool_use
+// blocks, and K tool_result blocks.
+func convertMessages(msgs []llm.Message) []anthropic.MessageParam {
+	messages := make([]anthropic.MessageParam, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Role == "assistant" {
+			var blocks []anthropic.ContentBlockParamUnion
+			if msg.Content != "" {
+				blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+			}
+			// Include tool_use blocks so Claude sees its own tool calls in history
+			for _, tc := range msg.ToolCalls {
+				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Args, tc.Name))
+			}
+			if len(blocks) > 0 {
+				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+			}
+		} else if msg.ToolResultID != "" {
+			// Tool result message - must use tool_result block referencing the tool call ID
+			messages = append(messages, anthropic.NewUserMessage(
+				anthropic.NewToolResultBlock(msg.ToolResultID, msg.Content, msg.IsError),
+			))
+		} else {
+			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
+		}
+	}
+	return messages
+}
+
+// systemBlocks renders the segmented system prompt as Anthropic system content
+// blocks, placing a single cache_control breakpoint at the stable/volatile
+// boundary the segments declare.
+//
+// Anthropic renders the prefix as tools → system → messages, and a breakpoint
+// caches everything AHEAD of it. One breakpoint at the end of the stable
+// system region therefore covers the tool definitions and the static system
+// text together, which is exactly the region the stability invariant is scoped
+// to — and it stays well inside the four-breakpoint-per-request limit.
+//
+// The breakpoint is deliberately NOT placed at the end of the system prompt.
+// joe appends query-derived skills last, so an end-of-system breakpoint would
+// write a fresh entry on every turn and read one on none, paying the write
+// premium for zero reads. That trap is the reason the seam carries segments at
+// all.
+//
+// At most two blocks are emitted and their concatenation is byte-identical to
+// SystemPrompt.String(), so segmenting changes what is cached and nothing about
+// what the model reads.
+func systemBlocks(sys llm.SystemPrompt) []anthropic.TextBlockParam {
+	text := sys.String()
+	if text == "" {
+		return nil
+	}
+
+	stable := sys.StablePrefix()
+	if stable == "" {
+		// Nothing cacheable leads the prompt: emit it whole, unmarked.
+		return []anthropic.TextBlockParam{{Text: text}}
+	}
+
+	head := anthropic.TextBlockParam{
+		Text:         stable,
+		CacheControl: anthropic.NewCacheControlEphemeralParam(),
+	}
+	if len(stable) == len(text) {
+		// Every segment is stable, so the boundary genuinely IS the end of
+		// the system prompt. That is the boundary the segments declared, not
+		// the end-of-prompt default this function exists to avoid.
+		return []anthropic.TextBlockParam{head}
+	}
+	// The remainder opens with the separator that joined the two regions, so
+	// head.Text + tail.Text == text exactly.
+	return []anthropic.TextBlockParam{head, {Text: text[len(stable):]}}
 }
 
 // convertToolDefinition converts our tool definition to Anthropic format
@@ -167,6 +224,13 @@ func (c *Client) convertResponse(response *anthropic.Message) *llm.ChatResponse 
 			InputTokens:  int(response.Usage.InputTokens),
 			OutputTokens: int(response.Usage.OutputTokens),
 			TotalTokens:  int(response.Usage.InputTokens + response.Usage.OutputTokens),
+			// The only observable of cache efficacy. Anthropic reports these
+			// separately from InputTokens, so they are not folded into
+			// TotalTokens — see llm.TokenUsage. A read of zero on a repeat
+			// turn means the cache did not engage, which a byte-equality
+			// argument alone cannot detect.
+			CacheReadTokens:  int(response.Usage.CacheReadInputTokens),
+			CacheWriteTokens: int(response.Usage.CacheCreationInputTokens),
 		},
 	}
 

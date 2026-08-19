@@ -38,7 +38,7 @@ func TestSessionTokenCeiling_TerminatesAtExpectedIteration(t *testing.T) {
 		stub,
 		executor,
 		registry,
-		"sys",
+		llm.StaticSystem("sys"),
 		agentloop.WithSessionLimits(tightLimits),
 		agentloop.WithAuditRepo(auditRepo),
 	)
@@ -120,7 +120,7 @@ func TestSessionTokenCeiling_HappyPathUnchanged(t *testing.T) {
 		stub,
 		executor,
 		registry,
-		"sys",
+		llm.StaticSystem("sys"),
 		// Generous ceiling: 100M, well above the single call's 1500 total.
 		agentloop.WithSessionLimits(tightSessionLimits{ceiling: 100_000_000}),
 		agentloop.WithAuditRepo(auditRepo),
@@ -165,7 +165,7 @@ func TestSessionTokenCeiling_DefaultProviderActive(t *testing.T) {
 	// No WithSessionLimits, no WithAuditRepo — the agent is wired
 	// exactly as a legacy caller would wire it. The hardcoded static
 	// provider must still be active.
-	agent := agentloop.NewAgent(stub, executor, registry, "sys")
+	agent := agentloop.NewAgent(stub, executor, registry, llm.StaticSystem("sys"))
 	agent.SetMaxIterations(50)
 
 	session := agentloop.NewSession(nil)

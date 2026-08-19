@@ -62,7 +62,7 @@ func TestMaxIterations_ForcedSynthesisSucceeds(t *testing.T) {
 		&synthesizingLLM{},
 		executor,
 		registry,
-		"sys",
+		llm.StaticSystem("sys"),
 		agentloop.WithAuditRepo(auditRepo),
 		agentloop.WithObserver(observer),
 	)
@@ -121,7 +121,7 @@ func TestMaxIterations_SynthesisFailureFallsThrough(t *testing.T) {
 		&fixedUsageLLM{inputPerCall: 10, outputPerCall: 5},
 		executor,
 		registry,
-		"sys",
+		llm.StaticSystem("sys"),
 		agentloop.WithAuditRepo(auditRepo),
 	)
 	agent.SetMaxIterations(3)

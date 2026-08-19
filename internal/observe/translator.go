@@ -34,7 +34,7 @@ func (t *LLMTranslator) Translate(ctx context.Context, question, sourceType stri
 	systemPrompt := prompts.TranslatorSystem(sourceType)
 
 	resp, err := t.llm.Chat(ctx, llm.ChatRequest{
-		SystemPrompt: systemPrompt,
+		System: llm.StaticSystem(systemPrompt),
 		Messages: []llm.Message{
 			{Role: "user", Content: question},
 		},

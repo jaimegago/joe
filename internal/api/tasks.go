@@ -399,31 +399,72 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		loopExec = captaingate.New(executor, h.server.services.SessionModel, h.server.services.Audit, captaingate.WithFloor(h.server.services.WriteFloor))
 	}
 
-	// Build graph context for system prompt
-	systemPrompt := prompts.TaskSystem
-	// D-0019: when the boot-resolved write floor is up, tell the model its
-	// posture (observation / safe mode) so it declines managed-system writes
-	// proactively with articulation, rather than only after the floor denies the
-	// tool call at execution. This changes neither the tool surface (no pruning)
-	// nor enforcement (the floor still denies every Mutate). Full mode injects
-	// nothing. Reads the same boot-sealed value the executor and floor wrapper use.
-	if posture := prompts.PostureSection(h.server.services.WriteFloor.Reason()); posture != "" {
-		systemPrompt += "\n\n" + posture
-	}
-	if zoneScope.scopeDesc != "" {
-		systemPrompt += "\n\n" + zoneScope.scopeDesc
-	}
+	// Build the system prompt as ordered segments, each marked stable or
+	// volatile. The rendered bytes are identical to the single string this
+	// used to concatenate — llm.SystemPrompt joins with the same "\n\n" and
+	// drops empty sections — so what the model reads is unchanged. What the
+	// segments add is a boundary an adapter can act on: the Anthropic adapter
+	// places its one cache_control breakpoint at the end of the leading stable
+	// run, and the other two ignore the marking.
+	//
+	// Section-by-section classification, and why each falls where it does.
+	// "Stable" is the ratified invariant's sense: a deterministic function of
+	// the tool set and the binary, identical across independent constructions
+	// AND across process restarts. That across-restarts clause is what puts
+	// posture on the volatile side despite it being constant within a process.
+	systemPrompt := llm.StaticSystem(prompts.TaskSystem)
+
+	// STABLE ends here. Everything appended below is volatile.
+
+	// VOLATILE — posture. D-0019: when the boot-resolved write floor is up,
+	// tell the model its posture (observation / safe mode) so it declines
+	// managed-system writes proactively with articulation, rather than only
+	// after the floor denies the tool call at execution. This changes neither
+	// the tool surface (no pruning) nor enforcement (the floor still denies
+	// every Mutate). Full mode injects nothing. Reads the same boot-sealed
+	// value the executor and floor wrapper use.
+	//
+	// Classified volatile rather than stable, and the call is close enough to
+	// be worth writing down. safety.WriteFloor is boot-resolved and
+	// runtime-immutable — no setter lowering a resolved floor exists anywhere
+	// in the binary — so PostureSection's output cannot change within a
+	// process, and per-process stability alone would admit it. It is volatile
+	// because the ratified invariant reaches ACROSS RESTARTS, and the floor
+	// resolves from a panic-state file and the JOE_MODE env var, either of
+	// which can differ at the next boot. The cost of the conservative call is
+	// small: full mode injects nothing at all, so in the ordinary posture this
+	// segment is absent and the boundary sits in the same place either way.
+	systemPrompt = systemPrompt.Append(
+		prompts.PostureSection(h.server.services.WriteFloor.Reason()), false)
+
+	// VOLATILE — zone scope. Derived from the request's allowed_zones config
+	// and from live RBAC state (zone list, zone assignments), so it varies per
+	// caller, per request, and with the RBAC repository. Varying per caller
+	// does not forbid caching — it scopes any cache entry to that caller,
+	// since a byte-exact prefix match cannot be satisfied by a principal whose
+	// scope text differs — but it must sit on the volatile side for the
+	// tools-plus-static-system guarantee to mean anything.
+	systemPrompt = systemPrompt.Append(zoneScope.scopeDesc, false)
+
+	// VOLATILE — graph summary. Interpolates live node and edge counts, so it
+	// changes whenever the graph does. This is the badly placed section the
+	// design named: it sat ahead of nothing that needed it, and every change
+	// to a node count invalidated the whole prefix behind it.
 	if h.server.accessor.GraphAvailable() {
 		if summary, err := h.server.accessor.GraphSummary(ctx, rbac.PrincipalFromContext(ctx)); err == nil {
-			systemPrompt += fmt.Sprintf(
-				"\n\nCurrent infrastructure context:\nInfrastructure graph: %d nodes, %d edges. Node types: %v",
+			systemPrompt = systemPrompt.Append(fmt.Sprintf(
+				"Current infrastructure context:\nInfrastructure graph: %d nodes, %d edges. Node types: %v",
 				summary.NodeCount, summary.EdgeCount, summary.NodesByType,
-			)
+			), false)
 		}
 	}
-	if section := renderSkillsForQuery(h.server.services.Skills.Snapshot(), req.Message); section != "" {
-		systemPrompt += "\n\n" + section
-	}
+
+	// VOLATILE — query-derived skills. Selected from the user's message, so it
+	// differs on essentially every turn. Its placement at the tail is correct
+	// and unchanged; it is precisely why the breakpoint must not go at the end
+	// of the system prompt.
+	systemPrompt = systemPrompt.Append(
+		renderSkillsForQuery(h.server.services.Skills.Snapshot(), req.Message), false)
 
 	// Stream G phase G3a → G4: the production task loop reads its
 	// session token ceiling through the storage-backed provider
@@ -511,7 +552,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	if h.server.services.ContextBudgetProvider != nil {
 		fraction = h.server.services.ContextBudgetProvider.BudgetFraction()
 	}
-	overhead := agentloop.EstimateOverheadTokens(systemPrompt, registry.ToDefinitions())
+	overhead := agentloop.EstimateOverheadTokens(systemPrompt.String(), registry.ToDefinitions())
 	budget := agentloop.ComputeInputTokenBudget(caps.ContextWindowTokens, caps.MaxOutputTokens, overhead, fraction)
 	if budget < 1 {
 		budget = 1

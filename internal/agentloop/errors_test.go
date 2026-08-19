@@ -20,7 +20,7 @@ import (
 func TestErrMaxIterations_IsCheckable(t *testing.T) {
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, observability.EnsureMetrics(nil))
-	agent := agentloop.NewAgent(&alwaysToolCallLLM{}, executor, registry, "sys")
+	agent := agentloop.NewAgent(&alwaysToolCallLLM{}, executor, registry, llm.StaticSystem("sys"))
 	agent.SetMaxIterations(2)
 
 	session := agentloop.NewSession(nil)

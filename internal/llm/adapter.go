@@ -1,6 +1,9 @@
 package llm
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // LLMAdapter is the interface for AI providers (Claude, OpenAI, Ollama, etc.)
 // Joe is AI-agnostic - different providers implement this interface
@@ -11,10 +14,94 @@ type LLMAdapter interface {
 
 // ChatRequest represents a request to the LLM
 type ChatRequest struct {
-	SystemPrompt string
-	Messages     []Message
-	Tools        []ToolDefinition
-	MaxTokens    int
+	System    SystemPrompt
+	Messages  []Message
+	Tools     []ToolDefinition
+	MaxTokens int
+}
+
+// SystemSegment is one ordered region of the system prompt, carrying whether
+// its bytes are stable.
+//
+// The seam carries structure, not mechanism. An adapter handed a single
+// opaque system string cannot know which region is stable — only the
+// assembler that concatenated it knows that — and the one boundary an adapter
+// could find unaided, the end of the system prompt, is the wrong one: joe
+// appends query-derived skills last, so a breakpoint there would write a fresh
+// cache entry every turn and never read one, paying the write premium for zero
+// reads. Each adapter decides what to do with the marking; adapters with no
+// caching contract ignore it.
+type SystemSegment struct {
+	// Text is the segment's content, carrying no separator of its own.
+	Text string
+	// Stable is true when the segment's bytes are a deterministic function of
+	// the tool set and the binary — identical across independent
+	// constructions within one process AND across process restarts. Anything
+	// varying per request, per caller, per query, or with live system state is
+	// volatile, and so is anything that can differ across a restart.
+	Stable bool
+}
+
+// SystemPrompt is the ordered segment list an assembler hands to an adapter.
+type SystemPrompt []SystemSegment
+
+// systemSegmentSeparator joins adjacent segments. It reproduces exactly the
+// "\n\n" the task handler used when it concatenated these sections into a
+// single string, so segmenting the prompt changes no bytes reaching a provider.
+const systemSegmentSeparator = "\n\n"
+
+// StaticSystem returns a one-segment stable system prompt. It is the
+// constructor for the ordinary case — a system prompt that is a single
+// package-level constant, and therefore stable by construction. Empty text
+// yields a nil SystemPrompt.
+func StaticSystem(text string) SystemPrompt {
+	if text == "" {
+		return nil
+	}
+	return SystemPrompt{{Text: text, Stable: true}}
+}
+
+// Append adds a segment, dropping empty ones so the rendered string never
+// carries a separator around absent content.
+func (p SystemPrompt) Append(text string, stable bool) SystemPrompt {
+	if text == "" {
+		return p
+	}
+	return append(p, SystemSegment{Text: text, Stable: stable})
+}
+
+// String renders the whole system prompt as a provider sees it.
+func (p SystemPrompt) String() string {
+	return joinSegments(p)
+}
+
+// StablePrefix returns the rendered leading run of stable segments — the
+// region a prefix cache can key on.
+//
+// It is the LEADING run rather than every stable segment, because provider
+// caching is a byte-exact PREFIX match: a stable segment sitting behind a
+// volatile one is part of no stable prefix, however stable its own bytes are.
+// Returns "" when the first segment is volatile.
+func (p SystemPrompt) StablePrefix() string {
+	n := 0
+	for _, seg := range p {
+		if !seg.Stable {
+			break
+		}
+		n++
+	}
+	return joinSegments(p[:n])
+}
+
+func joinSegments(segs []SystemSegment) string {
+	var b strings.Builder
+	for i, seg := range segs {
+		if i > 0 {
+			b.WriteString(systemSegmentSeparator)
+		}
+		b.WriteString(seg.Text)
+	}
+	return b.String()
 }
 
 // ChatResponse represents a response from the LLM
@@ -67,6 +154,21 @@ type TokenUsage struct {
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int
+	// CacheReadTokens is the number of input tokens served from a provider
+	// prompt cache, and CacheWriteTokens the number written into one. They are
+	// the ONLY observable of cache efficacy — a prefix below the model's
+	// minimum cacheable length caches nothing, silently and without an error,
+	// so byte-stability on its own does not show the mechanism working.
+	//
+	// An adapter with no caching contract leaves both zero, which is an honest
+	// report of "this provider cached nothing", not a missing measurement.
+	//
+	// Neither is added into TotalTokens. Anthropic reports cached input
+	// separately from InputTokens and prices it differently (a write premium,
+	// a read discount), so folding them in would silently change what every
+	// existing cost and budget consumer means by a total.
+	CacheReadTokens  int
+	CacheWriteTokens int
 }
 
 // CostNanoUnitsPerUnit is the integer scale used to store LLM call cost in

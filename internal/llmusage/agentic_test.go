@@ -40,7 +40,7 @@ func TestAgenticLoop_RecordsOnePerChatCall(t *testing.T) {
 	// after the first iteration.
 	registry := tools.NewRegistry()
 	executor := tools.NewExecutor(registry, nil)
-	agent := agentloop.NewAgent(rec, executor, registry, "system")
+	agent := agentloop.NewAgent(rec, executor, registry, llm.StaticSystem("system"))
 
 	// Same context shape the /tasks handler installs: principal +
 	// prepared session id + freshly-minted task id.

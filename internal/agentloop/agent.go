@@ -98,7 +98,7 @@ type Agent struct {
 	llm            llm.LLMAdapter
 	executor       BatchExecutor
 	registry       *tools.Registry
-	systemPrompt   string
+	systemPrompt   llm.SystemPrompt
 	maxIterations  int
 	adapterFactory AdapterFactory // optional, for hot-swap
 	currentModel   string         // display name of active model
@@ -130,7 +130,7 @@ type Agent struct {
 }
 
 // NewAgent creates a new agent. Options are applied after defaults.
-func NewAgent(llmAdapter llm.LLMAdapter, executor BatchExecutor, registry *tools.Registry, systemPrompt string, opts ...AgentOption) *Agent {
+func NewAgent(llmAdapter llm.LLMAdapter, executor BatchExecutor, registry *tools.Registry, systemPrompt llm.SystemPrompt, opts ...AgentOption) *Agent {
 	a := &Agent{
 		llm:           llmAdapter,
 		executor:      executor,
@@ -218,10 +218,10 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 
 		// Build request with current conversation history
 		req := llm.ChatRequest{
-			SystemPrompt: a.systemPrompt,
-			Messages:     session.Messages,
-			Tools:        toolDefs,
-			MaxTokens:    a.maxOutputTokens,
+			System:    a.systemPrompt,
+			Messages:  session.Messages,
+			Tools:     toolDefs,
+			MaxTokens: a.maxOutputTokens,
 		}
 
 		// Capture tool names for observer
@@ -452,10 +452,10 @@ func (a *Agent) probeUnfulfilledToolIntent(ctx context.Context, session *Session
 
 	a.mu.RLock()
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
-		SystemPrompt: a.systemPrompt,
-		Messages:     messages,
-		Tools:        a.registry.ToDefinitions(),
-		MaxTokens:    a.maxOutputTokens,
+		System:    a.systemPrompt,
+		Messages:  messages,
+		Tools:     a.registry.ToDefinitions(),
+		MaxTokens: a.maxOutputTokens,
 	})
 	a.mu.RUnlock()
 	if err != nil {
@@ -508,8 +508,8 @@ func (a *Agent) synthesizeFinalAnswer(ctx context.Context, session *Session) (st
 	})
 
 	req := llm.ChatRequest{
-		SystemPrompt: a.systemPrompt,
-		Messages:     messages,
+		System:   a.systemPrompt,
+		Messages: messages,
 		// No Tools: the synthesis turn must answer from evidence in hand.
 		MaxTokens: a.maxOutputTokens,
 	}
