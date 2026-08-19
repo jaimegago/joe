@@ -11,6 +11,36 @@ describe('writeFailureMessage', () => {
     );
   });
 
+  it('maps scope_denial to a session-scope message distinct from zone_denial', () => {
+    const msg = writeFailureMessage('scope_denial');
+    expect(msg).toBe(
+      'That target is outside the scope this session was given — a limit of this session, not a missing permission. Ask your administrator to widen its scope.'
+    );
+    // scope_denial is the session's configured scope, zone_denial is a missing
+    // RBAC grant. Two different remedies, so two different sentences.
+    expect(msg).not.toBe(writeFailureMessage('zone_denial'));
+  });
+
+  // A code the backend can emit but this dispatch does not map renders NOTHING
+  // and, because the backend summary is first-non-empty across the turn, takes
+  // the slot from a mapped code later in the same turn. scope_denial can fire on
+  // a refused READ — typically the earliest thing a turn does — where every code
+  // above it in the switch fires only on a write, so an unmapped branch here
+  // silently removed the observation-mode notice from a read-only session's
+  // turn. Pin every code the backend can send.
+  it('maps every tool-failure code the backend can send', () => {
+    for (const code of [
+      'zone_denial',
+      'scope_denial',
+      'incident_mode',
+      'safe_mode',
+      'observation',
+      'internal_error',
+    ]) {
+      expect(writeFailureMessage(code), `no message for ${code}`).toBeDefined();
+    }
+  });
+
   it('maps incident_mode to the writes-blocked message', () => {
     expect(writeFailureMessage('incident_mode')).toBe(
       'System is in incident mode. Writes are temporarily blocked.'

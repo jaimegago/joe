@@ -160,10 +160,12 @@ type taskToolResult struct {
 	Name   string `json:"name"`
 	Result any    `json:"result"`
 	Error  string `json:"error,omitempty"`
-	// ErrorCode is the stable write-failure classification for a denied tool
-	// call (Item 8): "zone_denial" (RBAC) or "incident_mode" (captain gate).
-	// Empty for a success or an unclassified failure. Lets the UI render a
-	// specific message instead of the raw error string.
+	// ErrorCode is the stable classification for a refused tool call (Item 8):
+	// one of the codes classifyWriteFailure returns, enumerated in the constant
+	// block in constants.go rather than here so the list has one home. Empty
+	// for a success or an unclassified failure. Lets the UI render a specific
+	// message instead of the raw error string, and lets a harness read the
+	// refusal as a typed fact rather than parsing prose.
 	ErrorCode  string `json:"error_code,omitempty"`
 	DurationMs int    `json:"duration_ms"`
 }
@@ -486,9 +488,10 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		// the loop builds, so the agentic path never relies on a provider's
 		// implicit default (Claude defaulted to 4096; Gemini set none).
 		agentloop.WithMaxOutputTokens(caps.MaxOutputTokens),
-		// Item 8: classify a denied tool call into a stable write-failure code
-		// (incident_mode / zone_denial) so the chat UI can show a specific
-		// message instead of the raw error string.
+		// Item 8: classify a refused tool call into one of the stable codes in
+		// constants.go, so the chat UI can show a specific message instead of
+		// the raw error string and a harness can read the refusal as a typed
+		// fact.
 		agentloop.WithToolErrorClassifier(classifyWriteFailure),
 	)
 	agent.SetMaxIterations(maxIterations)
