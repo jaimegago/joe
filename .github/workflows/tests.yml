@@ -4,16 +4,6 @@ name: Tests
 # broken — and its `Test Summary` job is the check the `main` ruleset requires.
 # Releasability is a heavier question and lives in post-merge.yml.
 #
-# Every Go job caches the module cache AND the build cache, keyed by job id.
-# Caching modules alone left each run compiling everything: Unit Tests measured
-# 219s against packages that sum to ~60s locally, while Lint — which already had
-# the build cache through setup-go's `cache: true` — ran in 87s. The key is
-# per-job because the jobs compile different trees (internal/... for unit, the
-# tagged test/integration tree for integration, the vet closure for lint), so a
-# shared key would have them overwrite each other's cache and restore the wrong
-# one. One mechanism, explicit, rather than setup-go's implicit cache in some
-# jobs and a hand-rolled actions/cache in others.
-#
 # Path filtering applies to pull requests only. Every other trigger runs the
 # full unfiltered matrix, because filtering buys merge latency and nothing
 # else, and only a pull request is waiting on it. The nightly schedule is the
@@ -136,15 +126,12 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Cache Go modules and build
+      - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ github.job }}-
             ${{ runner.os }}-go-
 
       # Coverage generation re-ran the whole suite a second time for an upload
@@ -166,15 +153,12 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Cache Go modules and build
+      - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ github.job }}-
             ${{ runner.os }}-go-
 
       - name: Run integration tests
@@ -206,15 +190,12 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Cache Go modules and build
+      - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ github.job }}-
             ${{ runner.os }}-go-
 
       # `make build` now embeds the real UI via the build-ui prerequisite, so
@@ -247,36 +228,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # This job used to declare `cache: true` on setup-go, with a comment
-      # ruling out a second actions/cache step on the ground that setup-go
-      # already covered strictly more — GOCACHE as well as GOMODCACHE. That was
-      # correct about coverage and is reversed here on a different ground, so
-      # the reversal is stated rather than left to be inferred from the diff.
+      # setup-go v5 caches the module cache and the build cache by default and
+      # was already covering this job before it said so; run 31430252511's Lint
+      # job reports `Cache restored successfully`. Declared explicitly here
+      # because caching is production infrastructure and should not be an
+      # inherited default nobody can see. A second actions/cache step is
+      # deliberately not added: it would shadow a cache that already covers
+      # strictly more, GOCACHE as well as GOMODCACHE.
       #
-      # setup-go v5's cache key carries platform, arch, Go version and the
-      # go.sum hash, and NO job component. Every Go job in this workflow
-      # therefore competes for one key: the first to finish uploads, the rest
-      # skip as already-existing, and later runs restore whichever job won that
-      # race. The jobs compile different trees, so the winner's build cache is
-      # the wrong one for everybody else.
+      # THIS WAS REVERSED ON 2026-08-18 AND REVERTED ON 2026-08-19. Do not try
+      # it again without new evidence. The reversal replaced setup-go's cache
+      # with a per-job actions/cache covering both paths, on the theory that
+      # setup-go's key has no job component and the jobs therefore evict each
+      # other. The key observation is true; the change was still wrong:
       #
-      # The step below keys on github.job and so gives each job its own. It
-      # covers both paths, so nothing is lost against what setup-go provided.
+      #   - It delivered nothing. Unit Tests ran 219s before, 217s and 234s
+      #     after. The premise that the gate was compile-bound came from
+      #     comparing a warm local Apple Silicon run (~60s of test time) against
+      #     a 2-core ubuntu runner, which is not a comparison.
+      #   - It doubled the cache footprint. setup-go's `cache` input defaults to
+      #     true, so removing the explicit line changed nothing and both
+      #     mechanisms ran: ~880MB of setup-go caches alongside 932MB
+      #     (unit-tests), 955MB (lint) and 1591MB (goreleaser-build) of per-job
+      #     ones, against a 10GB repository limit.
+      #   - Eviction followed. The 2026-08-19 nightly logged `Cache not found
+      #     for input keys: Linux-go-unit-tests-...` — the per-job cache had
+      #     already been evicted.
+      #
+      # Unit Tests is execution-bound, not compile-bound. The lever is test
+      # parallelism; see docs/backlog/gate-unit-test-parallelism.md.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Cache Go modules and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ github.job }}-
-            ${{ runner.os }}-go-
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -369,17 +355,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Cache Go modules and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ github.job }}-
-            ${{ runner.os }}-go-
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Set up Node
         uses: actions/setup-node@v4
