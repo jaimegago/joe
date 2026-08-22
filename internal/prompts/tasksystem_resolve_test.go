@@ -69,3 +69,22 @@ func TestTaskSystem_ResolveRuleDoesNotConflateWithPosture(t *testing.T) {
 		}
 	}
 }
+
+// TestTaskSystem_OneReachableComponentIsNeverAQuestion pins the negative half
+// of the invariant joe-pm ratified on 2026-08-22
+// (threads/joe-unresolved-phrase-fallback.md). On 2026-08-21, with the prose
+// above already in place, gemini-2.5-flash resolved "notification-service" to
+// zero candidates and asked the operator which cluster and namespace to look
+// in — with one cluster registered. "Keep investigating" was read as
+// compatible with asking. The rule now says what it forbids.
+func TestTaskSystem_OneReachableComponentIsNeverAQuestion(t *testing.T) {
+	for _, required := range []string{
+		"never a reason to stop while at least one component is reachable",
+		"If exactly one component is reachable, investigate inside it",
+		"never ask the operator which cluster or namespace to use when there is only one",
+	} {
+		if !strings.Contains(TaskSystem, required) {
+			t.Errorf("TaskSystem must carry the one-component rule (missing %q)", required)
+		}
+	}
+}

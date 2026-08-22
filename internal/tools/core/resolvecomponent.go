@@ -6,12 +6,16 @@ import (
 
 	"github.com/jaimegago/joe/internal/componentresolve"
 	"github.com/jaimegago/joe/internal/llm"
+	"github.com/jaimegago/joe/internal/store"
 )
 
 // ResolveComponentClient defines the subset of the in-process core client
-// needed for ResolveComponentTool.
+// needed for ResolveComponentTool. ListComponents is here for the empty case:
+// when nothing matched, the tool answers with what IS reachable instead of
+// leaving the model to decide whether to go and look.
 type ResolveComponentClient interface {
 	ResolveComponents(ctx context.Context, phrase, componentType string) (*componentresolve.Resolution, error)
+	ListComponents(ctx context.Context) ([]*store.Component, error)
 }
 
 // noCandidatesReason is the single reason string an empty result carries. It is
@@ -28,6 +32,39 @@ type ResolveComponentClient interface {
 // The cost is accepted knowingly — a missing grant presents to the caller as a
 // component that does not exist — which is why the audit half is not optional.
 const noCandidatesReason = "no component in the registry matched this phrase, or none that matched is visible to you"
+
+// The empty case carries the fallback WITH it rather than describing it.
+//
+// Before this, an empty result told the model to "try list_components" and
+// the task prompt said an empty result "is not a wall". Both were prose, and
+// on 2026-08-21 (joe-pm threads/da1-real-app.md, runs 20260821-210907-b6e2a2
+// and 20260821-211242-2641c1) gemini-2.5-flash read candidate_count: 0 as
+// "notification-service does not exist", stopped, and asked the operator which
+// cluster to look in — with exactly one cluster registered. The invariant
+// joe-pm ratified on 2026-08-22 (threads/joe-unresolved-phrase-fallback.md):
+//
+//	An unresolved phrase is never a terminal condition while at least one
+//	component is reachable. Asking the operator for a cluster or namespace is
+//	permitted only when more than one component is reachable and the phrase
+//	does not disambiguate — never when there is exactly one.
+//
+// So the empty answer now includes the reachable components themselves and a
+// directive keyed on how many there are. The model no longer has to choose to
+// take a second hop to learn that the only place to look is oasis-lab; the
+// hop is taken for it. This discloses nothing new: the list is the same
+// ungoverned registry read list_components already returns whole (see
+// inProcessCoreClient.ResolveComponents), and the reason string above is
+// unchanged, so not-found and not-permitted remain indistinguishable.
+//
+// maxReachableComponents bounds the list so the empty answer cannot grow
+// with the registry; reachable_truncated says when it was cut.
+const maxReachableComponents = 25
+
+const (
+	fallbackNoneReachable = "No component is reachable at all, so there is nowhere to look for what the phrase names. Say so plainly."
+	fallbackOneReachable  = "Exactly one component is reachable. Whatever the phrase names is not a registered component, so it lives INSIDE that one component — a workload, namespace, repository path or similar. Continue the investigation there with the tools you have (list resources, read logs and events) using its component_id. Do NOT ask the operator which cluster, namespace or component to look in: there is only one, and asking is not an answer."
+	fallbackManyReachable = "More than one component is reachable. Whatever the phrase names is not a registered component, so it lives inside one of them. Read the task for an environment, region, type or other qualifier and pick the component it points at; if several still fit, investigate them in turn. Ask the operator which to use only if the task genuinely does not disambiguate and investigating each is not practical."
+)
 
 // ResolveComponentTool resolves a task phrase to the components it might name.
 //
@@ -78,7 +115,10 @@ func (t *ResolveComponentTool) Description() string {
 		"`bindings_truncated` means you may see more relations for that candidate than were returned; `candidates_truncated` means more components you may see matched than were returned; `matches_truncated` means more components matched the phrase than were examined. " +
 		"`max_candidates`, `max_bindings_per_candidate` and `max_total_bindings` are the bounds actually in force, so narrow the phrase rather than re-asking when a truncation flag is set. " +
 		"AN EMPTY RESULT IS AN ANSWER, NOT AN ERROR, and it does not tell you whether nothing matched or nothing matched that you may see — so do not report the phrase as naming something that does not exist. " +
-		"On an empty result, fall back: try list_components, try a different phrase from the task, or carry on with the tools you can reach and say what you could not resolve."
+		"An empty result carries `reachable_components`: the components you can see, and a `next` directive keyed on how many there are. " +
+		"An unresolved phrase is never a reason to stop while at least one component is reachable — the phrase names something INSIDE a component (a workload, a namespace, a path), so continue the investigation inside the reachable components using their component_id. " +
+		"If exactly one component is reachable, investigate inside it and never ask the operator which cluster or namespace to use. " +
+		"Ask the operator only when more than one component is reachable and the task does not say which."
 }
 
 func (t *ResolveComponentTool) Parameters() llm.ParameterSchema {
@@ -150,8 +190,48 @@ func (t *ResolveComponentTool) Execute(ctx context.Context, args map[string]any)
 	}
 	if len(candidates) == 0 {
 		out["reason"] = noCandidatesReason
+		if err := t.attachReachable(ctx, out); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
+}
+
+// attachReachable adds the reachable-component fallback to an empty answer.
+// A failure to list is an error in the same sense a failure to resolve is: the
+// caller asked a well-formed question and the registry could not be read.
+func (t *ResolveComponentTool) attachReachable(ctx context.Context, out map[string]any) error {
+	components, err := t.client.ListComponents(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve component fallback: list components failed: %w", err)
+	}
+
+	truncated := false
+	if len(components) > maxReachableComponents {
+		components = components[:maxReachableComponents]
+		truncated = true
+	}
+	reachable := make([]map[string]any, 0, len(components))
+	for _, c := range components {
+		reachable = append(reachable, map[string]any{
+			"component_id": c.ID,
+			"name":         c.Name,
+			"type":         c.Type,
+		})
+	}
+
+	out["reachable_components"] = reachable
+	out["reachable_component_count"] = len(reachable)
+	out["reachable_truncated"] = truncated
+	switch {
+	case len(reachable) == 0:
+		out["next"] = fallbackNoneReachable
+	case len(reachable) == 1 && !truncated:
+		out["next"] = fallbackOneReachable
+	default:
+		out["next"] = fallbackManyReachable
+	}
+	return nil
 }
 
 // bindingViews flattens one candidate's graph evidence into the tool's wire

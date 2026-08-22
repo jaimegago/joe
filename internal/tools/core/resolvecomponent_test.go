@@ -8,6 +8,7 @@ import (
 
 	"github.com/jaimegago/joe/internal/componentresolve"
 	"github.com/jaimegago/joe/internal/graph"
+	"github.com/jaimegago/joe/internal/store"
 	"github.com/jaimegago/joe/internal/tools/core"
 )
 
@@ -16,6 +17,18 @@ type fakeResolveComponentClient struct {
 	gotType   string
 	result    *componentresolve.Resolution
 	err       error
+
+	reachable []*store.Component
+	listErr   error
+	listCalls int
+}
+
+func (f *fakeResolveComponentClient) ListComponents(_ context.Context) ([]*store.Component, error) {
+	f.listCalls++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.reachable, nil
 }
 
 func (f *fakeResolveComponentClient) ResolveComponents(_ context.Context, phrase, componentType string) (*componentresolve.Resolution, error) {
@@ -54,7 +67,12 @@ func TestResolveComponentTool_DescriptionCarriesTheContract(t *testing.T) {
 		"SEVERAL CANDIDATES IS NORMAL",
 		"AN EMPTY RESULT IS AN ANSWER, NOT AN ERROR",
 		"do not report the phrase as naming something that does not exist",
-		"fall back",
+		// The fallback is carried in the answer (`reachable_components`,
+		// `next`) rather than described as "try list_components": the
+		// 2026-08-21 DA-1 runs showed the described form being skipped.
+		"reachable_components",
+		"never a reason to stop while at least one component is reachable",
+		"If exactly one component is reachable, investigate inside it and never ask the operator",
 		"bindings",
 		"match_kind",
 		"bindings_truncated",
@@ -253,4 +271,141 @@ func TestResolveComponentTool_ClientErrorPropagates(t *testing.T) {
 	if !strings.Contains(err.Error(), "graph store not available") {
 		t.Errorf("error %v must carry the underlying cause", err)
 	}
+}
+
+// The empty case is where the invariant joe-pm ratified on 2026-08-22 lives
+// (threads/joe-unresolved-phrase-fallback.md): an unresolved phrase is never a
+// terminal condition while at least one component is reachable, and the model
+// must never be told — or left free — to ask the operator which cluster when
+// there is exactly one. Prose said as much before and gemini-2.5-flash stopped
+// anyway, so the fallback is now IN the answer: the reachable components and a
+// directive keyed on their count.
+
+func TestResolveComponentTool_EmptyWithOneReachable_DirectsInsideIt(t *testing.T) {
+	c := &fakeResolveComponentClient{
+		result:    &componentresolve.Resolution{},
+		reachable: []*store.Component{{ID: "comp-1", Name: "oasis-lab", Type: "kubernetes"}},
+	}
+	tool := core.NewResolveComponentTool(c)
+
+	res, err := tool.Execute(context.Background(), map[string]any{"phrase": "notification-service", "type": "service"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := res.(map[string]any)
+
+	if c.listCalls != 1 {
+		t.Fatalf("an empty answer must take the list hop itself, listCalls = %d", c.listCalls)
+	}
+	if out["reachable_component_count"] != 1 {
+		t.Errorf("reachable_component_count = %v, want 1", out["reachable_component_count"])
+	}
+	reachable := out["reachable_components"].([]map[string]any)
+	if len(reachable) != 1 || reachable[0]["component_id"] != "comp-1" || reachable[0]["name"] != "oasis-lab" {
+		t.Errorf("reachable_components = %v, want the one registered cluster with its component_id", reachable)
+	}
+	if out["reachable_truncated"] != false {
+		t.Errorf("reachable_truncated = %v, want false", out["reachable_truncated"])
+	}
+
+	next, _ := out["next"].(string)
+	for _, required := range []string{"Exactly one component is reachable", "INSIDE", "component_id"} {
+		if !strings.Contains(next, required) {
+			t.Errorf("next %q must direct the investigation inside the one component (missing %q)", next, required)
+		}
+	}
+	// The negative half of the invariant, stated as a prohibition rather than
+	// left to inference: with one component there is nothing to ask about.
+	if !strings.Contains(next, "Do NOT ask the operator which cluster") {
+		t.Errorf("next %q must forbid asking the operator when exactly one component is reachable", next)
+	}
+	// The reason string is untouched: the fallback discloses the registry
+	// (which list_components already does) and nothing about permission.
+	if out["reason"] != "no component in the registry matched this phrase, or none that matched is visible to you" {
+		t.Errorf("reason changed: %v", out["reason"])
+	}
+}
+
+func TestResolveComponentTool_EmptyWithManyReachable_AsksOnlyIfUndisambiguated(t *testing.T) {
+	c := &fakeResolveComponentClient{
+		result: &componentresolve.Resolution{},
+		reachable: []*store.Component{
+			{ID: "comp-1", Name: "prod", Type: "kubernetes"},
+			{ID: "comp-2", Name: "staging", Type: "kubernetes"},
+		},
+	}
+	out := mustExecute(t, core.NewResolveComponentTool(c), "checkout app")
+
+	if out["reachable_component_count"] != 2 {
+		t.Errorf("reachable_component_count = %v, want 2", out["reachable_component_count"])
+	}
+	next, _ := out["next"].(string)
+	if !strings.Contains(next, "More than one component is reachable") {
+		t.Errorf("next %q must say several components are reachable", next)
+	}
+	if !strings.Contains(next, "Ask the operator which to use only if") {
+		t.Errorf("next %q must make asking conditional on the task not disambiguating", next)
+	}
+}
+
+func TestResolveComponentTool_EmptyWithNoneReachable_SaysSo(t *testing.T) {
+	c := &fakeResolveComponentClient{result: &componentresolve.Resolution{}}
+	out := mustExecute(t, core.NewResolveComponentTool(c), "anything")
+
+	if out["reachable_component_count"] != 0 {
+		t.Errorf("reachable_component_count = %v, want 0", out["reachable_component_count"])
+	}
+	if len(out["reachable_components"].([]map[string]any)) != 0 {
+		t.Error("reachable_components must be an empty list, not absent")
+	}
+	if next, _ := out["next"].(string); !strings.Contains(next, "No component is reachable") {
+		t.Errorf("next %q must say nothing is reachable", next)
+	}
+}
+
+func TestResolveComponentTool_EmptyReachableListIsBounded(t *testing.T) {
+	many := make([]*store.Component, 0, 40)
+	for i := 0; i < 40; i++ {
+		many = append(many, &store.Component{ID: "c", Name: "n", Type: "kubernetes"})
+	}
+	c := &fakeResolveComponentClient{result: &componentresolve.Resolution{}, reachable: many}
+	out := mustExecute(t, core.NewResolveComponentTool(c), "anything")
+
+	if n := len(out["reachable_components"].([]map[string]any)); n != 25 {
+		t.Errorf("reachable_components has %d entries, want the 25 bound", n)
+	}
+	if out["reachable_truncated"] != true {
+		t.Error("a cut list must say reachable_truncated: true")
+	}
+}
+
+func TestResolveComponentTool_NonEmptyDoesNotList(t *testing.T) {
+	c := &fakeResolveComponentClient{
+		result: &componentresolve.Resolution{Candidates: []componentresolve.Candidate{{ComponentID: "comp-1", Name: "api", Type: "kubernetes"}}},
+	}
+	out := mustExecute(t, core.NewResolveComponentTool(c), "api")
+
+	if c.listCalls != 0 {
+		t.Errorf("a non-empty answer must not take the list hop, listCalls = %d", c.listCalls)
+	}
+	if _, present := out["reachable_components"]; present {
+		t.Error("reachable_components belongs to the empty case only")
+	}
+}
+
+func TestResolveComponentTool_EmptyListErrorPropagates(t *testing.T) {
+	c := &fakeResolveComponentClient{result: &componentresolve.Resolution{}, listErr: errors.New("registry down")}
+	_, err := core.NewResolveComponentTool(c).Execute(context.Background(), map[string]any{"phrase": "x"})
+	if err == nil || !strings.Contains(err.Error(), "registry down") {
+		t.Fatalf("a failed fallback list must surface as an error, got: %v", err)
+	}
+}
+
+func mustExecute(t *testing.T, tool *core.ResolveComponentTool, phrase string) map[string]any {
+	t.Helper()
+	res, err := tool.Execute(context.Background(), map[string]any{"phrase": phrase})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return res.(map[string]any)
 }

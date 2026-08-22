@@ -14,6 +14,52 @@ unit of work that produced it.
 
 ---
 
+## D-0156 — An unresolved phrase is never terminal while a component is reachable: `resolve_component`'s empty answer carries the reachable components and a count-keyed directive, and the task prompt forbids asking which cluster when there is one
+
+- Date: 2026-08-22
+- Status: accepted (implemented)
+- Session: joe-unresolved-phrase-fallback
+- Decision: four parts.
+  a. **THE INVARIANT.** An unresolved phrase is never a terminal condition
+     while at least one component is reachable. When resolution yields nothing
+     the agent falls back to the components it can see and searches for the
+     phrase inside them. Asking the operator for a cluster or namespace is
+     permitted only when more than one component is reachable and the phrase
+     does not disambiguate — never when there is exactly one. Ratified in the
+     joe-pm ledger (`threads/joe-unresolved-phrase-fallback.md`, from
+     `queue/joe-stops-at-unresolved-component.md`).
+  b. **THE EMPTY ANSWER CARRIES THE FALLBACK INSTEAD OF DESCRIBING IT.** On
+     zero candidates `resolve_component` now lists the reachable components
+     itself (`reachable_components`, `reachable_component_count`,
+     `reachable_truncated`, bounded at 25) and adds a `next` directive keyed on
+     the count: none → say so; one → investigate inside it and do NOT ask the
+     operator which cluster; several → disambiguate from the task, ask only if
+     it genuinely cannot. D-0155(c)'s single reason string is unchanged, so
+     not-found and not-permitted remain indistinguishable; the list is the
+     same ungoverned registry read `list_components` already returns whole, so
+     the tool discloses nothing it did not before. The non-empty path does not
+     list.
+  c. **THE TASK PROMPT STATES THE PROHIBITION.** The resolve-first section
+     gains the negative clause: with exactly one reachable component, never ask
+     the operator which cluster or namespace. It is pinned by
+     `TestTaskSystem_OneReachableComponentIsNeverAQuestion` and stays clear of
+     the D-0101 forbidden shapes.
+  d. **REGISTERING WORKLOADS AS COMPONENTS IS RULED OUT** as the fix. It would
+     make the invariant hold only for names the registry already knows — the
+     names a diagnostic question is least likely to use — and leave the
+     behaviour wrong for the next unregistered phrase.
+- Basis: joe-pm `threads/da1-real-app.md` report addendum, runs
+  `20260821-210907-b6e2a2` and `20260821-211242-2641c1` on joe `75ae236`,
+  model `gemini-2.5-flash`: one action, `resolve_component("notification-service")`
+  → `candidate_count: 0`, then a request to the operator for cluster and
+  namespace, with one cluster registered. The prose guidance D-0155 put in the
+  tool description and the task prompt ("an empty result is an answer, not a
+  wall"; "fall back: try list_components") was in place for both runs and was
+  not followed. A described fallback is a choice the model can decline; a
+  fallback carried in the answer is not.
+- Supersedes: nothing. Amends D-0155's description text; D-0155(c) and (j)
+  stand.
+
 ## D-0155 — `resolve_component` ships as the NAMING hop: narrow deterministic matching on component name and type, rich per-candidate graph evidence, one indistinguishable empty answer, and a per-component RBAC gate that is the first governed graph read keyed on a real component
 
 - Date: 2026-08-17
