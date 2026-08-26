@@ -147,6 +147,29 @@ type ToolCall struct {
 	ID   string
 	Name string
 	Args map[string]any
+	// ProviderSignature is an opaque provider-issued token bound to THIS tool
+	// call, which the provider requires replayed verbatim when the call is
+	// echoed back in conversation history. The seam carries it because no
+	// other layer can: it is minted by the provider, it is meaningless to
+	// joe, and dropping it silently breaks the next turn rather than the
+	// current one.
+	//
+	// The live instance is Gemini 3's thought signature. A thinking model
+	// returns one alongside each function call and rejects the follow-up
+	// request without it — "Function call is missing a thought_signature in
+	// functionCall parts. This is required for tools to work correctly" —
+	// which is why joe could not complete a multi-turn tool exchange on any
+	// pro-tier Gemini model before this field existed.
+	//
+	// Adapters with no such contract leave it nil, which is an honest report
+	// of "this provider issues nothing to replay", not a missing value. It is
+	// deliberately []byte and deliberately undocumented in shape: joe never
+	// interprets it, and a typed field would invite a reader to.
+	//
+	// It is NOT persisted. The agent loop copies ToolCalls into history
+	// in-memory within one turn, which is the whole lifetime a signature has
+	// to survive; a rehydrated conversation starts a fresh exchange.
+	ProviderSignature []byte
 }
 
 // TokenUsage tracks token consumption
