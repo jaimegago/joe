@@ -9,10 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/generative-ai-go/genai"
 	"github.com/jaimegago/joe/internal/llm"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 // mockRoundTripper intercepts HTTP requests and returns a pre-configured response.
@@ -37,25 +35,27 @@ func newMockGeminiClient(t *testing.T, body string, statusCode int) *Client {
 	httpClient := &http.Client{Transport: transport}
 
 	ctx := context.Background()
-	gClient, err := genai.NewClient(ctx,
-		option.WithAPIKey("fake-key"),
-		option.WithHTTPClient(httpClient),
-	)
+	gClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:     "fake-key",
+		Backend:    genai.BackendGeminiAPI,
+		HTTPClient: httpClient,
+	})
 	if err != nil {
 		t.Fatalf("Failed to create mock Gemini client: %v", err)
 	}
-	t.Cleanup(func() { gClient.Close() })
 	return &Client{client: gClient, model: DefaultModel}
 }
 
-// The Gemini REST streaming endpoint returns a JSON array of response chunks.
-const geminiTextResponse = `[{
+// The non-streaming generateContent endpoint returns a single JSON object.
+// The previous SDK drove the streaming endpoint, whose body is a JSON array of
+// chunks; this fixture changed shape with the endpoint, not with the assertion.
+const geminiTextResponse = `{
 	"candidates":[{
 		"content":{"parts":[{"text":"Hello from Gemini!"}],"role":"model"},
 		"finishReason":"STOP","index":0
 	}],
 	"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}
-}]`
+}`
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
@@ -480,12 +480,12 @@ func TestConvertResponse_WithText(t *testing.T) {
 		Candidates: []*genai.Candidate{
 			{
 				Content: &genai.Content{
-					Parts: []genai.Part{genai.Text("Hello from Gemini!")},
-					Role:  "model",
+					Parts: []*genai.Part{{Text: "Hello from Gemini!"}},
+					Role:  genai.RoleModel,
 				},
 			},
 		},
-		UsageMetadata: &genai.UsageMetadata{
+		UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
 			PromptTokenCount:     10,
 			CandidatesTokenCount: 5,
 			TotalTokenCount:      15,
@@ -520,13 +520,13 @@ func TestConvertResponse_WithFunctionCall(t *testing.T) {
 		Candidates: []*genai.Candidate{
 			{
 				Content: &genai.Content{
-					Parts: []genai.Part{
-						genai.FunctionCall{
+					Parts: []*genai.Part{
+						{FunctionCall: &genai.FunctionCall{
 							Name: "echo",
 							Args: map[string]any{"message": "hello"},
-						},
+						}},
 					},
-					Role: "model",
+					Role: genai.RoleModel,
 				},
 			},
 		},
@@ -557,8 +557,8 @@ func TestConvertResponse_NilUsageMetadata(t *testing.T) {
 		Candidates: []*genai.Candidate{
 			{
 				Content: &genai.Content{
-					Parts: []genai.Part{genai.Text("response")},
-					Role:  "model",
+					Parts: []*genai.Part{{Text: "response"}},
+					Role:  genai.RoleModel,
 				},
 			},
 		},
@@ -618,7 +618,7 @@ func TestEnhanceErrorWithDebug_GoogleAPI403(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 403, Message: "permission denied"}
+	apiErr := genai.APIError{Code: 403, Message: "permission denied"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -638,7 +638,7 @@ func TestEnhanceErrorWithDebug_GoogleAPI429(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 429, Message: "quota exceeded"}
+	apiErr := genai.APIError{Code: 429, Message: "quota exceeded"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -660,7 +660,7 @@ func TestEnhanceErrorWithDebug_ContextOverflow(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{
+	apiErr := genai.APIError{
 		Code:    400,
 		Message: "The input token count (461428) exceeds the maximum number of tokens allowed (131072).",
 	}
@@ -684,7 +684,7 @@ func TestEnhanceErrorWithDebug_NonOverflow400(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 400, Message: "Invalid value at 'contents'"}
+	apiErr := genai.APIError{Code: 400, Message: "Invalid value at 'contents'"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 	if errors.Is(err, llm.ErrContextOverflow) {
 		t.Error("non-overflow 400 misclassified as ErrContextOverflow")
@@ -703,7 +703,7 @@ func TestEnhanceErrorWithDebug_GoogleAPIDefault(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 500, Message: "internal server error"}
+	apiErr := genai.APIError{Code: 500, Message: "internal server error"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -724,7 +724,7 @@ func TestEnhanceErrorWithDebug_GoogleAPI404_ClaudeModel(t *testing.T) {
 	client, _ := NewClient(ctx, "claude-opus-4")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 404, Message: "model not found"}
+	apiErr := genai.APIError{Code: 404, Message: "model not found"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -744,7 +744,7 @@ func TestEnhanceErrorWithDebug_GoogleAPI400(t *testing.T) {
 	client, _ := NewClient(ctx, "gemini-1.5-flash-exp")
 	defer client.Close()
 
-	apiErr := &googleapi.Error{Code: 400, Message: "bad request"}
+	apiErr := genai.APIError{Code: 400, Message: "bad request"}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -820,10 +820,17 @@ func TestChat_AssistantAndToolResultMessages(t *testing.T) {
 	}
 }
 
+// TestChat_LastMessageIsAssistant: a conversation ending on an assistant turn
+// is sent as itself.
+//
+// The previous SDK's chat session took the final user message as a separate
+// argument, so this case used to synthesise an empty user part to have
+// something to send. GenerateContent takes the conversation whole and no
+// synthetic part is produced — see buildContents, and
+// TestBuildContents_TrailingAssistantTurn for the assertion on the shape.
 func TestChat_LastMessageIsAssistant(t *testing.T) {
 	client := newMockGeminiClient(t, geminiTextResponse, 200)
 
-	// When all messages are assistant/history, the last user send is empty
 	resp, err := client.Chat(context.Background(), llm.ChatRequest{
 		Messages: []llm.Message{
 			{Role: "user", Content: "first"},
@@ -876,6 +883,15 @@ func TestChat_ToolResultWithNonJSONContent(t *testing.T) {
 	}
 }
 
+// TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage: a 400 carrying no
+// message still classifies, and the operator gets the placeholder rather than
+// an empty gap where the cause should be.
+//
+// This test used to build the empty message out of googleapi.Error's nested
+// Errors slice, which google.golang.org/genai has no analogue for — its
+// APIError carries Code, Message, Status and Details and nothing nested. The
+// branch under test was always the "" fallback, so the fixture lost a layer of
+// indirection and the assertion gained the substance it was missing.
 func TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage(t *testing.T) {
 	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")
@@ -884,14 +900,7 @@ func TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage(t *testing.T) {
 	client, _ := NewClient(ctx, "")
 	defer client.Close()
 
-	// Empty message with nested errors
-	apiErr := &googleapi.Error{
-		Code:    400,
-		Message: "",
-		Errors: []googleapi.ErrorItem{
-			{Message: "nested error detail"},
-		},
-	}
+	apiErr := genai.APIError{Code: 400, Message: ""}
 	err := client.enhanceErrorWithDebug(ctx, apiErr, "debug info")
 
 	var enhanced *APIError
@@ -901,26 +910,205 @@ func TestEnhanceErrorWithDebug_GoogleAPI400_EmptyMessage(t *testing.T) {
 	if enhanced.Code != 400 {
 		t.Errorf("Code = %d, want 400", enhanced.Code)
 	}
+	if !strings.Contains(err.Error(), "(no error message provided by API)") {
+		t.Errorf("empty API message lost its placeholder: %s", err.Error())
+	}
 }
 
-// TestApplyMaxOutputTokens asserts the agentic path's output cap is wired
-// onto the genai model's GenerationConfig, and that a non-positive value
-// leaves the provider default in place (no limit set). This is the seam that
-// fixes the prior behaviour where the Gemini adapter set NO output limit at
-// all, unlike the Claude adapter's 4096 default.
+// TestApplyMaxOutputTokens asserts the agentic path's output cap is wired onto
+// the request config, and that a non-positive value leaves the provider
+// default in place (no limit set). This is the seam that fixes the prior
+// behaviour where the Gemini adapter set NO output limit at all, unlike the
+// Claude adapter's 4096 default.
+//
+// The cap moved from the model object to GenerateContentConfig with the SDK,
+// and from *int32 to int32 — so "unset" is now the zero value rather than a
+// nil pointer. Both readings mean the same thing on the wire: the field is
+// omitempty, so a zero cap sends no maxOutputTokens at all.
 func TestApplyMaxOutputTokens(t *testing.T) {
-	m := &genai.GenerativeModel{}
-	applyMaxOutputTokens(m, 4096)
-	if m.MaxOutputTokens == nil {
-		t.Fatal("MaxOutputTokens not set for a positive cap")
-	}
-	if *m.MaxOutputTokens != 4096 {
-		t.Errorf("MaxOutputTokens = %d, want 4096", *m.MaxOutputTokens)
+	cfg := &genai.GenerateContentConfig{}
+	applyMaxOutputTokens(cfg, 4096)
+	if cfg.MaxOutputTokens != 4096 {
+		t.Errorf("MaxOutputTokens = %d, want 4096", cfg.MaxOutputTokens)
 	}
 
-	zero := &genai.GenerativeModel{}
+	zero := &genai.GenerateContentConfig{}
 	applyMaxOutputTokens(zero, 0)
-	if zero.MaxOutputTokens != nil {
-		t.Errorf("MaxOutputTokens = %d for a zero cap, want unset (provider default)", *zero.MaxOutputTokens)
+	if zero.MaxOutputTokens != 0 {
+		t.Errorf("MaxOutputTokens = %d for a zero cap, want unset (provider default)", zero.MaxOutputTokens)
+	}
+}
+
+// TestConvertResponse_CarriesThoughtSignature is the read half of the round
+// trip this migration exists for. A Gemini 3 thinking model returns a
+// thoughtSignature alongside each functionCall part; if the adapter drops it
+// here there is nothing for the next turn to replay.
+func TestConvertResponse_CarriesThoughtSignature(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	sig := []byte("opaque-signature-bytes")
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Role: genai.RoleModel,
+					Parts: []*genai.Part{
+						{
+							FunctionCall:     &genai.FunctionCall{Name: "echo", Args: map[string]any{"m": "hi"}},
+							ThoughtSignature: sig,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := client.convertResponse(resp)
+
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if got := string(result.ToolCalls[0].ProviderSignature); got != string(sig) {
+		t.Errorf("ProviderSignature = %q, want %q", got, string(sig))
+	}
+}
+
+// TestConvertResponse_SkipsThoughtParts: a thinking model emits its reasoning
+// as a text part flagged Thought. That is not answer text and must not reach
+// the operator as though it were.
+func TestConvertResponse_SkipsThoughtParts(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "")
+	defer client.Close()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Role: genai.RoleModel,
+					Parts: []*genai.Part{
+						{Text: "let me think about this", Thought: true},
+						{Text: "The pod is OOMKilled."},
+					},
+				},
+			},
+		},
+	}
+
+	result := client.convertResponse(resp)
+
+	if result.Content != "The pod is OOMKilled." {
+		t.Errorf("Content = %q, want the answer text alone", result.Content)
+	}
+}
+
+// TestBuildContents_ReplaysThoughtSignature is the write half of the round
+// trip. A functionCall part echoed back into history unsigned is what Gemini 3
+// rejects with "Function call is missing a thought_signature in functionCall
+// parts", which is the failure that made every pro-tier model unusable with
+// tools.
+func TestBuildContents_ReplaysThoughtSignature(t *testing.T) {
+	sig := []byte("opaque-signature-bytes")
+	contents := buildContents([]llm.Message{
+		{Role: "user", Content: "why is it crashing"},
+		{
+			Role:    "assistant",
+			Content: "checking",
+			ToolCalls: []llm.ToolCall{{
+				ID:                "echo",
+				Name:              "echo",
+				Args:              map[string]any{"m": "hi"},
+				ProviderSignature: sig,
+			}},
+		},
+		{Role: "user", ToolResultID: "echo", ToolName: "echo", Content: `{"result":"hi"}`},
+	})
+
+	if len(contents) != 3 {
+		t.Fatalf("Expected 3 contents, got %d", len(contents))
+	}
+
+	assistant := contents[1]
+	if assistant.Role != genai.RoleModel {
+		t.Errorf("assistant role = %q, want %q", assistant.Role, genai.RoleModel)
+	}
+
+	var found *genai.Part
+	for _, p := range assistant.Parts {
+		if p.FunctionCall != nil {
+			found = p
+		}
+	}
+	if found == nil {
+		t.Fatal("no functionCall part in the assistant turn")
+	}
+	if got := string(found.ThoughtSignature); got != string(sig) {
+		t.Errorf("ThoughtSignature = %q, want %q", got, string(sig))
+	}
+}
+
+// TestBuildContents_NoSignatureStaysNil: an adapter round-tripping a tool call
+// that never carried a signature — every Gemini 2.x turn — must not invent one.
+func TestBuildContents_NoSignatureStaysNil(t *testing.T) {
+	contents := buildContents([]llm.Message{
+		{
+			Role:      "assistant",
+			ToolCalls: []llm.ToolCall{{ID: "echo", Name: "echo", Args: map[string]any{}}},
+		},
+	})
+
+	if len(contents) != 1 {
+		t.Fatalf("Expected 1 content, got %d", len(contents))
+	}
+	if sig := contents[0].Parts[0].ThoughtSignature; sig != nil {
+		t.Errorf("ThoughtSignature = %v, want nil for an unsigned call", sig)
+	}
+}
+
+// TestBuildContents_TrailingAssistantTurn pins the behaviour change the SDK
+// swap made: the conversation is sent whole, with no synthetic empty user part
+// appended to give the old chat API something to send.
+func TestBuildContents_TrailingAssistantTurn(t *testing.T) {
+	contents := buildContents([]llm.Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "response"},
+	})
+
+	if len(contents) != 2 {
+		t.Fatalf("Expected 2 contents, got %d — a synthetic part was appended", len(contents))
+	}
+	if contents[1].Role != genai.RoleModel {
+		t.Errorf("last role = %q, want %q", contents[1].Role, genai.RoleModel)
+	}
+	if contents[1].Parts[0].Text != "response" {
+		t.Errorf("last part = %q, want %q", contents[1].Parts[0].Text, "response")
+	}
+}
+
+// TestBuildContents_ToolResultWrapsNonJSON: a tool that returns plain text is
+// wrapped rather than dropped, because FunctionResponse.Response is a JSON
+// object and the raw string is not one.
+func TestBuildContents_ToolResultWrapsNonJSON(t *testing.T) {
+	contents := buildContents([]llm.Message{
+		{Role: "user", ToolResultID: "cmd", ToolName: "cmd", Content: "plain text result"},
+	})
+
+	if len(contents) != 1 {
+		t.Fatalf("Expected 1 content, got %d", len(contents))
+	}
+	fr := contents[0].Parts[0].FunctionResponse
+	if fr == nil {
+		t.Fatal("tool result did not render as a functionResponse part")
+	}
+	if fr.Response["result"] != "plain text result" {
+		t.Errorf("Response = %v, want the text under a \"result\" key", fr.Response)
 	}
 }

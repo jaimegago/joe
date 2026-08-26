@@ -87,6 +87,7 @@ after the move rather than by inspection.
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open | next |
 | [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |
+| [`llmusage-tables-cover-two-models`](llmusage-tables-cover-two-models.md) | Capability and price tables cover two models, so every other model is a 100,000-token unknown | open | later |
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open | later |
 | [`macos-signing-notarization`](macos-signing-notarization.md) | Sign and notarize released macOS binaries | open | later |
 | [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |

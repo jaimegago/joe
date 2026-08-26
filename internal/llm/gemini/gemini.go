@@ -8,11 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/generative-ai-go/genai"
 	"github.com/jaimegago/joe/internal/env"
 	"github.com/jaimegago/joe/internal/llm"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 // Client implements the LLMAdapter interface using Google's Gemini API
@@ -62,7 +60,15 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 		return nil, fmt.Errorf("%s appears to be invalid (too short or placeholder value). Get a real API key from https://aistudio.google.com/apikey", env.GeminiAPIKey)
 	}
 
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	// Backend is pinned explicitly rather than left to inference. A nil
+	// ClientConfig makes google.golang.org/genai read GOOGLE_GENAI_USE_VERTEXAI
+	// from the environment and switch to Vertex AI, which needs a project and a
+	// location joe does not carry — so an unrelated variable in an operator's
+	// shell could otherwise redirect every call.
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
@@ -79,25 +85,21 @@ func NewClient(ctx context.Context, model string) (*Client, error) {
 
 // Chat sends a chat request and returns a response
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
-	model := c.client.GenerativeModel(c.model)
+	config := &genai.GenerateContentConfig{}
 
 	// Apply the explicit output cap when the caller set one. Previously the
 	// Gemini adapter set NO output limit at all (unlike the Claude adapter's
 	// 4096 default), so an agentic turn could generate up to the model's full
 	// output ceiling. The agentic path now passes the capabilities table's
 	// max-output through ChatRequest.MaxTokens; honour it here.
-	applyMaxOutputTokens(model, req.MaxTokens)
+	applyMaxOutputTokens(config, req.MaxTokens)
 
 	// Set system instruction if provided. Gemini's cached-content resource is
 	// a different contract from Anthropic's inline breakpoints, so this
 	// adapter renders the segments and ignores their stable/volatile marking —
 	// which the seam permits by design.
 	if systemPrompt := req.System.String(); systemPrompt != "" {
-		model.SystemInstruction = &genai.Content{
-			Parts: []genai.Part{
-				genai.Text(systemPrompt),
-			},
-		}
+		config.SystemInstruction = genai.NewContentFromText(systemPrompt, genai.RoleUser)
 	}
 
 	// Add tools if provided
@@ -110,78 +112,16 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 			}
 			tools = append(tools, convertedTool)
 		}
-		model.Tools = tools
+		config.Tools = tools
 	}
 
-	// Build conversation history
-	var history []*genai.Content
-	var lastParts []genai.Part
-	var lastRole string
+	contents := buildContents(req.Messages)
 
-	for i, msg := range req.Messages {
-		// Determine the parts and role for this message
-		var parts []genai.Part
-		var role string
-
-		if msg.Role == "assistant" {
-			role = "model"
-			if msg.Content != "" {
-				parts = append(parts, genai.Text(msg.Content))
-			}
-			// Include FunctionCall parts so Gemini sees its own tool calls in history
-			for _, tc := range msg.ToolCalls {
-				parts = append(parts, genai.FunctionCall{
-					Name: tc.Name,
-					Args: tc.Args,
-				})
-			}
-		} else if msg.ToolResultID != "" {
-			// Tool result message - use FunctionResponse
-			role = "user"
-			var responseData map[string]any
-			if err := json.Unmarshal([]byte(msg.Content), &responseData); err != nil {
-				// If content isn't valid JSON, wrap it
-				responseData = map[string]any{"result": msg.Content}
-			}
-			parts = append(parts, genai.FunctionResponse{
-				Name:     msg.ToolName,
-				Response: responseData,
-			})
-		} else {
-			role = "user"
-			parts = append(parts, genai.Text(msg.Content))
-		}
-
-		// Gemini API wants the last user message separate for SendMessage
-		if i == len(req.Messages)-1 && role == "user" {
-			lastParts = parts
-			lastRole = role
-			break
-		}
-
-		if len(parts) > 0 {
-			history = append(history, &genai.Content{
-				Parts: parts,
-				Role:  role,
-			})
-		}
-	}
-
-	// Start chat session with history
-	chat := model.StartChat()
-	chat.History = history
-
-	// Send the last message
-	if lastParts == nil {
-		lastParts = []genai.Part{genai.Text("")}
-		lastRole = "user"
-	}
-	_ = lastRole // role is implicit in SendMessage
-	resp, err := chat.SendMessage(ctx, lastParts...)
+	resp, err := c.client.Models.GenerateContent(ctx, c.model, contents, config)
 	if err != nil {
 		// Add debug info about what we sent
-		debugInfo := fmt.Sprintf("\n\nDebug info:\n- Model: %s\n- System prompt: %v\n- Tools count: %d\n- History messages: %d\n- Last message parts: %d",
-			c.model, req.System.String() != "", len(req.Tools), len(history), len(lastParts))
+		debugInfo := fmt.Sprintf("\n\nDebug info:\n- Model: %s\n- System prompt: %v\n- Tools count: %d\n- History messages: %d",
+			c.model, req.System.String() != "", len(req.Tools), len(contents))
 		return nil, c.enhanceErrorWithDebug(ctx, err, debugInfo)
 	}
 
@@ -189,15 +129,70 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	return c.convertResponse(resp), nil
 }
 
-// applyMaxOutputTokens sets the model's output-token cap from the
-// ChatRequest's MaxTokens. The genai GenerativeModel embeds a
-// GenerationConfig; SetMaxOutputTokens bounds the response length. A value
-// <= 0 leaves the provider default in place (matching the prior behaviour
-// for callers that don't set MaxTokens). Extracted as a free function so it
-// is testable without a live genai client or a network round-trip.
-func applyMaxOutputTokens(model *genai.GenerativeModel, maxTokens int) {
+// buildContents renders joe's provider-neutral message list as the single
+// ordered content slice GenerateContent takes.
+//
+// The whole conversation goes in one slice. The previous SDK's chat session
+// wanted the final user message handed to SendMessage separately, so this code
+// used to split the last message off the history and synthesise an empty user
+// part when the conversation ended on an assistant turn. GenerateContent takes
+// the conversation whole, so both the split and the empty-part workaround are
+// gone — a trailing assistant turn is now sent as itself.
+//
+// Extracted as a free function so the history rendering, including the
+// signature round-trip below, is testable without a client or a round-trip.
+func buildContents(messages []llm.Message) []*genai.Content {
+	var contents []*genai.Content
+
+	for _, msg := range messages {
+		var parts []*genai.Part
+		var role string
+
+		switch {
+		case msg.Role == "assistant":
+			role = genai.RoleModel
+			if msg.Content != "" {
+				parts = append(parts, genai.NewPartFromText(msg.Content))
+			}
+			// Include FunctionCall parts so Gemini sees its own tool calls in
+			// history, and replay the provider signature that came back with
+			// each one. A Gemini 3 thinking model rejects the turn outright if
+			// a functionCall part it previously signed reappears unsigned.
+			for _, tc := range msg.ToolCalls {
+				part := genai.NewPartFromFunctionCall(tc.Name, tc.Args)
+				part.ThoughtSignature = tc.ProviderSignature
+				parts = append(parts, part)
+			}
+		case msg.ToolResultID != "":
+			// Tool result message - use FunctionResponse
+			role = genai.RoleUser
+			var responseData map[string]any
+			if err := json.Unmarshal([]byte(msg.Content), &responseData); err != nil {
+				// If content isn't valid JSON, wrap it
+				responseData = map[string]any{"result": msg.Content}
+			}
+			parts = append(parts, genai.NewPartFromFunctionResponse(msg.ToolName, responseData))
+		default:
+			role = genai.RoleUser
+			parts = append(parts, genai.NewPartFromText(msg.Content))
+		}
+
+		if len(parts) > 0 {
+			contents = append(contents, &genai.Content{Parts: parts, Role: role})
+		}
+	}
+
+	return contents
+}
+
+// applyMaxOutputTokens sets the request's output-token cap from the
+// ChatRequest's MaxTokens. A value <= 0 leaves the provider default in place
+// (matching the prior behaviour for callers that don't set MaxTokens).
+// Extracted as a free function so it is testable without a live genai client
+// or a network round-trip.
+func applyMaxOutputTokens(config *genai.GenerateContentConfig, maxTokens int) {
 	if maxTokens > 0 {
-		model.SetMaxOutputTokens(int32(maxTokens))
+		config.MaxOutputTokens = int32(maxTokens)
 	}
 }
 
@@ -322,25 +317,40 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 
 	// Extract content and tool calls from candidates
 	for _, candidate := range resp.Candidates {
-		if candidate.Content == nil {
+		if candidate == nil || candidate.Content == nil {
 			continue
 		}
 
 		for _, part := range candidate.Content.Parts {
-			switch v := part.(type) {
-			case genai.Text:
-				result.Content += string(v)
-			case genai.FunctionCall:
-				// Convert function call to tool call
-				args := make(map[string]any)
-				for k, val := range v.Args {
+			if part == nil {
+				continue
+			}
+
+			// A thought part is the model's own reasoning, not an answer. The
+			// previous SDK had no way to express one, so every text part was
+			// answer text; Gemini 3 thinking models emit both, and folding
+			// reasoning into Content would put it in front of the operator.
+			if part.Thought {
+				continue
+			}
+
+			if part.Text != "" {
+				result.Content += part.Text
+			}
+
+			if fc := part.FunctionCall; fc != nil {
+				args := make(map[string]any, len(fc.Args))
+				for k, val := range fc.Args {
 					args[k] = val
 				}
 
 				result.ToolCalls = append(result.ToolCalls, llm.ToolCall{
-					ID:   v.Name, // Gemini doesn't have separate ID, use name
-					Name: v.Name,
+					ID:   fc.Name, // Gemini doesn't have separate ID, use name
+					Name: fc.Name,
 					Args: args,
+					// Carried so the next turn can replay it. See
+					// llm.ToolCall.ProviderSignature.
+					ProviderSignature: part.ThoughtSignature,
 				})
 			}
 		}
@@ -352,17 +362,15 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 // enhanceErrorWithDebug provides better error messages for common API errors
 // Returns *APIError with structured details for logging
 func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo string) error {
-	// Check if it's a Google API error (need to unwrap)
-	var apiErr *googleapi.Error
+	// Check if it's a Gemini API error (need to unwrap). google.golang.org/genai
+	// returns genai.APIError BY VALUE, not as a pointer, so the errors.As
+	// target is a value of that type.
+	var apiErr genai.APIError
 	if errors.As(err, &apiErr) {
 		var enhancedErr error
 
 		// Extract more detailed error info
 		errDetails := apiErr.Message
-		if errDetails == "" && len(apiErr.Errors) > 0 {
-			// Try to get message from nested errors
-			errDetails = apiErr.Errors[0].Message
-		}
 		if errDetails == "" {
 			errDetails = "(no error message provided by API)"
 		}
@@ -459,17 +467,19 @@ func isContextOverflowMessage(msg string) bool {
 		strings.Contains(m, "exceeds the maximum number of tokens")
 }
 
-// listAvailableModels fetches the list of available models from Gemini API
+// listAvailableModels fetches the list of available models from Gemini API.
+//
+// The list is a hint and not a statement about servability: Google advertises
+// generateContent for models whose generateContent endpoint returns 404. See
+// joe-pm queue/gemini-404-discards-api-message.md.
 func (c *Client) listAvailableModels(ctx context.Context) []string {
 	// Create a context with timeout to avoid blocking too long
 	listCtx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 
-	iter := c.client.ListModels(listCtx)
 	var models []string
 
-	for {
-		model, err := iter.Next()
+	for model, err := range c.client.Models.All(listCtx) {
 		if err != nil {
 			break
 		}
@@ -479,8 +489,8 @@ func (c *Client) listAvailableModels(ctx context.Context) []string {
 		if model != nil && strings.Contains(model.Name, "models/") {
 			modelName := strings.TrimPrefix(model.Name, "models/")
 			// Only include models that support generateContent
-			for _, method := range model.SupportedGenerationMethods {
-				if method == "generateContent" {
+			for _, action := range model.SupportedActions {
+				if action == "generateContent" {
 					models = append(models, modelName)
 					break
 				}
@@ -496,7 +506,12 @@ func (c *Client) listAvailableModels(ctx context.Context) []string {
 	return models
 }
 
-// Close closes the Gemini client
+// Close releases the client's resources.
+//
+// google.golang.org/genai holds none — it has no Close of its own, unlike the
+// SDK this replaced. The method stays because it is joe's exported surface and
+// callers should not have to know which provider needs closing; it is a
+// truthful no-op rather than a stub.
 func (c *Client) Close() error {
-	return c.client.Close()
+	return nil
 }
