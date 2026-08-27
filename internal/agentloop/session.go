@@ -89,6 +89,14 @@ type Session struct {
 	terminalTurnKind TurnKind
 	turnKindDeclared bool
 
+	// terminalConclusion is the diagnostic conclusion the model declared on
+	// the turn that ended this run — the cause it committed to and the signals
+	// it ruled out (see conclusion.go). Zero-valued when the model declared
+	// none, which DiagnosticConclusion.Declared reports; an undeclared
+	// conclusion is an absence and is never defaulted to a claim, because
+	// unlike a turn kind there is no neutral value a conclusion could take.
+	terminalConclusion DiagnosticConclusion
+
 	// zeroActionQuestionGate records the gate's outcome for this session:
 	// empty when it never fired, ZeroActionQuestionGateHeld when it fired and
 	// the model did not go on to return another zero-action question, and
@@ -272,6 +280,13 @@ func (s *Session) TerminalTurnKind() TurnKind { return s.terminalTurnKind }
 // TurnKindAnswer default. A consumer that needs to know the model said so —
 // rather than that joe assumed so — reads this alongside the kind.
 func (s *Session) TurnKindDeclared() bool { return s.turnKindDeclared }
+
+// TerminalConclusion reports the diagnostic conclusion the model declared on
+// the turn that ended this run. Its Declared method says whether the model
+// declared one at all — a consumer needs that separately, because an empty
+// Discarded list means "discarded nothing" under a declaration and "declared
+// nothing" without one, and the list alone cannot tell those apart.
+func (s *Session) TerminalConclusion() DiagnosticConclusion { return s.terminalConclusion }
 
 // ZeroActionQuestionGate reports the gate's outcome for this session:
 // ZeroActionQuestionGateHeld, ZeroActionQuestionGateNotHeld, or empty when it

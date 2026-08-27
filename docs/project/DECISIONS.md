@@ -14,6 +14,57 @@ unit of work that produced it.
 
 ---
 
+## D-0159 — An `answer` terminal turn declares its diagnostic conclusion: a committed root cause and the signals it ruled out
+
+- Date: 2026-08-27
+- Status: accepted (implemented)
+- Session: declared-diagnostic-conclusion
+- Decision: four parts.
+  a. **A terminal turn typed `answer` declares two fields** —
+     `root_cause`, the one cause the agent commits to, and `discarded`, the
+     signals it considered and ruled out, each with the rationale it gave.
+     `agentloop.DiagnosticConclusion` holds them. The problem it solves: a
+     consumer deciding whether an answer named a cause, or dismissed a signal,
+     otherwise has only the prose, and deciding it from prose matches words —
+     which measures **vocabulary rather than reasoning**. Two models answering
+     the same question correctly in different words then score differently,
+     which is the one thing a comparison between models cannot survive.
+  b. **The declaration is model-authored, via marker lines the loop strips.**
+     `ROOT-CAUSE:` and `DISCARDED: <signal> | <rationale>`
+     (`prompts.TaskSystem`, DIAGNOSTIC CONCLUSION clause);
+     `agentloop.SplitConclusion` parses and removes them before the content
+     reaches the intent probe, the session history, the observer, or the
+     operator. **The weakness is accepted, not overlooked**, on D-0158's own
+     terms: an agent whose declared `root_cause` its prose contradicts defeats
+     anything keyed on the declaration. What it buys is that the agent's
+     *claim* becomes machine-readable. Cross-checking a declaration against the
+     text beside it is a consumer's concern and is deliberately not joe's here.
+  c. **An absent declaration is an absence, and joe never defaults it.** Unlike
+     a turn kind, a conclusion has no neutral value: `answer` is a real kind an
+     undeclared turn can honestly carry, and there is no root cause an
+     undeclared answer honestly commits to. An agent that will not commit
+     leaves `root_cause` empty, and a consumer reports the behaviour
+     **unassessable** rather than scoring it a wrong diagnosis — scoring an
+     absence as an error measures contract adoption, not diagnostic accuracy.
+  d. **`discarded` is emitted when empty and `conclusion_declared` carries the
+     difference.** On the wire `discarded` is not `omitempty` and serializes as
+     `[]`, because an absent list is ambiguous between "ruled nothing out" — an
+     answer — and "declared nothing" — an absence. This is D-0158.c one level
+     down: presence and content are two facts, and one field cannot hold both.
+- Basis: `internal/agentloop/conclusion.go`; `internal/api/tasks.go`
+  (`root_cause`, `discarded`, `conclusion_declared` on `taskTurn`);
+  `internal/prompts/prompts.go` DIAGNOSTIC CONCLUSION clause;
+  `internal/agentloop/conclusion_test.go`;
+  `internal/api/conclusion_wire_test.go`. Ordered by joe-pm
+  `threads/declared-diagnostic-conclusion.md`, whose design session declined an
+  LLM judge for the same category on the grounds that it trades determinism for
+  comprehension.
+- Supersedes: nothing. It extends D-0158 from the *shape* of a prose turn to its
+  *content*, and D-0158's `answer` terminal is the substrate rather than a
+  competing mechanism.
+
+---
+
 ## D-0158 — A terminal turn declares its kind from a closed three-value vocabulary, and a `question` terminal on a session with zero actions re-enters the loop once
 
 - Date: 2026-08-27

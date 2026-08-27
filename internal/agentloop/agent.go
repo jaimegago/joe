@@ -265,6 +265,12 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		var turnKind TurnKind
 		var kindDeclared bool
 
+		// The terminal turn's declared diagnostic conclusion, resolved on the
+		// same branch. Unlike the kind it has no default: a conclusion nobody
+		// declared is an absence, and inventing a neutral one would be a claim
+		// joe made on the model's behalf.
+		var conclusion DiagnosticConclusion
+
 		// A response with no tool calls is the loop's completion signal — but it
 		// is NOT self-evidently a final answer. A model can narrate the tool call
 		// it is about to make and then omit the call itself (reproduced on
@@ -283,6 +289,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			// the operator. Parsing here rather than at the return means there
 			// is exactly one place the marker is stripped.
 			turnKind, kindDeclared, resp.Content = SplitTurnKind(resp.Content)
+			conclusion, resp.Content = SplitConclusion(resp.Content)
 
 			if recovered := a.probeUnfulfilledToolIntent(ctx, session, resp.Content); len(recovered) > 0 {
 				resp.ToolCalls = recovered
@@ -350,6 +357,7 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		if len(resp.ToolCalls) == 0 {
 			session.terminalTurnKind = turnKind
 			session.turnKindDeclared = kindDeclared
+			session.terminalConclusion = conclusion
 
 			// The gate fired earlier in this session and the model has come
 			// back with the same shape of turn. It is returned rather than
@@ -492,6 +500,11 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		var kind TurnKind
 		kind, session.turnKindDeclared, answer = SplitTurnKind(answer)
 		session.terminalTurnKind = kind
+		// A synthesised answer is a diagnosis like any other, so a conclusion
+		// declared on it is honoured and its markers stripped. The synthesis
+		// call offers no tools and asks for an answer from the evidence in
+		// hand, which is precisely the turn the declaration is for.
+		session.terminalConclusion, answer = SplitConclusion(answer)
 		return answer, nil
 	}
 
