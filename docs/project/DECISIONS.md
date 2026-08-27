@@ -14,6 +14,85 @@ unit of work that produced it.
 
 ---
 
+## D-0158 — A terminal turn declares its kind from a closed three-value vocabulary, and a `question` terminal on a session with zero actions re-enters the loop once
+
+- Date: 2026-08-27
+- Status: accepted (implemented)
+- Session: terminal-turn-kind
+- Decision: five parts.
+  a. **Every turn that ends by returning words to the operator carries a declared
+     kind**, from a vocabulary closed at exactly three values —
+     `answer` (a diagnosis, finding, or result), `question` (a request for
+     information from the operator), `refusal` (a decline to continue). The kind
+     is present on **every** terminal turn, `answer` included. A kind emitted only
+     for the interesting cases is a kind whose absence is ambiguous between "not
+     that shape" and "not emitted", and nothing downstream can tell those apart.
+     The problem it solves: a turn that ends in prose is invisible to anything
+     keyed on actions — `tools_used` and the step list record what joe *did*, and
+     say nothing about what the words joe stopped with were for.
+  b. **The kind is model-declared, via a marker line the loop strips.** The model
+     ends its terminal reply with `TURN-KIND: <value>` (`prompts.TaskSystem`,
+     TERMINAL TURN clause); `agentloop.SplitTurnKind` parses and removes it before
+     the content reaches the intent probe, the session history, the observer, or
+     the operator. **The weakness is accepted, not overlooked**: a model that asks
+     a question and types the turn `answer` defeats anything keyed on the
+     declaration. What the declaration buys is that the *shape* of a prose turn
+     becomes machine-readable, which prose is not — a signal, not a proof. Same
+     class as the prompt clause D-0156 delivered, one step further down. Checking
+     a declaration against its own text (an `answer` that ends in a question mark)
+     is an evaluator concern and is deliberately not joe's here.
+  c. **An undeclared turn is `answer`, and declaredness is a second field.** The
+     vocabulary stays closed at three, so there is no `unknown` value to report;
+     `Session.TerminalTurnKind()` always returns one of the three and
+     `Session.TurnKindDeclared()` says whether the model actually said so. The
+     default is `answer` rather than `question` because the gate in (d) keys on
+     `question`, and a gate firing on a formatting slip would spend an extra LLM
+     round trip on nothing.
+  d. **Invariant: joe does not return a `question` terminal turn on a session in
+     which it has taken no actions.** Where the model produces one, the loop
+     re-enters — the question preserved in history, `prompts.ZeroActionQuestionReentry`
+     appended — rather than returning. This gate was chosen over a broader one
+     because it is decidable without any knowledge of the environment: *"you have
+     not looked yet"* is a fact about the session, while *"the operator could not
+     have told you anything you do not already have"* is a judgement about the
+     world, and only the first can be pinned by a test that holds every turn. It
+     **supplements** the prompt clause and does not replace it — the clause is a
+     ceiling on behaviour and this is a floor under it, and the floor exists
+     because the ceiling is advisory: an unchanged prompt scored the same
+     investigation 1.0 on 2026-08-22 and 0 on 2026-08-26.
+  e. **The gate fires at most once per session, and the failure is recorded.** If
+     the re-entered turn is again a zero-action `question`, that question is
+     returned as it stands and `Session.ZeroActionQuestionGate()` reads `not_held`
+     rather than `held`. An unbounded re-entry gate is a hang, and a hang is a
+     worse failure than the question it was preventing. An action counts even when
+     it **errored**: the gate's claim is that the model has not looked, and a model
+     holding a denial or a timeout has looked. The counter is session-scoped, not
+     run-scoped, so a follow-up question in a session that has already looked is
+     not gated.
+- Basis: `terminal-turn-kind` session against the live tree at `2c56e92`. The
+  invariant, its bound, and the recording are pinned by
+  `internal/agentloop/turnkind_test.go` (`TestGate_ZeroActionQuestionReenters`,
+  `TestGate_FiresAtMostOncePerSession`, `TestGate_DoesNotFireAfterAnAction`,
+  `TestGate_DoesNotFireOnAnUndeclaredTurn`); the vocabulary's closure by
+  `TestParseTurnKind_VocabularyIsClosed` at the parser end and
+  `TestTaskSystem_TurnKindVocabularyIsClosed` at the prompt end. The second of
+  those pair matters on its own: the kind is model-declared, so a deleted prompt
+  clause would fail no agentloop test — those feed the marker in directly — while
+  every live turn silently defaulted to `answer`.
+- Supersedes: nothing. It sits alongside D-0103 (the unfulfilled-tool-intent
+  probe), which disambiguates a *tool-call-free* response before the loop accepts
+  it; this decision types the response the probe lets through and gates one shape
+  of it. Both run on the same branch, probe first.
+- Scope deliberately not taken: **C-DA-001**, the shape where joe's question
+  contradicts a directive it already received — the zero-action gate does not
+  reach it, because that run made a call. It stays open in joe-pm
+  `queue/agent-asks-instead-of-investigating.md`. **Whether the declared kind
+  reaches the run evidence artifacts**, and what an evaluator does with it, is
+  joe-pm `queue/prose-refusal-precedes-the-call.md`'s question and not this one's;
+  joe emits the kind on its own task response and stops there.
+
+---
+
 ## D-0157 — The read posture is flippable from the Web UI: a standalone, never-posture-gated `Read Posture` admin page that states the consequence — including the grant count — before it acts
 
 - Date: 2026-08-26

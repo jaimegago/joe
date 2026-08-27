@@ -64,6 +64,38 @@ type Session struct {
 	// per task in buildTaskRun); the API layer reads it via StopReason() to
 	// stamp the final event and persist the assistant message's marker.
 	stopReason string
+
+	// actionsTaken counts the tool calls this SESSION has executed, across
+	// every Run on it. It is the "zero actions" the terminal-turn gate keys
+	// on, and it is deliberately not reset by ResetRunStats: the gate's rule
+	// is stated over the session, not the turn, so a follow-up question in a
+	// session that has already looked is not gated.
+	//
+	// A call that ERRORED still counts. The gate's claim is "you have not
+	// looked yet", and a model whose tool call was denied, timed out, or came
+	// back empty has looked — it holds evidence about the environment, which
+	// is exactly what the zero-action case says it cannot have.
+	actionsTaken int
+
+	// terminalTurnKind / turnKindDeclared record the kind of the turn that
+	// ended this run and whether the model actually declared it, rather than
+	// falling back to the TurnKindAnswer default. Two fields because the
+	// vocabulary is closed at three values (see turnkind.go): a turn always
+	// carries one of them, and whether it was declared is a separate fact.
+	// terminalTurnKind is empty only for a run that never reached a terminal
+	// turn at all — a context cancellation, a token-ceiling termination, an
+	// LLM error. Those return no words to the operator, so they are not
+	// terminal turns and carry no kind.
+	terminalTurnKind TurnKind
+	turnKindDeclared bool
+
+	// zeroActionQuestionGate records the gate's outcome for this session:
+	// empty when it never fired, ZeroActionQuestionGateHeld when it fired and
+	// the model did not go on to return another zero-action question, and
+	// ZeroActionQuestionGateNotHeld when the re-entered turn was again one and
+	// was returned as it stood. The bound is one firing per session, tracked
+	// by the same field being non-empty.
+	zeroActionQuestionGate string
 }
 
 // NewSession creates a new session with empty conversation history
@@ -224,6 +256,27 @@ func (s *Session) UserMessageTruncated() bool { return s.userMessageTruncated }
 // only StopReasonMaxIterations, set by Run's forced-synthesis path). Empty for
 // a normally-completed run.
 func (s *Session) StopReason() string { return s.stopReason }
+
+// ActionsTaken reports how many tool calls this session has executed, across
+// every Run on it, successful or not.
+func (s *Session) ActionsTaken() int { return s.actionsTaken }
+
+// TerminalTurnKind reports the declared kind of the turn that ended this run —
+// one of TurnKindAnswer, TurnKindQuestion, TurnKindRefusal. Empty only when the
+// run returned no words to the operator at all (cancellation, token ceiling, an
+// LLM error), which is not a terminal turn.
+func (s *Session) TerminalTurnKind() TurnKind { return s.terminalTurnKind }
+
+// TurnKindDeclared reports whether the model actually emitted the kind marker
+// for the terminal turn, as against TerminalTurnKind having fallen back to the
+// TurnKindAnswer default. A consumer that needs to know the model said so —
+// rather than that joe assumed so — reads this alongside the kind.
+func (s *Session) TurnKindDeclared() bool { return s.turnKindDeclared }
+
+// ZeroActionQuestionGate reports the gate's outcome for this session:
+// ZeroActionQuestionGateHeld, ZeroActionQuestionGateNotHeld, or empty when it
+// never fired.
+func (s *Session) ZeroActionQuestionGate() string { return s.zeroActionQuestionGate }
 
 // truncationLimit returns the per-message token cap for the given budget
 // fraction: max(fraction * TokenBudget, minTruncationTokenFloor). It returns 0

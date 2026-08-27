@@ -98,6 +98,33 @@ type taskResponse struct {
 	// (distinct from the destructive failure banner) when it is set; the
 	// max_iterations_reached STATUS is reserved for the synthesis-FAILURE path.
 	StopReason string `json:"stop_reason,omitempty"`
+	// TurnKind is the declared shape of the turn that ended this run — one of
+	// "answer", "question", "refusal" (agentloop.TurnKind). A turn ending in
+	// prose is otherwise invisible to anything keyed on actions: tools_used
+	// and steps record what joe DID, and say nothing about whether the words
+	// joe finished with were a finding, a request for information, or a
+	// refusal. Present on every completed turn; absent only where the run
+	// returned no words at all (cancellation, token ceiling, an LLM error).
+	//
+	// TurnKindDeclared says whether the MODEL declared it or joe defaulted.
+	// The kind vocabulary is closed at three values, so there is no
+	// "undeclared" kind to report; the two fields together carry what one
+	// field cannot. It is omitempty like its neighbours, so its absence on a
+	// turn that has a turn_kind means the default was used — which is why
+	// turn_kind itself is never absent on a completed turn.
+	TurnKind         string `json:"turn_kind,omitempty"`
+	TurnKindDeclared bool   `json:"turn_kind_declared,omitempty"`
+	// ZeroActionQuestionGate reports the zero-action question gate's outcome
+	// for this session: "held" when it fired and the model did not return
+	// another zero-action question, "not_held" when the re-entered turn was
+	// again one and was returned as it stood, absent when it never fired.
+	//
+	// "not_held" is the case worth surfacing. The gate is bounded at one
+	// firing per session because an unbounded one is a hang, so a model that
+	// asks twice without looking gets its question through — and that outcome
+	// must be legible rather than indistinguishable from a gate that was never
+	// needed.
+	ZeroActionQuestionGate string `json:"zero_action_question_gate,omitempty"`
 	// ErrorCode is the turn-level write-failure classification: the first
 	// per-tool denial code observed across this turn's steps (Item 8). It lets
 	// the chat UI surface a specific "why the write failed" message even though
@@ -833,17 +860,20 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 			InputTokens:  session.TotalInputTokens,
 			OutputTokens: session.TotalOutputTokens,
 		},
-		ContextWindowTokens:  contextWindowTokens,
-		DurationMs:           int(duration.Milliseconds()),
-		Error:                errMsg,
-		HistoryTrimmed:       session.HistoryTrimmed(),
-		MessagesDropped:      session.MessagesDropped(),
-		ToolResultsTruncated: session.ToolResultsTruncated(),
-		UserMessageTruncated: session.UserMessageTruncated(),
-		StopReason:           session.StopReason(),
-		ErrorCode:            firstWriteFailureCode(outSteps),
-		Model:                model,
-		Provider:             provider,
+		ContextWindowTokens:    contextWindowTokens,
+		DurationMs:             int(duration.Milliseconds()),
+		Error:                  errMsg,
+		HistoryTrimmed:         session.HistoryTrimmed(),
+		MessagesDropped:        session.MessagesDropped(),
+		ToolResultsTruncated:   session.ToolResultsTruncated(),
+		UserMessageTruncated:   session.UserMessageTruncated(),
+		StopReason:             session.StopReason(),
+		TurnKind:               string(session.TerminalTurnKind()),
+		TurnKindDeclared:       session.TurnKindDeclared(),
+		ZeroActionQuestionGate: session.ZeroActionQuestionGate(),
+		ErrorCode:              firstWriteFailureCode(outSteps),
+		Model:                  model,
+		Provider:               provider,
 	}
 }
 
