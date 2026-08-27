@@ -42,6 +42,7 @@ after the move rather than by inspection.
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
 | [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`admin-bootstrap-cli-04`](admin-bootstrap-cli-04.md) | The `cfg.Database` override block is written out three times | open | later |
+| [`admin-list-null-arrays`](admin-list-null-arrays.md) | Admin list endpoints serialize an empty list as `null`, and three UI parsers reject it | open | next |
 | [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 | later |

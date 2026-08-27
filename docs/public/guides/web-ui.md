@@ -69,9 +69,20 @@ The navigation is flat. Every signed-in operator sees the same top-level entries
 
 Admins additionally see a single **Admin** subgroup, revealed only when the signed-in
 principal's `is_admin` flag is true (Joe reports it from `GET /api/v1/me`). It collects
-the governance surfaces — Zones, Autonomous Reads, Skills, Admins, Users, Credentials,
-and LLM Settings. A non-admin who navigates directly to an admin route is redirected
-away; the subgroup is hidden, not merely disabled.
+the governance surfaces — Zones, Read Posture, Autonomous Reads, Skills, Admins, Users,
+Credentials, and LLM Settings. A non-admin who navigates directly to an admin route is
+redirected away; the subgroup is hidden, not merely disabled.
+
+**Read Posture is where you switch between the two read postures.** The page shows the
+live posture and flips it `team_flat` ⇄ `zoned`. It states the consequence before it
+acts: switching to `zoned` narrows reads to grants for every non-admin principal —
+admins keep reading every component, because the admin capability admits regardless of
+grant — and it names how many grants exist, because an install with no grants leaves
+non-admin principals reading nothing. Switching back to `team_flat` widens read access
+to every authenticated principal, service-account keys included, and leaves existing
+grants in place but inert. The posture is resolved on each access decision, so a switch
+takes effect immediately with no restart, and every switch is recorded in the audit log.
+Read Posture is itself never posture-gated: it is the surface that ends `team_flat`.
 
 **Policies appears only under the `zoned` read posture.** The Policies page configures
 grant-based read, which does nothing under the launch-default `team_flat` posture —

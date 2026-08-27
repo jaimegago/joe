@@ -98,10 +98,22 @@ export function removeZone(componentId: string): Promise<void> {
   return apiClient.delete<void>(`/api/v1/admin/component-zones/${encodeURIComponent(componentId)}`);
 }
 
+// fetchPolicies lists the grant rows. The `policies` field is NULLABLE on the
+// wire: the handler serializes a nil slice, so an install with no grants returns
+// {"count":0,"policies":null} rather than an empty array, and a bare
+// z.array() parse REJECTS it. Normalizing to [] here is what lets a caller
+// distinguish "no grants" (0) from "could not read grants" (a rejected query) —
+// the read-posture control's zero-grant lockout warning turns on exactly that,
+// and the Policies page's own "No policies" empty state was unreachable without
+// it. The same null-for-empty shape affects fetchComponentZones,
+// fetchUnassigned and fetchPrincipals; those are tracked in
+// docs/backlog/admin-list-null-arrays.md and deliberately not fixed here.
 export function fetchPolicies(): Promise<RbacPolicy[]> {
   return apiClient
     .get<unknown>('/api/v1/admin/policies')
-    .then((r) => z.object({ policies: z.array(RbacPolicySchema) }).parse(r).policies);
+    .then(
+      (r) => z.object({ policies: z.array(RbacPolicySchema).nullable() }).parse(r).policies ?? []
+    );
 }
 
 export function createPolicy(
@@ -138,6 +150,24 @@ export type ReadPosture = (typeof READ_POSTURE)[keyof typeof READ_POSTURE];
 export function fetchReadPosture(): Promise<ReadPosture> {
   return apiClient
     .get<unknown>('/api/v1/admin/read-posture')
+    .then(
+      (r) =>
+        z.object({ posture: z.enum([READ_POSTURE.teamFlat, READ_POSTURE.zoned]) }).parse(r).posture
+    );
+}
+
+// setReadPosture flips the install-wide read posture — POST
+// /api/v1/admin/read-posture. Admin-gated; the server validates the value
+// against the two recognised postures (400 on anything else) and commits the
+// posture row and its audit row in one transaction, so a failed audit write
+// leaves the posture unchanged. Returns the echoed posture it just set.
+//
+// The RBAC engine resolves the posture live per decision with no cache
+// (internal/rbac ReadPostureResolver), so the flip takes effect on the next
+// decision without a restart.
+export function setReadPosture(posture: ReadPosture): Promise<ReadPosture> {
+  return apiClient
+    .post<unknown>('/api/v1/admin/read-posture', { posture })
     .then(
       (r) =>
         z.object({ posture: z.enum([READ_POSTURE.teamFlat, READ_POSTURE.zoned]) }).parse(r).posture

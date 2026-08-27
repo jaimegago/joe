@@ -56,10 +56,20 @@ deferred out of the launch build without losing any capability.
   describes a tabbed `/admin` surface with a Policies tab, while the shipped UI has a
   flat sidebar with an Admin subgroup. That drift is wider than the read posture and
   was left alone rather than half-fixed.
-- **v2 zoned-flip UI.** The posture flip is REST-only today (`POST
-  /api/v1/admin/read-posture`). Build the admin UI affordance that flips an
-  install from `team_flat` to `zoned` (and back), surfacing the current posture
-  and the consequence of the flip. Gated to admins; reads the live posture.
+- **v2 zoned-flip UI — done (read-posture-zoned-flip-ui, D-0157).** The flip is
+  no longer REST-only. `/admin/read-posture` is a standalone admin route under
+  the Admin nav subgroup showing the live posture and flipping it `team_flat` ⇄
+  `zoned`, behind `<RequireAdmin>`; no backend endpoint was added. The
+  confirmation states the consequence rather than the mechanism: switching to
+  `zoned` narrows non-admin reads to grants while **admins are unaffected** (the
+  admin short-circuit admits regardless of grant), and it names the grant count,
+  stating the lockout outright when that count is zero; switching back widens
+  read to every authenticated principal, `svc:` API keys included, leaving
+  existing grants kept but inert. A successful flip writes the applied posture to
+  `QUERY_KEYS.readPosture`, so the Policies nav entry and route guard follow
+  without a reload. **The page is deliberately NOT posture-gated** the way
+  Policies is — gating it on `zoned` would hide the only control that can leave
+  the launch-default `team_flat`.
 - **Roles and groups for full RBAC v2.** The grant model the `zoned` posture
   drives is still per-principal, per-zone. Full RBAC v2 (role indirection, group
   subjects, granular permissions) is the larger evolution that makes the `zoned`

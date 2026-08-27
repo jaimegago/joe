@@ -32,9 +32,14 @@ helps, but the standing posture value itself is still invisible.
 
 ## Proposed work
 
-- Surface the effective read posture read-only in the Web UI (e.g. a small badge
-  in the admin/security area, fed by the existing `GET /api/v1/admin/read-posture`
-  via a `useReadPosture`-style hook — no new backend endpoint needed).
+- ~~Surface the effective read posture read-only in the Web UI.~~ **Done, by
+  subsumption (read-posture-zoned-flip-ui, D-0157)** — as the "Relationship to
+  existing work" section below anticipated. The `/admin/read-posture` page
+  displays the live posture beside the control that changes it, fed by the
+  existing `useReadPosture` hook over `GET /api/v1/admin/read-posture`; no
+  backend endpoint was added. **This item stays open for the two surfaces below**,
+  which the Web UI page does nothing for: an operator without the Web UI, and the
+  daemon's startup output.
 - Add a `joe` CLI read of the current posture (a subcommand or a field on an
   existing status surface) for operators without the Web UI.
 - Log the resolved posture once at boot alongside the other governance signals,
@@ -46,9 +51,9 @@ This is read-only *visibility* of the current posture and is distinct from — b
 partially overlaps — the **v2 zoned-flip UI** item in
 [`read-posture-latch`](read-posture-latch.md), which is a *write* affordance (an
 admin control to flip `team_flat` ⇄ `zoned`) that would necessarily also display
-the current posture. If the zoned-flip UI is built first it likely subsumes the
-Web UI half of this item; the CLI read and the boot-log line stand on their own
-regardless. `read-posture-latch` is scoped to deferring the zoned-era surfaces
+the current posture. **The zoned-flip UI was built first and did subsume the Web
+UI half**, exactly as anticipated; the CLI read and the boot-log line stand on
+their own and remain open. `read-posture-latch` is scoped to deferring the zoned-era surfaces
 behind the `team_flat` launch default; this papercut applies under `team_flat`
 too, which is why it is tracked separately.
 

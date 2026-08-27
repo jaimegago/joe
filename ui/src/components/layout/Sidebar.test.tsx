@@ -57,6 +57,7 @@ describe('Sidebar', () => {
     // The Admin subgroup header and its children render for admins.
     expect(screen.getByText('Admin')).toBeInTheDocument();
     expect(screen.getByText('Zones')).toBeInTheDocument();
+    expect(screen.getByText('Read Posture')).toBeInTheDocument();
     expect(screen.getByText('Policies')).toBeInTheDocument();
     expect(screen.getByText('Autonomous Reads')).toBeInTheDocument();
     expect(screen.getByText('Skills')).toBeInTheDocument();
@@ -94,6 +95,10 @@ describe('Sidebar', () => {
     // Zones and component-zone assignment retain live read-shaping function under
     // team_flat (zone.Allows gates ahead of the team_flat admit), so Zones stays.
     expect(screen.getByText('Zones')).toBeInTheDocument();
+    // Read Posture is NOT posture-gated, deliberately: it is the surface that
+    // ends team_flat, so gating it on the posture would make the flip
+    // unreachable from the UI in exactly the posture that needs it.
+    expect(screen.getByText('Read Posture')).toBeInTheDocument();
     // The rest of the admin subgroup is unaffected.
     expect(screen.getByText('Autonomous Reads')).toBeInTheDocument();
     expect(screen.getByText('Admins')).toBeInTheDocument();

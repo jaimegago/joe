@@ -34,6 +34,9 @@ const ZonesAdminPage = lazy(() =>
 const PoliciesAdminPage = lazy(() =>
   import('@/pages/admin/PoliciesAdminPage').then((m) => ({ default: m.PoliciesAdminPage }))
 );
+const ReadPostureAdminPage = lazy(() =>
+  import('@/pages/admin/ReadPostureAdminPage').then((m) => ({ default: m.ReadPostureAdminPage }))
+);
 const AutonomousReadsAdminPage = lazy(() =>
   import('@/pages/admin/AutonomousReadsAdminPage').then((m) => ({
     default: m.AutonomousReadsAdminPage,
@@ -139,6 +142,16 @@ export function App() {
                             <PoliciesAdminPage />
                           </Suspense>
                         </RequireZonedPosture>
+                      </RequireAdmin>
+                    }
+                  />
+                  <Route
+                    path="admin/read-posture"
+                    element={
+                      <RequireAdmin>
+                        <Suspense fallback={<LoadingPage />}>
+                          <ReadPostureAdminPage />
+                        </Suspense>
                       </RequireAdmin>
                     }
                   />

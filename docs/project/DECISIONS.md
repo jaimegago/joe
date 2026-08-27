@@ -14,6 +14,104 @@ unit of work that produced it.
 
 ---
 
+## D-0157 — The read posture is flippable from the Web UI: a standalone, never-posture-gated `Read Posture` admin page that states the consequence — including the grant count — before it acts
+
+- Date: 2026-08-26
+- Status: accepted (implemented)
+- Session: read-posture-zoned-flip-ui
+- Decision: five parts.
+  a. **The flip gets a UI.** The install-wide read posture was writable over REST
+     only (`POST /api/v1/admin/read-posture`, D-0041); learning it or changing it
+     meant curl or a SQLite row. It is now a standalone admin route,
+     `/admin/read-posture`, rendering behind `<RequireAdmin>` under the Admin nav
+     subgroup — the shape every admin-only surface with no operator view takes
+     (admin-nav-consolidation). **No backend endpoint was added**: the server half
+     — boundary validation, the single-transaction posture-plus-audit write — was
+     already complete and is untouched.
+  b. **`Read Posture` is never posture-gated, and sits ahead of `Policies` in the
+     nav.** Gating it the way `Policies` is gated (D-0072) would make the flip
+     unreachable from the UI in exactly the posture that needs it: `team_flat` is
+     the launch default, so a gate on `zoned` would hide the only control that can
+     leave `team_flat`. Its nav position is the same argument — under `team_flat`,
+     `Policies` is absent, and the entry that explains the absence and can end it
+     is the one immediately above where `Policies` would be.
+  c. **The confirmation states the consequence, not the mechanism, and the grant
+     count is part of the consequence.** Switching to `zoned` makes reads
+     grant-based for every non-admin principal while **admins are unaffected** —
+     the admin short-circuit in `PolicyEngine.Decide` admits a read regardless of
+     grant — so the dialog says so, and names how many grants exist. With **zero**
+     grants it states the lockout outright: no non-admin principal will read any
+     component. Switching to `team_flat` says that it **widens** access, that
+     named `svc:` API-key principals are admitted alongside `user:` ones (verified
+     read-posture-latch-02: the `team_flat` admit does no principal-type check),
+     and that existing grants are **kept, not deleted**, merely inert.
+  d. **A successful flip publishes the applied posture to the shared query key.**
+     `QUERY_KEYS.readPosture` is read by the Sidebar nav gate and the
+     `/admin/policies` route guard (D-0072), so writing it makes the Policies
+     surface appear and disappear without a reload. Without that write the two
+     gates keep showing the pre-flip posture until the query is refetched, which
+     reads as the flip having failed.
+  e. **`fetchPolicies` is made null-tolerant, and only that one parser is.** Four
+     admin list endpoints serialize an empty list as `null` rather than `[]`, and
+     the UI parses each with a bare `z.array()`, which rejects `null` — so on a
+     fresh install the query fails and the page renders its error state instead of
+     its empty state. `fetchPolicies` is fixed here because part (c) depends on
+     telling "no grants" apart from "the grants could not be read", and the
+     rejecting parse collapsed the first into the second in exactly the install
+     where the warning matters most. The other three, and the open question of
+     whether the fix belongs on the wire rather than the client, are
+     `docs/backlog/admin-list-null-arrays.md`.
+- Basis: `read-posture-zoned-flip-ui` session against the live tree at `9e815c2`.
+  Verified by reading `PolicyEngine.Decide` (`internal/rbac/policy.go`): the
+  `zone.Allows` gate returns before the posture block, the `team_flat` admit
+  returns `ReasonTeamFlatRead` for any non-empty principal set on `ActionRead`,
+  and under `zoned` the decision falls through the `agent:core` auto-promote
+  predicate, then the admin short-circuit, then the per-zone grant union — which
+  is what makes the "admins are unaffected" claim in (c) true rather than
+  plausible. The `ReadPostureResolver` doc comment on the same file states the
+  live-per-decision, no-cache resolution the "no restart" claim rests on.
+  Endpoint behaviour was exercised against a booted binary on a fresh store:
+  `GET` returns `{"posture":"team_flat"}`, `POST` of each valid posture echoes it
+  and the following `GET` reflects it, and `POST` of an unrecognised value returns
+  400 with the two valid literals named. The same run is where the null-array
+  defect in (e) was measured: `{"count":0,"policies":null}`.
+  New UI: `ui/src/pages/admin/ReadPostureAdminPage.tsx`,
+  `ui/src/components/admin/ReadPostureControl.tsx`, `setReadPosture` in
+  `ui/src/api/security.ts`; route in `ui/src/App.tsx`; nav entry in
+  `ui/src/components/layout/Sidebar.tsx`. Tests:
+  `ReadPostureControl.test.tsx` (the posture shown and the one offered, that the
+  button asks before it flips, the admins-unaffected and grant-count copy, the
+  zero-grant lockout warning, the unknown-count case held distinct from zero, the
+  service-account and grants-kept copy, the flip itself, the query-key write, and
+  cancel), `security.policies.test.ts` (the nullable grant list), and two added
+  `Sidebar.test.tsx` cases pinning that `Read Posture` renders for admins and is
+  **not** hidden under `team_flat`. Full UI lint, build and suite green;
+  `go build`, `go vet` and `gofmt` clean.
+  **Verified in the running app**, per this repo's standing requirement that a UI
+  feature be exercised against the real binary because the suite mocks the API
+  boundary: a release-shaped `make build` booted on a fresh store, signed in as a
+  bootstrapped admin. Under `team_flat` the Admin nav carried `Read Posture` and
+  no `Policies`. The zero-grant dialog rendered the lockout sentence — which is
+  the `null`-grant-list path of (e) working end to end against the real server,
+  not against a fixture. Confirming flipped the posture, the badge and the button
+  label followed, and **`Policies` appeared in the nav with no reload**; the
+  server reported `zoned` and the audit row carried
+  `{"before":"team_flat","after":"zoned"}`. The reverse flip rendered the widening
+  copy in the destructive variant and `Policies` disappeared, again without a
+  reload. A hard reload of `/admin/read-posture` resolved through the loading
+  state to the page rather than bouncing.
+- Supersedes: closes the "v2 zoned-flip UI" deferred item in
+  `docs/backlog/read-posture-latch.md`, which D-0072 recorded as still deferred,
+  and the Web-UI half of `docs/backlog/read-posture-visibility.md` (its CLI read
+  and boot-log line stay open). Does not supersede **D-0041** (the posture
+  mechanism), **D-0043** (the posture's transport-only scope), or **D-0072** (the
+  Policies posture gate) — it builds on all three. The `team_flat`
+  `svc:`-principal scope question recorded in `read-posture-latch` is untouched
+  and remains open: this ships a control over the posture as it behaves, and
+  does not change what either posture means.
+
+---
+
 ## D-0156 — An unresolved phrase is never terminal while a component is reachable: `resolve_component`'s empty answer carries the reachable components and a count-keyed directive, and the task prompt forbids asking which cluster when there is one
 
 - Date: 2026-08-22
