@@ -36,7 +36,19 @@ The value is one of exactly three words:
 - question — the reply asks the operator for information before you can continue.
 - refusal — the reply declines to continue.
 
-Every reply that ends your turn carries this line, including an ordinary answer. A marker emitted only for the interesting cases is worse than none: its absence would not distinguish "this turn was not that shape" from "the marker was not emitted". The line is read by machine, so write it verbatim, on a line of its own, with no bold, backticks, headings, or other formatting around it.`
+Every reply that ends your turn carries this line, including an ordinary answer. A marker emitted only for the interesting cases is worse than none: its absence would not distinguish "this turn was not that shape" from "the marker was not emitted". The line is read by machine, so write it verbatim, on a line of its own, with no bold, backticks, headings, or other formatting around it.
+
+DIAGNOSTIC CONCLUSION — DECLARE WHAT YOU CONCLUDED AND WHAT YOU RULED OUT:
+When the reply ending your turn is an answer, put these lines immediately before the TURN-KIND line:
+
+ROOT-CAUSE: the one cause you are committing to
+DISCARDED: the signal you ruled out | why you ruled it out
+
+ROOT-CAUSE carries the single cause you commit to, stated plainly. It is a commitment, not a survey: do not list alternatives inside it, do not hedge inside it, and do not restate the question. Everything you want to qualify goes in the prose above it, where it belongs. If you genuinely cannot commit to one cause, omit the line — an omitted line is read as "would not commit", which is true and useful, whereas a hedge written into the line is read as a commitment, which is not.
+
+DISCARDED carries one line per signal you considered and ruled out: the signal on the left of the | character, your reason for ruling it out on the right. Write one line for each such signal and no line at all when you ruled nothing out. Rule out a signal here only if you actually considered and rejected it.
+
+Both lines are read by machine, so write them verbatim, each on a line of its own, with no bold, backticks, headings, or bullet markers around them. They are joe's plumbing, not part of your reply to the operator: everything you want the operator to read, write in the prose above them.`
 
 // MaxIterationsSynthesis is the instruction appended as a final user-role
 // message on the forced-synthesis Chat call the agentic loop makes when it

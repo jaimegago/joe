@@ -114,6 +114,37 @@ type taskResponse struct {
 	// turn_kind itself is never absent on a completed turn.
 	TurnKind         string `json:"turn_kind,omitempty"`
 	TurnKindDeclared bool   `json:"turn_kind_declared,omitempty"`
+	// RootCause and Discarded carry the diagnostic conclusion the model
+	// declared on an `answer` terminal turn (agentloop.DiagnosticConclusion):
+	// the one cause it commits to, and the signals it considered and ruled out
+	// with the rationale it gave for each.
+	//
+	// They exist because an evaluation that must decide whether an answer named
+	// a cause, or dismissed a signal, otherwise has only the prose — and
+	// deciding it from prose measures vocabulary rather than reasoning. Two
+	// models answering the same question correctly in different words score
+	// differently, which is exactly what a comparison between models cannot
+	// survive.
+	//
+	// RootCause is omitempty: an absent field is an agent that would not commit
+	// to one cause, which is a true report and a better one than a hedge read
+	// as a commitment. A consumer treats it as UNASSESSABLE, never as a wrong
+	// diagnosis — scoring an absence as an error measures contract adoption
+	// rather than accuracy.
+	//
+	// Discarded is NOT omitempty, and that asymmetry is the point. An absent
+	// list is ambiguous between "ruled nothing out" and "declared nothing", and
+	// no consumer can separate those from the list alone; the first is an
+	// answer and the second is an absence. It is `[]` on every turn where the
+	// model declared a conclusion and ruled nothing out, and
+	// ConclusionDeclared is what says which case an empty list is.
+	RootCause string                `json:"root_cause,omitempty"`
+	Discarded []taskDiscardedSignal `json:"discarded"`
+	// ConclusionDeclared says whether the model declared a conclusion at all,
+	// as against joe finding none. It is the same fact TurnKindDeclared carries
+	// for the kind, and it is a separate field for the same reason: presence
+	// and content are two facts, and one field cannot hold both.
+	ConclusionDeclared bool `json:"conclusion_declared,omitempty"`
 	// ZeroActionQuestionGate reports the zero-action question gate's outcome
 	// for this session: "held" when it fired and the model did not return
 	// another zero-action question, "not_held" when the re-entered turn was
@@ -826,6 +857,16 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 // .provider); both are passed through verbatim, so an unresolved model reaches
 // the wire as an absent field rather than an empty string.
 func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, steps []agentloop.StepRecord, session *agentloop.Session, contextWindowTokens int, model, provider string, duration time.Duration) taskResponse {
+	// The declared conclusion, converted to the wire shape. discarded is built
+	// non-nil unconditionally so the field serializes as `[]` rather than
+	// `null`: a JSON null would reintroduce exactly the absent-field ambiguity
+	// the non-omitempty tag exists to remove, and it would do it silently.
+	conclusion := session.TerminalConclusion()
+	discarded := make([]taskDiscardedSignal, 0, len(conclusion.Discarded))
+	for _, d := range conclusion.Discarded {
+		discarded = append(discarded, taskDiscardedSignal{Signal: d.Signal, Rationale: d.Rationale})
+	}
+
 	outSteps := make([]taskStep, len(steps))
 	toolsUsedSet := map[string]struct{}{}
 	for i, s := range steps {
@@ -870,11 +911,25 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		StopReason:             session.StopReason(),
 		TurnKind:               string(session.TerminalTurnKind()),
 		TurnKindDeclared:       session.TurnKindDeclared(),
+		RootCause:              conclusion.RootCause,
+		Discarded:              discarded,
+		ConclusionDeclared:     conclusion.Declared(),
 		ZeroActionQuestionGate: session.ZeroActionQuestionGate(),
 		ErrorCode:              firstWriteFailureCode(outSteps),
 		Model:                  model,
 		Provider:               provider,
 	}
+}
+
+// taskDiscardedSignal is one signal the agent declared it ruled out, with the
+// rationale it gave. Both halves are carried separately because the act being
+// declared is discarding a signal WITH stated rationale: a signal named with no
+// reason beside it is a different, weaker thing, and a consumer that requires
+// the rationale must be able to see that it is missing rather than having to
+// split a sentence to find out.
+type taskDiscardedSignal struct {
+	Signal    string `json:"signal"`
+	Rationale string `json:"rationale,omitempty"`
 }
 
 // firstWriteFailureCode returns the first non-empty per-tool write-failure
