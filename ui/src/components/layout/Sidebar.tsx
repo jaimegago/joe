@@ -12,6 +12,7 @@ import {
   Boxes,
   Scale,
   Eye,
+  ScanEye,
   Puzzle,
   ChevronDown,
   ChevronRight,
@@ -59,6 +60,10 @@ const operatorNav: NavItem[] = [
 // no operator-visible subset, so it is a plain admin-only child like the rest.
 const adminNav: NavItem[] = [
   { to: '/admin/zones', icon: Boxes, label: 'Zones', end: false },
+  // Read Posture sits ahead of Policies deliberately: the posture decides whether
+  // grants are consulted at all, so under team_flat — where Policies is hidden —
+  // this is the entry that explains the absence and can end it.
+  { to: '/admin/read-posture', icon: ScanEye, label: 'Read Posture', end: false },
   { to: '/admin/policies', icon: Scale, label: 'Policies', end: false },
   { to: '/admin/autonomous-reads', icon: Eye, label: 'Autonomous Reads', end: false },
   { to: '/admin/skills', icon: Puzzle, label: 'Skills', end: false },
@@ -104,9 +109,7 @@ export function Sidebar() {
   // Policies stays hidden — it never flickers in before the posture is known.
   const postureQ = useReadPosture({ enabled: isAdmin });
   const showPolicies = postureQ.data === READ_POSTURE.zoned;
-  const visibleAdminNav = adminNav.filter(
-    (item) => item.to !== '/admin/policies' || showPolicies
-  );
+  const visibleAdminNav = adminNav.filter((item) => item.to !== '/admin/policies' || showPolicies);
 
   // The Admin subgroup is open by default so its children are discoverable; the
   // header toggles it. It only renders for admins.
