@@ -353,6 +353,26 @@ surfaces context-management fields (`history_trimmed`, `messages_dropped`,
 `tool_results_truncated`, `user_message_truncated`, `context_window_tokens`) when they
 apply.
 
+`turn_kind` reports the declared shape of the turn that ended the run — one of `answer`
+(a diagnosis, finding, or result), `question` (a request for information from you), or
+`refusal` (a decline to continue). The vocabulary is closed at those three, and every
+completed turn carries one; it is absent only where the run returned no words at all
+(cancellation, an error). `steps` and `tools_used` record what Joe *did*, and say nothing
+about what the words it stopped with were for — `turn_kind` is that, without anyone
+having to read the prose.
+
+The kind is **declared by the model**, not derived from the answer. `turn_kind_declared`
+says whether the model actually declared it or Joe fell back to the `answer` default, so
+a consumer that needs the model to have said so can tell the two apart. A model that asks
+a question and types the turn `answer` defeats anything keyed on it: this is a signal
+about the shape of a turn, not a proof about its content.
+
+`zero_action_question_gate` appears only when Joe declined to return a `question` turn on
+a session in which it had run no tool at all, and sent itself back to investigate first.
+`held` means the model did not go on to ask again without looking; `not_held` means it
+did, and that question was returned as it stood — the re-entry fires at most once per
+session, because an unbounded one would be a hang.
+
 `model` is the **provider model identifier** — `claude-sonnet-4-20250514`, not the key
 that names it in Joe's own configuration — and `provider` is the adapter family
 (`claude`, `gemini`, `openai-compat`). Both are read from the configured entry for the

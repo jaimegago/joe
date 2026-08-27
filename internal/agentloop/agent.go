@@ -260,6 +260,11 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				ceiling, session.TotalTokens, ErrSessionTokenCeiling)
 		}
 
+		// The terminal turn's declared kind, resolved on the branch below and
+		// read by the gate and the completion path after it.
+		var turnKind TurnKind
+		var kindDeclared bool
+
 		// A response with no tool calls is the loop's completion signal — but it
 		// is NOT self-evidently a final answer. A model can narrate the tool call
 		// it is about to make and then omit the call itself (reproduced on
@@ -272,13 +277,89 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 		// assistant's message. A model that is genuinely done falls through to the
 		// completion path below with its answer untouched.
 		if len(resp.ToolCalls) == 0 {
+			// Separate the declared kind from the prose BEFORE anything else
+			// reads the content: the marker is joe's plumbing, and it must not
+			// reach the probe's replay, the session history, the observer, or
+			// the operator. Parsing here rather than at the return means there
+			// is exactly one place the marker is stripped.
+			turnKind, kindDeclared, resp.Content = SplitTurnKind(resp.Content)
+
 			if recovered := a.probeUnfulfilledToolIntent(ctx, session, resp.Content); len(recovered) > 0 {
 				resp.ToolCalls = recovered
 			}
 		}
 
+		// The zero-action question gate: joe does not return a `question`
+		// terminal turn on a session in which it has taken no actions
+		// (joe-pm threads/terminal-turn-kind.md). The model has not looked
+		// yet, so it cannot know that the operator's answer is what it needs.
+		// The loop re-enters with the question preserved and one instruction
+		// appended, rather than returning.
+		//
+		// Bounded at one firing per session, unconditionally. An unbounded
+		// re-entry gate is a hang, and a hang is a worse failure than the
+		// question it was preventing — so a second zero-action question is
+		// returned as it stands, and the gate records that it did not hold.
+		//
+		// This supplements the prompt clause that asks the model not to stop
+		// early; it does not replace it. The clause is a ceiling on behaviour
+		// and this is a floor under it, and the floor is here because the
+		// ceiling is advisory: the same investigation scored 1.0 on
+		// 2026-08-22 and 0 on 2026-08-26 against an unchanged prompt.
+		if len(resp.ToolCalls) == 0 &&
+			turnKind == TurnKindQuestion &&
+			session.actionsTaken == 0 &&
+			session.zeroActionQuestionGate == "" {
+
+			session.zeroActionQuestionGate = ZeroActionQuestionGateHeld
+
+			// The model's own question stays in history — the re-entered turn
+			// must see what it asked, or it will simply ask it again.
+			if resp.Content != "" {
+				session.AddMessage(ctx, llm.Message{
+					Role:    "assistant",
+					Content: resp.Content,
+				})
+			}
+			session.AddMessage(ctx, llm.Message{
+				Role:    "user",
+				Content: prompts.ZeroActionQuestionReentry,
+			})
+
+			// The iteration is real — an LLM call was made and paid for — so
+			// it is reported. Silence here would make the run's step count
+			// disagree with its token spend, and would hide the gated question
+			// from anyone reading the steps to see what joe did.
+			if a.observer != nil {
+				a.observer.OnStep(StepRecord{
+					StepNumber: i + 1,
+					LLMRequest: LLMRequestSummary{
+						MessageCount:   len(session.Messages),
+						ToolsAvailable: toolNames,
+					},
+					LLMResponse: LLMResponseSummary{
+						Content: resp.Content,
+						Usage:   resp.Usage,
+					},
+				})
+			}
+			continue
+		}
+
 		// If no tool calls, we have the final response
 		if len(resp.ToolCalls) == 0 {
+			session.terminalTurnKind = turnKind
+			session.turnKindDeclared = kindDeclared
+
+			// The gate fired earlier in this session and the model has come
+			// back with the same shape of turn. It is returned rather than
+			// looped, and the failure is recorded rather than swallowed.
+			if session.zeroActionQuestionGate == ZeroActionQuestionGateHeld &&
+				turnKind == TurnKindQuestion &&
+				session.actionsTaken == 0 {
+				session.zeroActionQuestionGate = ZeroActionQuestionGateNotHeld
+			}
+
 			// Add assistant's final response to history
 			if resp.Content != "" {
 				session.AddMessage(ctx, llm.Message{
@@ -331,6 +412,11 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			return "", fmt.Errorf("tool execution failed: %w", err)
 		}
 		toolDuration := time.Since(toolStart)
+
+		// Every executed call counts as an action, errored ones included: the
+		// zero-action gate's claim is that the model has not looked, and a
+		// model holding a denial or a timeout has looked.
+		session.actionsTaken += len(results)
 
 		// Notify observer of step with tool results
 		if a.observer != nil {
@@ -397,6 +483,15 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 	a.writeMaxIterationsAudit(ctx, a.maxIterations, synthesized)
 	if synthesized {
 		session.stopReason = StopReasonMaxIterations
+		// A synthesised answer is still a turn that returns words to the
+		// operator, so it carries a kind like any other. The synthesis prompt
+		// directs the model to answer from the evidence in hand, so the
+		// TurnKindAnswer default is the right one when it declares nothing —
+		// but a declaration is honoured and its marker stripped, because a
+		// model that has learned to emit the line will emit it here too.
+		var kind TurnKind
+		kind, session.turnKindDeclared, answer = SplitTurnKind(answer)
+		session.terminalTurnKind = kind
 		return answer, nil
 	}
 
