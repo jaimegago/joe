@@ -156,6 +156,16 @@ type taskResponse struct {
 	// must be legible rather than indistinguishable from a gate that was never
 	// needed.
 	ZeroActionQuestionGate string `json:"zero_action_question_gate,omitempty"`
+	// EmptyAnswerGate reports the empty-answer gate's outcome for this session,
+	// on the same three values: "held" when joe declined to return an `answer`
+	// turn with nothing for the operator to read and the model then wrote one,
+	// "not_held" when the re-entered session again ended on an empty answer
+	// and that answer was returned as it stood, absent when it never fired.
+	//
+	// "not_held" is the case worth surfacing: it is the one where the response
+	// really is empty, and it is what tells a reader that joe noticed and the
+	// silence is the model's rather than a transport that dropped the reply.
+	EmptyAnswerGate string `json:"empty_answer_gate,omitempty"`
 	// ErrorCode is the turn-level write-failure classification: the first
 	// per-tool denial code observed across this turn's steps (Item 8). It lets
 	// the chat UI surface a specific "why the write failed" message even though
@@ -915,6 +925,7 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		Discarded:              discarded,
 		ConclusionDeclared:     conclusion.Declared(),
 		ZeroActionQuestionGate: session.ZeroActionQuestionGate(),
+		EmptyAnswerGate:        session.EmptyAnswerGate(),
 		ErrorCode:              firstWriteFailureCode(outSteps),
 		Model:                  model,
 		Provider:               provider,

@@ -71,7 +71,10 @@ func TestConclusionReachesTheWire(t *testing.T) {
 // it would do it silently, on the far side of a pipe nobody re-reads.
 func TestDiscardedSerializesAsEmptyArrayNotNull(t *testing.T) {
 	t.Run("declared with nothing discarded", func(t *testing.T) {
-		resp := runConclusionTurn(t, "ROOT-CAUSE: the init container failed\nTURN-KIND: answer")
+		// Prose above the markers: a turn made only of them is an empty answer,
+		// which the empty-answer gate re-enters (D-0160) and this fixture's
+		// two-response script cannot serve.
+		resp := runConclusionTurn(t, "The migration init container exited non-zero.\nROOT-CAUSE: the init container failed\nTURN-KIND: answer")
 		if !resp.ConclusionDeclared {
 			t.Fatal("conclusion_declared = false, want true")
 		}

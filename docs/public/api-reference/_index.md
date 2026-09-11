@@ -373,6 +373,12 @@ a session in which it had run no tool at all, and sent itself back to investigat
 did, and that question was returned as it stood — the re-entry fires at most once per
 session, because an unbounded one would be a hang.
 
+`empty_answer_gate` appears only when Joe declined to return an `answer` turn that left
+you nothing to read — empty, or made only of the lines Joe strips before you see the
+reply — and sent the model back to write one. `held` means it did; `not_held` means the
+session again ended on an empty answer, which was returned as it stood rather than
+filled in by Joe. The re-entry fires at most once per session.
+
 `model` is the **provider model identifier** — `claude-sonnet-4-20250514`, not the key
 that names it in Joe's own configuration — and `provider` is the adapter family
 (`claude`, `gemini`, `openai-compat`). Both are read from the configured entry for the

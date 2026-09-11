@@ -125,6 +125,30 @@ Ask the operator only for something no tool of yours can obtain — a decision t
 
 Do not apologise or explain this instruction back to the operator. Continue the task.`
 
+// EmptyAnswerReentry is the instruction appended as a user-role message when
+// the empty-answer gate fires: the model ended its turn with an `answer` whose
+// operator-facing prose was empty once joe's markers were stripped (joe-pm
+// threads/empty-answer-gate.md). The loop re-enters rather than returning.
+//
+// It shares no text with ZeroActionQuestionReentry, because it states a
+// different fact. That one says "you have not looked yet" and sends the model
+// to its tools; a model re-entered on it after five successful actions would be
+// told something false about its own session, and would most likely act again
+// rather than write. This one says the reply is missing, and asks for the reply.
+//
+// It deliberately does NOT assert that the model investigated. The gate keys on
+// the prose alone, not on the action count, so it also fires on an empty answer
+// in a session that ran no tool — and a prompt claiming "you looked" there would
+// be the same false statement in the other direction. It asserts only what the
+// gate knows: the turn was an answer, and nothing in it reaches the operator.
+const EmptyAnswerReentry = `You have ended your turn with an answer, and it contains nothing for the operator to read.
+
+The TURN-KIND, ROOT-CAUSE and DISCARDED lines are not a reply. joe removes them before the operator sees anything, so a turn made only of those lines, or of nothing at all, reaches the operator as silence.
+
+Write your reply to the operator now, in prose, from what this conversation already holds: what you found, what it means, and what you could not establish. Do not open a new line of investigation merely to replace a conclusion you have already reached. End the reply the way every reply that ends your turn ends.
+
+Do not apologise or explain this instruction back to the operator.`
+
 // ChatTitleSystem instructs the model to distil a chat's opening message into a
 // short title. Used by the async title upgrade (DESIGN-CHAT-SESSIONS.md §11
 // Phase 2) that replaces the immediate first-words heuristic. The constraints
