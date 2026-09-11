@@ -14,6 +14,61 @@ unit of work that produced it.
 
 ---
 
+## D-0160 — An `answer` terminal turn whose operator-facing prose is empty re-enters the loop once
+
+- Date: 2026-09-11
+- Status: accepted (implemented)
+- Session: empty-answer-gate
+- Decision: four parts.
+  a. **Invariant: joe does not return an `answer` terminal turn whose
+     operator-facing prose is empty.** Where the model produces one, the loop
+     re-enters with `prompts.EmptyAnswerReentry` appended rather than returning.
+     The defect it closes: a model can follow the D-0158 and D-0159 marker format
+     exactly and write nothing above the markers, and the operator receives
+     silence from a session that did the work.
+  b. **Empty means what reaches the operator.** It is judged after the one strip
+     of the turn-kind marker and the declaration block, on the same string the
+     completion path returns — so a marker-only turn is empty exactly as a
+     zero-length or whitespace-only one is. The gate keys on the kind and the
+     prose, **never on the declared conclusion**: it fires on an empty answer
+     with a complete declaration and on one with none. An undeclared turn is
+     `answer` by D-0158(c) and is gated too, since a zero-length reply carries no
+     marker at all.
+  c. **Bounded at one firing per session, and the failure is recorded.** A second
+     empty answer is returned as it stands and `Session.EmptyAnswerGate()` reads
+     `not_held`, surfaced as `empty_answer_gate` on the task response. It is
+     **never filled in** on the way out — neither synthesised from the
+     declaration nor carried forward from the first attempt's conclusion — because
+     that would be joe speaking in the model's place and would hide the defect
+     from every later run.
+  d. **The re-entry states a different fact from D-0158's.** That one says *you
+     have not looked yet* and sends the model to its tools; this one says the
+     reply is missing and asks for the reply. They share no text. It also does
+     not claim the model investigated, because the gate does not read the action
+     count and fires on a zero-action empty answer too.
+- Basis: `empty-answer-gate` session against the live tree at `957d2b9`, from the
+  defect recorded in joe-pm `queue/empty-answer-turn-accepted.md` (three
+  occurrences across runs `20260827-203410-dc8a85` and `20260829-173511-75206e`).
+  Pinned by `internal/agentloop/emptyanswer_test.go`: the invariant
+  (`TestEmptyAnswerGate_Reenters`), the emptiness definition
+  (`TestEmptyAnswerGate_EmptinessIsWhatReachesTheOperator`), declaration
+  independence (`TestEmptyAnswerGate_DoesNotReadTheDeclaration`), the bound
+  (`TestEmptyAnswerGate_FiresAtMostOncePerSession`), the record
+  (`TestEmptyAnswerGate_RecordDistinguishesOutcomes`), and the provider-failure
+  exclusion (`TestEmptyAnswerGate_DoesNotFireOnProviderFailure`).
+- Supersedes: nothing. It sits beside D-0158(d) on the same branch, after the
+  D-0103 probe and after the zero-action gate; the two gates key on different
+  kinds and cannot both fire on one turn. **Rejected alternatives**: a prompt
+  change, because the clause already says it and was obeyed while producing the
+  defect; a synthesis fallback, for the reasons in (c).
+- Scope deliberately not taken: an empty `refusal` (on the safety side a prose
+  refusal is correct behaviour, and a gate would argue with it); an empty
+  `question` (unobserved); whether the gate's outcome reaches run evidence
+  artifacts, and what an evaluator does with it. A session ending on an LLM error
+  is not a terminal turn and is never re-entered.
+
+---
+
 ## D-0159 — An `answer` terminal turn declares its diagnostic conclusion: a committed root cause and the signals it ruled out
 
 - Date: 2026-08-27

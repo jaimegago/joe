@@ -104,6 +104,14 @@ type Session struct {
 	// was returned as it stood. The bound is one firing per session, tracked
 	// by the same field being non-empty.
 	zeroActionQuestionGate string
+
+	// emptyAnswerGate records the empty-answer gate's outcome for this session,
+	// on the same three values and the same once-per-session bound:
+	// empty when it never fired, EmptyAnswerGateHeld when it fired and the
+	// model did not go on to return another empty answer, and
+	// EmptyAnswerGateNotHeld when it did and that answer was returned as it
+	// stood.
+	emptyAnswerGate string
 }
 
 // NewSession creates a new session with empty conversation history
@@ -292,6 +300,10 @@ func (s *Session) TerminalConclusion() DiagnosticConclusion { return s.terminalC
 // ZeroActionQuestionGateHeld, ZeroActionQuestionGateNotHeld, or empty when it
 // never fired.
 func (s *Session) ZeroActionQuestionGate() string { return s.zeroActionQuestionGate }
+
+// EmptyAnswerGate reports the empty-answer gate's outcome for this session:
+// EmptyAnswerGateHeld, EmptyAnswerGateNotHeld, or empty when it never fired.
+func (s *Session) EmptyAnswerGate() string { return s.emptyAnswerGate }
 
 // truncationLimit returns the per-message token cap for the given budget
 // fraction: max(fraction * TokenBudget, minTruncationTokenFloor). It returns 0

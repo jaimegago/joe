@@ -353,6 +353,65 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			continue
 		}
 
+		// The empty-answer gate: joe does not return an `answer` terminal turn
+		// whose operator-facing prose is empty (joe-pm
+		// threads/empty-answer-gate.md). A model can follow the marker format
+		// exactly — kind declared, conclusion declared — and write nothing above
+		// it, and the operator then receives silence from a session that did
+		// the work.
+		//
+		// Emptiness is judged on resp.Content AFTER the one strip above, and
+		// that is the same string the completion path below returns. So the gate
+		// reads exactly what would reach the operator: a turn made only of
+		// markers is as silent as a zero-length one, and is gated like one.
+		//
+		// It keys on the kind and the prose alone, never on the declared
+		// conclusion — reading that would make the gate depend on what the
+		// model chose to fill in. An undeclared turn is `answer` by D-0158's
+		// default and is gated too: a zero-length reply carries no marker at
+		// all, and it is the plainest case of the defect.
+		//
+		// Bounded at one firing per session, like the zero-action gate and for
+		// the same reason. A second empty answer is returned as it stands —
+		// never filled in on the way out, which would be joe speaking in the
+		// model's place — and the gate records that it did not hold.
+		//
+		// A session that ends on an LLM error never reaches this branch: the
+		// Chat error returns above, before any terminal turn exists.
+		if len(resp.ToolCalls) == 0 &&
+			turnKind == TurnKindAnswer &&
+			operatorProseEmpty(resp.Content) &&
+			session.emptyAnswerGate == "" {
+
+			session.emptyAnswerGate = EmptyAnswerGateHeld
+
+			// Nothing of the model's is appended. Its prose is empty, its
+			// markers are plumbing that never reaches history, and a provider
+			// rejects a contentless assistant message — the same shape
+			// probeUnfulfilledToolIntent already sends for an empty response.
+			session.AddMessage(ctx, llm.Message{
+				Role:    "user",
+				Content: prompts.EmptyAnswerReentry,
+			})
+
+			// A real, paid-for iteration, reported for the reason the
+			// zero-action gate reports its own.
+			if a.observer != nil {
+				a.observer.OnStep(StepRecord{
+					StepNumber: i + 1,
+					LLMRequest: LLMRequestSummary{
+						MessageCount:   len(session.Messages),
+						ToolsAvailable: toolNames,
+					},
+					LLMResponse: LLMResponseSummary{
+						Content: resp.Content,
+						Usage:   resp.Usage,
+					},
+				})
+			}
+			continue
+		}
+
 		// If no tool calls, we have the final response
 		if len(resp.ToolCalls) == 0 {
 			session.terminalTurnKind = turnKind
@@ -366,6 +425,15 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 				turnKind == TurnKindQuestion &&
 				session.actionsTaken == 0 {
 				session.zeroActionQuestionGate = ZeroActionQuestionGateNotHeld
+			}
+
+			// The empty-answer gate fired earlier in this session and the model
+			// has returned another empty answer. It goes out as it stands, and
+			// the record is what makes the silence legible.
+			if session.emptyAnswerGate == EmptyAnswerGateHeld &&
+				turnKind == TurnKindAnswer &&
+				operatorProseEmpty(resp.Content) {
+				session.emptyAnswerGate = EmptyAnswerGateNotHeld
 			}
 
 			// Add assistant's final response to history
