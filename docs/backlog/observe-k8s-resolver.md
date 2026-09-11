@@ -62,6 +62,40 @@ Cleaning the fixtures to the real vocabulary (`node`) is not cosmetic: it is wha
 the tests capable of failing. Do Gap 1 and Gap 2 together — fixing the fixtures without
 fixing the switch will surface the dead arms as red tests, which is the point.
 
+## Gap 3 — the same vocabulary is re-encoded at twelve more read sites, one with the same phantom
+
+Found 2026-09-11 while reading the graph end to end. Every site below compares
+`node.Type` against a literal that only agrees with the writer by convention.
+Writers are fixed literals from spec tables (`k8sRefreshResources`,
+`crdRefreshSpecs`), so the set is static per build; what nothing pins is
+**writer/reader agreement**.
+
+| Read site | Literals |
+|-----------|----------|
+| [internal/api/observe.go:48](../../internal/api/observe.go#L48), `:412` | prefers `service` as the subject |
+| [internal/coreagent/observability_refresh.go:99](../../internal/coreagent/observability_refresh.go#L99), `:153`, `:223`, `:293`, `:412`, `:441` | attaches `metrics_in` / `logs_in` / `traces_in` only to `service`, `deployment` |
+| [internal/coreagent/networking_refresh.go:152](../../internal/coreagent/networking_refresh.go#L152), `:193` | `service`, `deployment` |
+| [internal/coreagent/registry_refresh.go:205](../../internal/coreagent/registry_refresh.go#L205) | `deployment`, `service` |
+| [internal/coreagent/gitops_refresh.go:237](../../internal/coreagent/gitops_refresh.go#L237) | `deployment`, `statefulset`, `daemonset`, `service` |
+| [internal/coreagent/aws_refresh.go:224](../../internal/coreagent/aws_refresh.go#L224), [azure_refresh.go:193](../../internal/coreagent/azure_refresh.go#L193) | queries `type:node` |
+| [internal/coreagent/crd_refresh.go:45-85](../../internal/coreagent/crd_refresh.go#L45) | `TargetTypes` per CRD spec |
+
+The last row carries **a second `azure_vm` phantom**: the Crossplane spec at
+`crd_refresh.go:85` lists `ec2_instance`, `rds_instance`, `azure_vm`, `node` as
+edge targets, and azure writes `vm` (`azure_refresh.go:69`). A Crossplane
+managed resource can therefore never produce a `provisions` edge to an Azure VM
+— the same dead arm as Gap 1, in a table instead of a switch.
+
+This does not change the decision Gap 1 poses; it widens what the decision
+covers. Whichever option lands — exported per-writer constants, or a break-test
+asserting every read-site literal is a type some refresher writes — should be
+applied to these sites in the same pass, and the break-test form is the one that
+also catches a `TargetTypes` entry. The `<type>_component` anchor literals
+(`observability_refresh.go:32`, computed from the component type) and the
+relation constants in `internal/graph/relations.go` are the precedent for the
+constants form; `edge-type-literal-consolidation` is the same decision for the
+relation column.
+
 ## Not in scope here
 
 The `is_k8s_node` **relation** constant (`internal/graph/relations.go:11`) is unrelated
