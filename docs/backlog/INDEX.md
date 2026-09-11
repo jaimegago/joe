@@ -125,8 +125,10 @@ after the move rather than by inspection.
 | [`site-claims-ship-trigger`](site-claims-ship-trigger.md) | Site-claims register: no trigger fires when a newly shipped mechanism falsifies unregistered published copy | open | next |
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open | next |
 | [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
+| [`synthesis-marker-only-answer`](synthesis-marker-only-answer.md) | The forced-synthesis path can return an empty `answer`: success is judged before the markers are stripped | open | |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
 | [`turn-code-first-wins-masking`](turn-code-first-wins-masking.md) | Turn-level error_code is first-wins, so an early scope refusal hides a later write denial | open | later |
+| [`turn-kind-duplicate-marker-leak`](turn-kind-duplicate-marker-leak.md) | `SplitTurnKind` strips only the last `TURN-KIND` line, so an earlier copy reaches the operator | open | |
 | [`web-search-tool`](web-search-tool.md) | Backlog — Web-search tool fast-follows | open | later |
 | [`zone-scope-empty-claims-unenforced-block`](zone-scope-empty-claims-unenforced-block.md) | Zone scope with no assigned components tells the model it cannot act, and enforces nothing | open | next |
