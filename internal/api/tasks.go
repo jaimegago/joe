@@ -322,9 +322,16 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 		"duration_ms", resp.DurationMs,
 	)
 
+	// The gate outcome is logged beside the answer rather than folded into the
+	// completion line above, because the two are read together: an empty
+	// "response" is ambiguous on its own, and the gate is what says whether joe
+	// noticed. Logged unconditionally — "" is the gate never firing, and a
+	// consumer grepping this line must not have to tell an absent key from an
+	// absent outcome.
 	slog.Info("task response",
 		"task_id", taskID,
 		"response", resp.FinalAnswer,
+		"empty_answer_gate", resp.EmptyAnswerGate,
 	)
 
 	writeJSON(w, http.StatusOK, resp)
