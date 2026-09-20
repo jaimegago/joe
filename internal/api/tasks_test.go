@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -485,6 +487,57 @@ func TestTaskEndpoint_ObservedModel(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestTaskEndpoint_EmptyAnswerGateLogged pins the gate outcome onto the
+// "task response" log line.
+//
+// It is logged because the outcome reaches the wire and stops there for any
+// consumer that does not decode the field: joe-pm
+// queue/empty-answer-gate-outcome-unrecorded.md records it stopping at the
+// first one. The log is the independent hop — a run whose artifacts never
+// record the outcome still leaves the fact somewhere a reader can find it.
+//
+// The key must be present unconditionally. "" is the gate never having fired,
+// and a consumer grepping this line cannot tell an absent key from an absent
+// outcome, so a conditional log would reintroduce the ambiguity the field
+// exists to remove.
+func TestTaskEndpoint_EmptyAnswerGateLogged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	_, mux := setupTaskServer(t, &taskStubLLM{response: "ok"})
+	w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var line map[string]any
+	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+			continue
+		}
+		if entry["msg"] == "task response" {
+			line = entry
+			break
+		}
+	}
+	if line == nil {
+		t.Fatalf("no \"task response\" line in the captured log: %s", buf.String())
+	}
+
+	gate, ok := line["empty_answer_gate"]
+	if !ok {
+		t.Fatal("task response line carries no empty_answer_gate key; the outcome is unreadable from the logs")
+	}
+	// A turn that answered normally never fires the gate, so the value here is
+	// the empty one. What this asserts is that the KEY is on the line for it.
+	if gate != "" {
+		t.Errorf("empty_answer_gate = %v for a turn that answered; want the gate not to have fired", gate)
+	}
 }
 
 // TestTaskEndpoint_SessionPersisted verifies the session is persisted and messages are retrievable.
