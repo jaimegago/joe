@@ -309,7 +309,7 @@ func TestBuildDDLogsInEdges_SkipsNonServiceNodes2(t *testing.T) {
 
 	_ = realStore.AddNode(ctx, graph.Node{
 		ID:       "k8snode/api-node",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "api-node"},
 	})
 

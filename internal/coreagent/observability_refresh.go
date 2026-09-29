@@ -96,7 +96,7 @@ func (r *Refresher) buildMetricsInEdges(ctx context.Context, source *store.Compo
 		}
 
 		for _, svcNode := range matchingNodes {
-			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+			if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 				continue
 			}
 			edges = append(edges, graph.Edge{
@@ -126,7 +126,7 @@ func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Comp
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "loki_component",
+			Type:        graph.NodeTypeLokiComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -150,7 +150,7 @@ func (r *Refresher) refreshLokiComponent(ctx context.Context, source *store.Comp
 				continue
 			}
 			for _, svcNode := range matchingNodes {
-				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
@@ -196,7 +196,7 @@ func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Com
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "tempo_component",
+			Type:        graph.NodeTypeTempoComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -220,7 +220,7 @@ func (r *Refresher) refreshTempoComponent(ctx context.Context, source *store.Com
 				continue
 			}
 			for _, svcNode := range matchingNodes {
-				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
@@ -266,7 +266,7 @@ func (r *Refresher) refreshJaegerComponent(ctx context.Context, source *store.Co
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "jaeger_component",
+			Type:        graph.NodeTypeJaegerComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -290,7 +290,7 @@ func (r *Refresher) refreshJaegerComponent(ctx context.Context, source *store.Co
 				continue
 			}
 			for _, svcNode := range matchingNodes {
-				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
@@ -341,7 +341,7 @@ func (r *Refresher) refreshDatadogComponent(ctx context.Context, source *store.C
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "datadog_component",
+			Type:        graph.NodeTypeDatadogComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -409,7 +409,7 @@ func (r *Refresher) buildDDMetricsInEdges(ctx context.Context, source *store.Com
 			continue
 		}
 		for _, svcNode := range matchingNodes {
-			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+			if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 				continue
 			}
 			edges = append(edges, graph.Edge{
@@ -438,7 +438,7 @@ func (r *Refresher) buildDDLogsInEdges(ctx context.Context, source *store.Compon
 			continue
 		}
 		for _, svcNode := range matchingNodes {
-			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+			if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 				continue
 			}
 			edges = append(edges, graph.Edge{
@@ -466,7 +466,7 @@ func (r *Refresher) refreshSplunkComponent(ctx context.Context, source *store.Co
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "splunk_component",
+			Type:        graph.NodeTypeSplunkComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -502,7 +502,7 @@ func (r *Refresher) refreshDynatraceComponent(ctx context.Context, source *store
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "dynatrace_component",
+			Type:        graph.NodeTypeDynatraceComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -538,7 +538,7 @@ func (r *Refresher) refreshNewRelicComponent(ctx context.Context, source *store.
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "newrelic_component",
+			Type:        graph.NodeTypeNewRelicComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,

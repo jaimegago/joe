@@ -356,10 +356,10 @@ func TestBuildImageStoredInEdges_SkipsNonDeploymentNodes(t *testing.T) {
 	ctx := context.Background()
 	src := &store.Component{ID: "src-img-4", Type: store.ComponentTypeOCIRegistry}
 
-	// Add a k8s_node — should NOT produce an image_stored_in edge.
+	// Add a node — should NOT produce an image_stored_in edge.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
 		ID:          "k8snode/my-payment-node",
-		Type:        "k8s_node",
+		Type:        "node",
 		ComponentID: "src-k8s",
 		Metadata:    map[string]any{"name": "my-payment-node"},
 	})

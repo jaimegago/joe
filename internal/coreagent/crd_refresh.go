@@ -39,50 +39,50 @@ var crdRefreshSpecs = []crdRefreshSpec{
 	{
 		// KEDA ScaledObjects: scaled_by from ScaledObject → workload.
 		Resource:    "keda.sh/v1alpha1/scaledobjects",
-		NodeType:    "keda_scaledobject",
+		NodeType:    graph.NodeTypeKEDAScaledObject,
 		Relation:    graph.RelationScaledBy,
 		TargetField: "spec.scaleTargetRef.name",
-		TargetTypes: []string{"deployment", "statefulset", "daemonset"},
+		TargetTypes: []string{graph.NodeTypeDeployment, graph.NodeTypeStatefulSet, graph.NodeTypeDaemonSet},
 	},
 	{
 		// cert-manager Certificates: secures from Certificate → service/ingress.
 		Resource:    "cert-manager.io/v1/certificates",
-		NodeType:    "certificate",
+		NodeType:    graph.NodeTypeCertificate,
 		Relation:    graph.RelationSecures,
 		TargetField: "", // use cert name (matches the ingress/service it secures)
-		TargetTypes: []string{"service", "deployment", "nginx_ingress"},
+		TargetTypes: []string{graph.NodeTypeService, graph.NodeTypeDeployment, graph.NodeTypeNginxIngress},
 	},
 	{
 		// OPA ConstraintTemplates: policy_enforces from template → namespace/workload.
 		Resource:    "templates.gatekeeper.sh/v1/constrainttemplates",
-		NodeType:    "opa_constraint_template",
+		NodeType:    graph.NodeTypeOPAConstraintTemplate,
 		Relation:    graph.RelationPolicyEnforces,
 		TargetField: "",
-		TargetTypes: []string{"namespace", "deployment"},
+		TargetTypes: []string{graph.NodeTypeNamespace, graph.NodeTypeDeployment},
 	},
 	{
 		// Cilium NetworkPolicies: policy_enforces from policy → namespace/workload.
 		Resource:    "cilium.io/v2/ciliumnetworkpolicies",
-		NodeType:    "cilium_network_policy",
+		NodeType:    graph.NodeTypeCiliumNetworkPolicy,
 		Relation:    graph.RelationPolicyEnforces,
 		TargetField: "spec.endpointSelector.matchLabels.app",
-		TargetTypes: []string{"namespace", "deployment"},
+		TargetTypes: []string{graph.NodeTypeNamespace, graph.NodeTypeDeployment},
 	},
 	{
 		// Istio VirtualServices: mesh_for from VirtualService → service.
 		Resource:    "networking.istio.io/v1beta1/virtualservices",
-		NodeType:    "istio_virtual_service",
+		NodeType:    graph.NodeTypeIstioVirtualService,
 		Relation:    graph.RelationMeshFor,
 		TargetField: "", // use VS name which typically matches the service
-		TargetTypes: []string{"service", "deployment"},
+		TargetTypes: []string{graph.NodeTypeService, graph.NodeTypeDeployment},
 	},
 	{
 		// Crossplane Managed Resources: provisions from XR → cloud node.
 		Resource:    "apiextensions.crossplane.io/v1/composites",
-		NodeType:    "crossplane_resource",
+		NodeType:    graph.NodeTypeCrossplaneResource,
 		Relation:    graph.RelationProvisions,
 		TargetField: "",
-		TargetTypes: []string{"ec2_instance", "rds_instance", "azure_vm", "node"},
+		TargetTypes: []string{graph.NodeTypeEC2Instance, graph.NodeTypeRDSInstance, graph.NodeTypeVM, graph.NodeTypeNode},
 	},
 }
 

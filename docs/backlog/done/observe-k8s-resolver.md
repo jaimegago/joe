@@ -1,5 +1,5 @@
 Node-type vocabulary re-encoded by consumers — the gitops provides-matcher's phantom arms and the test fixtures that green them
-Status: open
+Status: done — node-type vocabulary single-sourced in `internal/graph/nodetypes.go`, every Go reader and spec table referencing it, pinned by `TestNodeTypeVocabulary`; the Azure provides arms now match what azure writes; thread `node-type-vocabulary`
 Priority: next
 
 D-0116 fixed one consumer that bound to a node-type vocabulary no writer emits
@@ -101,3 +101,52 @@ relation column.
 The `is_k8s_node` **relation** constant (`internal/graph/relations.go:11`) is unrelated
 and correct — it is an edge relation name, not a node type, and the aws/azure refreshers
 write it deliberately. Do not "clean" it while sweeping the phantom node types.
+
+## Closed
+
+Closed by joe-pm thread `node-type-vocabulary`, which records the pull request
+and the merge commit. The body above is kept as the historical statement of the
+problem; this section records what the fix covered, because it differs from the
+body in three places.
+
+**Delivered.** Both options Gap 1 weighed, ratified together. Every node type a
+refresher writes is a `graph.NodeType*` constant in `internal/graph/nodetypes.go`,
+and every writer and reader references those constants, including the
+`buildProvidesEdges` switch and every CRD spec's `TargetTypes`.
+`TestNodeTypeVocabulary` (`internal/graph/nodetypes_guard_test.go`) type-checks
+every production package that imports `internal/graph`. It fails when a string
+literal stands where a node type belongs, and when a constant is written by no
+refresher. So a phantom arm cannot be represented: a literal fails the first
+check, and an unwritten constant fails the second.
+
+**Behaviour change.** The four dead provides arms are gone. `vm`, `aks_cluster`
+and `sql_database` now match in their place, so **a terraform resource can now
+produce a `provisions` edge to Azure resources**, and a Crossplane resource can
+reach an Azure `vm`. `TestBuildProvidesEdges_ReachesAzureTypes` and
+`TestCrossplaneTargetsAzureVM` pin this.
+
+**Where the body was wrong about the tree:**
+
+- **Gap 2's causal claim does not hold.** None of the `k8s_node` fixtures
+  exercises the provides-matcher. Every one is a negative case for a different
+  matcher, such as datadog, registry, networking or alerting, asserting that a
+  non-service node is skipped. Switching them to `node` left the suite green,
+  both before and after the switch was fixed. They were cleaned anyway. The
+  provides phantom stayed green because nothing tested the Azure arms
+  positively, not because of those fixtures.
+- **There were more fixtures than listed.** There were eleven `k8s_node`
+  fixtures in six files. The body names five in four files.
+- **There were more read sites than listed.** Gap 3's table omits
+  `alerting_refresh.go` (two sites), `datastore_refresh.go` (two), and the
+  `k8s_refresh.go` type switches and namespace checks. All of them are covered.
+
+**Deliberately out of the set:**
+
+- The computed observability anchor, `source.Type + "_component"`. Its value is
+  a function of the component-type registry, not a literal any writer declares,
+  and no reader compares against it. Anchor naming is
+  `component-anchor-node`'s question.
+- The parked LLM graph-write tool (D-0110), whose type comes from tool arguments.
+
+**Still open elsewhere:** relations, which are `edge-type-literal-consolidation`.
+The UI's own node-type strings are not covered by a Go guard.

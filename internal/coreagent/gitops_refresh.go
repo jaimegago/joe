@@ -24,7 +24,7 @@ func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Co
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "argocd_component",
+			Type:        graph.NodeTypeArgoCDComponent,
 			ComponentID: source.ID,
 			Metadata:    gitopsMetadata(source),
 			LastSeen:    now,
@@ -40,7 +40,7 @@ func (r *Refresher) refreshArgoCDComponent(ctx context.Context, source *store.Co
 			appNodeID := fmt.Sprintf("argocd/%s/%s", source.ID, app.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          appNodeID,
-				Type:        "argocd_app",
+				Type:        graph.NodeTypeArgoCDApp,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":        app.Name,
@@ -91,7 +91,7 @@ func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Comp
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "helm_component",
+			Type:        graph.NodeTypeHelmComponent,
 			ComponentID: source.ID,
 			Metadata:    gitopsMetadata(source),
 			LastSeen:    now,
@@ -108,7 +108,7 @@ func (r *Refresher) refreshHelmComponent(ctx context.Context, source *store.Comp
 			releaseNodeID := fmt.Sprintf("helm/%s/%s/%s", source.ID, rel.Namespace, rel.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          releaseNodeID,
-				Type:        "helm_release",
+				Type:        graph.NodeTypeHelmRelease,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":          rel.Name,
@@ -158,7 +158,7 @@ func (r *Refresher) refreshTerraformComponent(ctx context.Context, source *store
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "terraform_component",
+			Type:        graph.NodeTypeTerraformComponent,
 			ComponentID: source.ID,
 			Metadata:    gitopsMetadata(source),
 			LastSeen:    now,
@@ -178,7 +178,7 @@ func (r *Refresher) refreshTerraformComponent(ctx context.Context, source *store
 			tfNodeID := fmt.Sprintf("terraform/%s/%s", source.ID, res.Address)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          tfNodeID,
-				Type:        "terraform_resource",
+				Type:        graph.NodeTypeTerraformResource,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"address":  res.Address,
@@ -234,7 +234,7 @@ func (r *Refresher) buildManagedByEdges(ctx context.Context, source *store.Compo
 
 	for _, node := range matchingNodes {
 		switch node.Type {
-		case "deployment", "statefulset", "daemonset", "service":
+		case graph.NodeTypeDeployment, graph.NodeTypeStatefulSet, graph.NodeTypeDaemonSet, graph.NodeTypeService:
 		default:
 			continue
 		}
@@ -280,9 +280,9 @@ func (r *Refresher) buildProvidesEdges(ctx context.Context, source *store.Compon
 	for _, node := range matchingNodes {
 		// Only match cloud-tier node types (EC2, RDS, EKS node, Azure VM, etc.).
 		switch node.Type {
-		case "ec2_instance", "rds_instance", "eks_cluster",
-			"azure_vm", "azure_aks", "azure_sql",
-			"k8s_node", "node":
+		case graph.NodeTypeEC2Instance, graph.NodeTypeRDSInstance, graph.NodeTypeEKSCluster,
+			graph.NodeTypeVM, graph.NodeTypeAKSCluster, graph.NodeTypeSQLDatabase,
+			graph.NodeTypeNode:
 		default:
 			continue
 		}

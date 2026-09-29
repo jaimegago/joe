@@ -45,7 +45,7 @@ func (s *Server) resolveComponentForService(r *http.Request, service, relation s
 	// Prefer a node of type "service"; fall back to first result.
 	serviceNodeID := nodes[0].ID
 	for _, n := range nodes {
-		if n.Type == "service" {
+		if n.Type == graph.NodeTypeService {
 			serviceNodeID = n.ID
 			break
 		}
@@ -409,7 +409,7 @@ func (s *Server) resolveK8sComponentForService(r *http.Request, service string) 
 
 	serviceNodeID := nodes[0].ID
 	for _, n := range nodes {
-		if n.Type == "service" {
+		if n.Type == graph.NodeTypeService {
 			serviceNodeID = n.ID
 			break
 		}

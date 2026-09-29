@@ -24,7 +24,7 @@ func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Com
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "nginx_component",
+			Type:        graph.NodeTypeNginxComponent,
 			ComponentID: source.ID,
 			Metadata:    networkingMetadata(source),
 			LastSeen:    now,
@@ -41,7 +41,7 @@ func (r *Refresher) refreshNginxComponent(ctx context.Context, source *store.Com
 			ingNodeID := fmt.Sprintf("nginx/%s/%s/%s", source.ID, ing.Namespace, ing.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          ingNodeID,
-				Type:        "nginx_ingress",
+				Type:        graph.NodeTypeNginxIngress,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"name":      ing.Name,
@@ -95,7 +95,7 @@ func (r *Refresher) refreshEnvoyComponent(ctx context.Context, source *store.Com
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "envoy_component",
+			Type:        graph.NodeTypeEnvoyComponent,
 			ComponentID: source.ID,
 			Metadata:    networkingMetadata(source),
 			LastSeen:    now,
@@ -149,7 +149,7 @@ func (r *Refresher) buildIngressForEdges(ctx context.Context, source *store.Comp
 	}
 
 	for _, node := range matchingNodes {
-		if node.Type != "service" && node.Type != "deployment" {
+		if node.Type != graph.NodeTypeService && node.Type != graph.NodeTypeDeployment {
 			continue
 		}
 		// Prefer same-namespace matches.
@@ -190,7 +190,7 @@ func (r *Refresher) buildProxiesEdges(ctx context.Context, source *store.Compone
 	}
 
 	for _, node := range matchingNodes {
-		if node.Type != "service" && node.Type != "deployment" {
+		if node.Type != graph.NodeTypeService && node.Type != graph.NodeTypeDeployment {
 			continue
 		}
 		edges = append(edges, graph.Edge{

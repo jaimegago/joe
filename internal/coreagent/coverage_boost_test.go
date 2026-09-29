@@ -313,10 +313,10 @@ func TestBuildStoresInEdgesByName_SkipsNonServiceNodes(t *testing.T) {
 	ctx := context.Background()
 	src := &store.Component{ID: "src-ds-4", Name: "orders-db", Type: store.ComponentTypePostgreSQL}
 
-	// k8s_node type — should NOT produce an edge.
+	// node type — should NOT produce an edge.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
 		ID:          "k8snode/orders-db",
-		Type:        "k8s_node",
+		Type:        "node",
 		ComponentID: "src-k8s",
 		Metadata:    map[string]any{"name": "orders-db"},
 	})

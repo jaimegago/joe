@@ -42,7 +42,7 @@ func (r *Refresher) refreshArtifactoryComponent(ctx context.Context, source *sto
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "artifact_registry",
+			Type:        graph.NodeTypeArtifactRegistry,
 			ComponentID: source.ID,
 			Metadata:    registryMetadata(source),
 			LastSeen:    now,
@@ -58,7 +58,7 @@ func (r *Refresher) refreshArtifactoryComponent(ctx context.Context, source *sto
 			repoID := repoNodeID(source.ID, repo.Key)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          repoID,
-				Type:        "image_repository",
+				Type:        graph.NodeTypeImageRepository,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"component_id":   source.ID,
@@ -87,7 +87,7 @@ func (r *Refresher) refreshECRComponent(ctx context.Context, source *store.Compo
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "artifact_registry",
+			Type:        graph.NodeTypeArtifactRegistry,
 			ComponentID: source.ID,
 			Metadata:    registryMetadata(source),
 			LastSeen:    now,
@@ -103,7 +103,7 @@ func (r *Refresher) refreshECRComponent(ctx context.Context, source *store.Compo
 			repoID := repoNodeID(source.ID, repo.Name)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          repoID,
-				Type:        "image_repository",
+				Type:        graph.NodeTypeImageRepository,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"component_id":   source.ID,
@@ -131,7 +131,7 @@ func (r *Refresher) refreshRegistryComponent(ctx context.Context, source *store.
 	desiredNodes := []graph.Node{
 		{
 			ID:          sourceNodeID,
-			Type:        "artifact_registry",
+			Type:        graph.NodeTypeArtifactRegistry,
 			ComponentID: source.ID,
 			Metadata:    registryMetadata(source),
 			LastSeen:    now,
@@ -147,7 +147,7 @@ func (r *Refresher) refreshRegistryComponent(ctx context.Context, source *store.
 			repoID := repoNodeID(source.ID, repoName)
 			desiredNodes = append(desiredNodes, graph.Node{
 				ID:          repoID,
-				Type:        "image_repository",
+				Type:        graph.NodeTypeImageRepository,
 				ComponentID: source.ID,
 				Metadata: map[string]any{
 					"component_id":   source.ID,
@@ -202,7 +202,7 @@ func (r *Refresher) buildImageStoredInEdges(ctx context.Context, source *store.C
 	}
 
 	for _, node := range matchingNodes {
-		if node.Type != "deployment" && node.Type != "service" {
+		if node.Type != graph.NodeTypeDeployment && node.Type != graph.NodeTypeService {
 			continue
 		}
 		edges = append(edges, graph.Edge{

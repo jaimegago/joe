@@ -24,7 +24,7 @@ func (r *Refresher) refreshAlertmanagerComponent(ctx context.Context, source *st
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "alertmanager_component",
+			Type:        graph.NodeTypeAlertmanagerComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -99,7 +99,7 @@ func (r *Refresher) buildAlertsInEdges(ctx context.Context, source *store.Compon
 		}
 
 		for _, svcNode := range matchingNodes {
-			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+			if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 				continue
 			}
 			if seen[svcNode.ID] {
@@ -133,7 +133,7 @@ func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "pagerduty_component",
+			Type:        graph.NodeTypePagerDutyComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,
@@ -162,7 +162,7 @@ func (r *Refresher) refreshPagerDutyComponent(ctx context.Context, source *store
 				continue
 			}
 			for _, svcNode := range matchingNodes {
-				if svcNode.Type != "service" && svcNode.Type != "deployment" {
+				if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 					continue
 				}
 				desiredEdges = append(desiredEdges, graph.Edge{
@@ -208,7 +208,7 @@ func (r *Refresher) refreshGrafanaComponent(ctx context.Context, source *store.C
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "grafana_component",
+			Type:        graph.NodeTypeGrafanaComponent,
 			ComponentID: source.ID,
 			Metadata: map[string]any{
 				"component_id":   source.ID,

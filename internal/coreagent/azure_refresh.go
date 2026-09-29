@@ -37,7 +37,7 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "vnet",
+			Type:        graph.NodeTypeVNet,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -66,7 +66,7 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "vm",
+			Type:        graph.NodeTypeVM,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -107,7 +107,7 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "aks_cluster",
+			Type:        graph.NodeTypeAKSCluster,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -148,7 +148,7 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "sql_database",
+			Type:        graph.NodeTypeSQLDatabase,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -190,7 +190,7 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 // match the VM name.
 func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *store.Component, vms []azureadapter.VM, now time.Time) []graph.Edge {
 	// Build a lookup index: node name (and hostname) → K8s node graph ID.
-	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
+	k8sNodes, err := r.services.Graph.Query(ctx, "type:"+graph.NodeTypeNode)
 	if err != nil || len(k8sNodes) == 0 {
 		return nil
 	}

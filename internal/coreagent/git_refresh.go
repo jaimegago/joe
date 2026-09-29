@@ -99,7 +99,7 @@ func (r *Refresher) buildGitHostingEdge(ctx context.Context, source *store.Compo
 	hostNodeID := gitNodeID(source.ID, "provider")
 	node := graph.Node{
 		ID:          hostNodeID,
-		Type:        "code_host",
+		Type:        graph.NodeTypeCodeHost,
 		ComponentID: source.ID,
 		Metadata: map[string]any{
 			"provider_component_id": provider.ID,
@@ -132,7 +132,7 @@ func (r *Refresher) buildGitRepoNode(ctx context.Context, sourceID string, adapt
 	info := gitRepoInfo{
 		node: graph.Node{
 			ID:          gitNodeID(sourceID, "repo"),
-			Type:        "git_repo",
+			Type:        graph.NodeTypeGitRepo,
 			ComponentID: sourceID,
 			LastSeen:    now,
 		},
@@ -150,6 +150,6 @@ func (r *Refresher) buildGitRepoNode(ctx context.Context, sourceID string, adapt
 	return info, nil
 }
 
-func gitNodeID(sourceID, nodeType string) string {
-	return fmt.Sprintf("git/%s/%s", sourceID, nodeType)
+func gitNodeID(sourceID, segment string) string {
+	return fmt.Sprintf("git/%s/%s", sourceID, segment)
 }
