@@ -43,7 +43,7 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "vpc",
+			Type:        graph.NodeTypeVPC,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -79,7 +79,7 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "ec2_instance",
+			Type:        graph.NodeTypeEC2Instance,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -128,7 +128,7 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "eks_cluster",
+			Type:        graph.NodeTypeEKSCluster,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -178,7 +178,7 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 		}
 		desiredNodes = append(desiredNodes, graph.Node{
 			ID:          nodeID,
-			Type:        "rds_instance",
+			Type:        graph.NodeTypeRDSInstance,
 			ComponentID: source.ID,
 			Metadata:    metadata,
 			LastSeen:    now,
@@ -221,7 +221,7 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 // against K8s node InternalIPs already in the graph.
 func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *store.Component, instances []awsadapter.EC2Instance, now time.Time) []graph.Edge {
 	// Build a lookup index: InternalIP → K8s node graph ID.
-	k8sNodes, err := r.services.Graph.Query(ctx, "type:node")
+	k8sNodes, err := r.services.Graph.Query(ctx, "type:"+graph.NodeTypeNode)
 	if err != nil || len(k8sNodes) == 0 {
 		return nil
 	}

@@ -31,7 +31,7 @@ func TestBuildMetricsInEdges_SkipsNonServiceNode(t *testing.T) {
 	// Add a node that is NOT a service or deployment — it should be skipped.
 	if err := gs.AddNode(ctx, graph.Node{
 		ID:       "k8snode/worker-1",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "worker-1"},
 	}); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -127,10 +127,10 @@ func TestBuildAlertsInEdges_NonServiceNodeSkipped(t *testing.T) {
 	gs := setupGraphStore(t)
 	ctx := context.Background()
 
-	// Add a k8s_node (not service/deployment) — should be skipped.
+	// Add a node (not service/deployment) — should be skipped.
 	if err := gs.AddNode(ctx, graph.Node{
 		ID:       "k8snode/controller",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "controller"},
 	}); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -319,7 +319,7 @@ func TestRefreshLokiComponent_SkipsNonServiceNode(t *testing.T) {
 	// Add a non-service, non-deployment node.
 	if err := gs.AddNode(ctx, graph.Node{
 		ID:       "k8snode/loki-worker",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "loki-worker"},
 	}); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -352,7 +352,7 @@ func TestRefreshTempoComponent_SkipsNonServiceNode(t *testing.T) {
 
 	if err := gs.AddNode(ctx, graph.Node{
 		ID:       "k8snode/tempo-worker",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "tempo-worker"},
 	}); err != nil {
 		t.Fatalf("AddNode: %v", err)
@@ -381,7 +381,7 @@ func TestRefreshJaegerComponent_SkipsNonServiceNode(t *testing.T) {
 
 	if err := gs.AddNode(ctx, graph.Node{
 		ID:       "k8snode/jaeger-worker",
-		Type:     "k8s_node",
+		Type:     "node",
 		Metadata: map[string]any{"name": "jaeger-worker"},
 	}); err != nil {
 		t.Fatalf("AddNode: %v", err)

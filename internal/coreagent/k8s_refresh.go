@@ -55,14 +55,14 @@ type k8sResourceSpec struct {
 }
 
 var k8sRefreshResources = []k8sResourceSpec{
-	{Resource: "deployments", NodeType: "deployment", Namespaced: true},
-	{Resource: "statefulsets", NodeType: "statefulset", Namespaced: true},
-	{Resource: "daemonsets", NodeType: "daemonset", Namespaced: true},
-	{Resource: "services", NodeType: "service", Namespaced: true},
-	{Resource: "configmaps", NodeType: "configmap", Namespaced: true},
-	{Resource: "secrets", NodeType: "secret", Namespaced: true},
-	{Resource: "namespaces", NodeType: "namespace", Namespaced: false},
-	{Resource: "nodes", NodeType: "node", Namespaced: false},
+	{Resource: "deployments", NodeType: graph.NodeTypeDeployment, Namespaced: true},
+	{Resource: "statefulsets", NodeType: graph.NodeTypeStatefulSet, Namespaced: true},
+	{Resource: "daemonsets", NodeType: graph.NodeTypeDaemonSet, Namespaced: true},
+	{Resource: "services", NodeType: graph.NodeTypeService, Namespaced: true},
+	{Resource: "configmaps", NodeType: graph.NodeTypeConfigMap, Namespaced: true},
+	{Resource: "secrets", NodeType: graph.NodeTypeSecret, Namespaced: true},
+	{Resource: "namespaces", NodeType: graph.NodeTypeNamespace, Namespaced: false},
+	{Resource: "nodes", NodeType: graph.NodeTypeNode, Namespaced: false},
 }
 
 type workloadInfo struct {
@@ -142,9 +142,9 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 			nodeIndex[node.ID] = node
 
 			switch spec.NodeType {
-			case "deployment", "statefulset", "daemonset":
+			case graph.NodeTypeDeployment, graph.NodeTypeStatefulSet, graph.NodeTypeDaemonSet:
 				workloads = append(workloads, extractWorkloadInfo(source.ID, spec.NodeType, namespace, &obj))
-			case "service":
+			case graph.NodeTypeService:
 				services = append(services, extractServiceInfo(source.ID, namespace, &obj))
 			}
 		}
@@ -152,7 +152,7 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 
 	namespaceNodes := make(map[string]string)
 	for _, node := range desiredNodes {
-		if node.Type == "namespace" {
+		if node.Type == graph.NodeTypeNamespace {
 			name, _ := node.Metadata["name"].(string)
 			if name != "" {
 				namespaceNodes[name] = node.ID
@@ -172,7 +172,7 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 
 	// Namespace contains edges.
 	for _, node := range desiredNodes {
-		if node.Type == "namespace" {
+		if node.Type == graph.NodeTypeNamespace {
 			continue
 		}
 		namespace, _ := node.Metadata["namespace"].(string)
@@ -295,14 +295,14 @@ func buildK8sMetadata(obj *unstructured.Unstructured, nodeType, namespace string
 	}
 
 	switch nodeType {
-	case "deployment", "statefulset", "daemonset":
+	case graph.NodeTypeDeployment, graph.NodeTypeStatefulSet, graph.NodeTypeDaemonSet:
 		if replicas, found, _ := unstructured.NestedInt64(obj.Object, "spec", "replicas"); found {
 			metadata["replicas"] = replicas
 		}
 		if selector, found, _ := unstructured.NestedStringMap(obj.Object, "spec", "selector", "matchLabels"); found {
 			metadata["selector"] = selector
 		}
-	case "service":
+	case graph.NodeTypeService:
 		if svcType, found, _ := unstructured.NestedString(obj.Object, "spec", "type"); found {
 			metadata["type"] = svcType
 		}
@@ -312,11 +312,11 @@ func buildK8sMetadata(obj *unstructured.Unstructured, nodeType, namespace string
 		if ports, found, _ := unstructured.NestedSlice(obj.Object, "spec", "ports"); found {
 			metadata["ports"] = simplifyPorts(ports)
 		}
-	case "configmap", "secret":
+	case graph.NodeTypeConfigMap, graph.NodeTypeSecret:
 		if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
 			metadata["data_keys"] = mapKeys(data)
 		}
-	case "node":
+	case graph.NodeTypeNode:
 		if labels := obj.GetLabels(); len(labels) > 0 {
 			metadata["labels"] = labels
 		}

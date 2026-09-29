@@ -20,31 +20,31 @@ import (
 // source name to existing service/deployment nodes.
 func (r *Refresher) refreshPostgreSQLComponent(ctx context.Context, source *store.Component, _ postgresadapter.PostgreSQLAdapter) error {
 	r.logger.Info("refreshing postgresql component", "component_id", source.ID)
-	return r.refreshDataStoreComponent(ctx, source, "postgresql_component", graph.RelationStoresIn, "postgresql")
+	return r.refreshDataStoreComponent(ctx, source, graph.NodeTypePostgreSQLComponent, graph.RelationStoresIn, "postgresql")
 }
 
 // refreshMySQLComponent refreshes a MySQL source.
 func (r *Refresher) refreshMySQLComponent(ctx context.Context, source *store.Component, _ mysqladapter.MySQLAdapter) error {
 	r.logger.Info("refreshing mysql component", "component_id", source.ID)
-	return r.refreshDataStoreComponent(ctx, source, "mysql_component", graph.RelationStoresIn, "mysql")
+	return r.refreshDataStoreComponent(ctx, source, graph.NodeTypeMySQLComponent, graph.RelationStoresIn, "mysql")
 }
 
 // refreshRedisComponent refreshes a Redis source.
 func (r *Refresher) refreshRedisComponent(ctx context.Context, source *store.Component, _ redisadapter.RedisAdapter) error {
 	r.logger.Info("refreshing redis component", "component_id", source.ID)
-	return r.refreshDataStoreComponent(ctx, source, "redis_component", graph.RelationStoresIn, "redis")
+	return r.refreshDataStoreComponent(ctx, source, graph.NodeTypeRedisComponent, graph.RelationStoresIn, "redis")
 }
 
 // refreshMongoDBComponent refreshes a MongoDB source.
 func (r *Refresher) refreshMongoDBComponent(ctx context.Context, source *store.Component, _ mongodbadapter.MongoDBAdapter) error {
 	r.logger.Info("refreshing mongodb component", "component_id", source.ID)
-	return r.refreshDataStoreComponent(ctx, source, "mongodb_component", graph.RelationStoresIn, "mongodb")
+	return r.refreshDataStoreComponent(ctx, source, graph.NodeTypeMongoDBComponent, graph.RelationStoresIn, "mongodb")
 }
 
 // refreshElasticsearchComponent refreshes an Elasticsearch source.
 func (r *Refresher) refreshElasticsearchComponent(ctx context.Context, source *store.Component, _ elasticsearchadapter.ElasticsearchAdapter) error {
 	r.logger.Info("refreshing elasticsearch component", "component_id", source.ID)
-	return r.refreshDataStoreComponent(ctx, source, "elasticsearch_component", graph.RelationStoresIn, "elasticsearch")
+	return r.refreshDataStoreComponent(ctx, source, graph.NodeTypeElasticsearchComponent, graph.RelationStoresIn, "elasticsearch")
 }
 
 // refreshKafkaComponent refreshes a Kafka source.
@@ -59,7 +59,7 @@ func (r *Refresher) refreshKafkaComponent(ctx context.Context, source *store.Com
 	desiredNodes := []graph.Node{
 		{
 			ID:          nodeID,
-			Type:        "kafka_component",
+			Type:        graph.NodeTypeKafkaComponent,
 			ComponentID: source.ID,
 			Metadata:    datastoreMetadata(source),
 			LastSeen:    now,
@@ -151,7 +151,7 @@ func (r *Refresher) buildStoresInEdgesByName(ctx context.Context, source *store.
 	}
 
 	for _, svcNode := range matchingNodes {
-		if svcNode.Type != "service" && svcNode.Type != "deployment" {
+		if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 			continue
 		}
 		edges = append(edges, graph.Edge{
@@ -188,7 +188,7 @@ func (r *Refresher) buildQueuesInEdges(ctx context.Context, source *store.Compon
 		}
 
 		for _, svcNode := range matchingNodes {
-			if svcNode.Type != "service" && svcNode.Type != "deployment" {
+			if svcNode.Type != graph.NodeTypeService && svcNode.Type != graph.NodeTypeDeployment {
 				continue
 			}
 			edges = append(edges, graph.Edge{

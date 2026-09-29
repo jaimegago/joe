@@ -58,7 +58,7 @@ func TestBuildDDMetricsInEdges_SkipsNonServiceNodes(t *testing.T) {
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
 		ID:          "k8snode/payment-node",
-		Type:        "k8s_node",
+		Type:        "node",
 		ComponentID: "src-k8s",
 		Metadata:    map[string]any{"name": "payment-node"},
 	})
@@ -353,7 +353,7 @@ func TestBuildQueuesInEdges_SkipsNonServiceNodes(t *testing.T) {
 
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
 		ID:          "k8snode/orders-node",
-		Type:        "k8s_node",
+		Type:        "node",
 		ComponentID: "src-k8s",
 		Metadata:    map[string]any{"name": "orders-node"},
 	})

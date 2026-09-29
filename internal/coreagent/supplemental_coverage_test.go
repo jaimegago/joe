@@ -396,10 +396,10 @@ func TestBuildProxiesEdges_NonServiceNode(t *testing.T) {
 	ctx := context.Background()
 	src := &store.Component{ID: "src-envoy-ns", Type: store.ComponentTypeEnvoy, Name: "envoy"}
 
-	// k8s_node type — should be skipped.
+	// node type — should be skipped.
 	_ = r.services.Graph.AddNode(ctx, graph.Node{
 		ID:          "k8snode/payment-node",
-		Type:        "k8s_node",
+		Type:        "node",
 		ComponentID: "src-k8s",
 		Metadata:    map[string]any{"name": "payment-node"},
 	})
