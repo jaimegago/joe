@@ -15,7 +15,9 @@ func (r *Refresher) refreshAzureComponent(ctx context.Context, source *store.Com
 	r.logger.Info("refreshing azure component", "component_id", source.ID)
 
 	now := time.Now()
-	desiredNodes := make([]graph.Node, 0)
+	desiredNodes := []graph.Node{
+		componentAnchorNode(source, azureAnchorNodeID(source.ID), graph.NodeTypeAzureComponent, now),
+	}
 	desiredEdges := make([]graph.Edge, 0)
 	vnetIndex := make(map[string]string)
 
@@ -226,6 +228,11 @@ func (r *Refresher) buildIsK8sNodeEdgesFromVMs(ctx context.Context, source *stor
 		})
 	}
 	return edges
+}
+
+// azureAnchorNodeID is the ID of an azure component's anchor node.
+func azureAnchorNodeID(sourceID string) string {
+	return fmt.Sprintf("azure/%s", sourceID)
 }
 
 func azureNodeID(sourceID, service, resourceID string) string {

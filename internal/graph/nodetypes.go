@@ -15,6 +15,14 @@ package graph
 // declares, and the parked LLM graph-write tool (D-0110), whose type comes
 // from tool arguments.
 const (
+	// Component anchors for the refreshers whose nodes are otherwise only the
+	// resources they discover — k8s_refresh.go, aws_refresh.go,
+	// azure_refresh.go, git_refresh.go. One per component, carrying no edges.
+	NodeTypeKubernetesComponent = "kubernetes_component"
+	NodeTypeAWSComponent        = "aws_component"
+	NodeTypeAzureComponent      = "azure_component"
+	NodeTypeGitComponent        = "git_component"
+
 	// Kubernetes resources — k8s_refresh.go.
 	NodeTypeDeployment  = "deployment"
 	NodeTypeStatefulSet = "statefulset"

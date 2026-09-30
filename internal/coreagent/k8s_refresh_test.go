@@ -129,8 +129,9 @@ func TestRefreshK8sComponentMapping(t *testing.T) {
 		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
-	if len(nodes) != 7 {
-		t.Fatalf("nodes count = %d, want 7", len(nodes))
+	// 7 discovered resources plus the component's anchor node.
+	if len(nodes) != 8 {
+		t.Fatalf("nodes count = %d, want 8", len(nodes))
 	}
 
 	nodeIDs := map[string]struct{}{}

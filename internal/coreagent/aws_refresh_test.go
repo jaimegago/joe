@@ -96,8 +96,9 @@ func TestRefreshAWSComponentMapping(t *testing.T) {
 		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
-	if len(nodes) != 4 {
-		t.Fatalf("nodes count = %d, want 4", len(nodes))
+	// 4 discovered resources plus the component's anchor node.
+	if len(nodes) != 5 {
+		t.Fatalf("nodes count = %d, want 5", len(nodes))
 	}
 
 	requireEdge(t, edges, "aws/src-aws-1/ec2/i-1", "aws/src-aws-1/vpc/vpc-1", "in_vpc")

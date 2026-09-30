@@ -1,5 +1,5 @@
 Every registered component gets an anchor node — kubernetes, aws and azure are represented only by their discovered resources
-Status: open
+Status: done — kubernetes, aws, azure and git each write one bare anchor typed `<type>_component`; pinned over every registered component type by `TestEveryRegisteredComponentTypeWritesOneAnchor`; thread `component-anchor-node`
 
 Most refreshers open their desired set with one node that stands for the
 component itself: `obs/<type>/<component-id>` typed `<type>_component`
@@ -64,3 +64,45 @@ same way. Then:
 
 Untriaged. Found while reading the graph for the maintainer's 2026-09-11
 deep-dive; recorded under the `GRAPH` milestone in the maintainer's ledger.
+
+## Closed
+
+Closed by joe-pm thread `component-anchor-node`, which records the pull request
+and the merge commit. The body above is kept as the historical statement of the
+problem; this section records what the fix covered, because it differs from the
+body in four places.
+
+**Delivered.** The kubernetes, aws, azure and git refreshers each emit one anchor
+node first in their desired set, through the ordinary delta reconcile:
+`k8s/<component-id>`, `aws/<component-id>`, `azure/<component-id>` and
+`git/<component-id>`, typed `kubernetes_component`, `aws_component`,
+`azure_component` and `git_component`. The four types are declared in
+`internal/graph/nodetypes.go`. The anchors are bare: no edge joins one to its
+component's resources (Open work item 2, decided bare).
+
+**Pinned.** `TestEveryRegisteredComponentTypeWritesOneAnchor`
+(`internal/coreagent/component_anchor_test.go`) walks
+`store.AllowedComponentTypes()` — the registry, not the refreshers — and asserts
+exactly one node typed `<type>_component` per component. A registered type with
+neither a fixture nor a named exemption fails.
+`TestUnregistrableCloudTypesWriteOneAnchor` covers aws and azure separately.
+
+**Where it differs from the body.**
+
+- **git was not in the table and is covered.** Its refresher wrote one `git_repo`
+  node and no `git_component`. It now writes both.
+- **aws and azure are UNREGISTRABLE** (`internal/store/constants.go`), which the
+  body does not say. Their anchors are written only for rows stored before the
+  trim, and the registry walk cannot reach them — hence the second test.
+- **Three registered types are exempt by name**, not one: `falco`
+  ([falco-refresher](../falco-refresher.md)), `github` and `gitlab`. None has a
+  case in `refreshComponent`'s switch.
+- **"Most refreshers … do the same" holds only for registered types.** The
+  unregistrable `nginx-ingress` writes `nginx_component`, and the four registry
+  types write `artifact_registry`; neither is `<type>_component`. Left as it is:
+  the walk does not reach them, and nothing was changed.
+
+**Not delivered.** `contains` edges from an anchor to its top-level resources,
+and the `eks_cluster`/`aks_cluster` → kubernetes-anchor join.
+`resolveK8sComponentForService` is unchanged and keeps its depth-two walk.
+

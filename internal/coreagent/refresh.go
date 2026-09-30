@@ -39,6 +39,7 @@ import (
 	ecradapter "github.com/jaimegago/joe/internal/adapters/registry/ecr"
 	ociadapter "github.com/jaimegago/joe/internal/adapters/registry/oci"
 	"github.com/jaimegago/joe/internal/core"
+	"github.com/jaimegago/joe/internal/graph"
 	"github.com/jaimegago/joe/internal/llm"
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/rbac"
@@ -491,5 +492,25 @@ func (r *Refresher) refreshComponent(ctx context.Context, source *store.Componen
 	default:
 		r.logger.Debug("skipping unsupported component type", "component_id", source.ID, "type", source.Type)
 		return nil
+	}
+}
+
+// componentAnchorNode builds the one node that stands for the component itself
+// (graph-contract promise 2): typed <component-type>_component and carrying the
+// component's ID. It is bare — no edge joins it to the component's own
+// resources — and is emitted first in the desired set so it rides the ordinary
+// delta reconcile (D-0110: no separate write path).
+// TestEveryRegisteredComponentTypeWritesOneAnchor pins the invariant.
+func componentAnchorNode(source *store.Component, nodeID, nodeType string, now time.Time) graph.Node {
+	return graph.Node{
+		ID:          nodeID,
+		Type:        nodeType,
+		ComponentID: source.ID,
+		Metadata: map[string]any{
+			"component_id":   source.ID,
+			"component_type": source.Type,
+			"name":           source.Name,
+		},
+		LastSeen: now,
 	}
 }

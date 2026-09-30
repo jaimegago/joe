@@ -104,6 +104,8 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 
 	now := time.Now()
 
+	desiredNodes = append(desiredNodes, componentAnchorNode(source, k8sAnchorNodeID(source.ID), graph.NodeTypeKubernetesComponent, now))
+
 	for _, spec := range k8sRefreshResources {
 		items, err := adapter.ListResources(ctx, spec.Resource, "")
 		if err != nil {
@@ -259,6 +261,12 @@ func (r *Refresher) refreshK8sComponent(ctx context.Context, source *store.Compo
 
 	r.logger.Info("k8s refresh completed", "component_id", source.ID, "nodes", len(desiredNodes), "edges", len(desiredEdges), "skipped", len(skips), "duration_ms", time.Since(start).Milliseconds())
 	return skips, nil
+}
+
+// k8sAnchorNodeID is the ID of a kubernetes component's anchor node: the k8s
+// family prefix with no kind segment.
+func k8sAnchorNodeID(sourceID string) string {
+	return fmt.Sprintf("k8s/%s", sourceID)
 }
 
 func k8sNodeID(sourceID, kind, namespace, name string) string {
