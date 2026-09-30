@@ -54,7 +54,6 @@ after the move rather than by inspection.
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open | next |
 | [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
 | [`cli-version-and-help`](cli-version-and-help.md) | Backlog — Skills/incident leaf help still runs behind a config load (deferred from cli-version-and-help / D-0143) | open | next |
-| [`component-anchor-node`](component-anchor-node.md) | Every registered component gets an anchor node — kubernetes, aws and azure are represented only by their discovered resources | open | |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
 | [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |

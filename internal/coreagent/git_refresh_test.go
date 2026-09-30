@@ -76,8 +76,14 @@ func TestRefreshGitComponentBasic(t *testing.T) {
 		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
-	if len(nodes) != 1 {
-		t.Fatalf("nodes count = %d, want 1", len(nodes))
+	// The repository node plus the component's anchor node.
+	if len(nodes) != 2 {
+		t.Fatalf("nodes count = %d, want 2", len(nodes))
+	}
+	for i := range nodes {
+		if nodes[i].Type == graph.NodeTypeGitRepo {
+			nodes[0], nodes[i] = nodes[i], nodes[0]
+		}
 	}
 
 	if nodes[0].Type != "git_repo" {
@@ -190,8 +196,8 @@ func TestRefreshGitComponent_DanglingProviderSkipped(t *testing.T) {
 	if len(edges) != 0 {
 		t.Errorf("edges = %d, want 0 — a dangling declaration must not produce a hosting claim", len(edges))
 	}
-	if len(nodes) != 1 {
-		t.Errorf("nodes = %d, want only the repository anchor", len(nodes))
+	if len(nodes) != 2 {
+		t.Errorf("nodes = %d, want only the repository node and the component anchor", len(nodes))
 	}
 }
 
@@ -250,7 +256,7 @@ func TestRefreshGitComponent_HostingEdgeReconcilesAway(t *testing.T) {
 	if len(edges) != 0 {
 		t.Errorf("edges = %d after the declaration was cleared, want 0", len(edges))
 	}
-	if len(nodes) != 1 {
-		t.Errorf("nodes = %d after the declaration was cleared, want only the repository anchor", len(nodes))
+	if len(nodes) != 2 {
+		t.Errorf("nodes = %d after the declaration was cleared, want only the repository node and the component anchor", len(nodes))
 	}
 }

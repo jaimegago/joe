@@ -18,7 +18,9 @@ func (r *Refresher) refreshAWSComponent(ctx context.Context, source *store.Compo
 	now := time.Now()
 	region := awsRegionFromComponent(source)
 
-	desiredNodes := make([]graph.Node, 0)
+	desiredNodes := []graph.Node{
+		componentAnchorNode(source, awsAnchorNodeID(source.ID), graph.NodeTypeAWSComponent, now),
+	}
 	desiredEdges := make([]graph.Edge, 0)
 	nodeIndex := make(map[string]struct{})
 	vpcIndex := make(map[string]string)
@@ -253,6 +255,11 @@ func (r *Refresher) buildIsK8sNodeEdgesFromEC2(ctx context.Context, source *stor
 		})
 	}
 	return edges
+}
+
+// awsAnchorNodeID is the ID of an aws component's anchor node.
+func awsAnchorNodeID(sourceID string) string {
+	return fmt.Sprintf("aws/%s", sourceID)
 }
 
 func awsNodeID(sourceID, service, resourceID string) string {

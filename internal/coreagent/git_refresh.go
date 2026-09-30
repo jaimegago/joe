@@ -24,6 +24,7 @@ func (r *Refresher) refreshGitComponent(ctx context.Context, source *store.Compo
 		return fmt.Errorf("build git repo node: %w", err)
 	}
 
+	desiredNodes = append(desiredNodes, componentAnchorNode(source, gitAnchorNodeID(source.ID), graph.NodeTypeGitComponent, now))
 	desiredNodes = append(desiredNodes, graph.Node{
 		ID:          repoInfo.node.ID,
 		Type:        repoInfo.node.Type,
@@ -148,6 +149,11 @@ func (r *Refresher) buildGitRepoNode(ctx context.Context, sourceID string, adapt
 	}
 
 	return info, nil
+}
+
+// gitAnchorNodeID is the ID of a git component's anchor node.
+func gitAnchorNodeID(sourceID string) string {
+	return fmt.Sprintf("git/%s", sourceID)
 }
 
 func gitNodeID(sourceID, segment string) string {

@@ -91,8 +91,9 @@ func TestRefreshAzureComponentMapping(t *testing.T) {
 		t.Fatalf("LoadGraphStateForComponent error: %v", err)
 	}
 
-	if len(nodes) != 4 {
-		t.Fatalf("nodes count = %d, want 4", len(nodes))
+	// 4 discovered resources plus the component's anchor node.
+	if len(nodes) != 5 {
+		t.Fatalf("nodes count = %d, want 5", len(nodes))
 	}
 
 	requireEdge(t, edges, "azure/src-az-1/vm/vm-1", "azure/src-az-1/vnet/vnet-1", "in_vnet")
