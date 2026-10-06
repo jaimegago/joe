@@ -183,15 +183,20 @@ type TokenUsage struct {
 	// minimum cacheable length caches nothing, silently and without an error,
 	// so byte-stability on its own does not show the mechanism working.
 	//
-	// An adapter with no caching contract leaves both zero, which is an honest
-	// report of "this provider cached nothing", not a missing measurement.
+	// Each is nil when the provider does not report that count, and non-nil
+	// (possibly zero) when it does. The two must stay distinguishable: zero
+	// says "the provider reported no cache activity", nil says "this provider
+	// gives no cache accounting at all", and a consumer that reads nil as zero
+	// would report a cache miss that was never measured. Anthropic reports
+	// both; Gemini reports reads only; the OpenAI-compatible path reports
+	// neither.
 	//
 	// Neither is added into TotalTokens. Anthropic reports cached input
 	// separately from InputTokens and prices it differently (a write premium,
 	// a read discount), so folding them in would silently change what every
 	// existing cost and budget consumer means by a total.
-	CacheReadTokens  int
-	CacheWriteTokens int
+	CacheReadTokens  *int
+	CacheWriteTokens *int
 }
 
 // CostNanoUnitsPerUnit is the integer scale used to store LLM call cost in

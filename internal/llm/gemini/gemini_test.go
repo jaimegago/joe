@@ -1112,3 +1112,31 @@ func TestBuildContents_ToolResultWrapsNonJSON(t *testing.T) {
 		t.Errorf("Response = %v, want the text under a \"result\" key", fr.Response)
 	}
 }
+
+// Gemini reports cached input but no cache writes: the read is present (zero
+// included) and the write is absent, never a defaulted zero.
+func TestConvertResponse_CacheCounts(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	client, _ := NewClient(context.Background(), "")
+	defer client.Close()
+
+	for _, cached := range []int32{0, 640} {
+		resp := &genai.GenerateContentResponse{
+			UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+				PromptTokenCount:        1000,
+				CandidatesTokenCount:    5,
+				TotalTokenCount:         1005,
+				CachedContentTokenCount: cached,
+			},
+		}
+		result := client.convertResponse(resp)
+		if result.Usage.CacheReadTokens == nil || *result.Usage.CacheReadTokens != int(cached) {
+			t.Errorf("cached=%d: CacheReadTokens = %v, want %d", cached, result.Usage.CacheReadTokens, cached)
+		}
+		if result.Usage.CacheWriteTokens != nil {
+			t.Errorf("cached=%d: CacheWriteTokens = %d, want nil (Gemini reports no cache writes)", cached, *result.Usage.CacheWriteTokens)
+		}
+	}
+}

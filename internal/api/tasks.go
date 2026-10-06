@@ -241,6 +241,12 @@ type taskToolResult struct {
 type taskTokenUsage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+	// CacheReadTokens / CacheWriteTokens are absent when the provider does not
+	// report the count, and present — zero included — when it does. omitempty
+	// on a pointer drops only nil, so a reported zero still serializes. A
+	// consumer must not read an absent field as zero; see llm.TokenUsage.
+	CacheReadTokens  *int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens *int `json:"cache_write_tokens,omitempty"`
 }
 
 // --- Handler ---
@@ -838,8 +844,10 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 		LLMResponse: taskLLMResponse{
 			Content: s.LLMResponse.Content,
 			Usage: taskTokenUsage{
-				InputTokens:  s.LLMResponse.Usage.InputTokens,
-				OutputTokens: s.LLMResponse.Usage.OutputTokens,
+				InputTokens:      s.LLMResponse.Usage.InputTokens,
+				OutputTokens:     s.LLMResponse.Usage.OutputTokens,
+				CacheReadTokens:  s.LLMResponse.Usage.CacheReadTokens,
+				CacheWriteTokens: s.LLMResponse.Usage.CacheWriteTokens,
 			},
 		},
 	}
@@ -915,8 +923,10 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		FinalAnswer: answer,
 		ToolsUsed:   toolsUsed,
 		TotalTokens: taskTokenUsage{
-			InputTokens:  session.TotalInputTokens,
-			OutputTokens: session.TotalOutputTokens,
+			InputTokens:      session.TotalInputTokens,
+			OutputTokens:     session.TotalOutputTokens,
+			CacheReadTokens:  session.CacheReadTokens(),
+			CacheWriteTokens: session.CacheWriteTokens(),
 		},
 		ContextWindowTokens:    contextWindowTokens,
 		DurationMs:             int(duration.Milliseconds()),
