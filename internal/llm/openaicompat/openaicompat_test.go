@@ -216,3 +216,23 @@ func TestChat_ErrorStatus_CarriesCode(t *testing.T) {
 		t.Fatalf("expected APIError with code 401, got %T: %v", err, err)
 	}
 }
+
+// The OpenAI-compatible wire declares no cache accounting, so both counts are
+// absent — never a defaulted zero.
+func TestChat_CacheCountsUnreported(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL+"/v1")
+	resp, err := c.Chat(context.Background(), llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: "go"}}})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Usage.CacheReadTokens != nil || resp.Usage.CacheWriteTokens != nil {
+		t.Errorf("cache counts = %v/%v, want both nil", resp.Usage.CacheReadTokens, resp.Usage.CacheWriteTokens)
+	}
+}

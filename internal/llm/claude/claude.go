@@ -219,6 +219,8 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) anthropic.ToolUn
 
 // convertResponse converts Anthropic response to our response format
 func (c *Client) convertResponse(response *anthropic.Message) *llm.ChatResponse {
+	cacheRead := int(response.Usage.CacheReadInputTokens)
+	cacheWrite := int(response.Usage.CacheCreationInputTokens)
 	result := &llm.ChatResponse{
 		Usage: llm.TokenUsage{
 			InputTokens:  int(response.Usage.InputTokens),
@@ -229,8 +231,8 @@ func (c *Client) convertResponse(response *anthropic.Message) *llm.ChatResponse 
 			// TotalTokens — see llm.TokenUsage. A read of zero on a repeat
 			// turn means the cache did not engage, which a byte-equality
 			// argument alone cannot detect.
-			CacheReadTokens:  int(response.Usage.CacheReadInputTokens),
-			CacheWriteTokens: int(response.Usage.CacheCreationInputTokens),
+			CacheReadTokens:  &cacheRead,
+			CacheWriteTokens: &cacheWrite,
 		},
 	}
 

@@ -576,3 +576,26 @@ func TestEnhanceError_Unknown(t *testing.T) {
 		t.Errorf("Expected 'call to Claude API failed' in error, got: %s", err.Error())
 	}
 }
+
+// Anthropic reports both cache counts, so both are present — zero included.
+func TestConvertResponse_CacheCountsReported(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	msgJSON := `{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":900,"cache_creation_input_tokens":0}}`
+	var msg anthropic.Message
+	if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+		t.Fatalf("Failed to unmarshal message: %v", err)
+	}
+
+	result := client.convertResponse(&msg)
+
+	if result.Usage.CacheReadTokens == nil || *result.Usage.CacheReadTokens != 900 {
+		t.Errorf("CacheReadTokens = %v, want 900", result.Usage.CacheReadTokens)
+	}
+	if result.Usage.CacheWriteTokens == nil || *result.Usage.CacheWriteTokens != 0 {
+		t.Errorf("CacheWriteTokens = %v, want a reported 0", result.Usage.CacheWriteTokens)
+	}
+}

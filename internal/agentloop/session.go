@@ -23,6 +23,17 @@ type Session struct {
 	RunTokens       int
 	RunLLMCalls     int
 
+	// Cache accounting over the session's LLM calls. A count is summed only
+	// from calls that reported it, and CacheReadTokens / CacheWriteTokens
+	// return it only when every call did — a sum over some calls would read as
+	// the task's figure while silently missing the rest (a fallback chain can
+	// mix providers within one task). See llm.TokenUsage for nil versus zero.
+	llmCalls         int
+	cacheReadTokens  int
+	cacheReadCalls   int
+	cacheWriteTokens int
+	cacheWriteCalls  int
+
 	// MaxMessages limits conversation history size to prevent unbounded growth
 	// When 0, no limit is applied. Recommended: 100-200 for typical conversations.
 	// Applied as a SECONDARY backstop after the token budget (a cheap guard
@@ -386,4 +397,33 @@ func (s *Session) AddTokenUsage(ctx context.Context, usage llm.TokenUsage) {
 	s.TotalOutputTokens += usage.OutputTokens
 	s.TotalTokens += usage.TotalTokens
 	s.metrics.RecordSessionTokens(ctx, usage.TotalTokens)
+
+	s.llmCalls++
+	if usage.CacheReadTokens != nil {
+		s.cacheReadTokens += *usage.CacheReadTokens
+		s.cacheReadCalls++
+	}
+	if usage.CacheWriteTokens != nil {
+		s.cacheWriteTokens += *usage.CacheWriteTokens
+		s.cacheWriteCalls++
+	}
+}
+
+// CacheReadTokens returns the session's total cache-read tokens, or nil when
+// no LLM call was made or any call did not report the count.
+func (s *Session) CacheReadTokens() *int {
+	return completeCount(s.cacheReadTokens, s.cacheReadCalls, s.llmCalls)
+}
+
+// CacheWriteTokens returns the session's total cache-write tokens, or nil when
+// no LLM call was made or any call did not report the count.
+func (s *Session) CacheWriteTokens() *int {
+	return completeCount(s.cacheWriteTokens, s.cacheWriteCalls, s.llmCalls)
+}
+
+func completeCount(total, reported, calls int) *int {
+	if calls == 0 || reported < calls {
+		return nil
+	}
+	return &total
 }
