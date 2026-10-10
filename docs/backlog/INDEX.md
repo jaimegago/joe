@@ -92,7 +92,6 @@ after the move rather than by inspection.
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open | later |
 | [`macos-signing-notarization`](macos-signing-notarization.md) | Sign and notarize released macOS binaries | open | later |
 | [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |
-| [`mcp-client-absence-guard`](mcp-client-absence-guard.md) | Guard test pinning the no-MCP-client invariant | open | next |
 | [`oasis-refresh-principal-no-grant`](oasis-refresh-principal-no-grant.md) | Autonomous refresh principal is denied `no_grant` on the registered lab component | open | next |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open | next |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open | next |

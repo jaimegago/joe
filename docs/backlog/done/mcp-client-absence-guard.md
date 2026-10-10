@@ -1,5 +1,5 @@
 Guard test pinning the no-MCP-client invariant
-Status: open
+Status: done — `TestNoMCPClientInProduction` (`internal/mcp/client_absence_break_test.go`), session `mcp-client-absence-guard`
 Priority: next
 
 D-0067 categorically rejects Joe acting as an MCP client, and the live tree

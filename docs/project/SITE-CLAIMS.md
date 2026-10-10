@@ -206,13 +206,14 @@ test(s)** · **binding note** (where applicable).
 - **Claim.** Joe runs as an MCP server (`joe mcp`) exposing its own governed tools and
   deliberately does not act as an MCP client consuming external servers' tools, because the
   protocol carries no enforceable mutation classification. The copy carries a precision note
-  that this stance is not yet pinned by a guard test.
+  that this stance is not yet pinned by a guard test — **stale: the guard has landed.**
 - **Mechanism.** `joe mcp` is server-only; no MCP-client dispatch path exists in the tree
-  (D-0067).
-- **Pinning tests.** None yet.
-- **Binding note. Mechanism-bound.** The "not yet test-pinned" sentence in the copy dies when
-  the guard lands (`docs/backlog/mcp-client-absence-guard.md`); revise the copy to cite the new
-  guard test at that point.
+  (D-0067). A repo-wide import allowlist admits only the mcp-go server and protocol-type
+  packages, so an MCP client import — from mcp-go or any other MCP library — fails the build.
+- **Pinning tests.** `TestNoMCPClientInProduction`, `TestIsExternalMCPImport`.
+- **Binding note. Mechanism-bound, trigger reached.** The guard landed
+  (`docs/backlog/done/mcp-client-absence-guard.md`), so the copy's "not yet test-pinned"
+  sentence is owed a revision on joeagent.dev citing `TestNoMCPClientInProduction`.
 
 ### OASIS: Joe is a validated pipeline stage, with a deliberate no-verdict stance
 
@@ -319,8 +320,8 @@ and becomes load-bearing.
   reason this caption names no model. The claim the caption does carry is the **grounding path**:
   that the answer came from Joe-served state over MCP.
 - **Pinning tests.** None possible for the footage. The underlying server-only MCP posture is
-  covered by the Safety deep-dive entry "Joe speaks MCP in one direction only", which records that
-  it too is not yet test-pinned.
+  covered by the Safety deep-dive entry "Joe speaks MCP in one direction only", pinned by
+  `TestNoMCPClientInProduction`.
 - **Binding note. Recording-bound.** Invalidated if the clip is re-recorded such that either the
   frame-visible model or the Joe-grounded evidence path changes. Because the model here is shown
   rather than stated, a re-record on a different model invalidates the footage-to-claim mapping in
