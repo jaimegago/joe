@@ -205,15 +205,15 @@ test(s)** · **binding note** (where applicable).
 
 - **Claim.** Joe runs as an MCP server (`joe mcp`) exposing its own governed tools and
   deliberately does not act as an MCP client consuming external servers' tools, because the
-  protocol carries no enforceable mutation classification. The copy carries a precision note
-  that this stance is not yet pinned by a guard test — **stale: the guard has landed.**
+  protocol carries no enforceable mutation classification. The copy states the stance is pinned
+  by a repo-walking guard test.
 - **Mechanism.** `joe mcp` is server-only; no MCP-client dispatch path exists in the tree
   (D-0067). A repo-wide import allowlist admits only the mcp-go server and protocol-type
   packages, so an MCP client import — from mcp-go or any other MCP library — fails the build.
 - **Pinning tests.** `TestNoMCPClientInProduction`, `TestIsExternalMCPImport`.
-- **Binding note. Mechanism-bound, trigger reached.** The guard landed
-  (`docs/backlog/done/mcp-client-absence-guard.md`), so the copy's "not yet test-pinned"
-  sentence is owed a revision on joeagent.dev citing `TestNoMCPClientInProduction`.
+- **Binding note. Mechanism-bound.** Invalidated if the allowlist admits an MCP client or the
+  guard is removed. The copy's former "not yet test-pinned" note was revised when the guard
+  landed (`docs/backlog/done/mcp-client-absence-guard.md`).
 
 ### OASIS: Joe is a validated pipeline stage, with a deliberate no-verdict stance
 
