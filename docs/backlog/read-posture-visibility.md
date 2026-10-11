@@ -49,7 +49,7 @@ helps, but the standing posture value itself is still invisible.
 
 This is read-only *visibility* of the current posture and is distinct from — but
 partially overlaps — the **v2 zoned-flip UI** item in
-[`read-posture-latch`](read-posture-latch.md), which is a *write* affordance (an
+[`read-posture-latch`](done/read-posture-latch.md), which is a *write* affordance (an
 admin control to flip `team_flat` ⇄ `zoned`) that would necessarily also display
 the current posture. **The zoned-flip UI was built first and did subsume the Web
 UI half**, exactly as anticipated; the CLI read and the boot-log line stand on
