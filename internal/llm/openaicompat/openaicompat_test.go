@@ -22,6 +22,14 @@ func newTestClient(t *testing.T, baseURL string) *Client {
 	return c
 }
 
+// deref reads a captured message's content, treating null as empty.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 func TestNewClient_RequiresBaseURL(t *testing.T) {
 	if _, err := NewClient("m", ""); err == nil {
 		t.Fatal("expected error when base_url is empty")
@@ -94,10 +102,10 @@ func TestChat_RequestMapping(t *testing.T) {
 	if len(captured.Messages) != 4 {
 		t.Fatalf("got %d messages, want 4: %+v", len(captured.Messages), captured.Messages)
 	}
-	if captured.Messages[0].Role != "system" || captured.Messages[0].Content != "you are joe" {
+	if captured.Messages[0].Role != "system" || deref(captured.Messages[0].Content) != "you are joe" {
 		t.Errorf("message[0] = %+v, want leading system prompt", captured.Messages[0])
 	}
-	if captured.Messages[1].Role != "user" || captured.Messages[1].Content != "hello" {
+	if captured.Messages[1].Role != "user" || deref(captured.Messages[1].Content) != "hello" {
 		t.Errorf("message[1] = %+v, want user/hello", captured.Messages[1])
 	}
 
@@ -115,7 +123,7 @@ func TestChat_RequestMapping(t *testing.T) {
 
 	// Tool result becomes a tool-role message referencing the call id.
 	tool := captured.Messages[3]
-	if tool.Role != "tool" || tool.ToolCallID != "call_1" || tool.Content != "cpu=80%" {
+	if tool.Role != "tool" || tool.ToolCallID != "call_1" || deref(tool.Content) != "cpu=80%" {
 		t.Errorf("message[3] = %+v, want tool/call_1/cpu=80%%", tool)
 	}
 
@@ -234,5 +242,54 @@ func TestChat_CacheCountsUnreported(t *testing.T) {
 	}
 	if resp.Usage.CacheReadTokens != nil || resp.Usage.CacheWriteTokens != nil {
 		t.Errorf("cache counts = %v/%v, want both nil", resp.Usage.CacheReadTokens, resp.Usage.CacheWriteTokens)
+	}
+}
+
+// TestChat_ContentAlwaysEmitted pins the content field on the wire. Ollama's
+// /v1 rejects a message carrying neither content nor tool_calls ("invalid
+// message content type: <nil>"), so an empty tool result or an empty user turn
+// must still send "content":"" rather than omit the key. An assistant turn that
+// carries only tool calls sends "content":null, the OpenAI contract's form.
+func TestChat_ContentAlwaysEmitted(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+
+	var raw struct {
+		Messages []map[string]json.RawMessage `json:"messages"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL+"/v1")
+	_, err := c.Chat(context.Background(), llm.ChatRequest{Messages: []llm.Message{
+		{Role: "user", Content: ""},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call_1", Name: "run", Args: map[string]any{}}}},
+		{ToolResultID: "call_1", ToolName: "run", Content: ""},
+		{Role: "assistant", Content: "checking", ToolCalls: []llm.ToolCall{{ID: "call_2", Name: "run", Args: map[string]any{}}}},
+		{ToolResultID: "call_2", ToolName: "run", Content: "done"},
+		{Role: "assistant", Content: ""},
+	}})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+
+	want := []string{`""`, `null`, `""`, `"checking"`, `"done"`, `""`}
+	if len(raw.Messages) != len(want) {
+		t.Fatalf("got %d messages, want %d", len(raw.Messages), len(want))
+	}
+	for i, w := range want {
+		got, ok := raw.Messages[i]["content"]
+		if !ok {
+			t.Errorf("message[%d] (%s) omits content; want %s", i, raw.Messages[i]["role"], w)
+			continue
+		}
+		if string(got) != w {
+			t.Errorf("message[%d] (%s) content = %s, want %s", i, raw.Messages[i]["role"], got, w)
+		}
 	}
 }
