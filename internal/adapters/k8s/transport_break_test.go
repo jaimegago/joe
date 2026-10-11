@@ -114,6 +114,11 @@ func TestNoClientcmdOutsideAllowedAdapters(t *testing.T) {
 		if d.IsDir() {
 			// Skip node_modules and any hidden dir (.git, and .claude/worktrees,
 			// which holds sibling git worktrees whose stale copies would be scanned).
+			// The root is exempt: its name is "..", which would otherwise read as
+			// hidden and skip the whole walk.
+			if path == root {
+				return nil
+			}
 			if d.Name() == "node_modules" || (len(d.Name()) > 1 && strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir
 			}

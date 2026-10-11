@@ -200,3 +200,62 @@ func TestSession_Clear(t *testing.T) {
 		t.Errorf("Session has %d messages after clear and add, want 1", len(session.Messages))
 	}
 }
+
+func intPtr(n int) *int { return &n }
+
+// Cache counts are absent, never zero, unless every LLM call in the session
+// reported them — joe-pm threads/cost-latency-metadata-wire.md, invariant 2.
+func TestSessionCacheTokens(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name      string
+		usages    []llm.TokenUsage
+		wantRead  *int
+		wantWrite *int
+	}{
+		{name: "no calls", usages: nil},
+		{
+			name:      "every call reports both",
+			usages:    []llm.TokenUsage{{CacheReadTokens: intPtr(0), CacheWriteTokens: intPtr(120)}, {CacheReadTokens: intPtr(120), CacheWriteTokens: intPtr(0)}},
+			wantRead:  intPtr(120),
+			wantWrite: intPtr(120),
+		},
+		{
+			name:      "reported zero stays zero",
+			usages:    []llm.TokenUsage{{CacheReadTokens: intPtr(0), CacheWriteTokens: intPtr(0)}},
+			wantRead:  intPtr(0),
+			wantWrite: intPtr(0),
+		},
+		{
+			name:     "reads only, as Gemini reports",
+			usages:   []llm.TokenUsage{{CacheReadTokens: intPtr(7)}, {CacheReadTokens: intPtr(3)}},
+			wantRead: intPtr(10),
+		},
+		{name: "provider reports nothing", usages: []llm.TokenUsage{{InputTokens: 5}}},
+		{
+			name:   "one call unreported makes the total unknown",
+			usages: []llm.TokenUsage{{CacheReadTokens: intPtr(9), CacheWriteTokens: intPtr(1)}, {InputTokens: 5}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSession(nil)
+			for _, u := range tt.usages {
+				s.AddTokenUsage(ctx, u)
+			}
+			assertCount(t, "CacheReadTokens", s.CacheReadTokens(), tt.wantRead)
+			assertCount(t, "CacheWriteTokens", s.CacheWriteTokens(), tt.wantWrite)
+		})
+	}
+}
+
+func assertCount(t *testing.T, name string, got, want *int) {
+	t.Helper()
+	switch {
+	case got == nil && want == nil:
+	case got == nil || want == nil:
+		t.Errorf("%s = %v, want %v (nil means unreported)", name, got, want)
+	case *got != *want:
+		t.Errorf("%s = %d, want %d", name, *got, *want)
+	}
+}
