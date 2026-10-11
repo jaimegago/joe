@@ -396,7 +396,7 @@ export function PromoteComponentForm({
                       onChange={(e) => setCaData(e.target.value)}
                       placeholder="-----BEGIN CERTIFICATE-----&#10;..."
                       rows={4}
-                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                     <p className="text-xs text-muted-foreground">
                       The cluster CA certificate, stored inline so the record is self-contained.

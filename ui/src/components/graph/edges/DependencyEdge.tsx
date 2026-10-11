@@ -49,7 +49,7 @@ export const DependencyEdge = memo(function DependencyEdge({
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
             pointerEvents: 'all',
           }}
-          className="rounded bg-white px-1 py-0.5 text-xs text-gray-400 shadow-sm"
+          className="rounded bg-white px-1 py-0.5 text-xs text-gray-400 shadow-xs"
         >
           {cfg.label}
         </div>

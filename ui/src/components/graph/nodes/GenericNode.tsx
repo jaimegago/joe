@@ -14,9 +14,9 @@ export const GenericNode = memo(function GenericNode({ data, selected }: NodePro
         borderWidth: selected ? 2 : 1,
         backgroundColor: cfg.bgColor,
       }}
-      className="min-w-[160px] max-w-[200px] rounded-lg border bg-white p-3 shadow-sm"
+      className="min-w-[160px] max-w-[200px] rounded-lg border bg-white p-3 shadow-xs"
     >
-      <Handle type="target" position={Position.Top} className="!border-0 !bg-gray-400" />
+      <Handle type="target" position={Position.Top} className="border-0! bg-gray-400!" />
       <div className="flex items-center gap-1.5">
         <span className="truncate text-sm font-semibold" title={data.name}>
           {data.name}
@@ -32,7 +32,7 @@ export const GenericNode = memo(function GenericNode({ data, selected }: NodePro
           <span>{data.kind}</span>
         </p>
       </div>
-      <Handle type="source" position={Position.Bottom} className="!border-0 !bg-gray-400" />
+      <Handle type="source" position={Position.Bottom} className="border-0! bg-gray-400!" />
     </div>
   );
 });
