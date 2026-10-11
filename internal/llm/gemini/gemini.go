@@ -308,10 +308,15 @@ func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatR
 
 	// Safely extract token usage - UsageMetadata can be nil
 	if resp.UsageMetadata != nil {
+		// Gemini reports cached input (implicit or explicit caching) but has
+		// no count for tokens written into a cache, so CacheWriteTokens stays
+		// nil — unreported, not zero. See llm.TokenUsage.
+		cacheRead := int(resp.UsageMetadata.CachedContentTokenCount)
 		result.Usage = llm.TokenUsage{
-			InputTokens:  int(resp.UsageMetadata.PromptTokenCount),
-			OutputTokens: int(resp.UsageMetadata.CandidatesTokenCount),
-			TotalTokens:  int(resp.UsageMetadata.TotalTokenCount),
+			InputTokens:     int(resp.UsageMetadata.PromptTokenCount),
+			OutputTokens:    int(resp.UsageMetadata.CandidatesTokenCount),
+			TotalTokens:     int(resp.UsageMetadata.TotalTokenCount),
+			CacheReadTokens: &cacheRead,
 		}
 	}
 

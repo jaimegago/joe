@@ -451,7 +451,7 @@ Result: DENIED (zone does not permit mutate)
 
 Under the launch-default `team_flat` posture, *read* decisions short-circuit to allow for any authenticated principal (§3.5); *mutate* decisions are unaffected and still evaluate against the zone ceiling, the safety policy, and the write floor.
 
-> **Launch note (read-posture-latch).** The zone/policy/component-zone admin surface is the **full-mode (`zoned`) era** model. At launch the install ships `team_flat`, and the zone-administration UI is de-emphasized; zones become operative when an operator opts in to `zoned`. See `docs/backlog/read-posture-latch.md` and D-0041/D-0043.
+> **Launch note (read-posture-latch).** The zone/policy/component-zone admin surface is the **full-mode (`zoned`) era** model. At launch the install ships `team_flat`, and the zone-administration UI is de-emphasized; zones become operative when an operator opts in to `zoned`. See `docs/backlog/done/read-posture-latch.md` and D-0041/D-0043.
 
 ### 8.2 Protected configuration
 

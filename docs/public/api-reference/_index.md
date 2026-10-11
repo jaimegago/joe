@@ -347,6 +347,13 @@ Runs the task to completion and returns the full result synchronously. Response 
 }
 ```
 
+`total_tokens` may also carry `cache_read_tokens` and `cache_write_tokens`. Each is
+present only when the provider reports it for every LLM call in the task, and a present
+`0` means the provider reported no cache activity. An absent field means the count was
+not reported. It does not mean zero. Anthropic reports both counts, Gemini reports reads
+only, and OpenAI-compatible providers report neither. A step's `usage` follows the same
+rule for its one call.
+
 Each step carries the LLM request (`message_count`, `tools_available`), the LLM response
 (`content`, optional `tool_calls`, `usage`), and any `tool_results`. The response also
 surfaces context-management fields (`history_trimmed`, `messages_dropped`,
