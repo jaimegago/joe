@@ -39,8 +39,9 @@ longer resolve:
   doc-publishing entries describe the pre-prune tree.
 
 Neither was in this session's scope. Note that `learn-from-sessions-current-state.md` is in the
-same condition but is **already** tracked, at the tail of
-[`learn-from-sessions-fate`](learn-from-sessions-fate.md) — do not open a second item for it.
+same condition. It was tracked at the tail of
+[`learn-from-sessions-fate`](done/learn-from-sessions-fate.md) until that item closed under
+`node-notes-filing`; it is tracked **here** now — do not open a second item for it.
 
 ## 3 — `joe-architecture.md` needs the same tense-and-subject sweep
 

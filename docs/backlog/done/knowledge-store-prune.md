@@ -93,6 +93,16 @@ claiming a live feature reintroduces the exact drift D-0074 was about.
 - **`docs/backlog/learn-from-sessions-fate.md`** is marked `decided` against a store that
   will not exist; revisit or close it.
 
+## Forward dependency discharged (session node-notes-filing)
+
+The forward dependency above — where IaC-repo and other LLM-derived inferences land, given
+D-0110 bars them from the graph (`knowledge-store-maturation.md` § 6, carried by D-0113) — is
+answered: **they land in the node-anchored notes table, never the graph.** See D-0161 and
+[DESIGN-NODE-NOTES](../../reference/DESIGN-NODE-NOTES.md); the build is
+[`node-anchored-notes`](../node-anchored-notes.md). The `learn-from-sessions-fate` bullet above
+is closed by the same answer; its legacy-tables half is re-filed as
+[`legacy-sessions-tables-fate`](../legacy-sessions-tables-fate.md).
+
 ## Not addressed here
 
 Whether v2 is built at all, and on what design. This item removes the current

@@ -108,3 +108,7 @@ main reason the derived tier and its write path matter beyond tidiness: there is
 consumer coming, and it should not arrive to find it must invent its own ungoverned path.
 Whatever is decided in items 1 and 4 should be checked against this use case before it is
 called done.
+
+**Discharged (session node-notes-filing):** the derived tier is gone (D-0113); these
+inferences land in the node-anchored notes table instead, never the graph — D-0161 and
+[DESIGN-NODE-NOTES](../../reference/DESIGN-NODE-NOTES.md).

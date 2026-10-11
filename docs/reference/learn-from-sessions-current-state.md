@@ -162,7 +162,7 @@ context:
 
 The feature's fate is **decided — deferred to a future feature, not retired** —
 recorded in
-[docs/backlog/learn-from-sessions-fate.md](../backlog/learn-from-sessions-fate.md).
+[docs/backlog/done/learn-from-sessions-fate.md](../backlog/done/learn-from-sessions-fate.md).
 When the future feature is built, the extractor will be rewired (repointed at the
 live `agent_sessions`/`chat_messages` store) and governed (real principal, audit
 row, resolved tier, explicit invocation path, config switch defaulting off)

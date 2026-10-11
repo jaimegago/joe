@@ -86,12 +86,13 @@ after the move rather than by inspection.
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred | later |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open | next |
-| [`learn-from-sessions-fate`](learn-from-sessions-fate.md) | Backlog — Fate of the learn-from-sessions (knowledge extraction) feature | open | next |
+| [`legacy-sessions-tables-fate`](legacy-sessions-tables-fate.md) | Backlog — Fate of the legacy `sessions` / `session_messages` tables | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |
 | [`llmusage-tables-cover-two-models`](llmusage-tables-cover-two-models.md) | Capability and price tables cover two models, so every other model is a 100,000-token unknown | open | later |
 | [`loop-budget-exhaustion`](loop-budget-exhaustion.md) | Backlog — Loop budget-exhaustion follow-ups (deferred from loop-budget-exhaustion / D-0096–D-0100) | open | later |
 | [`macos-signing-notarization`](macos-signing-notarization.md) | Sign and notarize released macOS binaries | open | later |
 | [`mcp-agentic-ask`](mcp-agentic-ask.md) | An agentic-ask MCP tool — reach the agent loop from a coding agent | open | next |
+| [`node-anchored-notes`](node-anchored-notes.md) | Node-anchored operational notes — Joe's memory surface | open | next |
 | [`oasis-refresh-principal-no-grant`](oasis-refresh-principal-no-grant.md) | Autonomous refresh principal is denied `no_grant` on the registered lab component | open | next |
 | [`oasis-relationship`](oasis-relationship.md) | OASIS evaluation relationship and the deferred post-Phase-2 re-score | open | next |
 | [`observation-default`](observation-default.md) | Full-mode boot posture: resolve the write floor down under the full-mode-requires-auth fail-closed guarantee | open | next |
@@ -122,7 +123,7 @@ after the move rather than by inspection.
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open | next |
 | [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
 | [`synthesis-marker-only-answer`](synthesis-marker-only-answer.md) | The forced-synthesis path can return an empty `answer`: success is judged before the markers are stripped | open | |
-| [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class for the two currently-unpinned cases | open | next |
+| [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class — 58 Read rows are unpinned | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
 | [`turn-code-first-wins-masking`](turn-code-first-wins-masking.md) | Turn-level error_code is first-wins, so an early scope refusal hides a later write denial | open | later |
 | [`turn-kind-duplicate-marker-leak`](turn-kind-duplicate-marker-leak.md) | `SplitTurnKind` strips only the last `TURN-KIND` line, so an earlier copy reaches the operator | open | |
