@@ -41,10 +41,17 @@ The following were deliberately deferred and remain open:
   the operator must point `embedding_model` at an embeddings-capable endpoint.
   Richer negotiation (capability discovery, graceful degradation) is deferred.
 
-- **Hardening against stricter generic servers.** Live verification covered
-  Gemini's compat endpoint, which is lenient about request shape. Stricter
-  generic servers (vLLM, Ollama's `/v1`, and similar) can reject requests
-  carrying unexpected or non-applicable fields. Auditing the emitted request
-  shape against those servers and trimming/guarding fields they reject — so the
-  single generic path stays portable beyond the lenient hosted endpoints — remains
-  deferred.
+- **Hardening against stricter generic servers — done (thread
+  `openai-compat-strict-servers`, 2026-10-11).** The emitted request shape was
+  audited against the OpenAI-compatible servers of Ollama (`openai/openai.go`)
+  and vLLM (`vllm/renderers/chat_utils.py`) by source; neither was runnable
+  locally, so no live run backs it. One defect found and fixed: `content` was
+  `omitempty`, so an empty tool result or empty user turn reached the wire with
+  neither `content` nor `tool_calls`, which Ollama rejects (`invalid message
+  content type: <nil>`); vLLM tolerates it. `content` is now always emitted — a
+  string, or `null` on a tool-call-only assistant turn — pinned by
+  `TestChat_ContentAlwaysEmitted`. Checked and left alone: `max_tokens` (both
+  accept it; Ollama maps it to `num_predict`), `tools[].function.parameters`
+  (always an object; the one array-typed property declares `items`), and the
+  response shape (both return `arguments` as a JSON string, `content` null on
+  tool-call turns decodes to empty).
