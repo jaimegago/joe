@@ -480,7 +480,7 @@ and becomes load-bearing.
 - **Binding note. Mechanism-bound.** Revises when any of the deferred retention work lands — an
   `llm_usage` retention/roll-up, a review-jobs disposition, or a DB-size
   operator signal (`docs/backlog/db-retention-story.md`) — or if the legacy-table disposition
-  changes (`learn-from-sessions-fate`).
+  changes (`legacy-sessions-tables-fate`).
 
 ### The store runs in WAL journal mode, on every pooled connection — `/operations/persistence-and-backup/`
 

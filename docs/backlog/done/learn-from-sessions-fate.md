@@ -1,7 +1,25 @@
 # Backlog — Fate of the learn-from-sessions (knowledge extraction) feature
 
-Status: open — **the prior "decided" disposition is void**, see below. Re-decide.
+Status: done — split. The v2 half is answered by the node-anchored notes design; the
+legacy-tables half is re-filed as [`legacy-sessions-tables-fate`](../legacy-sessions-tables-fate.md).
 Priority: next
+
+## Closure (session node-notes-filing, D-0161)
+
+**What a v2 would have to answer** (below) is discharged by
+[DESIGN-NODE-NOTES](../../reference/DESIGN-NODE-NOTES.md):
+
+- the governed write path — R2–R4: per-component authorization through `permit`, a
+  principal stamped on every note, and the audit row in the write's transaction (D-0162,
+  D-0163);
+- the invocation path — R9's `session` producer, an `ActionRead` tool on the loop;
+- the D-0110 question of where LLM-derived inferences go — the notes table, never the
+  graph (D-0161, D-0167).
+
+**The live question about the legacy `sessions` / `session_messages` tables is not
+answered by that design**, which reads neither table. It is re-filed, not closed, as
+[`legacy-sessions-tables-fate`](../legacy-sessions-tables-fate.md). The body below is
+kept as history.
 
 ## Why this reopened (session knowledge-store-prune, D-0113)
 
@@ -66,10 +84,10 @@ If a knowledge-store v2 is ever designed and session-derived extraction is wante
 ## Pointers
 
 - Consolidation context:
-  [docs/reference/DESIGN-CHAT-SESSIONS.md](../reference/DESIGN-CHAT-SESSIONS.md) §12.
+  [docs/reference/DESIGN-CHAT-SESSIONS.md](../../reference/DESIGN-CHAT-SESSIONS.md) §12.
 - The prune that voided this item's premise: D-0113 in
-  [docs/project/DECISIONS.md](../project/DECISIONS.md), and
-  [docs/backlog/done/knowledge-store-prune.md](done/knowledge-store-prune.md).
+  [docs/project/DECISIONS.md](../../project/DECISIONS.md), and
+  [docs/backlog/done/knowledge-store-prune.md](knowledge-store-prune.md).
 - The former current-state record
   (`docs/reference/learn-from-sessions-current-state.md`) describes deleted code; read it as
   history, not as a description of the tree.

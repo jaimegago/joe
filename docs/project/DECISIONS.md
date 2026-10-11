@@ -14,6 +14,212 @@ unit of work that produced it.
 
 ---
 
+## D-0167 — Notes are probabilistic input and never permit; the graph stays structure-only
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: a node-anchored note may **narrow** what a later session does — what it
+  looks at first, what it treats as already known — and may **never widen** what a
+  session is allowed to do. No authorization, floor, captain-gate or governance
+  decision reads a note. The governance seam is unchanged by the notes surface, and
+  the infrastructure graph stays structure-only: a note is not a node, an edge, or a
+  property of either.
+- Rationale: notes include LLM-authored judgment (`session` kind, D-0163) that is
+  admitted precisely because it is cheap and decays. Judgment admitted on those terms
+  cannot be allowed to grant anything; if it could, the admissibility argument of
+  D-0163 would be an argument for an ungoverned permission path. Keeping notes outside
+  the graph is what leaves **D-0110** untouched rather than carved into.
+- Constrains: every consumer of notes — the loop, the UI, any future evaluator.
+  A change that makes a note an input to `permit`, the write floor, or a tool's
+  admissibility contradicts this entry. A change that stores note content in
+  `graph_nodes`/`graph_edges` contradicts this entry and D-0161.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R11; joe-pm
+  `threads/node-anchored-notes.md` § Report.
+- Supersedes: nothing.
+
+---
+
+## D-0166 — Notes are delivered in the tool payload; the task system prompt keeps its single tool-steering rule
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: notes reach the model inside the result payload of the tool that
+  retrieves a node, at the **head** of that payload, and are announced nowhere else.
+  No sentence about notes is added to the task system prompt.
+- Rationale: the task system prompt holds exactly one tool-steering paragraph by
+  deliberate, test-pinned design — the rule "has to reach the model before it picks a
+  tool, so that one rule lives in the task system prompt and nothing else does"
+  (`internal/tools/core/resolvecomponent.go:99-105`, pinned by
+  `internal/prompts/tasksystem_resolve_test.go`). The available precedent points the
+  same way and is stronger: `resolve_component` attaches directives into its payload
+  because prose in the prompt was ignored (`resolvecomponent.go:36-57`). Head
+  placement follows from the elision rule — over-budget results drop the middle, so a
+  trailing notes section is the first thing lost (`internal/agentloop/tokens.go`).
+- Constrains: the build's slices 2–4 (`docs/backlog/node-anchored-notes.md`). The
+  starting snapshot's system-prompt sentence is **overturned**, not deferred. A later
+  change adding notes guidance to the task system prompt must first reverse this
+  entry and the one-rule property it preserves.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R8, R12; citations at commit
+  `a829e96`.
+- Supersedes: nothing. This was decided by the design session under delegation, not
+  ruled by the maintainer; the design thread records which.
+
+---
+
+## D-0165 — Graph traversal is filtered by intent over `(relation, direction)` pairs: one parameter, four values
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented); **the mapping table is
+  UNVERIFIED**
+- Session: node-notes-filing
+- Decision: graph traversal takes one intent parameter with four values — `cause`
+  (what could have caused this), `impact` (what this breaks), `observe` (where I look
+  at this), `control` (what changes this). The mapping is over **`(relation,
+  direction)` pairs**, never over relations alone, and carries a default for any
+  relation it does not recognise.
+- Rationale: propagation is directional, and one edge means opposite things walked
+  each way, so a relation-only map is wrong by construction. `relation` is free TEXT
+  with no constraint or validator (`internal/store/migrations/002_graph.up.sql`), so a
+  map that is total over today's twenty constants is total only by convention and
+  must carry a default. The starting snapshot's four-class taxonomy
+  (failure-propagating / observation / management / discovery) is **overturned**:
+  `discovery` is empty under honest assignment, and class and direction are not
+  independent axes.
+- Constrains: slice 2 of `docs/backlog/node-anchored-notes.md`. **The
+  `(relation, direction) → intent` table is not settled by this entry.** The design
+  session reasoned from relation names and never verified which way each edge
+  points; the table must be built against the refresher construction sites and
+  verified there. Nothing may cite this entry as settling any row of it. It does not
+  resurrect the dead `Path` store method.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R7, § 5.
+- Supersedes: nothing. Decided by the design session under delegation.
+
+---
+
+## D-0164 — The graph delta must express change before any note is derived from it
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: `BuildGraphDelta` must classify nodes and edges as added /
+  changed-with-before-value / removed, and must stay pure (no context, no store),
+  before any producer derives a note from a refresh. The meaning of "changed" for a
+  node's free-form `metadata` blob is settled inside that work.
+- Rationale: the delta today is not a change feed. Every desired node is upserted
+  unconditionally to refresh `last_seen`, so new and unchanged nodes are
+  indistinguishable; a changed entry carries only its after value; the prior node is
+  used only to carry `FirstSeen` and then discarded; the delta is never persisted
+  (`internal/coreagent/graphdelta.go`). A note hook over that delta would emit one
+  note per node per component on the five-minute refresh — noise, not memory. A
+  naive metadata comparison would mark every node changed on every re-serialization.
+- Constrains: slice 1 of `docs/backlog/node-anchored-notes.md`, which ships no notes
+  and is a prerequisite rather than a stall. The refresher producer (slice 3) may not
+  land ahead of it.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R6, § 2.
+- Supersedes: nothing.
+
+---
+
+## D-0163 — Mandatory expiry is the admissibility discriminator for an LLM-reachable write into Joe's own store, not a retention policy
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: three parts.
+  a. **A note-writing tool is `ActionRead`.** This is an application of **D-0018**,
+     whose definition of a write governs only managed-system mutations, and not a new
+     exemption from it. The tree already states the same rule at
+     `internal/safety/tier.go:195-203`: tools that only record observed state into
+     Joe's own graph/store are, by the write definition, reads. The live precedent is
+     `register_component` — `ActionRead`, writes Joe's own store, and commits its
+     audit row in the write's transaction.
+  b. **Every note expires, and expiry is what makes (a) admissible.** The write floor
+     is boot-resolved, process-global and defaults to observation, with no lowering
+     path (D-0073), so an `ActionRead` write into Joe's own store passes it
+     unconditionally, everywhere. That is the same property that got the three
+     graph-write tools of **D-0110** parked: their stated parking reason is that
+     "nothing reconciles or removes what they add"
+     (`internal/coreagent/agent.go:163-181`). **Expiry is that reconciler.** A note
+     decays and parked graph structure did not; that is the whole of the difference
+     between this write and theirs.
+  c. **Expiry is graded by author kind and is optional for exactly one.** `refresher`
+     notes age out by time and a per-node cap; `session` notes carry a TTL that a
+     later session's re-confirmation resets; `operator` notes, written by a human
+     through the UI, are the only kind permitted to outlive the default TTL.
+- Rationale: without (b), (a) is the parked graph-write tools again under a new name.
+  The discrimination is the point of the entry.
+- Constrains: **expiry is an admissibility property, not a retention policy, and must
+  not be made configurable, disable-able, or optional for any LLM-reachable author
+  kind.** A reader who sees a TTL and reasonably takes it for a retention knob should
+  read this entry first: lengthening it without bound, or exposing it as an operator
+  setting that applies to `session` or `refresher` notes, removes the property that
+  admits the write and puts the design back where D-0110's parked tools stand. The
+  `operator` exemption does not extend to any kind a loop can author.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R4, R5, R9; D-0018; D-0073; D-0110.
+- Supersedes: nothing. It does not amend D-0018 and does not reopen D-0110.
+
+---
+
+## D-0162 — A note exists only where authorization can exist; notes are authorized per component, strictly stricter than their carrier
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: two parts.
+  a. **`component_id` is required on every note.** A note against a node with no
+     component attribution is **refused at the write path**, not written with a
+     sentinel. A note may anchor on `component_id` alone with a NULL `node_id`, which
+     is how a note about a hard-deleted node survives.
+  b. **Every note read and write is authorized per component** through the existing
+     `permit` chokepoint (`internal/access/access.go`), following the memoised
+     per-component pattern `ComponentBindings` already uses.
+- Rationale: an unattributed node "cannot be authorized per component"
+  (`internal/graph/store.go:57`), so a note on one would be a datum no grant can
+  govern. Topology is a fact about the estate; a note is judgment, and judgment is
+  where per-component authorization matters most.
+- Constrains: **the notes surface is deliberately stricter than the graph surface
+  that carries it.** The graph read tools authorize once against the pseudo-component
+  `"graph"` and their SQL carries no component predicate, so a caller can see a
+  node's topology and be refused its notes. **That asymmetry is intentional and must
+  not be "fixed" by loosening the notes side.** The carrier's own repair — whether the
+  graph read path becomes per-component — belongs to
+  `docs/backlog/investigations/agentic-path-rbac-read-enforcement.md`; if that repair
+  lands, the asymmetry disappears on its own.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R2, R3, § 2.
+- Supersedes: nothing. It alters nothing about the graph read path's authorization.
+
+---
+
+## D-0161 — Node-anchored notes are a separate table, never node metadata
+
+- Date: 2026-10-11
+- Status: accepted (design of record; not implemented)
+- Session: node-notes-filing
+- Decision: Joe's memory surface — operational notes anchored to graph nodes — is
+  stored in its own table, keyed to a component and optionally a node, and never in
+  `graph_nodes.metadata` or any other column of the graph. This answers the forward
+  dependency D-0113 left open: **LLM-derived inferences land in the notes table**,
+  under D-0162 through D-0167, and still never in the graph.
+- Rationale: `AddNode` upserts and replaces `metadata` wholesale
+  (`internal/graph/sqlite.go`), so a note stored there is destroyed by the next
+  refresh, at most five minutes away. Notes are many-per-node, have lifecycles
+  independent of the node's, and must never put a refresh in contention with a
+  session on one row. Findings and `joe_warnings` were examined as substrates and
+  rejected: neither is node-anchored or component-attributed, and neither is read
+  back into a loop.
+- Constrains: the schema work of slice 3 (`docs/backlog/node-anchored-notes.md`).
+  Human-authored documentation (runbooks, wikis) is out of scope; sources are live
+  infrastructure and repositories only; this is not RAG and adds no embeddings
+  dependency.
+- Basis: `docs/reference/DESIGN-NODE-NOTES.md` R1, § 1, § 2; joe-pm
+  `threads/node-anchored-notes.md` § Report.
+- Supersedes: nothing. It discharges the open forward dependency recorded in D-0113
+  and in `docs/backlog/done/knowledge-store-maturation.md` § 6.
+
+---
+
 ## D-0160 — An `answer` terminal turn whose operator-facing prose is empty re-enters the loop once
 
 - Date: 2026-09-11

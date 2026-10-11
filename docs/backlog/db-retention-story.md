@@ -46,12 +46,13 @@ that unbounded growth is acceptable for its expected volume.
 
 The migration-001 `sessions` / `session_messages` tables are frozen: no live writer, no
 deletion path, one dormant reader (the orphaned learn-from-sessions extractor). Their fate
-is **not** an open question here — it is settled by
-[`learn-from-sessions-fate`](learn-from-sessions-fate.md) (status: decided), which requires
-the tables be **retained, not dropped**, because a future knowledge-extraction feature
-depends on them. This item only cross-references that decision: any whole-DB retention
-design must treat those tables as retained-but-frozen, and must not schedule them for
-deletion absent an explicit reversal of `learn-from-sessions-fate`.
+is **not** an open question here — it is owned by
+[`legacy-sessions-tables-fate`](legacy-sessions-tables-fate.md), re-filed from the closed
+`learn-from-sessions-fate`. The "retain because a future knowledge-extraction feature depends
+on them" reason that item once recorded is void (D-0113), and the disposition is open there.
+This item only cross-references it: until it is decided, any whole-DB retention design must
+treat those tables as retained-but-frozen, and must not schedule them for deletion ahead of
+that decision.
 
 ### 5. Database-size observability for operators
 

@@ -534,8 +534,8 @@ phase it — security first.
   `ON DELETE CASCADE`, and the permanent-transcript decision are all **unchanged** by
   this amendment.
 - **Legacy `sessions` / `session_messages` tables are retired,** gated on the
-  learn-from-sessions fate decision (`docs/backlog/learn-from-sessions-fate.md`), since
-  those tables are that feature's only data source.
+  legacy-tables fate decision (`docs/backlog/legacy-sessions-tables-fate.md`, re-filed from
+  the closed `learn-from-sessions-fate`).
 
 ### 12.5 Retention and lifecycle pipeline (one pipeline, not parallel mechanisms)
 
