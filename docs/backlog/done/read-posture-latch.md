@@ -1,6 +1,6 @@
 Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces
 
-Status: in-progress — the posture mechanism, the admin flip endpoint, and the audit trail have landed (D-0041); the axis-coupling between the read posture and the agent:core autonomous read surface introduced by D-0041 was corrected (D-0043): the posture governs human-facing transport reads only. This file tracks the deferred work that the launch default (`team_flat`) lets us postpone.
+Status: done — the posture mechanism landed (D-0041, transport-only per D-0043) and all three deferred items closed: the Policies gate (D-0072), the docs reframe (read-posture-docs-reframe), and the v2 zoned-flip UI (D-0157); archived 2026-10-11, thread `read-posture-latch-archive`
 Priority: now
 
 ## Context
@@ -73,8 +73,8 @@ deferred out of the launch build without losing any capability.
 - **Roles and groups for full RBAC v2.** The grant model the `zoned` posture
   drives is still per-principal, per-zone. Full RBAC v2 (role indirection, group
   subjects, granular permissions) is the larger evolution that makes the `zoned`
-  era ergonomic at scale — tracked in [`rbac-v2`](rbac-v2.md) and the related
-  [`full-mode-rbac-track`](full-mode-rbac-track.md); this item is the read-posture
+  era ergonomic at scale — tracked in [`rbac-v2`](../rbac-v2.md) and the related
+  [`full-mode-rbac-track`](../full-mode-rbac-track.md); this item is the read-posture
   framing of why that work is deferrable behind the `team_flat` launch default.
 - **Decide whether `team_flat` should admit `user:` principals only (transport
   scope of the admit).** Current behavior (verified read-posture-latch-02): the

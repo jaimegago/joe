@@ -16,6 +16,6 @@ AI-agent framing. The following thread is deliberately deferred and keeps this i
   remove a section. Giving RBAC / zones / read-posture its own top-level `docs/public`
   section — rather than living only in the `concepts/rbac-zones-and-read-posture.md`
   explanation page — is deferred until the post-launch RBAC work lands (see
-  `read-posture-latch.md` and `rbac-v2.md`). When that work settles the full-mode RBAC
+  `done/read-posture-latch.md` and `rbac-v2.md`). When that work settles the full-mode RBAC
   surface, revisit whether the taxonomy should grow a dedicated section and record the
   taxonomy change as its own decision.

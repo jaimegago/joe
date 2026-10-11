@@ -103,7 +103,6 @@ after the move rather than by inspection.
 | [`pr-surface-joe-mention`](pr-surface-joe-mention.md) | PR surface: an @joe mention triggers a change-impact assessment | open | later |
 | [`promotion-requirements-single-source`](promotion-requirements-single-source.md) | Backlog — Drive component promotion validation from a single per-Kind requirements source | open | later |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open | later |
-| [`read-posture-latch`](read-posture-latch.md) | Read-posture latch — launch as team_flat, defer the zoned (full-mode) surfaces | in-progress | now |
 | [`read-posture-visibility`](read-posture-visibility.md) | Read posture is invisible in every UI and CLI surface | open | next |
 | [`reference-docs-prune-reconcile`](reference-docs-prune-reconcile.md) | Backlog — Residue from the reference-docs prune reconcile | open | next |
 | [`refresher-rbac-degradation`](refresher-rbac-degradation.md) | Backlog — Refresher per-resource-type degradation follow-ups (deferred from refresher-rbac-degradation / D-0093) | open | later |
