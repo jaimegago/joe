@@ -65,3 +65,22 @@ func TestConnect_ResolveFailure_SurfacesWithoutCredential(t *testing.T) {
 		t.Errorf("credential leaked into error: %v", err)
 	}
 }
+
+// TestConnect_PromotedReferenceOnly pins the config exactly as promotion writes
+// it: routing fields plus a static env_var reference, and no inline credential
+// field. Before the credential check moved after resolution, ParseConfig refused
+// it, so no promoted Dynatrace component could ever connect.
+func TestConnect_PromotedReferenceOnly(t *testing.T) {
+	var gotAuth string
+	srv := dtAuthServer(t, &gotAuth)
+
+	t.Setenv("JOE_DYNATRACE_PROBE", "env-tok")
+	a := dynatrace.New()
+	cfg := fmt.Sprintf(`{"url":%q,"credential_provider":"static","env_var":"JOE_DYNATRACE_PROBE"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "dt-ref", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !strings.Contains(gotAuth, "env-tok") {
+		t.Errorf("Authorization = %q, want it to carry env-tok", gotAuth)
+	}
+}

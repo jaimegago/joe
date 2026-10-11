@@ -371,7 +371,7 @@ func TestConnect_StaticProvider_ResolvesEnvVar(t *testing.T) {
 
 	t.Setenv("JOE_TEST_GL_TOKEN", "env-tok")
 	a := New()
-	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GL_TOKEN"}`, srv.URL)
+	cfg := fmt.Sprintf(`{"base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GL_TOKEN"}`, srv.URL)
 	if err := a.Connect(context.Background(), store.Component{ID: "gl-3", Config: []byte(cfg)}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -419,9 +419,9 @@ func TestParseConfig(t *testing.T) {
 			wantURL: "https://gitlab.example.com",
 		},
 		{
-			name:    "missing token",
+			name:    "missing token is left to Connect",
 			raw:     `{"base_url":"https://gitlab.com"}`,
-			wantErr: true,
+			wantURL: "https://gitlab.com",
 		},
 		{
 			name:    "empty config",

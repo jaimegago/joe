@@ -55,9 +55,8 @@ func TestParseConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing token",
-			config:  map[string]any{"url": "https://splunk:8089"},
-			wantErr: true,
+			name:   "missing token is left to Connect",
+			config: map[string]any{"url": "https://splunk:8089"},
 		},
 	}
 

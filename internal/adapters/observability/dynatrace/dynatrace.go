@@ -137,6 +137,12 @@ func (a *Adapter) Connect(ctx context.Context, source store.Component) error {
 	if v, ok := res.StaticValue(); ok && v != "" {
 		cfg.Token = v
 	}
+	// Required only once the reference is resolved. A promoted component
+	// carries a credential reference and never the inline field, so requiring
+	// the field at parse time refused every promoted component of this type.
+	if cfg.Token == "" {
+		return fmt.Errorf("token is required: promote the component with a credential reference")
+	}
 
 	a.config = cfg
 

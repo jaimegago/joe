@@ -23,9 +23,6 @@ func ParseConfig(raw json.RawMessage) (Config, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse github config: %w", err)
 	}
-	if cfg.Token == "" {
-		return Config{}, fmt.Errorf("github config: token is required")
-	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.github.com"
 	}

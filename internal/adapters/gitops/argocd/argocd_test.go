@@ -108,9 +108,9 @@ func TestParseConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing token",
+			name:    "missing token is left to Connect",
 			raw:     `{"url":"http://argo.example.com"}`,
-			wantErr: true,
+			wantURL: "http://argo.example.com",
 		},
 		{
 			name:    "invalid json",

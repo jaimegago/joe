@@ -8,8 +8,8 @@ description: Bring a Kubernetes cluster under Joe's management through the web U
 
 This how-to walks you, click by click, through bringing one Kubernetes cluster under
 Joe's management using the web UI. You will **register** the cluster (it lands inert),
-**assign it a zone**, **promote** it with a credential reference, and run a **connectivity
-test** that takes it live — no daemon restart. When you finish, Joe can read the cluster
+**assign it a zone**, **promote** it with a credential reference, which brings it live,
+and run a **connectivity test** to confirm it — no daemon restart. When you finish, Joe can read the cluster
 and answer questions about it.
 
 Joe offers **two Kubernetes authentication methods**, both native and both authenticating
@@ -27,10 +27,11 @@ You choose the method in the Promote dialog. Either way you supply a *reference*
 credential, never the secret itself, and Joe never ingests a human's kubeconfig.
 
 This page covers **Kubernetes only**. Other component types follow the same register →
-promote → activate spine but differ in their credential mechanism and activation path
-(some come live only at the next daemon restart). They are documented separately — see
-[Components](../../components/) for the per-type routing index, and the sibling
-how-to pages as they are added.
+promote → activate spine but differ in their credential mechanism. Git, GitHub, GitLab,
+and PagerDuty have their own walkthroughs —
+[Register a Git repository](../register-git/) and
+[Register a GitHub, GitLab, or PagerDuty component](../register-token-components/) — and
+[Connectable systems](../../components/connectable-systems/) covers every type.
 
 For *why* the lifecycle is split the way it is — inert registration, governed promotion,
 and credentials held as references rather than stored secrets — see
@@ -133,8 +134,9 @@ and never ingests a human's kubeconfig.
    credentialed connection under its zone — a privileged, audited change. Confirm with
    **Promote**.
 
-The row's arming state flips to **armed**. Promotion records the reference only; it does
-**not** itself open a connection — that is the next step.
+The row's arming state flips to **armed**. Promotion also brings the connection up straight
+away with the reference you supplied; if that first connect fails, the component stays
+armed, and the next step is how you retry.
 
 > The credential variable (the bearer-token variable, the in-cluster token, or the
 > client-secret variable) must exist **where the Joe daemon runs**, because Joe resolves it
@@ -200,8 +202,8 @@ mutation. See
 
 ## Where to go next
 
-- The per-type routing index, including which types come live at runtime versus only at
-  the next daemon restart → [Components](../../components/)
+- Every connectable type, its credential mechanism, and whether the web UI covers it →
+  [Connectable systems](../../components/connectable-systems/)
 - Why registration and promotion are two separate, governed steps →
   [The component lifecycle](../../concepts/component-lifecycle/)
 - Zones and who may read a component → [RBAC, zones, and read posture](../../concepts/rbac-zones-and-read-posture/)

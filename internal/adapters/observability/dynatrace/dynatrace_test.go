@@ -56,9 +56,8 @@ func TestParseConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing token",
-			config:  map[string]any{"url": "https://dt.example.com"},
-			wantErr: true,
+			name:   "missing token is left to Connect",
+			config: map[string]any{"url": "https://dt.example.com"},
 		},
 		{
 			name:    "url trailing slash stripped",

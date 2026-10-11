@@ -27,10 +27,6 @@ func ParseConfig(sourceConfig map[string]any) (Config, error) {
 		return cfg, fmt.Errorf("unmarshal yaml to config: %w", err)
 	}
 
-	if cfg.APIKey == "" {
-		return cfg, fmt.Errorf("api_key is required")
-	}
-
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultAPIURL
 	}

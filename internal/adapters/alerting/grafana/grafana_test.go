@@ -29,9 +29,9 @@ func TestParseConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing api_key",
+			name:    "missing api_key is left to Connect",
 			config:  map[string]any{"url": "http://grafana:3000"},
-			wantErr: true,
+			wantURL: "http://grafana:3000",
 		},
 	}
 

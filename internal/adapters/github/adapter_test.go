@@ -356,13 +356,15 @@ func TestConnect_StaticProvider_ResolvesInlineValue(t *testing.T) {
 
 // D-0026 unit 2: GitHub resolves its token from a named environment variable via
 // the static provider, proving resolution (not just config decode) feeds auth.
+// The config carries no inline token — the shape promotion writes — which
+// ParseConfig refused until the credential check moved after resolution.
 func TestConnect_StaticProvider_ResolvesEnvVar(t *testing.T) {
 	var gotAuth string
 	srv := captureAuthServer(t, &gotAuth)
 
 	t.Setenv("JOE_TEST_GH_TOKEN", "env-tok")
 	a := New()
-	cfg := fmt.Sprintf(`{"token":"placeholder","base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GH_TOKEN"}`, srv.URL)
+	cfg := fmt.Sprintf(`{"base_url":%q,"credential_provider":"static","env_var":"JOE_TEST_GH_TOKEN"}`, srv.URL)
 	if err := a.Connect(context.Background(), store.Component{ID: "gh-3", Config: []byte(cfg)}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -410,9 +412,9 @@ func TestParseConfig(t *testing.T) {
 			wantURL: "https://ghes.example.com",
 		},
 		{
-			name:    "missing token",
+			name:    "missing token is left to Connect",
 			raw:     `{"base_url":"https://api.github.com"}`,
-			wantErr: true,
+			wantURL: "https://api.github.com",
 		},
 		{
 			name:    "empty config",

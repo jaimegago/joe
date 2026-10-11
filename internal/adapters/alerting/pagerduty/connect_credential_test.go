@@ -66,3 +66,22 @@ func TestConnect_ResolveFailure_SurfacesWithoutCredential(t *testing.T) {
 		t.Errorf("credential leaked into error: %v", err)
 	}
 }
+
+// TestConnect_PromotedReferenceOnly pins the config exactly as promotion writes
+// it: routing fields plus a static env_var reference, and no inline credential
+// field. Before the credential check moved after resolution, ParseConfig refused
+// it, so no promoted PagerDuty component could ever connect.
+func TestConnect_PromotedReferenceOnly(t *testing.T) {
+	var gotAuth string
+	srv := pdAuthServer(t, &gotAuth)
+
+	t.Setenv("JOE_PAGERDUTY_PROBE", "env-tok")
+	a := pagerduty.New()
+	cfg := fmt.Sprintf(`{"api_url":%q,"credential_provider":"static","env_var":"JOE_PAGERDUTY_PROBE"}`, srv.URL)
+	if err := a.Connect(context.Background(), store.Component{ID: "pd-ref", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !strings.Contains(gotAuth, "env-tok") {
+		t.Errorf("Authorization = %q, want it to carry env-tok", gotAuth)
+	}
+}

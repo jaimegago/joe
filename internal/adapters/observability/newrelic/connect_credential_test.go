@@ -62,3 +62,20 @@ func TestConnect_ResolveFailure_SurfacesWithoutCredential(t *testing.T) {
 		t.Errorf("credential leaked into error: %v", err)
 	}
 }
+
+// TestConnect_PromotedReferenceOnly pins the config exactly as promotion writes
+// it: routing fields plus a static env_var reference, and no inline credential
+// field. Before the credential check moved after resolution, ParseConfig refused
+// it, so no promoted New Relic component could ever connect.
+func TestConnect_PromotedReferenceOnly(t *testing.T) {
+	t.Setenv("JOE_NEWRELIC_PROBE", "env-tok")
+	d := &capturingDoer{}
+	a := newrelic.NewWithClient(d)
+	cfg := `{"account_id":12345,"credential_provider":"static","env_var":"JOE_NEWRELIC_PROBE"}`
+	if err := a.Connect(context.Background(), store.Component{ID: "nr-ref", Config: []byte(cfg)}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if d.gotAPIKey != "env-tok" {
+		t.Errorf("Api-Key = %q, want env-tok", d.gotAPIKey)
+	}
+}

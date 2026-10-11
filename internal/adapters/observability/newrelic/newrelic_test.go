@@ -49,9 +49,9 @@ func TestParseConfig(t *testing.T) {
 			wantRegion: "EU",
 		},
 		{
-			name:    "missing api_key",
-			config:  map[string]any{"account_id": 12345},
-			wantErr: true,
+			name:       "missing api_key is left to Connect",
+			config:     map[string]any{"account_id": 12345},
+			wantRegion: "US",
 		},
 		{
 			name:    "missing account_id",

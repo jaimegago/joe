@@ -18,9 +18,13 @@ binary. For the *why* behind any of these, the pages link back to
 - [The web UI and human login](web-ui/) — log a human in over OIDC, the admin
   bootstrap, and what the post-login app actually looks like.
 - [Register a Kubernetes component](register-kubernetes/) — bring a cluster under Joe's
-  management through the UI: register it inert, promote it with a static-bearer reference,
-  and take it live. Other component types are covered separately; see
-  [Components](../components/) for the per-type routing.
+  management through the UI: register it inert, promote it with a static-bearer or
+  Entra-exchange reference, and confirm it is live.
+- [Register a Git repository](register-git/) — register a repository by its clone URL and
+  promote it with a token reference, or as public.
+- [Register a GitHub, GitLab, or PagerDuty component](register-token-components/) — promote
+  it with a reference to an API token and confirm it is live. Types that need an endpoint
+  URL are registered through the API; see [Components](../components/).
 - [Chat sessions](chat-sessions/) — create a session, who can read it, and link one
   to an incident.
 - [The incident regime](incidents/) — declare and resolve an incident, and what the

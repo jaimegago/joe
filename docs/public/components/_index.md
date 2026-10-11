@@ -17,12 +17,15 @@ happens through the components you register. Without them, Joe boots, authentica
 answers, but has nothing real to say.
 
 This section is the practical guide to connecting Joe to the systems it manages. Every
-system follows the same first three steps — **register, then promote, then arm** — but the
-final **activation** step differs by type. Most types come live at runtime through a
-connectivity test; a few can only be brought live at the next daemon restart. This page
-documents the shared flow once, flags which activation path each type takes, then points you
-to [Connectable systems](connectable-systems/) for the per-type credential mechanism of each
-system you can connect today.
+system follows the same steps — **register, then promote, then arm** — and comes live at
+runtime, with no daemon restart. This page documents the shared flow once through the API,
+then points you to [Connectable systems](connectable-systems/) for the per-type credential
+mechanism of each system you can connect today.
+
+The web UI walks the same flow for the types whose registration needs no endpoint URL —
+Kubernetes, Git, GitHub, GitLab, and PagerDuty — see [Guides](../guides/). The UI's Register
+dialog cannot yet collect an endpoint URL, so a type that needs one (Prometheus, Grafana,
+Argo CD, and the rest) is registered through the API below, with the URL in its `config`.
 
 For the *why* behind the two-step lifecycle, read
 [The component lifecycle](../concepts/component-lifecycle/). For the configuration
@@ -127,48 +130,27 @@ secret. Re-promoting an armed component overwrites its reference as another audi
 
 ### 4. Activate the component
 
-Promotion records the reference but does not itself authenticate or open a live connection.
-How an armed component becomes live depends on its type, and the two paths are **not**
-interchangeable — sending a boot-only type down the runtime path silently does nothing.
-The per-type tables on [Connectable systems](connectable-systems/) mark which path each
-type takes.
+A successful promotion also activates the component: once the arm is recorded, Joe
+connects with the referenced credential and registers the live connection — no restart
+needed. If that connect fails (the referenced environment variable is not set, say, or the
+backend is unreachable), the arm still stands and Joe logs the failure; it does not undo
+the promotion.
 
-#### Runtime activation (most types)
-
-For a **runtime-registerable** type, a connectivity test constructs the adapter,
-authenticates with the armed reference, and registers the live connection immediately — no
-restart needed:
+The connectivity test is how you confirm the component is live, and how you retry after
+fixing whatever stopped the first connect:
 
 ```sh
-curl -s http://localhost:7777/api/v1/components/<id>/test \
+curl -s -X POST http://localhost:7777/api/v1/components/<id>/test \
   -H "Authorization: Bearer $JOE_API_KEY"
 ```
 
-A response of `"ok": true, "message": "connection successful"` means the component is live
-now and its tools are usable.
+A response of `"ok": true` with a message beginning `connection successful` means the
+component is live and its tools are usable. `"ok": false` carries the reason in `message`.
+The test does not require an admin principal.
 
-#### Boot activation (boot-config-only types)
-
-A few types — `github`, `gitlab`, `splunk`, `dynatrace`, and `newrelic` — have **no
-runtime construction path**. For these, the connectivity test cannot build an adapter: it
-returns `"ok": true` with a message like `type "github" has no connection to test` and
-registers **nothing**. Do not read that as success — the component is still not live.
-
-These types come live only at daemon **startup**. The full bring-up is:
-
-1. Register the component (step 1) and promote it (step 3), exactly as above — both work at
-   runtime and land the armed record in the store.
-2. Make sure the component's static credential environment variable
-   (`JOE_GITHUB_<LABEL>`, `JOE_GITLAB_<LABEL>`, `JOE_SPLUNK_<LABEL>`,
-   `JOE_DYNATRACE_<LABEL>`, or `JOE_NEWRELIC_<LABEL>`) is set in the daemon's environment.
-3. **Restart the daemon.** On boot Joe loads every armed component of these types from the
-   store and opens its connection.
-
-```sh
-# In the daemon's environment, before (re)starting:
-export JOE_GITHUB_PROD="ghp_your_token"
-# ...then restart the joe process.
-```
+Joe reads a static credential from its own process environment, so the referenced variable
+has to be present when the daemon starts. If you set it after Joe is already running,
+restart Joe, then run the test.
 
 A component armed with a working credential can read with that credential; whether it may
 *mutate* its target is governed separately by the [write floor](../concepts/observation-mode-and-the-write-floor/)

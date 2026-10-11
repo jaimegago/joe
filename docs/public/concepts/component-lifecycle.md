@@ -41,10 +41,11 @@ or an Entra exchange that mints a token from an Azure app registration's client 
 referenced by variable name) — never an inline secret value. The secret itself lives where
 it always did (your environment, the cluster); Joe stores only the pointer.
 
-Promotion does the bookkeeping of arming a component but does **not** itself reach out
-and authenticate: it performs no connect and no probe. Whether the referenced
-credential actually works is a separate, explicit check, kept distinct from the act of
-recording the reference. Re-promoting an already-armed component overwrites its
+Recording the reference is the governed act, and it is committed on its own. Once it is,
+Joe connects with the new reference straight away so the component comes live without a
+restart — but that connect sits strictly behind the commit: if it fails, the arm stands,
+the failure is logged, and the explicit connectivity test is how the credential is checked
+again. A credential that does not work never undoes a recorded promotion. Re-promoting an already-armed component overwrites its
 reference as another gated, audited event — so even *changing* a credential is a
 governed transition, not a delete-and-recreate that slips outside the audit trail.
 
