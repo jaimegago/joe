@@ -22,9 +22,6 @@ func ParseConfig(raw json.RawMessage) (Config, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse gitlab config: %w", err)
 	}
-	if cfg.Token == "" {
-		return Config{}, fmt.Errorf("gitlab config: token is required")
-	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://gitlab.com"
 	}

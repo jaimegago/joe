@@ -23,8 +23,5 @@ func ParseConfig(raw []byte) (Config, error) {
 	if cfg.URL == "" {
 		return cfg, fmt.Errorf("url is required")
 	}
-	if cfg.Token == "" {
-		return cfg, fmt.Errorf("token is required")
-	}
 	return cfg, nil
 }

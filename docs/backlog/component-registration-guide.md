@@ -1,70 +1,79 @@
 # Component registration guide — UI-driven public how-to
 Status: in-progress
 Priority: now
+Blocked-by: register-component-config-default
 
-The first UI-driven registration how-to shipped this session (D-0059):
-`docs/public/guides/register-kubernetes.md` covers **Kubernetes only**, with
-Quickstart now including a Kubernetes register-and-promote step. The thread stays
-in-progress because the following work remains.
+## What has shipped
 
-## Deferred work
+- `docs/public/guides/register-kubernetes.md` (D-0059) — Kubernetes.
+- `docs/public/guides/register-git.md` — `git`: repository URL at registration, then a
+  static `JOE_GIT_<LABEL>` reference or the explicit no-credential arm (D-0150).
+- `docs/public/guides/register-token-components.md` — `github`, `gitlab`, `pagerduty`,
+  grouped on one page because they differ only in the env-var prefix and what the token
+  is. Covers the static promotion form's candidate picker and the compose-a-label
+  fallback with its not-currently-set warning.
 
-### Per-type registration how-tos (sibling Guides pages)
+All three follow D-0119: promote connects, and Test Connection is a confirmation and
+retry step, not the activation step. None carries screenshots or placeholders (D-0148).
 
-A Guides page per remaining documentable type (or grouped sibling pages), each
-walking the real web-UI affordances for that type — register → assign zone →
-promote → activate — the way `register-kubernetes.md` does. They split by
-activation path (D-0056):
+The thread that shipped the last two (`component-registration-guide`, 2026-10-11) also
+fixed a defect that had made them impossible to write: eight adapters (`github`,
+`gitlab`, `pagerduty`, `grafana`, `argocd`, `splunk`, `dynatrace`, `newrelic`) required
+their inline credential field in `ParseConfig`, before the armed reference was resolved,
+so every promoted component of those types failed to connect with `token is required` /
+`api_key is required`. The check now runs in `Connect`, after resolution, pinned per
+adapter by `TestConnect_PromotedReferenceOnly` (`ResolvesEnvVar` for `github` and
+`gitlab`, which no longer carry a placeholder token).
 
-- **Runtime-registerable** static-credential types whose happy path ends at a UI
-  **Test Connection** click, like Kubernetes does: `prometheus`, `mimir`, `loki`,
-  `tempo`, `jaeger`, `alertmanager`, `pagerduty`, `grafana`, `argocd`, `falco`.
-  These differ from Kubernetes only in the promotion form — a static env-var
-  reference (`JOE_<SEGMENT>_<LABEL>`) instead of a kubeconfig locator.
-  **D-0119 changed the framing these pages must use:** promote itself now
-  connects and registers the adapter, so Test Connection is a *confirmation and
-  retry* step, not the activation step. `register-kubernetes.md` Step 5 was
-  reworded accordingly; write the sibling pages the same way rather than copying
-  the pre-D-0119 "take it live with a connectivity test" heading.
-- **Credential-less** types that register and test live with nothing to promote:
-  `terraform`, `envoy`.
-- **Boot-config-only** types (`github`, `gitlab`, `splunk`, `dynatrace`,
-  `newrelic`): these register and promote at runtime, but the UI Test Connection
-  reports a misleading "no connection to test" and registers nothing — they come
-  live **only at the next daemon restart**. Their how-to must make the restart
-  step explicit and must **not** present the Test click as the activation step.
+The "boot-config-only" category this item used to describe is gone: since
+`adapter-dispatch-consolidation` every type is built by `factory.New`, so all of them
+come live at runtime. `docs/public/components/` was corrected to match.
 
-Structure these so the Kubernetes page does not need reworking — add them as
-sibling pages and extend the Guides index list.
+## Remaining work — blocked on a UI routing locator
 
-### Static-provider promotion nuance
+Every other documentable type needs a non-credential routing field at registration that
+the web UI cannot collect: the Register dialog sends a `config` only for `git`, the static
+Promote form collects only the env-var reference, and there is no route for editing a
+component's config afterwards.
 
-The static promotion form has behaviour the Kubernetes page did not need to cover:
-a live **candidate picker** of matching env vars currently set in Joe's
-environment, plus a compose-a-label fallback that warns when the composed
-`JOE_<SEGMENT>_<LABEL>` is not currently set. The static how-tos should document
-this picker/compose affordance.
+- `url`: `prometheus`, `mimir`, `loki`, `tempo`, `jaeger`, `alertmanager`, `grafana`,
+  `argocd`, `falco`, `splunk`, `dynatrace`, and the credential-less `envoy`.
+- `account_id`: `newrelic`.
+- `state_path`: the credential-less `terraform`.
+- The endpoint override for GitHub Enterprise Server, self-managed GitLab, and PagerDuty's
+  EU region (`base_url` / `api_url`).
 
-### Screenshots
+These types work today through the API, with the field in `config` at registration —
+`docs/public/components/connectable-systems.md` marks each one "API only". A UI how-to for
+them waits on item 3 of `register-component-config-default.md` (a per-type routing field
+in the Register dialog). When that lands, add the static types to
+`register-token-components.md` or as sibling pages, and give `terraform` and `envoy` a
+page whose happy path has no promotion step.
 
-`register-kubernetes.md` ships with no screenshots, by decision (D-0148): manual
-capture was rejected, and the placeholder blockquotes that once marked where they'd
-go are removed. The only sanctioned future path is deterministic capture from the
+## Screenshots
+
+Every registration how-to ships with no screenshots, by decision (D-0148): manual capture
+was rejected. The only sanctioned future path is deterministic capture from the
 joe-oasis-e2e Playwright harness, regenerated per release as a build artifact — see
-`guide-screenshots-e2e-capture.md`. Each later per-type page should follow the same
-decision and not carry placeholders.
+`guide-screenshots-e2e-capture.md`. Later pages follow the same decision and carry no
+placeholders.
 
-### Cross-surface "you need registered components" framing
+## Cross-surface "you need registered components" framing
 
-Tracked separately in `registered-components-required-framing.md` — the docs
-should state up front that Joe is near-useless without registered components, in
-Overview and Quickstart.
+Tracked separately in `registered-components-required-framing.md`.
 
-### Watch item — governed connectivity check
+## Watch item — governed connectivity check
 
-The happy path ends on the legacy `POST /components/{id}/test` affordance, which
-is not admin-gated and is the subject of the open
-`governed-connectivity-check-surface` backlog item. If that item repoints the UI
-test affordance at the admin credential-status probe, the activation step in every
-registration how-to (including the shipped Kubernetes page) must be revised to
-match.
+Every registration how-to ends on the legacy `POST /components/{id}/test` affordance,
+which is not admin-gated and is the subject of the open
+`governed-connectivity-check-surface` backlog item. If that item repoints the UI test
+affordance at the admin credential-status probe, the confirmation step in every
+registration how-to must be revised to match.
+
+## Watch item — what Test Connection proves for GitHub and GitLab
+
+The `github` and `gitlab` adapters make no API call in `Connect`, so Test Connection
+reports `connection successful` once the token resolves, while the success message itself
+says it "verifies reachability and authentication". `register-token-components.md` states
+what the test actually proves for those two types. If either adapter gains a probe in
+`Connect`, revise that paragraph.

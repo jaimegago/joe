@@ -29,9 +29,5 @@ func ParseConfig(sourceConfig map[string]any) (Config, error) {
 		return cfg, fmt.Errorf("url is required")
 	}
 
-	if cfg.APIKey == "" {
-		return cfg, fmt.Errorf("api_key is required")
-	}
-
 	return cfg, nil
 }

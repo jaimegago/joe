@@ -24,9 +24,8 @@ func TestParseConfig(t *testing.T) {
 			wantKey: "test-key-123",
 		},
 		{
-			name:    "missing api_key",
-			config:  map[string]any{},
-			wantErr: true,
+			name:   "missing api_key is left to Connect",
+			config: map[string]any{},
 		},
 	}
 

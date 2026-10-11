@@ -197,11 +197,11 @@ Joe is near-useless until it has a registered component to reason about, so conn
 before you ask anything. Do it through the web UI. Bringing a system under management is
 always the same three beats: **register** it (it lands inert — recorded, but
 credential-less and unable to act), **promote** it with a credential **reference** (never
-a stored secret), then run a **connectivity test** that takes it live. For Kubernetes,
+a stored secret), which brings it live, then run a **connectivity test** to confirm it. For Kubernetes,
 running outside the cluster, that reference is the cluster's **API-server URL** and **CA
 bundle** plus the **bearer-token environment variable** you readied in *Before you start* —
-the variable must be set where the daemon runs, since Joe resolves it there — and the test
-brings the cluster live with no restart.
+the variable must be set where the daemon runs, since Joe resolves it there — and the
+cluster comes live with no restart.
 
 The full click-by-click procedure — registering, assigning a zone, promoting with a
 static-bearer reference, and testing — lives in the guide:
