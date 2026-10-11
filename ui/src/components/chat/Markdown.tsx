@@ -34,7 +34,7 @@ function CodeBlock({ children }: { children: string }) {
 // turns and streamed final answers render identically.
 export function Markdown({ content }: { content: string }) {
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none [&_code:not(pre_code)]:bg-zinc-200 [&_code:not(pre_code)]:dark:bg-zinc-700 [&_code:not(pre_code)]:rounded [&_code:not(pre_code)]:px-1 [&_code:not(pre_code)]:py-0.5 [&_code:not(pre_code)]:text-xs">
+    <div className="prose prose-sm dark:prose-invert max-w-none [&_code:not(pre_code)]:bg-zinc-200 dark:[&_code:not(pre_code)]:bg-zinc-700 [&_code:not(pre_code)]:rounded [&_code:not(pre_code)]:px-1 [&_code:not(pre_code)]:py-0.5 [&_code:not(pre_code)]:text-xs">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

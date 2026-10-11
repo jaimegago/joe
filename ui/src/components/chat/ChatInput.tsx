@@ -54,7 +54,7 @@ export function ChatInput({ onSend, onStop, disabled }: ChatInputProps) {
         placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
         rows={1}
         disabled={disabled}
-        className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-ring disabled:opacity-50"
         style={{ maxHeight: 120 }}
       />
       {showStop ? (

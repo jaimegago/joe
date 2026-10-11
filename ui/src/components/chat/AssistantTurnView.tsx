@@ -130,7 +130,7 @@ export function AssistantTurnView({ turn, onResend }: AssistantTurnViewProps) {
             data-testid="write-failure-notice"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="min-w-0 whitespace-pre-wrap break-words">{writeFailure}</p>
+            <p className="min-w-0 whitespace-pre-wrap wrap-break-word">{writeFailure}</p>
           </div>
         )}
 
@@ -152,7 +152,7 @@ export function AssistantTurnView({ turn, onResend }: AssistantTurnViewProps) {
             data-testid="cancelled-notice"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="min-w-0 whitespace-pre-wrap break-words">
+            <p className="min-w-0 whitespace-pre-wrap wrap-break-word">
               You stopped this response before Joe finished. Resend to try again.
             </p>
           </div>
@@ -168,7 +168,7 @@ export function AssistantTurnView({ turn, onResend }: AssistantTurnViewProps) {
             data-testid="max-iterations-notice"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="min-w-0 whitespace-pre-wrap break-words">
+            <p className="min-w-0 whitespace-pre-wrap wrap-break-word">
               Joe reached its step limit for this task. The answer above synthesizes the evidence
               gathered so far and may be incomplete.
             </p>
@@ -182,7 +182,7 @@ export function AssistantTurnView({ turn, onResend }: AssistantTurnViewProps) {
             <div className="min-w-0">
               <p className="font-medium">{turn.failureLabel ?? 'Something went wrong'}</p>
               {turn.errorMessage && (
-                <p className="mt-0.5 whitespace-pre-wrap break-words">{turn.errorMessage}</p>
+                <p className="mt-0.5 whitespace-pre-wrap wrap-break-word">{turn.errorMessage}</p>
               )}
             </div>
           </div>
