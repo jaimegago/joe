@@ -75,9 +75,14 @@ func NewClient(model, baseURL string) (*Client, error) {
 
 // --- wire types (OpenAI Chat Completions) ---
 
+// chatMessage.Content is a pointer so it is always emitted: a string on every
+// message, or null on an assistant turn that carries only tool calls. Omitting
+// it is not portable — Ollama's /v1 rejects a message with neither content nor
+// tool_calls ("invalid message content type: <nil>"), which an empty tool
+// result or an empty user turn would otherwise produce.
 type chatMessage struct {
 	Role       string         `json:"role"`
-	Content    string         `json:"content,omitempty"`
+	Content    *string        `json:"content"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
 }
@@ -135,7 +140,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	// is ignored here — the seam carries structure, and an adapter that cannot
 	// act on it is free to render and move on.
 	if systemPrompt := req.System.String(); systemPrompt != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
+		messages = append(messages, chatMessage{Role: "system", Content: &systemPrompt})
 	}
 
 	for _, msg := range req.Messages {
@@ -145,10 +150,10 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: msg.ToolResultID,
-				Content:    msg.Content,
+				Content:    textContent(msg.Content),
 			})
 		case msg.Role == "assistant":
-			out := chatMessage{Role: "assistant", Content: msg.Content}
+			out := chatMessage{Role: "assistant", Content: textContent(msg.Content)}
 			// Replay the assistant's prior tool calls so the server sees its
 			// own history (required when a tool result follows).
 			for _, tc := range msg.ToolCalls {
@@ -162,10 +167,13 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 					Function: wireFunction{Name: tc.Name, Arguments: string(argsJSON)},
 				})
 			}
+			if msg.Content == "" && len(out.ToolCalls) > 0 {
+				out.Content = nil // tool-call-only turn: null, per the OpenAI contract
+			}
 			messages = append(messages, out)
 		default:
 			// "user" and any other role map to a user-role message.
-			messages = append(messages, chatMessage{Role: "user", Content: msg.Content})
+			messages = append(messages, chatMessage{Role: "user", Content: textContent(msg.Content)})
 		}
 	}
 
@@ -229,6 +237,10 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 
 	return result, nil
 }
+
+// textContent returns a pointer to s so the content field is emitted even when
+// s is empty.
+func textContent(s string) *string { return &s }
 
 // --- shared HTTP plumbing ---
 
