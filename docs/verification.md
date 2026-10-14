@@ -1,6 +1,6 @@
 # Verification Map
 
-What a change to this repository owes in verification, by class of work. Each class carries five fields:
+What a change to this repository owes in verification, by class of work. Joe's behaviour claims — what the LLM-driven agent does well — are evidenced by scenarios rather than by tests, and are mapped in [`docs/behaviour-claims.md`](behaviour-claims.md). Each class carries five fields:
 
 - **Scope** — a classifier decidable from a diff.
 - **Verify** — commands that are runnable today. Runnable, not enforced: a command that works locally but no machine re-runs still belongs here.
