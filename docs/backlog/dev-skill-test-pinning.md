@@ -2,7 +2,7 @@ Strengthen dev standard skill on regression tests and pinning
 Status: open
 Priority: next
 
-Update the **dev-standards** skill (`~/.claude/skills/dev-standards/`) to state a pinning standard, using the findings of sessions `demo-bugfix-pins` and `rbac-engine-split` as the evidence. **The skill lives in the agent skills repo, not this one — this file is a cross-repo pointer only.** Nothing here is actionable inside `joe/`; the change lands in the skills repo and this item is closed from there.
+Update the **dev-standards** skill (`~/.claude/skills/dev-standards/`) to state a pinning standard, using the findings of sessions `demo-bugfix-pins` and `rbac-engine-split` as the evidence. **The skill lives in the agent skills repo, [`jaimegago/agent-skills`](https://github.com/jaimegago/agent-skills), not this one — this file is a cross-repo pointer only.** Nothing here is actionable inside `joe/`; the change lands in the skills repo and this item is closed from there.
 
 The gap: the skill already says verification-before-claiming, but it does not say what a fix must *leave behind* so the next change cannot silently undo it. Both sessions below found real defects that existing tests did not catch, for two different structural reasons. Both are worth incorporating as worked examples rather than as an abstract rule.
 

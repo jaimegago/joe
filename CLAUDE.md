@@ -42,6 +42,8 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 
 ## Applicable Skills
 
+The paths below are a checkout of [`jaimegago/agent-skills`](https://github.com/jaimegago/agent-skills); a skill is edited there, never in the checkout.
+
 - **dev-standards** (`~/.claude/skills/dev-standards/`): universal — verification-before-claiming, read-before-editing, minimal-changes discipline
 - **go-backend** (`~/.claude/skills/go-backend/`): authoritative for Go conventions, error handling, testing patterns
 - **frontend-dev** (`~/.claude/skills/frontend-dev/`): authoritative for React/TypeScript component structure, styling, and frontend testing
