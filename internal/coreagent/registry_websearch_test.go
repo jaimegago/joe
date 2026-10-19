@@ -10,7 +10,7 @@ import (
 
 // TestCoreAgentRegistryExcludesWebSearch pins the invariant that the autonomous
 // agent:core tool registry does NOT include the web_search shared tool
-// (CLAUDE.md: web_search is registered on the user task loop only, via
+// (AGENTS.md: web_search is registered on the user task loop only, via
 // internal/tools/default.go). The autonomous refresh surface must not gain an
 // external-egress tool by accident, so this guards against a future edit that
 // adds web_search — or any shared egress tool — to registerCoreAgentTools.

@@ -1220,7 +1220,7 @@ func registerBusinessMetricsDefault(services *core.Services) error {
 	// joe_build_info: one constant-1 gauge per binary, build identity in labels
 	// (read from the single source of build truth). Registered here in the
 	// metrics-setup layer, under the same metrics-enabled gate as the business
-	// gauges, per the CLAUDE.md instrumentation invariant.
+	// gauges, per the AGENTS.md instrumentation invariant.
 	bi := buildinfo.Get()
 	if _, err := services.Metrics.RegisterBuildInfo(observability.BuildInfo{
 		Version:   bi.Version,

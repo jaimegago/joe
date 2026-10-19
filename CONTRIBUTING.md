@@ -33,7 +33,7 @@ gofmt -s -w .    # format
 
 Integration tests run under a build tag: `go test -tags=integration ./...`.
 
-See [test/README.md](test/README.md) for the test tree layout, but treat [CLAUDE.md](CLAUDE.md) as the authoritative source for the exact commands if the two ever disagree.
+See [test/README.md](test/README.md) for the test tree layout, but treat [AGENTS.md](AGENTS.md) as the authoritative source for the exact commands if the two ever disagree.
 
 PRs that change behavior are expected to include or update tests covering that behavior. A PR that touches the safety invariants below without a test change will be treated as unfinished, not just unverified.
 

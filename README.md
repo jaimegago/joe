@@ -179,7 +179,7 @@ gofmt -s -w .    # format
 
 `make build` produces the release-shaped binary (embedded UI + injected build truth). Integration tests run under a build tag: `go test -tags=integration ./...`.
 
-See [CLAUDE.md](CLAUDE.md) for repo conventions and [test/README.md](test/README.md) for the test tree layout.
+See [AGENTS.md](AGENTS.md) for repo conventions and [test/README.md](test/README.md) for the test tree layout.
 
 ---
 

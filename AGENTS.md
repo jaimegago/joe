@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## Project Identity
 
@@ -42,13 +42,15 @@ Joe (Joe Operates Everything) is an AI-powered infrastructure copilot for platfo
 
 ## Applicable Skills
 
-The paths below are a checkout of [`jaimegago/agent-skills`](https://github.com/jaimegago/agent-skills); a skill is edited there, never in the checkout.
+Skills are vendored at `agent-skills/` — a git submodule of [`jaimegago/agent-skills`](https://github.com/jaimegago/agent-skills) pinned to a tag — and cited by that path. Nothing auto-discovers them; this file is the discovery. A skill is edited in that repository, never here, and the pin moves only when a joe-pm thread advances it.
 
-- **dev-standards** (`~/.claude/skills/dev-standards/`): universal — verification-before-claiming, read-before-editing, minimal-changes discipline
-- **go-backend** (`~/.claude/skills/go-backend/`): authoritative for Go conventions, error handling, testing patterns
-- **frontend-dev** (`~/.claude/skills/frontend-dev/`): authoritative for React/TypeScript component structure, styling, and frontend testing
+- **dev-standards** (`agent-skills/dev-standards/SKILL.md`): universal — read at the start of every session; verification-before-claiming, read-before-editing, minimal-changes discipline
+- **go-backend** (`agent-skills/go-backend/SKILL.md`, with its `references/`): read before writing, reviewing or scaffolding Go code; authoritative for Go conventions, error handling, testing patterns
+- **frontend-dev** (`agent-skills/frontend-dev/SKILL.md`, with its `references/`): read before any work under `ui/`; authoritative for React/TypeScript component structure, styling, and frontend testing
 
-> **Precedence.** When this CLAUDE.md and a referenced skill give conflicting guidance, the skill wins for topics within its scope. This CLAUDE.md only overrides a skill when it explicitly says "repo-specific override:" followed by the rule.
+> **Precedence.** When this AGENTS.md and a referenced skill give conflicting guidance, the skill wins for topics within its scope. This AGENTS.md only overrides a skill when it explicitly says "repo-specific override:" followed by the rule.
+
+This file was `CLAUDE.md` until 2026-10-19 (joe-pm `threads/agent-skills-pinned.md`). A reference to `CLAUDE.md` in the decision log or a backlog item names this file; history is not retrofitted.
 
 ## Build / Test / Lint
 
@@ -91,7 +93,7 @@ npm run test
 - MCP server (`joe mcp`) reads `JOE_SERVER` + `JOE_API_KEY` env vars
 - Joe speaks MCP in one direction only: it runs as an MCP server (`joe mcp`), exposing its own governed tools, but deliberately does NOT act as an MCP client / consume external MCP servers' tools — the protocol has no enforceable tool mutation classification, so consuming it would reduce the machine-checkable observe-mode write-floor guarantee to an operator promise (see D-0067)
 - **repo-specific override:** do not add a `Co-Authored-By` trailer to commit messages
-- **Volatile counts are expressed structurally in this file, never as fixed figures (D-0032).** Counts that grow as the codebase grows — graph edge types, database migrations, and similar — are not stated in `CLAUDE.md` as hardcoded numbers, because such figures restale on the next commit that grows the set. Express them structurally instead: a pointer to the declaring file plus a description of how the set is defined — "the relation constants declared in `internal/graph/relations.go`, plus inline literals that bypass them" rather than "19 edge types"; "the migration files on disk in the migrations directory" rather than a count. A raw number, if retained at all, is never presented as the authoritative total
+- **Volatile counts are expressed structurally in this file, never as fixed figures (D-0032).** Counts that grow as the codebase grows — graph edge types, database migrations, and similar — are not stated in `AGENTS.md` as hardcoded numbers, because such figures restale on the next commit that grows the set. Express them structurally instead: a pointer to the declaring file plus a description of how the set is defined — "the relation constants declared in `internal/graph/relations.go`, plus inline literals that bypass them" rather than "19 edge types"; "the migration files on disk in the migrations directory" rather than a count. A raw number, if retained at all, is never presented as the authoritative total
 
 ## Reference Documents
 

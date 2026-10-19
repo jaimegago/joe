@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// CLAUDE.md states that internal/buildinfo is the single source of build truth
+// AGENTS.md states that internal/buildinfo is the single source of build truth
 // and that no other package declares build-identity vars. Until this file that
 // claim was prose, and it had two live counterexamples: internal/mcp declared
 // its own serverVersion and internal/observability its own serviceVersion, both
