@@ -106,7 +106,7 @@ jobs:
           # the nightly unfiltered matrix, via the early return above, so what
           # moved is when a failure is learned about, not whether it is. Red in
           # the post-merge tier flips the responsible thread from done back to
-          # blocked, per joe-pm CLAUDE.md.
+          # blocked, per joe-pm AGENTS.md.
           e2e=false
           goreleaser=false
 
