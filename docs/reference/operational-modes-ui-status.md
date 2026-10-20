@@ -415,7 +415,7 @@ the classifier; the branch order is documentation of intent, not the enforcement
    ([internal/api/captain.go:21-22,49-60](../../internal/api/captain.go)).
 
 6. **Single binary — `cmd/joe-core` does not exist.** The live tree has only `cmd/joe`; the
-   server entrypoint is [cmd/joe/server.go](../../cmd/joe/server.go), matching `CLAUDE.md`'s
+   server entrypoint is [cmd/joe/server.go](../../cmd/joe/server.go), matching `AGENTS.md`'s
    single-binary model.
 
 7. **Deny-only captain gate — VERIFIED, no contradiction.** `captaingate` is DENY-ONLY: the

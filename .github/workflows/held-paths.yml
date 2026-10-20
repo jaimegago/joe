@@ -83,7 +83,7 @@ jobs:
           # reading carefully by the thirteenth time. See joe-pm
           # decisions/0014-retract-the-review-cascade.md.
           instruction="$(printf '%s\n' "$files" \
-            | grep -E '^CLAUDE\.md$|^docs/verification\.md$' || true)"
+            | grep -E '^AGENTS\.md$|^docs/verification\.md$' || true)"
 
           held="$(printf '%s\n' "$instruction" | grep -v '^$' | sort -u || true)"
 
