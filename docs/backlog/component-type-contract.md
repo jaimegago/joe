@@ -44,3 +44,15 @@ answer.
 This frame is deliberately later: per the vertical-slices principle it should be
 designed against operational evidence from `component-resolution-tool` and
 `repo-registration-path`, not speculatively.
+
+## Open question — hide a type until its contract is complete?
+
+Raised in the maintainer's notes (joe-pm notes entry `p3x4c.05`), placed under
+the ordering "components → config granularity → KG connection → matching tool":
+whether a component type should stay out of view until it carries all five
+elements, rather than being registrable, or advertised to the loop, part-built.
+
+`advertised-dead-tools` is the same question at the tool level — its first
+design option filters the task registry to tools whose types are registrable —
+and `trim-deadonarrival-component-types` is its registration-level residue.
+Whatever this contract answers should answer those consistently.
