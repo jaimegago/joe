@@ -141,3 +141,6 @@ maps onto these finer rbac verbs, so a zone can name `query` or `delete` in its
 trim these from the verb vocabulary, keep them for forward compatibility, or wire
 the executor onto a finer verb set instead of the current Read/Mutate binary is
 an open v2 design question, not resolved here.
+
+The maintainer raised the same question independently in joe-pm notes entry
+`pnnno.03` ("why four actions in zones?"). It is this finding, not a second item.
