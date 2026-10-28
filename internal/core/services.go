@@ -7,6 +7,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
+	"github.com/jaimegago/joe/internal/autorun"
 	"github.com/jaimegago/joe/internal/config"
 	"github.com/jaimegago/joe/internal/findings"
 	"github.com/jaimegago/joe/internal/graph"
@@ -48,6 +49,12 @@ type Services struct {
 	Graph     graph.GraphStore
 	Store     *store.Store
 	Agent     CoreAgent // Core Agent instance for control endpoints
+	// AutoRun is the Auto Joe run service (internal/autorun): the non-HTTP way
+	// to start an agent run, reached by an operator trigger and by an installed
+	// schedule. Installed by api.Server.InstallAutoRun at the composition root
+	// (cmd/joe/server.go) and started/stopped there beside the Core Agent and
+	// the sweeper; nil when the session store is not wired.
+	AutoRun *autorun.Service
 	// WriteFloor is the boot-resolved, runtime-immutable write floor (D-0018).
 	// Resolved exactly once in cmd/joe/server.go from the panic state (sticky)
 	// and the JOE_MODE=observation env var, then stored here as the single

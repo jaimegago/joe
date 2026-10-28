@@ -668,11 +668,42 @@ func (a *Agent) probeUnfulfilledToolIntent(ctx context.Context, session *Session
 // exactly what the loop left them — the synthesis attempt has no observable
 // side effect beyond token usage and (on success) the returned answer.
 func (a *Agent) synthesizeFinalAnswer(ctx context.Context, session *Session) (string, bool) {
+	answer, err := a.SynthesizeReport(ctx, session, prompts.MaxIterationsSynthesis, 0)
+	if err != nil || answer == "" {
+		return "", false
+	}
+	return answer, true
+}
+
+// SynthesizeReport makes one tool-less Chat call over the session's evidence
+// with the given instruction appended as a final user-role message, and
+// returns the model's content. It is the forced-synthesis seam
+// synthesizeFinalAnswer has always used, exported so the Auto Joe run path
+// (internal/autorun) can fund a report from a reserve held OUTSIDE the run's
+// ceilings: a run stopped by its token ceiling or its wall clock calls this
+// under a fresh context and a bounded output cap, after Run has returned, so
+// the pass's partial evidence is reported rather than discarded. That is the
+// reserved-headroom design docs/backlog/loop-budget-exhaustion.md § 2 names as
+// its open prerequisite, built here for the run path only.
+//
+// outputCap, when positive and below the agent's configured output cap, bounds
+// MaxTokens for this one call so the report cannot spend past its reserve on
+// output; zero keeps the agent's cap. No session token-ceiling check is
+// applied — the caller has already decided the loop is over and is spending a
+// reserve it holds — but usage IS recorded on the session, so the report's
+// tokens appear in the run's totals and a caller can measure the reserve it
+// actually spent by differencing TotalTokens around the call.
+//
+// Everything synthesizeFinalAnswer promised still holds: observer-silent, built
+// on a LOCAL copy of the history with nothing written back, and cancellation is
+// honoured before the call. An empty content is returned as "" with a nil
+// error; the caller decides what an empty report means.
+func (a *Agent) SynthesizeReport(ctx context.Context, session *Session, instruction string, outputCap int) (string, error) {
 	// Honour cancellation: a caller whose context is already done gets no
 	// synthesis attempt (mirrors the loop's per-iteration cancellation check).
 	select {
 	case <-ctx.Done():
-		return "", false
+		return "", ctx.Err()
 	default:
 	}
 
@@ -680,29 +711,30 @@ func (a *Agent) synthesizeFinalAnswer(ctx context.Context, session *Session) (st
 	copy(messages, session.Messages)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: prompts.MaxIterationsSynthesis,
+		Content: instruction,
 	})
 
+	maxTokens := a.maxOutputTokens
+	if outputCap > 0 && (maxTokens <= 0 || outputCap < maxTokens) {
+		maxTokens = outputCap
+	}
 	req := llm.ChatRequest{
 		System:   a.systemPrompt,
 		Messages: messages,
 		// No Tools: the synthesis turn must answer from evidence in hand.
-		MaxTokens: a.maxOutputTokens,
+		MaxTokens: maxTokens,
 	}
 
 	a.mu.RLock()
 	resp, err := a.llm.Chat(ctx, req)
 	a.mu.RUnlock()
 	if err != nil {
-		return "", false
+		return "", err
 	}
 	// Real spend — record it in the turn's totals even though the loop has
 	// already decided to exit.
 	session.AddTokenUsage(ctx, resp.Usage)
-	if resp.Content == "" {
-		return "", false
-	}
-	return resp.Content, true
+	return resp.Content, nil
 }
 
 // writeMaxIterationsAudit records one KindLLMLimitTriggered audit row for an

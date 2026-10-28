@@ -55,6 +55,12 @@ type Server struct {
 	// there is exactly one engine per request path and the read-posture / promote
 	// resolvers wired into it at construction reach every consumer.
 	engine *rbac.PolicyEngine
+	// autorun is the Auto Joe run handler, installed by InstallAutoRun from the
+	// composition root with the run path's OWN accessor — built on the
+	// promote-aware engine the refresher uses, never the transport engine
+	// above — so a run's reads are admitted by exactly the refresher's
+	// authority. nil until installed; the routes are registered only then.
+	autorun *autoRunHandler
 	// sessionAuthzAdmin is the ADMIN session-authorization seam instance (§12.7
 	// seam / §12.8 two-instance defense-in-depth, B006). It is built with the REAL
 	// D-0011 admin checker (newAdminSessionAuthz / rbacAdminChecker) and is the
@@ -137,6 +143,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerAdminSessionRoutes(mux, apiPrefix)
 	s.registerObserveCategoryRoutes(mux, apiPrefix)
 	s.registerTaskRoutes(mux, apiPrefix)
+	// autojoe-ro-run-build: the Auto Joe run surface — operator trigger,
+	// schedules, run records. Registered only once InstallAutoRun has wired the
+	// run path; absent, the routes do not exist rather than answering 503.
+	s.registerAutoRunRoutes(mux, apiPrefix)
 	// Phase 2: model control plane — list/swap the single LLM contact point.
 	s.registerModelRoutes(mux, apiPrefix)
 	s.registerSkillsRoutes(mux, apiPrefix)
