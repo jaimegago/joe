@@ -4,6 +4,7 @@ import {
   Database,
   MessageSquare,
   MessagesSquare,
+  ClipboardList,
   ShieldCheck,
   Users,
   UserCog,
@@ -49,6 +50,12 @@ interface NavItem {
 const operatorNav: NavItem[] = [
   { to: '/chat', icon: MessageSquare, label: 'Chat', end: false },
   { to: '/sessions', icon: MessagesSquare, label: 'Sessions', end: false },
+  // Findings is the read-only Auto Joe findings view by band (the purpose-built
+  // replacement for the retired alerts widget, D-0038). Team-public like the
+  // sessions the findings are rendered into; its admin-only half, the
+  // proposed-admissions list, is inline on Components where registration
+  // happens, not duplicated here.
+  { to: '/findings', icon: ClipboardList, label: 'Findings', end: false },
   { to: '/components', icon: Database, label: 'Components', end: false },
 ];
 

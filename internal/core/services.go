@@ -18,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/readposture"
+	"github.com/jaimegago/joe/internal/runfindings"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/search"
@@ -172,12 +173,19 @@ type Services struct {
 	// report 503 when it is nil, the same carve-out the rest of the admin surface
 	// uses for an unwired store.
 	SessionArchive *sessionarchive.Archiver
-	RunModel       runmodel.Repository          // nil until wired in cmd/joe/server.go
-	Findings       findings.Repository          // nil until wired in cmd/joe/server.go
-	Warnings       warnings.Repository          // nil until wired in cmd/joe/server.go
-	CaptainSvc     *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
-	Skills         *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
-	SkillsWatcher  *skills.Watcher              // nil when hot reload is disabled or failed to start
+	RunModel       runmodel.Repository // nil until wired in cmd/joe/server.go
+	Findings       findings.Repository // nil until wired in cmd/joe/server.go
+	// RunFindings is the typed finding record a read-only Auto Joe run produces
+	// (internal/runfindings, migration 035) — not the human `findings`
+	// annotation above. Read by the findings endpoint and view and by the next
+	// run's labelling; read by no authorization or enforcement path (D-0167).
+	// nil until wired in cmd/joe/server.go; the findings routes are not
+	// registered when it is nil.
+	RunFindings   runfindings.Repository
+	Warnings      warnings.Repository          // nil until wired in cmd/joe/server.go
+	CaptainSvc    *sessionmodel.CaptainService // nil until wired in cmd/joe/server.go
+	Skills        *skills.AtomicRouter         // never nil after wiring; Snapshot() may return nil
+	SkillsWatcher *skills.Watcher              // nil when hot reload is disabled or failed to start
 	// SkillsManager owns ~/.joe/skills/ and the lockfile. Used by the
 	// admin API (POST /api/v1/skills/approve, GET /api/v1/skills). It is
 	// nil only when joecored started without ever resolving its joe-dir,
