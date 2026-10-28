@@ -37,6 +37,7 @@ type JoeTestHarness struct {
 	configPath   string
 	tmpDir       string
 	testPort     string
+	metricsPort  string
 	cleanupFuncs []func()
 
 	// Responder is the scripted LLM joe is pointed at. It runs DefaultScript
@@ -58,13 +59,14 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	setupTestConfig(t, configPath, testPort, responder.BaseURL(), tmpDir)
 	return &JoeTestHarness{
-		t:          t,
-		apiURL:     fmt.Sprintf("http://localhost:%s", testPort),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		configPath: configPath,
-		tmpDir:     tmpDir,
-		testPort:   testPort,
-		Responder:  responder,
+		t:           t,
+		apiURL:      fmt.Sprintf("http://localhost:%s", testPort),
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
+		configPath:  configPath,
+		tmpDir:      tmpDir,
+		testPort:    testPort,
+		metricsPort: freePort(t),
+		Responder:   responder,
 	}
 }
 
@@ -82,21 +84,21 @@ func freePort(t *testing.T) string {
 
 // joeEnv is the environment joe runs under: the test process's own, with every
 // JOE_ variable removed so a developer's shell cannot override the harness's
-// config (JOE_LLM_PROVIDER and JOE_LLM_MODEL apply after the file is read), and
-// with HOME in the test's temp dir so nothing joe defaults under ~/.joe is
-// shared between tests or with the developer's own joe.
+// config (JOE_LLM_PROVIDER and JOE_LLM_MODEL apply after the file is read).
 func (h *JoeTestHarness) joeEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "JOE_") || strings.HasPrefix(kv, "HOME=") {
+		if strings.HasPrefix(kv, "JOE_") {
 			continue
 		}
 		env = append(env, kv)
 	}
 	return append(env,
-		fmt.Sprintf("HOME=%s", h.tmpDir),
 		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
 		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
+		// The Prometheus listener defaults to a fixed :9090, which every joe
+		// instance would otherwise contend for.
+		fmt.Sprintf("OTEL_METRICS_PORT=%s", h.metricsPort),
 	)
 }
 
@@ -322,6 +324,11 @@ func (h *JoeTestHarness) buildBinaries() error {
 // setupTestConfig creates a test configuration file. Setting llm.current
 // skips auto-selection, which never picks openai-compat; base_url is the only
 // way to point that provider anywhere, since no env var carries it.
+//
+// The database, its encryption key and the session archive live in the test's
+// temp dir, so tests share no state with each other or with the developer's
+// own joe. HOME cannot do this: joe resolves ~/.joe through user.Current() on
+// purpose (internal/paths), so ~/.joe/skills is still read from the real home.
 func setupTestConfig(t *testing.T, path, port, llmBaseURL, dataDir string) {
 	config := fmt.Sprintf(`llm:
   current: e2e-responder
@@ -333,7 +340,9 @@ func setupTestConfig(t *testing.T, path, port, llmBaseURL, dataDir string) {
 database:
   driver: sqlite
   dsn: %s
+  encryption_key_path: %s
 server:
+  session_archive_dir: %s
   address: localhost:%s
   service_accounts:
     - name: e2e
@@ -342,7 +351,7 @@ logging:
   level: debug
 refresh:
   interval_minutes: 60
-`, llmBaseURL, filepath.Join(dataDir, "joe.db"), port)
+`, llmBaseURL, filepath.Join(dataDir, "joe.db"), filepath.Join(dataDir, "encryption.key"), filepath.Join(dataDir, "session-archive"), port)
 	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
