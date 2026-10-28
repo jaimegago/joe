@@ -45,8 +45,51 @@ type JoeTestHarness struct {
 	Responder *Responder
 }
 
+// ServiceAccount is a machine identity the harness adds to joe's config
+// beside the "e2e" account. Configuring any service account enforces RBAC,
+// so every account but one an admin bootstraps is a grantless non-admin.
+type ServiceAccount struct {
+	Name string
+	Key  string
+}
+
+// harnessConfig is what HarnessOptions change in the generated config.
+type harnessConfig struct {
+	serviceAccounts        []ServiceAccount
+	refreshIntervalMinutes int
+	extraYAML              string
+}
+
+// HarnessOption changes the config joe boots with.
+type HarnessOption func(*harnessConfig)
+
+// WithServiceAccount adds a service account beside "e2e".
+func WithServiceAccount(name, key string) HarnessOption {
+	return func(c *harnessConfig) {
+		c.serviceAccounts = append(c.serviceAccounts, ServiceAccount{Name: name, Key: key})
+	}
+}
+
+// WithRefreshIntervalMinutes sets the Core Agent's graph refresh interval. The
+// refresher ticks on it and never at boot, so it is how long a test waits for
+// a registered component's nodes to appear in the graph.
+func WithRefreshIntervalMinutes(m int) HarnessOption {
+	return func(c *harnessConfig) { c.refreshIntervalMinutes = m }
+}
+
+// WithConfigYAML appends top-level YAML sections to the config. They must not
+// repeat a section the harness writes (llm, database, server, logging,
+// refresh).
+func WithConfigYAML(yaml string) HarnessOption {
+	return func(c *harnessConfig) { c.extraYAML = yaml }
+}
+
 // NewTestHarness creates a new test harness
-func NewTestHarness(t *testing.T) *JoeTestHarness {
+func NewTestHarness(t *testing.T, opts ...HarnessOption) *JoeTestHarness {
+	cfg := harnessConfig{refreshIntervalMinutes: 60}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	tmpDir := t.TempDir()
 	// An OS-assigned port per joe instance, so tests do not collide with each
 	// other or with a joe the developer has running.
@@ -57,7 +100,7 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 	}
 	// Setup test config
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	setupTestConfig(t, configPath, testPort, responder.BaseURL(), tmpDir)
+	setupTestConfig(t, configPath, testPort, responder.BaseURL(), tmpDir, cfg)
 	return &JoeTestHarness{
 		t:           t,
 		apiURL:      fmt.Sprintf("http://localhost:%s", testPort),
@@ -329,7 +372,11 @@ func (h *JoeTestHarness) buildBinaries() error {
 // temp dir, so tests share no state with each other or with the developer's
 // own joe. HOME cannot do this: joe resolves ~/.joe through user.Current() on
 // purpose (internal/paths), so ~/.joe/skills is still read from the real home.
-func setupTestConfig(t *testing.T, path, port, llmBaseURL, dataDir string) {
+func setupTestConfig(t *testing.T, path, port, llmBaseURL, dataDir string, hc harnessConfig) {
+	var accounts strings.Builder
+	for _, sa := range hc.serviceAccounts {
+		fmt.Fprintf(&accounts, "    - name: %s\n      key: %s\n", sa.Name, sa.Key)
+	}
 	config := fmt.Sprintf(`llm:
   current: e2e-responder
   available:
@@ -347,14 +394,71 @@ server:
   service_accounts:
     - name: e2e
       key: e2e-service-account-key-not-a-real-credential
-logging:
+%slogging:
   level: debug
 refresh:
-  interval_minutes: 60
-`, llmBaseURL, filepath.Join(dataDir, "joe.db"), filepath.Join(dataDir, "encryption.key"), filepath.Join(dataDir, "session-archive"), port)
+  interval_minutes: %d
+%s`, llmBaseURL, filepath.Join(dataDir, "joe.db"), filepath.Join(dataDir, "encryption.key"), filepath.Join(dataDir, "session-archive"), port,
+		accounts.String(), hc.refreshIntervalMinutes, hc.extraYAML)
 	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
+}
+
+// DBPath is the sqlite database joe writes, in the test's temp dir.
+func (h *JoeTestHarness) DBPath() string {
+	return filepath.Join(h.tmpDir, "joe.db")
+}
+
+// BootstrapAdmin grants principal admin through `joe admin bootstrap`, the
+// offline first-admin command, against the harness's config and database. It
+// builds joe if needed and must run before Start: the command is the
+// deployment's own bootstrap path, so no admin row is written by the test.
+func (h *JoeTestHarness) BootstrapAdmin(principal string) error {
+	if err := h.buildBinaries(); err != nil {
+		return fmt.Errorf("build failed: %w", err)
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(repoRoot, "joe"), "admin", "bootstrap", principal, "--config", h.configPath)
+	cmd.Env = h.joeEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("joe admin bootstrap %s: %w: %s", principal, err, out)
+	}
+	return nil
+}
+
+// Do sends one API request authenticated with key, JSON-encoding body when it
+// is non-nil, and returns the status and the raw response body.
+func (h *JoeTestHarness) Do(method, path, key string, body any) (int, []byte, error) {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, err
+		}
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), method, h.apiURL+path, reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, out, err
 }
 
 // CreateTestFile creates a file in the test directory
