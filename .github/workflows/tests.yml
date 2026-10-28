@@ -64,7 +64,11 @@ jobs:
             exit 0
           fi
 
-          files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          # One JSON object per changed file: its path, its status (added,
+          # modified, removed, renamed, ...) and its patch. GitHub omits the
+          # patch for a file too large to diff.
+          entries="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | {filename, status, patch}')"
+          files="$(printf '%s\n' "$entries" | jq -r '.filename')"
           echo "changed files:"
           printf '%s\n' "$files" | sed 's/^/  /'
 
@@ -85,30 +89,67 @@ jobs:
             frontend=true
           fi
 
-          # End-to-End and GoReleaser Snapshot Build are POST-MERGE, always.
-          # Never on a pull request, whatever the diff touches.
-          #
-          # The gate answers one question — is `main` broken — and it answers
-          # it with checks that are fast and deterministic. Neither of these
-          # is:
-          #
-          #   - End-to-End boots cmd/joe, runs `npm ci`, and spawns real
-          #     binaries. It also runs against placeholder keys that fall back
-          #     to the literal `test-key`, so the real-provider paths its name
-          #     implies are not exercised. 139s of gate time for that.
-          #   - GoReleaser Snapshot Build is a packaging build. Releasability
-          #     is a real question and is not this one. At 538s it was the
-          #     single largest cost in the gate, and it was pulled in by any
-          #     diff touching .github/workflows/ — including a diff to this
-          #     file.
-          #
-          # Coverage is unchanged. Both still run on every push to main and in
-          # the nightly unfiltered matrix, via the early return above, so what
-          # moved is when a failure is learned about, not whether it is. Red in
-          # the post-merge tier flips the responsible thread from done back to
-          # blocked, per joe-pm AGENTS.md.
+          # End-to-End gates when the diff touches test/e2e/, and is
+          # post-merge otherwise. A feature ships with a deterministic e2e
+          # test (joe-pm decision 0018), so a feature pull request carries one
+          # under test/e2e/ and pays for running it; a docs or refactor pull
+          # request does not. The suite runs joe against the harness's
+          # scripted responder, with no LLM and no key, which is what makes it
+          # fit for the gate.
           e2e=false
+          if touches '^test/e2e/'; then
+            e2e=true
+          fi
+
+          # GoReleaser Snapshot Build is POST-MERGE, always. Never on a pull
+          # request, whatever the diff touches. It is a packaging build, and
+          # releasability is a real question that is not the gate's. At 538s
+          # it was the single largest cost in the gate, and it was pulled in
+          # by any diff touching .github/workflows/ — including a diff to this
+          # file. It still runs on every push to main and in the nightly
+          # unfiltered matrix, via the early return above. Red there flips the
+          # responsible thread from done back to blocked, per joe-pm AGENTS.md.
           goreleaser=false
+
+          # feature-e2e (docs/verification.md): a diff that adds an HTTP
+          # route, a migration or a UI page owes an end-to-end test, so it
+          # must carry a test/e2e/ path. Refused here, where no session can
+          # talk the check out of running.
+          #
+          # "Adds" is decided from the diff. A migration or a page is an added
+          # file. A route or a <Route> is an added line whose text was not
+          # also removed in the same diff, so moving a registration is not
+          # adding one.
+          added_files="$(printf '%s\n' "$entries" | jq -r 'select(.status == "added") | .filename')"
+          added_lines() {
+            # $1: a jq regex selecting files, $2: an ERE selecting lines.
+            # Prints the matching lines the diff adds to those files, minus
+            # any line it also removes from them. Test files never count.
+            local sel plus minus
+            sel="$(printf '%s\n' "$entries" | jq -r --arg f "$1" \
+              'select((.filename | test($f)) and (.filename | test("[._]test\\.(go|tsx)$") | not)) | .patch // empty')"
+            plus="$(printf '%s\n' "$sel" | grep -E '^\+' | grep -Ev '^\+\+\+' | sed -E 's/^\+[[:space:]]*//' | grep -E "$2" | sort -u || true)"
+            minus="$(printf '%s\n' "$sel" | grep -E '^-' | grep -Ev '^---' | sed -E 's/^-[[:space:]]*//' | grep -E "$2" | sort -u || true)"
+            comm -23 <(printf '%s\n' "$plus") <(printf '%s\n' "$minus") | sed '/^$/d'
+          }
+          migrations="$(printf '%s\n' "$added_files" | grep -E '^internal/store/migrations/' || true)"
+          pages="$(printf '%s\n' "$added_files" | grep -E '^ui/src/pages/.*\.tsx$' | grep -Ev '\.test\.tsx$' || true)"
+          routes="$(added_lines '^(internal|cmd)/.*\.go$' '(HandleFunc|Handle)\(')"
+          ui_routes="$(added_lines '^ui/src/.*\.tsx$' '<Route([[:space:]>]|$)')"
+          unpatched="$(printf '%s\n' "$entries" | jq -r 'select(.patch == null) | .filename' | grep -E '^(internal|cmd)/.*\.go$|^ui/src/.*\.tsx$' || true)"
+          if [ -n "$unpatched" ]; then
+            echo "::warning::GitHub returned no patch for these files, so they were not inspected for added routes: $(printf '%s ' $unpatched)"
+          fi
+          if [ -n "$migrations$pages$routes$ui_routes" ]; then
+            echo "feature-e2e scope matched:"
+            for kind in migrations pages routes ui_routes; do
+              printf '%s\n' "${!kind}" | sed '/^$/d' | sed "s|^|  $kind: |"
+            done
+            if [ "$e2e" != "true" ]; then
+              echo "::error::This diff is in the feature-e2e class (docs/verification.md): it adds an HTTP route, a migration or a UI page, and carries no test/e2e/ path. A feature ships with a deterministic end-to-end test under test/e2e/ (joe-pm decision 0018)."
+              exit 1
+            fi
+          fi
 
           emit "$go" "$frontend" "$e2e" "$goreleaser"
 
@@ -169,11 +210,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: classify
     if: needs.classify.outputs.e2e == 'true'
-    env:
-      # Use test/mock API keys for e2e tests
-      # For real E2E with actual LLMs, use secrets
-      GEMINI_API_KEY: ${{ secrets.TEST_GEMINI_API_KEY || 'test-key' }}
-      ANTHROPIC_API_KEY: ${{ secrets.TEST_ANTHROPIC_API_KEY || 'test-key' }}
+    # No LLM key, deliberately. The harness points joe's openai-compat
+    # provider at a scripted responder it runs in the test process
+    # (test/e2e/responder.go), so the suite needs no network and no model.
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
