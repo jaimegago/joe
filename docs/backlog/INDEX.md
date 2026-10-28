@@ -46,6 +46,7 @@ after the move rather than by inspection.
 | [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
 | [`agent-tool-reference`](agent-tool-reference.md) | Agent tool reference — every tool the agent loop can call, with its action class | open | |
+| [`autojoe-ro-findings-fence`](autojoe-ro-findings-fence.md) | The first live Auto Joe run persisted no findings: the model fenced its block as `json` and typed its findings `refusal` | open | |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 | later |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred | later |
 | [`azure-credential-provider-and-connect`](azure-credential-provider-and-connect.md) | Backlog — Azure credential provider + Connect implementation (deferred from A003) | deferred from A003 | later |
