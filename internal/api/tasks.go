@@ -572,31 +572,7 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 	// default for an unknown / unconfigured model. The capabilities drive
 	// both the explicit per-request output cap (set on the agent below) and
 	// the token budget the session prunes history to.
-	caps := llmusage.LookupCapabilities("", "")
-	activeModel := ""
-	providerModel := ""
-	provider := ""
-	if cfg := h.server.services.Config; cfg != nil {
-		activeKey := cfg.LLM.Current
-		if sw, ok := h.server.services.LLM.(*llm.SwappableAdapter); ok {
-			if cur := sw.Current(); cur != "" {
-				activeKey = cur
-			}
-		}
-		activeModel = activeKey
-		// The provider model identifier + adapter family the task response
-		// attests (D-0153) come from the same catalogue entry the capabilities
-		// do, so the reported model and the window it is pruned against can
-		// never name two different models. A key with no entry has no provider
-		// identifier to report: fall back to the raw key and leave the provider
-		// empty rather than inventing either.
-		providerModel = activeKey
-		if mc, ok := cfg.LLM.Available[activeKey]; ok {
-			caps = llmusage.LookupCapabilities(mc.Provider, mc.Model)
-			providerModel = mc.Model
-			provider = mc.Provider
-		}
-	}
+	caps, activeModel, providerModel, provider := h.server.resolveActiveModel()
 
 	agent := agentloop.NewAgent(
 		h.server.services.LLM,
@@ -652,6 +628,42 @@ func (h *taskHandler) buildTaskRun(ctx context.Context, req taskRequest, maxIter
 		providerModel: providerModel,
 		provider:      provider,
 	}
+}
+
+// resolveActiveModel resolves the active model's capabilities (context window
+// + default max output) from the compile-time table, with the catalogue key,
+// provider model identifier and adapter family the task response attests
+// (D-0153). The active catalogue key is the live SwappableAdapter's current
+// key (it tracks runtime model swaps); fall back to the configured Current
+// key, then to the conservative default for an unknown / unconfigured model.
+// Shared by the task loop and the Auto Joe run loop so the two cannot prune
+// against different windows for one model.
+//
+// The provider model identifier + adapter family come from the same catalogue
+// entry the capabilities do, so the reported model and the window it is pruned
+// against can never name two different models. A key with no entry has no
+// provider identifier to report: fall back to the raw key and leave the
+// provider empty rather than inventing either.
+func (s *Server) resolveActiveModel() (caps llmusage.ModelCapabilities, modelKey, providerModel, provider string) {
+	caps = llmusage.LookupCapabilities("", "")
+	cfg := s.services.Config
+	if cfg == nil {
+		return caps, "", "", ""
+	}
+	activeKey := cfg.LLM.Current
+	if sw, ok := s.services.LLM.(*llm.SwappableAdapter); ok {
+		if cur := sw.Current(); cur != "" {
+			activeKey = cur
+		}
+	}
+	modelKey = activeKey
+	providerModel = activeKey
+	if mc, ok := cfg.LLM.Available[activeKey]; ok {
+		caps = llmusage.LookupCapabilities(mc.Provider, mc.Model)
+		providerModel = mc.Model
+		provider = mc.Provider
+	}
+	return caps, modelKey, providerModel, provider
 }
 
 // taskStatus maps an agent run error to the wire status + error message.

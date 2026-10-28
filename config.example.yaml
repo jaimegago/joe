@@ -32,6 +32,21 @@ refresh:
     batch_threshold: 10
     batch_timeout_sec: 30
 
+# Auto Joe run budget (read-only autonomous pass over a scope of components,
+# started by an operator trigger or an installed schedule; executes as joe's
+# own svc:agent:core identity). Every run carries both ceilings; a run that
+# hits either stops and still reports, funded from the reserves held outside
+# the ceilings. A schedule's cost is runs times ceiling.
+auto_run:
+  # Token ceiling per run (input + output, summed over the pass)
+  token_ceiling: 1000000
+  # Wall-clock ceiling per run, in minutes
+  wall_clock_minutes: 20
+  # Output reserve for the report a ceiling-stopped run still writes
+  report_reserve_tokens: 50000
+  # Wall-clock reserve for that report, in seconds
+  report_reserve_seconds: 120
+
 logging:
   # Log level: debug, info, warn, error
   level: info

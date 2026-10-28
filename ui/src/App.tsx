@@ -18,6 +18,9 @@ const ChatPage = lazy(() => import('@/pages/ChatPage').then((m) => ({ default: m
 const SessionsPage = lazy(() =>
   import('@/pages/SessionsPage').then((m) => ({ default: m.SessionsPage }))
 );
+const FindingsPage = lazy(() =>
+  import('@/pages/FindingsPage').then((m) => ({ default: m.FindingsPage }))
+);
 const UsersPage = lazy(() => import('@/pages/UsersPage').then((m) => ({ default: m.UsersPage })));
 const CredentialStatusPage = lazy(() =>
   import('@/pages/CredentialStatusPage').then((m) => ({ default: m.CredentialStatusPage }))
@@ -108,6 +111,14 @@ export function App() {
                     element={
                       <Suspense fallback={<LoadingPage />}>
                         <SessionsPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="findings"
+                    element={
+                      <Suspense fallback={<LoadingPage />}>
+                        <FindingsPage />
                       </Suspense>
                     }
                   />

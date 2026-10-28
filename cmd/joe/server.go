@@ -22,6 +22,7 @@ import (
 	"github.com/jaimegago/joe/internal/api"
 	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/auth"
+	"github.com/jaimegago/joe/internal/autorun"
 	"github.com/jaimegago/joe/internal/buildinfo"
 	"github.com/jaimegago/joe/internal/captaingate"
 	"github.com/jaimegago/joe/internal/config"
@@ -40,6 +41,7 @@ import (
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/readposture"
+	"github.com/jaimegago/joe/internal/runfindings"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/search"
@@ -373,6 +375,10 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// Phase 1 Change 3 — see the Phase 1 decomposition plan.
 	findingsRepo := findings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	warningsRepo := warnings.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	// Wire the run-findings repository (tables created by migration 035): the
+	// typed record a read-only Auto Joe run produces, distinct from the human
+	// findings annotation above (autojoe-ro-report-build).
+	runFindingsRepo := runfindings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
 	// Wire captain state-machine service (Phase 1 Change 6).
 	// Reachability threshold of 90s matches the CaptainService default;
@@ -555,6 +561,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
 	services.Warnings = warningsRepo
+	services.RunFindings = runFindingsRepo
 	services.CaptainSvc = captainSvc
 	// Web search is a global, boot-only capability (not a component): resolve
 	// the configured SearchProvider once here from cfg.WebSearch and seal it
@@ -909,6 +916,25 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 		return 1
 	}
 
+	// Start the Auto Joe run service (installed inside buildHTTPHandler). Runs
+	// derive from this ctx and are cancelled, and recorded as cancelled, on
+	// shutdown; the scheduler ticks under it. Nothing starts a run but an
+	// operator trigger or an installed schedule, so starting the service
+	// starts no run.
+	if services.AutoRun != nil {
+		if err := services.AutoRun.Start(ctx); err != nil {
+			slog.Error("failed to start auto run service", "error", err)
+			return 1
+		}
+		defer func() {
+			stopCtx, cancelStop := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelStop()
+			if err := services.AutoRun.Stop(stopCtx); err != nil {
+				slog.Error("failed to stop auto run service", "error", err)
+			}
+		}()
+	}
+
 	switch {
 	case oidcConfigured && saResolver.Configured():
 		slog.Info("API authentication enabled (OIDC login + service-account keys)")
@@ -1053,6 +1079,27 @@ func buildHTTPHandler(
 	// governance-wired engine constructed just above.
 	mux := http.NewServeMux()
 	apiServer := newAPIServer(services, policyEngine)
+
+	// autojoe-ro-run-build: the Auto Joe run path reads through an accessor
+	// built on the SAME promote-aware, posture-less engine the Core Agent
+	// refresh uses (A001-COREGOV CC-05, read-posture-latch-02 / D-0043) — never
+	// the transport engine above — so a run under svc:agent:core sees exactly
+	// what the refresher sees: grants plus the per-type auto_promote_reads
+	// admit, and nothing the human read posture admits. Built here because the
+	// engine constructors are the composition root's alone. The budget is the
+	// deployment default from config; the service is started beside the Core
+	// Agent in runServerWithDeps once the handler is assembled.
+	var runEngine *rbac.PolicyEngine
+	if cfg.RBACEnabled() {
+		runEngine = rbac.NewPolicyEngineWithPromote(rbacRepo, promoteReadsRepo)
+	}
+	runBudget := cfg.AutoRun.WithDefaults()
+	services.AutoRun = apiServer.InstallAutoRun(runEngine, autorun.Budget{
+		TokenCeiling:        runBudget.TokenCeiling,
+		WallClock:           runBudget.WallClock,
+		ReportReserveTokens: runBudget.ReportReserveTokens,
+		ReportReserve:       runBudget.ReportReserve,
+	})
 	apiServer.RegisterRoutes(mux)
 
 	// Register the OIDC login/callback/logout endpoints when an issuer is

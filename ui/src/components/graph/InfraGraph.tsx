@@ -31,10 +31,16 @@ const edgeTypes: EdgeTypes = {
 
 interface InfraGraphProps {
   graph: Graph;
+  // initialSelectedNodeId opens the graph with that node selected (its details
+  // panel shown). Read once on mount; a later change to the prop does not
+  // re-select, so a user who deselects is not fought.
+  initialSelectedNodeId?: string | null;
 }
 
-export function InfraGraph({ graph }: InfraGraphProps) {
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+export function InfraGraph({ graph, initialSelectedNodeId }: InfraGraphProps) {
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    initialSelectedNodeId ?? null
+  );
   const [filterNamespace, setFilterNamespace] = useState('all');
   const [filterKind, setFilterKind] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');

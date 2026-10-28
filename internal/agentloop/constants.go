@@ -37,6 +37,16 @@ const (
 	// the same open-enum design (D-0099) — the terminal status vocabulary is
 	// unchanged; stop_reason is the only new vocabulary.
 	StopReasonCancelled = "cancelled"
+
+	// StopReasonTokenCeiling and StopReasonWallClock mark an Auto Joe run (the
+	// read-only autonomous pass, internal/autorun) that stopped on one of its two
+	// per-run ceilings and still reported, funded from the report reserve held
+	// outside the run's ceiling. They are the sibling values the
+	// loop-budget-exhaustion item reserved for the ceiling paths; the /tasks
+	// path does not adopt them here and its termination behaviour is unchanged
+	// (that adoption is docs/backlog/loop-budget-exhaustion.md § 2 and § 3).
+	StopReasonTokenCeiling = "token_ceiling"
+	StopReasonWallClock    = "wall_clock"
 )
 
 // Per-message ingestion-truncation caps. A single message entering session

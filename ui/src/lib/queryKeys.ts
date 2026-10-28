@@ -20,4 +20,6 @@ export const QUERY_KEYS = {
   componentZones: ['component-zones'] as const,
   llmSettings: ['llm-settings'] as const,
   readPosture: ['read-posture'] as const,
+  runFindings: ['run-findings'] as const,
+  proposedAdmissions: ['run-findings', 'admissions'] as const,
 } as const;

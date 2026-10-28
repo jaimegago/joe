@@ -45,6 +45,7 @@ after the move rather than by inspection.
 | [`admin-list-null-arrays`](admin-list-null-arrays.md) | Admin list endpoints serialize an empty list as `null`, and three UI parsers reject it | open | next |
 | [`advertised-dead-tools`](advertised-dead-tools.md) | Advertised-dead tools — tools registered on the loop that no registrable component can serve | open | next |
 | [`agent-identity-doc`](agent-identity-doc.md) | Agent identity and authentication — explanation doc and the implementation it trickles into | open | next |
+| [`agent-tool-reference`](agent-tool-reference.md) | Agent tool reference — every tool the agent loop can call, with its action class | open | |
 | [`aws-credential-provider`](aws-credential-provider.md) | Backlog — AWS-shaped credential provider (deferred from A003) | deferred from A003 | later |
 | [`azure-adapter-connect-skeleton`](azure-adapter-connect-skeleton.md) | Backlog — Azure adapter Connect is a skeleton (no SDK client built) | deferred | later |
 | [`azure-credential-provider-and-connect`](azure-credential-provider-and-connect.md) | Backlog — Azure credential provider + Connect implementation (deferred from A003) | deferred from A003 | later |
@@ -53,6 +54,7 @@ after the move rather than by inspection.
 | [`captain-write-consolidation`](captain-write-consolidation.md) | Backlog — Consolidate the captain detach/attach write patterns behind one tx-aware seam | deferred | later |
 | [`case-study-kiro-redo`](case-study-kiro-redo.md) | Redo the Kiro case study against current Joe architecture | open | next |
 | [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
+| [`chat-session-controls`](chat-session-controls.md) | Chat session controls — compression, an accurate usage indicator, effort, and model selection | open | later |
 | [`cli-version-and-help`](cli-version-and-help.md) | Backlog — Skills/incident leaf help still runs behind a config load (deferred from cli-version-and-help / D-0143) | open | next |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
@@ -85,6 +87,7 @@ after the move rather than by inspection.
 | [`home-dir-override-seam`](home-dir-override-seam.md) | `joe`'s home/data-directory resolution has no override seam for tests or isolated runs | open | |
 | [`iac-graph-ingestion`](iac-graph-ingestion.md) | IaC declared-to-live bridge upgrade — identifier-derived edges, git_repo anchoring, and flux | open | later |
 | [`incident-view-filter-to-mine`](incident-view-filter-to-mine.md) | Backlog — "Filter to mine" in the incident view | deferred | later |
+| [`joe-operator`](joe-operator.md) | Joe operator — install Joe, and declare its skills and components, as Kubernetes resources | open | later |
 | [`launch-ui-polish`](launch-ui-polish.md) | Purpose-built dashboard to replace the retired fabricated-data landing page | open | next |
 | [`legacy-sessions-tables-fate`](legacy-sessions-tables-fate.md) | Backlog — Fate of the legacy `sessions` / `session_messages` tables | open | next |
 | [`llm-observed-health-surface`](llm-observed-health-surface.md) | LLM observed-health surface — last-successful-call display and failure recording | open | later |

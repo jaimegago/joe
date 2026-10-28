@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router';
 import { useGraph } from '@/hooks/useGraph';
 import { ApiRequestError } from '@/api/client';
 import { Header } from '@/components/layout/Header';
@@ -41,6 +42,10 @@ function graphErrorState(error: unknown): {
 
 export function GraphPage() {
   const { data: graph, isLoading, isError, error, refetch } = useGraph();
+  // ?node=<id> opens the page with that node selected — the link target a
+  // finding uses to reach its subject node (FindingCard.graphNodeHref).
+  const [params] = useSearchParams();
+  const focusNodeId = params.get('node');
 
   if (isLoading) return <LoadingPage />;
 
@@ -76,7 +81,7 @@ export function GraphPage() {
     <div className="flex h-full flex-col">
       <Header title="Infrastructure Graph" />
       <div className="flex-1 overflow-hidden">
-        <InfraGraph graph={graph} />
+        <InfraGraph graph={graph} initialSelectedNodeId={focusNodeId} />
       </div>
     </div>
   );

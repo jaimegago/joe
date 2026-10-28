@@ -22,6 +22,7 @@ type Config struct {
 	Skills    SkillsConfig    `yaml:"skills"`
 	Auth      AuthConfig      `yaml:"auth"`
 	WebSearch WebSearchConfig `yaml:"web_search"`
+	AutoRun   AutoRunConfig   `yaml:"auto_run"`
 
 	// explicitProvider records whether the user expressed an explicit LLM
 	// provider preference during Load — either JOE_LLM_PROVIDER or an
@@ -326,6 +327,30 @@ func (c *LLMConfig) ModelNames() []string {
 	return names
 }
 
+// AutoRunConfig carries the deployment defaults an Auto Joe run is budgeted
+// from (joe-pm queue/autojoe-ro-run.md § Budget; internal/autorun). The two
+// ceilings bound the pass; the two reserves are held OUTSIDE the ceilings and
+// fund the report a run owes when a ceiling stops it, so the report's own
+// tokens and seconds are never what breached the ceiling. Every field falls
+// back to its default when zero or negative; there is no way to configure a
+// run with no ceiling.
+type AutoRunConfig struct {
+	// TokenCeiling is the per-run token ceiling (input plus output, summed over
+	// every LLM call the pass makes).
+	TokenCeiling int `yaml:"token_ceiling"`
+	// WallClockMinutes is the per-run wall-clock ceiling.
+	WallClockMinutes int           `yaml:"wall_clock_minutes"`
+	WallClock        time.Duration `yaml:"-"` // Computed from WallClockMinutes
+	// ReportReserveTokens bounds the output of the one forced-synthesis call a
+	// ceiling-stopped run makes to report; it is spent after the ceiling, not
+	// within it.
+	ReportReserveTokens int `yaml:"report_reserve_tokens"`
+	// ReportReserveSeconds bounds that call's wall clock, for a run the clock
+	// stopped.
+	ReportReserveSeconds int           `yaml:"report_reserve_seconds"`
+	ReportReserve        time.Duration `yaml:"-"` // Computed from ReportReserveSeconds
+}
+
 // RefreshConfig configures background refresh
 type RefreshConfig struct {
 	IntervalMinutes int           `yaml:"interval_minutes"`
@@ -409,6 +434,7 @@ func Load(configPath string) (*Config, error) {
 	// Compute derived fields
 	cfg.Refresh.Interval = time.Duration(cfg.Refresh.IntervalMinutes) * time.Minute
 	cfg.Refresh.LLMBudget.BatchTimeout = time.Duration(cfg.Refresh.LLMBudget.BatchTimeoutSec) * time.Second
+	cfg.AutoRun = applyAutoRunDefaults(cfg.AutoRun)
 
 	// Stream G phase G2 boundary check. The cost-currency invariant
 	// (non-USD currency requires a positive USD-to-configured FX rate)
@@ -467,7 +493,35 @@ func defaultConfig() *Config {
 			SessionTTL:        defaultAuthSessionTTL,
 			PostLoginRedirect: "/",
 		},
+		AutoRun: applyAutoRunDefaults(AutoRunConfig{}),
 	}
+}
+
+// WithDefaults returns the budget with every zero or negative field filled
+// from the deployment defaults and the duration forms computed — what Load
+// does for a loaded config, available to a caller holding a Config built by
+// hand (a test harness, the composition root under a regression pin).
+func (c AutoRunConfig) WithDefaults() AutoRunConfig { return applyAutoRunDefaults(c) }
+
+// applyAutoRunDefaults fills every zero or negative Auto Joe budget field with
+// its deployment default and computes the duration forms. A run is always
+// budgeted: an operator can lower or raise a ceiling, never remove one.
+func applyAutoRunDefaults(c AutoRunConfig) AutoRunConfig {
+	if c.TokenCeiling <= 0 {
+		c.TokenCeiling = defaultAutoRunTokenCeiling
+	}
+	if c.WallClockMinutes <= 0 {
+		c.WallClockMinutes = defaultAutoRunWallClockMinutes
+	}
+	if c.ReportReserveTokens <= 0 {
+		c.ReportReserveTokens = defaultAutoRunReportReserveTokens
+	}
+	if c.ReportReserveSeconds <= 0 {
+		c.ReportReserveSeconds = defaultAutoRunReportReserveSeconds
+	}
+	c.WallClock = time.Duration(c.WallClockMinutes) * time.Minute
+	c.ReportReserve = time.Duration(c.ReportReserveSeconds) * time.Second
+	return c
 }
 
 // loadFromFile loads config from a YAML file. currentSet reports whether the
