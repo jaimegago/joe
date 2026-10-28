@@ -57,7 +57,9 @@ func TestE2E_TaskCompletesThroughScriptedResponder(t *testing.T) {
 	}
 
 	// The responder saw the turn the default script describes: a tool call,
-	// then the answer, then the no-tool-call probe.
+	// then the answer, then the no-tool-call probe. joe may make further calls
+	// after the turn returns (the session title is generated asynchronously),
+	// so only the first three are the turn's.
 	calls := harness.Responder.Calls()
 	if len(calls) < 3 {
 		t.Fatalf("responder received %d calls, want at least 3 (tool call, answer, probe)", len(calls))
@@ -68,8 +70,8 @@ func TestE2E_TaskCompletesThroughScriptedResponder(t *testing.T) {
 	if !calls[1].Request.HasToolResult() {
 		t.Error("second call carried no tool result; the tool call was not fed back to the model")
 	}
-	if !calls[len(calls)-1].Request.IsToolIntentProbe() {
-		t.Error("last call was not the no-tool-call probe")
+	if !calls[2].Request.IsToolIntentProbe() {
+		t.Error("third call was not the no-tool-call probe")
 	}
 
 	t.Logf("✓ task %s completed in %d iterations through %d responder calls", resp.TaskID, resp.Iterations, len(calls))
