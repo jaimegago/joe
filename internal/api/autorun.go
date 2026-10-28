@@ -18,6 +18,7 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
+	"github.com/jaimegago/joe/internal/runfindings"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/tools"
 )
@@ -47,6 +48,11 @@ type autoRunHandler struct {
 	service  *autorun.Service
 	accessor *access.Accessor
 	inproc   *inProcessCoreClient
+	// findings is the report side's pipeline (autojoe-ro-report-build), wired
+	// over the run accessor and the run-findings repository; nil when the
+	// repository is not wired, in which case a run's final turn carries its
+	// prose unverified and no finding record is written.
+	findings *runFindingsPipeline
 }
 
 // InstallAutoRun wires the Auto Joe run service onto the server and returns
@@ -72,6 +78,11 @@ func (s *Server) InstallAutoRun(runEngine *rbac.PolicyEngine, budget autorun.Bud
 		accessor: runAccessor,
 		inproc:   newInProcessCoreClient(runAccessor, s.services),
 	}
+	var findings autorun.FindingsPipeline
+	if s.services.RunFindings != nil {
+		h.findings = &runFindingsPipeline{repo: s.services.RunFindings, reader: runAccessor, now: time.Now}
+		findings = h.findings
+	}
 	var zones autorun.ZoneAssignments
 	if s.services.RBAC != nil {
 		zones = s.services.RBAC
@@ -83,6 +94,7 @@ func (s *Server) InstallAutoRun(runEngine *rbac.PolicyEngine, budget autorun.Bud
 		Zones:      zones,
 		Budget:     budget,
 		Loop:       h.buildLoop,
+		Findings:   findings,
 	})
 	if err != nil {
 		slog.Error("auto run: not installed", "error", err)
@@ -135,6 +147,13 @@ func (h *autoRunHandler) buildLoop(ctx context.Context, run *autorun.Run, observ
 	systemPrompt := llm.StaticSystem(prompts.TaskSystem).Append(prompts.AutoRunSystem, true)
 	systemPrompt = systemPrompt.Append(prompts.PostureSection(h.server.services.WriteFloor.Reason()), false)
 	systemPrompt = systemPrompt.Append(prompts.AutoRunScopeSection(run.ResolvedComponents), false)
+	// The standing questions, one per finding type, and the structured output
+	// contract the findings pipeline parses (autojoe-ro-report-build). Both
+	// are compile-time constants, so they sit in the stable prefix.
+	if h.findings != nil {
+		systemPrompt = systemPrompt.Append(prompts.AutoRunFindingsQuestions, true)
+		systemPrompt = systemPrompt.Append(runfindings.OutputContract, true)
+	}
 	if h.accessor.GraphAvailable() {
 		// The principal here is the run's, read from the context the service
 		// stamped — never a constant and never the activator.
