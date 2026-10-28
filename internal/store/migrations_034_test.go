@@ -10,16 +10,14 @@ import (
 	"github.com/jaimegago/joe/internal/observability"
 )
 
-// TestMigration034_AutoRuns_UpDownUp_RoundTrip isolates migration 034 (the Auto
-// Joe run record and schedules). Asserts:
+// TestMigration034_RunFindings_UpDownUp_RoundTrip isolates migration 034 (the
+// run findings record). Asserts:
 //
-//   - At HEAD: auto_runs and auto_schedules exist with their indexes, and the
-//     one-live-run-per-scope partial unique index refuses a second 'running'
-//     row on one scope while admitting one on another scope and a completed
-//     row on the same scope.
-//   - After reverting 034: both tables and every index are gone.
+//   - At HEAD: run_finding_sets and run_findings exist with their indexes.
+//   - After reverting 034: both tables and all six indexes are gone, and the
+//     human findings table (011) is untouched.
 //   - After re-up to HEAD: both tables are back.
-func TestMigration034_AutoRuns_UpDownUp_RoundTrip(t *testing.T) {
+func TestMigration034_RunFindings_UpDownUp_RoundTrip(t *testing.T) {
 	s, err := New(DatabaseConfig{Driver: DriverSQLite, DSN: ":memory:"}, (*observability.Metrics)(nil))
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -29,46 +27,19 @@ func TestMigration034_AutoRuns_UpDownUp_RoundTrip(t *testing.T) {
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate up #1: %v", err)
 	}
-	for _, table := range []string{"auto_runs", "auto_schedules"} {
-		if !tableExists(t, s, table) {
-			t.Fatalf("at HEAD: %s must exist", table)
-		}
-	}
 	indexes := []string{
-		"idx_auto_runs_scope_key", "idx_auto_runs_started_at",
-		"idx_auto_runs_one_live_per_scope", "idx_auto_schedules_next_run_at",
+		"idx_run_finding_sets_scope", "idx_run_finding_sets_session",
+		"idx_run_findings_run", "idx_run_findings_key", "idx_run_findings_session", "idx_run_findings_subject",
+	}
+	for _, tbl := range []string{"run_finding_sets", "run_findings"} {
+		if !tableExists(t, s, tbl) {
+			t.Errorf("at HEAD: %s must exist", tbl)
+		}
 	}
 	for _, idx := range indexes {
 		if !indexExists(t, s, idx) {
 			t.Errorf("at HEAD: index %s must exist", idx)
 		}
-	}
-
-	// One live run per scope is structural: the second 'running' row on scope
-	// "a" fails the partial unique index; a running row on scope "b" and a
-	// completed row on scope "a" both insert.
-	insert := func(id, scope, state string) error {
-		_, err := s.db.Exec(`INSERT INTO auto_runs
-			(id, activator, principal, selection, scope_key, resolved_components,
-			 token_ceiling, wall_clock_seconds, report_reserve_tokens, state, started_at)
-			VALUES (?, 'user:op', 'svc:agent:core', '{}', ?, '[]', 1, 1, 1, ?, '2026-10-28T00:00:00Z')`,
-			id, scope, state)
-		return err
-	}
-	if err := insert("r1", "a", "running"); err != nil {
-		t.Fatalf("first running row on scope a: %v", err)
-	}
-	if err := insert("r2", "a", "running"); err == nil {
-		t.Fatal("second running row on scope a must fail the one-live-per-scope index")
-	}
-	if err := insert("r3", "b", "running"); err != nil {
-		t.Fatalf("running row on scope b: %v", err)
-	}
-	if err := insert("r4", "a", "completed"); err != nil {
-		t.Fatalf("completed row on scope a: %v", err)
-	}
-	if err := insert("r5", "a", "paused"); err == nil {
-		t.Fatal("state outside the CHECK domain must be refused")
 	}
 
 	source, err := iofs.New(migrationsFS, "migrations")
@@ -87,9 +58,9 @@ func TestMigration034_AutoRuns_UpDownUp_RoundTrip(t *testing.T) {
 	if err := m.Steps(stepsDownTo(t, 33)); err != nil {
 		t.Fatalf("step down to 033 boundary: %v", err)
 	}
-	for _, table := range []string{"auto_runs", "auto_schedules"} {
-		if tableExists(t, s, table) {
-			t.Errorf("after down: %s must be dropped", table)
+	for _, tbl := range []string{"run_finding_sets", "run_findings"} {
+		if tableExists(t, s, tbl) {
+			t.Errorf("after down: %s must be dropped", tbl)
 		}
 	}
 	for _, idx := range indexes {
@@ -97,13 +68,16 @@ func TestMigration034_AutoRuns_UpDownUp_RoundTrip(t *testing.T) {
 			t.Errorf("after down: index %s must be dropped", idx)
 		}
 	}
+	if !tableExists(t, s, "findings") {
+		t.Error("after down: the human findings table (011) must be untouched")
+	}
 
 	if err := m.Up(); err != nil {
-		t.Fatalf("re-up to HEAD: %v", err)
+		t.Fatalf("re-up: %v", err)
 	}
-	for _, table := range []string{"auto_runs", "auto_schedules"} {
-		if !tableExists(t, s, table) {
-			t.Errorf("after re-up: %s must exist", table)
+	for _, tbl := range []string{"run_finding_sets", "run_findings"} {
+		if !tableExists(t, s, tbl) {
+			t.Errorf("after re-up: %s must exist", tbl)
 		}
 	}
 }
