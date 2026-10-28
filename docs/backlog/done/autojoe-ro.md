@@ -1,6 +1,11 @@
 # Read-only Auto Joe — first slice: a budgeted run on `agent:core` delivering typed, ranked findings into a session
 
-Status: open
+Status: done — the first slice shipped as two pull requests: the run side as
+joe#91 (`autojoe-ro-run-build`) and the report side as joe#93
+(`autojoe-ro-report-build`), both merged on `main` on 2026-10-28. Archived by
+the joe-pm thread `retire-delivered-items`. The body below is preserved as it
+stood; what it defers (the push surface, the weight label) stays deferred and
+is not this item's.
 Design of record: the joe-pm ledger's `AUTOJOE-RO` milestone (`queue/autojoe-ro.md`) and its two phase items, `queue/autojoe-ro-run.md` and `queue/autojoe-ro-report.md`, both settled in full on 2026-10-27. This entry is the build order for the first slice: it restates the settled contracts as requirements and acceptance criteria and lists what joe has to add. It decides nothing those items left settled, and it reopens nothing.
 
 ## Context
